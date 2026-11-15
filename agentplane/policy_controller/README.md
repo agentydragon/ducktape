@@ -90,5 +90,4 @@ leader election. `reader_services` admits exact service SPIFFE IDs to read metho
 `writer_services` admits exact service SPIFFE IDs to write methods. Both require
 `grpc_tls.client_ca_file`, and a service must be explicitly listed for each role it needs.
 PolicyService refuses bearer credentials, workload SVIDs and delegation envelopes.
-`grpc_audience`, `reader_accounts` and `writer_accounts` remain decoded but ignored until
-manifest omission rolls out. See the [service contract](SPEC.md#policy-resource-watches).
+See the [service contract](SPEC.md#policy-resource-watches).

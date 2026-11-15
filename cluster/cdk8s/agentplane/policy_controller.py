@@ -110,10 +110,7 @@ class PolicyController(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name="policy-controller-settings", namespace=namespace),
-            # CLEANUP(added 2026-11-15): Drop this projection when the decoded legacy fields retire.
-            content=yaml_config(
-                settings.model_dump(mode="json", exclude={"grpc_audience", "reader_accounts", "writer_accounts"})
-            ),
+            content=yaml_config(settings),
             path="/etc/agentplane-policy-controller/config.yaml",
         )
         workload = add_service_workload(

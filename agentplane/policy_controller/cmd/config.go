@@ -24,18 +24,14 @@ type config struct {
 	MetricsBindAddress     string                     `yaml:"metrics_bind_address"`
 	HealthProbeBindAddress string                     `yaml:"health_probe_bind_address"`
 	GRPCTLS                *peertls.ServerTLSListener `yaml:"grpc_tls"`
-	// CLEANUP(added 2026-11-15): remove these ignored bearer keys after manifests omit them and that rollout completes.
-	GRPCAudience       string   `yaml:"grpc_audience"`
-	ReaderAccounts     []string `yaml:"reader_accounts"`
-	WriterAccounts     []string `yaml:"writer_accounts"`
-	ReaderServices     []string `yaml:"reader_services"`
-	WriterServices     []string `yaml:"writer_services"`
-	WorkloadIssuer     string   `yaml:"workload_issuer"`
-	WorkloadNamespaces []string `yaml:"workload_namespaces"`
+	ReaderServices         []string                   `yaml:"reader_services"`
+	WriterServices         []string                   `yaml:"writer_services"`
+	WorkloadIssuer         string                     `yaml:"workload_issuer"`
+	WorkloadNamespaces     []string                   `yaml:"workload_namespaces"`
 }
 
 func defaultConfig() config {
-	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081", GRPCAudience: "agentplane-policy"}
+	return config{MetricsBindAddress: ":8080", HealthProbeBindAddress: ":8081"}
 }
 
 func loadConfig() (config, error) {

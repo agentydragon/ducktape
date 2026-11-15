@@ -32,20 +32,6 @@ class Settings(BaseModel):
         default=":8081", min_length=1, description="Where /healthz and /readyz are served."
     )
     grpc_tls: ServerTLSListener = Field(description="Server-authenticated TLS listener for PolicyService.")
-    # CLEANUP(added 2026-11-15): remove these ignored bearer keys after manifest omission has rolled out.
-    grpc_audience: str = Field(
-        default="agentplane-policy",
-        min_length=1,
-        description="Ignored legacy bearer audience; retained until manifest omission rolls out.",
-    )
-    reader_accounts: Set[str] = Field(
-        default_factory=frozenset,
-        description="Ignored legacy reader accounts; retained until manifest omission rolls out.",
-    )
-    writer_accounts: Set[str] = Field(
-        default_factory=frozenset,
-        description="Ignored legacy writer accounts; retained until manifest omission rolls out.",
-    )
     reader_services: Set[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,
@@ -66,14 +52,7 @@ class Settings(BaseModel):
         description="Namespaces whose WorkloadCredentials this controller issues; empty issues none.",
     )
 
-    @field_serializer(
-        "subject_namespaces",
-        "reader_accounts",
-        "writer_accounts",
-        "reader_services",
-        "writer_services",
-        "workload_namespaces",
-    )
+    @field_serializer("subject_namespaces", "reader_services", "writer_services", "workload_namespaces")
     def sorted_names(self, names: Set[str]) -> list[str]:
         return sorted(names)
 
