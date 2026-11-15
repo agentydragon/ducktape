@@ -17,6 +17,8 @@ use super::{DataflowOpacityCause, EffectCell, ExportLinkage, StatementFacts, Sta
 use crate::analysis_inputs::ProofDependencies;
 use crate::execution_evidence::{AssumedEffectReason, ExecutionPrecisionLoss, SourceLocation};
 
+pub use crate::saved_proto::proto::OwnerInitializationCoverageRefusalReason;
+
 #[derive(Debug, Clone, Serialize)]
 pub struct InitializationEffectEvidence {
     #[serde(flatten)]
@@ -79,55 +81,6 @@ pub enum UnknownEffectCoverage {
     GlobalProperties,
     GeneralHeap,
     HostEffects,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OwnerInitializationCoverageRefusalReason {
-    UnsupportedOwnerKind,
-    ExportedOwner,
-    SplitDeclaration,
-    UnsupportedBindingShape,
-    MissingInitializer,
-    UnsupportedInitializer,
-    OwnerBindingMismatch,
-    InitializerResultUnproved,
-    /// A root `receiver.property = value` statement outside the admitted
-    /// root statements (`roots/operands`): its receiver is not an initialized
-    /// module record with a writable own data slot at its prefix (a global
-    /// publication, a new property, an unproved alias, an escaped record),
-    /// or the owner is excluded (dynamic scope, opaque, deferred global
-    /// write). A store whose value can run code keeps
-    /// `UnsupportedOwnerKind`.
-    UnprovedFieldStore,
-    /// A root `binding = value` statement storing to an imported binding,
-    /// which throws.
-    ImportedBindingStore,
-    /// A root `binding = value` statement storing to a `const`, which throws.
-    ConstBindingStore,
-    /// A root `binding = value` statement storing to a lexical binding still
-    /// in its TDZ at the statement's prefix, which throws.
-    UninitializedBindingStore,
-    /// A root `binding = value` statement storing to a binding some closure
-    /// reads: the closure's view of the binding is not a module-prefix value.
-    CapturedBindingStore,
-    /// A root `binding = value` statement storing to an exported binding,
-    /// which an importer can observe through its live binding.
-    ExportedBindingStore,
-    /// An admitted root statement's kernel attempt did not seal it, so the
-    /// flattened lane ran it instead.
-    UnprovedStatementOperation,
-    /// The owner's execution created a callback that captures a live
-    /// activation cell; a call that receives it has no effect receipt until
-    /// call-effect coverage follows live captures.
-    CallbackCapturesLiveCell,
-    UnknownCall,
-    PrecisionLoss,
-    UninitializedRead,
-    IncompleteExecution,
-    BindingNotInitialized,
-    NoExecutionSummary,
-    RefusalUnavailable,
 }
 
 /// Why a root's kernel attempt did not seal its owner, so the executor
@@ -438,157 +391,6 @@ fn record(
         });
 }
 
-impl ProtoConvert<i32> for OwnerInitializationCoverageRefusalReason {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::UnsupportedOwnerKind => {
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind as i32
-            }
-            Self::ExportedOwner => {
-                proto::OwnerInitializationCoverageRefusalReason::ExportedOwner as i32
-            }
-            Self::SplitDeclaration => {
-                proto::OwnerInitializationCoverageRefusalReason::SplitDeclaration as i32
-            }
-            Self::UnsupportedBindingShape => {
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape as i32
-            }
-            Self::MissingInitializer => {
-                proto::OwnerInitializationCoverageRefusalReason::MissingInitializer as i32
-            }
-            Self::UnsupportedInitializer => {
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedInitializer as i32
-            }
-            Self::OwnerBindingMismatch => {
-                proto::OwnerInitializationCoverageRefusalReason::OwnerBindingMismatch as i32
-            }
-            Self::InitializerResultUnproved => {
-                proto::OwnerInitializationCoverageRefusalReason::InitializerResultUnproved as i32
-            }
-            Self::UnprovedFieldStore => {
-                proto::OwnerInitializationCoverageRefusalReason::UnprovedFieldStore as i32
-            }
-            Self::ImportedBindingStore => {
-                proto::OwnerInitializationCoverageRefusalReason::ImportedBindingStore as i32
-            }
-            Self::ConstBindingStore => {
-                proto::OwnerInitializationCoverageRefusalReason::ConstBindingStore as i32
-            }
-            Self::UninitializedBindingStore => {
-                proto::OwnerInitializationCoverageRefusalReason::UninitializedBindingStore as i32
-            }
-            Self::CapturedBindingStore => {
-                proto::OwnerInitializationCoverageRefusalReason::CapturedBindingStore as i32
-            }
-            Self::ExportedBindingStore => {
-                proto::OwnerInitializationCoverageRefusalReason::ExportedBindingStore as i32
-            }
-            Self::UnprovedStatementOperation => {
-                proto::OwnerInitializationCoverageRefusalReason::UnprovedStatementOperation as i32
-            }
-            Self::CallbackCapturesLiveCell => {
-                proto::OwnerInitializationCoverageRefusalReason::CallbackCapturesLiveCell as i32
-            }
-            Self::UnknownCall => {
-                proto::OwnerInitializationCoverageRefusalReason::UnknownCall as i32
-            }
-            Self::PrecisionLoss => {
-                proto::OwnerInitializationCoverageRefusalReason::PrecisionLoss as i32
-            }
-            Self::UninitializedRead => {
-                proto::OwnerInitializationCoverageRefusalReason::UninitializedRead as i32
-            }
-            Self::IncompleteExecution => {
-                proto::OwnerInitializationCoverageRefusalReason::IncompleteExecution as i32
-            }
-            Self::BindingNotInitialized => {
-                proto::OwnerInitializationCoverageRefusalReason::BindingNotInitialized as i32
-            }
-            Self::NoExecutionSummary => {
-                proto::OwnerInitializationCoverageRefusalReason::NoExecutionSummary as i32
-            }
-            Self::RefusalUnavailable => {
-                proto::OwnerInitializationCoverageRefusalReason::RefusalUnavailable as i32
-            }
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::OwnerInitializationCoverageRefusalReason::try_from(value)? {
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedOwnerKind => {
-                    Self::UnsupportedOwnerKind
-                }
-                proto::OwnerInitializationCoverageRefusalReason::ExportedOwner => {
-                    Self::ExportedOwner
-                }
-                proto::OwnerInitializationCoverageRefusalReason::SplitDeclaration => {
-                    Self::SplitDeclaration
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedBindingShape => {
-                    Self::UnsupportedBindingShape
-                }
-                proto::OwnerInitializationCoverageRefusalReason::MissingInitializer => {
-                    Self::MissingInitializer
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UnsupportedInitializer => {
-                    Self::UnsupportedInitializer
-                }
-                proto::OwnerInitializationCoverageRefusalReason::OwnerBindingMismatch => {
-                    Self::OwnerBindingMismatch
-                }
-                proto::OwnerInitializationCoverageRefusalReason::InitializerResultUnproved => {
-                    Self::InitializerResultUnproved
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UnprovedFieldStore => {
-                    Self::UnprovedFieldStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::ImportedBindingStore => {
-                    Self::ImportedBindingStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::ConstBindingStore => {
-                    Self::ConstBindingStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UninitializedBindingStore => {
-                    Self::UninitializedBindingStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::CapturedBindingStore => {
-                    Self::CapturedBindingStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::ExportedBindingStore => {
-                    Self::ExportedBindingStore
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UnprovedStatementOperation => {
-                    Self::UnprovedStatementOperation
-                }
-                proto::OwnerInitializationCoverageRefusalReason::CallbackCapturesLiveCell => {
-                    Self::CallbackCapturesLiveCell
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UnknownCall => Self::UnknownCall,
-                proto::OwnerInitializationCoverageRefusalReason::PrecisionLoss => {
-                    Self::PrecisionLoss
-                }
-                proto::OwnerInitializationCoverageRefusalReason::UninitializedRead => {
-                    Self::UninitializedRead
-                }
-                proto::OwnerInitializationCoverageRefusalReason::IncompleteExecution => {
-                    Self::IncompleteExecution
-                }
-                proto::OwnerInitializationCoverageRefusalReason::BindingNotInitialized => {
-                    Self::BindingNotInitialized
-                }
-                proto::OwnerInitializationCoverageRefusalReason::NoExecutionSummary => {
-                    Self::NoExecutionSummary
-                }
-                proto::OwnerInitializationCoverageRefusalReason::RefusalUnavailable => {
-                    Self::RefusalUnavailable
-                }
-                proto::OwnerInitializationCoverageRefusalReason::Unspecified => {
-                    bail!("unspecified saved-analysis initialization coverage refusal")
-                }
-            },
-        )
-    }
-}
 impl ProtoConvert<i32> for RootAttemptRewind {
     fn to_proto(&self) -> Result<i32> {
         Ok(match self {

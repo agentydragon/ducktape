@@ -494,6 +494,31 @@ struct SavedSynchronousCalls<'a> {
     purity_disagreement: Option<SavedPurityDisagreement>,
 }
 
+fn refusal_reason_from_prost_field(
+    value: i32,
+) -> Result<crate::facts::OwnerInitializationCoverageRefusalReason> {
+    use crate::facts::OwnerInitializationCoverageRefusalReason as Reason;
+
+    let reason = Reason::try_from(value)?;
+    ensure!(
+        reason != Reason::Unspecified,
+        "unspecified saved-analysis initialization coverage refusal"
+    );
+    Ok(reason)
+}
+
+fn refusal_reason_to_prost_field(
+    value: crate::facts::OwnerInitializationCoverageRefusalReason,
+) -> Result<i32> {
+    use crate::facts::OwnerInitializationCoverageRefusalReason as Reason;
+
+    ensure!(
+        value != Reason::Unspecified,
+        "unspecified saved-analysis initialization coverage refusal"
+    );
+    Ok(value as i32)
+}
+
 struct SavedPurityDisagreement {
     prepared: proto::SavedPurity,
     completed: proto::SavedPurity,
@@ -817,7 +842,11 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
             initializer_binding_effects: self.initializer_binding_effects.to_proto()?,
             initializer_external_effects: self.initializer_external_effects.to_proto()?,
             completed_initialization: self.completed_initialization.to_proto()?,
-            initialization_coverage_refusal: self.initialization_coverage_refusal.to_proto()?,
+            initialization_coverage_refusal: self
+                .initialization_coverage_refusal
+                .as_ref()
+                .map(refusal_reason_to_prost_field)
+                .transpose()?,
             root_attempt: self.root_attempt.to_proto()?,
             evaluation_effects: Some(self.evaluation_effects.to_proto()?),
             local_record_factory_uses: self.local_record_factory_uses.to_proto()?,
@@ -874,9 +903,12 @@ impl<'a> ProtoConvert<proto::SavedSynchronousCalls> for SavedSynchronousCalls<'a
             initializer_binding_effects: Cow::from_proto(value.initializer_binding_effects)?,
             initializer_external_effects: Cow::from_proto(value.initializer_external_effects)?,
             completed_initialization: Cow::from_proto(value.completed_initialization)?,
-            initialization_coverage_refusal: Cow::from_proto(
-                value.initialization_coverage_refusal,
-            )?,
+            initialization_coverage_refusal: Cow::Owned(
+                value
+                    .initialization_coverage_refusal
+                    .map(refusal_reason_from_prost_field)
+                    .transpose()?,
+            ),
             root_attempt: Option::from_proto(value.root_attempt)?,
             evaluation_effects: Cow::from_proto(required(
                 value.evaluation_effects,
@@ -955,10 +987,61 @@ impl ProtoConvert<proto::SavedPurityDisagreement> for SavedPurityDisagreement {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ProofDependencies;
+    use crate::facts::OwnerInitializationCoverageRefusalReason as Reason;
     use crate::purity::{PurityReason, PurityRule};
     use crate::reports::schema::PurityCompletionDisagreement;
     use std::sync::Arc;
     use swc_common::{BytePos, Span};
+
+    #[test]
+    fn generated_initialization_refusal_reason_keeps_serde_names() {
+        let reasons = [
+            (Reason::UnsupportedOwnerKind, "unsupported_owner_kind"),
+            (Reason::ExportedOwner, "exported_owner"),
+            (Reason::SplitDeclaration, "split_declaration"),
+            (Reason::UnsupportedBindingShape, "unsupported_binding_shape"),
+            (Reason::MissingInitializer, "missing_initializer"),
+            (Reason::UnsupportedInitializer, "unsupported_initializer"),
+            (Reason::OwnerBindingMismatch, "owner_binding_mismatch"),
+            (
+                Reason::InitializerResultUnproved,
+                "initializer_result_unproved",
+            ),
+            (Reason::UnprovedFieldStore, "unproved_field_store"),
+            (Reason::ImportedBindingStore, "imported_binding_store"),
+            (Reason::ConstBindingStore, "const_binding_store"),
+            (
+                Reason::UninitializedBindingStore,
+                "uninitialized_binding_store",
+            ),
+            (Reason::CapturedBindingStore, "captured_binding_store"),
+            (Reason::ExportedBindingStore, "exported_binding_store"),
+            (
+                Reason::UnprovedStatementOperation,
+                "unproved_statement_operation",
+            ),
+            (
+                Reason::CallbackCapturesLiveCell,
+                "callback_captures_live_cell",
+            ),
+            (Reason::UnknownCall, "unknown_call"),
+            (Reason::PrecisionLoss, "precision_loss"),
+            (Reason::UninitializedRead, "uninitialized_read"),
+            (Reason::IncompleteExecution, "incomplete_execution"),
+            (Reason::BindingNotInitialized, "binding_not_initialized"),
+            (Reason::NoExecutionSummary, "no_execution_summary"),
+            (Reason::RefusalUnavailable, "refusal_unavailable"),
+        ];
+        for (reason, name) in reasons {
+            let json = serde_json::to_string(&reason).unwrap();
+            assert_eq!(json, format!("\"{name}\""));
+            assert_eq!(serde_json::from_str::<Reason>(&json).unwrap(), reason);
+        }
+
+        assert!(serde_json::to_string(&Reason::Unspecified).is_err());
+        assert!(serde_json::from_str::<Reason>("\"unspecified\"").is_err());
+        assert!(refusal_reason_from_prost_field(0).is_err());
+    }
 
     #[test]
     fn saved_synchronous_calls_require_authority_and_effect_metadata() {

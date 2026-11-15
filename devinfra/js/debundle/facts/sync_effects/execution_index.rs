@@ -29,7 +29,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::integrity::{
     IntegrityFlags, IntrinsicIntact, IntrinsicSlot, PrototypeWrites,
 };
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, KindProperties, Value};
 use crate::facts::at_init_fallback::{
     is_no_sync_callback_member_call, member_row_invokes_no_argument,
 };
@@ -7475,7 +7475,7 @@ impl ExecutionIndex {
             else {
                 continue;
             };
-            if row.allocates.is_some_and(Kind::is_keyed_collection) {
+            if row.allocates.is_some_and(|kind| kind.is_keyed_collection()) {
                 collection_bindings.insert(binding, row);
             }
         }

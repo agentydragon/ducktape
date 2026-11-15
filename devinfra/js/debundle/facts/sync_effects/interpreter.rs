@@ -72,7 +72,7 @@ use crate::facts::abstract_domain::builtins::{
 use crate::facts::abstract_domain::effect::{CoerceOp, CoerceOperand};
 use crate::facts::abstract_domain::heap::Mutation;
 use crate::facts::abstract_domain::integrity::{Integrity, IntrinsicSlot};
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, KindProperties, Value};
 use crate::facts::callable_inference::CallableInferenceInputs;
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
 use crate::facts::item_views::TopLevelItemView;

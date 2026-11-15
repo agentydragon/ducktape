@@ -8,7 +8,7 @@
 use super::*;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::builtins::{self, Invocation};
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, KindProperties, Value};
 use crate::facts::semantic_inference::{SemanticFacts, SemanticKey};
 use std::sync::Arc;
 
@@ -241,7 +241,8 @@ fn safe_field_value(
             };
             let safe = builtins::lookup(callee.sym.as_ref(), None, Invocation::Construct)
                 .is_some_and(|row| {
-                    row.allocates.is_some_and(Kind::is_keyed_collection) && row.arity.contains(&0)
+                    row.allocates.is_some_and(|kind| kind.is_keyed_collection())
+                        && row.arity.contains(&0)
                 })
                 && !shadowed.contains(callee.sym.as_ref())
                 && construction.args.as_ref().is_none_or(Vec::is_empty);

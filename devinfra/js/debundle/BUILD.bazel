@@ -1808,9 +1808,25 @@ rust_test(
 proto_library(
     name = "saved_analysis_proto",
     srcs = ["saved-analysis.proto"],
+    data = [":saved_analysis_serde_enums"],
     deps = [
         ":spec_wire_proto",
         "@protobuf//:empty_proto",
+    ],
+)
+
+rust_prost_transform(
+    name = "saved_analysis_serde_enums",
+    deps = ["@crates//:serde"],
+    prost_opts = [
+        "type_attribute=ducktape.debundle.saved_analysis.Kind=#[derive(::serde::Serialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.Kind=#[derive(::serde::Deserialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.Kind=#[serde(rename_all = \"snake_case\")]",
+        "field_attribute=ducktape.debundle.saved_analysis.Kind.KIND_UNSPECIFIED=#[serde(skip)]",
+        "type_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason=#[derive(::serde::Serialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason=#[derive(::serde::Deserialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason=#[serde(rename_all = \"snake_case\")]",
+        "field_attribute=ducktape.debundle.saved_analysis.OwnerInitializationCoverageRefusalReason.OWNER_INITIALIZATION_COVERAGE_REFUSAL_REASON_UNSPECIFIED=#[serde(skip)]",
     ],
 )
 

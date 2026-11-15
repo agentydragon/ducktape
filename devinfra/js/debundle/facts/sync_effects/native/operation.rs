@@ -13,7 +13,7 @@ use super::super::world::descriptor_heap::{
 };
 use crate::facts::abstract_domain::builtins::{ArgSel, Row};
 use crate::facts::abstract_domain::heap::Mutation;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, KindProperties, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 

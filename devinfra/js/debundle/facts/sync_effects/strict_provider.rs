@@ -6,7 +6,7 @@ use super::execution_index::ExecutionIndex;
 use super::value_model::{AbstractValue, ProviderInput, ProviderScopeId};
 use crate::analysis_inputs::{ForeignInvocation, ForeignReturn};
 use crate::facts::abstract_domain::foreign_call::DerivedForeignCall;
-use crate::facts::abstract_domain::value::{Kind, Value};
+use crate::facts::abstract_domain::value::{Kind, KindProperties, Value};
 use std::collections::BTreeSet;
 use swc_ecma_ast::Id;
 

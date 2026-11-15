@@ -5,7 +5,7 @@ use super::value_model::{
 };
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
-use crate::facts::abstract_domain::value::Value;
+use crate::facts::abstract_domain::value::{KindProperties, Value};
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 

@@ -10,6 +10,8 @@ use analysis_model::PrimKinds;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
+pub use crate::saved_proto::proto::Kind;
+
 /// One abstract value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,91 +31,60 @@ pub enum Value {
     Top,
 }
 
-/// Kind of an allocation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Kind {
-    /// A function, arrow or method body.
-    Function,
-    Class,
-    /// An object, array or regular-expression literal: value flow gives them
-    /// one identity lane. Builtin rows allocate `Object`, `Array` and `RegExp`
-    /// by their own kinds.
-    Object,
-    /// A native `Set`.
-    Set,
-    Array,
-    Map,
-    WeakMap,
-    WeakSet,
-    RegExp,
-    /// A `FinalizationRegistry`.
-    Registry,
-    Proxy,
-}
-
-impl Kind {
+/// Analysis capabilities for allocation kinds.
+pub trait KindProperties {
     /// Whether this allocation kind can use the engine's ordinary own-data
     /// read proof. This is a model capability, not a claim that other JavaScript
     /// objects lack ordinary own properties; their native/descriptor proofs
     /// must be handled before this default refusal.
-    pub fn supports_ordinary_own_data_read_proof(self) -> bool {
-        self == Self::Object
-    }
+    fn supports_ordinary_own_data_read_proof(&self) -> bool;
 
     /// Kinds whose application-time prefix tracks arbitrary own-property
     /// containment. This carries callback/escape references without implying
     /// that reads have ordinary-record or descriptor semantics.
-    pub fn tracks_prefix_own_properties(self) -> bool {
-        matches!(self, Self::Object | Self::RegExp)
-    }
+    fn tracks_prefix_own_properties(&self) -> bool;
 
     /// Kinds whose retained references are expanded from prefix heap state.
     /// `Set` is included because its contents are tracked in a separate
     /// native lane; its property behavior does not use the arbitrary-own-
     /// property lane above.
-    pub fn tracks_prefix_references(self) -> bool {
-        self.tracks_prefix_own_properties() || self == Self::Set
-    }
+    fn tracks_prefix_references(&self) -> bool;
 
     /// ECMA-262 § Keyed Collections: `Map`, `Set`, `WeakMap`, `WeakSet`.
-    pub fn is_keyed_collection(self) -> bool {
+    fn is_keyed_collection(&self) -> bool;
+}
+
+impl KindProperties for Kind {
+    fn supports_ordinary_own_data_read_proof(&self) -> bool {
+        *self == Self::Object
+    }
+
+    fn tracks_prefix_own_properties(&self) -> bool {
+        matches!(self, Self::Object | Self::RegExp)
+    }
+
+    fn tracks_prefix_references(&self) -> bool {
+        self.tracks_prefix_own_properties() || *self == Self::Set
+    }
+
+    fn is_keyed_collection(&self) -> bool {
         matches!(self, Self::Map | Self::Set | Self::WeakMap | Self::WeakSet)
     }
 }
 
-impl ProtoConvert<i32> for Kind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Function => proto::Kind::Function as i32,
-            Self::Class => proto::Kind::Class as i32,
-            Self::Object => proto::Kind::Object as i32,
-            Self::Set => proto::Kind::Set as i32,
-            Self::Array => proto::Kind::Array as i32,
-            Self::Map => proto::Kind::Map as i32,
-            Self::WeakMap => proto::Kind::WeakMap as i32,
-            Self::WeakSet => proto::Kind::WeakSet as i32,
-            Self::RegExp => proto::Kind::RegExp as i32,
-            Self::Registry => proto::Kind::Registry as i32,
-            Self::Proxy => proto::Kind::Proxy as i32,
-        })
+fn kind_from_prost_field(value: i32) -> Result<Kind> {
+    let kind = Kind::try_from(value)?;
+    if kind == Kind::Unspecified {
+        bail!("unspecified saved-analysis allocation kind");
     }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::Kind::try_from(value)? {
-            proto::Kind::Function => Self::Function,
-            proto::Kind::Class => Self::Class,
-            proto::Kind::Object => Self::Object,
-            proto::Kind::Set => Self::Set,
-            proto::Kind::Array => Self::Array,
-            proto::Kind::Map => Self::Map,
-            proto::Kind::WeakMap => Self::WeakMap,
-            proto::Kind::WeakSet => Self::WeakSet,
-            proto::Kind::RegExp => Self::RegExp,
-            proto::Kind::Registry => Self::Registry,
-            proto::Kind::Proxy => Self::Proxy,
-            proto::Kind::Unspecified => bail!("unspecified saved-analysis allocation kind"),
-        })
+    Ok(kind)
+}
+
+fn kind_to_prost_field(value: Kind) -> Result<i32> {
+    if value == Kind::Unspecified {
+        bail!("unspecified saved-analysis allocation kind");
     }
+    Ok(value as i32)
 }
 impl ProtoConvert<proto::Value> for Value {
     fn to_proto(&self) -> Result<proto::Value> {
@@ -121,7 +92,7 @@ impl ProtoConvert<proto::Value> for Value {
         Ok(proto::Value {
             value: Some(match self {
                 Self::Alloc(kind, site) => Value::Allocation(Allocation {
-                    kind: Some(kind.to_proto()?),
+                    kind: Some(kind_to_prost_field(*kind)?),
                     site: Some(*site),
                 }),
                 Self::Prim(kinds) => Value::PrimitiveKinds(kinds.to_proto()?),
@@ -134,13 +105,47 @@ impl ProtoConvert<proto::Value> for Value {
         use proto::value::Value;
         Ok(match required(value.value, "Value.value")? {
             Value::Allocation(value) => Self::Alloc(
-                Kind::from_proto(required(value.kind, "Value.allocation.kind")?)?,
+                kind_from_prost_field(required(value.kind, "Value.allocation.kind")?)?,
                 required(value.site, "Value.allocation.site")?,
             ),
             Value::PrimitiveKinds(kinds) => Self::Prim(PrimKinds::from_proto(kinds)?),
             Value::Unavailable(_) => Self::Unavailable,
             Value::Top(_) => Self::Top,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Kind, KindProperties};
+
+    #[test]
+    fn generated_kind_keeps_serde_names_and_unspecified_fails_closed() {
+        let kinds = [
+            (Kind::Function, "function"),
+            (Kind::Class, "class"),
+            (Kind::Object, "object"),
+            (Kind::Set, "set"),
+            (Kind::Array, "array"),
+            (Kind::Map, "map"),
+            (Kind::WeakMap, "weak_map"),
+            (Kind::WeakSet, "weak_set"),
+            (Kind::RegExp, "reg_exp"),
+            (Kind::Registry, "registry"),
+            (Kind::Proxy, "proxy"),
+        ];
+        for (kind, name) in kinds {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{name}\""));
+            assert_eq!(serde_json::from_str::<Kind>(&json).unwrap(), kind);
+        }
+
+        assert!(serde_json::to_string(&Kind::Unspecified).is_err());
+        assert!(serde_json::from_str::<Kind>("\"unspecified\"").is_err());
+        assert!(!Kind::Unspecified.supports_ordinary_own_data_read_proof());
+        assert!(!Kind::Unspecified.tracks_prefix_own_properties());
+        assert!(!Kind::Unspecified.tracks_prefix_references());
+        assert!(!Kind::Unspecified.is_keyed_collection());
     }
 }
 
