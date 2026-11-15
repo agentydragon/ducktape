@@ -1,24 +1,35 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
-  "observed_at_utc": "2026-11-15T13:10:00Z",
+  "source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
+  "observed_at_utc": "2026-11-15T13:50:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
-    "checked_at_utc": "2026-11-15T13:10:00+00:00",
-    "previous_pin": "34507c2f0c3756193eab9834e743032ccfb7b99e",
-    "go_or_proto_delta": "Since 34507c2f0c, only `testing/grpcmethods/tls.go` was added; stage 5 bearer retirements (#16681, #16690), the Runtime proxy receiver's enablement (#16692) and caller server-identity acceptance (#16696), and Environment Runtime wording (#16691, #16698, #16702, #16705) edited code only. No proto change.",
-    "landed": [],
-    "interpretation": "No track landed whole at this pin. The operator released three stage 4 extractions (app browser routes, app browser session store, CLI command families), now READY. Landed work items are removed, not listed as done."
+    "checked_origin_devel": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
+    "checked_at_utc": "2026-11-15T13:50:00+00:00",
+    "previous_pin": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
+    "go_or_proto_delta": "Since 25fc0b2f24, #16717 split the CLI: `client.go`, `errors.go`, `output.go` and `paging.go` moved to `cli/internal/invocation` (with new `command.go`, `deadline.go`, `invocation.go`, `proto.go`, `text.go`), the families to `cli/internal/{actions,notifications,sessions,environments}`, `text.go` split by family (Egress formatting to `cli/egress_text.go`), and `main.go` to `cli/cmd`; #16720 moved `app/internal/auth/store.go` to `auth/session/store.go` and added `auth/session_row.go`. Stage 5 field deletions (#16722) and the coherence sweep (#16719) edited code only. No proto change.",
+    "landed": [
+      {
+        "track": "cli-command-families",
+        "pr": 16717,
+        "result": "The command root in `cli/` composes per-family packages under `cli/internal/` over one invocation owner; the executable is `cli/cmd`."
+      },
+      {
+        "track": "app-browser-session-store",
+        "pr": 16720,
+        "result": "Browser-session SQL persistence is `app/internal/auth/session`, with refresh and termination serialized on the session row; `auth` keeps the HTTP/OIDC flow."
+      }
+    ],
+    "interpretation": "Landed work items are removed, not listed as done. Moved and new files are reclassified at their new paths as retained owners; `agentplane/cli` and `app/internal/auth` are retained with their remaining roles."
   },
   "inventory": {
-    "source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
+    "source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
     "counts": {
-      "files": 1320,
-      "directories": 237,
-      "production": 725,
-      "tests": 595
+      "files": 1339,
+      "directories": 244,
+      "production": 739,
+      "tests": 600
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"

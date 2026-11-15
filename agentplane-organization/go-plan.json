@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
-  "observed_at_utc": "2026-11-15T13:10:00Z",
+  "source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
+  "observed_at_utc": "2026-11-15T13:50:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1320,
-    "directories": 237,
-    "production": 725,
-    "tests": 595
+    "files": 1339,
+    "directories": 244,
+    "production": 739,
+    "tests": 600
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -1003,8 +1003,8 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 76,
-        "directories": 20
+        "files": 79,
+        "directories": 21
       },
       "directories": [
         {
@@ -1026,7 +1026,17 @@
             "agentplane/app/internal/auth/oidc_integration_test.go",
             "agentplane/app/internal/auth/session_integration_test.go",
             "agentplane/app/internal/auth/session_integration_testmain_test.go",
-            "agentplane/app/internal/auth/store.go"
+            "agentplane/app/internal/auth/session_row.go"
+          ]
+        },
+        {
+          "path": "agentplane/app/internal/auth/session",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/app/internal/auth/session/doc.go",
+            "agentplane/app/internal/auth/session/store.go",
+            "agentplane/app/internal/auth/session/store_test.go"
           ]
         },
         {
@@ -1232,7 +1242,6 @@
       ],
       "pending_tracks": [
         "app-http-owners",
-        "app-browser-session-store",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -1250,6 +1259,7 @@
         "reviewed_package_paths": [
           "agentplane/app/cmd",
           "agentplane/app/internal/auth",
+          "agentplane/app/internal/auth/session",
           "agentplane/app/internal/electricproxy",
           "agentplane/app/internal/federation",
           "agentplane/app/internal/historyclient",
@@ -1288,20 +1298,35 @@
         },
         {
           "path": "agentplane/app/internal/auth",
-          "role": "Operator OIDC login, browser sessions and authenticated caller projection",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/app/internal/auth",
-            "agentplane/app/internal/auth/session"
-          ],
-          "reason": "Separate browser session persistence from OIDC/HTTP flow after explicit token/session lifetime contracts; keep operator authority at its backend.",
+          "role": "Operator OIDC login, cookie signing and authenticated caller projection",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16720 moved browser-session SQL persistence to `auth/session`; this package keeps the HTTP/OIDC flow, cookie signing, login policy and the projection shown to callers (`session_row.go`).",
           "gate": "",
           "evidence_paths": ["agentplane/app/internal/auth/auth.go"],
           "declared_packages": ["auth"],
-          "pending_tracks": ["app-browser-session-store"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 4,
             "tests": 5
+          }
+        },
+        {
+          "path": "agentplane/app/internal/auth/session",
+          "role": "SQL persistence for the app's browser sessions: records, opaque handles, expiry and pending-state merging; refresh and termination serialize on the session row.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted from `auth/store.go` by #16720; the package doc comment states its contract.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/app/internal/auth/session/doc.go",
+            "agentplane/app/internal/auth/session/store.go"
+          ],
+          "declared_packages": ["session"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
           }
         },
         {
@@ -2414,78 +2439,248 @@
       "id": "cli",
       "path": "agentplane/cli",
       "counts": {
-        "files": 24,
-        "directories": 1
+        "files": 40,
+        "directories": 7
       },
       "directories": [
         {
           "path": "agentplane/cli",
-          "production": 14,
+          "production": 3,
           "tests": 10,
           "files": [
-            "agentplane/cli/actions.go",
-            "agentplane/cli/actions_guide.go",
             "agentplane/cli/actions_guide_test.go",
             "agentplane/cli/actions_test.go",
             "agentplane/cli/app.go",
-            "agentplane/cli/client.go",
             "agentplane/cli/egress.go",
             "agentplane/cli/egress_test.go",
-            "agentplane/cli/environments.go",
+            "agentplane/cli/egress_text.go",
             "agentplane/cli/environments_test.go",
-            "agentplane/cli/errors.go",
             "agentplane/cli/errors_test.go",
             "agentplane/cli/helpers_test.go",
-            "agentplane/cli/main.go",
-            "agentplane/cli/notifications.go",
             "agentplane/cli/notifications_test.go",
-            "agentplane/cli/output.go",
-            "agentplane/cli/paging.go",
-            "agentplane/cli/sessions.go",
             "agentplane/cli/sessions_test.go",
             "agentplane/cli/submit_test.go",
-            "agentplane/cli/text.go",
-            "agentplane/cli/wait.go",
             "agentplane/cli/wait_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/cli/cmd",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/cli/cmd/main.go"]
+        },
+        {
+          "path": "agentplane/cli/internal/actions",
+          "production": 6,
+          "tests": 1,
+          "files": [
+            "agentplane/cli/internal/actions/actions.go",
+            "agentplane/cli/internal/actions/actions_guide.go",
+            "agentplane/cli/internal/actions/client.go",
+            "agentplane/cli/internal/actions/doc.go",
+            "agentplane/cli/internal/actions/text.go",
+            "agentplane/cli/internal/actions/text_test.go",
+            "agentplane/cli/internal/actions/wait.go"
+          ]
+        },
+        {
+          "path": "agentplane/cli/internal/environments",
+          "production": 2,
+          "tests": 0,
+          "files": [
+            "agentplane/cli/internal/environments/doc.go",
+            "agentplane/cli/internal/environments/environments.go"
+          ]
+        },
+        {
+          "path": "agentplane/cli/internal/invocation",
+          "production": 10,
+          "tests": 1,
+          "files": [
+            "agentplane/cli/internal/invocation/client.go",
+            "agentplane/cli/internal/invocation/client_test.go",
+            "agentplane/cli/internal/invocation/command.go",
+            "agentplane/cli/internal/invocation/deadline.go",
+            "agentplane/cli/internal/invocation/doc.go",
+            "agentplane/cli/internal/invocation/errors.go",
+            "agentplane/cli/internal/invocation/invocation.go",
+            "agentplane/cli/internal/invocation/output.go",
+            "agentplane/cli/internal/invocation/paging.go",
+            "agentplane/cli/internal/invocation/proto.go",
+            "agentplane/cli/internal/invocation/text.go"
+          ]
+        },
+        {
+          "path": "agentplane/cli/internal/notifications",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/cli/internal/notifications/doc.go",
+            "agentplane/cli/internal/notifications/notifications.go",
+            "agentplane/cli/internal/notifications/text_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/cli/internal/sessions",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/cli/internal/sessions/doc.go",
+            "agentplane/cli/internal/sessions/sessions.go",
+            "agentplane/cli/internal/sessions/text_test.go"
           ]
         }
       ],
       "context_paths": [],
-      "pending_tracks": ["orchestration-v1-retirement", "cli-command-families"],
-      "goal_note": "Agent-facing Cobra command composition and invocation lifecycle",
+      "pending_tracks": ["orchestration-v1-retirement"],
+      "goal_note": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, sessions, environments) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
       "decision": {
         "state": "REWORK",
-        "role": "One CLI invocation owner",
-        "goal_summary": "Agent-facing Cobra command composition and invocation lifecycle",
+        "role": "Command root over one CLI invocation owner and per-family command packages",
+        "goal_summary": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, sessions, environments) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
-        "evidence_paths": ["agentplane/cli/actions.go"],
-        "reviewed_package_paths": ["agentplane/cli"]
+        "evidence_paths": ["agentplane/cli/internal/actions/actions.go"],
+        "reviewed_package_paths": [
+          "agentplane/cli",
+          "agentplane/cli/cmd",
+          "agentplane/cli/internal/actions",
+          "agentplane/cli/internal/environments",
+          "agentplane/cli/internal/invocation",
+          "agentplane/cli/internal/notifications",
+          "agentplane/cli/internal/sessions"
+        ]
       },
       "package_decisions": [
         {
           "path": "agentplane/cli",
-          "role": "Agent-facing Cobra command composition and invocation lifecycle",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/cli",
-            "agentplane/cli/cmd",
-            "agentplane/cli/internal/invocation",
-            "agentplane/cli/internal/actions",
-            "agentplane/cli/internal/notifications",
-            "agentplane/cli/internal/sessions",
-            "agentplane/cli/internal/environments"
-          ],
-          "reason": "One invocation context is valid, but it need not own every command receiver. Introduce explicit shared streams/deadline/auth/output inputs, then let substantial command families own their parsing and presentation.",
+          "role": "Agent-facing Cobra command root and the Egress command family",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16717 left the command root here: it composes the command families from `cli/internal/` and keeps the small Egress family (`egress.go`, `egress_text.go`) with composition, as planned, plus the command-tree tests.",
           "gate": "",
-          "evidence_paths": ["agentplane/cli/actions.go"],
-          "declared_packages": ["main"],
-          "pending_tracks": [
-            "orchestration-v1-retirement",
-            "cli-command-families"
-          ],
+          "evidence_paths": ["agentplane/cli/internal/actions/actions.go"],
+          "declared_packages": ["cli"],
+          "pending_tracks": ["orchestration-v1-retirement"],
           "counts": {
-            "non_test": 14,
+            "non_test": 3,
             "tests": 10
+          }
+        },
+        {
+          "path": "agentplane/cli/cmd",
+          "role": "The `agentplane` executable entry: process setup, then the command root.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `cli/main.go` by #16717; the binary is `//agentplane/cli/cmd:agentplane` and the release target `:cli_release`.",
+          "gate": "",
+          "evidence_paths": ["agentplane/cli/cmd/main.go"],
+          "declared_packages": ["main"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/cli/internal/actions",
+          "role": "Action commands, receipt waiting and recovery, and their formatting.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `actions.go`, `actions_guide.go`, `wait.go` and the Action part of `text.go` by #16717.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/cli/internal/actions/actions.go",
+            "agentplane/cli/internal/actions/actions_guide.go",
+            "agentplane/cli/internal/actions/client.go",
+            "agentplane/cli/internal/actions/doc.go",
+            "agentplane/cli/internal/actions/text.go",
+            "agentplane/cli/internal/actions/wait.go"
+          ],
+          "declared_packages": ["actions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 6,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/cli/internal/environments",
+          "role": "Environment discovery and explicit resume commands.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `environments.go` by #16717.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/cli/internal/environments/doc.go",
+            "agentplane/cli/internal/environments/environments.go"
+          ],
+          "declared_packages": ["environments"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/cli/internal/invocation",
+          "role": "One CLI call's environment, streams, global flags, cancellation, deadlines, transport setup and output/error envelopes.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16717 from `client.go`, `errors.go`, `output.go`, `paging.go` and the shared part of `text.go`; the package doc comment states its contract.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/cli/internal/invocation/client.go",
+            "agentplane/cli/internal/invocation/command.go",
+            "agentplane/cli/internal/invocation/deadline.go",
+            "agentplane/cli/internal/invocation/doc.go",
+            "agentplane/cli/internal/invocation/errors.go",
+            "agentplane/cli/internal/invocation/invocation.go",
+            "agentplane/cli/internal/invocation/output.go",
+            "agentplane/cli/internal/invocation/paging.go",
+            "agentplane/cli/internal/invocation/proto.go",
+            "agentplane/cli/internal/invocation/text.go"
+          ],
+          "declared_packages": ["invocation"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 10,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/cli/internal/notifications",
+          "role": "The Notification command family and its formatting.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `notifications.go` by #16717.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/cli/internal/notifications/doc.go",
+            "agentplane/cli/internal/notifications/notifications.go"
+          ],
+          "declared_packages": ["notifications"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/cli/internal/sessions",
+          "role": "Session/Dispatcher and retained-History commands and their formatting.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `sessions.go` by #16717.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/cli/internal/sessions/doc.go",
+            "agentplane/cli/internal/sessions/sessions.go"
+          ],
+          "declared_packages": ["sessions"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
           }
         }
       ],
@@ -9590,119 +9785,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "app-browser-session-store",
-      "title": "Separate browser session persistence from OIDC flow",
-      "components": ["app"],
-      "source_paths": [
-        "agentplane/app/internal/auth/auth.go",
-        "agentplane/app/internal/auth/store.go",
-        "agentplane/app/internal/auth/cookie.go"
-      ],
-      "target_paths": [
-        "agentplane/app/internal/auth",
-        "agentplane/app/internal/auth/session"
-      ],
-      "source_owner": "agentplane/app/internal/auth",
-      "status": "READY",
-      "summary": "The login/refresh/logout HTTP flow and browser-session SQL lifecycle are distinct owners. Keep cookie/authentication semantics together while giving persistence a narrow transaction API.",
-      "how": [
-        "Map refresh/revocation races, token expiry, cookie handles and the current sessionStore fields.",
-        "Extract a concrete private session store only after refresh and termination operations have an explicit atomic contract.",
-        "Keep the HTTP/OIDC caller projection outside the SQL leaf and run real database session tests."
-      ],
-      "gate": "Released by the operator 2026-11-15 12:59 UTC (card choice; DAG `GO_LOCAL_EXTRACTIONS`) with the app browser routes, the app browser session store and CLI command families, built by one Codex worker in that order: CLI, then the session store, then the app routes. Each extraction's first PR states its local contract in the PR body and the package doc comment. Token/session invalidation ordering is an invariant; do not extract a CRUD-only leaf that scatters refresh/revoke transactions.",
-      "preserve": "Cookie integrity, refresh serialization, revocation, expiry and absence of app-issued backend authority.",
-      "validation": [
-        "//agentplane/app/internal/auth:unit_test",
-        "//agentplane/app/internal/auth:session_integration_test",
-        "//agentplane/app/internal/server:server_test",
-        "//agentplane/app/internal/server:threadreadapi_test",
-        "//agentplane/app/internal/server:sessionapi_test",
-        "//agentplane/app/internal/server:streamapi_test",
-        "//agentplane/app/internal/server:schema_export_test"
-      ],
-      "evidence_paths": [
-        "agentplane/app/internal/auth/auth.go",
-        "agentplane/app/internal/auth/store.go",
-        "agentplane/app/internal/auth/cookie.go",
-        "agentplane/app/internal/auth/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 4,
-      "group": "app-cli",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "cli-command-families",
-      "title": "Organize CLI by command family with one invocation contract",
-      "components": ["cli"],
-      "source_paths": [
-        "agentplane/cli/app.go",
-        "agentplane/cli/client.go",
-        "agentplane/cli/errors.go",
-        "agentplane/cli/output.go",
-        "agentplane/cli/paging.go",
-        "agentplane/cli/text.go",
-        "agentplane/cli/notifications.go",
-        "agentplane/cli/actions.go",
-        "agentplane/cli/wait.go",
-        "agentplane/cli/sessions.go",
-        "agentplane/cli/environments.go"
-      ],
-      "target_paths": [
-        "agentplane/cli/cmd",
-        "agentplane/cli/internal/invocation",
-        "agentplane/cli/internal/actions",
-        "agentplane/cli/internal/notifications",
-        "agentplane/cli/internal/sessions",
-        "agentplane/cli/internal/environments"
-      ],
-      "source_owner": "agentplane/cli",
-      "status": "READY",
-      "summary": "A thin command root composes substantial command families. One invocation owns cancellation, streams, deadlines and error/JSON envelopes; families receive narrow typed inputs instead of the whole mutable app.",
-      "how": [
-        "Specify the invocation inputs and output/error contract, preserving signal-derived exit behavior and CLI machine output.",
-        "Extract Notifications first, then Actions/wait and Sessions/Environments in coherent 200–3,000 changed-LOC PRs. Keep the small Egress family with composition until a useful standalone owner exists.",
-        "Split mixed text.go formatting by the command that understands its domain; shared paging/ProtoJSON remains only where multiple real consumers need it. Move the executable entry to cmd with its image/release/runfile callers."
-      ],
-      "gate": "Released by the operator 2026-11-15 12:59 UTC (card choice; DAG `GO_LOCAL_EXTRACTIONS`) with the app browser routes, the app browser session store and CLI command families, built by one Codex worker in that order: CLI, then the session store, then the app routes. Each extraction's first PR states its local contract in the PR body and the package doc comment. Do not export the mutable app as the package API or create a package for every verb. Preserve reconciliation of uncertain writes by ID and all exit/stdout/stderr contracts.",
-      "preserve": "Command syntax, flags, credentials, JSON output, exit codes, deadlines/signals and no automatic write resubmission.",
-      "validation": [
-        "//agentplane/cli:cli_test",
-        "//agentplane/cli:agentplane"
-      ],
-      "evidence_paths": [
-        "agentplane/cli/app.go",
-        "agentplane/cli/client.go",
-        "agentplane/cli/errors.go",
-        "agentplane/cli/output.go",
-        "agentplane/cli/paging.go",
-        "agentplane/cli/text.go",
-        "agentplane/cli/notifications.go",
-        "agentplane/cli/actions.go",
-        "agentplane/cli/wait.go",
-        "agentplane/cli/sessions.go",
-        "agentplane/cli/environments.go",
-        "agentplane/cli/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 5,
-      "group": "app-cli",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "sampler-execution-state",
       "title": "Give process/cell state and SQL conversion explicit owners",
       "components": ["central_sampler"],
@@ -10981,8 +11063,6 @@
         "mcp-edge-command-action-client",
         "action-service-grpcgate",
         "app-http-owners",
-        "app-browser-session-store",
-        "cli-command-families",
         "sampler-execution-state",
         "sampler-request-preparation",
         "sampler-content-persistence",
@@ -10993,7 +11073,7 @@
         "sampler-codehost-ownership",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Lifecycle owners come last and need race tests; the Sandbox Controller's waits for the stage 3 merge. The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the rest are not released."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Lifecycle owners come last and need race tests; the Sandbox Controller's waits for the stage 3 merge. The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717) and the session store (#16720) landed and the app routes are in progress (#16725). The rest are not released."
     },
     {
       "stage": 5,
@@ -11022,12 +11102,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 237,
-    "go_files": 1320,
+    "go_packages": 244,
+    "go_files": 1339,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "25fc0b2f24ecea10822a36362f67399a1bc8a4ee",
+    "review_source_sha": "26dc93a444ab38ebeb0bf7030dc88711b2ccf3c1",
     "review_slices": [
       {
         "slice": "action_service",
@@ -11038,8 +11118,8 @@
       {
         "slice": "app",
         "components": ["app"],
-        "packages": 20,
-        "go_files": 76
+        "packages": 21,
+        "go_files": 79
       },
       {
         "slice": "central_sampler",
@@ -11050,8 +11130,8 @@
       {
         "slice": "cli",
         "components": ["cli"],
-        "packages": 1,
-        "go_files": 24
+        "packages": 7,
+        "go_files": 40
       },
       {
         "slice": "crds",
@@ -11265,24 +11345,10 @@
     },
     {
       "id": "next-4",
-      "track": "cli-command-families",
-      "title": "Organize CLI by command family with one invocation contract",
-      "readiness": "READY",
-      "first_step": "First of the three released extractions: state the invocation contract (cancellation, streams, deadlines, error and JSON envelopes), then extract Notifications."
-    },
-    {
-      "id": "next-5",
-      "track": "app-browser-session-store",
-      "title": "Separate browser session persistence from OIDC flow",
-      "readiness": "READY",
-      "first_step": "After the CLI: state the atomic refresh and termination contract, then extract the private session store."
-    },
-    {
-      "id": "next-6",
       "track": "app-http-owners",
       "title": "Split browser routes into resource owners",
       "readiness": "READY",
-      "first_step": "After the session store: extract the remaining `environment_runtime_api.go` routes and the `streamapi.go` facades under `app/internal/httpapi`."
+      "first_step": "In progress: #16725 (open) extracts the remaining route owners (`environment_runtime_api.go`, `streamapi.go` facades) under `app/internal/httpapi`."
     }
   ],
   "maintenance": {
