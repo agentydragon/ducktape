@@ -1721,6 +1721,10 @@ googleapis-common-protos==1.75.3 \
     #   google-api-core
     #   opentelemetry-exporter-otlp-proto-grpc
     #   opentelemetry-exporter-otlp-proto-http
+grafana-foundation-sdk==0.0.22 \
+    --hash=sha256:075f0bfa5da8a4d59cd7c834e171ef6296114605b3bbc7ecf344c4c80808d4cc \
+    --hash=sha256:be93f9d2bc8728d07613d7fdf40076e301743113d53436715819b5ac301dfe1c
+    # via ducktape (pyproject.toml)
 greenlet==3.5.5 \
     --hash=sha256:03115c2e0a371999bf8ae616aa8d653f96641d4705c457aebaa187276e9f7537 \
     --hash=sha256:03551ed792cb1b4fc0277a0c60dfd8c343894a0ba06fe60dcd22f568b433da39 \

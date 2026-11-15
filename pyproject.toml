@@ -118,6 +118,7 @@ dependencies = [
     "PyGithub>=2.10.0",
 
     # Visualization
+    "grafana-foundation-sdk==0.0.22",
     "matplotlib>=3.11.2",
     "networkx>=3.0",
     "types-networkx",

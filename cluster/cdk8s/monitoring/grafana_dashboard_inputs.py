@@ -17,7 +17,7 @@ FILE_DASHBOARDS = {
     "zot-cache-image-pulls": FileDashboard(
         datasources={"DS_MIMIR": "Mimir", "DS_LOKI": "Loki"}, folder="Cluster & Platform"
     ),
-    "cpap-gateway-disk": FileDashboard(datasources={"DS_MIMIR": "Mimir"}, folder="Cluster & Platform"),
+    "cpap-gateway-disk": FileDashboard(datasources={}, folder="Cluster & Platform"),
     "flux-cluster": FileDashboard(datasources={}, folder="Cluster & Platform"),
     "interface-flap-frequency": FileDashboard(
         datasources={"DS_LOKI": "Loki", "DS_PROMETHEUS": "Mimir"}, folder="Network"
