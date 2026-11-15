@@ -12,5 +12,6 @@ pub mod orders;
 pub mod pairs;
 pub mod premises;
 pub mod program;
+pub mod publication;
 pub mod report;
 pub mod tier0;

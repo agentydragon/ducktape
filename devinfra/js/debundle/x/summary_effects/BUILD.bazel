@@ -17,12 +17,14 @@ rust_library(
         "pairs.rs",
         "premises.rs",
         "program.rs",
+        "publication.rs",
         "report.rs",
         "tier0.rs",
     ],
     crate_root = "lib.rs",
     edition = "2024",
     deps = [
+        "//devinfra/js/debundle:binding_targets",
         "//devinfra/js/debundle:js_ast",
         "@crates//:anyhow",
         "@crates//:clap",
@@ -72,5 +74,34 @@ rust_test(
         "//devinfra/js/debundle:js_ast",
         "@crates//:serde_json",
         "@crates//:swc_common",
+    ],
+)
+
+# Source-derived private allocation certificate; no production dependency.
+rust_binary(
+    name = "publication_certificate",
+    srcs = ["publication_main.rs"],
+    crate_root = "publication_main.rs",
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@crates//:anyhow",
+        "@crates//:clap",
+        "@crates//:serde",
+        "@crates//:serde_json",
+    ],
+)
+
+rust_test(
+    name = "publication_test",
+    srcs = ["publication_test.rs"],
+    crate_root = "publication_test.rs",
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    edition = "2024",
+    deps = [
+        ":summary_effects",
+        "//devinfra/js/debundle:js_ast",
+        "@rules_rust//tools/runfiles",
     ],
 )
