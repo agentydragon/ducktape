@@ -44,7 +44,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.net.peertls.config import APP_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI, TLS
+from agentplane.net.peertls.config import LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
@@ -70,6 +70,7 @@ from cluster.cdk8s.agentplane import (
     policy_controller,
     policy_controller_rbac,
     runner_gateway_workload,
+    sandbox_controller,
     staging_config,
     staging_grants,
     workload_certificate_admission,
@@ -1069,9 +1070,9 @@ def delivery_chart(app: App, env: Environment = ENV) -> Chart:
                 env.namespace
             ).pods
         },
-        operator_service_callers=frozenset({APP_URI}),
-        wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
-        extra_delegated_methods=("/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",),
+        operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
+        wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
+        extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
     )
 
 

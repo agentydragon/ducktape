@@ -3,6 +3,8 @@ PVCs, WorkloadCredentials and Pod or VM incarnations for Sandboxes using their r
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -10,10 +12,21 @@ from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import MTLS, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI, ClientTLS
+from agentplane.environments.settings import EnvironmentService, ServiceDelegation, ServiceDelegator, Settings
+from agentplane.identity.auth import listener as workload_listener
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    MTLS,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+    ClientTLS,
+    ServiceSPIFFEID,
+)
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import environment_sandbox, workload_tls
+from cluster.cdk8s.agentplane import actions, app as app_component, environment_sandbox, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -32,6 +45,92 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
 _GROUP = "agentplane.allegedly.works"
 _HEALTH_PORT = 8081
+_ENVIRONMENT_SERVICE_PORT = 8082
+_ENVIRONMENT_SERVICE = "/agentplane.environments.v1.EnvironmentService/"
+_ENVIRONMENT_SERVICE_READ_METHODS = (
+    f"{_ENVIRONMENT_SERVICE}ListEnvironments",
+    f"{_ENVIRONMENT_SERVICE}GetEnvironment",
+    f"{_ENVIRONMENT_SERVICE}WatchEnvironment",
+)
+OPERATOR_SERVICE_CALLERS = frozenset({APP_URI})
+WAKE_SERVICE_CALLERS = frozenset({APP_URI, NOTIFICATIONS_URI})
+_RESUME_METHOD = f"{_ENVIRONMENT_SERVICE}ResumeEnvironment"
+
+
+def service(namespace: str) -> ServiceRef:
+    """The Controller's stable every-replica EnvironmentService listener."""
+    return ServiceRef(name=NAME, port=Port(name="grpc", number=_ENVIRONMENT_SERVICE_PORT), pods=pods(namespace))
+
+
+def _account(account: ServiceAccountRef) -> str:
+    return f"{account.namespace}/{account.name}"
+
+
+@dataclass(frozen=True)
+class EnvironmentServiceAuthority:
+    """The shared authority projection for the legacy Gateway and the Controller receiver."""
+
+    readers: frozenset[str]
+    managers: frozenset[str]
+    launchers: frozenset[str]
+    operators: frozenset[str]
+    service_readers: frozenset[ServiceSPIFFEID]
+    service_managers: frozenset[ServiceSPIFFEID]
+    service_launchers: frozenset[ServiceSPIFFEID]
+    service_operators: frozenset[ServiceSPIFFEID]
+    wake_callers: frozenset[str]
+    wake_service_callers: frozenset[ServiceSPIFFEID]
+    service_delegation_actor: ServiceSPIFFEID | None
+    service_delegation_methods: tuple[str, ...]
+
+
+def environment_service_authority(
+    env: Environment,
+    *,
+    operator_callers: Iterable[ServiceAccountRef],
+    launchers: Iterable[ServiceAccountRef],
+    operator_service_callers: frozenset[ServiceSPIFFEID],
+    wake_callers: Iterable[ServiceAccountRef],
+    wake_service_callers: frozenset[ServiceSPIFFEID],
+    delegation_actor: ServiceAccountRef | None,
+    extra_delegated_methods: tuple[str, ...] = (),
+) -> EnvironmentServiceAuthority:
+    """Compose only the EnvironmentService slice of the Gateway's existing grants."""
+    delegated_methods = (
+        tuple(
+            method
+            for method in (*_ENVIRONMENT_SERVICE_READ_METHODS, *extra_delegated_methods)
+            if method.startswith(_ENVIRONMENT_SERVICE)
+        )
+        if delegation_actor is not None
+        else ()
+    )
+    return EnvironmentServiceAuthority(
+        readers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
+        managers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
+        launchers=frozenset(map(_account, launchers)),
+        operators=frozenset(map(_account, operator_callers)),
+        service_readers=frozenset({APP_URI}),
+        service_managers=frozenset({APP_URI}),
+        service_launchers=frozenset(),
+        service_operators=operator_service_callers,
+        wake_callers=frozenset(map(_account, wake_callers)),
+        wake_service_callers=wake_service_callers,
+        service_delegation_actor=ACTIONS_URI if delegated_methods else None,
+        service_delegation_methods=delegated_methods,
+    )
+
+
+def action_delegation_actor(env: Environment) -> ServiceAccountRef | None:
+    """The Action account that owns optional environment management and Session groups."""
+    if env.actions.orchestration_v1 is None and env.actions.session_delegation is None:
+        return None
+    return ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
+
+
+def environment_service_delegated_methods(env: Environment) -> tuple[str, ...]:
+    """Explicit resume is delegated only where an Environment Action group is configured."""
+    return (_RESUME_METHOD,) if action_delegation_actor(env) is not None else ()
 
 
 _DEFAULT_MEMORY_REQUEST = Size.mebibytes(64)
@@ -60,6 +159,7 @@ class SandboxController(Construct):
         gateway: ServiceRef,
         gateway_audience: str,
         gateway_control_target: str,
+        authority: EnvironmentServiceAuthority,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         registry_secret_name: str | None = "forgejo-images-creds",
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
@@ -69,12 +169,14 @@ class SandboxController(Construct):
         super().__init__(scope, id)
         self.env = env
         self.gateway = gateway
+        self.authority = authority
         namespace = env.namespace
         endpoint = metrics(namespace)
+        environment_endpoint = service(namespace)
         workload = add_service_workload(
             self,
             env,
-            serves=[endpoint],
+            serves=[endpoint, environment_endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
             extra_ports=[Port(name="health", number=_HEALTH_PORT).container_port()],
@@ -95,7 +197,36 @@ class SandboxController(Construct):
         assert runner_tls.cert_file is not None
         assert runner_tls.key_file is not None
         assert runner_tls.ca_file is not None
+        environment_service = EnvironmentService(
+            rpc=workload_listener.Listener(
+                listen_address=f"0.0.0.0:{environment_endpoint.port.number}",
+                tls=workload_listener.TLS(cert_file=Path(runner_tls.cert_file), key_file=Path(runner_tls.key_file)),
+                auth=[workload_listener.SPIFFEAuth(ca_file=Path(runner_tls.ca_file))],
+            ),
+            policy_namespace=namespace,
+            audience=gateway_audience,
+            readers=tuple(sorted(authority.readers)),
+            managers=tuple(sorted(authority.managers)),
+            launchers=tuple(sorted(authority.launchers)),
+            operators=tuple(sorted(authority.operators)),
+            service_readers=tuple(sorted(authority.service_readers)),
+            service_managers=tuple(sorted(authority.service_managers)),
+            service_launchers=tuple(sorted(authority.service_launchers)),
+            service_operators=tuple(sorted(authority.service_operators)),
+            wake_callers=tuple(sorted(authority.wake_callers)),
+            wake_service_callers=tuple(sorted(authority.wake_service_callers)),
+            service_delegation=(
+                ServiceDelegation(
+                    actors=(ServiceDelegator(spiffe_id=authority.service_delegation_actor),),
+                    methods=authority.service_delegation_methods,
+                )
+                if authority.service_delegation_actor is not None
+                else None
+            ),
+            runtime_catalog=env.runtime_catalog,
+        )
         settings = Settings(
+            environment_service=environment_service,
             runner_gateway_tls=ClientTLS(
                 ca_file=Path(runner_tls.ca_file),
                 server_uri=SESSION_DISPATCHER_URI,
@@ -125,9 +256,11 @@ class SandboxController(Construct):
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
-                # Update adds and removes the state-volume finalizer.
+                # Controller reconciliation and every-replica EnvironmentService management share
+                # Sandbox writes; the latter only changes the live object through guarded patches.
                 RolePolicyRule(
-                    resources=[custom_resource(_GROUP, "sandboxes")], verbs=["get", "list", "watch", "update"]
+                    resources=[custom_resource(_GROUP, "sandboxes")],
+                    verbs=["get", "list", "watch", "create", "update", "patch", "delete"],
                 ),
                 # The controller is the only writer of Sandbox status, which holds the runner
                 # credential binding; Sandbox writers holding patch must not get this rule.
@@ -166,9 +299,16 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "patch"]
                 ),
-                # The Identity each Sandbox acts as, read live before a start; a watch retries the
-                # Sandboxes naming one that appears or goes.
-                RolePolicyRule(resources=[custom_resource(_GROUP, "identities")], verbs=["get", "list", "watch"]),
+                # Resolve the caller's ServiceAccount for SVID revocation and keep the independent
+                # EnvironmentService policy watches current on every replica.
+                RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(
+                    resources=[
+                        custom_resource(_GROUP, resource) for resource in ("identities", "policysets", "policybindings")
+                    ],
+                    verbs=["get", "list", "watch"],
+                ),
+                RolePolicyRule(resources=[custom_resource(_GROUP, "policybindings/status")], verbs=["patch"]),
                 # Controller-runtime leader election reads, creates, and updates its coordination Lease.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
@@ -187,15 +327,24 @@ class SandboxController(Construct):
         ).add_subjects(workload.account)
 
     def add_platform_resources(self) -> None:
-        """Add fleet network policy and metrics scrape."""
+        """Add the scoped receiver network policy and metrics scrape."""
         namespace = self.env.namespace
         endpoint = metrics(namespace)
+        environment_endpoint = service(namespace)
+        environment_callers = []
+        if self.env.app is not None:
+            environment_callers.append(app_component.service(namespace).pods)
+        if self.authority.service_delegation_actor is not None:
+            environment_callers.append(actions.service(namespace).pods)
         NetworkPolicy(
             self,
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
-            ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
+            ingress=[
+                cilium.SCRAPERS.admit(endpoint.pod_port),
+                *(caller.admit(environment_endpoint.pod_port) for caller in environment_callers),
+            ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),

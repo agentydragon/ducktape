@@ -9,7 +9,16 @@ from more_itertools import one
 
 from agentplane.environments.settings import Settings
 from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
-from cluster.cdk8s.agentplane import environment_sandbox, runner_gateway, sandbox_controller, workload_tls
+from agentplane.runner_gateway.settings import Settings as GatewaySettings
+from cluster.cdk8s.agentplane import (
+    actions,
+    app,
+    environment_sandbox,
+    runner_gateway,
+    sandbox_controller,
+    staging,
+    workload_tls,
+)
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -113,6 +122,106 @@ def test_controller_rbac_keeps_only_leader_election_lease_access(staging_manifes
         "create",
         "update",
     ]
+
+
+def test_environment_receiver_preserves_gateway_authority_and_uses_controller_certificate(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    controller = Settings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+        )
+    )
+    gateway = GatewaySettings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+        )
+    )
+    receiver = controller.environment_service
+    assert receiver is not None
+    # During overlap both receivers must enforce the same roles and effective-Identity delegation.
+    for role in ("readers", "managers", "launchers"):
+        assert set(getattr(receiver, role)) == set(getattr(gateway, f"environment_{role}"))
+        assert set(getattr(receiver, f"service_{role}")) == set(getattr(gateway, f"environment_service_{role}"))
+    assert set(receiver.operators) == set(gateway.operator_callers or ())
+    assert set(receiver.service_operators) == set(gateway.environment_service_operators)
+    assert set(receiver.wake_callers) == set(gateway.wake_callers or ())
+    assert set(receiver.wake_service_callers) == set(gateway.wake_service_callers)
+    delegation = gateway.environment_service_delegation
+    assert delegation is not None
+    assert receiver.service_delegation is not None
+    assert receiver.service_delegation.model_dump() == delegation.model_dump()
+    assert controller.runner_security.mode == "mtls"
+    assert receiver.rpc.tls is not None
+    assert str(receiver.rpc.tls.cert_file) == controller.runner_security.tls.cert_file
+    assert str(receiver.rpc.tls.key_file) == controller.runner_security.tls.key_file
+    service = _resource(staging_manifests, "Service", sandbox_controller.NAME)
+    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    assert int(receiver.rpc.listen_address.rsplit(":", 1)[1]) == port["targetPort"]
+    deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
+    container = one(deployment["spec"]["template"]["spec"]["containers"])
+    assert port["targetPort"] in {entry["containerPort"] for entry in container["ports"]}
+
+
+def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    rules = _resource(staging_manifests, "Role", sandbox_controller.NAME)["rules"]
+
+    def verbs(group: str, resource: str) -> set[str]:
+        return {
+            verb
+            for rule in rules
+            if group in rule["apiGroups"] and resource in rule["resources"]
+            for verb in rule["verbs"]
+        }
+
+    assert verbs("agentplane.allegedly.works", "sandboxes") == {
+        "get",
+        "list",
+        "watch",
+        "create",
+        "update",
+        "patch",
+        "delete",
+    }
+    for resource in ("identities", "policysets", "policybindings"):
+        assert verbs("agentplane.allegedly.works", resource) == {"get", "list", "watch"}
+    assert verbs("agentplane.allegedly.works", "policybindings/status") == {"patch"}
+    assert verbs("", "serviceaccounts") == {"get", "list", "watch"}
+
+
+def test_environment_receiver_network_reachability_matches_enabled_callers(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    endpoint = sandbox_controller.service(staging.ENV.namespace)
+    policy = _resource(staging_manifests, "CiliumNetworkPolicy", sandbox_controller.NAME)["spec"]
+    allowed = {
+        source["matchLabels"]["app.kubernetes.io/name"]
+        for rule in policy["ingress"]
+        if any(
+            str(port["port"]) == str(endpoint.pod_port)
+            for target in rule.get("toPorts", [])
+            for port in target["ports"]
+        )
+        for source in rule.get("fromEndpoints", [])
+    }
+    callers = [app.service(staging.ENV.namespace)]
+    if staging.ENV.actions.orchestration_v1 is not None or staging.ENV.actions.session_delegation is not None:
+        callers.append(actions.service(staging.ENV.namespace))
+    assert allowed == {caller.pods.selector["app.kubernetes.io/name"] for caller in callers}
+    for caller in callers:
+        caller_policy = _resource(staging_manifests, "CiliumNetworkPolicy", caller.name)["spec"]
+        assert any(
+            target["matchLabels"].get("app.kubernetes.io/name") == endpoint.pods.selector["app.kubernetes.io/name"]
+            and any(
+                str(port["port"]) == str(endpoint.pod_port)
+                for ports in rule.get("toPorts", [])
+                for port in ports["ports"]
+            )
+            for rule in caller_policy["egress"]
+            for target in rule.get("toEndpoints", [])
+        )
 
 
 if __name__ == "__main__":

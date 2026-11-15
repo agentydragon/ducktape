@@ -4018,7 +4018,12 @@ flowchart LR
 **In flight; operator approved the [serving contract](environment_service_serving.md) and released
 implementation on 2026-11-15.** Every replica serves mutations as well as reads, readiness never
 waits for leadership, authorization fails closed, and rollout uses separate image/config PRs.
-Receiver/composition support lands disabled before enabling the listener and retargeting callers.
+Receiver/composition support is available disabled; listener configuration waits for its accepting
+Controller image to be pinned and running. Retarget callers after verifying the new receiver.
+Caller cutover includes the Sandbox CLI: `cli/environments.go` shares the Sessions URL;
+[#16550](https://github.com/agentydragon/ducktape/pull/16550) accepts a separate EnvironmentService URL.
+Pin it before changing its route/launch configuration, and keep the Gateway registration until
+existing CLI callers have moved.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
 Then move `runner_gateway/environments` with `lifecycle`,

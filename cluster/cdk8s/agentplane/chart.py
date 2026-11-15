@@ -156,6 +156,7 @@ def environment_chart(
     ).add_platform_resources()
     sandbox_pod.add_tool_config(chart, env)
     app_caller = {app_account: app_component.service(env.namespace).pods}
+    environment_launchers = actions.orchestration_callers(env)
     notifications_caller = {
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
@@ -199,6 +200,7 @@ def environment_chart(
         env,
         electric=electric.service(env.namespace),
         database_url=app_database_url,
+        environment_service_endpoint=sandbox_controller.service(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -219,6 +221,16 @@ def environment_chart(
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),
+        authority=sandbox_controller.environment_service_authority(
+            env,
+            operator_callers=app_caller,
+            launchers=environment_launchers,
+            operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
+            wake_callers=env.wake_caller_accounts | environment_launchers.keys(),
+            wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
+            delegation_actor=sandbox_controller.action_delegation_actor(env),
+            extra_delegated_methods=sandbox_controller.environment_service_delegated_methods(env),
+        ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -231,6 +243,11 @@ def environment_chart(
         history_audience=history_service.TOKEN_AUDIENCE,
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
+        environment_service_endpoint=(
+            sandbox_controller.service(env.namespace)
+            if sandbox_controller.action_delegation_actor(env) is not None
+            else None
+        ),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()

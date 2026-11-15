@@ -155,7 +155,7 @@ class RunnerGateway(Construct):
         wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
         gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
-        sandbox_controller: tuple[ServiceAccountRef, Pods],
+        controller_peer: tuple[ServiceAccountRef, Pods],
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
@@ -174,7 +174,7 @@ class RunnerGateway(Construct):
         namespace = env.namespace
         self.env = env
         self.dispatcher_callers = dispatcher_callers
-        self.sandbox_controller_pods = sandbox_controller[1]
+        self.sandbox_controller_pods = controller_peer[1]
         proxy = runner_gateway.service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # A delivery worker may run on a different replica from the holder. It calls
@@ -182,9 +182,7 @@ class RunnerGateway(Construct):
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
         self.proxy_callers = proxy_callers
         dispatcher_accounts = frozenset(map(_account, dispatcher_callers))
-        operator_accounts = frozenset(map(_account, operator_callers or {}))
         gateway_accounts = frozenset(map(_account, proxy_callers))
-        wake_accounts = frozenset(map(_account, wake_callers))
         central_sampler_account = ServiceAccountRef(namespace=namespace, name=central_sampler.NAME)
         workload = add_service_workload(
             self,
@@ -273,6 +271,16 @@ class RunnerGateway(Construct):
         assert serving_tls.cert_file is not None
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
+        environment_authority = sandbox_controller.environment_service_authority(
+            env,
+            operator_callers=(operator_callers or {}).keys(),
+            launchers=environment_launchers,
+            operator_service_callers=operator_service_callers,
+            wake_callers=wake_callers,
+            wake_service_callers=wake_service_callers,
+            delegation_actor=delegation_actor,
+            extra_delegated_methods=extra_delegated_methods,
+        )
         delegation = None
         dispatcher_service_delegation = None
         environment_service_delegation = None
@@ -308,12 +316,7 @@ class RunnerGateway(Construct):
                 ),
             )
             environment_service_delegation = ServiceDelegation(
-                actors=(actor,),
-                methods=tuple(
-                    method
-                    for method in delegation.methods
-                    if method.startswith("/agentplane.environments.v1.EnvironmentService/")
-                ),
+                actors=(actor,), methods=environment_authority.service_delegation_methods
             )
         static_settings = Settings(
             sandbox_namespace=namespace,
@@ -346,20 +349,21 @@ class RunnerGateway(Construct):
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
-            environment_service_readers=frozenset({APP_URI}),
-            environment_service_managers=frozenset({APP_URI}),
-            environment_service_operators=operator_service_callers,
-            wake_service_callers=wake_service_callers,
-            environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
-            environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
-            environment_launchers=frozenset(map(_account, environment_launchers)),
+            environment_service_readers=environment_authority.service_readers,
+            environment_service_managers=environment_authority.service_managers,
+            environment_service_launchers=environment_authority.service_launchers,
+            environment_service_operators=environment_authority.service_operators,
+            wake_service_callers=environment_authority.wake_service_callers,
+            environment_readers=environment_authority.readers,
+            environment_managers=environment_authority.managers,
+            environment_launchers=environment_authority.launchers,
             delegation=delegation,
             dispatcher_service_delegation=dispatcher_service_delegation,
             environment_service_delegation=environment_service_delegation,
             gateway_callers=gateway_accounts,
-            wake_callers=wake_accounts or None,
-            operator_callers=operator_accounts or None,
-            sandbox_controller_account=_account(sandbox_controller[0]),
+            wake_callers=environment_authority.wake_callers or None,
+            operator_callers=environment_authority.operators or None,
+            sandbox_controller_account=_account(controller_peer[0]),
             central_sampler=central_sampler_target,
             executor_callers=(
                 frozenset({_account(central_sampler_account)}) if central_sampler_target is not None else frozenset()
@@ -535,18 +539,14 @@ def serving_chart(
         dispatcher_callers=callers | orchestration | session_delegation,
         operator_callers=operator_callers,
         environment_launchers=orchestration,
-        delegation_actor=(
-            ServiceAccountRef(namespace=env.namespace, name=actions.NAME)
-            if env.actions.orchestration_v1 is not None or env.actions.session_delegation is not None
-            else None
-        ),
+        delegation_actor=(sandbox_controller.action_delegation_actor(env)),
         extra_delegated_methods=extra_delegated_methods,
         operator_service_callers=operator_service_callers,
         wake_service_callers=wake_service_callers,
         gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),
-        sandbox_controller=(
+        controller_peer=(
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),
         ),

@@ -8,11 +8,11 @@ runner-initiated platform routes. Per-path diagrams (session delivery, runner co
 history and browser sync, notifications, actions and egress) and direct API definition links:
 [focused diagrams below](#focused-diagrams).
 
-The Controller binary additionally supports an opt-in EnvironmentService listener on each replica
-at `:8082`, with `spiffe://agentplane/sandbox-controller`. It uses its own policy watches and uncached
-Kubernetes reads, independent of the elected reconcilers. Deployment settings currently omit that
-listener, so the diagrams retain the Gateway EnvironmentService edges. Retargeting those edges
-follows the receiver image/config rollout; Runtime-proxy calls remain at the Gateway in this slice.
+The Controller serves EnvironmentService on each replica at `sandbox-controller:8082`, with
+`spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
+reads do not require leadership. App and Actions still call the Gateway during receiver deployment;
+caller retargeting follows verification of the new listener on every replica. Runtime-proxy calls
+remain at the Gateway.
 
 ```mermaid
 flowchart LR
@@ -24,7 +24,7 @@ flowchart LR
     subgraph services[Agentplane services]
         direction TB
         gw[Runner Gateway TLS RPC :8080: Dispatcher, EnvironmentService, proxy and observation]
-        sandboxctl[Sandbox Controller]
+        sandboxctl[Sandbox Controller + EnvironmentService :8082]
         policy[Policy Controller]
         hs[History TLS RPC :8080: readers and JournalIngress]
         notif[Notification TLS RPC :8080; signed webhook HTTP :8081]
@@ -241,7 +241,8 @@ for resident Session work and History export wakeups.
 
 The app forwards authenticated Sandbox management requests to the Runner Gateway's
 `EnvironmentService`, which writes Sandbox desired state to Kubernetes; the Sandbox Controller
-reconciles it, owns `Sandbox.status`, and holds
+also serves the API on every replica during receiver overlap. The elected Controller
+reconciles desired state, owns `Sandbox.status`, and holds
 deletion until the runner has sealed its Sessions through the Gateway. Notifications and the
 Runner Gateway read Sandbox inventory directly. The Runner Gateway implements Dispatcher Session
 openings and durable command admission/delivery alongside the control stream; the app reads live
@@ -279,7 +280,7 @@ flowchart LR
     relay[VM launcher relay]
     egress[Egress proxy]
     central[Experimental central sampler]
-    sandboxctl[Sandbox Controller]
+    sandboxctl[Sandbox Controller + EnvironmentService :8082]
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
@@ -291,6 +292,7 @@ flowchart LR
     app -->|per-Sandbox Runner Proxy: live inventory + diagnostics| gateway
     dispatcher -->|Pod-bound workload token: wrapped Codex and Claude opens + commands| gateway
     dispatcher -->|central opens + commands: bearer over verified server TLS| central
+    sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
     sandboxctl -->|Quiesce| gateway
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     dispatcher -->|Sandbox + independent environment-policy watches| k8s
@@ -474,7 +476,7 @@ flowchart LR
     gateway -->|mTLS Runner / Executor; independent WatchState; UID and boot fences| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     gateway -->|list/watch grants; patch EnvironmentReady| policy_api
-    sandboxctl[Sandbox Controller] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
+    sandboxctl[Sandbox Controller + EnvironmentService :8082] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     delivery -.->|durable journal push and ACK| history
 ```
 
