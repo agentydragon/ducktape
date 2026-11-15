@@ -334,7 +334,7 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
 fn inferred_spread_keeps_later_alias_mutation_order() {
     let source = "var seed = new Set([1]), merged = new Set([...seed, 3]);\nconst alias = merged;\nalias.add(4);\nconst after = merged.has(4);\nconsole.log(after);\nexport {};\n";
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        &source,
+        source,
         vec![logical_module(
             "sets",
             &[
