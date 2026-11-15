@@ -374,6 +374,7 @@ data:
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
         - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
     dispatcher_service_callers:
+      - spiffe://agentplane/actions
       - spiffe://agentplane/app
       - spiffe://agentplane/notifications
     dispatcher_callers:
