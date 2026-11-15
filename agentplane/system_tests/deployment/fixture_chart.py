@@ -789,7 +789,11 @@ def add_app(chart: Chart, env: Environment) -> AppFixture:
         construct=service,
         service=APP_SERVICE,
         origin=env.app.origin,
-        operator_tokens=(OPERATOR_TOKENS if env.app.config.oidc.static_ed25519_keys is not None else None),
+        operator_tokens=(
+            OPERATOR_TOKENS
+            if env.app.config.oidc is not None and env.app.config.oidc.static_ed25519_keys is not None
+            else None
+        ),
     )
 
 
