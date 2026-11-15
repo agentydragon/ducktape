@@ -587,7 +587,7 @@ impl AnalysisWire for crate::AnalysisNativeOperationInput {
         Ok(pb::AnalysisNativeOperationInput {
             declaration: Some(self.declaration.to_wire()?),
             selector: Some(self.selector.to_wire()?),
-            operation: Some(self.operation.to_proto()),
+            operation: Some(self.operation as i32),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
         })
     }
@@ -595,7 +595,9 @@ impl AnalysisWire for crate::AnalysisNativeOperationInput {
         Ok(Self {
             declaration: analysis_required(v.declaration)?,
             selector: analysis_required(v.selector)?,
-            operation: required(v.operation)?,
+            operation: spec::NativeOperationKind::try_from(
+                v.operation.context("missing native operation kind")?,
+            )?,
             audited_source_sha256: required(v.audited_source_sha256)?,
         })
     }

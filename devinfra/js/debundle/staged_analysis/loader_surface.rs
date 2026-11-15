@@ -977,7 +977,7 @@ impl ProtoConvert<proto::LoaderRequestReportTarget> for LoaderRequestReportTarge
         Ok(proto::LoaderRequestReportTarget {
             value: Some(match self {
                 Self::Builtin(module) => Value::Builtin(module.to_proto()?),
-                Self::EmbeddedFile(loader) => Value::EmbeddedFile(loader.to_proto()?),
+                Self::EmbeddedFile(loader) => Value::EmbeddedFile(*loader as i32),
                 Self::Chunk(target) => Value::Chunk(target.to_proto()?),
             }),
         })
@@ -988,7 +988,7 @@ impl ProtoConvert<proto::LoaderRequestReportTarget> for LoaderRequestReportTarge
             match required(value.value, "LoaderRequestReportTarget.value")? {
                 Value::Builtin(value) => Self::Builtin(spec::HostModule::from_proto(value)?),
                 Value::EmbeddedFile(value) => {
-                    Self::EmbeddedFile(spec::EmbeddedLoader::from_proto(value)?)
+                    Self::EmbeddedFile(spec::EmbeddedLoader::try_from(value)?)
                 }
                 Value::Chunk(value) => Self::Chunk(ExportReentryTarget::from_proto(value)?),
             },

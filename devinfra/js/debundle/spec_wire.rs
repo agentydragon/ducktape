@@ -291,14 +291,16 @@ impl Wire for spec::HostBehavior {
     type Proto = pb::HostBehavior;
     fn to_proto(&self) -> Self::Proto {
         pb::HostBehavior {
-            synchronous_module_loader: Some(self.synchronous_module_loader.to_proto()),
+            synchronous_module_loader: Some(self.synchronous_module_loader as i32),
             loader_result_for_evaluating_module: self
                 .loader_result_for_evaluating_module
-                .to_proto(),
+                .map(|value| value as i32),
             synchronous_load_runs_app_callbacks: self
                 .synchronous_load_runs_app_callbacks
-                .to_proto(),
-            synchronous_load_drains_microtasks: self.synchronous_load_drains_microtasks.to_proto(),
+                .map(|value| value as i32),
+            synchronous_load_drains_microtasks: self
+                .synchronous_load_drains_microtasks
+                .map(|value| value as i32),
             reentry_free_builtin_modules: self
                 .reentry_free_builtin_modules
                 .iter()
@@ -309,7 +311,11 @@ impl Wire for spec::HostBehavior {
                 .iter()
                 .map(|module| *module as i32)
                 .collect(),
-            reentry_free_embedded_loaders: self.reentry_free_embedded_loaders.to_proto(),
+            reentry_free_embedded_loaders: self
+                .reentry_free_embedded_loaders
+                .iter()
+                .map(|value| *value as i32)
+                .collect(),
             reentry_free_operations: self.reentry_free_operations.to_proto(),
             predefined_globals: Some(self.predefined_globals.to_proto()),
             note: self.note.clone(),
@@ -317,16 +323,22 @@ impl Wire for spec::HostBehavior {
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            synchronous_module_loader: required(v.synchronous_module_loader)?,
-            loader_result_for_evaluating_module: Wire::from_proto(
-                v.loader_result_for_evaluating_module,
+            synchronous_module_loader: pb::SynchronousModuleLoader::try_from(
+                v.synchronous_module_loader
+                    .context("missing required projection field")?,
             )?,
-            synchronous_load_runs_app_callbacks: Wire::from_proto(
-                v.synchronous_load_runs_app_callbacks,
-            )?,
-            synchronous_load_drains_microtasks: Wire::from_proto(
-                v.synchronous_load_drains_microtasks,
-            )?,
+            loader_result_for_evaluating_module: v
+                .loader_result_for_evaluating_module
+                .map(pb::LoaderResultForEvaluatingModule::try_from)
+                .transpose()?,
+            synchronous_load_runs_app_callbacks: v
+                .synchronous_load_runs_app_callbacks
+                .map(pb::SynchronousLoadRunsAppCallbacks::try_from)
+                .transpose()?,
+            synchronous_load_drains_microtasks: v
+                .synchronous_load_drains_microtasks
+                .map(pb::SynchronousLoadDrainsMicrotasks::try_from)
+                .transpose()?,
             reentry_free_builtin_modules: unique_set(
                 v.reentry_free_builtin_modules
                     .into_iter()
@@ -337,7 +349,11 @@ impl Wire for spec::HostBehavior {
                     .into_iter()
                     .map(|value| Ok(pb::BunModule::try_from(value)?)),
             )?,
-            reentry_free_embedded_loaders: Wire::from_proto(v.reentry_free_embedded_loaders)?,
+            reentry_free_embedded_loaders: unique_set(
+                v.reentry_free_embedded_loaders
+                    .into_iter()
+                    .map(|value| Ok(pb::EmbeddedLoader::try_from(value)?)),
+            )?,
             reentry_free_operations: Wire::from_proto(v.reentry_free_operations)?,
             predefined_globals: required(v.predefined_globals)?,
             note: v.note,
@@ -348,18 +364,22 @@ impl Wire for spec::ProgramPremises {
     type Proto = pb::ProgramPremises;
     fn to_proto(&self) -> Self::Proto {
         pb::ProgramPremises {
-            process_prototype_chain_accessors: Some(
-                self.process_prototype_chain_accessors.to_proto(),
-            ),
-            non_literal_loader_calls: Some(self.non_literal_loader_calls.to_proto()),
+            process_prototype_chain_accessors: Some(self.process_prototype_chain_accessors as i32),
+            non_literal_loader_calls: Some(self.non_literal_loader_calls as i32),
             intrinsics_never_written: self.intrinsics_never_written.to_proto(),
             note: self.note.clone(),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            process_prototype_chain_accessors: required(v.process_prototype_chain_accessors)?,
-            non_literal_loader_calls: required(v.non_literal_loader_calls)?,
+            process_prototype_chain_accessors: pb::ProcessPrototypeChainAccessors::try_from(
+                v.process_prototype_chain_accessors
+                    .context("missing required projection field")?,
+            )?,
+            non_literal_loader_calls: pb::NonLiteralLoaderCalls::try_from(
+                v.non_literal_loader_calls
+                    .context("missing required projection field")?,
+            )?,
             intrinsics_never_written: Wire::from_proto(v.intrinsics_never_written)?,
             note: v.note,
         })
@@ -386,7 +406,7 @@ impl Wire for spec::IntrinsicFamilies {
         use pb::intrinsic_families::Value;
         pb::IntrinsicFamilies {
             value: Some(match self {
-                Self::All(v) => Value::All(v.to_proto()),
+                Self::All(v) => Value::All(*v as i32),
                 Self::Listed(v) => Value::Listed(pb::IntrinsicFamilySelection {
                     families: v.to_proto(),
                 }),
@@ -396,7 +416,7 @@ impl Wire for spec::IntrinsicFamilies {
     fn from_proto(v: Self::Proto) -> Result<Self> {
         use pb::intrinsic_families::Value;
         Ok(match v.value.context("missing intrinsic families")? {
-            Value::All(v) => Self::All(Wire::from_proto(v)?),
+            Value::All(v) => Self::All(pb::AllIntrinsicFamilies::try_from(v)?),
             Value::Listed(v) => Self::Listed(Wire::from_proto(v.families)?),
         })
     }
@@ -500,7 +520,7 @@ impl Wire for spec::PartialSwapSymbol {
     fn to_proto(&self) -> Self::Proto {
         pb::PartialSwapSymbol {
             package: Some(self.package.clone()),
-            kind: Some(self.kind.to_proto()),
+            kind: Some(self.kind as i32),
             upstream_export: self.upstream_export.clone(),
             local: self.local.clone(),
         }
@@ -508,7 +528,9 @@ impl Wire for spec::PartialSwapSymbol {
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             package: required(v.package)?,
-            kind: required(v.kind)?,
+            kind: pb::PartialSwapKind::try_from(
+                v.kind.context("missing required projection field")?,
+            )?,
             upstream_export: v.upstream_export,
             local: v.local,
         })
@@ -747,7 +769,7 @@ impl Wire for spec::SourceMatchClaim {
     type Proto = pb::SourceMatchClaim;
     fn to_proto(&self) -> Self::Proto {
         pb::SourceMatchClaim {
-            identifiers: Some(self.identifiers.to_proto()),
+            identifiers: Some(self.identifiers as i32),
             match_source: Some(self.match_source.clone()),
             bindings: self.bindings.to_proto(),
             note: self.note.clone(),
@@ -755,7 +777,9 @@ impl Wire for spec::SourceMatchClaim {
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            identifiers: required(v.identifiers)?,
+            identifiers: pb::SourceMatchIdentifierMode::try_from(
+                v.identifiers.context("missing required projection field")?,
+            )?,
             match_source: required(v.match_source)?,
             bindings: Wire::from_proto(v.bindings)?,
             note: v.note,
@@ -859,14 +883,16 @@ impl Wire for spec::SourceMatch {
     type Proto = pb::SourceMatch;
     fn to_proto(&self) -> Self::Proto {
         pb::SourceMatch {
-            identifiers: Some(self.identifiers.to_proto()),
+            identifiers: Some(self.identifiers as i32),
             target_binding: self.target_binding.clone(),
             match_source: Some(self.match_source.clone()),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            identifiers: required(v.identifiers)?,
+            identifiers: pb::SourceMatchIdentifierMode::try_from(
+                v.identifiers.context("missing required projection field")?,
+            )?,
             target_binding: v.target_binding,
             match_source: required(v.match_source)?,
         })
@@ -1050,12 +1076,14 @@ impl Wire for spec::CapturedValueContract {
     type Proto = pb::CapturedValueContract;
     fn to_proto(&self) -> Self::Proto {
         pb::CapturedValueContract {
-            kind: Some(self.kind.to_proto()),
+            kind: Some(self.kind as i32),
         }
     }
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
-            kind: required(v.kind)?,
+            kind: pb::CapturedValueKind::try_from(
+                v.kind.context("missing required projection field")?,
+            )?,
         })
     }
 }
@@ -1064,7 +1092,7 @@ impl Wire for spec::NativeOperationInputContract {
     fn to_proto(&self) -> Self::Proto {
         pb::NativeOperationInputContract {
             selector: Some(self.selector.to_proto()),
-            operation: Some(self.operation.to_proto()),
+            operation: Some(self.operation as i32),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
             note: self.note.clone(),
         }
@@ -1072,7 +1100,9 @@ impl Wire for spec::NativeOperationInputContract {
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             selector: required(v.selector)?,
-            operation: required(v.operation)?,
+            operation: pb::NativeOperationKind::try_from(
+                v.operation.context("missing required projection field")?,
+            )?,
             audited_source_sha256: required(v.audited_source_sha256)?,
             note: v.note,
         })
@@ -1149,7 +1179,7 @@ impl Wire for spec::InitializerCallEffectiveReplacement {
         pb::InitializerCallEffectiveReplacement {
             package: Some(self.package.clone()),
             bundle_export: Some(self.bundle_export.clone()),
-            symbol_kind: Some(self.symbol_kind.to_proto()),
+            symbol_kind: Some(self.symbol_kind as i32),
             upstream_export: self.upstream_export.clone(),
             audited_bundle_sha256: Some(self.audited_bundle_sha256.clone()),
         }
@@ -1158,7 +1188,9 @@ impl Wire for spec::InitializerCallEffectiveReplacement {
         Ok(Self {
             package: required(v.package)?,
             bundle_export: required(v.bundle_export)?,
-            symbol_kind: required(v.symbol_kind)?,
+            symbol_kind: pb::PartialSwapKind::try_from(
+                v.symbol_kind.context("missing required projection field")?,
+            )?,
             upstream_export: v.upstream_export,
             audited_bundle_sha256: required(v.audited_bundle_sha256)?,
         })
@@ -1259,7 +1291,7 @@ impl Wire for spec::NativeCallIdentityInputContract {
     fn to_proto(&self) -> Self::Proto {
         pb::NativeCallIdentityInputContract {
             source_match: Some(self.source_match.to_proto()),
-            callee: Some(self.callee.to_proto()),
+            callee: Some(self.callee as i32),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
             note: self.note.clone(),
         }
@@ -1267,7 +1299,9 @@ impl Wire for spec::NativeCallIdentityInputContract {
     fn from_proto(v: Self::Proto) -> Result<Self> {
         Ok(Self {
             source_match: required(v.source_match)?,
-            callee: required(v.callee)?,
+            callee: pb::NativeCallIdentityKind::try_from(
+                v.callee.context("missing required projection field")?,
+            )?,
             audited_source_sha256: required(v.audited_source_sha256)?,
             note: v.note,
         })
@@ -1516,98 +1550,7 @@ impl Wire for spec::EmitBrowserHarnessConfig {
         })
     }
 }
-impl Wire for spec::SynchronousModuleLoader {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::None => pb::SynchronousModuleLoader::None as i32,
-            Self::Present => pb::SynchronousModuleLoader::Present as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::SynchronousModuleLoader::try_from(v)? {
-            pb::SynchronousModuleLoader::None => Self::None,
-            pb::SynchronousModuleLoader::Present => Self::Present,
-            pb::SynchronousModuleLoader::Unspecified => {
-                bail!("unspecified synchronous module loader")
-            }
-        })
-    }
-}
-impl Wire for spec::LoaderResultForEvaluatingModule {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Throws => pb::LoaderResultForEvaluatingModule::Throws as i32,
-            Self::ReturnsPartialNamespace => {
-                pb::LoaderResultForEvaluatingModule::ReturnsPartialNamespace as i32
-            }
-            Self::Unknown => pb::LoaderResultForEvaluatingModule::Unknown as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::LoaderResultForEvaluatingModule::try_from(v)? {
-            pb::LoaderResultForEvaluatingModule::Throws => Self::Throws,
-            pb::LoaderResultForEvaluatingModule::ReturnsPartialNamespace => {
-                Self::ReturnsPartialNamespace
-            }
-            pb::LoaderResultForEvaluatingModule::Unknown => Self::Unknown,
-            pb::LoaderResultForEvaluatingModule::Unspecified => bail!("unspecified loader result"),
-        })
-    }
-}
-impl Wire for spec::SynchronousLoadRunsAppCallbacks {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Never => pb::SynchronousLoadRunsAppCallbacks::Never as i32,
-            Self::Unknown => pb::SynchronousLoadRunsAppCallbacks::Unknown as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::SynchronousLoadRunsAppCallbacks::try_from(v)? {
-            pb::SynchronousLoadRunsAppCallbacks::Never => Self::Never,
-            pb::SynchronousLoadRunsAppCallbacks::Unknown => Self::Unknown,
-            pb::SynchronousLoadRunsAppCallbacks::Unspecified => {
-                bail!("unspecified synchronous callbacks")
-            }
-        })
-    }
-}
-impl Wire for spec::SynchronousLoadDrainsMicrotasks {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Never => pb::SynchronousLoadDrainsMicrotasks::Never as i32,
-            Self::Unknown => pb::SynchronousLoadDrainsMicrotasks::Unknown as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::SynchronousLoadDrainsMicrotasks::try_from(v)? {
-            pb::SynchronousLoadDrainsMicrotasks::Never => Self::Never,
-            pb::SynchronousLoadDrainsMicrotasks::Unknown => Self::Unknown,
-            pb::SynchronousLoadDrainsMicrotasks::Unspecified => {
-                bail!("unspecified synchronous microtasks")
-            }
-        })
-    }
-}
-impl Wire for spec::EmbeddedLoader {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Text => pb::EmbeddedLoader::Text as i32,
-            Self::Napi => pb::EmbeddedLoader::Napi as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::EmbeddedLoader::try_from(v)? {
-            pb::EmbeddedLoader::Text => Self::Text,
-            pb::EmbeddedLoader::Napi => Self::Napi,
-            pb::EmbeddedLoader::Unspecified => bail!("unspecified embedded loader"),
-        })
-    }
-}
+
 impl Wire for spec::ReentryFreeOperation {
     type Proto = i32;
     fn to_proto(&self) -> i32 {
@@ -1646,51 +1589,22 @@ impl Wire for spec::PredefinedGlobals {
         })
     }
 }
-impl Wire for spec::ProcessPrototypeChainAccessors {
+
+impl Wire for spec::InitializerExternalEffects {
     type Proto = i32;
     fn to_proto(&self) -> i32 {
         match self {
-            Self::None => pb::ProcessPrototypeChainAccessors::None as i32,
-            Self::Unknown => pb::ProcessPrototypeChainAccessors::Unknown as i32,
+            Self::Isolated => pb::InitializerExternalEffects::Isolated as i32,
+            Self::PrivateMetadata => pb::InitializerExternalEffects::PrivateMetadata as i32,
         }
     }
     fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::ProcessPrototypeChainAccessors::try_from(v)? {
-            pb::ProcessPrototypeChainAccessors::None => Self::None,
-            pb::ProcessPrototypeChainAccessors::Unknown => Self::Unknown,
-            pb::ProcessPrototypeChainAccessors::Unspecified => {
-                bail!("unspecified prototype chain accessors")
+        Ok(match pb::InitializerExternalEffects::try_from(v)? {
+            pb::InitializerExternalEffects::Isolated => Self::Isolated,
+            pb::InitializerExternalEffects::PrivateMetadata => Self::PrivateMetadata,
+            pb::InitializerExternalEffects::Unspecified => {
+                bail!("unspecified initializer external effects")
             }
-        })
-    }
-}
-impl Wire for spec::NonLiteralLoaderCalls {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::NativeAddonsOnly => pb::NonLiteralLoaderCalls::NativeAddonsOnly as i32,
-            Self::Unknown => pb::NonLiteralLoaderCalls::Unknown as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::NonLiteralLoaderCalls::try_from(v)? {
-            pb::NonLiteralLoaderCalls::NativeAddonsOnly => Self::NativeAddonsOnly,
-            pb::NonLiteralLoaderCalls::Unknown => Self::Unknown,
-            pb::NonLiteralLoaderCalls::Unspecified => bail!("unspecified non-literal loader calls"),
-        })
-    }
-}
-impl Wire for spec::AllIntrinsicFamilies {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::All => pb::AllIntrinsicFamilies::All as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::AllIntrinsicFamilies::try_from(v)? {
-            pb::AllIntrinsicFamilies::All => Self::All,
-            pb::AllIntrinsicFamilies::Unspecified => bail!("unspecified intrinsic families"),
         })
     }
 }
@@ -1729,142 +1643,6 @@ impl Wire for spec::IntrinsicFamily {
             pb::IntrinsicFamily::WeakMap => Self::WeakMap,
             pb::IntrinsicFamily::WeakSet => Self::WeakSet,
             pb::IntrinsicFamily::Unspecified => bail!("unspecified intrinsic family"),
-        })
-    }
-}
-impl Wire for spec::PartialSwapKind {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Member => pb::PartialSwapKind::Member as i32,
-            Self::Namespace => pb::PartialSwapKind::Namespace as i32,
-            Self::Default => pb::PartialSwapKind::Default as i32,
-            Self::Named => pb::PartialSwapKind::Named as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::PartialSwapKind::try_from(v)? {
-            pb::PartialSwapKind::Member => Self::Member,
-            pb::PartialSwapKind::Namespace => Self::Namespace,
-            pb::PartialSwapKind::Default => Self::Default,
-            pb::PartialSwapKind::Named => Self::Named,
-            pb::PartialSwapKind::Unspecified => bail!("unspecified partial swap kind"),
-        })
-    }
-}
-impl Wire for spec::SourceMatchIdentifierMode {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Exact => pb::SourceMatchIdentifierMode::Exact as i32,
-            Self::AlphaAll => pb::SourceMatchIdentifierMode::AlphaAll as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::SourceMatchIdentifierMode::try_from(v)? {
-            pb::SourceMatchIdentifierMode::Exact => Self::Exact,
-            pb::SourceMatchIdentifierMode::AlphaAll => Self::AlphaAll,
-            pb::SourceMatchIdentifierMode::Unspecified => {
-                bail!("unspecified selector identifier mode")
-            }
-        })
-    }
-}
-impl Wire for spec::InitializerExternalEffects {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Isolated => pb::InitializerExternalEffects::Isolated as i32,
-            Self::PrivateMetadata => pb::InitializerExternalEffects::PrivateMetadata as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::InitializerExternalEffects::try_from(v)? {
-            pb::InitializerExternalEffects::Isolated => Self::Isolated,
-            pb::InitializerExternalEffects::PrivateMetadata => Self::PrivateMetadata,
-            pb::InitializerExternalEffects::Unspecified => {
-                bail!("unspecified initializer external effects")
-            }
-        })
-    }
-}
-impl Wire for spec::CapturedValueKind {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::OrdinaryObject => pb::CapturedValueKind::OrdinaryObject as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::CapturedValueKind::try_from(v)? {
-            pb::CapturedValueKind::OrdinaryObject => Self::OrdinaryObject,
-            pb::CapturedValueKind::Unspecified => bail!("unspecified captured value kind"),
-        })
-    }
-}
-impl Wire for spec::NativeOperationKind {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::TextEncoderEmpty => pb::NativeOperationKind::TextEncoderEmpty as i32,
-            Self::MapEmpty => pb::NativeOperationKind::MapEmpty as i32,
-            Self::WeakMapEmpty => pb::NativeOperationKind::WeakMapEmpty as i32,
-            Self::SetEmpty => pb::NativeOperationKind::SetEmpty as i32,
-            Self::Symbol => pb::NativeOperationKind::Symbol as i32,
-            Self::SymbolFor => pb::NativeOperationKind::SymbolFor as i32,
-            Self::SetFromPrimitiveArray => pb::NativeOperationKind::SetFromPrimitiveArray as i32,
-            Self::SetFromSetSpread => pb::NativeOperationKind::SetFromSetSpread as i32,
-            Self::ObjectOwnDataFunctionRead => {
-                pb::NativeOperationKind::ObjectOwnDataFunctionRead as i32
-            }
-            Self::SymbolWellKnownClassKeys => {
-                pb::NativeOperationKind::SymbolWellKnownClassKeys as i32
-            }
-            Self::SymbolPrimitiveClassKeys => {
-                pb::NativeOperationKind::SymbolPrimitiveClassKeys as i32
-            }
-            Self::ArraySpreadFromPrimitiveArrays => {
-                pb::NativeOperationKind::ArraySpreadFromPrimitiveArrays as i32
-            }
-            Self::PromiseResolve => pb::NativeOperationKind::PromiseResolve as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::NativeOperationKind::try_from(v)? {
-            pb::NativeOperationKind::TextEncoderEmpty => Self::TextEncoderEmpty,
-            pb::NativeOperationKind::MapEmpty => Self::MapEmpty,
-            pb::NativeOperationKind::WeakMapEmpty => Self::WeakMapEmpty,
-            pb::NativeOperationKind::SetEmpty => Self::SetEmpty,
-            pb::NativeOperationKind::Symbol => Self::Symbol,
-            pb::NativeOperationKind::SymbolFor => Self::SymbolFor,
-            pb::NativeOperationKind::SetFromPrimitiveArray => Self::SetFromPrimitiveArray,
-            pb::NativeOperationKind::SetFromSetSpread => Self::SetFromSetSpread,
-            pb::NativeOperationKind::ObjectOwnDataFunctionRead => Self::ObjectOwnDataFunctionRead,
-            pb::NativeOperationKind::SymbolWellKnownClassKeys => Self::SymbolWellKnownClassKeys,
-            pb::NativeOperationKind::SymbolPrimitiveClassKeys => Self::SymbolPrimitiveClassKeys,
-            pb::NativeOperationKind::ArraySpreadFromPrimitiveArrays => {
-                Self::ArraySpreadFromPrimitiveArrays
-            }
-            pb::NativeOperationKind::PromiseResolve => Self::PromiseResolve,
-            pb::NativeOperationKind::Unspecified => bail!("unspecified native operation kind"),
-        })
-    }
-}
-impl Wire for spec::NativeCallIdentityKind {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::ObjectFreeze => pb::NativeCallIdentityKind::ObjectFreeze as i32,
-            Self::SetEmptyPrivateField => pb::NativeCallIdentityKind::SetEmptyPrivateField as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::NativeCallIdentityKind::try_from(v)? {
-            pb::NativeCallIdentityKind::ObjectFreeze => Self::ObjectFreeze,
-            pb::NativeCallIdentityKind::SetEmptyPrivateField => Self::SetEmptyPrivateField,
-            pb::NativeCallIdentityKind::Unspecified => {
-                bail!("unspecified native call identity kind")
-            }
         })
     }
 }

@@ -132,7 +132,7 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
                 }
                 Self::ReentryFreeBunModule(module) => Value::ReentryFreeBunModule(*module as i32),
                 Self::ReentryFreeEmbeddedLoader(loader) => {
-                    Value::ReentryFreeEmbeddedLoader(loader.to_proto()?)
+                    Value::ReentryFreeEmbeddedLoader(*loader as i32)
                 }
                 Self::ReentryFreeOperation(operation) => {
                     Value::ReentryFreeOperation(operation.to_proto()?)
@@ -155,7 +155,7 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
                 Self::ReentryFreeBunModule(spec::BunModule::try_from(value)?)
             }
             Value::ReentryFreeEmbeddedLoader(value) => {
-                Self::ReentryFreeEmbeddedLoader(spec::EmbeddedLoader::from_proto(value)?)
+                Self::ReentryFreeEmbeddedLoader(spec::EmbeddedLoader::try_from(value)?)
             }
             Value::ReentryFreeOperation(value) => {
                 Self::ReentryFreeOperation(spec::ReentryFreeOperation::from_proto(value)?)
@@ -170,8 +170,8 @@ impl ProtoConvert<proto::NativeInputKind> for NativeInputKind {
         use proto::native_input_kind::Value;
         Ok(proto::NativeInputKind {
             value: Some(match self {
-                Self::Operation(operation) => Value::Operation(operation.to_proto()?),
-                Self::CallIdentity(identity) => Value::CallIdentity(identity.to_proto()?),
+                Self::Operation(operation) => Value::Operation(*operation as i32),
+                Self::CallIdentity(identity) => Value::CallIdentity(*identity as i32),
             }),
         })
     }
@@ -179,11 +179,9 @@ impl ProtoConvert<proto::NativeInputKind> for NativeInputKind {
     fn from_proto(value: proto::NativeInputKind) -> Result<Self> {
         use proto::native_input_kind::Value;
         Ok(match required(value.value, "NativeInputKind.value")? {
-            Value::Operation(value) => {
-                Self::Operation(spec::NativeOperationKind::from_proto(value)?)
-            }
+            Value::Operation(value) => Self::Operation(spec::NativeOperationKind::try_from(value)?),
             Value::CallIdentity(value) => {
-                Self::CallIdentity(spec::NativeCallIdentityKind::from_proto(value)?)
+                Self::CallIdentity(spec::NativeCallIdentityKind::try_from(value)?)
             }
         })
     }
@@ -227,7 +225,7 @@ impl ProtoConvert<proto::EffectiveInitializerCallReplacement>
             package: Some(self.package.clone()),
             bundle_path: Some(self.bundle_path.to_proto()?),
             bundle_export: Some(self.bundle_export.clone()),
-            symbol_kind: Some(self.symbol_kind.to_proto()?),
+            symbol_kind: Some(self.symbol_kind as i32),
             upstream_export: self.upstream_export.clone(),
             bundle_sha256: Some(self.bundle_sha256.clone()),
         })
@@ -244,7 +242,7 @@ impl ProtoConvert<proto::EffectiveInitializerCallReplacement>
                 value.bundle_export,
                 "EffectiveInitializerCallReplacement.bundle_export",
             )?,
-            symbol_kind: ProtoConvert::from_proto(required(
+            symbol_kind: spec::PartialSwapKind::try_from(required(
                 value.symbol_kind,
                 "EffectiveInitializerCallReplacement.symbol_kind",
             )?)?,
@@ -813,7 +811,7 @@ impl ProtoConvert<proto::ValueInputEvidence> for ValueInputEvidence {
             reference: Some(self.reference.to_proto()?),
             spec_location: Some(self.spec_location.clone()),
             source_match: Some(self.source_match.to_proto()?),
-            value_kind: Some(self.value_kind.to_proto()?),
+            value_kind: Some(self.value_kind as i32),
             source_path: Some(self.source_path.clone()),
             audited_source_sha256: Some(self.audited_source_sha256.clone()),
             selected_binding: Some(self.selected_binding.clone()),
@@ -842,7 +840,7 @@ impl ProtoConvert<proto::ValueInputEvidence> for ValueInputEvidence {
                 value.source_match,
                 "ValueInputEvidence.source_match",
             )?)?,
-            value_kind: ProtoConvert::from_proto(required(
+            value_kind: spec::CapturedValueKind::try_from(required(
                 value.value_kind,
                 "ValueInputEvidence.value_kind",
             )?)?,
@@ -1430,7 +1428,21 @@ mod tests {
             returned
         );
         assert!(ForeignReturn::from_proto(proto::ForeignReturn { value: None }).is_err());
-        for value in [0, i32::MAX] {
+        assert_eq!(
+            NativeInputKind::from_proto(proto::NativeInputKind {
+                value: Some(proto::native_input_kind::Value::Operation(0)),
+            })
+            .unwrap(),
+            NativeInputKind::Operation(spec::NativeOperationKind::TextEncoderEmpty)
+        );
+        assert_eq!(
+            NativeInputKind::from_proto(proto::NativeInputKind {
+                value: Some(proto::native_input_kind::Value::CallIdentity(0)),
+            })
+            .unwrap(),
+            NativeInputKind::CallIdentity(spec::NativeCallIdentityKind::ObjectFreeze)
+        );
+        for value in [i32::MIN, i32::MAX] {
             assert!(
                 NativeInputKind::from_proto(proto::NativeInputKind {
                     value: Some(proto::native_input_kind::Value::Operation(value)),

@@ -22,7 +22,7 @@ pub fn required<T>(value: Option<T>, field: &str) -> Result<T> {
 // and saved artifacts. Keep their conversion in spec_wire rather than
 // maintaining a second set of enum mappings here. Generated spec enums are
 // cast only at their Protobuf fields.
-impl ProtoConvert<i32> for spec::AllIntrinsicFamilies {
+impl ProtoConvert<i32> for spec::IntrinsicFamily {
     fn to_proto(&self) -> Result<i32> {
         Ok(spec_wire::Wire::to_proto(self))
     }
@@ -30,15 +30,8 @@ impl ProtoConvert<i32> for spec::AllIntrinsicFamilies {
         spec_wire::Wire::from_proto(value)
     }
 }
-impl ProtoConvert<i32> for spec::CapturedValueKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::EmbeddedLoader {
+
+impl ProtoConvert<i32> for spec::ReentryFreeOperation {
     fn to_proto(&self) -> Result<i32> {
         Ok(spec_wire::Wire::to_proto(self))
     }
@@ -54,103 +47,7 @@ impl ProtoConvert<i32> for spec::InitializerExternalEffects {
         spec_wire::Wire::from_proto(value)
     }
 }
-impl ProtoConvert<i32> for spec::IntrinsicFamily {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::LoaderResultForEvaluatingModule {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::NativeCallIdentityKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::NativeOperationKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::NonLiteralLoaderCalls {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::PartialSwapKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
 impl ProtoConvert<i32> for spec::PredefinedGlobals {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::ProcessPrototypeChainAccessors {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::ReentryFreeOperation {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::SourceMatchIdentifierMode {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::SynchronousLoadDrainsMicrotasks {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::SynchronousLoadRunsAppCallbacks {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::SynchronousModuleLoader {
     fn to_proto(&self) -> Result<i32> {
         Ok(spec_wire::Wire::to_proto(self))
     }
@@ -503,22 +400,16 @@ impl ProtoConvert<proto::DescriptorCopyFactorySignature> for spec::DescriptorCop
 impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
     fn to_proto(&self) -> Result<proto::HostBehavior> {
         Ok(proto::HostBehavior {
-            synchronous_module_loader: Some(self.synchronous_module_loader.to_proto()?),
+            synchronous_module_loader: Some(self.synchronous_module_loader as i32),
             loader_result_for_evaluating_module: self
                 .loader_result_for_evaluating_module
-                .as_ref()
-                .map(ProtoConvert::to_proto)
-                .transpose()?,
+                .map(|value| value as i32),
             synchronous_load_runs_app_callbacks: self
                 .synchronous_load_runs_app_callbacks
-                .as_ref()
-                .map(ProtoConvert::to_proto)
-                .transpose()?,
+                .map(|value| value as i32),
             synchronous_load_drains_microtasks: self
                 .synchronous_load_drains_microtasks
-                .as_ref()
-                .map(ProtoConvert::to_proto)
-                .transpose()?,
+                .map(|value| value as i32),
             reentry_free_builtin_modules: self
                 .reentry_free_builtin_modules
                 .iter()
@@ -532,8 +423,8 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
             reentry_free_embedded_loaders: self
                 .reentry_free_embedded_loaders
                 .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+                .map(|value| *value as i32)
+                .collect(),
             reentry_free_operations: self
                 .reentry_free_operations
                 .iter()
@@ -545,21 +436,21 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
     }
     fn from_proto(value: proto::HostBehavior) -> Result<Self> {
         Ok(Self {
-            synchronous_module_loader: read_domain(
+            synchronous_module_loader: spec::SynchronousModuleLoader::try_from(required(
                 value.synchronous_module_loader,
                 "HostBehavior.synchronous_module_loader",
-            )?,
+            )?)?,
             loader_result_for_evaluating_module: value
                 .loader_result_for_evaluating_module
-                .map(spec::LoaderResultForEvaluatingModule::from_proto)
+                .map(spec::LoaderResultForEvaluatingModule::try_from)
                 .transpose()?,
             synchronous_load_runs_app_callbacks: value
                 .synchronous_load_runs_app_callbacks
-                .map(spec::SynchronousLoadRunsAppCallbacks::from_proto)
+                .map(spec::SynchronousLoadRunsAppCallbacks::try_from)
                 .transpose()?,
             synchronous_load_drains_microtasks: value
                 .synchronous_load_drains_microtasks
-                .map(spec::SynchronousLoadDrainsMicrotasks::from_proto)
+                .map(spec::SynchronousLoadDrainsMicrotasks::try_from)
                 .transpose()?,
             reentry_free_builtin_modules: spec_wire::unique_set(
                 value
@@ -573,7 +464,12 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
                     .into_iter()
                     .map(|value| Ok(spec::BunModule::try_from(value)?)),
             )?,
-            reentry_free_embedded_loaders: decode_set(value.reentry_free_embedded_loaders)?,
+            reentry_free_embedded_loaders: spec_wire::unique_set(
+                value
+                    .reentry_free_embedded_loaders
+                    .into_iter()
+                    .map(|value| Ok(spec::EmbeddedLoader::try_from(value)?)),
+            )?,
             reentry_free_operations: decode_set(value.reentry_free_operations)?,
             predefined_globals: read_domain(
                 value.predefined_globals,
@@ -652,7 +548,7 @@ impl ProtoConvert<proto::IntrinsicFamilies> for spec::IntrinsicFamilies {
         use proto::intrinsic_families::{ListedIntrinsics, Value};
         Ok(proto::IntrinsicFamilies {
             value: Some(match self {
-                Self::All(all) => Value::All(all.to_proto()?),
+                Self::All(all) => Value::All(*all as i32),
                 Self::Listed(families) => Value::Listed(ListedIntrinsics {
                     families: families
                         .iter()
@@ -665,7 +561,7 @@ impl ProtoConvert<proto::IntrinsicFamilies> for spec::IntrinsicFamilies {
     fn from_proto(value: proto::IntrinsicFamilies) -> Result<Self> {
         use proto::intrinsic_families::Value;
         Ok(match required(value.value, "IntrinsicFamilies.value")? {
-            Value::All(value) => Self::All(spec::AllIntrinsicFamilies::from_proto(value)?),
+            Value::All(value) => Self::All(spec::AllIntrinsicFamilies::try_from(value)?),
             Value::Listed(value) => Self::Listed(decode_set(value.families)?),
         })
     }
@@ -689,10 +585,8 @@ impl ProtoConvert<proto::IntrinsicsNeverWritten> for spec::IntrinsicsNeverWritte
 impl ProtoConvert<proto::ProgramPremises> for spec::ProgramPremises {
     fn to_proto(&self) -> Result<proto::ProgramPremises> {
         Ok(proto::ProgramPremises {
-            process_prototype_chain_accessors: Some(
-                self.process_prototype_chain_accessors.to_proto()?,
-            ),
-            non_literal_loader_calls: Some(self.non_literal_loader_calls.to_proto()?),
+            process_prototype_chain_accessors: Some(self.process_prototype_chain_accessors as i32),
+            non_literal_loader_calls: Some(self.non_literal_loader_calls as i32),
             intrinsics_never_written: self
                 .intrinsics_never_written
                 .as_ref()
@@ -703,14 +597,16 @@ impl ProtoConvert<proto::ProgramPremises> for spec::ProgramPremises {
     }
     fn from_proto(value: proto::ProgramPremises) -> Result<Self> {
         Ok(Self {
-            process_prototype_chain_accessors: read_domain(
-                value.process_prototype_chain_accessors,
-                "ProgramPremises.process_prototype_chain_accessors",
+            process_prototype_chain_accessors: spec::ProcessPrototypeChainAccessors::try_from(
+                required(
+                    value.process_prototype_chain_accessors,
+                    "ProgramPremises.process_prototype_chain_accessors",
+                )?,
             )?,
-            non_literal_loader_calls: read_domain(
+            non_literal_loader_calls: spec::NonLiteralLoaderCalls::try_from(required(
                 value.non_literal_loader_calls,
                 "ProgramPremises.non_literal_loader_calls",
-            )?,
+            )?)?,
             intrinsics_never_written: value
                 .intrinsics_never_written
                 .map(spec::IntrinsicsNeverWritten::from_proto)
@@ -774,7 +670,7 @@ impl ProtoConvert<proto::SourceMatchBindingDetail> for spec::SourceMatchBindingD
 impl ProtoConvert<proto::SourceMatchClaim> for spec::SourceMatchClaim {
     fn to_proto(&self) -> Result<proto::SourceMatchClaim> {
         Ok(proto::SourceMatchClaim {
-            identifiers: Some(self.identifiers.to_proto()?),
+            identifiers: Some(self.identifiers as i32),
             match_source: Some(self.match_source.clone()),
             bindings: self
                 .bindings
@@ -786,7 +682,10 @@ impl ProtoConvert<proto::SourceMatchClaim> for spec::SourceMatchClaim {
     }
     fn from_proto(value: proto::SourceMatchClaim) -> Result<Self> {
         Ok(Self {
-            identifiers: read_domain(value.identifiers, "SourceMatchClaim.identifiers")?,
+            identifiers: spec::SourceMatchIdentifierMode::try_from(required(
+                value.identifiers,
+                "SourceMatchClaim.identifiers",
+            )?)?,
             match_source: required(value.match_source, "SourceMatchClaim.match_source")?,
             bindings: value
                 .bindings
@@ -889,7 +788,7 @@ mod tests {
         host.synchronous_module_loader = None;
         assert!(spec::HostBehavior::from_proto(host).is_err());
         let mut host = spec::HostBehavior::default().to_proto().unwrap();
-        host.loader_result_for_evaluating_module = Some(0);
+        host.loader_result_for_evaluating_module = Some(i32::MAX);
         assert!(spec::HostBehavior::from_proto(host).is_err());
         let mut premises = spec::ProgramPremises::default().to_proto().unwrap();
         premises.process_prototype_chain_accessors = None;
@@ -1087,9 +986,11 @@ mod tests {
             .expect("global access evidence");
         evidence.dependencies = None;
         assert!(crate::facts::GlobalAccessEvidence::from_proto(evidence).is_err());
-        for value in [0, i32::MAX] {
-            assert!(spec::SourceMatchIdentifierMode::from_proto(value).is_err());
-        }
+        assert_eq!(
+            spec::SourceMatchIdentifierMode::try_from(0).unwrap(),
+            spec::SourceMatchIdentifierMode::AlphaAll
+        );
+        assert!(spec::SourceMatchIdentifierMode::try_from(i32::MAX).is_err());
     }
 
     #[test]

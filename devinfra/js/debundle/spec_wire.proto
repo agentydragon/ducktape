@@ -43,28 +43,24 @@ message HostBehavior {
 }
 
 enum SynchronousModuleLoader {
-  SYNCHRONOUS_MODULE_LOADER_UNSPECIFIED = 0;
+  SYNCHRONOUS_MODULE_LOADER_PRESENT = 0;
   SYNCHRONOUS_MODULE_LOADER_NONE = 1;
-  SYNCHRONOUS_MODULE_LOADER_PRESENT = 2;
 }
 
 enum LoaderResultForEvaluatingModule {
-  LOADER_RESULT_FOR_EVALUATING_MODULE_UNSPECIFIED = 0;
-  LOADER_RESULT_FOR_EVALUATING_MODULE_THROWS = 1;
-  LOADER_RESULT_FOR_EVALUATING_MODULE_RETURNS_PARTIAL_NAMESPACE = 2;
-  LOADER_RESULT_FOR_EVALUATING_MODULE_UNKNOWN = 3;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_THROWS = 0;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_RETURNS_PARTIAL_NAMESPACE = 1;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_UNKNOWN = 2;
 }
 
 enum SynchronousLoadRunsAppCallbacks {
-  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNSPECIFIED = 0;
-  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_NEVER = 1;
-  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNKNOWN = 2;
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_NEVER = 0;
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNKNOWN = 1;
 }
 
 enum SynchronousLoadDrainsMicrotasks {
-  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNSPECIFIED = 0;
-  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_NEVER = 1;
-  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNKNOWN = 2;
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_NEVER = 0;
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNKNOWN = 1;
 }
 
 enum NodeBuiltinModule {
@@ -114,9 +110,10 @@ enum BunModule {
 }
 
 enum EmbeddedLoader {
-  EMBEDDED_LOADER_UNSPECIFIED = 0;
-  EMBEDDED_LOADER_TEXT = 1;
-  EMBEDDED_LOADER_NAPI = 2;
+  // The file's text, as a string.
+  EMBEDDED_LOADER_TEXT = 0;
+  // A native addon: the host runs only its initializer.
+  EMBEDDED_LOADER_NAPI = 1;
 }
 
 enum ReentryFreeOperation {
@@ -140,15 +137,17 @@ message ProgramPremises {
 }
 
 enum ProcessPrototypeChainAccessors {
-  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNSPECIFIED = 0;
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNKNOWN = 0;
+  // No code in the program defines or redefines an accessor property on
+  // `process` or any object in its prototype chain, or changes that chain.
   PROCESS_PROTOTYPE_CHAIN_ACCESSORS_NONE = 1;
-  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNKNOWN = 2;
 }
 
 enum NonLiteralLoaderCalls {
-  NON_LITERAL_LOADER_CALLS_UNSPECIFIED = 0;
+  NON_LITERAL_LOADER_CALLS_UNKNOWN = 0;
+  // Every such call fails or loads a native addon, and no native addon's
+  // initializer calls application JavaScript or a module loader.
   NON_LITERAL_LOADER_CALLS_NATIVE_ADDONS_ONLY = 1;
-  NON_LITERAL_LOADER_CALLS_UNKNOWN = 2;
 }
 
 message IntrinsicsNeverWritten {
@@ -164,8 +163,7 @@ message IntrinsicFamilies {
 }
 
 enum AllIntrinsicFamilies {
-  ALL_INTRINSIC_FAMILIES_UNSPECIFIED = 0;
-  ALL_INTRINSIC_FAMILIES_ALL = 1;
+  ALL_INTRINSIC_FAMILIES_ALL = 0;
 }
 
 enum IntrinsicFamily {
@@ -237,11 +235,35 @@ message PartialSwapSymbol {
 }
 
 enum PartialSwapKind {
-  PARTIAL_SWAP_KIND_UNSPECIFIED = 0;
-  PARTIAL_SWAP_KIND_MEMBER = 1;
-  PARTIAL_SWAP_KIND_NAMESPACE = 2;
-  PARTIAL_SWAP_KIND_DEFAULT = 3;
-  PARTIAL_SWAP_KIND_NAMED = 4;
+  // Per-symbol member-access rewrite (zod-style). Emits one
+  // `import * as <namespace> from "<package>"` per file that uses
+  // the package and rewrites each `<local_binding>(...)` reference
+  // to `<namespace>.<upstream_export>(...)`. Dots in `upstream_export`
+  // separate nested properties; each segment is emitted as a safe
+  // property access. In contrast, `kind: named` uses a literal export name.
+  PARTIAL_SWAP_KIND_MEMBER = 0;
+  // Whole-namespace import. The chunk's export is itself the
+  // package's namespace object (e.g. `import { a as React } from
+  // "../chunk"` where `a` is React's default-namespace export and
+  // callers use `React.useState(...)` etc.). Rewrites the import
+  // to `import * as <local_binding> from "<package>"`; leaves
+  // every `<local_binding>.xxx` reference alone.
+  PARTIAL_SWAP_KIND_NAMESPACE = 1;
+  // Default import. The chunk's export is the package's default
+  // (e.g. `import { aQ as z } from "../chunk"` where `z` is
+  // clsx's default function). Rewrites the import to
+  // `import <local_binding> from "<package>"`; leaves every
+  // `<local_binding>(...)` reference alone.
+  PARTIAL_SWAP_KIND_DEFAULT = 2;
+  // Named import. The chunk's export is a single named export of
+  // the package (e.g. `import { o as mobxObserver } from
+  // "../chunk"` where `o` is `mobx-react-lite`'s `observer`).
+  // Rewrites the import to
+  // `import { <upstream_export> as <local_binding> } from "<package>"`
+  // (or `import { <name> } from "<package>"` when the local
+  // binding name matches the upstream export); leaves every
+  // `<local_binding>(...)` reference alone.
+  PARTIAL_SWAP_KIND_NAMED = 3;
 }
 
 message BundledPartialSwapMark {
@@ -346,9 +368,11 @@ message SourceMatchClaim {
 }
 
 enum SourceMatchIdentifierMode {
-  SOURCE_MATCH_IDENTIFIER_MODE_UNSPECIFIED = 0;
+  // The public `source_match` identifier policy.
+  SOURCE_MATCH_IDENTIFIER_MODE_ALPHA_ALL = 0;
+  // Internal exact identifier constraints for native lowering / solver tests.
+  // Public `SourceMatch` deserialization rejects this spelling.
   SOURCE_MATCH_IDENTIFIER_MODE_EXACT = 1;
-  SOURCE_MATCH_IDENTIFIER_MODE_ALPHA_ALL = 2;
 }
 
 message SourceMatchBinding {
@@ -498,8 +522,7 @@ message CapturedValueContract {
 }
 
 enum CapturedValueKind {
-  CAPTURED_VALUE_KIND_UNSPECIFIED = 0;
-  CAPTURED_VALUE_KIND_ORDINARY_OBJECT = 1;
+  CAPTURED_VALUE_KIND_ORDINARY_OBJECT = 0;
 }
 
 message NativeOperationInputContract {
@@ -522,20 +545,23 @@ message ResolvedMemberSelector {
 }
 
 enum NativeOperationKind {
-  NATIVE_OPERATION_KIND_UNSPECIFIED = 0;
-  NATIVE_OPERATION_KIND_TEXT_ENCODER_EMPTY = 1;
-  NATIVE_OPERATION_KIND_MAP_EMPTY = 2;
-  NATIVE_OPERATION_KIND_WEAK_MAP_EMPTY = 3;
-  NATIVE_OPERATION_KIND_SET_EMPTY = 4;
-  NATIVE_OPERATION_KIND_SYMBOL = 5;
-  NATIVE_OPERATION_KIND_SYMBOL_FOR = 6;
-  NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 7;
-  NATIVE_OPERATION_KIND_SET_FROM_SET_SPREAD = 8;
-  NATIVE_OPERATION_KIND_OBJECT_OWN_DATA_FUNCTION_READ = 9;
-  NATIVE_OPERATION_KIND_SYMBOL_WELL_KNOWN_CLASS_KEYS = 10;
-  NATIVE_OPERATION_KIND_SYMBOL_PRIMITIVE_CLASS_KEYS = 11;
-  NATIVE_OPERATION_KIND_ARRAY_SPREAD_FROM_PRIMITIVE_ARRAYS = 12;
-  NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 13;
+  // Direct zero-argument construction through the original global data binding.
+  NATIVE_OPERATION_KIND_TEXT_ENCODER_EMPTY = 0;
+  NATIVE_OPERATION_KIND_MAP_EMPTY = 1;
+  NATIVE_OPERATION_KIND_WEAK_MAP_EMPTY = 2;
+  NATIVE_OPERATION_KIND_SET_EMPTY = 3;
+  NATIVE_OPERATION_KIND_SYMBOL = 4;
+  NATIVE_OPERATION_KIND_SYMBOL_FOR = 5;
+  NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 6;
+  NATIVE_OPERATION_KIND_SET_FROM_SET_SPREAD = 7;
+  // One static own-data function property read on the original Object constructor.
+  NATIVE_OPERATION_KIND_OBJECT_OWN_DATA_FUNCTION_READ = 8;
+  // Exact well-known Symbol data reads in a direct class initializer's method keys.
+  NATIVE_OPERATION_KIND_SYMBOL_WELL_KNOWN_CLASS_KEYS = 9;
+  // Exact class-key reads of own data properties with unknown primitive values.
+  NATIVE_OPERATION_KIND_SYMBOL_PRIMITIVE_CLASS_KEYS = 10;
+  NATIVE_OPERATION_KIND_ARRAY_SPREAD_FROM_PRIMITIVE_ARRAYS = 11;
+  NATIVE_OPERATION_KIND_PROMISE_RESOLVE = 12;
 }
 
 message InitializerCallEffectInputContract {
@@ -594,9 +620,8 @@ message NativeCallIdentityInputContract {
 }
 
 enum NativeCallIdentityKind {
-  NATIVE_CALL_IDENTITY_KIND_UNSPECIFIED = 0;
-  NATIVE_CALL_IDENTITY_KIND_OBJECT_FREEZE = 1;
-  NATIVE_CALL_IDENTITY_KIND_SET_EMPTY_PRIVATE_FIELD = 2;
+  NATIVE_CALL_IDENTITY_KIND_OBJECT_FREEZE = 0;
+  NATIVE_CALL_IDENTITY_KIND_SET_EMPTY_PRIVATE_FIELD = 1;
 }
 
 message ArgumentInputContract {

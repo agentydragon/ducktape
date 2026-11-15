@@ -1170,7 +1170,14 @@ mod protobuf_tests {
             closure.failures[0].reason = Some(kind);
             assert!(ExportReentryReport::from_proto(malformed).is_err());
         }
-        for value in [0, i32::MAX] {
+        assert_eq!(
+            LoaderRequestReportTarget::from_proto(proto::LoaderRequestReportTarget {
+                value: Some(proto::loader_request_report_target::Value::EmbeddedFile(0)),
+            })
+            .unwrap(),
+            LoaderRequestReportTarget::EmbeddedFile(spec::EmbeddedLoader::Text)
+        );
+        for value in [i32::MIN, i32::MAX] {
             assert!(
                 LoaderRequestReportTarget::from_proto(proto::LoaderRequestReportTarget {
                     value: Some(proto::loader_request_report_target::Value::EmbeddedFile(
