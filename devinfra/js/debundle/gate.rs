@@ -32,7 +32,7 @@ pub use assignment_analysis::{
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
-pub use esm_schedule::{EsmImportSchedule, ImportScheduleError};
+pub use esm_schedule::{EsmImportSchedule, ImportScheduleError, ScheduleObstruction};
 pub use realizability::{
     CrossRebindEdge, EffectConflictCell, EffectConflictDiagnosticRow, EffectConflictDisposition,
     EffectConflictRow, EffectCoverageReport, EffectOpacity, EffectRelocationAcceptanceScope,
