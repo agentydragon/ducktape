@@ -139,7 +139,7 @@
               <${Group}
                 ><${Badge} color="blue">Draft experiment<//
                 ><${Badge}
-                  color=${data.validation.required_checks_passed ? "green" : "yellow"}
+                  color=${data.validation.implementation_checks_passed ? "green" : "yellow"}
                   >${data.validation.summary}<//
                 ><//
               >
@@ -155,6 +155,9 @@
             <${Anchor} href="#pytest-fixtures">Fixture ownership<//
             ><${Anchor} href="#next">Next work<//>
             <${Anchor} href="#validation">Validation<//>
+          <//>
+          <${Alert} mt="lg" color="blue" title="Current decision">
+            ${data.decision}
           <//>
           <${Section} id="devel" title="What devel already has">
             ${paragraph("These mechanisms are part of the rebased base and are not claimed as new improvements in this PR.")}
@@ -188,19 +191,31 @@
                 >${paragraph("Failed or replaced leases are discarded before reuse. Impostor workloads, revocation and lifecycle resources stay owned by their individual cases.")}<//
               >
             <//>
-            ${paragraph("Use standard pytest yield fixtures, pytest-asyncio's module loop and AsyncExitStack. Devel's single cleanup primitive drains owned work through repeated raw Task.cancel() delivery and reports cancellation separately from cleanup failure. This branch uses it for private failure diagnostics and the shared Pod owner too; the experimental duplicate helper is removed.")}
+            ${paragraph("Use standard pytest yield fixtures, pytest-asyncio's module loop and AsyncExitStack. Devel already supplies the shared cancellation-safe cleanup drain and diagnostic failure precedence, including merged PR #16615. The native Pod pool uses those existing owners.")}
+            ${paragraph("Common pytest hooks now own tracing, harness parameters and scripted models. Suites needing App clients, model discovery or App-backed Sandbox ownership explicitly load app_fixtures. MCP operator-login fixtures also load explicitly. Shared Sandbox types and template names have no App client dependency; App lifecycle operations live in app_sandbox. The native suites therefore keep the shared reporting machinery without loading App code.")}
             ${paragraph("Exact UIDs, acknowledged-create registration before readiness, uncertain-create ownership, deletion order and private secondary-error notes remain domain responsibilities. A general pytest plugin cannot infer those contracts.")}
             <${Alert}
               color="blue"
-              title="Keep the existing runner and bounded concurrency"
+              title="Required acceptance and manual comparisons"
             >
-              The AnyIO pilot removed no real fixture workaround, so migration
-              is deferred. Ordinary sequential pytest did not improve feedback
-              in the reviewed screen, so CaseBatch stays. Neither result rules
-              out a differently grouped or sharded architecture. Earlier
-              measurements are linked as experiment records and are not
-              presented as measurements of this rebased head.
+              The required Pod target keeps CaseBatch. Manual ordinary-pytest
+              targets call the same scenario functions with the same marks.
+              Their two stacks group compatible shared-runner probes together
+              and keep the fresh-inventory storage check first. Promotion also
+              needs complete-feedback, compute and failure-isolation evidence.
+              Actual fixtures still use pytest-asyncio.
             <//>
+          <//>
+          <${Section} id="measurements" title="Current experiment evidence">
+            <${Rows}
+              headers=${["Screen", "Observed result", "What it establishes"]}
+              rows=${data.current_screens.map((row) => [
+                html`<${Anchor} href=${row.url}>${row.title}<//>`,
+                row.result,
+                row.scope,
+              ])}
+            />
+            ${paragraph("The selector screen replays exact historical changes to one source file at a time through the production bazel-diff algorithm and tag filtering. It does not replay each entire historical PR. Selected-test counts, action execution time and complete required feedback are different measures. Raw JUnit, traces and execution payloads remain private; reviewed summaries retain immutable source and invocation links.")}
           <//>
           <${Section}
             id="next"
