@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T08:55:56.288893+00:00",
+  "observed_at_utc": "2026-11-15T10:13:37.674387+00:00",
   "source": {
-    "base": "01e85fd9d267be8b955d4e3bf753f2051261043f",
-    "head": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
+    "base": "aaa39328e439c7ceda96588ef7bd9b0d55c0125e",
+    "head": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -91,42 +91,49 @@
       "label": "Manual ordinary-pytest comparisons",
       "path": "agentplane/system_tests/suites/test_pod_sequential_spike.py",
       "change": "One unsharded control and two ordinary sequential pytest targets invoke the same scenario functions. All are manual experiments. The latest implementation uses devel\u2019s Worker owner.",
-      "retained": "The required two-slot CaseBatch gate is unchanged; all 15 case identities and marks are preserved. Storage checks run first."
+      "retained": "All 15 case identities and marks are preserved; storage checks run first. Required CaseBatch now uses the measured four-worker bound."
+    },
+    {
+      "path": "agentplane/system_tests/suites/test_pod.py",
+      "label": "Four workers in one Pod stack",
+      "change": "Default the 15-case App Pod suite to four workers; an explicit test environment override supports identical-source experiments.",
+      "retained": "Same case bodies, Sessions, worker cleanup, exclusive storage ordering, Pod resources and outer executor request. Native-platform acceptance remains required separately."
     }
   ],
   "next_steps": [
     {
-      "title": "1. Measure whole-PR selection benefit",
+      "title": "1. Qualify the four-worker setting in the real gate",
+      "action": "Measure a fixed-source selected required graph at two and four workers under concurrent CI demand; separately validate current devel\u2019s larger, unsplit Pod inventory before proposing a small independent port.",
+      "acceptance": "Keep exact JUnit identities, resource requests/limits, cleanup and fresh Sessions; count complete required feedback, CPU, cold/warm conditions and failures. Do not generalize this two-run-per-setting warm action screen into a fleet reliability or 30% whole-PR claim."
+    },
+    {
+      "title": "2. Measure whole-PR selection benefit",
       "action": "Replay complete historical App-only PR base/head pairs plus Gateway/Controller positive controls through the actual production selector, then execute matched required-check arms for a representative change.",
       "acceptance": "Count complete required feedback, action CPU and failures. Selected-test reductions alone do not qualify this branch; App Pod may still dominate the critical path."
     },
     {
-      "title": "2. Remove deployment machinery from protocol contracts",
+      "title": "3. Remove deployment machinery from protocol contracts",
       "action": "Audit which App Pod/central cases require Kubernetes reconciliation, issuance, workload identity, volume replacement or actual suspension. Run pure Session, History, authorization and turn-state contracts against real service processes with a small database fixture; keep real deployment witnesses for every unique boundary. Spike the largest transferable critical-path group first.",
       "acceptance": "Proceed only with an assertion-to-owner inventory, a real failing regression control, and an end-to-end saving plausibly \u226530%. No blanket path filter and no fake replacement for a real deployment assertion."
     },
     {
-      "title": "3. Qualify a promising architecture",
+      "title": "4. Qualify a promising architecture",
       "action": "If the small screen clears the latency/compute threshold, run 30 matched PR pairs and \u2265100 fresh contract executions across three busy windows, warm/cold conditions and a four-PR burst. Include seeded/historical failures and scenario-isolation controls.",
       "acceptance": "\u226530% faster complete required feedback; CPU ratio \u22641.25; no lost unique assertion or unexplained failure signature. Record p90, reruns, source/image inputs and unknown metrics."
     }
   ],
   "validation": {
     "implementation_checks_passed": true,
-    "summary": "Fixture libraries passed",
-    "detail": "Five explicitly named libraries build at the displayed source head: the central-sampler scenarios, App fixtures, App Sandbox owner, neutral Sandbox definitions and MCP operator fixtures. The 15 remaining App Pod scenario bodies match devel exactly; required test_pod and devel cleanup diagnostics have no remaining diff. Current-head required CI results and verified synthetic-merge parents are recorded separately in the manifest. Selector and Pod performance screens retain their earlier measured source pins and do not estimate performance of the final Session-routing rebase.",
+    "summary": "Six action screens passed",
+    "detail": "All six fresh matched actions at benchmark source 49d109ff43eee720bfd84548330131bbbea0bd8d passed the same 15 JUnit cases, with identical input trees and executor properties. Each fixture completed cleanup. The displayed branch head changes the default to the tested four-worker setting and records the experiment; current-head required CI is recorded separately in the manifest. Existing scenario bodies, CaseBatch lifecycle machinery and resource settings are unchanged by this concurrency intervention.",
     "links": [
       {
-        "label": "Current-head explicit fixture/scenario library build: passed",
-        "url": "https://app.buildbuddy.io/invocation/90016cc8-cbd7-4490-bbdb-9ab313dca925"
+        "label": "Committed experiment record and reproduction commands",
+        "url": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
       },
       {
-        "label": "Current-head configured runfiles query",
-        "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d"
-      },
-      {
-        "label": "Current-head required CI results",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43696717580"
+        "label": "Permanent identical-source benchmark tag",
+        "url": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115"
       }
     ],
     "explicit_build": {
@@ -137,8 +144,8 @@
     }
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/3b2be3f70026b24765b8537ae56da290d2f398d5/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/blob/a83552c866b300225ad2f80bfa3d2bd5708b5280/agentplane/debug/2026_11_15_app_fixture_cut.md"
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/9d3d923b0686c6e2dea570206e3a5bc6c416e212/agentplane-test-architecture/index.html",
+    "experiments": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
   },
   "limits": [
     "No fleet latency/reliability window refreshed.",
@@ -147,30 +154,30 @@
     "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen.",
     "Selector and Pod timing screens predate the final Session-routing rebase; sources remain pinned. That integration is validated separately by current-head correctness checks."
   ],
-  "decision": "Keep the explicit App fixture boundary: the current selector screen removes unintended native tests from an App Client edit. Retain required CaseBatch. The current same-source two-shard layout was 6.9% slower and used 45.6% more TestRunner CPU; do not expand its qualification. No 30% complete-feedback saving is established.",
+  "decision": "Keep the explicit App fixture boundary and use four case workers in one shared App Pod stack. Six matched warm actions passed all 90 case executions: four workers averaged 238.8s versus 304.0s at two, with 6.4% less CPU and similar peak memory. The case envelope fell 23.6%; setup also varied, so the 21.4% action difference is not wholly causal. Complete required PR feedback has not been measured.",
   "current_screens": [
     {
-      "title": "Current configured runfiles",
+      "title": "Pinned configured runfiles",
       "url": "https://app.buildbuddy.io/invocation/4769ce31-d34a-4645-915a-8ffdea0c815d",
       "result": "Zero agentplane/app/ runfiles in native Pod, central services and Gateway crash. App Pod retains eight.",
-      "scope": "Verified at displayed current source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
+      "scope": "Verified at pinned prior source d747cd1c39829b1e1a8fafde84594b7abeabcb05. Earlier matched query measured 4/5/5 \u2192 0/0/0 and App Pod 8 \u2192 8. Action-input evidence, not elapsed-time savings."
     },
     {
-      "title": "Pinned production selector replay",
+      "title": "Earlier pinned production selector replay",
       "url": "https://app.buildbuddy.io/invocation/20d7de33-6b2e-4200-b873-2ddc91b8bc18",
       "result": "App Client source edit: 79 \u2192 15 ordinary tests. Gateway 45 \u2192 45; Controller 20 \u2192 20. All 42 selection commands completed successfully.",
       "scope": "Control 5dc6d1a567cb9f21db696a9ed26bf36e78c7d8f9 versus candidate 6e6ad85a4c9c28a86fed31d83a6ea760677c171b. Exact historical single-file before/after blobs; no full historical PR replay or frequency/latency estimate. These measured sources precede the final Session-routing rebase."
     },
     {
-      "title": "Pinned same-source ordinary-pytest screen",
+      "title": "Earlier pinned same-source ordinary-pytest screen",
       "url": "https://app.buildbuddy.io/invocation/63ebfa7e-c7f1-472f-960e-f46d5fcaee52",
       "result": "Control 293.6s; two-shard maximum 313.9s (+6.9%). TestRunner CPU 719 \u2192 1,046 CPU-s (+45.6%). Bazel elapsed 323.1 \u2192 366.7s (+13.5%).",
       "scope": "Both arms use 6e6ad85a4c9c28a86fed31d83a6ea760677c171b and a warm clean baseline. Identical 15-case inventories, all passed, no skips or extra physical test attempts. One pair; action screen only. This allocation fails the speed and compute screen. This pair predates the displayed final rebase."
     },
     {
-      "title": "Pinned required matched control",
+      "title": "Earlier pinned required matched control",
       "url": "https://app.buildbuddy.io/invocation/2f92a6ab-7b18-479f-ac13-8098bedca6cc",
-      "result": "Required CaseBatch keeps one stack and two worker scopes. The two ordinary shards duplicated stack setup (55/53s) and cleanup (28/30s).",
+      "result": "That pinned control used one stack and two worker scopes. The two ordinary shards duplicated stack setup (55/53s) and cleanup (28/30s).",
       "scope": "Observed queue waits were ~0.06s per shard. Nested phase times overlap; do not add them to wall time. No cold-start, p90 or reliability-rate result."
     }
   ],
@@ -410,6 +417,436 @@
       "One warm pair at one pinned source; no p90 or complete-required-feedback estimate.",
       "The exact execution records show one execution per target; internal RBE retries not independently audited.",
       "CPU is observed TestRunner CPU, not total complete-CI compute."
+    ]
+  },
+  "pod_concurrency": {
+    "schema_version": 1,
+    "reviewed_at_utc": "2026-11-15T10:13:37.635525+00:00",
+    "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+    "source_base": "aaa39328e439c7ceda96588ef7bd9b0d55c0125e",
+    "source_tag": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115",
+    "target": "//agentplane/system_tests/suites:test_pod",
+    "order": ["c2-a", "c3-a", "c4-a", "c4-b", "c3-b", "c2-b"],
+    "window_start_utc": "2026-11-15T09:37:10.437289Z",
+    "window_end_utc": "2026-11-15T10:09:30.670605Z",
+    "input_root_digest": {
+      "hash": "e096325647f5e93c7fa963f8c942c68d8a9f1e3fdfb52503db62ad9f0c040caf",
+      "sizeBytes": "165"
+    },
+    "same_input_roots": true,
+    "same_executor_properties": true,
+    "commands_differ_only_by_concurrency_env": true,
+    "same_junit_identities": true,
+    "distinct_fixtures_across_runs": [
+      "namespace_uid",
+      "postgres_pod_uid",
+      "root_certificate_uid",
+      "root_secret_uid",
+      "collector_namespace_uid"
+    ],
+    "case_inventory": [
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_a_policy_granted_after_the_sandbox_is_running_takes_effect]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_a_preset_launches_an_initialized_editable_codex_thread]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_an_agent_messages_another_which_reads_and_acknowledges_it]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_an_identity_creates_a_native_session_only_with_an_explicit_binding_grant]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_an_unknown_history_session_is_not_found]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_codex_standing_instructions_after_suspend_and_compact]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_fresh_workspace_storage_survives_replacement]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_pod_mtls_session_survives_replacement_and_keeps_history]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_sandbox_cli_reaches_the_dispatcher_with_its_workload_svid]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_the_model_call_itself_goes_through_the_proxy]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_the_standing_instruction_reaches_the_model_and_only_in_its_own_session]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn]",
+      "agentplane.system_tests.suites.test_pod::test_pod_scenarios[test_two_harness_threads_keep_their_context_after_sandbox_suspend_resume]"
+    ],
+    "indexed_new_actions": 6,
+    "passing_case_executions": 90,
+    "executor_properties": {
+      "EstimatedComputeUnits": "4",
+      "EstimatedFreeDiskBytes": "50GB",
+      "container-image": "docker://ghcr.io/agentydragon/rbe-container-image@sha256:c73af98850208e2a898120f9992f4cb8c320c488bc3f3c8607cc06ace96be3c5",
+      "workload-isolation-type": "firecracker"
+    },
+    "runs": [
+      {
+        "tag": "c2-a",
+        "slots": 2,
+        "invocation": "4a2fe3e6-2cc4-472c-8d52-35bc1dd976d9",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/ca2e9a66-8cc5-4dbe-9cab-fcaecd5b40ed/blobs/8a38c7c54abf7c84def9bb6c137b1a2cdd1757087ab841c2ed754d1d713eee64/1218",
+        "action_digest": {
+          "hash": "8a38c7c54abf7c84def9bb6c137b1a2cdd1757087ab841c2ed754d1d713eee64",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T09:37:10.437289Z",
+        "execution_completed_at": "2026-11-15T09:42:22.813571Z",
+        "wall_seconds": 312.37628197669983,
+        "case_envelope_seconds": 211.68497514724731,
+        "setup_seconds": 49.6419517993927,
+        "cleanup_seconds": 29.932440042495728,
+        "cpu_seconds": 756.33924,
+        "peak_memory_bytes": 5282271232,
+        "queue_seconds": 0.05858206748962402,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 2,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 25,
+          "node_peak_working_set_bytes": 5154865152,
+          "node_min_available_bytes": 5042077696,
+          "peak_summed_pod_working_set_bytes": 743297024,
+          "sampled_peak_runtime_pods": 2
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      },
+      {
+        "tag": "c3-a",
+        "slots": 3,
+        "invocation": "ca8e5bfa-0624-47a8-9500-de75cc6a2cad",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/7ce6a416-5ace-4e50-adde-7451bbea91ce/blobs/b5f9a1589ddfa421abb76af27d4b0248b5ba335c8f0ce4178c75357b6b84771d/1218",
+        "action_digest": {
+          "hash": "b5f9a1589ddfa421abb76af27d4b0248b5ba335c8f0ce4178c75357b6b84771d",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T09:43:26.372565Z",
+        "execution_completed_at": "2026-11-15T09:47:31.557294Z",
+        "wall_seconds": 245.1847288608551,
+        "case_envelope_seconds": 167.43393802642822,
+        "setup_seconds": 26.6199209690094,
+        "cleanup_seconds": 30.134074926376343,
+        "cpu_seconds": 688.200884,
+        "peak_memory_bytes": 5333377024,
+        "queue_seconds": 0.06151390075683594,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 3,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 19,
+          "node_peak_working_set_bytes": 5096382464,
+          "node_min_available_bytes": 5100560384,
+          "peak_summed_pod_working_set_bytes": 575070208,
+          "sampled_peak_runtime_pods": 3
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      },
+      {
+        "tag": "c4-a",
+        "slots": 4,
+        "invocation": "a615d9b0-5cc9-4402-ae93-28c001c9f43c",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/26fe0b30-9bff-4454-a190-68384b076bed/blobs/4b4ad9b258cf98be5d5a48cce92d8c375c00e9874dc1ed476e2bcbec5d33c366/1218",
+        "action_digest": {
+          "hash": "4b4ad9b258cf98be5d5a48cce92d8c375c00e9874dc1ed476e2bcbec5d33c366",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T09:48:51.194025Z",
+        "execution_completed_at": "2026-11-15T09:52:49.932588Z",
+        "wall_seconds": 238.7385630607605,
+        "case_envelope_seconds": 160.42045092582703,
+        "setup_seconds": 27.15022611618042,
+        "cleanup_seconds": 30.11366105079651,
+        "cpu_seconds": 676.439213,
+        "peak_memory_bytes": 5220028416,
+        "queue_seconds": 0.060014963150024414,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 4,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 18,
+          "node_peak_working_set_bytes": 4815945728,
+          "node_min_available_bytes": 5380997120,
+          "peak_summed_pod_working_set_bytes": 571854848,
+          "sampled_peak_runtime_pods": 5
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      },
+      {
+        "tag": "c4-b",
+        "slots": 4,
+        "invocation": "077f1c1c-4399-4abe-b8bf-ef07df4148f3",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/53ca13dd-fa4d-4241-bef8-c6fa89e71388/blobs/4b4ad9b258cf98be5d5a48cce92d8c375c00e9874dc1ed476e2bcbec5d33c366/1218",
+        "action_digest": {
+          "hash": "4b4ad9b258cf98be5d5a48cce92d8c375c00e9874dc1ed476e2bcbec5d33c366",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T09:54:01.557820Z",
+        "execution_completed_at": "2026-11-15T09:58:00.498529Z",
+        "wall_seconds": 238.94070887565613,
+        "case_envelope_seconds": 157.50290489196777,
+        "setup_seconds": 27.999577045440674,
+        "cleanup_seconds": 31.530912160873413,
+        "cpu_seconds": 703.457034,
+        "peak_memory_bytes": 5228056576,
+        "queue_seconds": 0.06153297424316406,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 4,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 18,
+          "node_peak_working_set_bytes": 5036601344,
+          "node_min_available_bytes": 5160341504,
+          "peak_summed_pod_working_set_bytes": 572489728,
+          "sampled_peak_runtime_pods": 4
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      },
+      {
+        "tag": "c3-b",
+        "slots": 3,
+        "invocation": "7a8c7d2b-6690-4696-a25c-0b74f2209e23",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/d2f5ae82-82e9-4c5f-bd43-8213a2cbf686/blobs/b5f9a1589ddfa421abb76af27d4b0248b5ba335c8f0ce4178c75357b6b84771d/1218",
+        "action_digest": {
+          "hash": "b5f9a1589ddfa421abb76af27d4b0248b5ba335c8f0ce4178c75357b6b84771d",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T09:58:57.771294Z",
+        "execution_completed_at": "2026-11-15T10:03:34.440279Z",
+        "wall_seconds": 276.66898488998413,
+        "case_envelope_seconds": 172.64196801185608,
+        "setup_seconds": 44.70660710334778,
+        "cleanup_seconds": 31.891281127929688,
+        "cpu_seconds": 766.594632,
+        "peak_memory_bytes": 5361160192,
+        "queue_seconds": 0.06178402900695801,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 3,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 21,
+          "node_peak_working_set_bytes": 4940161024,
+          "node_min_available_bytes": 5256781824,
+          "peak_summed_pod_working_set_bytes": 607133696,
+          "sampled_peak_runtime_pods": 3
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      },
+      {
+        "tag": "c2-b",
+        "slots": 2,
+        "invocation": "4ed32eb8-6655-422a-8c95-a07558581322",
+        "source_head": "49d109ff43eee720bfd84548330131bbbea0bd8d",
+        "execution_id": "/uploads/e6510974-c12f-4a67-a6b8-70584a16c163/blobs/8a38c7c54abf7c84def9bb6c137b1a2cdd1757087ab841c2ed754d1d713eee64/1218",
+        "action_digest": {
+          "hash": "8a38c7c54abf7c84def9bb6c137b1a2cdd1757087ab841c2ed754d1d713eee64",
+          "sizeBytes": "1218"
+        },
+        "execution_started_at": "2026-11-15T10:04:35.123737Z",
+        "execution_completed_at": "2026-11-15T10:09:30.670605Z",
+        "wall_seconds": 295.5468678474426,
+        "case_envelope_seconds": 204.2129578590393,
+        "setup_seconds": 38.99805808067322,
+        "cleanup_seconds": 30.725209951400757,
+        "cpu_seconds": 717.796597,
+        "peak_memory_bytes": 5312835584,
+        "queue_seconds": 0.059654951095581055,
+        "case_count": 15,
+        "failures": 0,
+        "errors": 0,
+        "skips": 0,
+        "baseline": "warm",
+        "cleanup": "complete",
+        "indexed_new_test_executions": 1,
+        "indexed_junit_attempts": 1,
+        "observed_peak_cases": 2,
+        "node_allocatable_cpu": 7,
+        "node_allocatable_memory_bytes": 10196942848,
+        "memory": {
+          "sample_count": 24,
+          "node_peak_working_set_bytes": 5121814528,
+          "node_min_available_bytes": 5075128320,
+          "peak_summed_pod_working_set_bytes": 559415296,
+          "sampled_peak_runtime_pods": 3
+        },
+        "diagnostic_reason_counts": {
+          "before-import": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          },
+          "final": {
+            "FailedScheduling": 0,
+            "OOMKilled": 0,
+            "Evicted": 0
+          }
+        }
+      }
+    ],
+    "rows": [
+      {
+        "slots": 2,
+        "runs": 2,
+        "passes": 2,
+        "mean_action_seconds": 303.9615749120712,
+        "mean_case_envelope_seconds": 207.9489665031433,
+        "mean_cpu_seconds": 737.0679185,
+        "mean_setup_seconds": 44.32000494003296,
+        "max_action_memory_gib": 4.947963714599609,
+        "action_seconds_range": [295.5468678474426, 312.37628197669983],
+        "invocations": [
+          "4a2fe3e6-2cc4-472c-8d52-35bc1dd976d9",
+          "4ed32eb8-6655-422a-8c95-a07558581322"
+        ]
+      },
+      {
+        "slots": 3,
+        "runs": 2,
+        "passes": 2,
+        "mean_action_seconds": 260.9268568754196,
+        "mean_case_envelope_seconds": 170.03795301914215,
+        "mean_cpu_seconds": 727.3977580000001,
+        "mean_setup_seconds": 35.66326403617859,
+        "max_action_memory_gib": 4.992969512939453,
+        "action_seconds_range": [245.1847288608551, 276.66898488998413],
+        "invocations": [
+          "ca8e5bfa-0624-47a8-9500-de75cc6a2cad",
+          "7a8c7d2b-6690-4696-a25c-0b74f2209e23"
+        ]
+      },
+      {
+        "slots": 4,
+        "runs": 2,
+        "passes": 2,
+        "mean_action_seconds": 238.8396359682083,
+        "mean_case_envelope_seconds": 158.9616779088974,
+        "mean_cpu_seconds": 689.9481235000001,
+        "mean_setup_seconds": 27.574901580810547,
+        "max_action_memory_gib": 4.869007110595703,
+        "action_seconds_range": [238.7385630607605, 238.94070887565613],
+        "invocations": [
+          "a615d9b0-5cc9-4402-ae93-28c001c9f43c",
+          "077f1c1c-4399-4abe-b8bf-ef07df4148f3"
+        ]
+      }
+    ],
+    "four_vs_two": {
+      "mean_action_seconds": {
+        "absolute_reduction": 65.12193894386292,
+        "relative_reduction": 0.21424398449936022
+      },
+      "mean_case_envelope_seconds": {
+        "absolute_reduction": 48.98728859424591,
+        "relative_reduction": 0.23557360932354254
+      },
+      "mean_cpu_seconds": {
+        "absolute_reduction": 47.119794999999954,
+        "relative_reduction": 0.06392870157188901
+      }
+    },
+    "decision": "Default this branch's 15-case App Pod suite to four workers; keep Pod requests, memory limits, outer executor sizing and case ownership unchanged.",
+    "scope": "Two uncached actions per setting, ordered 2/3/4 then 4/3/2. All 90 JUnit case executions passed. Identical input trees and executor properties; Commands differ only by the case-limit environment variable. Infrastructure was warm, fixtures were distinct, and cleanup completed. This is an action screen, not complete PR feedback or a fleet failure-rate estimate. Control setup averaged 17 seconds slower than four-worker setup, so the full 21.4% action difference cannot all be attributed to concurrency; the case envelope fell 23.6%.",
+    "memory_finding": "No memory setting changed. Maximum whole-action memory was 4.95 GiB at two workers, 4.99 at three and 4.87 at four. Kubelet samples retained at least about 4.70 GiB available and sampled up to five concurrent runtime Pods in the four-worker arm. Before-import/final snapshots contain no FailedScheduling, OOMKilled or eviction reasons. Ten-second sampling and final snapshots can miss transient events.",
+    "limitations": [
+      "Small warm-only action cohort",
+      "Complete required feedback not measured",
+      "Current devel has a larger unsplit Pod inventory",
+      "No cold-start, p90 or fleet reliability claim",
+      "Internal executor retries are not fully observable from indexed execution/JUnit records",
+      "Snapshot and ten-second sampling evidence is not exhaustive"
+    ],
+    "followups": [
+      "Validate the larger current devel Pod inventory before an independent port",
+      "Measure the chosen setting in the selected required graph under concurrent demand",
+      "Collect repeated warm/cold and failure observations before a reliability-rate claim"
     ]
   }
 }
