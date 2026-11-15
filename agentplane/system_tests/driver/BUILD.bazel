@@ -892,3 +892,22 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_native_sandbox",
+    srcs = ["test_native_sandbox.py"],
+    deps = [
+        ":cluster",
+        ":environment_transport",
+        ":identity",
+        ":native_platform",
+        ":native_sandbox",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/proto:identity_pb2",
+        "//agentplane/system_tests:conftest",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
