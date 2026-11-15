@@ -121,13 +121,10 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: identitySandboxUID}
 	inventory := &authorityInventory{sandbox: snapshot, identity: named}
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
-	client := authorityClient(t, store, inventory, tokenReviewStub{
-		"owner-account": {account: caller, uid: "owner-uid"},
-		"owner-pod":     {account: caller, uid: "owner-uid", pod: true},
-	}, hub)
+	client := authorityClients(t, store, inventory, hub).component
 	open := func() string {
 		sessionID := uuid.NewString()
-		if _, err := client.CreateSession(authorityContext(t, "owner-pod"), &dispatcherpb.CreateSessionRequest{
+		if _, err := client.CreateSession(authoritySVIDContext(t), &dispatcherpb.CreateSessionRequest{
 			SessionId: sessionID, Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: snapshot.Name, Uid: snapshot.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}},
 		}); err != nil {
 			t.Fatalf("CreateSession: %v", err)
@@ -139,7 +136,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	if err != nil || !proto.Equal(stored.ExecutionIdentity, named) {
 		t.Fatalf("stored Session executes as %v (%v), want %v", stored.ExecutionIdentity, err, named)
 	}
-	read, err := client.GetSession(authorityContext(t, "owner-pod"), &dispatcherpb.GetSessionRequest{SessionId: placed})
+	read, err := client.GetSession(authoritySVIDContext(t), &dispatcherpb.GetSessionRequest{SessionId: placed})
 	if err != nil || !proto.Equal(read.GetSession().GetIdentity(), named) {
 		t.Fatalf("GetSession reads the Session as executing as %v (%v), want %v", read.GetSession().GetIdentity(), err, named)
 	}
