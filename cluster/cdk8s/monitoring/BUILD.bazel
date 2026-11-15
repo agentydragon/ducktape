@@ -207,6 +207,9 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/monitoring/dashboards:cpap_gateway_disk",
+        "//cluster/cdk8s/monitoring/dashboards:flux_cluster",
+        "//cluster/cdk8s/monitoring/dashboards:rugged_power",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/grafana_operator:grafana",
         "//cluster/cdk8s/providers/grafana_operator:grafana_dashboard",
@@ -215,6 +218,7 @@ py_library(
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
+        "@pypi//grafana_foundation_sdk",
     ],
 )
 

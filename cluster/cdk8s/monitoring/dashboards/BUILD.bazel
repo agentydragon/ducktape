@@ -16,11 +16,7 @@ exports_files(
 
 filegroup(
     name = "dashboards",
-    srcs = glob(["*.json"]) + [
-        ":cpap-gateway-disk.json",
-        ":flux-cluster.json",
-        ":rugged-power.json",
-    ],
+    srcs = glob(["*.json"]),
     visibility = [
         "//cluster/cdk8s/monitoring:__pkg__",
         "//grafana/skill:__pkg__",
@@ -36,6 +32,7 @@ py_library(
 py_library(
     name = "cpap_gateway_disk",
     srcs = ["cpap_gateway_disk.py"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":foundation",
         "@pypi//grafana_foundation_sdk",
@@ -50,6 +47,7 @@ foundation_dashboard(
 py_library(
     name = "flux_cluster",
     srcs = ["flux_cluster.py"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":foundation",
         "@pypi//grafana_foundation_sdk",
@@ -64,6 +62,7 @@ foundation_dashboard(
 py_library(
     name = "rugged_power",
     srcs = ["rugged_power.py"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":foundation",
         "@pypi//grafana_foundation_sdk",

@@ -21,7 +21,7 @@ from grafana_grafanadashboard_crds.org.integreatly.grafana import (
 
 class GrafanaDashboard(_GrafanaDashboard):
     """`None` leaves a `GrafanaDashboardSpec` field unset, so grafana-operator's own
-    default applies. Fields this repo doesn't build yet (`json`, `url`, `plugins`, ...)
+    default applies. Fields this repo doesn't build yet (`url`, `plugins`, ...)
     have no keyword here -- add one the day a caller needs it.
     """
 
@@ -35,6 +35,7 @@ class GrafanaDashboard(_GrafanaDashboard):
         folder: str | None = None,
         datasources: Sequence[GrafanaDashboardSpecDatasources] | None = None,
         config_map_ref: GrafanaDashboardSpecConfigMapRef | None = None,
+        json: str | None = None,
         grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
     ) -> None:
         super().__init__(
@@ -46,6 +47,7 @@ class GrafanaDashboard(_GrafanaDashboard):
                 folder=folder,
                 datasources=list(datasources) if datasources is not None else None,
                 config_map_ref=config_map_ref,
+                json=json,
                 grafana_com=grafana_com,
             ),
         )
