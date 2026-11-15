@@ -1,128 +1,27 @@
-package main
+package cli
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
-	"os"
-	"os/signal"
-	"strconv"
-	"sync/atomic"
-	"syscall"
-	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/actions"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/environments"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/notifications"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/sessions"
 	"github.com/spf13/cobra"
 )
 
-const defaultTimeout = 30 * time.Second
-
-// app is one invocation: its environment, streams and the flags every command shares.
-type app struct {
-	getenv         func(string) string
-	stdin          io.Reader
-	stdout, stderr io.Writer
-
-	asJSON  bool
-	timeout seconds
-	// ctx ends when SIGINT or SIGTERM arrives. Commands run under a deadline derived from it.
-	ctx context.Context
-}
+type app struct{ *invocation.Invocation }
 
 func newApp(getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) *app {
-	return &app{getenv: getenv, stdin: stdin, stdout: stdout, stderr: stderr, timeout: seconds{defaultTimeout}}
+	return &app{Invocation: invocation.New(getenv, stdin, stdout, stderr)}
 }
 
-// execute runs one command line and returns the process exit status.
-func (a *app) execute(args []string) int {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	var received atomic.Int32
-	go func() {
-		select {
-		case caught := <-signals:
-			received.Store(int32(caught.(syscall.Signal)))
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-	a.ctx = ctx
-
-	root := a.root()
-	root.SetArgs(append([]string{}, args...)) // cobra reads os.Args when given nil
-	err := root.ExecuteContext(ctx)
-
-	var done outcome
-	var failed *failure
-	switch {
-	case err == nil:
-		return 0
-	case errors.Is(err, errInterrupted):
-		fmt.Fprintln(a.stderr, "interrupted; request outcome may be unknown")
-		return 128 + int(received.Load())
-	case errors.As(err, &done):
-		return int(done)
-	case errors.As(err, &failed):
-	default:
-		// Cobra's own: an unknown flag or command, or the wrong number of arguments.
-		failed = usageFailure("%v", err)
-	}
-	a.report(failed)
-	return failed.exit
+// Execute runs one command line with the supplied environment and streams.
+func Execute(args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return newApp(getenv, stdin, stdout, stderr).execute(args)
 }
-
-// report writes the error envelope on stderr: JSON under --json, one line otherwise.
-func (a *app) report(f *failure) {
-	if a.asJSON {
-		encoder := json.NewEncoder(a.stderr)
-		encoder.SetEscapeHTML(false)
-		_ = encoder.Encode(envelope{Error: f.apiError})
-		return
-	}
-	line := fmt.Sprintf("error: %s (%s", f.Code, f.Source)
-	if f.HTTPStatus != nil {
-		line += fmt.Sprintf(", http %d", *f.HTTPStatus)
-	}
-	if f.Reason != nil {
-		line += ", reason " + *f.Reason
-	}
-	line += "): " + f.Message
-	if f.RetryAfterSeconds != nil {
-		line += fmt.Sprintf(" (retry after %ds)", *f.RetryAfterSeconds)
-	}
-	fmt.Fprintln(a.stderr, line)
-}
-
-// deadline bounds one command by --timeout; 0 sets no deadline.
-func (a *app) deadline() (context.Context, context.CancelFunc) {
-	if a.timeout.d == 0 {
-		return context.WithCancel(a.ctx)
-	}
-	return context.WithTimeout(a.ctx, a.timeout.d)
-}
-
-// seconds is a duration flag that reads a bare number as seconds ("30", "2.5") or a Go duration ("30s").
-type seconds struct{ d time.Duration }
-
-func (s *seconds) Set(value string) error {
-	if number, err := strconv.ParseFloat(value, 64); err == nil {
-		s.d = time.Duration(number * float64(time.Second))
-	} else if s.d, err = time.ParseDuration(value); err != nil {
-		return errors.New("want a number of seconds or a duration such as 30s")
-	}
-	if s.d < 0 {
-		return errors.New("must not be negative")
-	}
-	return nil
-}
-
-func (s *seconds) String() string { return s.d.String() }
-
-func (s *seconds) Type() string { return "seconds" }
+func (a *app) execute(args []string) int { return a.Execute(a.root(), args) }
 
 const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
 and observe-input. Notifications and egress rules use gRPC through local sidecar routes.
@@ -164,25 +63,12 @@ func (a *app) root() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
-		RunE:          requireSubcommand,
+		RunE:          invocation.RequireSubcommand,
 	}
-	root.SetOut(a.stdout)
-	root.SetErr(a.stderr)
+	root.SetOut(a.Stdout())
+	root.SetErr(a.Stderr())
 	root.CompletionOptions.DisableDefaultCmd = true
-	root.PersistentFlags().BoolVar(&a.asJSON, "json", false, "print the service's JSON unmodified; lists as JSON Lines")
-	root.PersistentFlags().Var(&a.timeout, "timeout", "deadline of the whole call in seconds; 0 sets none and waiting commands read once")
-	root.AddCommand(a.actionsCommand(), a.sessionsCommand(), a.notificationsCommand(), a.egressCommand(), a.environmentsCommand())
+	a.BindFlags(root)
+	root.AddCommand(actions.Command(a.Invocation), sessions.Command(a.Invocation), notifications.Command(a.Invocation), a.egressCommand(), environments.Command(a.Invocation))
 	return root
-}
-
-func requireSubcommand(cmd *cobra.Command, _ []string) error {
-	fmt.Fprint(cmd.ErrOrStderr(), cmd.UsageString())
-	return usageFailure("%s needs a command", cmd.CommandPath())
-}
-
-// group is a command that only holds subcommands.
-func group(use, short, long string, children ...*cobra.Command) *cobra.Command {
-	command := &cobra.Command{Use: use, Short: short, Long: long, Args: cobra.NoArgs, RunE: requireSubcommand}
-	command.AddCommand(children...)
-	return command
 }

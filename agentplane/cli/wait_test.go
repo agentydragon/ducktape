@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -96,7 +97,7 @@ func TestWaitExits10AtTheDeadlineWithTheCurrentReceipt(t *testing.T) {
 	}()
 	<-started
 	got := <-done
-	if receipt := decodeObject(t, got.stdout); got.code != exitDeadline || receipt["state"] != "ACTION_STATE_RUNNING" {
+	if receipt := decodeObject(t, got.stdout); got.code != invocation.ExitDeadline || receipt["state"] != "ACTION_STATE_RUNNING" {
 		t.Errorf("exit %d, stdout %q; want exit 10 and the current receipt", got.code, got.stdout)
 	}
 }
@@ -107,7 +108,7 @@ func TestWaitWithTimeoutZeroReadsOnce(t *testing.T) {
 		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
 	}
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0", "--json")
-	if got := decodeObject(t, stdout); code != exitDeadline || got["state"] != "ACTION_STATE_RUNNING" || fake.count("GetActionRequest") != 1 || fake.count("WatchActionRequest") != 0 {
+	if got := decodeObject(t, stdout); code != invocation.ExitDeadline || got["state"] != "ACTION_STATE_RUNNING" || fake.count("GetActionRequest") != 1 || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v; want one GetActionRequest and no watch", code, stdout, fake.callLog())
 	}
 }
@@ -139,7 +140,7 @@ func TestWaitByKeyResolvesTheIDBeforeSessionAWatch(t *testing.T) {
 
 func TestWaitByUnknownKeyExitsNotFound(t *testing.T) {
 	fake, endpoint := newActionFake(t)
-	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", "--key", "nobody"); code != exitNotFound || stdout != "" || fake.count("WatchActionRequest") != 0 {
+	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", "--key", "nobody"); code != invocation.ExitNotFound || stdout != "" || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v; want not found before a watch", code, stdout, fake.callLog())
 	}
 }
@@ -182,7 +183,7 @@ func TestWaitThatLosesTheServiceExits3WithTheLastReceipt(t *testing.T) {
 		return st.Err()
 	}
 	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0.2", "--json")
-	if got := decodeObject(t, stdout); code != exitTransient || got["state"] != "ACTION_STATE_RUNNING" || errorOf(t, stderr).Code != "UNAVAILABLE" {
+	if got := decodeObject(t, stdout); code != invocation.ExitTransient || got["state"] != "ACTION_STATE_RUNNING" || errorOf(t, stderr).Code != "UNAVAILABLE" {
 		t.Errorf("exit %d, stdout %q, stderr %q; want exit 3 with the running receipt", code, stdout, stderr)
 	}
 }
@@ -194,7 +195,7 @@ func TestWaitThatNeverReadsAReceiptExitsTransientWithoutOutput(t *testing.T) {
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0.2")
-	if code != exitTransient || stdout != "" || fake.count("WatchActionRequest") != 0 {
+	if code != invocation.ExitTransient || stdout != "" || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v; want no receipt and no watch", code, stdout, fake.callLog())
 	}
 }
@@ -205,7 +206,7 @@ func TestWaitDoesNotRetryARefusal(t *testing.T) {
 		return nil, status.Error(codes.PermissionDenied, "test refusal")
 	}
 	code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
-	if code != exitRefused || fake.count("GetActionRequest") != 1 || fake.count("WatchActionRequest") != 0 {
+	if code != invocation.ExitRefused || fake.count("GetActionRequest") != 1 || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, calls %+v; want a final refusal after one read", code, fake.callLog())
 	}
 }
@@ -216,7 +217,7 @@ func TestWaitRefusesAStateItDoesNotKnow(t *testing.T) {
 		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState(99))}, nil
 	}
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
-	if code != exitRefused || stdout != "" || fake.count("WatchActionRequest") != 0 {
+	if code != invocation.ExitRefused || stdout != "" || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v; want an immediate unusable response", code, stdout, fake.callLog())
 	}
 }

@@ -1,4 +1,4 @@
-package main
+package environments
 
 import (
 	"context"
@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
@@ -24,22 +24,22 @@ type environmentConnection struct {
 	client     environmentpb.EnvironmentServiceClient
 }
 
-func (a *app) connectEnvironment() (*environmentConnection, error) {
+func (a *commands) connectEnvironment() (*environmentConnection, error) {
 	group := "SESSIONS"
-	if a.getenv("AGENTPLANE_ENVIRONMENTS_URL") != "" {
+	if a.Getenv("AGENTPLANE_ENVIRONMENTS_URL") != "" {
 		group = "ENVIRONMENTS"
-	} else if a.getenv("AGENTPLANE_ENVIRONMENTS_CREDENTIAL") != "" {
-		return nil, usageFailure("AGENTPLANE_ENVIRONMENTS_URL not set")
+	} else if a.Getenv("AGENTPLANE_ENVIRONMENTS_CREDENTIAL") != "" {
+		return nil, invocation.UsageFailure("AGENTPLANE_ENVIRONMENTS_URL not set")
 	}
-	connection, err := a.connectGRPC(group)
+	connection, err := a.ConnectGRPC(group)
 	if err != nil {
 		return nil, err
 	}
 	return &environmentConnection{connection: connection, client: environmentpb.NewEnvironmentServiceClient(connection)}, nil
 }
 
-func (a *app) environmentsCommand() *cobra.Command {
-	return group("environments", "Discover existing environments this account may use",
+func (a *commands) environmentsCommand() *cobra.Command {
+	return invocation.Group("environments", "Discover existing environments this account may use",
 		`Lists and refreshes exact Sandbox identities (namespace/name/UID) for the authenticated caller.
 Uses AGENTPLANE_ENVIRONMENTS_URL and its optional AGENTPLANE_ENVIRONMENTS_CREDENTIAL bearer when
 configured. Otherwise uses AGENTPLANE_SESSIONS_URL and its optional AGENTPLANE_SESSIONS_CREDENTIAL.
@@ -48,7 +48,7 @@ current backend policy.`,
 		a.listEnvironmentsCommand(), a.getEnvironmentCommand(), a.resumeEnvironmentCommand())
 }
 
-func (a *app) resumeEnvironmentCommand() *cobra.Command {
+func (a *commands) resumeEnvironmentCommand() *cobra.Command {
 	var resumeToken string
 	command := &cobra.Command{
 		Use:   "resume NAMESPACE NAME UID --resume-token TOKEN",
@@ -61,14 +61,14 @@ request. This command never retries the mutation or replays an earlier command.`
 		Args: cobra.ExactArgs(3),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if resumeToken == "" {
-				return usageFailure("--resume-token must not be empty")
+				return invocation.UsageFailure("--resume-token must not be empty")
 			}
 			connected, err := a.connectEnvironment()
 			if err != nil {
 				return err
 			}
 			defer connected.connection.Close()
-			ctx, cancel := a.deadline()
+			ctx, cancel := a.Deadline()
 			defer cancel()
 			target := &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]}
 			response, err := connected.client.ResumeEnvironment(ctx, &environmentpb.ResumeEnvironmentRequest{
@@ -80,13 +80,13 @@ request. This command never retries the mutation or replays an earlier command.`
 			}
 			if response == nil || response.GetTarget() == nil || response.GetTarget().GetNamespace() != target.GetNamespace() ||
 				response.GetTarget().GetName() != target.GetName() || response.GetTarget().GetUid() != target.GetUid() {
-				return invalidResponse("ResumeEnvironment returned a different target")
+				return invocation.InvalidResponse("ResumeEnvironment returned a different target")
 			}
-			if a.asJSON {
+			if a.JSON() {
 				return a.writeProtoJSON(response)
 			}
-			if _, err := fmt.Fprintln(a.stdout, environmentResumeText(response)); err != nil {
-				return clientFailure(exitRefused, "INTERNAL", "write stdout: %v", err)
+			if _, err := fmt.Fprintln(a.Stdout(), environmentResumeText(response)); err != nil {
+				return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
 			}
 			return nil
 		},
@@ -97,8 +97,8 @@ request. This command never retries the mutation or replays an earlier command.`
 }
 
 func resumeFailure(ctx context.Context, err error) error {
-	failureErr := grpcFailure(ctx, err)
-	if failure, ok := failureErr.(*failure); ok {
+	failureErr := invocation.GRPCFailure(ctx, err)
+	if failure, ok := failureErr.(*invocation.Failure); ok {
 		var detailError error
 		if converted, isStatus := status.FromError(err); isStatus {
 			for _, detail := range converted.Details() {
@@ -118,14 +118,14 @@ func resumeFailure(ctx context.Context, err error) error {
 						failure.WakeAssessment = encoded
 					}
 					if typed.GetState() == environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN {
-						failure.exit = exitExecutionUnknown
+						failure.Exit = invocation.ExitExecutionUnknown
 						failure.Message = "resume outcome is unknown; refresh the exact environment and use only its current resume token for any new explicit request"
 					}
 				}
 			}
 		}
-		if failure.ambiguous() {
-			failure.exit = exitExecutionUnknown
+		if failure.Ambiguous() {
+			failure.Exit = invocation.ExitExecutionUnknown
 			failure.Message = "resume outcome is unknown; refresh the exact environment and use only its current resume token for any new explicit request"
 		}
 		if detailError != nil {
@@ -135,20 +135,20 @@ func resumeFailure(ctx context.Context, err error) error {
 	return failureErr
 }
 
-func (a *app) environmentCommand(fn func(context.Context, environmentpb.EnvironmentServiceClient, []string) error) func(*cobra.Command, []string) error {
+func (a *commands) environmentCommand(fn func(context.Context, environmentpb.EnvironmentServiceClient, []string) error) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, args []string) error {
 		connected, err := a.connectEnvironment()
 		if err != nil {
 			return err
 		}
 		defer connected.connection.Close()
-		ctx, cancel := a.deadline()
+		ctx, cancel := a.Deadline()
 		defer cancel()
 		return fn(ctx, connected.client, args)
 	}
 }
 
-func (a *app) listEnvironmentsCommand() *cobra.Command {
+func (a *commands) listEnvironmentsCommand() *cobra.Command {
 	var limit int
 	var pageToken string
 	command := &cobra.Command{
@@ -161,11 +161,11 @@ deployment-configured offers; custom templates without a published mapping remai
 		Args: cobra.NoArgs,
 		RunE: a.environmentCommand(func(ctx context.Context, client environmentpb.EnvironmentServiceClient, _ []string) error {
 			if limit < 1 || limit > maxEnvironmentPage {
-				return usageFailure("--limit must be between 1 and %d", maxEnvironmentPage)
+				return invocation.UsageFailure("--limit must be between 1 and %d", maxEnvironmentPage)
 			}
 			response, err := client.ListEnvironments(ctx, &environmentpb.ListEnvironmentsRequest{Limit: uint32(limit), PageToken: pageToken})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			return a.showEnvironmentPage(response)
 		}),
@@ -175,7 +175,7 @@ deployment-configured offers; custom templates without a published mapping remai
 	return command
 }
 
-func (a *app) getEnvironmentCommand() *cobra.Command {
+func (a *commands) getEnvironmentCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get NAMESPACE NAME UID",
 		Short: "Refresh one exact Sandbox identity",
@@ -186,45 +186,45 @@ func (a *app) getEnvironmentCommand() *cobra.Command {
 				Target: &identitypb.EnvironmentTarget{Namespace: args[0], Name: args[1], Uid: args[2]},
 			})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			return a.showEnvironment(response)
 		}),
 	}
 }
 
-func (a *app) showEnvironmentPage(response *environmentpb.ListEnvironmentsResponse) error {
-	if a.asJSON {
+func (a *commands) showEnvironmentPage(response *environmentpb.ListEnvironmentsResponse) error {
+	if a.JSON() {
 		return a.writeProtoJSON(response)
 	}
 	for _, environment := range response.GetItems() {
-		if _, err := fmt.Fprintln(a.stdout, environmentText(environment)); err != nil {
-			return clientFailure(exitRefused, "INTERNAL", "write stdout: %v", err)
+		if _, err := fmt.Fprintln(a.Stdout(), environmentText(environment)); err != nil {
+			return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
 		}
 	}
 	if response.GetNextPageToken() != "" {
-		fmt.Fprintf(a.stderr, "more may follow: --after %s\n", response.GetNextPageToken())
+		fmt.Fprintf(a.Stderr(), "more may follow: --after %s\n", response.GetNextPageToken())
 	}
 	return nil
 }
 
-func (a *app) showEnvironment(environment *environmentpb.EnvironmentDescriptor) error {
-	if a.asJSON {
+func (a *commands) showEnvironment(environment *environmentpb.EnvironmentDescriptor) error {
+	if a.JSON() {
 		return a.writeProtoJSON(environment)
 	}
-	if _, err := fmt.Fprintln(a.stdout, environmentText(environment)); err != nil {
-		return clientFailure(exitRefused, "INTERNAL", "write stdout: %v", err)
+	if _, err := fmt.Fprintln(a.Stdout(), environmentText(environment)); err != nil {
+		return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
 	}
 	return nil
 }
 
-func (a *app) writeProtoJSON(message proto.Message) error {
+func (a *commands) writeProtoJSON(message proto.Message) error {
 	encoded, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
 	if err != nil {
-		return invalidResponse("marshal discovery response: %v", err)
+		return invocation.InvalidResponse("marshal discovery response: %v", err)
 	}
-	if _, err := fmt.Fprintln(a.stdout, string(encoded)); err != nil {
-		return clientFailure(exitRefused, "INTERNAL", "write stdout: %v", err)
+	if _, err := fmt.Fprintln(a.Stdout(), string(encoded)); err != nil {
+		return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
 	}
 	return nil
 }
@@ -266,4 +266,10 @@ func environmentResumeText(response *environmentpb.ResumeEnvironmentResponse) st
 		line += fmt.Sprintf(" wake_generation=%d", response.GetWakeGeneration())
 	}
 	return line + " ready=not-established"
+}
+
+type commands struct{ *invocation.Invocation }
+
+func Command(in *invocation.Invocation) *cobra.Command {
+	return (&commands{Invocation: in}).environmentsCommand()
 }

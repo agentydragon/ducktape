@@ -1,69 +1,25 @@
-load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "cli",
     srcs = [
-        "actions.go",
-        "actions_guide.go",
         "app.go",
-        "client.go",
         "egress.go",
-        "environments.go",
-        "errors.go",
-        "main.go",
-        "notifications.go",
-        "output.go",
-        "paging.go",
-        "sessions.go",
-        "text.go",
-        "wait.go",
+        "egress_text.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/cli",
-    visibility = ["//visibility:private"],
+    visibility = ["//agentplane/cli:__subpackages__"],
     deps = [
-        "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/docs",
+        "//agentplane/cli/internal/actions",
+        "//agentplane/cli/internal/environments",
+        "//agentplane/cli/internal/invocation",
+        "//agentplane/cli/internal/notifications",
+        "//agentplane/cli/internal/sessions",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/docs",
-        "//agentplane/environments/v1:environment_service_go_proto",
-        "//agentplane/history_service/api/history:history_service_go_proto",
-        "//agentplane/notification_service/api/notifications:notifications_go_proto",
-        "//agentplane/notification_service/docs",
-        "//agentplane/proto:environment_lifecycle_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:session_go_proto",
-        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
-        "//agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
-        "//agentplane/session_client",
-        "@com_github_google_uuid//:uuid",
-        "@com_github_sethvargo_go_retry//:go-retry",
         "@com_github_spf13_cobra//:cobra",
-        "@org_golang_google_genproto_googleapis_rpc//code",
-        "@org_golang_google_genproto_googleapis_rpc//errdetails",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//types/known/structpb",
     ],
-)
-
-go_binary(
-    name = "agentplane",
-    embed = [":cli"],
-    pure = "on",
-    visibility = ["//visibility:public"],
-)
-
-copy_file(
-    name = "cli_release",
-    src = ":agentplane",
-    out = "agentplane-cli",
-    is_executable = True,
 )
 
 go_test(
@@ -84,6 +40,7 @@ go_test(
     embed = [":cli"],
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/cli/internal/invocation",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/environments/v1:environment_service_go_proto",
         "//agentplane/history_service/api/history:history_service_go_proto",
@@ -91,13 +48,16 @@ go_test(
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:event_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:session_go_proto",
         "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//code",
         "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_genproto_googleapis_rpc//status",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/durationpb",
         "@org_golang_google_protobuf//types/known/structpb",

@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -90,10 +91,10 @@ func decodeObject(t *testing.T, text string) map[string]any {
 }
 
 // errorOf is the error envelope on the last line of stderr.
-func errorOf(t *testing.T, stderr string) apiError {
+func errorOf(t *testing.T, stderr string) invocation.APIError {
 	t.Helper()
 	lines := strings.Split(strings.TrimSpace(stderr), "\n")
-	var parsed envelope
+	var parsed invocation.Envelope
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &parsed); err != nil {
 		t.Fatalf("stderr does not end in an error envelope: %q: %v", stderr, err)
 	}

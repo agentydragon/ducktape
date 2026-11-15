@@ -16,7 +16,7 @@ exports_files([
 pkg_tar(
     name = "disk_bin",
     srcs = [
-        "//agentplane/cli:agentplane",
+        "//agentplane/cli/cmd:agentplane",
         "//agentplane/env/runtime/cmd:agentplane-environment-runtime",
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
         "//agentplane/firecracker/guest/cmd:agentplane-firecracker-thaw-agent",

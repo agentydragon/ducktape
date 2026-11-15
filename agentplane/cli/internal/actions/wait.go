@@ -1,4 +1,4 @@
-package main
+package actions
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -27,7 +28,7 @@ func receiptFromProto(message *action_servicepb.ActionRequest) (*receipt, error)
 
 func validateActionRequest(message *action_servicepb.ActionRequest) error {
 	if message == nil {
-		return invalidResponse("response has no Action request")
+		return invocation.InvalidResponse("response has no Action request")
 	}
 	switch message.GetState() {
 	case action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING,
@@ -40,7 +41,7 @@ func validateActionRequest(message *action_servicepb.ActionRequest) error {
 		action_servicepb.ActionState_ACTION_STATE_CANCELLED,
 		action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
 	default:
-		return invalidResponse("unrecognized Action state %q", message.GetState())
+		return invocation.InvalidResponse("unrecognized Action state %q", message.GetState())
 	}
 	return nil
 }
@@ -48,7 +49,7 @@ func validateActionRequest(message *action_servicepb.ActionRequest) error {
 func parseReceipt(raw []byte) (*action_servicepb.ActionRequest, error) {
 	message := &action_servicepb.ActionRequest{}
 	if err := protojson.Unmarshal(raw, message); err != nil {
-		return nil, invalidResponse("%v", err)
+		return nil, invocation.InvalidResponse("%v", err)
 	}
 	if err := validateActionRequest(message); err != nil {
 		return nil, err
@@ -71,7 +72,7 @@ func parseUntil(value string) (waitUntil, error) {
 	case "terminal":
 		return untilTerminal, nil
 	default:
-		return 0, usageFailure("--until must be decision or terminal")
+		return 0, invocation.UsageFailure("--until must be decision or terminal")
 	}
 }
 
@@ -105,15 +106,15 @@ func (r *receipt) exitStatus() (int, error) {
 		action_servicepb.ActionState_ACTION_STATE_RUNNING:
 		return 0, nil
 	case action_servicepb.ActionState_ACTION_STATE_DENIED:
-		return exitDenied, nil
+		return invocation.ExitDenied, nil
 	case action_servicepb.ActionState_ACTION_STATE_FAILED:
-		return exitFailed, nil
+		return invocation.ExitFailed, nil
 	case action_servicepb.ActionState_ACTION_STATE_CANCELLED:
-		return exitCancelled, nil
+		return invocation.ExitCancelled, nil
 	case action_servicepb.ActionState_ACTION_STATE_EXECUTION_UNKNOWN:
-		return exitExecutionUnknown, nil
+		return invocation.ExitExecutionUnknown, nil
 	default:
-		return 0, invalidResponse("unrecognized Action state %q", r.request.GetState())
+		return 0, invocation.InvalidResponse("unrecognized Action state %q", r.request.GetState())
 	}
 }
 
@@ -122,7 +123,7 @@ type receiptReader func(context.Context) (*receipt, error)
 func readReceipt(ctx context.Context, client action_servicepb.ActionServiceClient, id string) (*receipt, error) {
 	response, err := client.GetActionRequest(ctx, &action_servicepb.GetActionRequestRequest{RequestId: id})
 	if err != nil {
-		return nil, grpcFailure(ctx, err)
+		return nil, invocation.GRPCFailure(ctx, err)
 	}
 	return receiptFromProto(response.GetActionRequest())
 }
@@ -131,15 +132,15 @@ func readReceipt(ctx context.Context, client action_servicepb.ActionServiceClien
 func lookupByKey(ctx context.Context, client action_servicepb.ActionServiceClient, key string) (*receipt, error) {
 	response, err := client.ListActionRequests(ctx, &action_servicepb.ListActionRequestsRequest{IdempotencyKey: &key})
 	if err != nil {
-		return nil, grpcFailure(ctx, err)
+		return nil, invocation.GRPCFailure(ctx, err)
 	}
 	switch len(response.GetActionRequests()) {
 	case 0:
-		return nil, clientFailure(exitNotFound, "NOT_FOUND", "no Action request was submitted under idempotency key %q", key)
+		return nil, invocation.ClientFailure(invocation.ExitNotFound, "NOT_FOUND", "no Action request was submitted under idempotency key %q", key)
 	case 1:
 		return receiptFromProto(response.GetActionRequests()[0])
 	default:
-		return nil, invalidResponse("%d requests under one idempotency key", len(response.GetActionRequests()))
+		return nil, invocation.InvalidResponse("%d requests under one idempotency key", len(response.GetActionRequests()))
 	}
 }
 
@@ -163,8 +164,8 @@ func await(
 				last, lastFailure, backoff = current, nil, newBackoff()
 				break
 			}
-			var failed *failure
-			if !errors.As(err, &failed) || failed.exit != exitTransient || !bounded {
+			var failed *invocation.Failure
+			if !errors.As(err, &failed) || failed.Exit != invocation.ExitTransient || !bounded {
 				return nil, err
 			}
 			if ctx.Err() != nil {
@@ -182,9 +183,9 @@ func await(
 	}
 	for {
 		if ctx.Err() == context.Canceled {
-			return last, errInterrupted
+			return last, invocation.ErrInterrupted
 		}
-		if deadlineElapsed(ctx) {
+		if invocation.DeadlineElapsed(ctx) {
 			if lastFailure != nil {
 				return last, lastFailure
 			}
@@ -195,17 +196,17 @@ func await(
 		})
 		if err != nil {
 			if ctx.Err() == context.Canceled {
-				return last, errInterrupted
+				return last, invocation.ErrInterrupted
 			}
-			if deadlineElapsed(ctx) {
+			if invocation.DeadlineElapsed(ctx) {
 				if lastFailure != nil {
 					return last, lastFailure
 				}
 				return last, nil
 			}
-			rpcErr := grpcFailure(ctx, err)
-			var failed *failure
-			if !errors.As(rpcErr, &failed) || failed.exit != exitTransient {
+			rpcErr := invocation.GRPCFailure(ctx, err)
+			var failed *invocation.Failure
+			if !errors.As(rpcErr, &failed) || failed.Exit != invocation.ExitTransient {
 				return last, rpcErr
 			}
 			lastFailure = rpcErr
@@ -228,12 +229,12 @@ func await(
 				continue
 			}
 			if errors.Is(err, io.EOF) {
-				return last, invalidResponse("WatchActionRequest ended before the condition held")
+				return last, invocation.InvalidResponse("WatchActionRequest ended before the condition held")
 			}
 			if ctx.Err() == context.Canceled {
-				return last, errInterrupted
+				return last, invocation.ErrInterrupted
 			}
-			if deadlineElapsed(ctx) {
+			if invocation.DeadlineElapsed(ctx) {
 				if lastFailure != nil {
 					return last, lastFailure
 				}
@@ -244,9 +245,9 @@ func await(
 				// egress sidecar substitute its current token; refusal before a new frame is final.
 				break
 			}
-			rpcErr := grpcFailure(ctx, err)
-			var failed *failure
-			if !errors.As(rpcErr, &failed) || failed.exit != exitTransient || !bounded {
+			rpcErr := invocation.GRPCFailure(ctx, err)
+			var failed *invocation.Failure
+			if !errors.As(rpcErr, &failed) || failed.Exit != invocation.ExitTransient || !bounded {
 				return last, rpcErr
 			}
 			lastFailure = rpcErr
@@ -256,22 +257,12 @@ func await(
 	}
 }
 
-// deadlineElapsed recognizes the RPC deadline boundary even if the context timer has not yet
-// published DeadlineExceeded to Err. grpc-go may surface that deadline just before ctx.Err flips.
-func deadlineElapsed(ctx context.Context) bool {
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		return true
-	}
-	deadline, bounded := ctx.Deadline()
-	return bounded && !time.Now().Before(deadline)
-}
-
 func newBackoff() retry.Backoff {
 	return retry.WithCappedDuration(4*time.Second, retry.NewExponential(250*time.Millisecond))
 }
 
 // pause sleeps before the next attempt, for as long as the service asked if it did.
-func pause(ctx context.Context, backoff retry.Backoff, after *failure) {
+func pause(ctx context.Context, backoff retry.Backoff, after *invocation.Failure) {
 	delay, _ := backoff.Next()
 	if after.RetryAfterSeconds != nil {
 		delay = max(delay, time.Duration(*after.RetryAfterSeconds)*time.Second)
@@ -286,11 +277,11 @@ func pause(ctx context.Context, backoff retry.Backoff, after *failure) {
 
 // finish prints the receipt a wait ended with and exits as its state says: 10 when the condition
 // had not held by the deadline.
-func (a *app) finish(last *receipt, until waitUntil) error {
+func (a *commands) finish(last *receipt, until waitUntil) error {
 	if last == nil {
-		return invalidResponse("wait ended without a receipt")
+		return invocation.InvalidResponse("wait ended without a receipt")
 	}
-	code := exitDeadline
+	code := invocation.ExitDeadline
 	if until.holds(last.request.GetState()) {
 		var err error
 		if code, err = last.exitStatus(); err != nil {
@@ -300,14 +291,14 @@ func (a *app) finish(last *receipt, until waitUntil) error {
 	if err := a.printReceipt(last); err != nil {
 		return err
 	}
-	return exitWith(code)
+	return invocation.ExitWith(code)
 }
 
 // afterWait is the end of a wait that returned an error. A wait that lost the service after it had
 // read a receipt prints that receipt, the one error exit that carries stdout.
-func (a *app) afterWait(last *receipt, err error) error {
-	var failed *failure
-	if last != nil && errors.As(err, &failed) && failed.exit == exitTransient {
+func (a *commands) afterWait(last *receipt, err error) error {
+	var failed *invocation.Failure
+	if last != nil && errors.As(err, &failed) && failed.Exit == invocation.ExitTransient {
 		if printErr := a.printReceipt(last); printErr != nil {
 			return printErr
 		}

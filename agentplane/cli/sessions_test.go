@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -23,14 +24,14 @@ func TestObserveInputRequiresItsOwnHistoryConfiguration(t *testing.T) {
 		"AGENTPLANE_SESSIONS_CREDENTIAL": "dispatcher-placeholder",
 	}
 	code, stdout, stderr := invoke(env, "sessions", "observe-input", "58cae82c-453d-4de7-ae5b-17a8f7596077", "--command-id", "c40dd833-326f-4be1-b42a-4bb74c76c49a")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_HISTORY_URL not set") {
+	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_HISTORY_URL not set") {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want independent History configuration error", code, stdout, stderr)
 	}
 }
 
 func TestObserveInputRejectsWaitOverBoundBeforeConnecting(t *testing.T) {
 	code, stdout, stderr := invoke(nil, "sessions", "observe-input", "session", "--command-id", "command", "--wait-seconds", "31")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "--wait-seconds must be between 0 and 30") {
+	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "--wait-seconds must be between 0 and 30") {
 		t.Fatalf("exit %d, stdout %q, stderr %q; want bounded wait validation", code, stdout, stderr)
 	}
 }
@@ -38,38 +39,8 @@ func TestObserveInputRejectsWaitOverBoundBeforeConnecting(t *testing.T) {
 func TestCreateSessionRequiresCanonicalUUIDBeforeConnecting(t *testing.T) {
 	for _, sessionID := range []string{"not-a-uuid", "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF", "abcdefabcdef4abcdefabcdefabcdef"} {
 		code, stdout, stderr := invoke(nil, "sessions", "create", sessionID, "--sandbox", "sandbox", "--sandbox-uid", "uid", "--spec", "{}")
-		if code != exitUsage || stdout != "" || !strings.Contains(stderr, "SESSION_ID must be a canonical UUID") {
+		if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "SESSION_ID must be a canonical UUID") {
 			t.Errorf("sessions create %q: exit %d, stdout %q, stderr %q; want canonical UUID usage error", sessionID, code, stdout, stderr)
-		}
-	}
-}
-
-func TestSessionLineRejectsIncompleteResource(t *testing.T) {
-	for _, raw := range []string{
-		`{"sessionId":"session","placement":{"environmentHosted":{"environment":{"name":"sandbox","uid":"uid"}}}}`,
-		`{"sessionId":"session","status":{"materialization":"SESSION_MATERIALIZATION_WAITING"}}`,
-	} {
-		if _, err := sessionLine(json.RawMessage(raw)); err == nil {
-			t.Errorf("sessionLine(%s) accepted an incomplete Session", raw)
-		}
-	}
-}
-
-func TestDispatchLineMapsUnknownStateToNamedUnknown(t *testing.T) {
-	raw, err := protojson.Marshal(&dispatcherpb.Dispatch{CommandId: "command", State: dispatcherpb.DeliveryState(99)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, value := range []json.RawMessage{
-		raw,
-		json.RawMessage(`{"commandId":"command","state":"DELIVERY_STATE_FUTURE"}`),
-	} {
-		line, err := dispatchLine(value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(line, "unknown") || strings.Contains(line, "99") {
-			t.Fatalf("dispatchLine() = %q, want the normalized unknown state", line)
 		}
 	}
 }

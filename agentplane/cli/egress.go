@@ -1,8 +1,9 @@
-package main
+package cli
 
 import (
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"github.com/agentydragon/ducktape/agentplane/egress/docs"
 	"github.com/spf13/cobra"
@@ -10,7 +11,7 @@ import (
 )
 
 func (a *app) egressCommand() *cobra.Command {
-	return group("egress", "Read this account's effective egress rules",
+	return invocation.Group("egress", "Read this account's effective egress rules",
 		"Calls the Egress rules API (AGENTPLANE_EGRESS_GRPC_URL, AGENTPLANE_EGRESS_GRPC_CREDENTIAL).",
 		&cobra.Command{
 			Use:   "guide [credentials]",
@@ -20,7 +21,7 @@ func (a *app) egressCommand() *cobra.Command {
 				name := "agents/llms.txt"
 				if len(args) == 1 {
 					if args[0] != "credentials" {
-						return usageFailure("unknown egress guide %q", args[0])
+						return invocation.UsageFailure("unknown egress guide %q", args[0])
 					}
 					name = "agents/credentials.md"
 				}
@@ -28,7 +29,7 @@ func (a *app) egressCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				_, err = fmt.Fprint(a.stdout, string(content))
+				_, err = fmt.Fprint(a.Stdout(), string(content))
 				return err
 			},
 		},
@@ -41,22 +42,22 @@ do yourself: the proxy swaps in the real value only where the placeholder is pre
 the output, for example with jq; the proxy alone decides what matches a call.`,
 			Args: cobra.NoArgs,
 			RunE: func(_ *cobra.Command, _ []string) error {
-				connection, err := a.connectGRPC("EGRESS_GRPC")
+				connection, err := a.ConnectGRPC("EGRESS_GRPC")
 				if err != nil {
 					return err
 				}
 				defer connection.Close()
-				ctx, cancel := a.deadline()
+				ctx, cancel := a.Deadline()
 				defer cancel()
 				response, err := egressrulespb.NewEgressRulesClient(connection).GetRules(ctx, &egressrulespb.GetRulesRequest{})
 				if err != nil {
-					return grpcFailure(ctx, err)
+					return invocation.GRPCFailure(ctx, err)
 				}
 				body, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
 				if err != nil {
-					return invalidResponse("%v", err)
+					return invocation.InvalidResponse("%v", err)
 				}
-				return a.showOne(body, rulesText)
+				return a.ShowOne(body, rulesText)
 			},
 		})
 }

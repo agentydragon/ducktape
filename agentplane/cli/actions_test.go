@@ -1,16 +1,16 @@
-package main
+package cli
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -31,63 +31,6 @@ func requestWithResult(t *testing.T, value string) *action_servicepb.ActionReque
 	request := testActionRequest(waitedID, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)
 	request.Execution = &action_servicepb.Execution{Result: resultValue(t, value)}
 	return request
-}
-
-func TestActionTextUsesGeneratedProtoJSON(t *testing.T) {
-	group, err := groupLine(json.RawMessage(`{"key":"test-group","title":"Test","executorKind":"EXECUTOR_KIND_MCP","available":true,"actions":[{},{}]}`))
-	if err != nil || group != "test-group  mcp  2 actions  Test" {
-		t.Fatalf("group text = %q, error %v", group, err)
-	}
-
-	action, err := actionDetail(json.RawMessage(`{"group":"test-group","name":"echo","description":"Echo text","inputSchema":{"type":"object","properties":{"message":{"type":"string"}}}}`))
-	if err != nil || !strings.Contains(action, "input schema:\n{") || !strings.Contains(action, `"message"`) {
-		t.Fatalf("action detail = %q, error %v", action, err)
-	}
-
-	policy, err := policyText(json.RawMessage(`{"subject":{"namespace":"test","name":"agent"},"synced":true,"bindings":[{"name":"binding","expiresAt":"2026-01-02T03:04:05Z","policySets":[{"name":"set","generation":"1"}]}],"autoApproveIf":[{"binding":"binding","policySet":"set","source":"POLICY_SOURCE_RULES","index":0,"policy":{"exactActions":{"actions":[{"group":"test-group","names":["echo"]}]}}}]}`))
-	wantPolicy := "subject test/agent  synced true\nbinding binding  sets set  expires 2026-01-02T03:04:05Z\nauto-approve set#0  exact_actions  test-group/echo"
-	if err != nil || policy != wantPolicy {
-		t.Fatalf("policy text = %q, error %v; want %q", policy, err, wantPolicy)
-	}
-
-	cancellation, err := cancellationLine(json.RawMessage(`{"outcome":"CANCELLATION_OUTCOME_CANCELLED","actionRequest":{"id":"request-id","action":{"group":"test-group","name":"echo"},"state":"ACTION_STATE_CANCELLED","title":"Stop it"}}`))
-	if err != nil || cancellation != `cancelled  request-id  cancelled  test-group/echo  "Stop it"` {
-		t.Fatalf("cancellation text = %q, error %v", cancellation, err)
-	}
-}
-
-func TestGRPCTargetUsesTheURLDefaultPort(t *testing.T) {
-	cases := []struct {
-		origin string
-		want   string
-		bad    bool
-	}{
-		{"http://actions.example", "actions.example:80", false},
-		{"https://actions.example", "actions.example:443", false},
-		{"http://actions.example:8123", "actions.example:8123", false},
-		{"https://[::1]", "[::1]:443", false},
-		{"http://actions.example:", "", true},
-		{"http://actions.example:0", "", true},
-		{"http://actions.example:65536", "", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.origin, func(t *testing.T) {
-			parsed, err := url.Parse(tc.origin)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := grpcTarget(parsed, "AGENTPLANE_ACTIONS_URL")
-			if tc.bad {
-				if err == nil {
-					t.Fatalf("target = %q; want invalid origin", got)
-				}
-				return
-			}
-			if err != nil || got != tc.want {
-				t.Fatalf("target = %q, error %v; want %q", got, err, tc.want)
-			}
-		})
-	}
 }
 
 func TestSucceededActionExitsZeroWhateverItsResultSays(t *testing.T) {
@@ -156,7 +99,7 @@ func TestResultOfAnUnsuccessfulActionPrintsTheReceipt(t *testing.T) {
 		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_DENIED)}, nil
 	}
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "result", waitedID, "--json")
-	if got := decodeObject(t, stdout); code != exitDenied || got["id"] != waitedID {
+	if got := decodeObject(t, stdout); code != invocation.ExitDenied || got["id"] != waitedID {
 		t.Errorf("exit %d, stdout %q; want exit 11 and the receipt", code, stdout)
 	}
 }
@@ -168,8 +111,8 @@ func TestCancelExitsByOutcome(t *testing.T) {
 	}{
 		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED, 0},
 		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_CANCELLED, 0},
-		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE, exitTooLate},
-		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED, exitAlreadyFinished},
+		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE, invocation.ExitTooLate},
+		{action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED, invocation.ExitAlreadyFinished},
 	}
 	for _, tc := range cases {
 		fake, endpoint := newActionFake(t)
@@ -192,7 +135,7 @@ func TestCancelOfAnUnknownRequestExitsNotFound(t *testing.T) {
 	fake.cancelRequest = func(context.Context, *action_servicepb.CancelActionRequestRequest) (*action_servicepb.CancelActionRequestResponse, error) {
 		return nil, status.Error(codes.NotFound, "Action request not found")
 	}
-	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "cancel", missingID); code != exitNotFound || stdout != "" {
+	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "cancel", missingID); code != invocation.ExitNotFound || stdout != "" {
 		t.Errorf("exit %d, stdout %q; want exit 5", code, stdout)
 	}
 }
@@ -210,7 +153,7 @@ func TestGetExitsZeroForAnyState(t *testing.T) {
 func TestGetByKeyThatMatchesNothingExitsNotFound(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "get", "--key", "nobody")
-	if code != exitNotFound || stdout != "" || fake.count("ListActionRequests") != 1 {
+	if code != invocation.ExitNotFound || stdout != "" || fake.count("ListActionRequests") != 1 {
 		t.Errorf("exit %d, stdout %q, ListActionRequests calls %d; want exit 5 after one lookup", code, stdout, fake.count("ListActionRequests"))
 	}
 }
@@ -250,7 +193,7 @@ func TestListFlattensTheCatalogIntoActions(t *testing.T) {
 	}{
 		{[]string{"list"}, 0, []string{"a", "b", "c"}},
 		{[]string{"list", "g2"}, 0, []string{"c"}},
-		{[]string{"list", "missing"}, exitNotFound, nil},
+		{[]string{"list", "missing"}, invocation.ExitNotFound, nil},
 	} {
 		code, stdout, _ := invoke(actionsEnv(endpoint), append(append([]string{"actions"}, tc.args...), "--json")...)
 		var names []string
@@ -344,7 +287,7 @@ func TestRequestsAfterAnUnknownIDExitsNotFound(t *testing.T) {
 	fake.listRequests = func(context.Context, *action_servicepb.ListActionRequestsRequest) (*action_servicepb.ListActionRequestsResponse, error) {
 		return nil, status.Error(codes.NotFound, "unknown after id")
 	}
-	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "requests", "--after", "unknown"); code != exitNotFound || stdout != "" {
+	if code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "requests", "--after", "unknown"); code != invocation.ExitNotFound || stdout != "" {
 		t.Errorf("exit %d, stdout %q; want exit 5", code, stdout)
 	}
 }
@@ -381,7 +324,7 @@ func TestActionBaseURLRejectsAPathBeforeCallingTheService(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	env := actionsEnv(endpoint + "/prefix")
 	code, stdout, stderr := invoke(env, "actions", "groups")
-	if code != exitUsage || stdout != "" || fake.count("ListActionGroups") != 0 || !strings.Contains(stderr, "must not include a path") {
+	if code != invocation.ExitUsage || stdout != "" || fake.count("ListActionGroups") != 0 || !strings.Contains(stderr, "must not include a path") {
 		t.Errorf("exit %d, stdout %q, stderr %q, calls %+v", code, stdout, stderr, fake.callLog())
 	}
 }
@@ -405,7 +348,7 @@ func TestActionLookupByKeyUsesTheGeneratedRequestFilter(t *testing.T) {
 func TestEventCursorRejectsValuesOutsideTheProtoRange(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "events", waitedID, "--after", "2147483648")
-	if code != exitUsage || stdout != "" || fake.count("ListActionRequestEvents") != 0 {
+	if code != invocation.ExitUsage || stdout != "" || fake.count("ListActionRequestEvents") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v", code, stdout, fake.callLog())
 	}
 }
