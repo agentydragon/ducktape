@@ -103,5 +103,42 @@ def test_userspace_detection_keeps_early_console(tmp_path: Path) -> None:
     assert console.read_bytes().startswith(b"[0.0] Linux version\n")
 
 
+def test_host_pid_disappearance_does_not_discard_monitor_timeline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
+    )
+    monkeypatch.setattr(boot_interrupts, "MAX_SAMPLES", 2)
+    monkeypatch.setattr(boot_interrupts, "SAMPLE_SECONDS", 0)
+    calls: list[dict[str, Any]] = []
+
+    def qmp(*args: Any) -> Any:
+        command = args[-1]
+        calls.append(command)
+        if command["execute"] == "query-status":
+            return {"running": True}
+        if command["execute"] == "trace-event-get-state":
+            return []
+        assert command["execute"] == "human-monitor-command"
+        assert command["arguments"]["command-line"].startswith("info ")
+        return "read-only monitor sample"
+
+    monkeypatch.setattr(boot_interrupts, "_qmp", qmp)
+    target = {"pod_name": "launcher", "pod_uid": "uid", "vmi_name": "guest"}
+    boot_interrupts._trace_one(
+        lambda *_args: "", "scope", target, tmp_path, threading.Event(), proc_root=tmp_path / "gone-proc"
+    )
+    output = tmp_path / "boot-interrupts" / "uid"
+    summary = json.loads((output / "summary.json").read_text())
+    samples = [json.loads(line) for line in (output / "timeline.jsonl").read_text().splitlines()]
+    assert len(samples) == 2
+    assert all(len(sample["probes"]) == 3 for sample in samples)
+    assert summary["stop_reason"] == "sample-limit"
+    assert "Host process unavailable" in summary["logging_skipped"]
+    assert summary["errors"] == []
+    assert "log_int_accepted" not in summary
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

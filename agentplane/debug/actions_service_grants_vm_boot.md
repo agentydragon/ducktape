@@ -119,3 +119,41 @@ experiment, not a retry of #16467's CI verdict. The auth branch stays unchanged.
 The collector discovers compiled trace events at runtime and always retains
 repeated LAPIC/IOAPIC monitor snapshots, even when no candidate trace is supported.
 Results and actual accepted event names will be recorded after the runs complete.
+
+## Bounded reproduction results
+
+The authorized experiment completed with no VM failures and no matching timer
+stall in the 40 retained guest consoles:
+
+| Source before identical diagnostics               | Invocation                                                                                                        | Results                           |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| #16467 `b0a5719548b8f96d3f4591189953032fdaa0845c` | [05413723-5146-4b10-8efd-b40c2e5aff3a](https://app.buildbuddy.io/invocation/05413723-5146-4b10-8efd-b40c2e5aff3a) | 10/10 passed; 245.9–391.8 seconds |
+| devel `a8c4b186458f1522d783c74c5cd63ab6a35e36b8`  | [3ea624ce-ced3-4fc5-91c9-6e1cd53878c8](https://app.buildbuddy.io/invocation/3ea624ce-ced3-4fc5-91c9-6e1cd53878c8) | 10/10 passed; 235.0–380.0 seconds |
+
+Both used `--runs_per_test=10 --nocache_test_results --flaky_test_attempts=1`.
+The diagnostic source commits were `ccdd85dfeea9a104453beb328e621c034729f8a6`
+for the auth head and `38574eada7d5b64dfa8eb71471f9c07b845e39d3` for devel.
+Run/shard/attempt IDs were retained separately: ten distinct run IDs, each with
+attempt 1. Two earlier launch attempts used abbreviated SHAs and failed during
+checkout, before any test executed; they are not included in these counts.
+
+The running QEMU exposed **no APIC trace events**. No candidate event was
+accepted or enabled. `log int` was accepted for 16 of 20 guest boots in each
+cohort, together with repeated per-CPU `info lapic` and `info pic` samples.
+These are sampled state transitions and hardware-delivery/register logs, not
+an event-by-event EOI trace. Logging generally reached its 16 MiB retention
+limit before userspace; monitor sampling continued. All 40 early consoles
+were retained independently.
+
+The experiment also exposed a collector defect: six observers selected a host
+QEMU PID that disappeared before `/proc/<pid>/cmdline` could be opened. They
+aborted before starting the independent monitor timeline. Re-sampling after
+the Running query and treating a missing logging process as a logging-only gap
+preserves monitor collection. Two other devel observers exhausted their
+existing startup discovery budget; those gaps are recorded, and the budget
+has not been raised. Some discovery/probe requests also timed out and were
+recorded individually.
+
+There is no reproduced failure sequence to interpret and no established
+kernel or QEMU repair. No further reproduction runs are authorized by this
+experiment, and #16467 has received no push.
