@@ -53,6 +53,31 @@ fn dynamic_import_relative_specifier(node: &CallExpr) -> Option<String> {
     is_relative_specifier(&v).then_some(v)
 }
 
+/// If `node` is a direct literal `import.meta.require("relative")`
+/// request, return its source. This mirrors the pass-through
+/// canonicalizer's loader-call shape so chunks keep their AST until the
+/// entry request has been rewritten against the output artifact.
+fn import_meta_require_relative_specifier(node: &CallExpr) -> Option<String> {
+    let Callee::Expr(callee) = &node.callee else {
+        return None;
+    };
+    let Expr::Member(member) = callee.unwrap_parens() else {
+        return None;
+    };
+    if !is_import_meta_require_member(member) {
+        return None;
+    }
+    let first = node.args.first()?;
+    if first.spread.is_some() {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(source)) = &*first.expr else {
+        return None;
+    };
+    let source = str_value(source);
+    is_relative_specifier(&source).then_some(source)
+}
+
 /// If `node` is `new Worker("literal")` / `new SharedWorker("literal")`
 /// and the literal is a relative module path, return it; otherwise `None`.
 fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
@@ -916,11 +941,11 @@ fn item_line(line_index: &SourceLineIndex, item: &ModuleItem) -> Option<usize> {
 ///   `document.*` member access; matches the previous
 ///   `ObservableTopLevelEffectCollector` exactly.
 /// - `has_rewritable_specifier`: any `import`, `export … from`,
-///   `import(…literal)`, or `new Worker(…literal)` /
-///   `new SharedWorker(…literal)` whose source literal is a relative
-///   module path (`.` / `/` prefix). Mirrors `rewrite_source`'s gate
-///   so `prepare_js_chunks` can drop the AST when no rewrite is
-///   possible.
+///   `import(…literal)`, direct literal `import.meta.require(…literal)`,
+///   or `new Worker(…literal)` / `new SharedWorker(…literal)` whose
+///   source literal is a relative module path (`.` / `/` prefix).
+///   Mirrors the pass-through rewriter's gate so `prepare_js_chunks`
+///   can drop the AST when no rewrite is possible.
 ///
 /// Replaces three independent module-level `Visit` impls that each
 /// walked the full module — one `visit_with` per concern. Concerns
@@ -1069,6 +1094,10 @@ impl Visit for ModuleScanVisitor {
             };
             self.interop_uses
                 .push((self.item_index, node.span, kind, literal));
+        }
+        if !self.has_rewritable_specifier && import_meta_require_relative_specifier(node).is_some()
+        {
+            self.has_rewritable_specifier = true;
         }
         if let Callee::Expr(callee) = &node.callee
             && let Expr::Call(inner) = callee.unwrap_parens()

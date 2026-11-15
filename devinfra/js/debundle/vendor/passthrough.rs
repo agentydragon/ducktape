@@ -8,8 +8,8 @@
 //!
 //! * **Specifier canonicalization** (the old always-on stage 0):
 //!   relative `import` / `export … from` / `export *` / `import()` /
-//!   `new Worker` sources that resolve to another chunk are rewritten
-//!   to the artifact-relative form.
+//!   direct literal `import.meta.require` / `new Worker` sources that
+//!   resolve to another chunk are rewritten to the artifact-relative form.
 //! * **Boundary-rename name mapping** (the old `rename_vendor_exports`
 //!   caller side): named imports of a `boundary_rename` / `swap`
 //!   chunk's entry are renamed from vendor-local to public export
@@ -75,7 +75,8 @@ pub(crate) fn rewrite_passthrough_module(
     );
 
     // Pass B: specifier canonicalization (the old stage 0) over every
-    // directive shape, including `import()` and `new Worker` sources.
+    // directive shape and supported source call, including `import()`,
+    // literal `import.meta.require`, and `new Worker` sources.
     // Runs after the surgery so retained directives are canonicalized
     // and replacement package / facade sources (bare specifiers or
     // generated output paths outside the artifact) pass through
@@ -434,9 +435,10 @@ fn rewrite_export_from_decl(
 }
 
 /// Specifier canonicalization visitor — the relocated stage-0
-/// `RuntimeSourceRewriter`. Rewrites relative directive sources that
-/// resolve to another chunk into the artifact-relative form; sources
-/// already spelled as artifact output paths keep their spelling.
+/// `RuntimeSourceRewriter`. Rewrites relative requests from directives,
+/// supported literal calls, and worker sources that resolve to another
+/// chunk into artifact-relative form; sources already spelled as artifact
+/// output paths keep their spelling.
 /// Directives targeting a full-swap chunk that index resolution misses
 /// (the full-swap dangling-import contract) canonicalize against the
 /// plan's recorded entry path instead.
@@ -514,7 +516,7 @@ impl VisitMut for SourceCanonicalizer<'_> {
     }
 
     fn visit_mut_call_expr(&mut self, node: &mut CallExpr) {
-        if let Some(string) = dynamic_import_str_mut(node) {
+        if let Some(string) = canonicalizable_call_source_mut(node) {
             self.rewrite_str(string);
         }
         node.visit_mut_children_with(self);
@@ -532,16 +534,37 @@ impl VisitMut for SourceCanonicalizer<'_> {
     }
 }
 
-fn dynamic_import_str_mut(node: &mut CallExpr) -> Option<&mut Str> {
-    if matches!(node.callee, Callee::Import(_))
-        && let Some(first) = node.args.first_mut()
-        && first.spread.is_none()
-        && let Expr::Lit(Lit::Str(s)) = &mut *first.expr
-    {
-        Some(s)
-    } else {
-        None
+fn canonicalizable_call_source_mut(node: &mut CallExpr) -> Option<&mut Str> {
+    let is_dynamic_import = matches!(&node.callee, Callee::Import(_));
+    let is_literal_host_require = matches!(
+        &node.callee,
+        Callee::Expr(callee)
+            if matches!(
+                callee.unwrap_parens(),
+                Expr::Member(MemberExpr {
+                    obj,
+                    prop: MemberProp::Ident(property),
+                    ..
+                }) if matches!(
+                    &**obj,
+                    Expr::MetaProp(MetaPropExpr {
+                        kind: MetaPropKind::ImportMeta,
+                        ..
+                    })
+                ) && property.sym == *"require"
+            )
+    );
+    if !is_dynamic_import && !is_literal_host_require {
+        return None;
     }
+    let first = node.args.first_mut()?;
+    if first.spread.is_some() {
+        return None;
+    }
+    let Expr::Lit(Lit::Str(source)) = &mut *first.expr else {
+        return None;
+    };
+    Some(source)
 }
 
 fn worker_new_str(node: &NewExpr) -> Option<&Str> {
