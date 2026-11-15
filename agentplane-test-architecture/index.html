@@ -166,25 +166,30 @@
         const [data, setData] = useState(null);
         const [manifest, setManifest] = useState(null);
         const [dispatch, setDispatch] = useState(null);
+        const [fixtures, setFixtures] = useState(null);
         const [error, setError] = useState(null);
         useEffect(() => {
           const controller = new AbortController();
           Promise.all(
-            ["evidence.json", "manifest.json", "five-port-dispatch.json"].map(
-              async (path) => {
-                const response = await fetch(path, {
-                  signal: controller.signal,
-                });
-                if (!response.ok)
-                  throw new Error(`${path}: HTTP ${response.status}`);
-                return response.json();
-              },
-            ),
+            [
+              "evidence.json",
+              "manifest.json",
+              "five-port-dispatch.json",
+              "pytest-fixtures.json",
+            ].map(async (path) => {
+              const response = await fetch(path, {
+                signal: controller.signal,
+              });
+              if (!response.ok)
+                throw new Error(`${path}: HTTP ${response.status}`);
+              return response.json();
+            }),
           )
-            .then(([e, m, d]) => {
+            .then(([e, m, d, f]) => {
               setData(e);
               setManifest(m);
               setDispatch(d);
+              setFixtures(f);
             })
             .catch((e) => {
               if (e.name !== "AbortError") setError(String(e));
@@ -918,6 +923,22 @@
             >Fast CI through smaller real contracts<//
           >
           ${p("Agentplane test architecture pivot: reduce the work and dependency graph needed to establish each guarantee, while retaining real deployment and user-journey acceptance.")}
+          <${Alert}
+            color="blue"
+            title="Current work · fixture ownership on PR #16489"
+            my="md"
+          >
+            One cleanup drain replaces repeated cancellation loops. Trust probes
+            share a UID-checked Pod; mutation cases retain fresh resources.
+            Ordinary sequential pytest was slower in the corrected screen, and
+            AnyIO migration did not remove a real fixture workaround. Keep the
+            existing bounded runner. A 30% complete-feedback saving remains
+            unqualified.
+            <${Anchor} href="#pytest-fixtures"
+              >Read the measurements and decisions<//
+            >.
+          <//>
+          <${Text} fw=${600}>Historical iteration 16 evidence<//>
           <${Group} gap="xs" my="md"
             ><${Badge} color="teal"
               >Iteration 16 · exact-source platform proof passed<//
@@ -953,10 +974,11 @@
             >Historical iteration 3: ${iteration3TopSummary}<//
           >
           <${Text} size="sm" c="dimmed"
-            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · historical integrated devel base ${manifest.source_devel_commit?.slice(0, 10) || "pending"} · exact proof source ${manifest.iteration16?.source_head?.slice(0, 10) || manifest.pilot_head_commit?.slice(0, 10) || "pending"} · Services candidate source ${manifest.iteration16?.current_services_candidate_source?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
+            >${manifest ? `Initial source audit ${manifest.initial_source_devel_commit || source} · historical integrated devel base ${(manifest.historical_source_devel_commit || manifest.source_devel_commit)?.slice(0, 10) || "pending"} · exact proof source ${manifest.iteration16?.source_head?.slice(0, 10) || manifest.pilot_head_commit?.slice(0, 10) || "pending"} · Services candidate source ${manifest.iteration16?.current_services_candidate_source?.slice(0, 10) || "pending"} · snapshot prepared ${manifest.prepared_at_utc}` : "Loading source and publication metadata…"}<//
           >
           <${Group} component="nav" aria-label="Plan contents" gap="md" my="lg">
             ${[
+              ["pytest-fixtures", "Fixture reuse and cleanup"],
               ["port-dispatch", "Five-port dispatch"],
               ["iteration16", "Iteration 16 current evidence"],
               ["iteration15", "Historical iteration 15"],
@@ -984,7 +1006,56 @@
                 html`<${Anchor} key=${id} href=${`#${id}`}>${label}<//>`,
             )}
           <//>
-          <${Alert} color="yellow" title="Current architecture decision">
+          <${Section}
+            id="pytest-fixtures"
+            title="Fixture reuse and pytest lifecycle"
+          >
+            ${p("15 November bounded fixture iteration on PR #16489. The deployment was already shared once per Bazel test action. This change shares native clients and one healthy ordinary Pod across the three trust probes; verifies exact Sandbox and Pod UIDs before every lease; and discards a failed lease. Impostor, revocation and lifecycle mutation resources remain case-owned.")}
+            ${p("Scenario, Policy and Sandbox owners now use one cancellation-drain implementation. Standard pytest yield fixtures and AsyncExitStack own lifetimes. Exact UID ownership, registration before readiness, uncertain-create handling, deletion ordering, and private failure diagnostics remain explicit domain responsibilities.")}
+            <${Alert}
+              color="blue"
+              title="Prefer the existing runner unless migration removes real machinery"
+            >
+              The pinned AnyIO runner passed a scoped task-group lifecycle
+              spike, and the seven real platform cases passed with it. Its
+              shield did not protect raw asyncio Task.cancel(). Because the real
+              fixture has no cross-task workaround for AnyIO to remove,
+              migration is deferred; the shared platform fixture uses the
+              existing pytest-asyncio module-loop pattern. The isolated spike
+              remains.
+            <//>
+            <${Title} order=${3} mt="lg"
+              >Selected-target evidence, including both orders<//
+            >
+            ${
+              fixtures
+                ? html`<${Rows}
+                    headers=${["Run / intended inputs", "Runner", "Bazel elapsed", "Platform action", "Pod action", "Known test CPU"]}
+                    rows=${fixtures.runs.map((run) => [
+                      html`<${Anchor} href=${run.url}
+                        >${`${run.name} · ${(run.intended_source || run.source).slice(0, 10)}${run.overlay ? " (overlay)" : ""}`}<//
+                      >`,
+                      run.runner,
+                      seconds(run.elapsed_seconds),
+                      seconds(run.platform_seconds),
+                      seconds(run.pod_seconds),
+                      seconds(run.cpu_seconds),
+                    ])}
+                  />`
+                : p("Loading reviewed fixture measurements…")
+            }
+            ${p("A1/B1/B2/A2 each retain the identical 22-case JUnit multiset: 15 Pod cases and seven platform cases, with no skips. A2 is faster than either B run, so the first pair does not establish repeatable complete-feedback savings. Worker warmth, build cache and concurrent CI/experiments are uncontrolled. Test CPU and allocated-compute duration are separate from feedback time. No fleet window or denominator is refreshed here.")}
+            ${p("B2/A2 are overlays on remote Git HEAD c98ee8ab9c, not clean exact-commit repeats. The two top-level test-module digests match the intended revisions; the complete input trees were not independently verified and Git stamping can differ. The reviewed JSON retains both the actual remote base and logged patch digests.")}
+            ${fixtures ? p(fixtures.scheduler.finding) : null}
+            ${p("The goal remains at least 30% faster complete required PR feedback, now allowing up to 25% more compute. This is a prospective allowance; historical experiments keep their original caps and dispositions. The small fixture screen does not qualify that goal or justify changing the required gate.")}
+            <${Title} order=${3} mt="lg">What to measure next<//>
+            ${p("Keep the simpler cleanup ownership and tested resource reuse as maintenance changes. Retain bounded case concurrency unless ordinary pytest preserves correctness and feedback. Before replacing it with two ordinary Bazel shards, measure the extra deployment/setup cost against the 25% allowance. For the larger latency goal, measure actual affected-target cuts from separating App fixtures out of the common conftest dependency graph; label any estimated savings as hypotheses.")}
+            ${p(html`<${Anchor} href="pytest-fixtures.json">Reviewed run records and follow-ups<//> · <${Anchor} href="https://github.com/agentydragon/ducktape/pull/16489">Source PR #16489<//> · <${Anchor} href="https://github.com/agentydragon/ducktape/issues/16099">Qualification tracker #16099<//>`)}
+          <//>
+          <${Alert}
+            color="yellow"
+            title="Historical iteration 16 architecture decision"
+          >
             The new exact-source tests and ordinary CI pass are implementation
             evidence. The Services run compares unequal case sets. Pod B2 was
             13.4% lower in one native-time pair but used 35.8% more Pod CPU;
@@ -1001,9 +1072,10 @@
           <//>
           <${Section}
             id="port-dispatch"
-            title="Current five-port dispatch and qualification follow-up"
+            title="Five-port dispatch snapshot and qualification follow-up"
           >
             ${p("Five narrowly scoped test and fixture ports have independent PRs. They preserve required acceptance coverage and the existing selection policy while partitioning target boundaries; no tests are made optional. No KVM, resource, or concurrency policy changed, and historical fleet windows and denominators remain unchanged.")}
+            ${p("This retained dispatch snapshot predates the fixture iteration above. Its other PR heads were not refreshed here; current #16489 implementation and CI provenance are in pytest-fixtures.json.")}
             ${
               dispatch
                 ? html`<${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="sm"

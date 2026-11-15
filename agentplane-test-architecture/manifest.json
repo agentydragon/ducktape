@@ -1,9 +1,9 @@
 {
-  "source_devel_commit": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76",
-  "audited_at_utc": "2026-11-14T18:01:04Z",
+  "source_devel_commit": "f7e32024f8a6ed8620bf95545111de7bb6a2b26e",
+  "audited_at_utc": "2026-11-15T06:06:35.817697+00:00",
   "published_at_utc": null,
-  "scope": "Supplemental exact-source platform evidence, manual screens, and per-action coverage for the 9b330689 candidate slices. Seven recovered TestRunner ActionResults pass 59 JUnit case results across seven targets, with overlapping logical coverage; a separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf qualification aggregate is provider-disconnected, while separate same-source invocation b741 completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification is unmet. Fleet populations, rates, and denominators unchanged.",
-  "report_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
+  "scope": "Supplemental 15 November fixture ownership and pytest runner experiments for PR #16489, with exact-head ordinary CI correctness validation. Historical iteration16 and fleet windows, rates and denominators are retained. Complete-feedback performance qualification remains unmet.",
+  "report_sha256": "1b9439de96f6346e11a11264779e742249465363109e786c610c55ead31e17ab",
   "evidence_sha256": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
   "previous_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
   "pilot_branch": "agent/test-architecture-pivot",
@@ -19,12 +19,12 @@
   "ci_synthetic_merge_base_commit": null,
   "implementation_head_commit": "38f6c8e723995efb5c8372c5f81bbd30d9e0621f",
   "previous_published_at_utc": null,
-  "prepared_at_utc": "2026-11-14T18:10:20Z",
-  "publication_status": "Draft report16 includes 59 passing JUnit case results across seven targets with overlapping logical coverage, exact Services/Pod identity unions, and a separate successful 20-case same-source repeat with eight named library builds and six aspects. The direct 12cdf aggregate remains provider-disconnected; separate same-source b741 completed. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification, root review, visual rendering, and publication remain pending.",
+  "prepared_at_utc": "2026-11-15T06:01:11.687336+00:00",
+  "publication_status": "Reviewed fixture iteration prepared for a gh-pages PR. Root navigation, README and the new section are visually checked; deployment awaits that PR merging. Source #16489 remains draft; no required gate or selector change is adopted.",
   "reproduction_artifact_sha256": {
     "selector-counterfactual.sh": "74d59cd7daaafb0890ed4eb42523f05d81d95f259248f9e72362c8bac6eafcf2"
   },
-  "previous_snapshot_prepared_at_utc": "2026-11-13T14:55:57.010724+00:00",
+  "previous_snapshot_prepared_at_utc": "2026-11-14T18:10:20Z",
   "previous_snapshot_merge_completed_at_utc": "2026-11-13T15:03:10Z",
   "supporting_evidence_sha256": {
     "app-fixture-ownership.json": "436f76dbc8053790f9a186981e17a2e32bbaa891469bb18e7258e29930328cb2",
@@ -68,10 +68,11 @@
     "iteration15.json": "0e5f99643ef17a6f0044e733de13747aedd2eb1ef67dffdee023e2dad90b0316",
     "evidence.json": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
     "iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93",
-    "five-port-dispatch.json": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4"
+    "five-port-dispatch.json": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4",
+    "pytest-fixtures.json": "bf0cae1e03febd3ed842436440562b130c12c77c27d2d73e73f69de1d61151cd"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
-  "visual_validation_status": "Report16 visual validation pending; prior screenshot evidence applies only to the previous snapshot.",
+  "visual_validation_status": "Latest fixture section and root report card passed two real RBE browser cases, eight reviewed desktop/mobile captures, both initial color preferences and live theme changes. Historical iteration16 visual status is preserved separately.",
   "previous_snapshot_source": {
     "devel_base": "f2a98e950d5ed8b7b1d28b85f0b87e719b5ee7de",
     "pilot_head": "0a9acbf620a8aac16fee074812d58c8d63e603e1",
@@ -129,9 +130,9 @@
     "evidence_sha256": "490e4fb5a36103a61116a15a82a422fd37e5a3205360d7c4cf738629418629cc",
     "scope": "Single authoritative snapshot; original fleet latency/reliability populations unchanged."
   },
-  "source_devel_commit_scope": "No new devel fleet cohort or latency distribution was collected for iteration16. Supplemental evidence is pinned to the exact source revisions recorded under iteration16; historical windows and bases remain unchanged.",
-  "publication_base_gh_pages_commit": "895a488df402554bf680083d340019d7d95091f5",
-  "root_navigation_sha256": "aa8615d9532daf5d593a5627ef53e90557cff49e6af405857244a949d9833614",
+  "source_devel_commit_scope": "Current fixture implementation base; prior measurement sources remain under their historical iteration records.",
+  "publication_base_gh_pages_commit": "b663c1b108297cd01c73b87b22309315dd295090",
+  "root_navigation_sha256": "fb54f84da72eca5b8458f01335fc458ce36ae4c778676bdfbc9c6c2369b25644",
   "draft_prepared_at_utc": "2026-11-14T18:01:04Z",
   "iteration11": {
     "evidence_file": "iteration11.json",
@@ -539,5 +540,32 @@
     "dispatch_source_pr_merge_sha": "afb571b3b362d8c84ce2431bd75e148bf29cc63c",
     "dispatch_source_pr_merged_at_utc": "2026-11-15T03:15:16Z",
     "dispatch_source_pr_number": 16485
-  }
+  },
+  "pytest_fixture_iteration": {
+    "prepared_at_utc": "2026-11-15T06:01:11.687336+00:00",
+    "source_head": "9f0c41e03b5db191defea9eeabc618efe5d32679",
+    "implementation_base_devel_commit": "f7e32024f8a6ed8620bf95545111de7bb6a2b26e",
+    "tested_merge": "20dc59fbaf00e4356bef6ad25c157f63a5933a31",
+    "required_checks_passed": true,
+    "evidence": "pytest-fixtures.json",
+    "scope": "Supplemental fixture/scheduler screen and correctness validation; historical fleet windows and denominators are unchanged.",
+    "visual_validation": {
+      "invocation": "https://app.buildbuddy.io/invocation/944c7db3-db7f-4629-af66-8540cbb67615",
+      "result": "PASSED; 2 browser cases; 8 reviewed captures",
+      "viewports_css_px": [1440, 390],
+      "pages": [
+        "agentplane-test-architecture/#pytest-fixtures",
+        "root architecture report card"
+      ],
+      "coverage": "Real CDN, desktop/mobile, both initial color preferences and live changes, shared deterministic_browser_context and VisualPage.capture.",
+      "source_head": "9f0c41e03b5db191defea9eeabc618efe5d32679",
+      "source_overlay": "Temporary preview target and reviewed report archive; this is report QA, not an exact-source CI performance measurement.",
+      "preview_archive_sha256": "c0b7b6a584f9b257932bbd557a78b381bd8c7bf24c49f006c020434856d63853",
+      "scope": "Only the latest fixture section and root architecture report card. No new historical/fleet audit or whole-page visual qualification is asserted."
+    }
+  },
+  "historical_source_devel_commit": "bb7c716f5a97fe4946acb10f0dafa3d69ff76d76",
+  "historical_iteration16_scope": "Supplemental exact-source platform evidence, manual screens, and per-action coverage for the 9b330689 candidate slices. Seven recovered TestRunner ActionResults pass 59 JUnit case results across seven targets, with overlapping logical coverage; a separate complete same-source invocation repeats the MCP3/Pod 20-case subset and builds eight named libraries plus six aspects. The direct 12cdf qualification aggregate is provider-disconnected, while separate same-source invocation b741 completed successfully. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification is unmet. Fleet populations, rates, and denominators unchanged.",
+  "historical_iteration16_publication_status": "Draft report16 includes 59 passing JUnit case results across seven targets with overlapping logical coverage, exact Services/Pod identity unions, and a separate successful 20-case same-source repeat with eight named library builds and six aspects. The direct 12cdf aggregate remains provider-disconnected; separate same-source b741 completed. GitHub Actions attempt 2 passed all three required checks on synthetic merge 2aec7a80, not direct source 9b330689. Full-feedback/performance qualification, root review, visual rendering, and publication remain pending.",
+  "historical_iteration16_visual_validation_status": "Report16 visual validation pending; prior screenshot evidence applies only to the previous snapshot."
 }
