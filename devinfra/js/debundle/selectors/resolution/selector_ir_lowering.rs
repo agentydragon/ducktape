@@ -11,7 +11,7 @@ use selector_ir::{
     ClaimKind, SelectorAtom, SelectorProgram, SelectorProjectedValue, SelectorTargetId,
     SelectorVariableId, SourceUnitTerm, StringTerm, VariableDomain,
 };
-use spec::{BindingSelector, BindingSourceKind, CrossRefRelation, MemberSelectorSpec};
+use spec::{BindingSelector, BindingSourceKind, MemberSelectorSpec};
 
 /// A projected `source_match` candidate: its place and, per reference column,
 /// the chunk identifier its template bound there.
@@ -416,22 +416,11 @@ impl MemberSelectorProgramBuilder {
             }
             MemberSelectorSpec::CrossRef(target) => {
                 let anchor = self.source_unit_for_global_export(&target.anchor)?;
-                match target.relation {
-                    CrossRefRelation::References => {
-                        self.program
-                            .add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
-                                source_unit: source_unit_term(source_unit),
-                                referenced: source_unit_term(anchor),
-                            });
-                    }
-                    CrossRefRelation::Aliases => {
-                        self.program
-                            .add_atom(SelectorAtom::SourceUnitAliasesSourceUnit {
-                                source_unit: source_unit_term(source_unit),
-                                aliased: source_unit_term(anchor),
-                            });
-                    }
-                }
+                self.program
+                    .add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
+                        source_unit: source_unit_term(source_unit),
+                        referenced: source_unit_term(anchor),
+                    });
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
             }
@@ -639,7 +628,6 @@ mod tests {
 
     fn references(anchor: &str) -> CrossRefTarget {
         CrossRefTarget {
-            relation: CrossRefRelation::References,
             anchor: anchor.to_string(),
             kind: Some(BindingSourceKind::FunctionDeclaration),
         }

@@ -1293,7 +1293,9 @@ An anonymous statement written with a bare `match:` rather than `source_match:`
 skips alpha-renaming: its identifiers must equal the chunk's. Literals,
 operators, member property names, object keys and tree structure are
 significant. Relational selectors (`cross_ref`, `reads_member`, …) match through
-facts derived from the chunk, not through templates.
+facts derived from the chunk, not through templates. `cross_ref.references`
+selects a source unit that references the anchor member's binding, optionally
+narrowed by `kind`.
 
 An `anonymous_statements[].source_match.match` may contain a contiguous run of
 top-level statements. The final statement is the only claimed place; preceding

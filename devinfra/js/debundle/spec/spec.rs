@@ -2279,59 +2279,37 @@ pub struct RawMemberSelector {
     pub intrinsic_alias: Option<IntrinsicAliasSelector>,
 }
 
-/// Pin a member by a **cross-reference** to another spec member instead of by
-/// this member's own (re-minify-fragile) minified name. The anchor names another
-/// member by its readable name; the target is resolved through the dependency graph as
-/// the entity standing in the named relation to the anchor's resolved binding —
-/// e.g. a shapeless delegator `function T(x){ return Anchor(x) }` pinned as "the
-/// function that references @Anchor". Exactly one of `references` / `aliases`.
+/// Pin a member by referencing another spec member instead of by this member's
+/// own (re-minify-fragile) minified name. The anchor names another member by its
+/// readable name; the target is resolved through the dependency graph as the
+/// entity that references the anchor's resolved binding — e.g. a shapeless
+/// delegator `function T(x){ return Anchor(x) }` pinned as "the function that
+/// references @Anchor".
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(deny_unknown_fields)]
 pub struct CrossRefSelector {
     /// The target references the anchor member (a delegator / consumer body).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub references: Option<String>,
-    /// The target aliases the anchor member (`const T = Anchor`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub aliases: Option<String>,
+    pub references: String,
     /// Optional statement-kind constraint disambiguating when several source_units
     /// stand in the relation to the anchor (e.g. `function_declaration`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<BindingSourceKind>,
 }
 
-/// The validated cross-reference target (`RawMemberSelector::validate` resolves the
-/// `references`/`aliases` one-of into this).
+/// The validated cross-reference target (`RawMemberSelector::validate` resolves
+/// the required anchor into this).
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct CrossRefTarget {
-    pub relation: CrossRefRelation,
     pub anchor: String,
     pub kind: Option<BindingSourceKind>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
-pub enum CrossRefRelation {
-    References,
-    Aliases,
-}
-
 impl CrossRefSelector {
-    fn target(&self) -> std::result::Result<CrossRefTarget, MemberSelectorError> {
-        let (relation, anchor) = match (&self.references, &self.aliases) {
-            (Some(anchor), None) => (CrossRefRelation::References, anchor.clone()),
-            (None, Some(anchor)) => (CrossRefRelation::Aliases, anchor.clone()),
-            (None, None) => {
-                return Err(MemberSelectorError::MissingCrossRefTarget);
-            }
-            (Some(_), Some(_)) => {
-                return Err(MemberSelectorError::MultipleCrossRefTargets);
-            }
-        };
-        Ok(CrossRefTarget {
-            relation,
-            anchor,
+    fn target(&self) -> CrossRefTarget {
+        CrossRefTarget {
+            anchor: self.references.clone(),
             kind: self.kind,
-        })
+        }
     }
 }
 
@@ -2612,7 +2590,7 @@ impl RawMemberSelector {
                 Ok(MemberSelectorSpec::Binding(binding.clone()))
             }
             (None, Some(cross_ref), None, None, None, None, None) => {
-                cross_ref.target().map(MemberSelectorSpec::CrossRef)
+                Ok(MemberSelectorSpec::CrossRef(cross_ref.target()))
             }
             (None, None, Some(reads_member), None, None, None, None) => {
                 Ok(MemberSelectorSpec::ReadsMember(reads_member.target()))
@@ -2651,10 +2629,6 @@ pub enum MemberSelectorSpec {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum MemberSelectorError {
-    #[error("members[].selector.cross_ref must include `references` or `aliases`")]
-    MissingCrossRefTarget,
-    #[error("members[].selector.cross_ref must use either `references` or `aliases`, not both")]
-    MultipleCrossRefTargets,
     #[error(
         "members[].selector must include one of `binding`, `cross_ref`, \
              `reads_member`, `member_of_module`, `passed_to_call`, \
@@ -2796,18 +2770,6 @@ mod tests {
             serialized,
             serde_json::json!({ "match": "const readable = runtime;" })
         );
-    }
-
-    #[test]
-    fn cross_ref_requires_exactly_one_relation() {
-        let both: RawMemberSelector =
-            serde_json::from_str(r#"{ "cross_ref": { "references": "A", "aliases": "B" } }"#)
-                .unwrap();
-        assert!(both.validate().is_err(), "both relations must be rejected");
-
-        let neither: RawMemberSelector =
-            serde_json::from_str(r#"{ "cross_ref": { "kind": "class_declaration" } }"#).unwrap();
-        assert!(neither.validate().is_err(), "no relation must be rejected");
     }
 
     #[test]

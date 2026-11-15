@@ -195,7 +195,7 @@ fn list_reports_source_capture_direct_and_structural_identities_separately() {
             ),
             (
                 "helper.yaml",
-                "members: [{name: Helper, selector: {cross_ref: {aliases: AnchorClass}}}]",
+                "members: [{name: Helper, selector: {cross_ref: {references: AnchorClass, kind: variable_declarator}}}]",
             ),
         ],
     );

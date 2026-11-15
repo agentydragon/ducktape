@@ -55,7 +55,7 @@ fn relational_member_still_counts_when_editing_an_anchor_module() {
             ),
             (
                 "helper.yaml",
-                "members: [{name: Helper, selector: {cross_ref: {aliases: AnchorClass}}}]\n",
+                "members: [{name: Helper, selector: {cross_ref: {references: AnchorClass, kind: variable_declarator}}}]\n",
             ),
         ],
     );

@@ -474,7 +474,7 @@ fn applies_reviewed_relational_selector() {
         "module": "services/alias",
         "readable_names": {"alias": "Alias"},
         "selectors": {"alias": {"kind": "relational", "selector": {
-            "cross_ref": {"aliases": "Anchor"}
+            "cross_ref": {"references": "Anchor", "kind": "variable_declarator"}
         }}}
     });
     let temp = tempfile::tempdir().unwrap();
