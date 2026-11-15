@@ -124,12 +124,7 @@ from cluster.cdk8s.agentplane import (
     workload_certificate_admission,
     workload_tls,
 )
-from cluster.cdk8s.agentplane.chart import (
-    RUNNER_TRUST_BUNDLE,
-    RUNNER_TRUST_BUNDLE_KEY,
-    Namespace,
-    add_runner_certificates,
-)
+from cluster.cdk8s.agentplane.chart import RUNNER_TRUST_BUNDLE, RUNNER_TRUST_BUNDLE_KEY, Namespace
 from cluster.cdk8s.agentplane.egress_credentials import EgressCredentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
@@ -569,7 +564,6 @@ def add_fixture_pki(
     chart: Chart, env: Environment, *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str
 ) -> None:
     _add_runner_root(chart)
-    add_runner_certificates(chart, env)
     add_workload_ca(chart)
     workload_certificate_admission.add_workload_certificate_admission(
         chart,

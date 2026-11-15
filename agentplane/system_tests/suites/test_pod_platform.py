@@ -50,11 +50,11 @@ async def test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster: Clu
         await workload_trust.a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster, view)
 
 
-async def test_a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
+async def test_a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
     cluster: Cluster, native_trust_pod: Borrow
 ) -> None:
     async with native_trust_pod() as view:
-        await workload_trust.a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
+        await workload_trust.a_cluster_ca_leaf_naming_the_proxy_is_refused_by_the_runner(
             cluster, view, route=workload_trust.RunnerControlRoute.PORT_FORWARD
         )
 

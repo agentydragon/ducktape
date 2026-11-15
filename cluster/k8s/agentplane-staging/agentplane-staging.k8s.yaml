@@ -10,28 +10,6 @@ metadata:
   name: agentplane-staging
 spec: {}
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: agentplane-runner-gateway
-  namespace: agentplane-staging
-spec:
-  duration: 24h
-  issuerRef:
-    kind: ClusterIssuer
-    name: agentplane-workload
-  privateKey:
-    algorithm: ECDSA
-    rotationPolicy: Always
-    size: 256
-  renewBefore: 8h
-  secretName: agentplane-runner-gateway-tls
-  uris:
-    - spiffe://agentplane/runner-gateway
-  usages:
-    - digital signature
-    - client auth
----
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:

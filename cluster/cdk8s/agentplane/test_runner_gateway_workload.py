@@ -1,4 +1,4 @@
-"""The Gateway shares a TLS gRPC listener and uses mTLS connections to runner Pods."""
+"""The Dispatcher listener and its Environments/sampler mTLS client credentials."""
 
 from dataclasses import replace
 from pathlib import PurePosixPath
@@ -13,8 +13,6 @@ from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
-    GATEWAY_ENVIRONMENTS_URI,
-    GATEWAY_RUNTIME_PROXY_URI,
     GATEWAY_SESSIONS_URI,
     NOTIFICATIONS_URI,
     SANDBOX_CONTROLLER_URI,
@@ -24,7 +22,6 @@ from agentplane.runner_gateway.settings import Settings
 from cluster.cdk8s.agentplane import (
     actions,
     app,
-    chart as agentplane_chart,
     egress,
     environment_sandbox,
     history_service,
@@ -67,13 +64,16 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     workload_issuer = {"kind": WORKLOAD_ISSUER.kind, "name": WORKLOAD_ISSUER.name}
-    gateway_certificate = _resource(staging_manifests, "Certificate", agentplane_chart.RUNNER_GATEWAY_CERTIFICATE)
-    spec = gateway_certificate["spec"]
-    assert spec["secretName"] == runner_gateway.GATEWAY_TLS_SECRET
-    assert spec["issuerRef"] == workload_issuer
-    assert spec["uris"] == ["spiffe://agentplane/runner-gateway"]
-    assert set(spec["usages"]) == {"digital signature", "client auth"}
-    assert spec["privateKey"]["rotationPolicy"] == "Always"
+    assert not any(
+        doc["kind"] == "Certificate"
+        and doc["metadata"]["name"]
+        in {
+            "agentplane-runner-gateway",
+            "runner-gateway-runtime-proxy-client-workload",
+            "runner-gateway-environments-client-workload",
+        }
+        for doc in staging_manifests
+    )
 
     workload_certificate = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-workload")
     workload_spec = workload_certificate["spec"]
@@ -83,19 +83,12 @@ def test_environment_provisions_the_gateway_identity_from_the_workload_issuer(
     assert set(workload_spec["usages"]) == {"digital signature", "client auth", "server auth"}
     assert workload_spec["privateKey"]["rotationPolicy"] == "Always"
 
-    for name, uri in (
-        ("sessions", GATEWAY_SESSIONS_URI),
-        ("runtime-proxy", GATEWAY_RUNTIME_PROXY_URI),
-        ("environments", GATEWAY_ENVIRONMENTS_URI),
-    ):
-        client_spec = _resource(staging_manifests, "Certificate", f"{runner_gateway.NAME}-{name}-client-workload")[
-            "spec"
-        ]
-        assert client_spec["secretName"] == f"{runner_gateway.NAME}-{name}-client-workload-tls"
-        assert client_spec["issuerRef"] == workload_issuer
-        assert client_spec["uris"] == [uri]
-        assert set(client_spec["usages"]) == {"digital signature", "client auth", "server auth"}
-        assert client_spec["privateKey"]["rotationPolicy"] == "Always"
+    client_spec = _resource(staging_manifests, "Certificate", "runner-gateway-sessions-client-workload")["spec"]
+    assert client_spec["secretName"] == "runner-gateway-sessions-client-workload-tls"
+    assert client_spec["issuerRef"] == workload_issuer
+    assert client_spec["uris"] == [GATEWAY_SESSIONS_URI]
+    assert set(client_spec["usages"]) == {"digital signature", "client auth", "server auth"}
+    assert client_spec["privateKey"]["rotationPolicy"] == "Always"
 
 
 def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App) -> None:
@@ -138,14 +131,7 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     # Both outgoing Sessions connections use the same mounted role certificate.
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler["tls"][field] == settings["gateway_tls"][field]
-    assert settings["runner_security"] == {
-        "mode": "mtls",
-        "tls": {
-            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
-            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
-            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
-        },
-    }
+    assert "runner_security" not in settings
     assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
     assert not any(key.startswith("environment_") for key in settings)
     assert "operator_callers" not in settings
@@ -266,21 +252,11 @@ def test_gateway_settings_and_role_certificates_are_mounted(scratch_app: App) ->
     mounted = {mount["mountPath"]: mount["name"] for mount in container["volumeMounts"]}
     volumes = {volume["name"]: volume for volume in pod["volumes"]}
     settings_map = _resource(docs, "ConfigMap", f"{runner_gateway.NAME}-settings")
-    tls_volume = volumes[mounted[runner_gateway.GATEWAY_TLS_MOUNT_PATH]]["projected"]
-    assert tls_volume["defaultMode"] == 0o440
-    secret_source = one(source["secret"] for source in tls_volume["sources"] if "secret" in source)
-    assert secret_source["name"] == runner_gateway.GATEWAY_TLS_SECRET
-    assert {item["path"] for item in secret_source["items"]} == {"tls.crt", "tls.key"}
-    trust_source = one(source["configMap"] for source in tls_volume["sources"] if "configMap" in source)
-    # Runners and the Gateway's own leaf come from the workload CA, so it verifies them alone.
-    assert trust_source["name"] == "agentplane-workload-ca-bundle"
-    assert trust_source["items"] == [{"key": "ca-certificates.crt", "path": "ca.crt"}]
-    for name in ("sessions", "runtime-proxy", "environments"):
-        mount_path = f"/run/agentplane/{runner_gateway.NAME}-{name}-client-tls"
-        client_certificate_volume = volumes[mounted[mount_path]]
-        assert client_certificate_volume["secret"]["secretName"] == (
-            f"{runner_gateway.NAME}-{name}-client-workload-tls"
-        )
+    assert "/run/agentplane/runner-tls" not in mounted
+    assert "/run/agentplane/runner-gateway-runtime-proxy-client-tls" not in mounted
+    assert "/run/agentplane/runner-gateway-environments-client-tls" not in mounted
+    client_certificate_volume = volumes[mounted["/run/agentplane/runner-gateway-sessions-client-tls"]]
+    assert client_certificate_volume["secret"]["secretName"] == "runner-gateway-sessions-client-workload-tls"
     assert volumes[mounted[str(path.parent)]]["configMap"]["name"] == settings_map["metadata"]["name"]
     assert path.name in settings_map["data"]
 

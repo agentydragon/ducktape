@@ -180,9 +180,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         }
         for doc in docs
     )
-    gateway_certificate = _resource(docs, "Certificate", "agentplane-runner-gateway")
-    assert gateway_certificate["spec"]["uris"] == ["spiffe://agentplane/runner-gateway"]
-    assert set(gateway_certificate["spec"]["usages"]) == {"digital signature", "client auth"}
+    assert not any(
+        doc["kind"] == "Certificate" and doc["metadata"]["name"] == "agentplane-runner-gateway" for doc in docs
+    )
     dispatcher_certificate = _resource(docs, "Certificate", "runner-gateway-workload")
     assert dispatcher_certificate["spec"]["dnsNames"] == [f"session-dispatcher.{NAMESPACE}.svc.cluster.local"]
     workload_issuer = _resource(docs, "ClusterIssuer", "agentplane-workload")
@@ -330,14 +330,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "key_file": "/run/agentplane/workload-tls/tls.key",
     }
     assert gateway_config["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
-    assert gateway_config["runner_security"] == {
-        "mode": "mtls",
-        "tls": {
-            "cert_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.crt",
-            "key_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/tls.key",
-            "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
-        },
-    }
+    assert "runner_security" not in gateway_config
     app_certificate = _resource(docs, "Certificate", "app-workload")["spec"]
     assert set(app_certificate["uris"]) <= set(gateway_config["wake_service_callers"])
 

@@ -113,7 +113,9 @@ async def _renew_credentials(cluster: Cluster, secret_name: str) -> tuple[str, s
 
 
 async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credential: tuple[str, str]) -> None:
-    gateway = json.loads(await cluster.kubectl("get", "secret", "agentplane-runner-gateway-tls", "-o", "json"))["data"]
+    proxy = json.loads(
+        await cluster.kubectl("get", "secret", "sandbox-controller-runtime-proxy-client-workload-tls", "-o", "json")
+    )["data"]
     cert_pem, ca_pem = credential
     expected = x509.load_pem_x509_certificate(base64.b64decode(cert_pem))
     pod = json.loads(await cluster.kubectl("get", "pod", pod_name, "-o", "json"))
@@ -122,8 +124,8 @@ async def _wait_for_served_certificate(cluster: Cluster, pod_name: str, credenti
     address = pod["status"]["podIP"]
     with tempfile.TemporaryDirectory() as directory:
         cert, key = Path(directory) / "cert.pem", Path(directory) / "key.pem"
-        cert.write_bytes(base64.b64decode(gateway["tls.crt"]))
-        key.write_bytes(base64.b64decode(gateway["tls.key"]))
+        cert.write_bytes(base64.b64decode(proxy["tls.crt"]))
+        key.write_bytes(base64.b64decode(proxy["tls.key"]))
         trust = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         # URI-SAN identity is checked against the exact expected certificate
         # below; chain verification remains enabled.

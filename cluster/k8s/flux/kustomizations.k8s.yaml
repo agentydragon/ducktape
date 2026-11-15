@@ -4747,10 +4747,6 @@ spec:
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
       kind: Certificate
-      name: agentplane-runner-gateway
-      namespace: agentplane-staging
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
       name: llm-ingress-workload
       namespace: agentplane-staging
     - apiVersion: cert-manager.io/v1
