@@ -11,18 +11,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
-	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
-	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestSVIDListenerRefusesAdversarialLeavesBeforeHandler(t *testing.T) {
@@ -115,14 +112,19 @@ func (s *svidHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) 
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
-// Consolidating a listener must not widen the token writer policy to every Pod.
-func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
-	fixture, leaf := svidFixture(t)
+// One TLS listener may serve workload Identities and exact service roles without
+// turning its workload admission into a service-only method grant.
+func TestSharedListenerKeepsWorkloadAndServiceGrantsSeparate(t *testing.T) {
+	fixture, _ := svidFixture(t)
 	svids, err := auth.NewSVIDResolver(fixture.Objects, []string{fixture.Sandbox.Namespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(api.TokenReviews(), testAudience, []string{testNamespace, fixture.Sandbox.Namespace})
+	shared, err := auth.AnySubject(svids).AllowServiceCallers([]string{peertls.CentralSamplerURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceOnly, err := auth.Services([]string{peertls.CentralSamplerURI})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,13 +132,8 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
 	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
 		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
-		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
 	}}
-	resolver, err = resolver.WithListenerAuthentication(config, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := config.ServerCredentials(peertls.HistoryIngressURI)
+	serverCredentials, err := config.ServerCredentialsWithServices(peertls.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,56 +141,74 @@ func TestSharedListenerPreservesBearerWriterAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{healthpb.Health_Check_FullMethodName: auth.SVIDOrAccounts(resolver, []auth.Account{app})}
+	methods := auth.Methods{
+		healthpb.Health_Check_FullMethodName: shared,
+		healthpb.Health_List_FullMethodName:  serviceOnly,
+	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
-	callers := make(chan auth.Admission, 8)
-	healthpb.RegisterHealthServer(server, admissionHealth{admissions: callers})
+	admissions := make(chan auth.Admission, 1)
+	healthpb.RegisterHealthServer(server, admissionHealth{admissions: admissions})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	_, allowedToken := workload(t, app)
-	_, otherToken := workload(t, auth.Account{Namespace: testNamespace, Name: "other-writer"})
-	runtime := ca.Issue(t, leaf.URIs[0].String())
-	svidTLS, err := runtime.ClientTLSConfig(peertls.HistoryIngressURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backendTLS, err := (peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.HistoryIngressURI}).TLSConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name, token string
-		tls         *tls.Config
-		admitted    bool
+	workloadAdmission := auth.IdentityAdmission{Caller: fixture.Subject}
+	serviceAdmission := auth.ServiceAdmission{Caller: auth.ServicePrincipal{SPIFFEID: peertls.CentralSamplerURI}}
+	for _, tc := range []struct {
+		name, uri           string
+		md                  metadata.MD
+		checkCode, listCode codes.Code
+		want                auth.Admission
 	}{
-		{"SVID", "", svidTLS, true},
-		{"sampler bearer", allowedToken, backendTLS, true},
-		{"other bearer", otherToken, backendTLS, false},
-		{"ambiguous", allowedToken, svidTLS, false},
-		{"absent", "", backendTLS, false},
+		{name: "workload Identity", uri: fixture.URI, checkCode: codes.OK, listCode: codes.Unauthenticated, want: workloadAdmission},
+		{name: "granted service", uri: peertls.CentralSamplerURI, checkCode: codes.OK, listCode: codes.OK, want: serviceAdmission},
+		{name: "ungranted service", uri: peertls.AppURI, checkCode: codes.PermissionDenied, listCode: codes.PermissionDenied},
+		{name: "missing certificate", checkCode: codes.Unauthenticated, listCode: codes.Unauthenticated},
+		{name: "bearer without certificate", md: metadata.Pairs("authorization", "Bearer test-token"), checkCode: codes.Unauthenticated, listCode: codes.Unauthenticated},
+		{name: "workload plus bearer", uri: fixture.URI, md: metadata.Pairs("authorization", "Bearer test-token"), checkCode: codes.Unauthenticated, listCode: codes.Unauthenticated},
+		{name: "service plus bearer", uri: peertls.CentralSamplerURI, md: metadata.Pairs("authorization", "Bearer test-token"), checkCode: codes.Unauthenticated, listCode: codes.Unauthenticated},
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(test.tls)), grpc.WithNoProxy())
+		t.Run(tc.name, func(t *testing.T) {
+			var clientTLS *tls.Config
+			var err error
+			if tc.uri == "" {
+				clientTLS, err = (peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.HistoryIngressURI}).TLSConfig()
+			} else {
+				clientTLS, err = ca.Issue(t, tc.uri).ClientTLSConfig(peertls.HistoryIngressURI)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer connection.Close()
-			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-			defer cancel()
-			if test.token != "" {
-				ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+test.token))
-			}
-			_, err = healthpb.NewHealthClient(connection).Check(ctx, &healthpb.HealthCheckRequest{})
-			if test.admitted != (err == nil) {
-				t.Fatalf("admitted=%v, error=%v", test.admitted, err)
-			}
-			if test.admitted {
-				admission := <-callers
-				if test.name == "SVID" && admission != (auth.IdentityAdmission{Caller: fixture.Subject}) {
-					t.Fatalf("SVID admission = %#v, want Identity subject %#v", admission, fixture.Subject)
-				}
-			} else if len(callers) != 0 {
-				t.Fatal("refused caller reached handler")
+			client := healthpb.NewHealthClient(connection)
+			for _, call := range []struct {
+				name   string
+				invoke func(context.Context) error
+				code   codes.Code
+			}{
+				{"shared", func(ctx context.Context) error {
+					_, err := client.Check(ctx, &healthpb.HealthCheckRequest{})
+					return err
+				}, tc.checkCode},
+				{"service-only", func(ctx context.Context) error { _, err := client.List(ctx, &healthpb.HealthListRequest{}); return err }, tc.listCode},
+			} {
+				t.Run(call.name, func(t *testing.T) {
+					ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+					defer cancel()
+					err := call.invoke(metadata.NewOutgoingContext(ctx, tc.md))
+					if status.Code(err) != call.code {
+						t.Fatalf("call = %v, want %v", err, call.code)
+					}
+					if call.code == codes.OK {
+						if got := <-admissions; got != tc.want {
+							t.Fatalf("admission = %#v, want %#v", got, tc.want)
+						}
+					} else if len(admissions) != 0 {
+						t.Fatal("refused caller reached handler")
+					}
+				})
 			}
 		})
 	}
@@ -206,120 +221,25 @@ type admissionHealth struct {
 	admissions chan auth.Admission
 }
 
-func (h admissionHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+func (h admissionHealth) record(ctx context.Context) error {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	h.admissions <- admission
+	return nil
+}
+
+func (h admissionHealth) Check(ctx context.Context, _ *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	if err := h.record(ctx); err != nil {
+		return nil, err
+	}
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
-// An AnySubject or ReviewedServiceAccountOrIdentity method admits an Identity caller as an
-// IdentityAdmission and a ServiceAccount caller as before; a method that has not opted in refuses the
-// Identity caller.
-func TestIdentityAdmittingRulesAdmitIdentityCallers(t *testing.T) {
-	for _, rule := range []struct {
-		name  string
-		admit func(*auth.Resolver) auth.Rule
-	}{
-		{"AnySubject", func(r *auth.Resolver) auth.Rule { return auth.AnySubject(r) }},
-		{"ReviewedServiceAccountOrIdentity", auth.ReviewedServiceAccountOrIdentity},
-	} {
-		t.Run(rule.name, func(t *testing.T) { testIdentityAdmittingRule(t, rule.admit) })
+func (h admissionHealth) List(ctx context.Context, _ *healthpb.HealthListRequest) (*healthpb.HealthListResponse, error) {
+	if err := h.record(ctx); err != nil {
+		return nil, err
 	}
-}
-
-func testIdentityAdmittingRule(t *testing.T, admit func(*auth.Resolver) auth.Rule) {
-	accountWorkload, _ := svidWorkload(t)
-	identityWorkload := workloadauthtesting.NewIdentityWorkload(t, api, "svid-"+uuid.NewString(), "sandbox-"+uuid.NewString()[:8], testPolicyNamespace)
-	namespaces := []string{accountWorkload.Sandbox.Namespace, identityWorkload.Sandbox.Namespace}
-	svids, err := auth.NewSVIDResolver(accountWorkload.Objects, namespaces, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
-	config := authlistener.Config{ListenAddress: ":443", TLS: &authlistener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile}, Auth: []authlistener.Authentication{
-		&authlistener.SPIFFEAuth{CAFile: serverFiles.CAFile},
-		&authlistener.KubernetesBearerAuth{Audiences: []string{testAudience}},
-	}}
-	resolves, err := auth.NewResolver(api.TokenReviews(), testAudience, namespaces)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolves, err = resolves.WithListenerAuthentication(config, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverCredentials, err := config.ServerCredentials(peertls.HistoryIngressURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := auth.Methods{
-		healthpb.Health_Check_FullMethodName: admit(resolves),
-		healthpb.Health_List_FullMethodName:  auth.ReviewedServiceAccount(resolves),
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
-	admissions := make(chan auth.Admission, 4)
-	healthpb.RegisterHealthServer(server, admissionHealth{admissions: admissions})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	client := func(t *testing.T, uri string) healthpb.HealthClient {
-		t.Helper()
-		clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(peertls.HistoryIngressURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)), grpc.WithNoProxy())
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = connection.Close() })
-		return healthpb.NewHealthClient(connection)
-	}
-
-	identityClient := client(t, identityWorkload.URI)
-	if _, err := identityClient.Check(t.Context(), &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	if got := <-admissions; got != (auth.IdentityAdmission{Caller: identityWorkload.Subject}) {
-		t.Fatalf("Identity caller admitted as %#v, want %#v", got, identityWorkload.Subject)
-	}
-	if _, err := identityClient.List(t.Context(), &healthpb.HealthListRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("ServiceAccount-only method admitted an Identity caller: %v", err)
-	}
-
-	pod, err := api.Clientset.CoreV1().Pods(accountWorkload.Sandbox.Namespace).Get(t.Context(), accountWorkload.Principal.PodName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	token, err := api.PodToken(t.Context(), pod, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tokenTLS, err := (&peertls.ClientTLS{CAFile: serverFiles.CAFile, ServerURI: peertls.HistoryIngressURI}).TLSConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials.NewTLS(tokenTLS)), grpc.WithNoProxy())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
-	serviceAccountContext := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "Bearer "+token))
-	if _, err := healthpb.NewHealthClient(connection).Check(serviceAccountContext, &healthpb.HealthCheckRequest{}); err != nil {
-		t.Fatal(err)
-	}
-	direct, ok := (<-admissions).(auth.DirectAdmission)
-	if !ok || direct.Pod == nil || *direct.Pod != accountWorkload.Principal {
-		t.Fatalf("ServiceAccount caller admitted as %#v, want %#v", direct, accountWorkload.Principal)
-	}
-	if len(admissions) != 0 {
-		t.Fatal("a refused call reached the handler")
-	}
+	return &healthpb.HealthListResponse{}, nil
 }
