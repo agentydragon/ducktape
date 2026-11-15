@@ -19,7 +19,7 @@ type GatewayEnvironmentRuntimeProxy struct{ config EnvironmentRuntimeConfig }
 // NewGatewayEnvironmentRuntimeProxy validates the per-Sandbox Environment Runtime transport settings.
 func NewGatewayEnvironmentRuntimeProxy(config EnvironmentRuntimeConfig) (*GatewayEnvironmentRuntimeProxy, error) {
 	if config.Namespace == "" || config.Timeout <= 0 {
-		return nil, errors.New("runner namespace and positive timeout are required")
+		return nil, errors.New("Sandbox namespace and positive timeout are required")
 	}
 	if err := config.TLS.ValidateCaller(config.TokenFile, peertls.AppURI); err != nil {
 		return nil, errors.New("Runner Gateway caller authentication is invalid")
