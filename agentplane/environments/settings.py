@@ -61,11 +61,12 @@ class EnvironmentService(BaseModel):
     managers: tuple[Account, ...] = ()
     launchers: tuple[Account, ...] = ()
     operators: tuple[Account, ...] = ()
-    wake_callers: tuple[Account, ...] = ()
     service_readers: tuple[ServiceSPIFFEID, ...] = ()
     service_managers: tuple[ServiceSPIFFEID, ...] = ()
     service_launchers: tuple[ServiceSPIFFEID, ...] = ()
     service_operators: tuple[ServiceSPIFFEID, ...] = ()
+    # CLEANUP(added 2026-11-15): Remove after manifests omit wake_callers and that rollout completes. Ignored.
+    wake_callers: tuple[Account, ...] = ()
     # Read-only automatic-wake eligibility must match the Sessions broker grants.
     wake_service_callers: tuple[ServiceSPIFFEID, ...] = ()
     service_delegation: ServiceDelegation | None = None
