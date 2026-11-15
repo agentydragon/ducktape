@@ -74,6 +74,23 @@ fn selected_native_input(
     }
 }
 
+fn resolved_member_native_input(
+    source: &str,
+    module: &str,
+    name: &str,
+    operation: NativeOperationKind,
+) -> NativeOperationInputContract {
+    NativeOperationInputContract {
+        selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
+            module: module.to_owned(),
+            name: name.to_owned(),
+        }),
+        operation,
+        audited_source_sha256: source_sha256(source),
+        note: Some("Neutral fixture audits this exact native operation.".to_owned()),
+    }
+}
+
 #[test]
 fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
     const DECLARATION: &str =
@@ -642,6 +659,137 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
     );
     assert_eq!(uses[0]["evidence"]["operation"], "set_from_primitive_array");
     unknown_receiver_witness(&program_graph);
+}
+
+#[test]
+fn resolved_members_emit_only_the_selected_set_and_empty_map_sites() {
+    const SET_DECLARATION: &str = "const made = new Set([firstReason, secondReason]);";
+    const MAP_DECLARATION: &str = "const cache = new Map();";
+    const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nvar firstReason = 'alpha', secondReason = 'beta';\nconst made = new Set([firstReason, secondReason]);\nconst cache = new Map();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconsole.log(made.size, cache.size, LaterError.name, globalThis.saved().name);\nexport { factory, LaterError, reflect };\n";
+    let make_opts = |inputs: Vec<NativeOperationInputContract>| {
+        FixtureOpts::new(
+            SOURCE,
+            vec![
+                logical_module(
+                    "collections",
+                    &[
+                        Member::new("firstReason"),
+                        Member::new("secondReason"),
+                        Member::source_alpha_target("setValues", "made", SET_DECLARATION),
+                        Member::source_alpha_target("emptyCache", "cache", MAP_DECLARATION),
+                    ],
+                ),
+                logical_module("factory", &[Member::new("factory")]),
+                logical_module("later", &[Member::new("LaterError")]),
+            ],
+        )
+        .with_extra_chunks(REFLECT_CHUNKS)
+        .with_extra_files(REFLECT_FILES)
+        .with_native_operation_inputs("static/app", inputs)
+    };
+    let set_input = resolved_member_native_input(
+        SOURCE,
+        "collections",
+        "setValues",
+        NativeOperationKind::SetFromPrimitiveArray,
+    );
+    let map_input = resolved_member_native_input(
+        SOURCE,
+        "collections",
+        "emptyCache",
+        NativeOperationKind::MapEmpty,
+    );
+
+    let absent = run_rejection_fixture(make_opts(vec![]));
+    assert!(
+        absent
+            .atomic_group_conflicts()
+            .iter()
+            .any(
+                |conflict| conflict["claims"].as_array().is_some_and(|claims| {
+                    ["collections", "later"].iter().all(|module| {
+                        claims
+                            .iter()
+                            .any(|claim| claim["module"].as_str() == Some(*module))
+                    })
+                }),
+            ),
+        "without native premises the collection/later split must remain blocked: {:#?}",
+        absent.atomic_group_conflicts()
+    );
+
+    for (input, selected_binding, unselected_binding, expected_member) in [
+        (&set_input, "made", "cache", "setValues"),
+        (&map_input, "cache", "made", "emptyCache"),
+    ] {
+        let rejected = run_rejection_fixture(make_opts(vec![input.clone()]));
+        let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
+        let uses = json_execution_rows(&graph, "native_operation_input_uses");
+        assert_eq!(
+            uses.len(),
+            1,
+            "only the selected sibling uses the premise: {graph}"
+        );
+        assert_eq!(uses[0]["evidence"]["selected_binding"], selected_binding);
+        assert_eq!(
+            uses[0]["evidence"]["selector"]["resolved_member"]["name"], expected_member,
+            "the input must resolve through the readable logical-member name: {graph}"
+        );
+        assert!(
+            json_has_unknown_call_target(json_node_declaring(&graph, unselected_binding)),
+            "an adjacent unselected constructor must keep its opaque call frontier: {graph}"
+        );
+        assert!(
+            rejected
+                .atomic_group_conflicts()
+                .iter()
+                .any(
+                    |conflict| conflict["claims"].as_array().is_some_and(|claims| {
+                        ["collections", "later"].iter().all(|module| {
+                            claims
+                                .iter()
+                                .any(|claim| claim["module"].as_str() == Some(*module))
+                        })
+                    }),
+                ),
+            "certifying an adjacent site must not admit this split: {:#?}",
+            rejected.atomic_group_conflicts()
+        );
+    }
+
+    let fixture = run_fixture(make_opts(vec![set_input, map_input]));
+    assert_preserved_entry_output(&fixture, "2 0 LaterError LaterError\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/collections.js",
+        &["setValues", "emptyCache"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/collections.js",
+        &["const setValues = new Set", "const emptyCache = new Map"],
+        &[],
+    );
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let uses = json_execution_rows(&graph, "native_operation_input_uses");
+    assert_eq!(
+        uses.len(),
+        2,
+        "each resolved member selects one constructor: {graph}"
+    );
+    for (binding, member) in [("made", "setValues"), ("cache", "emptyCache")] {
+        assert!(
+            uses.iter().any(|use_site| {
+                use_site["evidence"]["selected_binding"] == binding
+                    && use_site["evidence"]["selector"]["resolved_member"]["module"]
+                        == "collections"
+                    && use_site["evidence"]["selector"]["resolved_member"]["name"] == member
+            }),
+            "missing resolved-member premise for {binding}: {uses:#?}"
+        );
+    }
+    unknown_receiver_witness(&serde_json::to_value(fixture.program_graph()).unwrap());
 }
 
 #[test]

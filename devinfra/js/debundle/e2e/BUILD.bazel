@@ -61,6 +61,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "native_own_data_read_test",
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
         "@crates//:serde_json",
