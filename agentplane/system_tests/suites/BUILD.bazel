@@ -231,7 +231,7 @@ _POD_DEPS = [
     "@pypi//pytest_bazel",
 ]
 
-# Gazelle owns the deps; all 21 cases remain on one stack.
+# Gazelle owns the deps; all cases share one stack.
 py_test(
     name = "test_pod",
     size = "enormous",
