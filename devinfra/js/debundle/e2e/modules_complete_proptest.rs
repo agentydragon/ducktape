@@ -4,6 +4,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{parse_stdout_json, read_tree};
 use proptest::prelude::*;
+use proptest::test_runner::FileFailurePersistence;
 use std::collections::BTreeMap;
 use std::fs;
 
@@ -11,6 +12,13 @@ fn config() -> ProptestConfig {
     let mut config = ProptestConfig::default();
     if std::env::var_os("PROPTEST_CASES").is_none() {
         config.cases = 32;
+    }
+    if let Ok(directory) = std::env::var("TEST_UNDECLARED_OUTPUTS_DIR") {
+        // Proptest's path API requires a static string. Keep one path for this
+        // test process; Bazel uploads the shrunk seed beside retained fixtures.
+        let path =
+            Box::leak(format!("{directory}/complete-search.proptest-regressions").into_boxed_str());
+        config.failure_persistence = Some(Box::new(FileFailurePersistence::Direct(path)));
     }
     config
 }
@@ -26,10 +34,13 @@ proptest! {
         let second = if lazy_second { "function second() { return first + STEP; }" } else { "const second = first + STEP;" }.replace("STEP", &step.to_string());
         let second_value = if lazy_second { "second()" } else { "second" };
         let operand = if third_reads_second { second_value } else { "first" };
-        let third = if lazy_third { format!("function third() {{ return {operand} + 1; }}") } else { format!("const third = {operand} + 1;") };
+        // Distinct literals keep each declaration structurally identifiable,
+        // so this property also exercises successful selector realization.
+        // Ambiguous binding/anonymous synthesis has separate no-write cases.
+        let third = if lazy_third { format!("function third() {{ return {operand} + 100; }}") } else { format!("const third = {operand} + 100;") };
         let third_value = if lazy_third { "third()" } else { "third" };
-        let source = format!("const anchor = 0;\nconst first = {seed};\n{second}\n{third}\nconsole.log(first, {second_value}, {third_value});\n");
-        let expected = format!("{} {} {}\n", seed, seed + step, if third_reads_second { seed + step + 1 } else { seed + 1 });
+        let source = format!("const anchor = 99;\nconst first = {seed};\n{second}\n{third}\nconsole.log(first, {second_value}, {third_value});\n");
+        let expected = format!("{} {} {}\n", seed, seed + step, if third_reads_second { seed + step + 100 } else { seed + 100 });
         let fixture = GraphFixture::new(&source, &[("middle.yaml", "members: [{selector: {binding: {name: anchor}}}]\n")]);
         let baseline = read_tree(&fixture.modules);
         let bindings = ["first", "second", "third"];

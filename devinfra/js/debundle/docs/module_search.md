@@ -125,16 +125,20 @@ a witness or exhausts it. It can be exponential and makes no optimality promise.
 - `modules_complete_proptest` generates small eager/lazy programs and permitted
   unit/destination scopes, exhaustively materializes their raw assignments, then
   compares existence with the complete CLI result. Every returned witness goes
-  through check, preview, apply and Node. Proptest shrinks source shape and scope;
-  increase `PROPTEST_CASES` for longer runs and turn any shrunk failure into a
+  through check, preview, apply and Node. This generator uses distinguishable
+  declaration literals so selector realization is possible. Proptest shrinks
+  source shape and scope; Bazel uploads failing seeds and retained fixture inputs.
+  Increase `PROPTEST_CASES` for longer runs and turn any shrunk failure into a
   named regression before fixing it.
 - `modules_complete_cli_test` pins joint peels, actual existing owners, intact
-  three-unit atoms, honest negatives/budgets, scope errors, stale plan IDs and
-  physical tree roots. `modules_check_cli_test` also distinguishes a valid
+  three-unit atoms, honest negatives/budgets (including time spent skipping
+  out-of-scope combinations), scope errors, stale plan IDs and physical tree
+  roots. `modules_check_cli_test` also distinguishes a valid
   asymmetric import cycle from a Pass-2 ESM rejection with no constraining cycle.
 - `modules_assignments_apply_test` pins anonymous/multiple-destination claims,
   exact unchanged-unit identity, metadata, empty owner shells, generated residual
-  destinations and no writes on graph, selector or freshness failure.
+  destinations and no writes on graph, selector or freshness failure, including
+  the duplicate-literal binding case shrunk from the property suite.
 - Pure combinatorial tests cover dense/finite path gaps and order-preserving
   representatives. Existing quotient tests retain the constructed remote-TDZ
   counterexample against local-only checks; that is distinct from the real-source
