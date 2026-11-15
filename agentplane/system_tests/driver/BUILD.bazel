@@ -557,7 +557,9 @@ py_library(
         "//agentplane:policy_sets",
         "//agentplane/action_service/policies:resources",
         "//agentplane/environments/v1:environment_service_pb2",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//tenacity",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 
