@@ -9,8 +9,9 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.app.settings import Settings as AppSettings
 from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
 from agentplane.runner_gateway.settings import Settings as GatewaySettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
@@ -192,6 +193,40 @@ def test_actions_service_launcher_requires_its_existing_namespaced_launcher_gran
     assert authority.service_launchers == (frozenset({ACTIONS_URI}) if allowed else frozenset())
     assert ACTIONS_URI not in authority.service_managers
     assert ACTIONS_URI not in authority.service_operators
+
+
+def test_app_environment_peer_matches_receiver_and_mounted_service_identity(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    settings = AppSettings.model_validate(
+        yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    )
+    peer = settings.environment_service
+    assert peer is not None
+    service = _resource(staging_manifests, "Service", sandbox_controller.NAME)
+    port = one(port for port in service["spec"]["ports"] if port["name"] == "grpc")
+    assert (
+        peer.target
+        == f"{service['metadata']['name']}.{service['metadata']['namespace']}.svc.cluster.local:{port['port']}"
+    )
+    certificate = _resource(staging_manifests, "Certificate", f"{sandbox_controller.NAME}-client-workload")
+    assert certificate["spec"]["uris"] == [peer.tls.server_uri]
+    app_certificate = _resource(staging_manifests, "Certificate", f"{app.NAME}-workload")
+    assert app_certificate["spec"]["uris"] == [peer.tls.client_uri]
+    assert peer.tls.client_uri == APP_URI
+    receiver = Settings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+        )
+    ).environment_service
+    assert receiver is not None
+    assert peer.tls.client_uri in receiver.service_readers
+    assert peer.tls.client_uri in receiver.service_managers
+    assert peer.tls.client_uri in receiver.service_operators
+    assert settings.session_dispatcher_tls is not None
+    assert settings.session_dispatcher_tls.server_uri == SESSION_DISPATCHER_URI
+    assert settings.session_dispatcher_target != peer.target
+    assert settings.runner_gateway_target != peer.target
 
 
 def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(

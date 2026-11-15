@@ -4407,6 +4407,15 @@ data:
     sandbox_namespace: agentplane-staging
     runner_gateway_target: runner-gateway.agentplane-staging.svc.cluster.local:8080
     session_dispatcher_target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
+    environment_service:
+      target: sandbox-controller.agentplane-staging.svc.cluster.local:8082
+      request_timeout_s: 20
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/sandbox-controller
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/app
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
     runner_gateway_control_target: runner-gateway.{namespace}.svc:8080
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
