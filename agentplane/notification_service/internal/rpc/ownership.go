@@ -23,32 +23,25 @@ func (s *Notifications) currentWorkload(ctx context.Context) (workload, error) {
 	if err != nil {
 		return workload{}, err
 	}
-	switch caller := caller.(type) {
-	case identityActor:
-		view, err := s.sandbox(ctx, caller.sandbox)
-		if err != nil {
-			return workload{}, err
-		}
-		owner := store.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
-		runsAs, err := s.sandboxRunsAs(ctx, view, owner)
-		if err != nil {
-			return workload{}, err
-		}
-		if !runsAs {
-			return workload{}, errSandboxMissing
-		}
-		return workload{
-			owner:   owner,
-			sandbox: caller.sandbox,
-		}, nil
-	case accountActor:
-		return workload{}, store.ErrNotFound
-	default:
-		panic(fmt.Sprintf("unknown actor %T", caller))
+	view, err := s.sandbox(ctx, caller.sandbox)
+	if err != nil {
+		return workload{}, err
 	}
+	owner := store.Owner{Identity: caller.identity, SandboxUID: caller.sandbox.UID}
+	runsAs, err := s.sandboxRunsAs(ctx, view, owner)
+	if err != nil {
+		return workload{}, err
+	}
+	if !runsAs {
+		return workload{}, errSandboxMissing
+	}
+	return workload{
+		owner:   owner,
+		sandbox: caller.sandbox,
+	}, nil
 }
 
-// operator reports whether the admitted caller is a configured ServiceAccount or service-SVID diagnostic reader.
+// operator reports whether the admitted caller is a configured service-SVID diagnostic reader.
 func (s *Notifications) operator(ctx context.Context) (bool, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
@@ -61,9 +54,5 @@ func (s *Notifications) operator(ctx context.Context) (bool, error) {
 		_, allowed := s.operatorServices[service.Caller.SPIFFEID]
 		return allowed, nil
 	}
-	caller, err := s.caller(ctx)
-	if err != nil {
-		return false, err
-	}
-	return s.operatorReader != "" && caller.Namespace == s.namespace && caller.Name == s.operatorReader, nil
+	return false, admissionRefused{fmt.Errorf("unexpected admission %T", admission)}
 }

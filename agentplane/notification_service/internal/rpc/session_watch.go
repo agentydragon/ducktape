@@ -168,7 +168,7 @@ func nextSessionChange(current *store.InboxStatus, observed time.Time) time.Time
 }
 
 // followSession subscribes before reading. A dropped listener fails the stream so a client reconnects
-// and receives a fresh snapshot. A quiet stream revalidates its bearer and sends bounded heartbeats.
+// and receives a fresh snapshot. A quiet stream revalidates its credential and sends bounded heartbeats.
 func followSession[T any](ctx context.Context, s *Notifications, sessionID string, caller *workload, stream grpc.ServerStreamingServer[T], read func(context.Context) (*T, time.Time, error), heartbeat *T) error {
 	if s.wakeups == nil {
 		return status.Error(codes.Unavailable, "notification change feed unavailable")

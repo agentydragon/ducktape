@@ -16,24 +16,24 @@ func TestOperatorInspectionDoesNotGrantInboxMutation(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "operator-has-none")
 	server.record(t, subscription, 1)
-	inboxes, err := server.client.ListInboxes(bearing(t, operatorToken), &pb.ListInboxesRequest{})
-	requireCode(t, err, codes.NotFound)
+	inboxes, err := server.client.ListInboxes(bearing(t, operatorCaller), &pb.ListInboxesRequest{})
+	requireCode(t, err, codes.PermissionDenied)
 	if err == nil && len(inboxes.GetInboxes()) != 0 {
 		t.Errorf("listed %v, %v", inboxes, err)
 	}
-	subscriptions, err := server.client.ListSubscriptions(bearing(t, operatorToken), &pb.ListSubscriptionsRequest{})
-	requireCode(t, err, codes.NotFound)
+	subscriptions, err := server.client.ListSubscriptions(bearing(t, operatorCaller), &pb.ListSubscriptionsRequest{})
+	requireCode(t, err, codes.PermissionDenied)
 	if err == nil && len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
-	page, err := server.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	page, err := server.client.ReadInbox(bearing(t, operatorCaller), &pb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(page.GetEntries()) != 1 || page.GetEntries()[0].GetCursor() != 1 || page.GetInbox().GetAcknowledged() != 0 {
 		t.Fatalf("operator read = %v, %v", page, err)
 	}
-	_, err = server.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
-	requireCode(t, err, codes.NotFound)
-	_, err = server.client.RetireInbox(bearing(t, operatorToken), &pb.RetireInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	_, err = server.client.AcknowledgeInbox(bearing(t, operatorCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
+	requireCode(t, err, codes.PermissionDenied)
+	_, err = server.client.RetireInbox(bearing(t, operatorCaller), &pb.RetireInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.PermissionDenied)
 }
 
 func TestOperatorCanInspectRetainedInboxAfterSandboxReplacement(t *testing.T) {
@@ -42,26 +42,26 @@ func TestOperatorCanInspectRetainedInboxAfterSandboxReplacement(t *testing.T) {
 	s.record(t, sub, 1)
 	s.recreateSandbox(t)
 
-	page, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	page, err := s.client.ReadInbox(bearing(t, operatorCaller), &pb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || page.GetInbox().GetId() != sub.GetInboxId() || len(page.GetEntries()) != 1 || page.GetEntries()[0].GetPayload() == nil {
 		t.Fatalf("retained operator read = %v, %v", page, err)
 	}
-	_, err = s.client.ReadInbox(bearing(t, sandboxToken), &pb.ReadInboxRequest{SessionId: testSession})
+	_, err = s.client.ReadInbox(bearing(t, identityCaller), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
-	_, err = s.client.ReadInbox(bearing(t, otherSandboxToken), &pb.ReadInboxRequest{SessionId: testSession})
+	_, err = s.client.ReadInbox(bearing(t, otherIdentityCaller), &pb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
-	_, err = s.client.AcknowledgeInbox(bearing(t, operatorToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
-	requireCode(t, err, codes.NotFound)
-	_, err = s.client.RetireInbox(bearing(t, operatorToken), &pb.RetireInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	_, err = s.client.AcknowledgeInbox(bearing(t, operatorCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
+	requireCode(t, err, codes.PermissionDenied)
+	_, err = s.client.RetireInbox(bearing(t, operatorCaller), &pb.RetireInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.PermissionDenied)
 }
 
-func TestOperatorPayloadReadRequiresConfiguredAccount(t *testing.T) {
-	s := newServer(t, func(config *serverConfig) { config.operatorReader = "" })
+func TestOperatorPayloadReadRequiresConfiguredService(t *testing.T) {
+	s := newServer(t, func(config *serverConfig) { config.operatorReaderServices = nil })
 	sub := s.subscribe(t, "no-operator-reader")
 	s.record(t, sub, 1)
-	_, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	_, err := s.client.ReadInbox(bearing(t, operatorCaller), &pb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.PermissionDenied)
 }
 
 func TestAppServiceSVIDCanReadDiagnosticsWithoutBecomingAnIdentity(t *testing.T) {
@@ -82,10 +82,8 @@ func TestAppServiceSVIDCanReadDiagnosticsWithoutBecomingAnIdentity(t *testing.T)
 	_, err = s.serviceClient.ListInboxes(bearing(t, ""), &pb.ListInboxesRequest{})
 	requireCode(t, err, codes.PermissionDenied)
 
-	legacyPage, err := s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
-	if err != nil || len(legacyPage.GetEntries()) != 1 {
-		t.Fatalf("legacy account reader stopped working during overlap = %v, %v", legacyPage, err)
-	}
+	_, err = s.client.ReadInbox(bearing(t, operatorToken), &pb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.Unauthenticated)
 
 	wrongCredentials, err := s.ca.Issue(t, peertls.ActionsURI).ClientCredentials(peertls.NotificationsURI)
 	if err != nil {
@@ -106,24 +104,24 @@ func TestSessionInboxReadsAreAuthorizedAndDoNotAcknowledge(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "session-status")
 	s.record(t, sub, 1)
-	for _, token := range []string{operatorToken, identityToken} {
+	for _, token := range []string{operatorCaller, identityCaller} {
 		got, err := s.client.GetInbox(bearing(t, token), &pb.GetInboxRequest{SessionId: testSession})
 		if err != nil || got.GetInbox().GetId() != sub.GetInboxId() || got.GetInbox().GetAcknowledged() != 0 || got.GetInbox().GetDelivery().GetPendingAcknowledgementCount() != 1 {
 			t.Fatalf("GetInbox for %s = %v, %v", token, got, err)
 		}
 	}
-	_, err := s.client.GetInbox(bearing(t, otherSandboxToken), &pb.GetInboxRequest{SessionId: testSession})
+	_, err := s.client.GetInbox(bearing(t, otherIdentityCaller), &pb.GetInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
-	_, err = s.client.GetInbox(bearing(t, operatorToken), &pb.GetInboxRequest{SessionId: ""})
+	_, err = s.client.GetInbox(bearing(t, operatorCaller), &pb.GetInboxRequest{SessionId: ""})
 	requireCode(t, err, codes.InvalidArgument)
-	_, err = s.client.GetInbox(bearing(t, operatorToken), &pb.GetInboxRequest{SessionId: strings.Repeat("x", 201)})
+	_, err = s.client.GetInbox(bearing(t, operatorCaller), &pb.GetInboxRequest{SessionId: strings.Repeat("x", 201)})
 	requireCode(t, err, codes.InvalidArgument)
-	missing, err := s.client.GetInbox(bearing(t, operatorToken), &pb.GetInboxRequest{SessionId: "unknown"})
+	missing, err := s.client.GetInbox(bearing(t, operatorCaller), &pb.GetInboxRequest{SessionId: "unknown"})
 	if err != nil || missing.GetInbox() != nil {
 		t.Fatalf("missing inbox = %v, %v", missing, err)
 	}
 
-	ctx, cancel := context.WithCancel(bearing(t, operatorToken))
+	ctx, cancel := context.WithCancel(bearing(t, operatorCaller))
 	defer cancel()
 	entries, err := s.client.WatchInboxEntries(ctx, &pb.WatchInboxEntriesRequest{SessionId: testSession})
 	if err != nil {
@@ -155,7 +153,7 @@ func TestEntryWatchBoundsItsSnapshot(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "many")
 	s.record(t, sub, 101)
-	stream, err := s.client.WatchInboxEntries(bearing(t, operatorToken), &pb.WatchInboxEntriesRequest{SessionId: testSession})
+	stream, err := s.client.WatchInboxEntries(bearing(t, operatorCaller), &pb.WatchInboxEntriesRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,14 +12,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 )
 
 type inboxWatch = grpc.ServerStreamingClient[pb.WatchInboxResponse]
 
 func (s testServer) watchInbox(t *testing.T, session string) inboxWatch {
 	t.Helper()
-	stream, err := s.client.WatchInbox(bearing(t, operatorToken), &pb.WatchInboxRequest{SessionId: session})
+	stream, err := s.client.WatchInbox(bearing(t, operatorCaller), &pb.WatchInboxRequest{SessionId: session})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,11 +49,11 @@ func TestInboxWatchOpensAndFollowsCommittedChanges(t *testing.T) {
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetId() == sub.GetInboxId() })
 	s.record(t, sub, 1)
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetDelivery().GetPendingAcknowledgementCount() == 1 })
-	if _, err := s.client.AcknowledgeInbox(bearing(t, identityToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetAcknowledged() == 1 })
-	if _, err := s.client.RetireInbox(bearing(t, identityToken), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
+	if _, err := s.client.RetireInbox(bearing(t, identityCaller), &pb.RetireInboxRequest{SessionId: testSession}); err != nil {
 		t.Fatal(err)
 	}
 	retired := untilInbox(t, stream, func(i *pb.Inbox) bool { return i.GetRetired() })
@@ -80,7 +79,7 @@ func TestSubscriptionWatchUpdatesWhenExpiryFallsDue(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "expires")
 	s.exec(t, `UPDATE subscription SET expires_at = $2 WHERE id = $1`, sub.GetId(), time.Now().Add(2*time.Second))
-	stream, err := s.client.WatchSubscriptions(bearing(t, operatorToken), &pb.WatchSubscriptionsRequest{SessionId: testSession})
+	stream, err := s.client.WatchSubscriptions(bearing(t, operatorCaller), &pb.WatchSubscriptionsRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +113,7 @@ func TestDrainingEndsOpenWatches(t *testing.T) {
 func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "entry-stream")
-	stream, err := s.client.WatchInboxEntries(bearing(t, operatorToken), &pb.WatchInboxEntriesRequest{SessionId: testSession})
+	stream, err := s.client.WatchInboxEntries(bearing(t, operatorCaller), &pb.WatchInboxEntriesRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +131,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 			break
 		}
 	}
-	if _, err := s.client.AcknowledgeInbox(bearing(t, identityToken), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityCaller), &pb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
 	for {
@@ -149,7 +148,7 @@ func TestEntryWatchSendsChangesAndRemovesAcknowledgedEntries(t *testing.T) {
 func TestWorkloadWatchStopsWhenItsSandboxIsRecreated(t *testing.T) {
 	s := newServer(t)
 	sub := s.subscribe(t, "watch-fence")
-	stream, err := s.client.WatchInbox(bearing(t, identityToken), &pb.WatchInboxRequest{SessionId: testSession})
+	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +191,7 @@ func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
 			// The client deadline bounds a broken service; a backend timeout must end the watch first.
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 			defer cancel()
-			stream, err := s.client.WatchInbox(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+identityToken), &pb.WatchInboxRequest{SessionId: testSession})
+			stream, err := s.client.WatchInbox(context.WithValue(ctx, callerContextKey{}, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -209,4 +208,20 @@ func TestWorkloadWatchBoundsSandboxAuthorizationLookups(t *testing.T) {
 			requireCode(t, err, codes.Unavailable)
 		})
 	}
+}
+
+func TestInboxWatchRevalidatesRevokedWorkloadBeforeSendingChanges(t *testing.T) {
+	s := newServer(t)
+	sub := s.subscribe(t, "revoked-watch")
+	stream, err := s.client.WatchInbox(bearing(t, identityCaller), &pb.WatchInboxRequest{SessionId: testSession})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, err := stream.Recv(); err != nil || first.GetInbox() == nil {
+		t.Fatalf("initial = %v, %v", first, err)
+	}
+	s.workload.Workload.Revoke(t)
+	s.record(t, sub, 1)
+	_, err = stream.Recv()
+	requireCode(t, err, codes.Unauthenticated)
 }

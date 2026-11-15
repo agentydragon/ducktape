@@ -251,7 +251,7 @@ func restart(t *testing.T, tune func(*config)) running {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := kubeDeps{Reviews: kube.TokenReviews(), Sandboxes: sandboxes, Policies: apiConfig}
+	deps := kubeDeps{Sandboxes: sandboxes, Policies: apiConfig}
 	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

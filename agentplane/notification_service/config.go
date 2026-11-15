@@ -25,7 +25,7 @@ import (
 
 const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
 
-// tokenAudience is what the TokenReview of a caller's bearer requires unless `token_audience` names another.
+// tokenAudience is retained for decoding pre-retirement settings only.
 const tokenAudience = "agentplane-notifications"
 
 // config is the Notification Service's deployment contract. Static settings come only from the YAML file named by
@@ -34,9 +34,12 @@ const tokenAudience = "agentplane-notifications"
 type config struct {
 	DatabaseURL string `mapstructure:"-"`
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
-	Namespace     string `mapstructure:"namespace"`
+	Namespace string `mapstructure:"namespace"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
+	// This legacy setting grants no admission.
 	TokenAudience string `mapstructure:"token_audience"`
-	// OperatorReaderAccount is the ServiceAccount allowed to inspect Session diagnostics across the namespace.
+	// CLEANUP(added 2026-11-15): Remove after manifests omit operator_reader_account and that rollout completes.
+	// This legacy setting grants no admission.
 	OperatorReaderAccount string `mapstructure:"operator_reader_account"`
 	// OperatorReaderServices are exact service SVIDs admitted to the same read-only diagnostic methods.
 	OperatorReaderServices []string     `mapstructure:"operator_reader_services"`
@@ -211,7 +214,6 @@ func (c *config) validate() error {
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
 		{"namespace", c.Namespace},
-		{"token_audience", c.TokenAudience},
 		{"host", c.Host},
 		{"actions.url", c.Actions.URL},
 		{"runner_gateway.control_target", c.RunnerGateway.ControlTarget},
@@ -252,13 +254,8 @@ func (c *config) validate() error {
 	if err := auth.ValidateServiceCallers(c.OperatorReaderServices); err != nil {
 		return fmt.Errorf("invalid operator_reader_services: %w", err)
 	}
-	if len(c.OperatorReaderServices) > 0 {
-		if !c.RPC.Has(listener.SPIFFE) {
-			return errors.New("operator_reader_services requires rpc spiffe client trust")
-		}
-	}
-	if !c.RPC.AllowsBearerAudience(c.TokenAudience) {
-		return errors.New("rpc.auth must allow the configured token_audience")
+	if !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("rpc requires spiffe client trust")
 	}
 	for _, quota := range []struct {
 		name  string

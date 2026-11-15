@@ -29,9 +29,8 @@ request's exact `caller_identity`; retained ServiceAccount caller attribution gr
 
 Identity callers subscribe to Sessions recorded as executing as their exact Identity and placed in the
 Sandbox controlling their credential. Message sends use the sender's current `session_inbox_access`
-grant, or the existing same-Identity rule. Component ServiceAccount senders retain their explicit grants
-and sent-message receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay
-intact. Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
+grant, or the existing same-Identity rule. Retired ServiceAccount credentials confer no sender
+or receipt access. Accepted sender attribution, payloads, cursors and runner receipts stay intact. Historical `owner_namespace` and `owner_name` columns name the destination Sandbox for new inboxes,
 so the existing inbox quota remains per Sandbox incarnation.
 
 For UID-pinned destinations with an established Session identity, a missing Sandbox or different UID leaves the inbox and
@@ -121,7 +120,7 @@ database checks alone do not prove ingress or runner notice delivery.
 
 The service reads the settings file and explicit Secret inputs described in [Configuration](#configuration). It takes no
 flags; logs are JSON on stderr. `request_timeout_s` (default 15) bounds a call's backend work
-and waiting for each watch write to clear transport backpressure. Watches revalidate the bearer and send heartbeats every 15 seconds.
+and waiting for each watch write to clear transport backpressure. Watches revalidate the credential and send heartbeats every 15 seconds.
 `message_body_limit_bytes` (default 32768, at most 262144, which the database also holds) bounds a message body.
 Sends are refused until the PolicySet and PolicyBinding informers have synced, and while either fails to list or
 watch. GitHub is on
@@ -129,11 +128,12 @@ when any `github.*` setting is set, so a Secret without `github.app_id`, or the 
 that fails validation stops startup without printing its value.
 
 The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc.health.v1`.
-`rpc.tls` supplies its server certificate and key, and `rpc.auth` explicitly admits SPIFFE and/or
-Kubernetes bearer authentication. Both modes retain the same method and inbox ownership policy.
+`rpc.tls` supplies its server certificate and key, and `rpc.auth` must configure SPIFFE client trust.
+The receiver admits live workload SVIDs and exact service SVID grants only; it performs no TokenReview.
 A certificate combined with bearer or delegation metadata is refused. `operator_reader_services`
-admits exact service SPIFFE IDs to the five diagnostic read methods; it requires SPIFFE client trust
-and can coexist with `operator_reader_account` during a rollout. A service SVID grants neither an
+admits exact service SPIFFE IDs to the five diagnostic read methods. Legacy `token_audience`,
+`operator_reader_account` and Kubernetes bearer listener entries still decode for rollout compatibility,
+but grant no admission. CLEANUP: remove these legacy settings after manifests omit them and that rollout completes. A service SVID grants neither an
 agent Identity nor inbox ownership, and is not admitted to mutations or other RPCs.
 The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
 paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials

@@ -26,7 +26,7 @@ import (
 func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *testing.T) {
 	server := newServer(t)
 	request := createRequest("create")
-	response, err := server.client.CreateSubscription(bearing(t, identityToken), request)
+	response, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 		t.Errorf("Action Service asked %v, want %v's request %s", got, owner, source.GetRequestId())
 	}
 
-	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,11 +66,11 @@ func TestCreateSubscriptionFollowsAnActionRequestAndAnAgentFindsItsInbox(t *test
 func TestCreateSubscriptionReplaysItsIdempotencyKey(t *testing.T) {
 	server := newServer(t)
 	request := createRequest("replay")
-	first, err := server.client.CreateSubscription(bearing(t, identityToken), request)
+	first, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	replayed, err := server.client.CreateSubscription(bearing(t, identityToken), request)
+	replayed, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCreateSubscriptionReplaysItsIdempotencyKey(t *testing.T) {
 		t.Errorf("replay = %v, want %v", replayed, first)
 	}
 	other := createRequest("replay")
-	_, err = server.client.CreateSubscription(bearing(t, identityToken), other)
+	_, err = server.client.CreateSubscription(bearing(t, identityCaller), other)
 	requireCode(t, err, codes.AlreadyExists)
 }
 
@@ -102,14 +102,14 @@ func TestSessionAddressedCreationRetainsAnExistingSubscriptionAndInbox(t *testin
 		t.Fatal(err)
 	}
 	s.record(t, stored, 2)
-	if _, err := s.client.AcknowledgeInbox(bearing(t, identityToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := s.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
-	retried, err := s.client.CreateSubscription(bearing(t, identityToken), request)
+	retried, err := s.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil || retried.GetSubscription().GetId() != stored.GetId() || retried.GetSubscription().GetInboxId() != stored.GetInboxId() {
 		t.Fatalf("retained subscription = %v, %v", retried, err)
 	}
-	page, err := s.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	page, err := s.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || page.GetInbox().GetAcknowledged() != 1 || page.GetInbox().GetLastCursor() != 2 || len(page.GetEntries()) != 2 {
 		t.Fatalf("retained inbox = %v, %v", page, err)
 	}
@@ -124,7 +124,7 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 		want       codes.Code
 		asksRunner bool
 	}{
-		{"another account's Sandbox", otherSandboxToken, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound, false},
+		{"another Identity's Sandbox", otherIdentityCaller, func(*notificationspb.CreateSubscriptionRequest) {}, codes.NotFound, false},
 		{"Session the runner does not hold", "", func(r *notificationspb.CreateSubscriptionRequest) { r.SessionId = "missing-session" }, codes.NotFound, true},
 		{"no source", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source = nil }, codes.InvalidArgument, false},
 		{"Action request that is no UUID", "", func(r *notificationspb.CreateSubscriptionRequest) { r.Source.GetActions().RequestId = "request" }, codes.InvalidArgument, false},
@@ -141,7 +141,7 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 			c.change(request)
 			token := c.token
 			if token == "" {
-				token = identityToken
+				token = identityCaller
 			}
 			_, err := server.client.CreateSubscription(bearing(t, token), request)
 			requireCode(t, err, c.want)
@@ -152,10 +152,6 @@ func TestCreateSubscriptionRefusesWhatTheCallerCannotFollowAndStoresNothing(t *t
 				t.Errorf("Action Service asked about a subscription that was refused before: %v", server.actions.asked())
 			}
 			listed, err := server.client.ListSubscriptions(bearing(t, token), &notificationspb.ListSubscriptionsRequest{})
-			if token != identityToken {
-				requireCode(t, err, codes.NotFound)
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -182,12 +178,12 @@ func TestCreateSubscriptionAnswersAFaultOfACollaboratorWithoutItsText(t *testing
 		t.Run(c.name, func(t *testing.T) {
 			server := newServer(t)
 			c.fail(server, c.cause)
-			_, err := server.client.CreateSubscription(bearing(t, identityToken), createRequest("faulted"))
+			_, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("faulted"))
 			requireCode(t, err, c.want)
 			if strings.Contains(status.Convert(err).Message(), "secret") {
 				t.Errorf("the client was told %q", status.Convert(err).Message())
 			}
-			listed, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{})
+			listed, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
 			if err != nil || len(listed.GetSubscriptions()) != 0 {
 				t.Errorf("listed %v, %v", listed, err)
 			}
@@ -217,7 +213,7 @@ func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			s := newServer(t)
 			s.openings.placements[testSession] = test.opening()
-			_, err := s.client.CreateSubscription(bearing(t, identityToken), createRequest("fenced-opening"))
+			_, err := s.client.CreateSubscription(bearing(t, identityCaller), createRequest("fenced-opening"))
 			requireCode(t, err, test.want)
 			s.requireNoInbox(t)
 			if len(s.runner.questions()) != 0 || len(s.actions.asked()) != 0 {
@@ -230,7 +226,7 @@ func TestSubscriptionCreationResolvesAndFencesTheSession(t *testing.T) {
 func TestACallThatOutlastsTheRequestTimeoutFails(t *testing.T) {
 	server := newServer(t, func(c *serverConfig) { c.requestTimeout = 100 * time.Millisecond })
 	server.runner.hang()
-	_, err := server.client.CreateSubscription(bearing(t, identityToken), createRequest("hangs"))
+	_, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("hangs"))
 	requireCode(t, err, codes.DeadlineExceeded)
 }
 
@@ -252,7 +248,7 @@ func githubRequest(key string) *notificationspb.CreateSubscriptionRequest {
 func TestCreateSubscriptionFollowsAGitHubSubjectUnderTheAccessItWasAuthorizedWith(t *testing.T) {
 	server := newServer(t)
 	request := githubRequest("github")
-	response, err := server.client.CreateSubscription(bearing(t, identityToken), request)
+	response, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,10 +273,10 @@ func TestCreateSubscriptionFollowsAGitHubSubjectUnderTheAccessItWasAuthorizedWit
 
 func TestCreateSubscriptionRefusesAGitHubSourceWhileTheProviderIsOff(t *testing.T) {
 	server := newServer(t, func(c *serverConfig) { c.githubDisabled = true })
-	_, err := server.client.CreateSubscription(bearing(t, identityToken), githubRequest("disabled"))
+	_, err := server.client.CreateSubscription(bearing(t, identityCaller), githubRequest("disabled"))
 	requireCode(t, err, codes.PermissionDenied)
 	// An Action request is not a GitHub source.
-	if _, err := server.client.CreateSubscription(bearing(t, identityToken), createRequest("actions")); err != nil {
+	if _, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("actions")); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -303,7 +299,7 @@ func TestCreateSubscriptionMapsWhatGitHubRefusesToStatusCodes(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			server := newServer(t)
 			server.github.failWith(c.err)
-			_, err := server.client.CreateSubscription(bearing(t, identityToken), githubRequest("refused"))
+			_, err := server.client.CreateSubscription(bearing(t, identityCaller), githubRequest("refused"))
 			requireCode(t, err, c.want)
 			if strings.Contains(status.Convert(err).Message(), "secret") {
 				t.Errorf("the client was told %q", status.Convert(err).Message())
@@ -322,7 +318,7 @@ func TestCreateSubscriptionMapsWhatGitHubRefusesToStatusCodes(t *testing.T) {
 			} else if retry != nil {
 				t.Errorf("retry info %v on a failure that is not a rate limit", retry)
 			}
-			listed, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{})
+			listed, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
 			if err != nil || len(listed.GetSubscriptions()) != 0 {
 				t.Errorf("listed %v, %v", listed, err)
 			}
@@ -333,7 +329,7 @@ func TestCreateSubscriptionMapsWhatGitHubRefusesToStatusCodes(t *testing.T) {
 func TestRenewAndCancelFollowTheSubscriptionsVersion(t *testing.T) {
 	server := newServer(t)
 	created := server.subscribe(t, "renew")
-	renewed, err := server.client.RenewSubscription(bearing(t, identityToken), &notificationspb.RenewSubscriptionRequest{
+	renewed, err := server.client.RenewSubscription(bearing(t, identityCaller), &notificationspb.RenewSubscriptionRequest{
 		SubscriptionId: created.GetId(), Version: created.GetVersion(), LifetimeDays: proto.Int32(30),
 	})
 	if err != nil {
@@ -344,11 +340,11 @@ func TestRenewAndCancelFollowTheSubscriptionsVersion(t *testing.T) {
 		!proto.Equal(subscription.GetSource(), created.GetSource()) {
 		t.Errorf("renewed = %v, created %v", subscription, created)
 	}
-	got, err := server.client.GetSubscription(bearing(t, identityToken), &notificationspb.GetSubscriptionRequest{SubscriptionId: created.GetId()})
+	got, err := server.client.GetSubscription(bearing(t, identityCaller), &notificationspb.GetSubscriptionRequest{SubscriptionId: created.GetId()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	listed, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{})
+	listed, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,22 +353,22 @@ func TestRenewAndCancelFollowTheSubscriptionsVersion(t *testing.T) {
 	}
 
 	// A renewal of a version that has moved on is refused, as is a renewal of a cancelled subscription.
-	_, err = server.client.RenewSubscription(bearing(t, identityToken), &notificationspb.RenewSubscriptionRequest{
+	_, err = server.client.RenewSubscription(bearing(t, identityCaller), &notificationspb.RenewSubscriptionRequest{
 		SubscriptionId: created.GetId(), Version: created.GetVersion(),
 	})
 	requireCode(t, err, codes.Aborted)
-	cancelled, err := server.client.CancelSubscription(bearing(t, identityToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: created.GetId()})
+	cancelled, err := server.client.CancelSubscription(bearing(t, identityCaller), &notificationspb.CancelSubscriptionRequest{SubscriptionId: created.GetId()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !cancelled.GetSubscription().GetCancelled() {
 		t.Errorf("cancelled = %v", cancelled)
 	}
-	_, err = server.client.RenewSubscription(bearing(t, identityToken), &notificationspb.RenewSubscriptionRequest{
+	_, err = server.client.RenewSubscription(bearing(t, identityCaller), &notificationspb.RenewSubscriptionRequest{
 		SubscriptionId: created.GetId(), Version: cancelled.GetSubscription().GetVersion(),
 	})
 	requireCode(t, err, codes.Aborted)
-	again, err := server.client.CancelSubscription(bearing(t, identityToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: created.GetId()})
+	again, err := server.client.CancelSubscription(bearing(t, identityCaller), &notificationspb.CancelSubscriptionRequest{SubscriptionId: created.GetId()})
 	if err != nil || !proto.Equal(again.GetSubscription(), cancelled.GetSubscription()) {
 		t.Errorf("cancelling again = %v, %v", again, err)
 	}
@@ -388,7 +384,7 @@ func TestRenewRefusesWhatIsNotAVersionOrALifetime(t *testing.T) {
 		"too long":    {SubscriptionId: created.GetId(), Version: 1, LifetimeDays: proto.Int32(31)},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := server.client.RenewSubscription(bearing(t, identityToken), request)
+			_, err := server.client.RenewSubscription(bearing(t, identityCaller), request)
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
@@ -399,7 +395,7 @@ func TestListSubscriptionsContinuesAfterTheLastIDOfAPage(t *testing.T) {
 	for _, key := range []string{"first", "second", "third"} {
 		server.subscribe(t, key)
 	}
-	all, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{})
+	all, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +403,7 @@ func TestListSubscriptionsContinuesAfterTheLastIDOfAPage(t *testing.T) {
 		t.Fatalf("listed %v", all)
 	}
 	after := all.GetSubscriptions()[0].GetId()
-	rest, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{AfterId: &after})
+	rest, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{AfterId: &after})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +412,7 @@ func TestListSubscriptionsContinuesAfterTheLastIDOfAPage(t *testing.T) {
 		t.Errorf("after %s listed %v, want the last two of %v", after, rest, all)
 	}
 	bad := "not-a-uuid"
-	_, err = server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{AfterId: &bad})
+	_, err = server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{AfterId: &bad})
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -450,19 +446,19 @@ func ownedCalls(server testServer, subscription *notificationspb.Subscription) m
 	}
 }
 
-func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
+func TestAnotherIdentitySeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 	server := newServer(t)
 	subscription := server.subscribe(t, "private")
 	server.record(t, subscription, 1)
-	stranger := func(t *testing.T) context.Context { return bearing(t, otherSandboxToken) }
+	stranger := func(t *testing.T) context.Context { return bearing(t, otherIdentityCaller) }
 
 	subscriptions, err := server.client.ListSubscriptions(stranger(t), &notificationspb.ListSubscriptionsRequest{})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.OK)
 	if err == nil && len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
 	inboxes, err := server.client.ListInboxes(stranger(t), &notificationspb.ListInboxesRequest{})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.OK)
 	if err == nil && len(inboxes.GetInboxes()) != 0 {
 		t.Errorf("listed %v, %v", inboxes, err)
 	}
@@ -470,7 +466,7 @@ func TestAnotherAccountSeesNoSubscriptionOrInboxOfTheCaller(t *testing.T) {
 		t.Run(name, func(t *testing.T) { requireCode(t, call(stranger(t)), codes.NotFound) })
 	}
 	// None of it touched the owner's.
-	read, err := server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	read, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(read.GetEntries()) != 1 || read.GetInbox().GetAcknowledged() != 0 || read.GetInbox().GetRetired() {
 		t.Errorf("read = %v, %v", read, err)
 	}
@@ -482,29 +478,29 @@ func TestASandboxRecreatedUnderTheNameSeesNoneOfItsPredecessorsInboxes(t *testin
 	server.record(t, subscription, 1)
 	server.recreateSandbox(t)
 
-	subscriptions, err := server.client.ListSubscriptions(bearing(t, identityToken), &notificationspb.ListSubscriptionsRequest{})
+	subscriptions, err := server.client.ListSubscriptions(bearing(t, identityCaller), &notificationspb.ListSubscriptionsRequest{})
 	if err != nil || len(subscriptions.GetSubscriptions()) != 0 {
 		t.Errorf("listed %v, %v", subscriptions, err)
 	}
-	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil || len(inboxes.GetInboxes()) != 0 {
 		t.Errorf("listed %v, %v", inboxes, err)
 	}
 	for name, call := range ownedCalls(server, subscription) {
-		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, identityToken)), codes.NotFound) })
+		t.Run(name, func(t *testing.T) { requireCode(t, call(bearing(t, identityCaller)), codes.NotFound) })
 	}
 
 	// The successor cannot reuse its predecessor's globally unique Session identity.
 	request := createRequest("successor")
-	_, err = server.client.CreateSubscription(bearing(t, identityToken), request)
+	_, err = server.client.CreateSubscription(bearing(t, identityCaller), request)
 	requireCode(t, err, codes.NotFound)
 	// A different Session created by the successor has its own inbox.
 	request.SessionId = "another-session"
-	created, err := server.client.CreateSubscription(bearing(t, identityToken), request)
+	created, err := server.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inboxes, err = server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err = server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil || len(inboxes.GetInboxes()) != 1 || inboxes.GetInboxes()[0].GetId() != created.GetSubscription().GetInboxId() {
 		t.Errorf("listed %v, %v; want only the successor's inbox", inboxes, err)
 	}
@@ -516,7 +512,7 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	server.record(t, subscription, 3)
 	read := func(request *notificationspb.ReadInboxRequest) (*notificationspb.ReadInboxResponse, error) {
 		request.SessionId = testSession
-		return server.client.ReadInbox(bearing(t, identityToken), request)
+		return server.client.ReadInbox(bearing(t, identityCaller), request)
 	}
 
 	page, err := read(&notificationspb.ReadInboxRequest{})
@@ -553,14 +549,14 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 			requireCode(t, err, codes.InvalidArgument)
 		})
 	}
-	_, err = server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{})
+	_, err = server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{})
 	requireCode(t, err, codes.InvalidArgument)
 	if again, err := read(&notificationspb.ReadInboxRequest{}); err != nil || again.GetInbox().GetAcknowledged() != 0 {
 		t.Errorf("reading acknowledged: %v, %v", again, err)
 	}
 
 	acknowledge := func(through int64) (*notificationspb.AcknowledgeInboxResponse, error) {
-		return server.client.AcknowledgeInbox(bearing(t, identityToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: through})
+		return server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: through})
 	}
 	if acknowledged, err := acknowledge(2); err != nil || acknowledged.GetInbox().GetAcknowledged() != 2 {
 		t.Fatalf("acknowledged = %v, %v", acknowledged, err)
@@ -574,7 +570,7 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	requireCode(t, err, codes.InvalidArgument)
 
 	retire := func() error {
-		_, err := server.client.RetireInbox(bearing(t, identityToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
+		_, err := server.client.RetireInbox(bearing(t, identityCaller), &notificationspb.RetireInboxRequest{SessionId: testSession})
 		return err
 	}
 	if err := retire(); err != nil {
@@ -587,14 +583,14 @@ func TestAnAgentReadsAcknowledgesAndRetiresItsInbox(t *testing.T) {
 	if err != nil || !retired.GetInbox().GetRetired() || len(retired.GetEntries()) != 3 {
 		t.Errorf("a retired inbox is read: %v, %v", retired, err)
 	}
-	got, err := server.client.GetSubscription(bearing(t, identityToken), &notificationspb.GetSubscriptionRequest{SubscriptionId: subscription.GetId()})
+	got, err := server.client.GetSubscription(bearing(t, identityCaller), &notificationspb.GetSubscriptionRequest{SubscriptionId: subscription.GetId()})
 	if err != nil || !got.GetSubscription().GetCancelled() {
 		t.Errorf("retiring cancels the subscriptions: %v, %v", got, err)
 	}
 	// A retired inbox takes no new subscription for its Session, and none of its subscriptions changes.
-	_, err = server.client.CreateSubscription(bearing(t, identityToken), createRequest("after-retire"))
+	_, err = server.client.CreateSubscription(bearing(t, identityCaller), createRequest("after-retire"))
 	requireCode(t, err, codes.FailedPrecondition)
-	_, err = server.client.RenewSubscription(bearing(t, identityToken), &notificationspb.RenewSubscriptionRequest{
+	_, err = server.client.RenewSubscription(bearing(t, identityCaller), &notificationspb.RenewSubscriptionRequest{
 		SubscriptionId: subscription.GetId(), Version: got.GetSubscription().GetVersion(),
 	})
 	requireCode(t, err, codes.FailedPrecondition)
@@ -610,7 +606,7 @@ func TestRetiredInboxAddressIsRejectedEvenWithSessionID(t *testing.T) {
 	for _, request := range []proto.Message{read, ack, retire} {
 		request.ProtoReflect().SetUnknown([]byte{0x0a, 0x03, 'o', 'l', 'd'})
 	}
-	ctx := bearing(t, identityToken)
+	ctx := bearing(t, identityCaller)
 	_, err := server.client.ReadInbox(ctx, read)
 	requireCode(t, err, codes.InvalidArgument)
 	_, err = server.client.AcknowledgeInbox(ctx, ack)
@@ -638,23 +634,23 @@ func TestRecreatedServiceAccountCannotAccessOrModifyOriginalInbox(t *testing.T) 
 		t.Fatal(err)
 	}
 	inboxes, err := s.client.ListInboxes(bearing(t, sandboxToken), &notificationspb.ListInboxesRequest{})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	if err == nil && len(inboxes.GetInboxes()) != 0 {
 		t.Fatalf("replacement inboxes = %v, %v", inboxes, err)
 	}
 	_, err = s.client.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	_, err = s.client.GetInbox(bearing(t, sandboxToken), &notificationspb.GetInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	_, err = s.client.AcknowledgeInbox(bearing(t, sandboxToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	_, err = s.client.RetireInbox(bearing(t, sandboxToken), &notificationspb.RetireInboxRequest{SessionId: testSession})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	_, err = s.client.CancelSubscription(bearing(t, sandboxToken), &notificationspb.CancelSubscriptionRequest{SubscriptionId: subscription.GetId()})
-	requireCode(t, err, codes.NotFound)
+	requireCode(t, err, codes.Unauthenticated)
 	_, err = s.client.CreateSubscription(bearing(t, sandboxToken), createRequest("replacement-account"))
-	requireCode(t, err, codes.NotFound)
-	page, err := s.client.ReadInbox(bearing(t, operatorToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	requireCode(t, err, codes.Unauthenticated)
+	page, err := s.client.ReadInbox(bearing(t, operatorCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil || len(page.GetEntries()) != 1 || page.GetInbox().GetAcknowledged() != 0 || page.GetInbox().GetRetired() {
 		t.Fatalf("retained operator view = %v, %v", page, err)
 	}
@@ -666,7 +662,7 @@ func TestASubscriptionEstablishesItsSessionsExecutionIdentityForTheInbox(t *test
 	server := newServer(t)
 	identity := server.identity
 	server.openings.placements[testSession].Identity = identity
-	response, err := server.client.CreateSubscription(bearing(t, identityToken), createRequest("identity"))
+	response, err := server.client.CreateSubscription(bearing(t, identityCaller), createRequest("identity"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -703,14 +699,14 @@ func TestReplacementSandboxExecutionIdentityCannotAccessOrCreateIdentityInbox(t 
 		t.Fatal(err)
 	}
 
-	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil || len(inboxes.GetInboxes()) != 0 {
 		t.Fatalf("former Identity inboxes = %v, %v; want no visible inbox", inboxes, err)
 	}
-	_, err = server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	_, err = server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	requireCode(t, err, codes.NotFound)
 	askedActions := len(server.actions.asked())
-	_, err = server.client.CreateSubscription(bearing(t, identityToken), createRequest("replaced-identity"))
+	_, err = server.client.CreateSubscription(bearing(t, identityCaller), createRequest("replaced-identity"))
 	requireCode(t, err, codes.NotFound)
 	if len(server.actions.asked()) != askedActions {
 		t.Fatal("Action source was read after the live Sandbox changed Identity")

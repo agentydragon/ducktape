@@ -6,7 +6,7 @@ from typing import Annotated, ClassVar, Self
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
-from agentplane.identity.auth.listener import KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.identity.auth.listener import Listener, SPIFFEAuth
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     HISTORY_SERVICE_URI,
@@ -165,16 +165,18 @@ class QuotaSettings(BaseModel):
 class Settings(BaseModel):
     config_file_env: ClassVar[str] = "AGENTPLANE_NOTIFICATIONS_CONFIG_FILE"
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    namespace: str = Field(description="Allowed caller ServiceAccount namespace and destination sandbox namespace.")
+    namespace: str = Field(description="Workload credential, Identity and destination Sandbox namespace.")
     actions: ActionsSettings
     runner_gateway: RunnerGatewaySettings
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
+    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
     token_audience: str = Field(
-        default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
+        default=TOKEN_AUDIENCE, description="Ignored legacy setting; remove after manifest omission and rollout."
     )
+    # CLEANUP(added 2026-11-15): Remove after manifests omit operator_reader_account and that rollout completes.
     operator_reader_account: str | None = Field(
-        default=None, description="ServiceAccount name allowed to inspect Session inbox diagnostics and entry payloads."
+        default=None, description="Ignored legacy setting; remove after manifest omission and rollout."
     )
     operator_reader_services: list[ServiceSPIFFEID] = Field(
         default_factory=list,
@@ -212,20 +214,11 @@ class Settings(BaseModel):
     )
 
     @model_validator(mode="after")
-    def bearer_audience(self) -> Settings:
-        if not any(
-            isinstance(method, KubernetesBearerAuth) and self.token_audience in method.audiences
-            for method in self.rpc.auth
-        ):
-            raise ValueError("rpc.auth must allow the configured token_audience")
-        return self
-
-    @model_validator(mode="after")
     def service_operator_readers(self) -> Settings:
         if len(set(self.operator_reader_services)) != len(self.operator_reader_services):
             raise ValueError("operator_reader_services must not contain duplicates")
-        if self.operator_reader_services and not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
-            raise ValueError("operator_reader_services requires rpc SPIFFE client trust")
+        if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
+            raise ValueError("rpc requires SPIFFE client trust")
         return self
 
     github: GitHubSettings | None = Field(

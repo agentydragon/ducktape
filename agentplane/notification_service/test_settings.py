@@ -21,7 +21,8 @@ def static_values() -> dict[str, object]:
     return {
         "rpc": {
             "listen_address": "0.0.0.0:8080",
-            "auth": [{"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]}],
+            "auth": [{"mode": "spiffe", "ca_file": "/test/ca.pem"}],
+            "tls": {"cert_file": "/test/tls.crt", "key_file": "/test/tls.key"},
         },
         "namespace": "test",
         "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
@@ -121,7 +122,7 @@ def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -
         Settings.model_validate(server_only_values)
 
 
-def test_operator_reader_account_and_service_svid_can_coexist() -> None:
+def test_legacy_operator_reader_setting_still_decodes() -> None:
     values = static_values()
     values["operator_reader_account"] = "test-app"
     values["operator_reader_services"] = ["spiffe://agentplane/app"]
@@ -203,6 +204,16 @@ def test_explicit_null_retention_differs_from_omission() -> None:
         ).github_delivery_retention_days
         is None
     )
+
+
+def test_receiver_requires_spiffe_trust() -> None:
+    values = static_values()
+    values["rpc"] = {
+        "listen_address": "0.0.0.0:8080",
+        "auth": [{"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]}],
+    }
+    with pytest.raises(ValidationError, match="rpc requires SPIFFE client trust"):
+        Settings.model_validate(values)
 
 
 if __name__ == "__main__":

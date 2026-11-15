@@ -13,7 +13,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadresolver "github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -34,7 +33,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -50,8 +48,10 @@ const (
 	testAudience  = "test-notification-service"
 	testNamespace = "test-namespace"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
-	callDeadline  = 30 * time.Second
-	identityToken = "test-identity-svid"
+	callDeadline        = 30 * time.Second
+	identityCaller      = "test-identity-svid"
+	otherIdentityCaller = "test-other-identity-svid"
+	operatorCaller      = "test-app-service-svid"
 
 	sandboxName      = "test-sandbox"
 	otherSandboxName = "other-sandbox"
@@ -61,39 +61,38 @@ const (
 
 var (
 	kube *kubeapiserver.Server
-	// Account tokens remain for operator and negative ServiceAccount-authentication coverage. Session
-	// owner calls use identityToken and are routed over an authenticated workload SVID connection.
+	// Bound account tokens are used only to verify retired credentials are rejected.
 	sandboxToken, otherSandboxToken, operatorToken, outsiderToken string
 	// sandboxUID and otherSandboxUID are the UIDs of the two Sandboxes newServer creates for the current test,
 	// and successorUID that of the test Sandbox recreateSandbox puts in its place. Tests run one at a time.
 	sandboxUID, otherSandboxUID, successorUID string
 	testPolicyIdentity                        *policyapi.Identity
 	testIdentityWorkload                      *workloadauthtesting.IdentityWorkload
+	testOtherWorkload                         *workloadauthtesting.IdentityWorkload
 )
 
-// routedClientConn keeps the same test client surface for reviewed ServiceAccount calls and
-// Identity calls. The synthetic identityToken only selects a separate mTLS connection whose live
-// SVID record names the exact Identity; it is removed before making that authenticated call.
-type routedClientConn struct {
-	mu       sync.RWMutex
-	account  *grpc.ClientConn
-	identity *grpc.ClientConn
-}
+// Test caller selectors choose authenticated connections without sending synthetic metadata.
+type (
+	callerContextKey struct{}
+	routedClientConn struct {
+		mu                                         sync.RWMutex
+		unauthenticated, identity, other, operator *grpc.ClientConn
+	}
+)
 
 func (r *routedClientConn) connection(ctx context.Context) (grpc.ClientConnInterface, context.Context) {
-	md, _ := metadata.FromOutgoingContext(ctx)
-	for _, authorization := range md.Get("authorization") {
-		if authorization == "Bearer "+identityToken {
-			md = md.Copy()
-			md.Delete("authorization")
-			ctx = metadata.NewOutgoingContext(ctx, md)
-			r.mu.RLock()
-			connection := r.identity
-			r.mu.RUnlock()
-			return connection, ctx
-		}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	switch ctx.Value(callerContextKey{}) {
+	case identityCaller:
+		return r.identity, ctx
+	case otherIdentityCaller:
+		return r.other, ctx
+	case operatorCaller:
+		return r.operator, ctx
+	default:
+		return r.unauthenticated, ctx
 	}
-	return r.account, ctx
 }
 
 func (r *routedClientConn) Invoke(ctx context.Context, method string, args, reply any, options ...grpc.CallOption) error {
@@ -294,11 +293,9 @@ func (h *fakeHistory) questions() []string {
 }
 
 type serverConfig struct {
-	requestTimeout time.Duration
-	debounce       store.Debounce
-	githubDisabled bool
-	// operatorReader is the account allowed to inspect namespace Session diagnostics.
-	operatorReader         string
+	requestTimeout         time.Duration
+	debounce               store.Debounce
+	githubDisabled         bool
 	operatorReaderServices []string
 	// messageBodyLimit is in UTF-8 bytes.
 	messageBodyLimit int
@@ -321,6 +318,7 @@ type testServer struct {
 	openings        *fakeSessions
 	identity        *identitypb.Identity
 	workload        *workloadauthtesting.IdentityWorkload
+	otherWorkload   *workloadauthtesting.IdentityWorkload
 	ca              *transporttesting.CA
 	identityAddress string
 	serviceAddress  string
@@ -373,9 +371,9 @@ func connectIdentityClient(t *testing.T, ca *transporttesting.CA, workload workl
 func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	t.Helper()
 	config := serverConfig{
-		requestTimeout: callDeadline,
-		debounce:       store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
-		operatorReader: operatorName, messageBodyLimit: 64,
+		requestTimeout:         callDeadline,
+		debounce:               store.Debounce{Quiet: time.Minute, MaxWait: 2 * time.Minute},
+		operatorReaderServices: []string{peertls.AppURI}, messageBodyLimit: 64,
 	}
 	for _, configure := range configure {
 		configure(&config)
@@ -393,9 +391,12 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		testIdentityWorkload.Workload.Delete(t)
 		testIdentityWorkload = nil
 	}
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
+	if testOtherWorkload != nil {
+		testOtherWorkload.Workload.Delete(t)
+		if err := testOtherWorkload.Objects.Delete(t.Context(), testOtherWorkload.Identity); err != nil {
+			t.Fatal(err)
+		}
+		testOtherWorkload = nil
 	}
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
@@ -412,7 +413,9 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	}
 	identityWorkload := identityWorkloadForTest(t)
 	testIdentity := &identitypb.Identity{Name: identityWorkload.Identity.Name, Uid: string(identityWorkload.Identity.UID)}
-	sandboxUID, otherSandboxUID, successorUID = string(identityWorkload.Sandbox.UID), createSandbox(t, kubeClient, otherSandboxName), ""
+	otherWorkload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, otherSandboxName, testNamespace)
+	testOtherWorkload = &otherWorkload
+	sandboxUID, otherSandboxUID, successorUID = string(identityWorkload.Sandbox.UID), string(otherWorkload.Sandbox.UID), ""
 	sandboxes, err := sandboxreader.New(testNamespace, kubeClient)
 	if err != nil {
 		t.Fatal(err)
@@ -434,8 +437,8 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		}},
 		kube:     kubeClient,
 		identity: testIdentity,
-		workload: &identityWorkload,
-		ca:       transporttesting.NewCA(t),
+		workload: &identityWorkload, otherWorkload: &otherWorkload,
+		ca: transporttesting.NewCA(t),
 		openings: &fakeSessions{placements: map[string]*dispatcherpb.Session{
 			testSession:       sessionWithIdentity(testSession, sandboxName, sandboxUID, testIdentity),
 			"missing-session": sessionWithIdentity("missing-session", sandboxName, sandboxUID, testIdentity),
@@ -444,7 +447,7 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 	server.policy.Health.MarkSynced()
 	options := Options{
 		Store: server.store, Wakeups: hub, Namespace: testNamespace, Sandboxes: sandboxes,
-		Runner: server.runner, Actions: server.actions, OperatorReader: config.operatorReader,
+		Runner: server.runner, Actions: server.actions,
 		OperatorReaderServices: config.operatorReaderServices,
 		SendPolicy:             server.policy, History: server.history, Sessions: server.openings, MessageBodyLimit: config.messageBodyLimit,
 		Debounce: config.debounce, RequestTimeout: config.requestTimeout,
@@ -453,98 +456,69 @@ func newServer(t *testing.T, configure ...func(*serverConfig)) testServer {
 		options.GitHub = server.github
 	}
 	server.notifications = NewNotifications(options)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods, err := Methods(options, resolver)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grpcServer := grpc.NewServer(methods.ServerOptions(config.requestTimeout)...)
-	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
-	go func() { _ = grpcServer.Serve(listener) }()
-	t.Cleanup(grpcServer.Stop)
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
 	svidResolver, err := auth.NewSVIDResolver(identityWorkload.Objects, []string{testNamespace}, &workloadresolver.Identities{PolicyNamespace: testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
+	methods, err := Methods(options, svidResolver)
+	if err != nil {
+		t.Fatal(err)
+	}
 	serving := server.ca.Issue(t, peertls.NotificationsURI)
-	serverTLS, err := serving.WorkloadServerTLSConfig(peertls.NotificationsURI)
+	serverTLS, err := serving.WorkloadServerTLSConfigWithServices(peertls.NotificationsURI, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityListenerConfig := authlistener.Config{
-		ListenAddress: "127.0.0.1:0",
-		TLS:           &authlistener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
-		Auth:          []authlistener.Authentication{&authlistener.SPIFFEAuth{CAFile: serving.CAFile}},
-	}
-	identityResolver, err := resolver.WithListenerAuthentication(identityListenerConfig, svidResolver)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityListener, err := net.Listen("tcp", "127.0.0.1:0")
+	grpcServer := grpc.NewServer(append(methods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	notificationspb.RegisterNotificationsServer(grpcServer, server.notifications)
+	go func() { _ = grpcServer.Serve(listener) }()
+	t.Cleanup(grpcServer.Stop)
+	address := listener.Addr().String()
+	server.identityAddress, server.serviceAddress = address, address
+	identityConn := connectIdentityClient(t, server.ca, identityWorkload.Workload, address)
+	otherConn := connectIdentityClient(t, server.ca, otherWorkload.Workload, address)
+	serviceCredentials, err := server.ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.NotificationsURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityMethods, err := Methods(options, identityResolver)
+	serviceConn, err := grpc.NewClient(address, grpc.WithTransportCredentials(serviceCredentials))
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityGRPCServer := grpc.NewServer(append(identityMethods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	notificationspb.RegisterNotificationsServer(identityGRPCServer, server.notifications)
-	go func() { _ = identityGRPCServer.Serve(identityListener) }()
-	t.Cleanup(identityGRPCServer.Stop)
-	identityConn := connectIdentityClient(t, server.ca, identityWorkload.Workload, identityListener.Addr().String())
-	server.identityAddress = identityListener.Addr().String()
-	server.clientRoutes = &routedClientConn{account: connection, identity: identityConn}
-	var serviceConn *grpc.ClientConn
-	if len(config.operatorReaderServices) > 0 {
-		serviceTLS, err := serving.WorkloadServerTLSConfigWithServices(peertls.NotificationsURI, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		serviceListener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		server.serviceAddress = serviceListener.Addr().String()
-		serviceServer := grpc.NewServer(append(methods.ServerOptions(config.requestTimeout), grpc.Creds(credentials.NewTLS(serviceTLS)))...)
-		notificationspb.RegisterNotificationsServer(serviceServer, server.notifications)
-		go func() { _ = serviceServer.Serve(serviceListener) }()
-		t.Cleanup(serviceServer.Stop)
-		serviceCredentials, err := server.ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.NotificationsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		serviceConn, err = grpc.NewClient(serviceListener.Addr().String(), grpc.WithTransportCredentials(serviceCredentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		server.serviceClient = notificationspb.NewNotificationsClient(serviceConn)
+	unauthenticatedCredentials, err := (&peertls.ClientTLS{CAFile: serving.CAFile, ServerURI: peertls.NotificationsURI}).Credentials()
+	if err != nil {
+		t.Fatal(err)
 	}
+	connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(unauthenticatedCredentials))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.serviceClient = notificationspb.NewNotificationsClient(serviceConn)
+	server.clientRoutes = &routedClientConn{unauthenticated: connection, identity: identityConn, other: otherConn, operator: serviceConn}
 	t.Cleanup(func() {
 		_ = connection.Close()
 		_ = identityConn.Close()
-		if serviceConn != nil {
-			_ = serviceConn.Close()
-		}
+		_ = otherConn.Close()
+		_ = serviceConn.Close()
 	})
 	server.client = notificationspb.NewNotificationsClient(server.clientRoutes)
 	return server
 }
 
-// bearing is a call context carrying the token, or none for "".
+// bearing selects a test SVID caller, or sends an actual bearer for rejection tests.
 func bearing(t *testing.T, token string) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
-	if token == "" {
+	switch token {
+	case "":
 		return ctx
+	case identityCaller, otherIdentityCaller, operatorCaller:
+		return context.WithValue(ctx, callerContextKey{}, token)
 	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
@@ -584,7 +558,7 @@ func (s testServer) subscribe(t *testing.T, key string, sessionID ...string) *no
 		s.runner.sessions[sandboxName] = append(s.runner.sessions[sandboxName], sessionID[0])
 		s.runner.mu.Unlock()
 	}
-	response, err := s.client.CreateSubscription(bearing(t, identityToken), request)
+	response, err := s.client.CreateSubscription(bearing(t, identityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +602,7 @@ func (s testServer) recreateSandbox(t *testing.T) {
 	t.Cleanup(func() { _ = connection.Close() })
 }
 
-// grantSend binds a set of one rule, allowing send_message to the targets, to the account of the given name.
+// grantSend binds send_message to the sender Identity, or an unrelated account for denial checks.
 // The binding is named after the account.
 func (s testServer) grantSend(account string, targets policyapi.SandboxTargets) {
 	s.policy.Rules.PutPolicySet(&policyapi.PolicySet{
@@ -637,10 +611,15 @@ func (s testServer) grantSend(account string, targets policyapi.SandboxTargets) 
 			{Type: "session_inbox_access", Operations: []string{"send_message"}, Targets: &targets},
 		}},
 	})
+	subject := policyapi.Subject{Namespace: testNamespace, Name: account}
+	if account == otherSandboxName {
+		s.policy.Rules.PutIdentity(s.otherWorkload.Identity)
+		subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: s.otherWorkload.Identity.Name}}
+	}
 	s.policy.Rules.PutBinding(&policyapi.PolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: account},
 		Spec: policyapi.PolicyBindingSpec{
-			Subject:    policyapi.Subject{Namespace: testNamespace, Name: account},
+			Subject:    subject,
 			PolicySets: []string{account + "-send"},
 		},
 	})

@@ -22,7 +22,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
@@ -53,7 +52,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,23 +72,15 @@ const (
 	historyReceiveBytes = 32 * 1024 * 1024
 )
 
-// kubeDeps is what the service reads from Kubernetes: whom a bearer proves, the Sandboxes of its namespace, and
+// kubeDeps is what the service reads from Kubernetes: live workload credentials, Sandboxes, and
 // the API server its send grants are watched on.
 type kubeDeps struct {
-	Reviews   auth.TokenReviews
 	Sandboxes client.Reader
 	Policies  *rest.Config
 }
 
 func inClusterDeps() (kubeDeps, error) {
 	kubeConfig, err := kubeclient.Config("")
-	if err != nil {
-		return kubeDeps{}, err
-	}
-	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
-	// client-side. API Priority and Fairness bounds the load on the server.
-	kubeConfig.QPS = -1
-	kube, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		return kubeDeps{}, err
 	}
@@ -104,10 +94,10 @@ func inClusterDeps() (kubeDeps, error) {
 	if err != nil {
 		return kubeDeps{}, err
 	}
-	return kubeDeps{Reviews: kube.AuthenticationV1().TokenReviews(), Sandboxes: sandboxes, Policies: kubeConfig}, nil
+	return kubeDeps{Sandboxes: sandboxes, Policies: kubeConfig}, nil
 }
 
-// run serves on the configured address, authenticating callers with the cluster's TokenReview API.
+// run serves on the configured address, authenticating workload and service SVIDs.
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
 		return fmt.Errorf("migrate Notification Service database: %w", err)
@@ -148,20 +138,8 @@ func newRoutes(webhookHandler http.Handler) http.Handler {
 
 // serve answers until ctx ends or a worker or a listener fails: the gRPC servicers and signed webhook.
 func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListener net.Listener) error {
-	callers, err := auth.NewResolver(deps.Reviews, c.TokenAudience, []string{c.Namespace})
-	if err != nil {
-		return err
-	}
-	var workloadSVIDs *auth.SVIDResolver
-	if c.RPC.Has(listener.SPIFFE) {
-		// The namespace holds the Sandboxes and the policy objects, Identities included, the service watches.
-		svid, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, &resolver.Identities{PolicyNamespace: c.Namespace})
-		if err != nil {
-			return err
-		}
-		workloadSVIDs = svid
-	}
-	callers, err = callers.WithListenerAuthentication(c.RPC, workloadSVIDs)
+	// The namespace holds the workload credentials and their live Identity subjects.
+	callers, err := auth.NewKubernetesSVIDResolver(deps.Policies, []string{c.Namespace}, &resolver.Identities{PolicyNamespace: c.Namespace})
 	if err != nil {
 		return err
 	}
@@ -248,8 +226,8 @@ func serve(ctx context.Context, c config, deps kubeDeps, grpcListener, httpListe
 		},
 		// The Action Service source authorizes a subscription the same way it reads one.
 		Actions: actionsSource, GitHub: githubAPI, SendPolicy: sendPolicy, History: history,
-		Sessions:         dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
-		MessageBodyLimit: c.MessageBodyLimitBytes, OperatorReader: c.OperatorReaderAccount,
+		Sessions:               dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
+		MessageBodyLimit:       c.MessageBodyLimitBytes,
 		OperatorReaderServices: c.OperatorReaderServices,
 		Debounce:               c.NoticeDebounce.Debounce(),
 		RequestTimeout:         seconds(c.RequestTimeoutSeconds),
