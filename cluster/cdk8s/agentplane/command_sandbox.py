@@ -112,12 +112,12 @@ class CommandSandbox(Construct):
         )
         self.add_template(
             "podtemplate",
-            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            metadata=k8s.ObjectMeta(name=NAME, namespace=env.namespace),
             workload=workload(_IMAGE, COMMAND_RESOURCES, env, trust_mounts=mounts),
         )
         self.add_template(
             "build-podtemplate",
-            metadata=ApiObjectMetadata(name=BUILD_NAME, namespace=env.namespace),
+            metadata=k8s.ObjectMeta(name=BUILD_NAME, namespace=env.namespace),
             workload=workload(
                 _BUILD_IMAGE,
                 _BUILD_RESOURCES,
@@ -129,7 +129,7 @@ class CommandSandbox(Construct):
         )
 
     def add_template(
-        self, id: str, *, metadata: ApiObjectMetadata, workload: k8s.Container, volumes: Sequence[k8s.Volume] = ()
+        self, id: str, *, metadata: k8s.ObjectMeta, workload: k8s.Container, volumes: Sequence[k8s.Volume] = ()
     ) -> k8s.KubePodTemplate:
         """Add a command workload with this component's shared sidecar and credential wiring."""
         return k8s.KubePodTemplate(

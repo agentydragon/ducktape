@@ -947,7 +947,7 @@ def add_svid_box_template(boxes: command_sandbox.CommandSandbox, env: Environmen
     )
     return boxes.add_template(
         "svid-box",
-        metadata=ApiObjectMetadata(name=svid_box.TEMPLATE, namespace=env.namespace),
+        metadata=k8s.ObjectMeta(name=svid_box.TEMPLATE, namespace=env.namespace),
         workload=command_sandbox.workload(
             ENVIRONMENT_TOOLS_IMAGE,
             command_sandbox.COMMAND_RESOURCES,
