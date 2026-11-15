@@ -60,5 +60,68 @@ async def test_policy_scope_finishes_deletion_before_propagating_cancellation(mo
     assert operations == [("create", "-f", "-"), ("delete", "policysets", "test-policy", "--ignore-not-found")]
 
 
+async def test_policy_scope_preserves_primary_failure_when_cleanup_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    cluster = Cluster(Path("/unused/kubeconfig"), "test", ("kubectl",))
+    original_error = ValueError("scenario failed")
+
+    async def kubectl(_cluster: Cluster, *args: str, body: object | None = None) -> str:
+        if args[0] == "create":
+            assert body is not None
+            return ""
+        if args[0] == "delete":
+            raise RuntimeError("sensitive cleanup details")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(Cluster, "kubectl", kubectl)
+
+    async def scenario() -> None:
+        async with PolicyObjects(cluster) as policies:
+            await policies.create_policy_set("test-policy", [])
+            raise original_error
+
+    with pytest.raises(ValueError, match="scenario failed") as raised:
+        await scenario()
+
+    assert raised.value is original_error
+    assert raised.value.__notes__ == [
+        "Policy resource cleanup also failed (1 resource(s)); cleanup details are suppressed to preserve the original failure."
+    ]
+    assert "sensitive cleanup details" not in str(raised.value.__notes__)
+
+
+async def test_policy_scope_attempts_all_deletions_and_aggregates_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    cluster = Cluster(Path("/unused/kubeconfig"), "test", ("kubectl",))
+    deletes: list[tuple[str, ...]] = []
+
+    async def kubectl(_cluster: Cluster, *args: str, body: object | None = None) -> str:
+        if args[0] == "create":
+            assert body is not None
+            return ""
+        if args[0] == "delete":
+            deletes.append(args)
+            if args[2] in {"test-policy-a", "test-policy-c"}:
+                raise RuntimeError(args[2])
+            return ""
+        raise AssertionError(args)
+
+    monkeypatch.setattr(Cluster, "kubectl", kubectl)
+
+    async def scenario() -> None:
+        async with PolicyObjects(cluster) as policies:
+            await policies.create_policy_set("test-policy-a", [])
+            await policies.create_policy_set("test-policy-b", [])
+            await policies.create_policy_set("test-policy-c", [])
+
+    with pytest.raises(ExceptionGroup, match="Policy resource cleanup failed") as raised:
+        await scenario()
+
+    assert deletes == [
+        ("delete", "policysets", "test-policy-c", "--ignore-not-found"),
+        ("delete", "policysets", "test-policy-b", "--ignore-not-found"),
+        ("delete", "policysets", "test-policy-a", "--ignore-not-found"),
+    ]
+    assert [str(error) for error in raised.value.exceptions] == ["test-policy-c", "test-policy-a"]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

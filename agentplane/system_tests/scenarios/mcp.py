@@ -46,6 +46,12 @@ from agentplane.system_tests.driver.tracing import tracer
 ORCHESTRATION_GROUP = "orchestration_v1"
 
 
+async def _submit_echo(
+    agent: ScriptedAgent, group: str, message: str, *, wait: bool
+) -> action_service_pb2.ActionRequest:
+    return await agent.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
+
+
 async def agent_executes_mcp_action(
     client: Client,
     dispatcher: SessionDispatcherClient,
@@ -64,7 +70,7 @@ async def agent_executes_mcp_action(
         client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted
     )
     marker = f"MCP0-{uuid4()}"
-    receipt = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
+    receipt = await _submit_echo(agent, mcp_servers.EVERYTHING_GROUP, marker, wait=True)
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("execution")
     assert_echoed_result(receipt.execution.result, marker)
@@ -113,7 +119,7 @@ async def operator_links_oauth_mcp_server(
         client, dispatcher, view, harness=harness, model=offered_model, upstream=scripted
     )
     marker = f"MCP-OAUTH-{uuid4()}"
-    receipt = await agent.submit_echo(server_id, marker, wait=True)
+    receipt = await _submit_echo(agent, server_id, marker, wait=True)
     assert receipt.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert receipt.HasField("execution")
     assert_echoed_result(receipt.execution.result, marker)
@@ -138,7 +144,7 @@ async def agent_mcp_bff_decision(
     for verdict in (action_service_pb2.VERDICT_DENY, action_service_pb2.VERDICT_ALLOW):
         # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
         marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
-        submitted = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=False)
+        submitted = await _submit_echo(agent, mcp_servers.EVERYTHING_GROUP, marker, wait=False)
         assert submitted.state == action_service_pb2.ACTION_STATE_DECISION_PENDING
         request_id = submitted.id
         path = f"/upstream/actions/v1/action-requests/{request_id}"
@@ -271,7 +277,7 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     )
 
     marker = f"MCP-POLICY-{uuid4()}"
-    approved = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, marker, wait=True)
+    approved = await _submit_echo(agent, mcp_servers.EVERYTHING_GROUP, marker, wait=True)
     assert approved.state == action_service_pb2.ACTION_STATE_SUCCEEDED
     assert approved.HasField("execution")
     assert_echoed_result(approved.execution.result, marker)
@@ -294,13 +300,13 @@ async def policy_binding_auto_approves_the_bound_sandbox(
     assert receipt.execution.state == action_service_pb2.EXECUTION_STATE_SUCCEEDED
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
-    missed = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
+    missed = await _submit_echo(agent, mcp_servers.EVERYTHING_GROUP, too_long, wait=False)
     await decide_pending_action(operator_bff, missed.id, action_service_pb2.VERDICT_DENY)
 
     await policy_objects.expire_binding(binding_name)
     await _wait_unbound(agent, view.identity_name, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
-    expired = await agent.submit_echo(mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
+    expired = await _submit_echo(agent, mcp_servers.EVERYTHING_GROUP, after_expiry, wait=False)
     await decide_pending_action(operator_bff, expired.id, action_service_pb2.VERDICT_DENY)
 
 
