@@ -4024,7 +4024,10 @@ both services have rolled on staging. Config-first retirement removes the Gatewa
 EnvironmentService grants before decoder/registration removal, retaining automatic wake grants. CLI support
 (#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
 Config retirement (#16593) and Gateway registration/decoder removal (#16601, including the App
-fixture migration) are merged. RBAC reduction waits for the removal image pin and rollout.
+fixture migration) are merged. The removal image `devel-20261115070016-fe1f0b6` is pinned
+on devel and both staging Gateway replicas rolled Ready without restarts at 07:01 UTC on
+2026-11-15. The separate RBAC reduction retires Sandbox create/delete and SandboxTemplate
+reads; Dispatcher automatic-wake patches, authentication reads and delivery Leases remain.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
 The package-boundary slice moves handlers,

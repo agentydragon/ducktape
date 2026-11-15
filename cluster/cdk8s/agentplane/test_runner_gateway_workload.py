@@ -207,7 +207,14 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "create",
         "update",
     ]
-    assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
+    # Dispatcher automatic wake may patch existing Sandboxes, but cannot launch or destroy them.
+    assert set(one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]) == {
+        "get",
+        "list",
+        "watch",
+        "patch",
+    }
+    assert "sandboxtemplates" not in resources
 
 
 def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manifests: list[dict[str, Any]]) -> None:

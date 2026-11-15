@@ -442,8 +442,7 @@ class RunnerGateway(Construct):
             rules=[
                 # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # The environment watch observes account revocation; all reads and Session admission
-                # recheck the live UID of the Sandbox-owned execution account.
+                # Session admission rechecks the live Sandbox execution account.
                 RolePolicyRule(
                     resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
                 ),
@@ -455,10 +454,8 @@ class RunnerGateway(Construct):
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, "sandboxes")],
-                    verbs=["get", "list", "watch", "create", "patch", "delete"],
+                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
                 ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list"]),
                 # A dispatcher caller's SVID names its WorkloadCredential, read live on every request.
                 RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # One Role covers both reads because the Sandbox namespace is the policy namespace: a
