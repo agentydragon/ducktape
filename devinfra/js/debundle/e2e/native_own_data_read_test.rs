@@ -458,9 +458,8 @@ fn intact_object_read_has_an_independent_source_certificate() {
         ],
     ));
     assert_preserved_entry_output(&fixture, "function\n");
-    let app_root = fixture.output_root().join("app");
     assert_module_source(
-        &app_root,
+        &fixture.out_root,
         "static/app/modules/alias.js",
         &["var alias = Object.defineProperty"],
         &[],
