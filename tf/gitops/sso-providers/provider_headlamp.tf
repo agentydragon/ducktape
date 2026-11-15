@@ -1,38 +1,9 @@
 # Headlamp — OIDC login for the Kubernetes dashboard
 
-resource "authentik_provider_oauth2" "headlamp" {
-  name               = "headlamp"
-  client_id          = "headlamp"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-  # Authentik defaults to 10-minute access tokens; Headlamp refreshes them on API requests.
-  access_token_validity = "hours=24"
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-    data.authentik_property_mapping_provider_scope.offline_access.id,
-  ]
-
-  allowed_redirect_uris = [
-    {
-      matching_mode     = "strict"
-      url               = "https://headlamp.allegedly.works/oidc-callback"
-      redirect_uri_type = "authorization"
-    },
-  ]
-}
-
 resource "authentik_application" "headlamp" {
   name              = "Headlamp"
   slug              = "headlamp"
-  protocol_provider = authentik_provider_oauth2.headlamp.id
+  protocol_provider = authentik_provider_oauth2.providers["headlamp"].id
   meta_description  = "Kubernetes cluster UI"
   meta_launch_url   = "https://headlamp.allegedly.works"
   meta_icon         = "https://raw.githubusercontent.com/kubernetes-sigs/headlamp/main/frontend/public/android-chrome-512x512.png"
@@ -58,8 +29,8 @@ resource "kubernetes_secret" "headlamp_oidc" {
   }
 
   data = {
-    OIDC_CLIENT_ID     = authentik_provider_oauth2.headlamp.client_id
-    OIDC_CLIENT_SECRET = authentik_provider_oauth2.headlamp.client_secret
+    OIDC_CLIENT_ID     = authentik_provider_oauth2.providers["headlamp"].client_id
+    OIDC_CLIENT_SECRET = authentik_provider_oauth2.providers["headlamp"].client_secret
     OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
     OIDC_SCOPES        = "profile,email,offline_access"
   }

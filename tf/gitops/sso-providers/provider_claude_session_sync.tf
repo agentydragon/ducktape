@@ -9,40 +9,10 @@ resource "random_password" "claude_session_sync_session_secret" {
   special = false
 }
 
-resource "authentik_provider_oauth2" "claude_session_sync" {
-  name               = "claude-session-sync-oidc"
-  client_id          = "claude-session-sync"
-  client_type        = "confidential"
-  grant_types        = ["authorization_code"]
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-  # The app's allowlist below is this same immutable numeric user ID.
-  sub_mode              = "user_id"
-  access_token_validity = "hours=1"
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-  ]
-
-  allowed_redirect_uris = [
-    {
-      matching_mode     = "strict"
-      url               = "https://claude-session-sync.allegedly.works/auth/callback"
-      redirect_uri_type = "authorization"
-    }
-  ]
-}
-
 resource "authentik_application" "claude_session_sync" {
   name              = "Claude session sync"
   slug              = "claude-session-sync"
-  protocol_provider = authentik_provider_oauth2.claude_session_sync.id
+  protocol_provider = authentik_provider_oauth2.providers["claude_session_sync"].id
   meta_description  = "Pair the Claude Code session sync and watch it mirror sessions into Postgres"
   meta_launch_url   = "https://claude-session-sync.allegedly.works/"
   open_in_new_tab   = true

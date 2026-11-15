@@ -1,37 +1,10 @@
 # GitLab's OIDC subject uses Authentik's stable user UID; the GitLab module
 # reads the same UID from the reflected identity Secret before linking it.
-resource "authentik_provider_oauth2" "gitlab_spike" {
-  name               = "gitlab-spike-oauth2"
-  client_id          = "gitlab-spike"
-  client_type        = "confidential"
-  grant_types        = ["authorization_code"]
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  sub_mode                   = "hashed_user_id"
-  include_claims_in_id_token = true
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-  ]
-
-  allowed_redirect_uris = [
-    {
-      matching_mode     = "strict"
-      url               = "https://gitlab-spike.allegedly.works/users/auth/openid_connect/callback"
-      redirect_uri_type = "authorization"
-    },
-  ]
-}
 
 resource "authentik_application" "gitlab_spike" {
   name              = "GitLab Spike"
   slug              = "gitlab-spike"
-  protocol_provider = authentik_provider_oauth2.gitlab_spike.id
+  protocol_provider = authentik_provider_oauth2.providers["gitlab_spike"].id
   meta_description  = "GitLab replacement spike"
   meta_publisher    = "GitLab"
 }
@@ -69,8 +42,8 @@ resource "kubernetes_secret_v1" "gitlab_spike_oidc" {
         client_auth_method = "query"
         uid_field          = "sub"
         client_options = {
-          identifier   = authentik_provider_oauth2.gitlab_spike.client_id
-          secret       = authentik_provider_oauth2.gitlab_spike.client_secret
+          identifier   = authentik_provider_oauth2.providers["gitlab_spike"].client_id
+          secret       = authentik_provider_oauth2.providers["gitlab_spike"].client_secret
           redirect_uri = "https://gitlab-spike.allegedly.works/users/auth/openid_connect/callback"
         }
       }

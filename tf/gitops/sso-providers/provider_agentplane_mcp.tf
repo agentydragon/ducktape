@@ -1,31 +1,9 @@
 # External MCP authentication is separate from app login and operator federation.
-resource "authentik_provider_oauth2" "agentplane_mcp" {
-  name                       = "agentplane-staging-mcp"
-  client_id                  = "agentplane-staging-mcp"
-  client_type                = "confidential"
-  authorization_flow         = data.authentik_flow.implicit_consent.id
-  invalidation_flow          = data.authentik_flow.invalidation.id
-  signing_key                = data.authentik_certificate_key_pair.self_signed.id
-  issuer_mode                = "per_provider"
-  sub_mode                   = "user_uuid"
-  include_claims_in_id_token = true
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-    data.authentik_property_mapping_provider_scope.offline_access.id,
-  ]
-  allowed_redirect_uris = [{
-    matching_mode     = "strict"
-    url               = "${local.agentplane_mcp_origin}/auth/callback"
-    redirect_uri_type = "authorization"
-  }]
-}
 
 resource "authentik_application" "agentplane_mcp" {
   name              = "Agentplane staging MCP"
   slug              = "agentplane-staging-mcp"
-  protocol_provider = authentik_provider_oauth2.agentplane_mcp.id
+  protocol_provider = authentik_provider_oauth2.providers["agentplane_mcp"].id
   meta_description  = "External MCP enrollment with operator consent in the Agentplane integration app"
 }
 
@@ -54,7 +32,7 @@ locals {
   agentplane_mcp_origin = "https://agentplane-actions-staging.allegedly.works"
   agentplane_mcp_issuer = "https://auth.allegedly.works/application/o/${authentik_application.agentplane_mcp.slug}/"
   agentplane_mcp_oauth = {
-    upstream_client_id          = authentik_provider_oauth2.agentplane_mcp.client_id
+    upstream_client_id          = authentik_provider_oauth2.providers["agentplane_mcp"].client_id
     upstream_client_secret_file = "/etc/agentplane-mcp/client-secret"
     base_url                    = local.agentplane_mcp_origin
     integration_app_url         = "https://agentplane-staging.allegedly.works"
@@ -83,7 +61,7 @@ resource "kubernetes_secret" "agentplane_mcp_oauth" {
   }
   data = {
     oauth           = jsonencode(local.agentplane_mcp_oauth)
-    client-secret   = authentik_provider_oauth2.agentplane_mcp.client_secret
+    client-secret   = authentik_provider_oauth2.providers["agentplane_mcp"].client_secret
     jwt-signing-key = random_password.agentplane_mcp_signing_key.result
     # Fernet requires URL-safe base64 of exactly 32 bytes, retaining padding.
     encryption-key = replace(replace(random_id.agentplane_mcp_encryption_key.b64_std, "+", "-"), "/", "_")
