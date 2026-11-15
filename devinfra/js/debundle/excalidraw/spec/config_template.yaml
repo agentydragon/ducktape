@@ -5,3 +5,6 @@ module_roots:
   editor: editor
   main: main
 write_js_tree: true
+unassigned_mode:
+  main:
+    kind: coarse_atomic_groups
