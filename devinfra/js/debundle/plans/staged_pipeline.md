@@ -18,12 +18,15 @@ projection before consuming the restored facts. This is
 semantic-analysis reuse, not a parse-free apply cache.
 
 The saved fact codec in
-[`analysis_artifact.rs`](../staged_analysis/analysis_artifact.rs) reconstructs
-source contexts against freshly parsed ASTs. [`SourceWithAst`](../artifacts/artifact.rs)
+[`analysis_artifact.rs`](../staged_analysis/analysis_artifact.rs) serializes
+AST references as context ordinals, then maps those ordinals onto freshly
+parsed ASTs when reading the artifact. [`SourceWithAst`](../artifacts/artifact.rs)
 is a read-only in-process representation: mutable AST access promotes it and
 invalidates the retained source pairing, and analysis releases it when those
-contexts are no longer needed. Persistent caches must therefore store stable
-facts and source identities, not SWC ASTs, `Id`s, spans, or context ordinals.
+contexts are no longer needed. A persistent cache may retain codec ordinals
+only with enough source and context-order identity to rebuild and validate the
+mapping before use. It must not treat ordinal values alone as portable, or
+persist raw SWC ASTs, process-local marks, `Id`s, or spans.
 
 ## Next architecture
 
@@ -86,8 +89,8 @@ Keep each step independently reviewable and land it only after its own evidence:
    in separate changes only after the prior invalidation map is complete.
    Compare cache-on output with a cold recompute byte-for-byte where the format
    is deterministic, and structurally otherwise. Retain only stages whose
-   repeatable end-to-end benefit for the observed edit mix exceeds lookup,
-   encoding, storage, and memory costs without worsening cold builds.
+   repeatable end-to-end benefit for the observed edit mix justifies the
+   measured cold-build, lookup, encoding, storage, and memory costs.
 
 Per-chunk S3 actions and a separate vendor-strip action remain deferred until
 these measurements show that their added action and artifact costs pay back.
