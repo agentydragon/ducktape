@@ -45,9 +45,7 @@
   </head>
   <body>
     <div id="report-content"></div>
-    <noscript
-      >This report uses JavaScript for Mantine charts and disclosures.</noscript
-    >
+    <noscript>This report uses JavaScript for charts and disclosures.</noscript>
     <script type="module">
       import {
         Accordion,
@@ -66,47 +64,26 @@
         Title,
       } from "@mantine/core";
       import { BarChart, LineChart } from "@mantine/charts";
-      import { CiLanes } from "../ci-lanes.js";
       import { html, mount, ManifestStamp } from "../report.js";
-      import { ResourceFollowup } from "./resource-followup.js";
       const response = await fetch("./evidence.json");
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
-      const evidence = await response.json();
-      const backend = evidence.backend_refresh;
-      const data = evidence.latest_refresh;
-      const followup = evidence.followup_refresh;
-      const recent = evidence.nov13_selected_followup;
-      const architectureFollowup = evidence.architecture_followup;
+      const e = await response.json(),
+        c = e.cohort;
+      const gh = "https://github.com/agentydragon/ducktape",
+        inv = (id) => `https://app.buildbuddy.io/invocation/${id}`;
       const fmt = (s) =>
         s == null
           ? "Unobserved"
           : `${Math.floor(s / 60)}m ${Math.round(s % 60)
               .toString()
               .padStart(2, "0")}s`;
-      const n = (s) => Number(s).toFixed(1);
-      const gh = "https://github.com/agentydragon/ducktape";
-      const prior = `${gh}/blob/${data.prior_report_commit}/latency/index.html`;
-      const inv = (id) => `https://app.buildbuddy.io/invocation/${id}`;
-      const source = (path) => `${gh}/blob/${data.source_devel_commit}/${path}`;
-      const shortNames = {
-        documentation: "Docs",
-        "other code/tooling": "Other code",
-        "cdk8s infrastructure": "cdk8s",
-        "Agentplane services": "Services",
-        "Agentplane frontend": "Frontend",
-        "Agentplane test infrastructure": "Test infra",
-        "graph-wide/toolchain": "Graph-wide",
-      };
-      const chartClasses = data.classes
-        .filter((c) => shortNames[c.name])
-        .map((c) => ({
-          label: shortNames[c.name],
-          p50: c.green_seconds.p50 / 60,
-          p90: c.green_seconds.p90 / 60,
-        }));
-      const table = (headers, rows, width = 650) =>
+      const n = (s) => (s == null ? "Unknown" : Number(s).toFixed(1));
+      const link = (url, label) =>
+        html`${" "}<${Anchor} href=${url}>${label}<//>${" "}`;
+      const pr = (id) => link(`${gh}/pull/${id}`, `#${id}`);
+      const table = (headers, rows, width = 700) =>
         html`<${Table.ScrollContainer} minWidth=${width}
-          ><${Table} striped highlightOnHover withTableBorder
+          ><${Table} striped withTableBorder
             ><${Table.Thead}
               ><${Table.Tr}
                 >${headers.map((h) => html`<${Table.Th}>${h}<//>`)}<//
@@ -116,122 +93,63 @@
             ><//
           ><//
         >`;
-      const poolTimeline = data.kvm_pool.timeline
-        .filter((r, i) => i % 5 === 0)
-        .map((r) => ({
-          time: new Date(r.t * 1000).toISOString().slice(11, 16),
-          healthy: r.healthy,
-          busy: r.busy,
-          reservations: r.local_reservations,
+      const caseBy = (pr) => e.selected_cases.find((x) => x.pr === pr);
+      const pools = e.kvm_pool.timeline
+        .filter((x, i) => i % 4 === 0)
+        .map((x) => ({
+          ...x,
+          time: new Date(x.t * 1000).toISOString().slice(11, 16),
         }));
-
-      function ReliabilityWork() {
-        const review = evidence.backend_retry_review;
-        return html`<${Stack}
-          component="section"
-          id="reliability-dispatch"
-          gap="md"
-        >
-          <${Title} order=${2}>Earlier Nov 10–12 backend rerun audit<//>
-          <${Text}
-            >22 of 102 green production-backend heads needed multiple Bazel
-            attempts. Those heads account for 47.5% of summed feedback time:
-            31m14s mean to green, compared with 9m30s for the 80 single-attempt
-            heads.<//
-          >
-          <${Text} size="sm" c="dimmed">${review.interpretation}<//>
-          <${SimpleGrid} cols=${{ base: 1, sm: 2 }}>
-            ${review.lanes.map(
-              (lane) =>
-                html`<${Paper} withBorder p="md">
-                  <${Stack} gap="sm">
-                    <${Title} order=${3}>${lane.name}<//>
-                    <${Badge} variant="light"
-                      >${lane.pr_state === "MERGED" ? "Merged" : lane.url ? "PR opened" : "Dispatched"}<//
-                    >
-                    <${Text} fw=${600}>${lane.status}<//>
-                    ${lane.url ? html`<${Anchor} href=${lane.url}>${lane.url}<//>` : null}
-                    <${Text}>${lane.summary}<//>
-                    <${Text} size="sm">${lane.validation}<//>
-                    <${Anchor} size="sm" href=${lane.focused_invocation_url}
-                      >Focused RBE validation<//
-                    >
-                    <${Anchor} size="sm" href=${lane.debug_note_url}
-                      >Investigation and remaining evidence boundaries<//
-                    >
-                  <//>
-                <//>`,
-            )}
-          <//>
-          <${Text}
-            >The 25 preceding failed checks include seven VM test failures and
-            four thread-browser failures. Two additional attempts include remote
-            execution failures while building the VM target. Targets can
-            co-fail; these counts are discovery leads, not per-target failure
-            rates.<//
-          >
-          <${Accordion} variant="contained" multiple=${true}>
-            <${Accordion.Item} value="reliability-cases">
-              <${Accordion.Control}
-                >Selected failed attempts and what remains unknown<//
-              >
-              <${Accordion.Panel}>
-                <${Stack} gap="md"
-                  >${review.selected_cases.map(
-                    (c) =>
-                      html`<${Paper} withBorder p="sm">
-                        <${Anchor}
-                          href=${`https://app.buildbuddy.io/invocation/${c.invocation}`}
-                          >PR #${c.pr} · ${c.target}<//
-                        >
-                        <${Text} size="sm" my="xs">${c.observation}<//>
-                        <${Text} size="sm" c="dimmed">${c.diagnosis}<//>
-                      <//>`,
-                  )}<//
-                >
-              <//>
-            <//>
-            <${Accordion.Item} value="reliability-landed">
-              <${Accordion.Control}
-                >Already landed: preserve the distinction between a fix and
-                measured recurrence<//
-              >
-              <${Accordion.Panel}>
-                <${Stack} gap="md"
-                  >${review.landed.map(
-                    (c) =>
-                      html`<${Paper} withBorder p="sm">
-                        <${Anchor}
-                          href=${`https://github.com/agentydragon/ducktape/pull/${c.pr}`}
-                          >#${c.pr} · ${c.status}<//
-                        >
-                        <${Text} size="sm" mt="xs">${c.summary}<//>
-                      <//>`,
-                  )}<//
-                >
-              <//>
-            <//>
-          <//>
-          <${Text} size="sm">${review.deferred}<//>
-          <${Text} size="sm"
-            ><${Anchor} href=${review.pod_split_disposition.source_url}
-              >TLS-only Pod split: keep disabled in required CI<//
-            >. ${review.pod_split_disposition.summary}<//
-          >
-          <${Text} size="sm" c="dimmed"
-            >Backend cohort window: 10 November 00:00–12 November 23:59:19 UTC;
-            results sampled ${review.population_observed_at_utc}. This
-            supplemental review uses current source
-            <${Anchor}
-              href=${`https://github.com/agentydragon/ducktape/commit/${review.inspected_devel_commit}`}
-              >${review.inspected_devel_commit}<//
-            >, reviewed ${review.reviewed_at_utc}. Earlier report populations
-            retain their original windows and source revisions.
-            <${Anchor} href="./evidence.json">Reviewed attempt inventory<//>.<//
-          >
-        <//>`;
-      }
-
+      const oldRows = [
+        [
+          "Native suite boundaries and trust reuse",
+          "Merged #16675/#16689/#16695/#16700. Configured runtime cut passes below; exact whole-feedback treatment remains unmeasured. Retain real PKI, ownership, readiness and fresh lifecycle witnesses.",
+        ],
+        [
+          "Pod four-worker scheduling",
+          "Merged #16659. Warm 22-case ABBA: 363.3→289.2s action mean (20.4%); CPU 883.2→844.3s; peak 5.07→5.12GiB. Faster-control sensitivity 13.8%. Current split has 23 cases; no matched new-layout feedback comparison. Exposure window ends 22Nov11: 01UTC.",
+        ],
+        [
+          "Two ordinary pytest stacks",
+          "Rejected at frozen 6e6ad85: same 15 cases passed; slowest action 293.608→313.861s (+6.9%), CPU 718.740→1046.335s (+45.6%). Extra setup defeated that allocation. Do not repeat it unchanged; native dependency partitions are a different design.",
+        ],
+        [
+          "Bridge eight shards / Python bytecode",
+          "Historical 4/8/8/4 same 24-case screen: elapsed−24.9%, CPU+62.8%; whole-gate benefit unqualified. Bytecode saved 4.494s import self-time but added 3455 cold compiles/4203CPU-s. No blanket bytecode promotion; archive both original sources.",
+        ],
+        [
+          "Guest architecture iterations 10–14",
+          "Private systemd proof in direct guest and missing-proof negative passed. Warm ownership screen native 200.769s versus 202.192s did not isolate a gain. Shared guest screen 343/424/246/357s changed fresh-fixture coverage and had variable cleanup; no promotion. Reduced Codex-only root removed 26.2% bytes, only 4.0% observed action time in one confounded pair.",
+        ],
+        [
+          "Earlier graph replay",
+          "Historical 376f ABBA: 442.484→365.475s selected invocation (17.4%), known CPU+5.4%; 562 NEW launches/4118 JUnit exposures. Historical labels/cache conditions, not current PR feedback or a qualified 30% saving.",
+        ],
+        [
+          "Image/store/import work",
+          "#15188 store continuity, #15966 image-import overlap and #16040 guarded usable-image import are merged. Warm ABBA setup 46.992→32.216s for import guard; complete graphs had mismatched VM roots. #15214 image split remains OPEN and held for actual savings; #15126 bulk-import OPEN, old confounded trial insufficient. Image bytes do not equal elapsed benefit.",
+        ],
+        [
+          "Artifact mounts / MCP overlap",
+          "#16047 remains OPEN manual/draft. Real harness mount feasibility passed, but total inputs fell only 47044B; no transfer-speed claim. #16038 MCP case overlap merged: 112.336→96.833s case envelope, whole action 254.348→265.866s; old setup/load confounds. Current 1+3+4 split changes arrangement; do not reuse old result as its effect.",
+        ],
+        [
+          "KVM placement and old resource experiments",
+          "#15822 CLOSED; #15996 pilot and capacity evidence merged. Four KVM actions on three slots left fourth queued 215.314s; Pod still last in that graph. Keep placement unchanged until capacity-aware qualification. Old 4→8CPU and 2→3Pod trials are not evidence against the later changed four-worker arrangement. One task/worker protects exclusive K3s state.",
+        ],
+        [
+          "Reliability and observer recovery",
+          "#16045/#16051 browser route lifetime repair and artifact retention, #16053 auth diagnostics, #16055 guest-progress diagnostics, #16299 and #16344 bounded readiness repairs are merged. Mechanism proofs stay distinct from recurrence rates. #16041 diagnostic PR remains OPEN: native two-reset control exhausted WaitExecution retry budget despite physical success. No blanket retries/cancellation policy change.",
+        ],
+        [
+          "Unresolved failures and ownership",
+          "Natural browser auth cause, admitted-turn guest stall, early QEMU crash #16057 and the newer VM API/containerd outage remain distinct. Next occurrence needs exact physical executor/incarnation, native process/API clocks and teardown owner. Map runner shutdown/reconciliation ownership, then simplify one race-tested path. No timeout increase.",
+        ],
+        [
+          "Old capacity and setup recommendations",
+          "Old one-worker 22–26-reservation incident is superseded by current 2–3 registered capacity. Graceful drain and 8GiB workers already landed. PKI/device-plugin trims and tag guards landed; no causal fleet saving assigned. Subsecond fetch examples do not justify a proxy. Idle suspend's production one-minute boundary and real boot/supervision assertions remain required.",
+        ],
+      ];
       function Report() {
         return html`<${Container}
           component="main"
@@ -240,1871 +158,588 @@
           style=${{ overflowWrap: "anywhere" }}
           ><${Stack} gap="xl">
             <header>
-              <${Anchor} href="../">Ducktape reports<//
-              ><${Text} mt="md" c="dimmed"
-                >${`CI latency · Agentplane backend · refreshed ${backend.observed_at_utc}`}<//
-              ><${Title} order=${1} my="sm"
-                >${`Agentplane backend CI: ${fmt(backend.summary.green_seconds.p50)} median, ${fmt(backend.summary.green_seconds.p90)} p90`}<//
-              ><${Text} size="lg"
-                >Among ${backend.summary.green_seconds.n} green production
-                backend heads, the mean is${" "}
-                <strong>${fmt(backend.summary.green_seconds.mean)}</strong>.
-                These timings cover the required CI gates from the first
-                workflow creation for each exact head, including reruns.
-                Integration test execution dominates the inspected median case;
-                failure recovery extends the tail.<//
-              ><${Text} mt="sm" size="sm" c="dimmed"
-                ><${ManifestStamp} src="./manifest.json" /><br />The backend
-                refresh below has its own population and window. Earlier all-PR
-                results and intervention experiments retain their original dates
-                and source revisions. Workflow creation is a proxy for push
-                time; review, conflicts, mergeability and agent notification
-                delivery are outside this clock.<//
+              ${link("../", "Ducktape reports")}
+              <${Text} c="dimmed" mt="md"
+                >CI latency · reviewed 15 November 2026 UTC<//
               >
-              <${Text} size="sm" mt="sm" c="dimmed">
-                Related scoped test and fixture ports are tracked in the
-                <${Anchor} href="../agentplane-test-architecture/#port-dispatch"
-                  >current five-port dispatch<//
-                >; those experiments do not refresh this cohort or its
-                denominator.
-              <//>
+              <${Title} order=${1} my="sm"
+                >Backend PR feedback: 9m34s median, 15m25s p90<//
+              >
+              <${Text} size="lg"
+                >Useful integration work still dominates typical feedback. KVM
+                admission can add several minutes to the tail. The new test
+                boundaries are merged, but a 30% complete-feedback gain has not
+                been demonstrated.<//
+              >
+              <${Text} size="sm" c="dimmed" mt="sm"
+                ><${ManifestStamp} src="./manifest.json" /><br />58 green
+                production-backend heads from 59 sampled heads; mean 9m41s.
+                Window 13Nov00: 00→15Nov13: 55UTC. First workflow creation
+                proxies unavailable push timestamps. These are CI-gate clocks,
+                not observed auto-merge eligibility.<//
+              >
             </header>
-            <${CiLanes} data=${evidence.dispatch10} />
-            <${Paper} component="section" id="latest-graph" withBorder p="lg">
-              <${Stack} gap="sm">
-                <${Title} order=${2}>Earlier selected graph experiments<//>
-                <${Text} size="sm" c="dimmed"
-                  >${`Supplement reviewed ${recent.reviewed_at_utc}; selected physical runs on 13 November UTC. The cohort distributions above retain their original windows and source revisions.`}<//
-                >
-                <${Text}>
-                  <${Anchor} href=${recent.fixture.pr_url}>Merged PR #15966<//
-                  >${" "} overlaps PodTemplate image import with CRDs and
-                  deployment startup, joining the import before tests create
-                  Sandboxes. A focused cold Pod pair reduced stack setup from
-                  140.131s to 125.428s; both runs passed 21 cases. That single
-                  pair does not measure a CI gate saving.
-                <//>
-                ${table(
-                  [
-                    "Selected Pod + MCP Actions + VM graph",
-                    "Control",
-                    "Fixture candidate",
-                  ],
-                  [
-                    ["Bazel elapsed", "492.125s", "519.987s"],
-                    ["JUnit cases passed", "27 / 27", "27 / 27"],
-                    ["Pod stack setup", "152.932s, cold", "149.724s, cold"],
-                    ["MCP Actions setup", "144.363s, cold", "172.264s, cold"],
-                    ["VM baseline", "cold", "warm"],
-                  ],
-                  680,
-                )}
-                <${Text} size="sm">
-                  <${Anchor} href=${recent.graph.control_invocation_url}
-                    >Control<//
-                  >${" "} and${" "}
-                  <${Anchor} href=${recent.graph.candidate_invocation_url}
-                    >candidate<//
-                  >${" "} used the same three labels and passed identical case
-                  sets (21 Pod, 5 MCP Actions, 1 VM). Their actual action inputs
-                  differed only in the intended fixture source. Different
-                  overlapping executor load and the VM cold/warm mismatch
-                  prevent a causal gate or compute-cost comparison. Pod finished
-                  last in both; the selected graph alone exceeded the
-                  four-minute objective. See the${" "}
-                  <${Anchor} href=${recent.graph.note_url}>graph evidence<//
-                  >${" "} and${" "}
-                  <${Anchor} href=${recent.graph.correction_pr_url}
-                    >compute-unit correction<//
-                  >: Pod and MCP Actions requested 4 CU each; VM requested 8 CU.
-                <//>
-                <${Text} size="sm">
-                  Per-suite images in${" "}
-                  <${Anchor} href=${recent.images.pr_url}>#15214<//>${" "} are
-                  open and ready for review with required checks green. The
-                  Codex-only image is 486.1 MB of OCI blobs versus 914.5 MB for
-                  the full image; the Pod variant is 798.9 MB. These are image
-                  inputs, not measured transfer savings. The observed smaller
-                  Pod image imported more slowly under different worker and load
-                  conditions, so its CI benefit remains unmeasured. The manual
-                  real-model suite was build-validated but not run.
-                <//>
-                <${Text} size="sm">
-                  A later warm-fixture Pod partition pair selected the same 27
-                  JUnit cases: 21 Pod cases split 5/9/7, 5 MCP Actions, and 1
-                  VM. The${" "}
-                  <${Anchor} href=${recent.pod_partition.control_invocation_url}
-                    >unsplit control<//
-                  >${" "} took 580.533s in Bazel; the${" "}
-                  <${Anchor}
-                    href=${recent.pod_partition.candidate_invocation_url}
-                    >partitioned candidate<//
-                  >${" "} took 357.487s. Its three Pod group processes finished
-                  in 220.075s, 255.994s, and 256.097s versus 387.428s for the
-                  unsplit Pod process; the VM finished last at about 314s in the
-                  candidate. Both selected graphs still exceeded 240s. Distinct
-                  warm fixtures each cleaned up, but partitioning created two
-                  extra stacks and the largest shared group could hold five
-                  Sandboxes at the node cap. The control had a failed VM
-                  execution followed by a successful new one, with its initiator
-                  unknown; load and run time also differed, and it overlapped
-                  the KVM pilot. Pod actions summed to 48.81 requested CU-min
-                  and 1976.706 observed CPU-seconds in the candidate versus
-                  25.83 CU-min and 1175.310 CPU-seconds in the control;
-                  requested CU-min is a capacity proxy, not billing. The${" "}
-                  <${Anchor} href=${recent.pod_partition.pr_url}
-                    >merged partition trial note<//
-                  >${" "} matches five common source files by CAS, without
-                  comparing full runfiles trees. This selected pair does not
-                  isolate a causal CI-gate improvement or capacity cost.
-                <//>
-                <${Text} size="sm">
-                  A separate same-source, uncached VM placement pilot in${" "}
-                  <${Anchor} href=${recent.vm_pilot.pr_url}>#15996<//>${" "}
-                  passed one ordinary Claude/Codex harness case on each path.
-                  Its KVM test action took 219.986s versus 346.448s on the
-                  managed TCG executor, with both requesting 4 CPU and 7 GiB;
-                  live KVM metrics confirmed that assignment, while managed
-                  actual resources were unobserved. The${" "}
-                  <${Anchor} href=${recent.vm_pilot.invocation_url}
-                    >selected invocation<//
-                  >${" "} took 396.977s overall. The managed fixture was cold,
-                  KVM image cache warmth is unknown, executor isolation and
-                  retention differ, and KVM queue timestamps were inverted. This
-                  selected pair cannot establish a causal improvement in the
-                  last CI gate, normal-load admission, or compute cost. The
-                  merged PR records the trial; required CI was not rerouted.
-                <//>
-              <//>
-            <//>
-            <${ReliabilityWork} />
-            <${Paper}
-              component="section"
-              id="architecture-followup"
-              withBorder
-              p="lg"
+            <${Alert} title="Next decision" color="blue"
+              >Prioritize a capacity-aware KVM tail experiment, and qualify the
+              merged architecture against complete selected graphs. A fourth
+              eligible worker could remove a demonstrated queue bottleneck; more
+              pytest sharding or a VM-only speedup cannot reliably shorten the
+              current typical path. Keep required scenarios and deployed routing
+              unchanged while testing.<//
             >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Historical iteration 9 source update and retained Bridge
-                  evidence<//
-                >
-                <${Text} size="sm" c="dimmed">
-                  Supplemental selected evidence, observed
-                  ${" "}${architectureFollowup.iteration9.observed_at_utc}. The
-                  backend cohort windows, source revision and rate denominators
-                  above were not recollected.
-                <//>
-                <${Title} order=${3} mt="sm">Current checked source · 8a555<//>
-                <${Text}>
-                  Source 8a555b2 passed all three required checks. The workflow
-                  creation-to-last-required-result clock was 351s; its native
-                  TestRunner invocation had 59 fresh physical actions and 292
-                  passing cases, with no failures, errors or skips. This is one
-                  observation, not a whole-CI saving. The older 0a9 workflow had
-                  eight fresh Bridge actions and a 264s clock, so those figures
-                  are not a matched comparison. ${" "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/required-ci-8a5-workflow.json"
-                    >8a555 required-CI record<//
-                  >
-                <//>
-                <${Text}>
-                  The bytecode collection screen used the same 24 collected
-                  cases and ran no bodies. Mean import self-time fell by 4.494s,
-                  while cold B1 added 3,455 PyCompile actions, 4,202.992 CPU
-                  seconds and 83.444s Bazel elapsed versus A1. The full
-                  warm-target comparison remains open; this result does not
-                  support adopting the change by itself. ${" "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/python-bytecode-collection-screen.json"
-                    >Collection and compile-cost evidence<//
-                  >
-                <//>
-                <${Text}>
-                  The earlier 0a9 profile recorded 93.111s before the first
-                  physical Bridge action. Its exact required-CI log had no
-                  Debian 404s and observed APT spans cover 5.747s. This
-                  architecture branch changes the CI driver, deliberately
-                  selecting a full-repository sweep; the profile includes
-                  unrelated projects. Its pre-test interval is not a measurement
-                  of ordinary backend selected-graph setup. A separate manual
-                  8a555 guest build logged 45 live-mirror package 404s and 22
-                  snapshot metadata misses, but no delay is attributed to those
-                  warnings; the combined analysis/build interval is
-                  unclassified. ${" "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/setup-attribution.json"
-                    >Setup attribution and limits<//
-                  >
-                <//>
-                <${Group} gap="md">
-                  <${Anchor}
-                    href="../agentplane-test-architecture/historical-app-cut-four-pair-selector.json"
-                    >Four additional historical selectors<//
-                  >
-                  <${Anchor}
-                    href="../agentplane-test-architecture/historical-app-cut-pair-deltas.jsonl"
-                    >Thirty pair deltas<//
-                  >
-                  <${Anchor}
-                    href="../agentplane-test-architecture/historical-app-cut-pair-asts.jsonl"
-                    >AST preservation audit<//
-                  >
-                <//>
-                <${Text}>
-                  Four additional historical App-cut selector pairs completed
-                  with identical runnable test sets in both arms: 29, 180, 285
-                  and 57 tests. The two Runtime-owning App suites stay selected
-                  wherever affected. The earlier #15858 pair removed 12
-                  unrelated App tests; this cut does not help every backend
-                  change. These are selector queries, with no selected builds or
-                  test bodies.
-                <//>
-                <${Title} order=${3} mt="sm">Prior source5699 critical path<//>
-                <${Text}>
-                  In the 13 November source5699 full run, Bridge shard 2/4 was
-                  the critical TestRunner at 109.44s; 98.31% of its duration was
-                  remote process and 0.06% was queue. The invocation-to-
-                  first-TestRunner interval was about 99.3s. The Bazel profile
-                  combines loading, analysis and build, so that interval is
-                  still unclassified. Removing the 27 observed TestRunner
-                  intervals from 12 conditionally removed App labels shortened
-                  the one-run TestRunner envelope by 2.159s; this is interval
-                  arithmetic, not a matched speedup. ${" "}
-                  <${Anchor}
-                    href=${inv(architectureFollowup.required_workflow.invocation)}
-                    >Source5699 full invocation<//
-                  >
-                  ${" · "}
-                  <${Anchor} href="critical-path-5699.json"
-                    >Curated phase evidence<//
-                  >
-                <//>
-                <${Title} order=${3} mt="sm"
-                  >Same 24 Bridge cases at 4/8/8/4 shards<//
-                >
-                ${table(
-                  [
-                    "Run",
-                    "Bazel elapsed",
-                    "Critical path",
-                    "Fresh actions / cases",
-                    "BuildBuddy invocation",
-                  ],
-                  architectureFollowup.bridge_sharding_probe.runs.map(
-                    (run, index) => [
-                      `${index + 1} · ${run.shards} shards`,
-                      `${n(run.bazel_elapsed_seconds)}s`,
-                      `${n(run.critical_path_seconds)}s`,
-                      `${run.fresh_physical_test_runner_actions} NEW · ${run.junit_passed}/24 passed`,
-                      html`<${Anchor} href=${inv(run.buildbuddy_invocation)}
-                        >${run.buildbuddy_invocation.slice(0, 8)}<//
-                      >`,
-                    ],
-                  ),
-                  760,
-                )}
-                <${Text}>
-                  The paired means were${" "}
-                  ${architectureFollowup.bridge_sharding_probe.arm_means.shards_4_bazel_elapsed_seconds}s
-                  at four shards and${" "}
-                  ${architectureFollowup.bridge_sharding_probe.arm_means.shards_8_bazel_elapsed_seconds}s
-                  at eight shards, 24.90% lower selected-target elapsed at
-                  eight. Mean physical envelope fell from 121.261s to 88.526s
-                  (27.00%), while summed action CPU rose from 590.291s to
-                  961.139s (62.82%). Eight shards used eight concurrent workers
-                  and PostgreSQL starts rather than four. Summed per-action peak
-                  memory was about 9 GiB rather than 4.5 GiB; these sums are not
-                  simultaneous host-memory measurements. All runs used the same
-                  Linux/amd64 Firecracker platform hash and saw about 0.06s
-                  queue. Each worker was estimated to request 3 vCPU, 7.5 GiB
-                  RAM and a 10 GiB disk, so the concurrent request estimate
-                  rises from 12 vCPU/30 GiB to 24 vCPU/60 GiB. Those are request
-                  estimates, not observed aggregate usage; per-action peak
-                  memory was 1.20–1.25 GiB.
-                <//>
-                <${Text} size="sm" c="dimmed">
-                  Eight shards are enabled on the architecture branch as a
-                  scheduling candidate. The 0a9acbf source passed all three
-                  required checks with eight fresh Bridge actions and cached
-                  results for other tests. The newer 8a555 workflow had 59 fresh
-                  actions across its native invocation; neither workflow is a
-                  matched shard-count experiment. No whole-CI saving is claimed.
-                  Both shard settings sped up between their two runs, so worker
-                  and cache variability remain relevant. ${" "}
-                  <${Anchor} href="bridge-sharding-probe.json"
-                    >Four-run source/CAS record<//
-                  >
-                  ${" · "}
-                  <${Anchor}
-                    href="../agentplane-test-architecture/required-ci-0a9-workflow.json"
-                    >0a9 required-CI record<//
-                  >
-                <//>
-              <//>
-            <//>
-            <${Paper}
-              component="section"
-              id="architecture-followup-iteration14"
-              withBorder
-              p="lg"
-              my="xl"
-            >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Iteration 14 architecture follow-up: shared-guest screen and
-                  seal retry candidate<//
-                >
-                <${Text} size="sm" c="dimmed">
-                  Selected architecture evidence only. The backend CI
-                  population, original observation windows, rates and
-                  denominators above are unchanged; these four arms are not a
-                  new fleet sample.
-                <//>
-                ${table(
-                  [
-                    "Run",
-                    "Guest arrangement",
-                    "Invocation",
-                    "Native",
-                    "Execution",
-                    "Cleanup",
-                  ],
-                  [
-                    [
-                      "A1",
-                      "Two separate fresh guests",
-                      html`<${Anchor}
-                        href=${inv("572ec341-d887-49e7-9a5d-27c090a1a7c3")}
-                        >572ec341<//
-                      >`,
-                      "343.286s",
-                      "300.021882s",
-                      "20.968475s, 76.358416s",
-                    ],
-                    [
-                      "B1",
-                      "One shared fresh guest",
-                      html`<${Anchor}
-                        href=${inv("21b2e916-d0d0-45ab-b2ba-9e878fc2844c")}
-                        >21b2e916<//
-                      >`,
-                      "424.462s",
-                      "270.135676s",
-                      "81.449116s",
-                    ],
-                    [
-                      "B2",
-                      "One shared fresh guest",
-                      html`<${Anchor}
-                        href=${inv("a9b44bc7-d5af-47b3-8e6d-06df1835b983")}
-                        >a9b44bc7<//
-                      >`,
-                      "246.365s",
-                      "199.252506s",
-                      "13.854960s",
-                    ],
-                    [
-                      "A2",
-                      "Two separate fresh guests",
-                      html`<${Anchor}
-                        href=${inv("289fcb99-c6ef-477e-9d88-034263b14a29")}
-                        >289fcb99<//
-                      >`,
-                      "357.140s",
-                      "313.951183s",
-                      "69.360931s, 67.363305s",
-                    ],
-                  ],
-                  920,
-                )}
-                <${Text}>
-                  All four runs succeeded with four NEW actions and six nonempty
-                  passing cases; failures, errors, skips and retries were zero,
-                  and CPU is unknown. Queue and image-import exposure differ
-                  between arms. Sharing one guest also changes the independent
-                  fresh-fixture guarantee. The screen does not qualify a saving
-                  or gate promotion, and it does not change the backend rates or
-                  denominators.
-                <//>
-                <${Text}>
-                  CI 9e943df5-9491-5e9a-9df7-1e35e45c734d reproduced a seal
-                  race: at 05:04:57.835 PodReady was false, phase was Quiescing,
-                  the destination was unavailable, and no Runtime forward
-                  occurred. A verified ready control followed at 05:04:58.786;
-                  the next Quiesce began at 05:05:57.015. Failed guest cleanup
-                  took 70.270s versus 17.083s for the other guest. Direct
-                  WatchState became fresh before Gateway Pod readiness and
-                  routing; the persisted one-minute cooldown amplified the race.
-                <//>
-                <${Text}>
-                  Candidate source 458e22a74523d49e80034eb3475f6c9f79c370f0
-                  makes at most three idempotent seal attempts, one second apart
-                  within the existing 30-second limit. Each attempt opens a
-                  fresh connection and resolves its target; the expected
-                  incarnation UID is enforced by the Gateway, which aborts on a
-                  mismatch. Existing readiness, caller, Lease and connection
-                  guards remain. Authentication refusal and unfinished seal do
-                  not retry inside the handshake; cooldown is unchanged. The
-                  negative probe rejects the old quiescer/proxy behavior, and a
-                  focused run passed 335 JUnit records over four NEW actions.
-                  Unchanged real Firecracker validation
-                  772f9305-8a5d-4c60-9f01-f52580d26799 passed at literal source
-                  458e22a74523d49e80034eb3475f6c9f79c370f0: native 658.540s with
-                  one unique NEW TestRunner, 284.170552s physical execution and
-                  253.777823s queue. Two nonempty JUnit cases passed with no
-                  failures, errors, skips or retries. The same-UID second trust
-                  guest request forwarded 1.008149s after the first Gateway
-                  start; process and boot continuity were verified. This
-                  confirms recovery in the controlled reproduction, not a
-                  whole-PR saving or fleet rate.
-                <//>
-                <${Text} size="sm">
-                  On that unchanged full CI, native time was 532.813s; VM took
-                  425.037s with 0.063s queue and finished at 05:06:51.772519;
-                  Pod took 312.127s. Firecracker took 274.942s, queued 106.276s,
-                  and finished at 05:06:10.952736. It is not the last phase in
-                  the graph, so its isolated benefit is not a whole-PR saving.
-                  The Claude guest runs a 22.51s synchronous systemd fixture
-                  before Runtime startup and reaches Ready about 23s after its
-                  concurrent Codex peer. A separate earlier oneshot would lose
-                  the exact Runtime invocation and lifetime-marker contract.
-                  Retain current ordering; the next bounded setup probe is the
-                  normal-root image-import benchmark. See the
-                  <${Anchor} href="../agentplane-test-architecture/#iteration14"
-                    >architecture analysis<//
-                  >
-                  and
-                  <${Anchor}
-                    href="../agentplane-test-architecture/iteration14.json"
-                    >reviewed evidence<//
-                  >.
-                <//>
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/16344"
-                  >Independent devel PR #16344 · ready for review, checks
-                  pass<//
-                >
-              <//>
-            <//>
-            <${Paper}
-              component="section"
-              id="architecture-followup-iteration13"
-              withBorder
-              p="lg"
-              my="xl"
-            >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Historical iteration 13 architecture follow-up: measured
-                  setup and required tail<//
-                >
-                <${Text} size="sm" c="dimmed">
-                  Current experiment source
-                  ff06b22d196eca2bd3c477e94e62b3e141336f1a passed all three
-                  required checks. Required invocation 08e0386c was SUCCESS in
-                  142.499s; its only NEW physical action was test manifest
-                  generation, with 1,993 passing results, mostly cached. The
-                  earlier rebase checkpoint
-                  a49291d92b9f831a33423ef17327ccb7603e2a55 passed all three
-                  required checks; its native invocation was SUCCESS in 530.543s
-                  against tested merge 06f3f7138a73446a543a88c0cc47b24d3fb0fe04.
-                <//>
-                <${Text}>
-                  Manual opt-in
-                  <${Code}
-                    >VM_PLATFORM_PRIVATE_SUPERVISION_OWNER=direct-guest<//
-                  >
-                  assigns the unchanged real private Go fixture to the existing
-                  direct Claude guest and omits its deployed VM duplicate. The
-                  default deployed owner remains enabled. All four arms ran the
-                  same two targets with warm compatible infrastructure ac4:
-                  <${Code}
-                    >//agentplane/system_tests/suites:test_vm_platform_light_guest_candidate<//
-                  >
-                  and
-                  <${Code}>//agentplane/x/direct_vm_boot:test_runtime_session<//
-                  >.
-                <//>
-                ${table(
-                  [
-                    "Run",
-                    "BuildBuddy invocation",
-                    "Native",
-                    "VM execution / CPU",
-                    "Direct execution / CPU",
-                    "Setup",
-                    "Readiness",
-                    "Case",
-                    "Cleanup",
-                  ],
-                  [
-                    [
-                      "A1",
-                      html`<${Anchor}
-                        href=${inv("a9a3b28d-a822-41da-b0a3-9f914150dae5")}
-                        >a9a3b28d<//
-                      >`,
-                      "289.701s",
-                      "224.880343s / 603.803123s",
-                      "148.126195s / 263.555310s",
-                      "70.183159s",
-                      "65.711302s",
-                      "100.409309s",
-                      "28.912327s",
-                    ],
-                    [
-                      "B1",
-                      html`<${Anchor}
-                        href=${inv("c5567381-85be-44de-bd09-bf256fe7a4b4")}
-                        >c5567381<//
-                      >`,
-                      "192.106s",
-                      "157.093140s / 381.071583s",
-                      "153.932405s / 277.286120s",
-                      "25.231895s",
-                      "53.817551s",
-                      "83.830489s",
-                      "28.690877s",
-                    ],
-                    [
-                      "B2",
-                      html`<${Anchor}
-                        href=${inv("29f33135-0dae-433f-a992-e11b0e5d58aa")}
-                        >29f33135<//
-                      >`,
-                      "209.431s",
-                      "173.389017s / 408.751466s",
-                      "160.310297s / 318.798760s",
-                      "26.388514s",
-                      "70.848107s",
-                      "99.711063s",
-                      "27.439968s",
-                    ],
-                    [
-                      "A2",
-                      html`<${Anchor}
-                        href=${inv("26742449-a8e5-4bfb-bb72-4a0285e6c544")}
-                        >26742449<//
-                      >`,
-                      "202.192s",
-                      "166.923732s / 392.254133s",
-                      "146.120944s / 271.761249s",
-                      "25.586051s",
-                      "65.904350s",
-                      "95.787735s",
-                      "28.452377s",
-                    ],
-                  ],
-                  1220,
-                )}
-                <${Text}>
-                  All four reviewed arms succeeded. Each has two NEW physical
-                  actions and two nonempty passing JUnit cases, with no
-                  failures, errors, skips or retries. A1 performed 12 image
-                  imports spanning 51.891588s; B1, B2 and A2 skipped every image
-                  import. Exclude A1 from warm timing comparisons. Warm A2
-                  native time (202.192s), VM execution (166.924s), readiness
-                  (65.904s) and case time (95.788s) fall between B1 and B2. Warm
-                  B1/B2 native time averages 200.769s versus A2 at 202.192s.
-                  B1/B2 readiness varies by 17.031s, so the screen does not
-                  isolate a causal saving. No speed promotion or 67.8s causal
-                  saving follows.
-                <//>
-                <${Text} size="sm" c="dimmed">
-                  The direct private parent passed all 11 children and one
-                  receipt in each arm (A1 15.13s, B1 13.24s, B2 23.6s, A2
-                  12.2s). Deployed A1/A2 also passed 11 children and one receipt
-                  (12.48s / 11.15s); deployed B1/B2 intentionally had no kernel
-                  argument, parent pass or receipt. The default deployed owner
-                  remains enabled. These runs confirm selected ownership and
-                  duplicate omission; the separate omission- negative remains
-                  the prior direct-private control. These selected runs do not
-                  refresh the latency cohort, denominator or feedback window.
-                <//>
-                <${Title} order=${3}
-                  >Earlier rebase-checkpoint invocation tail<//
-                >
-                <${Text}>
-                  At invocation ${" "}
-                  <${Anchor}
-                    href="https://app.buildbuddy.io/invocation/acbad609-9135-5b68-9fa5-30709c4690d4"
-                    >acbad609-9135-5b68-9fa5-30709c4690d4<//
-                  >, required Firecracker on kvm-vm queued 206.046s, then
-                  executed 223.095s with CPU unknown, ending 03:09:49.831Z. The
-                  next Pod ended at 03:08:19.785Z after 340.188s execution and
-                  894.170s CPU. Removing Firecracker queue alone can save at
-                  most 90.046s under fixed other clocks; VM or Services alone
-                  save zero in this observed graph. This is one invocation, not
-                  a fleet distribution or current-devel matched saving. This
-                  earlier rebase-checkpoint invocation is separate from current
-                  ff06 required invocation 08e0386c.
-                <//>
-                <${Text}>
-                  Read-only Mimir 15s samples over 03:02:30–03:06:15Z show all
-                  3/3 registered KVM workers scraped, with all three tasks
-                  executing through the 206s wait. Desired replicas were fixed
-                  at 3 and assigned/assignable CPU was 12,000m. All three
-                  workers were busy/capped throughout the wait. A fourth worker
-                  appears feasible within one host's request headroom, but
-                  strict spread is intentional and no capacity trial has run.
-                  Prioritize the shared-guest probe.
-                <//>
-                <${Text}>
-                  A separate trust case took 33.782s: about 18.387s for
-                  second-guest create/readiness and 13.782s cleanup; the helper
-                  took about 1.35s. A proposed combined first fresh guest before
-                  live/session mutations could remove about 32.2s, but it is
-                  untested and loses the separate clean-fixture witness. Treat
-                  this as a probe, not a measured saving.
-                <//>
-                <${Anchor}
-                  href="../agentplane-test-architecture/iteration13.json"
-                  >Reviewed measurements and exact provenance<//
-                >
-                >
-                <${Anchor} href="../agentplane-test-architecture/#iteration13"
-                  >Architecture details and retained guarantees<//
-                >
-                >
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/pull/16102"
-                  >Source PR #16102<//
-                >
-                >
-                <${Anchor}
-                  href="https://github.com/agentydragon/ducktape/issues/16099"
-                  >Tracker #16099<//
-                >
-                >
-              <//>
-            <//>
-            <${Paper}
-              component="section"
-              id="architecture-followup-iteration12"
-              withBorder
-              p="lg"
-              my="xl"
-            >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Historical iteration 12 architecture follow-up<//
-                >
-                <${Text} size="sm" c="dimmed"
-                  >Reviewed source 417b6428; original fleet populations,
-                  windows, source pins, rates and denominators remain unchanged.
-                  These selected experiments do not remeasure them.<//
-                >
-                <${Text}
-                  >The reduced platform root retains required Codex and omits
-                  unused Claude: 408,961,024 versus 553,885,696 EROFS bytes
-                  (26.2% less). In one serial same-source B/A pair, import falls
-                  43.766s to 20.116s, while physical execution falls only
-                  277.495s to 266.409s (4.0%). Readiness is worse in B: 136.646s
-                  versus 99.747s. Both arms pass one fresh physical case with
-                  complete cleanup. One pair on different workers is not a
-                  whole-CI saving, p90 or causal CPU estimate. Removing Codex
-                  too fails embedded Execution startup and is rejected.<//
-                >
-                <${Text}
-                  >The existing direct Claude guest now also passes the real
-                  private systemd fixture under the unchanged 120s guest cap,
-                  retaining both turns, exact History, setup/fence, CLI routes
-                  and revocation. A same-source omitted-fixture control starts
-                  Runtime but is rejected while waiting for the unchanged
-                  receipt; both paths clean up. This is correctness evidence,
-                  not a timing pair. No required owner moved.<//
-                >
-                <${Text}
-                  >The historical graph screen still observes 17.4% lower native
-                  mean with 5.4% more known CPU; it remains a historical label
-                  replay with unmatched baseline exposure. Next, transfer the
-                  private proof within the candidate graph and measure removing
-                  duplicate deployed work, while retaining Pod, MCP Services and
-                  all selected tails. Qualification remains open; 45s duration
-                  coverage, Bridge CPU, concurrency and kubelet tradeoffs are
-                  not clear independent speedups.<//
-                >
-                <${Text}
-                  >Independent PRs #16316 and #16317 are merged. The diagnostic
-                  archive preserves pre-tag query labels and verdicts (required
-                  tests were cached); Sampler adds auth/outage/backfill coverage
-                  with one NEW physical action. Neither establishes a latency
-                  reduction. Final source 417b is rebased onto 61fff; all three
-                  required checks passed at this exact head.<//
-                >
-                <${Anchor}
-                  href="../agentplane-test-architecture/iteration12.json"
-                  >Reviewed measurements and exact provenance<//
-                >
-                <${Anchor} href="../agentplane-test-architecture/#iteration12"
-                  >Architecture and concrete next steps<//
-                >
-              <//>
-            <//>
-            <${Paper}
-              component="section"
-              id="architecture-followup-iteration11"
-              withBorder
-              p="lg"
-              my="xl"
-            >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Historical iteration 11 architecture follow-up<//
-                >
-                <${Text} size="sm" c="dimmed"
-                  >Observed 2026-11-14T00:31:06Z from PR #16102 source 4bfabd5.
-                  The latency cohorts, source pins, original window, rates and
-                  denominators above are unchanged.<//
-                >
-                <${Text}
-                  >The fixed-source 376f8ae A/B/B/A replay of the historical
-                  2196229 label population averaged 442.484s baseline versus
-                  365.475s candidate (77.009s / 17.4% lower native invocation
-                  time); known test CPU rose 5.4%. It covered 562 unique NEW
-                  physical launches and 4,118 nonempty JUnit case exposures with
-                  no failures, errors, skips or retries. Only 14 new
-                  candidate-contract launches were observed. One Firecracker CPU
-                  and queue clock are unknown per arm. This is not current
-                  selection, branch-vs-devel, complete GitHub feedback, p90 or a
-                  qualified saving.<//
-                >
-                <${Text}
-                  >The one-VM platform candidate passed one NEW physical
-                  execution with one nonempty JUnit pass and no model request;
-                  its 403.285s native invocation is a single cold run, not a
-                  speed claim. The full VM case averaged 171.775s versus
-                  173.669s for the smaller witness, but the full baselines were
-                  cold and the witnesses warm. MCP Services nearly tied the VM
-                  tail in B2, so the combined graph must keep all tails. Current
-                  PR #16102 checks are green at 4bfabd5, but the 139.276s
-                  selected/cached Bazel invocation (tested merge c5a0272, devel
-                  parent 0479dfc9) is not a matched saving and no full
-                  current-head physical/JUnit cohort is curated.<//
-                >
-                <${Text}
-                  >Next, isolate Sandbox creation/readiness request to VM domain
-                  start, then guest boot to supervision receipt, seed
-                  launcher/mount, issuer/Pod binding, kernel-limit and
-                  supervision controls, then rerun a fixed-source graph
-                  including MCP Services, Pod and all selected targets. Keep the
-                  full gate until 30 qualified pairs, 100 fresh contract
-                  executions, three busy windows and a four-PR burst satisfy
-                  qualification. #15126 remains unproven and #15214 remains
-                  held.<//
-                >
-                <${Anchor}
-                  href="../agentplane-test-architecture/iteration11.json"
-                  >Reviewed architecture and readiness evidence<//
-                >
-              <//>
-            <//>
-            <${Paper}
-              component="section"
-              id="architecture-followup-iteration10"
-              withBorder
-              p="lg"
-              my="xl"
-            >
-              <${Stack} gap="sm">
-                <${Title} order=${2}
-                  >Historical iteration 10 architecture follow-up<//
-                >
-                <${Text} size="sm" c="dimmed">
-                  Selected evidence observed 2026-11-13T22:27:42Z. The latency
-                  cohorts, source pins, windows and denominators above are
-                  unchanged. This is not a new fleet rate census.
-                <//>
-                <${Text}>
-                  Current PR #16102 head 1948106 passed all three required
-                  checks by 22:10:16Z; no current-head physical/JUnit cohort is
-                  curated. The earlier metadata checkpoint 542e615 used tested
-                  merge parent a1121a0. The 2196229 checkpoint remains
-                  historical, not a matched saving. Three uncommitted
-                  composition runs produced six failed NEW physical guest
-                  actions across parser/harness-output and Notification
-                  shutdown. The latest two passed body assertions before
-                  shutdown failed at 10s; communicate() and the explicit
-                  delimiter did not resolve teardown. Two Go shutdown controls
-                  passed without reproducing the Python wedge or proving repair.
-                  A Python-only child GO_TEST_WRAP=0 control passed in 45.5s
-                  (56.578s invocation), supporting but not proving the rules_go
-                  wrapper hypothesis; the uncommitted full packaged guest
-                  composition d68330b6 then passed 2/2 NEW actions in 239.693s
-                  (Codex 140.3s; Claude 198.4s); the independent
-                  wrong-server-URI negative d2cba508 failed at CLI response
-                  interpretation (error object instead of seeded subscription)
-                  but tore down normally; the exact TLS payload was not
-                  inspected. This is not latency evidence.
-                  <${Anchor}
-                    href="../agentplane-test-architecture/iteration10.json"
-                    >Source, exact-head checks and guest evidence<//
-                  >
-                <//>
-                <${Text}>
-                  The candidate selected-label archive diagnostics and Central
-                  Sampler auth/History-outage ports have no speed claim. The
-                  four-case concurrency screen mixed whole-suite conditions and
-                  remains unqualified. Keep the Bridge eight-shard elapsed/CPU
-                  tradeoff and all existing cohort results as recorded above.
-                <//>
-              <//>
-            <//>
-            <section id="backend-current">
-              <${Title} order=${2}
-                >Current backend PRs: scope and distribution<//
+            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
+              <${Paper} withBorder p="md"
+                ><${Text} c="dimmed">Production backend sample<//
+                ><${Title} order=${2}>58 green / 59 heads<//
+                ><${Text}
+                  >1 failed; latest heads only. This is not a flake rate.<//
+                ><//
               >
-              <${Text} my="sm">${backend.population_description}<//>
+              <${Paper} withBorder p="md"
+                ><${Text} c="dimmed">Current last-test headroom<//
+                ><${Title} order=${2}>23s / 2s<//
+                ><${Text}
+                  >Dispatcher-only / VM-only fixed-clock headroom in two linked
+                  heads; other tests become last.<//
+                ><//
+              >
+              <${Paper} withBorder p="md"
+                ><${Text} c="dimmed">A slow Firecracker example<//
+                ><${Title} order=${2}>537s queue<//
+                ><${Text}
+                  >444s conditional headroom before Pod becomes last: 46.8% of
+                  that head’s 950s feedback.<//
+                ><//
+              >
+            <//>
+            <section id="cohort">
+              <${Title} order=${2}>What recent PRs experience<//>
+              <${Text} my="sm"
+                >A balanced chronological sample within each day and path class:
+                637 newly opened devel-base PRs in the search frame, 145
+                selected, 144 eligible heads. Up to 20 production and 10
+                test/fixture heads per day, 5 per other class; no outcome
+                filtering. Class percentiles are descriptive and unweighted,
+                rather than a traffic-weighted census. Older PRs with new pushes
+                and superseded heads are absent.<//
+              >
+              <${Box}
+                role="img"
+                data-chart="feedback"
+                aria-label="Green PR-head median and p90 feedback in minutes by changed-path class"
+                ><${BarChart}
+                  h=${330}
+                  data=${c.groups.map((g) => ({ label: `${g.name} (n=${g.green_s.n})`, Median: g.green_s.p50 / 60, p90: g.green_s.p90 / 60 }))}
+                  dataKey="label"
+                  orientation="vertical"
+                  series=${[
+                    { name: "Median", color: "blue.6" },
+                    { name: "p90", color: "orange.6" },
+                  ]}
+                  withLegend
+                  yAxisProps=${{ width: 190 }}
+                  valueFormatter=${(v) => `${n(v)}min`}
+              /><//>
               ${table(
                 [
                   "Changed paths",
                   "Heads",
-                  "Green / failed / cancelled / pending / missing",
-                  "Green mean",
-                  "Green median",
-                  "Green p90",
-                ],
-                backend.groups.map((g) => [
-                  g.name,
-                  g.n,
-                  `${g.outcomes.green || 0} / ${g.outcomes.failed || 0} / ${g.outcomes.cancelled || 0} / ${g.outcomes.pending || 0} / ${g.outcomes.missing || 0}`,
-                  fmt(g.green_seconds.mean),
-                  fmt(g.green_seconds.p50),
-                  fmt(g.green_seconds.p90),
-                ]),
-                900,
-              )}
-              <${Box}
-                mt="lg"
-                data-chart="backend-feedback"
-                role="img"
-                aria-label="Agentplane backend required-check median and p90, minutes, green exact heads only"
-              >
-                <${BarChart}
-                  h=${280}
-                  data=${backend.timing_groups
-                    .filter((g) => g.green_seconds.n)
-                    .map((g) => ({
-                      label: `${g.short_name} (n=${g.green_seconds.n})`,
-                      p50: g.green_seconds.p50 / 60,
-                      p90: g.green_seconds.p90 / 60,
-                    }))}
-                  dataKey="label"
-                  orientation="vertical"
-                  series=${[
-                    { name: "p50", label: "Median minutes", color: "blue.6" },
-                    { name: "p90", label: "p90 minutes", color: "orange.6" },
-                  ]}
-                  withLegend
-                  yAxisProps=${{ width: 140 }}
-                  valueFormatter=${(v) => `${n(v)} min`}
-                />
-              <//>
-              ${table(
-                [
-                  "Production backend, green heads",
-                  "n",
-                  "Mean",
+                  "Green / failed / cancelled",
                   "Median",
                   "p90",
-                  "Maximum",
+                  "Mean",
                 ],
-                backend.timing_groups.map((g) => [
+                c.groups.map((g) => [
                   g.name,
-                  g.green_seconds.n,
-                  fmt(g.green_seconds.mean),
-                  fmt(g.green_seconds.p50),
-                  fmt(g.green_seconds.p90),
-                  fmt(g.green_seconds.max),
+                  g.n,
+                  `${g.outcomes.green || 0} / ${g.outcomes.failed || 0} / ${g.outcomes.cancelled || 0}`,
+                  fmt(g.green_s.p50),
+                  fmt(g.green_s.p90),
+                  fmt(g.green_s.mean),
                 ]),
-                750,
-              )}
-              <${Title} order=${3} mt="lg" mb="sm"
-                >Fast, typical and recovery examples<//
-              >
-              ${table(
-                [
-                  "Exact head / latest Bazel job",
-                  "Required gates",
-                  "Before latest job",
-                  "Assignment",
-                  "Runner setup",
-                  "Remote envelope",
-                  "Post",
-                ],
-                backend.cases.map((c) => [
-                  html`<${Anchor} href=${c.job_url}
-                      >#${c.pr}, attempt ${c.attempt}<//
-                    ><br /><code>${c.head_sha}</code>`,
-                  fmt(c.feedback_seconds),
-                  fmt(c.before_latest_job_seconds),
-                  fmt(c.assignment_seconds),
-                  fmt(c.setup_seconds),
-                  fmt(c.remote_seconds),
-                  fmt(c.post_seconds),
-                ]),
-                1050,
-              )}
-              <${Text} size="sm" my="sm">
-                PR #15493 took 1h55m40s across five Bazel attempts: four
-                failures followed by success. The latest successful job itself
-                took only 3m55s from creation. The earlier attempts and gaps
-                remain part of feedback for that head; gap durations do not
-                identify scheduler waiting or an operator cause. Retained logs
-                show two VM-suite timeouts, a guest supervision proof failure,
-                and a managed MicroVM restore failure. Those observed failure
-                classes have different owners; they are not evidence of a single
-                queue problem.
-              <//>
-              <${Text} size="sm" mt="sm">${backend.method}<//>
-              <${Accordion} mt="md" variant="contained" multiple=${true}>
-                <${Accordion.Item} value="backend-heads">
-                  <${Accordion.Control}
-                    >Exact backend heads and required-gate results<//
-                  >
-                  <${Accordion.Panel}>
-                    ${table(
-                      [
-                        "PR / exact head",
-                        "Change class",
-                        "Outcome",
-                        "Required-gate feedback",
-                        "Bazel attempts",
-                      ],
-                      backend.heads.map((h) => [
-                        html`<${Anchor} href=${`${gh}/pull/${h.pr}`}>#${h.pr}<//
-                          ><br /><code>${h.head_sha}</code>`,
-                        h.change_class,
-                        h.outcome,
-                        h.job_url
-                          ? html`<${Anchor} href=${h.job_url}
-                              >${fmt(h.feedback_seconds)}<//
-                            >`
-                          : fmt(h.feedback_seconds),
-                        h.bazel_attempts,
-                      ]),
-                      950,
-                    )}
-                  <//>
-                <//>
-                <${Accordion.Item} value="backend-method">
-                  <${Accordion.Control}>Selection, clock and uncertainty<//>
-                  <${Accordion.Panel}
-                    ><${Stack} gap="sm">
-                      ${backend.limits.map((s) => html`<${Text} size="sm">${s}<//>`)}
-                    <//><//
-                  >
-                <//>
-              <//>
-              <${Paper} withBorder p="md" mt="lg">
-                <${Title} order=${3}
-                  >A 10m03s backend head: execution, with little action
-                  queueing<//
-                >
-                <${Text} my="sm">
-                  The earlier cohort’s median service head,${" "}
-                  <${Anchor} href=${backend.case_audit.job_url}>PR #15687<//>,
-                  tested <code>${backend.case_audit.tested_commit}</code>. Its
-                  GitHub job used 32s setup and 565s for the remote test/build
-                  envelope. The${" "}
-                  <${Anchor} href=${backend.case_audit.invocation_url}
-                    >inner Bazel test invocation<//
-                  >${" "}took 486.427s, with a 456.57s dependency critical path;
-                  Pod testing contributed 414.47s. These are nested clocks.
-                <//>
-                <${Text} my="sm">
-                  The physical Pod action queued for 0.061s and executed for
-                  412.659s. Existing spans show 111.851s stack setup, a 237.408s
-                  window containing 21 integration cases in two slots, and
-                  29.995s cleanup. The longest case takes 81.449s and proves
-                  idle suspension and explicit resume, including the production
-                  one-minute minimum. Nested spans overlap; their sums are not a
-                  critical path. This is a linked Nov 11 case, not a population
-                  estimate for current scheduling.
-                <//>
-                <${Text} size="sm">
-                  After the selected reliability work, revisit narrower real
-                  image inputs and matched full-graph measurements in${" "}
-                  <${Anchor} href=${`${gh}/pull/15214`}>#15214<//>, which
-                  remains open. Byte reductions have no established CI saving
-                  yet. Keep the existing scenario coverage and resource
-                  reservations. Earlier KVM and Pod experiments, recovery
-                  findings and their limits remain below.
-                <//>
-              <//>
-            </section>
-            <${Title} order=${2}>Earlier Nov 11–12 all-PR cohort<//>
-            <${Text} size="sm" c="dimmed">
-              Original window: 11 Nov 07:20 → 12 Nov 07:20 UTC; observed through
-              07:46:51 UTC. The broader service class below includes test-only
-              changes and is distinct from the production backend refresh above.
-              These retained counts and charts were not recollected.
-            <//>
-            <${SimpleGrid} cols=${{ base: 1, sm: 3 }}
-              ><${Paper} p="lg" withBorder
-                ><${Text} c="dimmed">All required gates green<//
-                ><${Title} order=${2}>94 / 159 heads<//
-                ><${Text}
-                  >33 failed · 31 cancelled · 1 pending. These outcomes are not
-                  a flake rate.<//
-                ><//
-              ><${Paper} p="lg" withBorder
-                ><${Text} c="dimmed">Among 94 green heads<//
-                ><${Title} order=${2}>2m55s / 15m12s<//
-                ><${Text}
-                  >p50 / p90; mean 6m17s. Failed and superseded work is reported
-                  separately.<//
-                ><//
-              ><${Paper} p="lg" withBorder
-                ><${Text} c="dimmed">Bazel is the last gate<//
-                ><${Title} order=${2}>90 / 94<//
-                ><${Text}
-                  >Artifact validation is last on four. Pre-commit is last on
-                  none.<//
-                ><//
-              ><//
-            >
-            <${Alert} title="Decision" color="blue"
-              >Keep the four-CPU KVM shape and the Pod suite’s current
-              reservation. The same-source KVM canary is faster in its bounded
-              three-scenario run, but uses different resources and cleanup, so
-              it does not establish a production CI saving. Firecracker
-              image-store reuse merged and was observed across two physical
-              executions on one worker; its speedup is unmeasured. VM/Pod
-              already retained a separate K3s baseline. More KVM workers cannot
-              shorten a managed VM or Pod action.<//
-            >
-            <section id="cohorts">
-              <${Title} order=${2}>What different PRs experience<//
-              ><${Text} my="sm"
-                >These classes use paginated file lists only when the PR’s
-                recorded head matches the measured SHA. Mixed PRs use the
-                documented class precedence. Superseded or unverified paths
-                remain unknown; that group contains most failed and cancelled
-                heads, so class-specific success frequencies would be
-                misleading. Small classes are descriptive, not stable
-                percentiles.<//
-              >
-              <${Box}
-                data-chart="latest-class-feedback"
-                role="img"
-                aria-label="Green-head median and p90 gate feedback by PR class, in minutes"
-                ><${BarChart}
-                  h=${300}
-                  data=${chartClasses}
-                  dataKey="label"
-                  orientation="vertical"
-                  series=${[
-                    { name: "p50", label: "Median minutes", color: "blue.6" },
-                    { name: "p90", label: "p90 minutes", color: "orange.6" },
-                  ]}
-                  withLegend
-                  tickLine="y"
-                  yAxisProps=${{ width: 100 }}
-                  valueFormatter=${(v) => `${n(v)} min`}
-              /><//>
-              ${table(
-                [
-                  "PR paths",
-                  "Heads",
-                  "Green / failed / cancelled / pending",
-                  "Green median",
-                  "Green p90",
-                ],
-                data.classes.map((c) => [
-                  c.name,
-                  c.n,
-                  `${c.outcomes["green-proxy"] || 0} / ${c.outcomes.failed || 0} / ${c.outcomes.canceled || 0} / ${c.outcomes.pending || 0}`,
-                  fmt(c.green_seconds.p50),
-                  fmt(c.green_seconds.p90),
-                ]),
+                850,
               )}
               <${Text} size="sm" mt="sm"
-                >The complete 72h run census contains 19,304 runs. Job details
-                cover every latest 24h required-workflow run, 100 time-spread
-                earlier heads regardless outcome, and every final 90min
-                workflow. The earlier 100-head sample is retained separately in
-                evidence; it is not pooled into a representative three-day
-                percentile. All runs, heads, attempts and physical executions
-                have different denominators.<//
+                >The prior 10–13Nov cohort had 124 green/129 production heads:
+                11m27s median, 23m38s p90, 13m36s mean. Current medians and
+                tails are lower, but the frame, equal-day sampling, source and
+                workload mix differ. Most new measurements precede today’s final
+                ports. This is not an attributed improvement.<//
+              >
+              <${Text} size="sm" mt="sm"
+                >Bazel was last on 140/141 green heads; artifact/import
+                validation on 1; pre-commit on 0. Only two sampled heads had
+                multiple Bazel checks: one cancelled attempt followed by success
+                (#16088), and one success followed by failure (#16007). This
+                latest-head sample cannot establish the fleet rerun rate or
+                prove the earlier reliability work eliminated retries.<//
               >
             </section>
-            <${Text} size="sm"
-              >For context, the preceding Nov8–9 all-green cohort had p50 2m38s
-              / p90 7m50s (186 heads); this cohort has a similar median and a
-              longer tail. Workload mix, source, cancellation and cache exposure
-              differ, so this is not an attributed regression. The prior
-              selected 19 system-suite sample (37m46s mean) is not the same
-              population as today’s 20 path-matched service heads.<//
-            >
             <section id="timelines">
-              <${Title} order=${2}
-                >Exact-head timelines: setup is small, remote work and recovery
-                are large<//
-              ><${Text} my="sm"
-                >Each row ends when that head’s latest required gate completes.
-                The remote envelope includes outer BuildBuddy admission,
-                selection, Bazel loading/analysis, prerequisites, execution and
-                finalization; its internal gaps are not all queue time. For
-                trusted forks, the exact workflow run-name SHA joins the trusted
-                Bazel and artifact bridge to ordinary pre-commit. Raw and linked
-                derivations are retained separately.<//
-              >
+              <${Title} order=${2}>Linked heads: the bottleneck changes<//>
               ${table(
                 [
-                  "Head / class",
+                  "PR / tested tree",
                   "Gate feedback",
-                  "Before latest job",
                   "Job assignment",
                   "Runner setup",
                   "Remote envelope",
-                  "Post",
+                  "Inner Bazel",
+                  "Last fresh test",
                 ],
-                data.cases.map((c) => [
-                  html`<${Anchor} href=${c.job_url}
-                      >${c.pr ? `PR #${c.pr}` : c.sha.slice(0, 10)} · attempt
-                      ${c.attempt}<//
-                    ><br />${c.class}<br /><code>${c.sha}</code><br />Tested:
-                    <code
-                      >${c.tested_commit || "No indexed child provenance"}</code
-                    >`,
-                  fmt(c.feedback_seconds),
-                  fmt(c.before_latest_job),
-                  fmt(c.created_to_start),
-                  fmt(c.setup),
-                  fmt(c.remote_envelope),
-                  fmt(c.post),
-                ]),
-                1000,
-              )}
-              <${Paper} withBorder p="md" mt="md"
-                ><${Title} order=${3}
-                  >PR #15741: a real same-source recovery, with an unassigned
-                  interval<//
-                ><${Text} my="sm"
-                  >The first Bazel job failed at 06:52:57 UTC; the next
-                  attempt’s job was created at 07:10:28. That 17m31s interval is
-                  measured. The snapshot does not establish a scheduler wait or
-                  why the rerun was requested then. The final attempt adds
-                  9m41s. Complete gate feedback is 37m18s.<//
-                ><${Text}
-                  >Both inner invocations tested
-                  <code>ebde9f0051adab3336975fa7ad60313b300ceba7</code>. The VM
-                  target failed and later passed with the same configuration and
-                  action digest in two distinct uncached physical executions
-                  (433.947s and 437.934s). The failure lost an exec-server tool
-                  session during the intentional OOM scenario, before its
-                  post-OOM assertions. See the
-                  <${Anchor} href="../reliability/">reliability diagnosis<//>; a
-                  successful retry does not establish a repair.<//
-                ><//
-              >
-              <${Text} size="sm" mt="sm"
-                >The two slowest green heads both have two attempts. No queue or
-                operator cause is assigned to the gaps. GitHub log receipt lines
-                were buffered, so they cannot date the first underlying
-                failure.<//
-              >
-            </section>
-            <section id="native">
-              <${Title} order=${2}>Where the physical time goes<//
-              ><${Text} my="sm"
-                >Two selected post-change mainline invocations establish that
-                the long poles can be useful execution rather than KVM
-                admission. These are linked examples, not a fleet distribution
-                or a controlled before/after experiment. Action cost and runner
-                occupancy are reported in their own units.<//
-              >
-              ${table(
-                [
-                  "Inner test invocation / tested source",
-                  "Bazel elapsed",
-                  "Fresh TestRunner actions",
-                  "Test process seconds",
-                  "Observed test CPU seconds",
-                ],
-                data.native_invocations.map((r) => [
-                  html`<${Anchor} href=${inv(r.invocation_id)}
-                      >${r.invocation_id.slice(0, 8)}<//
-                    ><br /><code>${r.tested_commit}</code>`,
-                  fmt(r.invocation_seconds),
-                  r.test_actions,
-                  n(r.test_process_seconds),
-                  `${n(r.test_cpu_seconds_observed)}; ${r.test_cpu_missing_actions} missing`,
-                ]),
-                1000,
-              )}
-              ${table(
-                [
-                  "Invocation",
-                  "Fresh target",
-                  "Queue s",
-                  "Worker preparation s",
-                  "Process s",
-                  "CPU s",
-                ],
-                data.native_invocations.flatMap((r) =>
-                  r.longest_tests
-                    .slice(0, 5)
-                    .map((t) => [
-                      r.invocation_id.slice(0, 8),
-                      t.label,
-                      t.queue_seconds == null
-                        ? "Unknown / invalid clocks"
-                        : n(t.queue_seconds),
-                      n(t.preparation_seconds),
-                      n(t.process_seconds),
-                      t.cpu_seconds == null ? "Unknown" : n(t.cpu_seconds),
-                    ]),
-                ),
+                [16226, 16657, 16689, 16716, 16718, 16378, 16088].map((p) => {
+                  const x = caseBy(p);
+                  return [
+                    html`${link(x.job_url, `#${p}`)}<br /><${Code}
+                        >${x.tested_merge.slice(0, 12)}<//
+                      >`,
+                    fmt(x.feedback_s),
+                    fmt(x.timeline.job_created_to_started_s),
+                    fmt(x.timeline.setup_s),
+                    fmt(x.timeline.remote_envelope_s),
+                    link(inv(x.invocation), fmt(x.bazel_elapsed_s)),
+                    x.last_test?.label.split(":").pop() ||
+                      "No NEW tests; cache/build path",
+                  ];
+                }),
                 1050,
               )}
-              <${Text} my="sm"
-                >The 816.367s invocation’s profile shows VM action 213.9→776.1s
-                and Pod action 276.7→816.1s. Its reported 625.54s Bazel critical
-                path names VM, while Pod finishes last after a later start.
-                Optimizing VM alone can save <strong>zero</strong> of this
-                invocation’s observed wall time if Pod is unchanged. The
-                571.337s invocation is instead dominated by MCP actions (467.805
-                process seconds; 475.43s reported critical path). Loading,
-                analysis and execution overlap; pre-test time is not an isolated
-                analysis-cache miss measurement.<//
+              <${Text} size="sm" mt="sm"
+                >Outer remote admission, checkout, selection, Bazel
+                prerequisites and finalization sit inside the remote envelope;
+                its unexplained remainder is not labelled queue time. The inner
+                Bazel clock is nested. Before-job and postprocessing clocks are
+                in evidence. No PR had a reconstructed historical push or
+                mergeability-ready timestamp.<//
               >
-              <${Text} my="sm"
-                >Exact physical traces put VM stack setup at 153.85s versus
-                77.23s in the other selected pass; its guest-root import takes
-                40.94s versus 14.46s and is nested inside setup. Pod setup in
-                the slower invocation is 153.02s. These are uncontrolled
-                worker/cache comparisons. The VM’s three guest readiness
-                intervals overlap at 143.63/113.24/106.03s. The Claude guest
-                intentionally runs the real systemd/kernel supervision suite
-                before Runner readiness (32.42s here, 14.58s in the other pass).
-                See
-                <${Anchor}
-                  href=${source("agentplane/system_tests/suites/test_vm.py")}
-                  >scenario ownership<//
+              <${Paper} withBorder p="md" mt="md"
+                ><${Title} order=${3}>#16716: Dispatcher finishes last<//>
+                <${Text} my="sm"
+                  >574s required feedback; 437.562s inner invocation; 413.54s
+                  dependency critical path. The Dispatcher process takes 320.49s
+                  with 0.06s recorded action queue. Existing spans show 113.933s
+                  cold setup, three serial cases 15.164/52.022/77.520s, and
+                  28.265s stack cleanup. A50.061s peer-lifetime span sits inside
+                  a case. These are real queue/readiness/failover and opted-in
+                  wake-up proofs, including global rollout mutations;
+                  parallelizing them on the same stack would need an isolation
+                  redesign.<//
                 >
-                and
-                <${Anchor}
-                  href=${source("agentplane/system_tests/vm/guest/supervision_check")}
-                  >guest readiness producer<//
-                >.<//
-              >
+                <${Text}
+                  >The next test finishes 23.118s earlier. Removing 100s from
+                  Dispatcher alone therefore cannot deliver 100s
+                  complete-feedback savings under the recorded other clocks. The
+                  four-worker and native split ports are in this tested merge;
+                  trust pooling is not.
+                  ${link(inv(caseBy(16716).invocation), "Exact invocation")}<//
+                >
+              <//>
+              <${Paper} withBorder p="md" mt="md"
+                ><${Title} order=${3}>#16718: VM and Firecracker almost tie<//>
+                <${Text} my="sm"
+                  >595s required feedback; 460.000s inner invocation. All six
+                  inspected merged ports are ancestors of this tested merge. VM
+                  process 413.25s: 125.225s cold setup, 201.037s longest
+                  concurrent scenario, 30.768s cleanup; other time includes
+                  Python/import and test plumbing. Two guest readiness waits
+                  overlap at 111.797s and 84.651s. Guest-root import 40.846s is
+                  nested in setup; it is not additional time.<//
+                >
+                <${Text}
+                  >Firecracker queues 146.13s and then executes 269.03s,
+                  finishing 1.919s before VM. Eliminating its queue alone saves
+                  zero under these clocks; accelerating VM alone has about 2s of
+                  TestRunner-envelope headroom. Both paths need attention.
+                  Native default runfiles and real integration assertions stay
+                  intact.
+                  ${link(inv(caseBy(16718).invocation), "Exact invocation")}<//
+                >
+              <//>
               <${Text} my="sm"
-                >The longest guest’s launcher records QEMU domain start at
-                03:31:44 UTC, Sandbox Running at 03:32:04, guest service start
-                at 03:32:42, supervision PASS at 03:33:21, and Gateway-backed
-                Ready at 03:33:39. Pod Ready and its “unpaused” condition are
-                earlier stages, not QEMU start or Runtime readiness. The
-                retained trace lacks the VMI phase publication timestamp; a 19s
-                domain-start→Sandbox-Running interval cannot all be assigned to
-                observer polling. Native QEMU snapshots confirm TCG and 11
-                allowed host CPUs; the six emulated vCPUs do not establish host
-                oversubscription. Cross-producer guest/host UTC stamps were not
-                independently skew-calibrated, so their differences are not
-                precise CPU or observer-delay attribution.<//
+                >All five inspected retained-baseline traces report
+                cold/fingerprint_mismatch, rather than an unexplained generic
+                “slow setup.” The compatibility fingerprint covers
+                infrastructure helpers, CRDs, manifests and PKI image indexes;
+                it already excludes per-action application images. This small
+                selected sample does not establish an avoidable-miss rate.
+                Preserve cleanliness, immutable compatibility and exact
+                ownership checks. See
+                ${link(`${gh}/blob/${e.source_devel_commit}/agentplane/system_tests/k3s/baseline.py`, "baseline owner")}
+                and
+                ${link(`${gh}/blob/${e.source_devel_commit}/agentplane/system_tests/deployment/stack.py`, "stack lifecycle")}
+                before narrowing the key.<//
               >
-              <${Paper} p="md" withBorder
-                ><${Title} order=${3}>What the tests buy<//
-                ><${Text} my="sm"
-                  >VM boots three independently owned guests, including real
-                  systemd/kernel supervision checks and a scoped tool-OOM
-                  recovery proof. Pod runs 21 distinct integration cases in two
-                  slots. The one-minute idle-suspension delay is enforced by the
-                  production CRD and cannot be shortened while retaining that
-                  boundary. The Electric compaction test uses three tiny chunks;
-                  the WAL recovery test writes until a real replication-slot
-                  loss predicate. These inspected workloads are behavioral
-                  integration checks, not generic volume stress to move to
-                  manual CI.<//
-                ><${Text}
-                  >Fresh trace findings and the unchanged-input constraints are
-                  recorded below. Successful scenarios and teardown remain
-                  required; readiness waits must continue to prove the actual
-                  producer’s state.<//
-                ><//
+              ${table(
+                [
+                  "PR",
+                  "NEW tests",
+                  "Test process seconds",
+                  "Observed test CPU seconds",
+                  "Missing CPU actions",
+                ],
+                e.selected_cases.map((x) => [
+                  pr(x.pr),
+                  x.fresh_tests,
+                  n(x.test_process_s),
+                  n(x.test_cpu_s_observed),
+                  x.cpu_missing,
+                ]),
+                850,
+              )}
+              <${Text} size="sm"
+                >Process seconds sum independent physical test actions; CPU is a
+                separate resource. Neither is PR elapsed time. Selected exact
+                JUnit artifacts contain 34 nonempty cases across six target
+                executions, all passed with no errors or skips. Fresh-origin
+                GetExecution records only; cached target durations are excluded.
+                Major inspected suites exercise readiness, identity/trust, real
+                guest/kernel supervision, dispatch and recovery; no volume
+                stress workload was identified among these long poles.<//
               >
             </section>
             <section id="queues">
               <${Title} order=${2}
-                >Queues and capacity: distinguish each service<//
+                >The scarce lane is KVM, not every executor<//
               >
               ${table(
-                ["Layer", "Observed work / delay", "Interpretation"],
+                ["Layer", "Observed evidence", "Implication"],
                 [
                   [
-                    "GitHub required Bazel job",
-                    "218 completed assigned attempts: creation→start p50 2s / p90 26s / max 784s",
-                    "Includes prerequisites and trust/environment conditions; not all runner starvation.",
+                    "GitHub Bazel jobs",
+                    "52 completed assigned attempts in recent 90min: created→start p50 2s, p90 72s, max 281s",
+                    "DAG/trust/concurrency time included. Not a pure runner-starvation distribution.",
                   ],
                   [
-                    "Outer managed BuildBuddy runner",
-                    "Inside remote envelope; not isolated across cohort",
-                    "Account/provider quota and allocation clocks unavailable; no free-tier-limit inference.",
+                    "Managed outer Remote Bazel runner",
+                    "Nested in 529/541s remote envelopes; provider admission not isolated",
+                    "Account entitlement and shared capacity unobserved; no free-tier or quota claim.",
                   ],
                   [
-                    "Managed VM / Pod / MCP TestRunner",
-                    "Selected fresh queue ~0.06s; process 294–555s for VM and 405–536s for Pod",
-                    "Native Action confirms Firecracker and 8CU VM / 4CU Pod; the reservation does not establish measured host CPU capacity.",
+                    "Managed inner K3s tests",
+                    "Current selected action queues~0.06–0.10s; process 267–413s",
+                    "Useful execution, cold setup and guest readiness dominate these records.",
                   ],
                   [
                     "Self-hosted kvm-vm",
-                    "Only Firecracker suite; explicit 4 CPU / 6GiB request; one task per worker",
-                    "Dashboard health checks show 1–2 registered healthy workers; live pool is autoscaled.",
+                    "2–3 registered and scraped workers; max 3; each 4CPU, 7GiB advertised, one task",
+                    "Firecracker requires KVM/Docker isolation. An idle managed worker is not interchangeable.",
                   ],
                   [
-                    "Nested fixture admission",
-                    "K3s readiness and guest/service work occur inside TestRunner",
-                    "Distinct from BuildBuddy admission. Pod ordering/ownership changes replaced the rejected 8CU proposal.",
+                    "Nested K3s",
+                    "Readiness, Kubernetes resources and cleanup occur inside TestRunner",
+                    "Do not add these waits to RBE queue or infer pod capacity from requested compute units.",
                   ],
                 ],
-                900,
+                1000,
               )}
               <${Box}
-                data-chart="latest-kvm-demand"
+                my="lg"
                 role="img"
-                aria-label="Healthy KVM executors, busy executors and local queued reservations, latest 24h, five-minute display"
+                data-chart="capacity"
+                aria-label="KVM registered executors, active tasks and local reservations over the recent 90minute window"
                 ><${LineChart}
-                  h=${280}
-                  data=${poolTimeline}
+                  h=${290}
+                  data=${pools}
                   dataKey="time"
                   series=${[
                     {
-                      name: "healthy",
-                      label: "Healthy executors",
+                      name: "registered",
+                      label: "Registered",
                       color: "blue.6",
                     },
-                    { name: "busy", label: "Busy executors", color: "teal.6" },
                     {
-                      name: "reservations",
+                      name: "tasks",
+                      label: "Tasks in progress",
+                      color: "teal.6",
+                    },
+                    {
+                      name: "local_reservations",
                       label: "Local reservations",
                       color: "orange.6",
                     },
                   ]}
+                  withLegend
                   withDots=${false}
                   curveType="step"
-                  withLegend
-                  yAxisProps=${{ domain: [0, 3], allowDecimals: false }}
+                  yAxisProps=${{ allowDecimals: false }}
               /><//>
-              <${Text} size="sm"
-                >Underlying queries use 60s resolution and the deployed
-                dashboard’s registration, scrape freshness and live-VM
-                predicates. Health is present at 1,438/1,441 points. Local
-                reservations are positive at 20 valid points (maximum two); busy
-                workers at 118. The chart thins to five-minute display. Local
-                reservations are not central backlog or distinct tasks; these
-                samples do not measure exact utilization. Missing points are
-                unknown.<//
-              >
-              <${Text} mt="sm"
-                >The pool now scales 1–3 workers, with 120s scale-up
-                stabilization and at most one added worker per 900s; scale-in
-                drain is merged. The old one-worker, 22–26-reservation incident
-                is historical. A separate live read found two ready VMs. Keep
-                one action per worker because shared K3s storage has exclusive
-                ownership. The earlier closed #15822 pilot requested 10 GB,
-                above the worker’s 7 GiB advertisement. The current manual KVM
-                target requests 7 GiB; required-CI placement still needs a
-                resource-matched, capacity-aware test.<//
+              <${Text}
+                >12:25→13:55UTC,361/361 joint 15s observations.
+                Registered/scraped count 2–3. Local reservations peak 14;153
+                points show reservations while every registered worker has a
+                task. Those reservations can duplicate physical actions and are
+                not central backlog. Charts display 60s samples; evidence
+                retains 15s points.
+                ${link("https://grafana.allegedly.works/d/buildbuddy-executor-pool", "Deployed pool dashboard")}<//
               >
               <${Text} my="sm"
-                >Selected latest day completed runner occupancy is 59.46
-                runner-hours, a lower bound for the selected workflows; this is
-                not account-wide utilization. The final 90min includes all
-                created workflows. A peak of 40 in this lower-bound sample does
-                not establish account entitlement or provider saturation.
-                Finished, positive-runner jobs only; unswept older active work
-                remains unknown.<//
+                >Historical #16378 is the consequential counterexample:
+                Firecracker waits 537.14s, runs 239.00s, finishes 444.392s after
+                Pod. Removing its wait would conditionally shorten that 950s
+                head by at most 444s(46.8%), before Pod becomes last. During its
+                exact 08:03:36→08:12: 33UTC queue, all 36 available 15s samples
+                show 3/3 registered workers occupied with positive local
+                reservations. This confirms eligible pool saturation in that
+                interval. This is fixed-clock headroom, not a prediction that
+                one added worker achieves it. Current #16718 instead has zero
+                queue-only headroom because VM ties it.<//
+              >
+              <${Text} size="sm"
+                >The complete recent 860-run census contains 2090 job attempts.
+                Completed assigned occupancy is 17.98 runner-hours, mean 11.99
+                busy runners, peak 38; excludes unfinished jobs and unswept
+                older work. It is a lower bound for this repository, not account
+                utilization. The separate older-live-run sweep changed 15→14
+                rows during pagination and failed; it was not silently accepted
+                as complete. CodeQL default setup is currently not
+                configured.<//
+              >
+            </section>
+            <section id="probe">
+              <${Title} order=${2}>Bounded probe: native runtime cut is real<//>
+              <${Text} my="sm"
+                >On literal devel
+                ${link(`${gh}/commit/${e.source_devel_commit}`, e.source_devel_commit)},
+                a CI-configured cquery inspects DefaultInfo.default_runfiles. It
+                executes no test bodies. Native targets carry no App runtime
+                files; positive App consumers still carry them.
+                ${link(inv(e.configured_input_probe.invocation), "Immutable query result")}<//
+              >
+              ${table(
+                ["Configured target", "App runtime files"],
+                e.configured_input_probe.targets.map((x) => [
+                  x.target,
+                  x.app_runtime_file_count,
+                ]),
+                900,
+              )}
+              <${Text} my="sm"
+                >A second
+                ${link(inv(e.configured_input_probe.remaining_path_invocation), "declared-path query")}
+                finds
+                ${html`<${Code}>native Pod → pod_native_manifests → renderer binary → recipe → fixture_chart → App settings<//>`}.
+                The shared renderer still imports App configuration. This can
+                broaden selection/build work even though App is absent from test
+                runfiles; re-rendering unchanged output can preserve the
+                downstream cache. Next probe the exact historical full-PR diffs
+                through the production selector and CAS outputs before crediting
+                elapsed savings.<//
               >
             </section>
             <section id="options">
-              <${Title} order=${2}>Earlier options and current dispositions<//
-              ><${Text} my="sm"
-                >The prior four-minute mean system-feedback objective remains
-                unmet. The current action graph needs several paths shortened;
-                cheap changes to an early-finishing target cannot reach it.
-                Values below are scoped ceilings or hypotheses, not measured CI
-                savings.<//
+              <${Title} order=${2}>Concrete options against the 30% goal<//>
+              <${Text} my="sm"
+                >Objective: good required coverage with at least 30% lower
+                complete backend feedback, progressing toward a four-minute mean
+                without excessive compute or lifecycle complexity. Test
+                grouping, fixture lifetime and placement are choices; real PKI,
+                guest/kernel boundaries, fresh identities, revocation, cleanup
+                ownership and unique behavioral assertions are constraints. No
+                current alternative is qualified to meet that objective across
+                the whole backend class.<//
               >
               ${table(
                 [
-                  "Priority / owner",
-                  "Concrete change and mechanism",
-                  "Benefit, cost and decisive validation",
+                  "Priority / architecture",
+                  "Change and expected scope",
+                  "Decisive experiment / cost",
                 ],
                 [
                   [
-                    "1 · test infrastructure",
-                    "Keep per-suite environment-tools image split PR #15214 held pending measured savings. Codex-only suites do not need Claude, git or kubectl layers; keep each suite’s real tools and integration assertions.",
-                    "Open and explicitly held; the ten-lane program above supersedes this earlier priority order. Published layer reductions are byte savings, not latency. Measure same-source physical cold/warm imports and the last required gate; benefit can be zero on a warm cache. No idle infrastructure cost.",
+                    "1 · KVM admission tail",
+                    "Compare a fourth eligible independent worker or reserved capacity at the pool owner; keep one task per worker. Conditional large-tail opportunity: up to 444s/46.8% on #16378, zero on #16718. A managed VM speedup does not serve this KVM capability.",
+                    "Currentmax 3 and strict host spread are explicit. A fourth worker needs a placement/capacity decision, not just higher Bazel jobs. Repeat three four-PR-equivalent bursts including a scale-down start only after changing that constraint; prior four-on-three burst already queued 215s. Track full gates, registration, load and drain; recurring 4CPU/8GiB guest plus disk per added worker. No deployed change made.",
                   ],
                   [
-                    "2 · K3s fixture lifecycle",
-                    "Firecracker image-store reuse passed cold import, warm reuse across fresh Kubernetes UIDs, SIGKILL reset and binary-mismatch reset under clean-stop, exact-binary and 20 GB headroom rules. VM/Pod already had a separate retained baseline. Keep mutable DB/PKI/workspaces fresh and cleanup scenario-owned.",
-                    "PR #15188 merged. Two uncached Firecracker actions on one worker confirmed store continuity; this is not an end-to-end latency measurement. Selected VM/Pod setup is 77–154s; this envelope is not removable-work evidence.",
+                    "2 · Shorten several setup/readiness paths together",
+                    "Keep the merged native partition; separate App-specific chart composition/settings from the common renderer where output equivalence permits. Then identify actual baseline component changes and safe retained-vs-fresh boundaries. Current cold setup 77–125s and~25s certified cleanup are observed envelopes, not fully removable work.",
+                    "First replay full historical App/backend PR diffs on literal current source; compare affected targets, renderer bytes, NEW actions and final gates. For retention, compare exact component digests and same-source cold/warm graphs; exercise dirty, changed binary/CRD and failed-cleanup rejection. No savings forecast until avoided work is demonstrated. Input probe above already tests the runtime-cut assumption.",
                   ],
                   [
-                    "3 · VM placement",
-                    "The bounded three-scenario same-source pilot completed: KVM 262.3s versus managed TCG 474.5s. KVM used 4 CPUs; managed TCG used 8 compute units. Stack time was 128s / 125s; scenario time was 115s / 249s.",
-                    "PR #15822 was closed after the pilot. Different resources and cleanup prevent a cost-adjusted production CI claim. One managed invocation still ends on Pod, so isolated VM acceleration has zero conditional headroom there. Extra worker RAM/capacity and isolation/drain ownership remain recurring costs.",
+                    "3 · Faster VM execution with adequate independent capacity",
+                    "A real-KVM VM test path is plausible; earlier same-source canaries were faster than managed TCG, but cache/resources differed and the existing KVM pool is already contended. Moving VM into that pool unchanged can worsen feedback.",
+                    "Provision/routable capacity is the changed constraint required before another placement trial. Preserve both real harnesses, systemd/kernel proof, History, suspend/recovery and teardown. Model at leasttwo KVM actions per PR; four simultaneous PRs need up toeight independent slots. Compare whole graphs and queue tails, not isolated boot times; substantial recurring capacity/maintenance cost.",
                   ],
                   [
-                    "Tail 1 · runtime/test contract",
-                    "The observed 256 MiB shared cgroup can kill the tool and Codex exec-server in sequence. The pinned Codex 0.162.1 bundled exec-server exposes no per-command memory/cgroup placement or pre-exec controls. The patch-dependent native fork route was rejected; the unsupported survival probe is now manual while no-replay behavior remains. CODEX_EXEC_SERVER_URL permits an external executor, but replacing it is a separate process/session/PTY/sandbox/filesystem architecture and ownership decision.",
-                    "The Nov 12 shared-cgroup incident killed the tool and then the exec-server, losing the native session. The audit of bundled Codex 0.162.1 found no per-command memory/cgroup placement or pre-exec controls. Runtime design PR #15800 and patch-dependent producer PR #15869 are closed; capability note PR #15883 merged. The current shared-cgroup setup does not guarantee exec-server survival from tool OOM. PR #15897 moved the unsupported OOM survival check to a manual target; no runtime repair is claimed.",
+                    "4 · Contract decomposition and shared setup",
+                    "For common service changes, move narrow protocol/state-machine assertions to real local-service fixtures and retain separately owned deployed witnesses for wiring/kernel/lifecycle contracts. Consolidate only compatible cases on one stack; isolate global Gateway rollouts. This is the larger architectural option if setup/placement cannot reach the goal.",
+                    "Inventory every unique assertion and integration boundary, implement one representative native contract slice plus unchanged deployed witnesses, compare full selectors and graphs. Prior two-stack and shared-guest failures constrain those arrangements, not this family. Benefit remains unmeasured; engineering/review cost exceeds a local scheduling tweak.",
                   ],
                   [
-                    "Retain / rejected",
-                    "Keep four KVM CPUs, two Pod case slots, current Pod reservation, and CRD minimum idle threshold. Do not add a cache proxy for already-subsecond fetch examples.",
-                    "Earlier 4→8CPU and 2→3-slot experiments did not demonstrate complete-CI benefit. #15212 was closed after #15210/#15233 reduced demand. New experiments need a changed constraint, not a rerun of a rejected hypothesis.",
+                    "Reliability · preserve mechanism-based repair",
+                    "#16704 waits for Claude’s actual resume transcript before intentionally killing it; #16344 bounds same-incarnation readiness retries. These remove reproduced failure mechanisms. Current non-green samples are inspected below; do not relabel all failed checks as flakes.",
+                    "Keep seven-day physical-exposure follow-ups and exact-source failures. On a runtime outage, map shutdown/reconciliation ownership and first missing producer/observer step; retain unknown-outcome resources and never replay mutation automatically. No blanket retries or raised timeouts.",
                   ],
                 ],
-                1100,
+                1050,
               )}
               <${Text} my="sm"
-                >Graph model for the 816s example:
-                <code
-                  >finish = max(VM start214 + action562, Pod start277 +
-                  action539, MCP services start203 + action371, budget start272
-                  + action352, …)</code
-                >. Retaining all other clocks makes a VM-only reduction
-                ineffective. Prepared setup, narrower inputs and placement may
-                change several clocks; the fixed graph is not an architectural
-                lower bound. Even an optimistic removal of all 153s of Pod setup
-                leaves that path at about 663s (11m03s) with its current start;
-                that is a necessary constraint, not a predicted finish for the
-                full graph. Reaching four minutes requires changing prerequisite
-                start times and scenario/lifecycle boundaries as well. Narrow
-                image inputs cost no standing capacity; prepared infrastructure
-                adds versioned reset ownership and idle resource cost; KVM
-                requires eligible capacity and admission/drain ownership. None
-                yet has a validated four-minute end-to-end forecast. Firecracker
-                store acceptance covers cold/warm reuse, fresh UIDs, forced
-                reset and binary mismatch with exact-head CI green; next measure
-                matched full-graph feedback. The KVM canary needs equivalent
-                resource and cleanup accounting before a placement change.<//
+                >Graph constraint: for #16718, even removing all 125s of VM
+                setup alone leaves its physical process around 288s, before
+                workflow/selection overhead; Firecracker is still nearly tied.
+                For #16716, Dispatcher-only headroom is 23s. Reaching 30%
+                typical feedback requires changing several paths or avoiding
+                their invalidation, not adding independent percentage gains. A
+                larger redesign remains open; small local wins are not proof of
+                diminishing returns.<//
+              >
+            </section>
+            <section id="reliability">
+              <${Title} order=${2}>Failure recovery and agent access<//>
+              <${Text} my="sm"
+                >#16721 fails the egress relay sidecar test; #16723 fails
+                fixture rendering and workload-trust tests. These are observed
+                test failures, without a same-tree passing control proving
+                flakiness. #16088’s earlier attempt was cancelled, then
+                completed successfully after a later request; cancellation
+                initiator and request-gap cause were not established. The long
+                feedback therefore remains counted, without calling it scheduler
+                delay.<//
+              >
+              <${Text} my="sm"
+                >Current policy still requires Bazel Test & Build, Pre-commit
+                checks and Build artifacts + imports check, zero ordinary
+                approvals, no code-owner approval and non-strict up-to-date
+                checks. Linear history, PR rules and extra approval for
+                unattributed changes still apply.
+                Draft/conflict/review/mergeability history is not reconstructed:
+                these clocks do not establish eligibility for auto-merge.<//
               >
               ${table(
-                [
-                  "Fixed-clock sensitivity, 94 green heads",
-                  "Mean saved seconds",
-                  "Median saved seconds",
-                  "p90 saved seconds",
-                ],
-                data.conditional_headroom.scenarios.map((s) => [
-                  s.name,
-                  n(s.mean_saved_wall_seconds),
-                  n(s.p50_saved_wall_seconds),
-                  n(s.p90_saved_wall_seconds),
-                ]),
-              )}
-              <${Text} mt="sm"
-                >These hypothetical gate reductions hold other clocks fixed.
-                They are not predictions for the image split, prepared
-                infrastructure, or actual auto-merge readiness. Savings across
-                heads cannot be added to CPU or worker seconds.<//
-              >
-            </section>
-            <${Stack} component="section" id="nov12-later" gap="sm" my="xl">
-              <${Title} order=${2}
-                >Later Nov 12: store reuse and the full graph<//
-              >
-              <${Text} component="p"
-                >These are selected observations through 23:20 UTC, not a new
-                population or a before/after CI rate.${" "}
-                <${Anchor} href="evidence.json"
-                  >Evidence and exact run identities<//
-                >.<//
-              >
-              <${Paper} withBorder p="md">
-                <${Text} fw=${600}>Firecracker store continuity<//>
-                <${Text} component="p"
-                  >Merged${" "}
-                  <${Anchor}
-                    href="https://github.com/agentydragon/ducktape/pull/15188"
-                    >#15188<//
-                  >${" "} retains Firecracker’s previously non-persisted image
-                  store. Two distinct uncached physical executions on one worker
-                  took 216.274s and 213.310s; the first final inventory matched
-                  the second starting inventory (52 image references). Setup was
-                  70.47s and 67.66s. This proves continuity on that worker, not
-                  causal speedup or fleet hit rate.${" "}
-                  <${Anchor}
-                    href="https://github.com/agentydragon/ducktape/pull/15901"
-                    >Methods and artifacts<//
-                  >.<//
-                >
-              <//>
-              <${Paper} withBorder p="md">
-                <${Text} fw=${600}
-                  >Full graph, admission and recovered action results<//
-                >
-                <${Text} component="p"
-                  >The sampled last bottleneck changed from Pod to MCP Actions
-                  between runs. A later${" "}
-                  <${Anchor}
-                    href="https://app.buildbuddy.io/invocation/88924b1e-808c-4da9-89ec-3ac634268d6c"
-                    >Pod control<//
-                  >${" "} queued 536.823s, yet a matching-platform${" "}
-                  <${Anchor}
-                    href="https://app.buildbuddy.io/invocation/34d911a5-ebfa-4040-b7d7-b59ccd4880ec"
-                    >action submitted during that wait<//
-                  >${" "} started in 25.7ms. Provider scheduling and placement
-                  reasons remain unknown. That second action failed before
-                  pytest collection from a malformed argument; its admission
-                  clock is still valid.<//
-                >
-                <${Text} component="p"
-                  >An isolated TLS case passed uncached in 188.771s. The control
-                  and corrected split-main actions lost their observers, but
-                  their exact execution IDs recovered the TestRunner results:
-                  JUnit shows 21/21 control cases and 20/20 split-main cases
-                  passed, with the intended TLS case excluded from split-main.
-                  This corrects our earlier claim that the test verdicts were
-                  unavailable. Both Bazel invocations remain disconnected, so
-                  the results do not prove full-gate success or a speedup. The
-                  next comparison needs admission evidence and matched full-gate
-                  timing with duplicate setup costs.${" "}
-                  <${Anchor}
-                    href="https://github.com/agentydragon/ducktape/pull/15904"
-                    >Graph and experiment follow-up<//
-                  >.<//
-                >
-              <//>
-            <//>
-            <${Stack} component="section" id="nov12-followups" gap="md" my="xl">
-              <${Title} order=${2}>Nov 12 intervention follow-up<//>
-              <${Text} component="p">
-                The cards below retain their status at
-                ${followup.observed_at_utc}; later updates appear above. The
-                latency population, source pin and 11–12 November observation
-                window above are unchanged. A faster action admission or pilot
-                does not equal a measured change in the full PR feedback cohort.
-              <//>
-              ${followup.workstreams.map((w) => {
-                const observed =
-                  w.id === "3"
-                    ? html`Cold import and warm reuse across fresh Kubernetes
-                        UIDs passed; SIGKILL and binary mismatch reset the
-                        store.
-                        <${Anchor} href=${w.acceptance_url}>Acceptance run<//>.`
-                    : w.id === "6"
-                      ? w.interpretation
-                      : `KVM canary ${n(w.runs[0].system_test_seconds)}s, stack ${w.runs[0].stack_seconds}s, scenarios ${w.runs[0].scenario_seconds}s; managed TCG ${n(w.runs[1].system_test_seconds)}s, stack ${w.runs[1].stack_seconds}s, scenarios ${w.runs[1].scenario_seconds}s. ${w.cleanup}`;
-                const runCards =
-                  w.id === "6"
-                    ? html`<${SimpleGrid}
-                        cols=${{ base: 1, md: 3 }}
-                        spacing="xs"
-                      >
-                        ${w.runs.map(
-                          (r) =>
-                            html`<${Paper}
-                              key=${r.invocation_id}
-                              withBorder
-                              p="sm"
-                            >
-                              <${Stack} gap=${4}>
-                                <${Text} fw=${600}>${r.jobs} jobs<//>
-                                <${Text} size="sm"
-                                  >${n(r.bazel_elapsed_seconds)}s Bazel; Pod
-                                  start ${n(r.pod_action_start_seconds)}s;
-                                  action ${n(r.pod_action_seconds)}s; provider
-                                  queue
-                                  ${r.pod_provider_queue_seconds == null ? "not observed" : `${r.pod_provider_queue_seconds.toFixed(2)}s`}.<//
-                                >
-                                <${Text} size="sm"
-                                  >${r.targets_passed}/${r.targets_total}
-                                  targets passed. Remaining failure:
-                                  ${r.other_failure}.<//
-                                >
-                                <${Anchor} href=${r.invocation_url}
-                                  >BuildBuddy invocation<//
-                                >
-                              <//>
-                            <//>`,
-                        )}
-                      <//>`
-                    : w.id === "10"
-                      ? html`<${SimpleGrid}
-                          cols=${{ base: 1, md: 2 }}
-                          spacing="xs"
-                        >
-                          ${w.runs.map(
-                            (r) =>
-                              html`<${Paper}
-                                key=${r.invocation_id}
-                                withBorder
-                                p="sm"
-                              >
-                                <${Stack} gap=${4}>
-                                  <${Text} fw=${600}
-                                    >${r.placement} ·
-                                    ${r.requested_cpus ? `${r.requested_cpus} CPUs` : `${r.compute_units} compute units`}<//
-                                  >
-                                  <${Text} size="sm"
-                                    >${n(r.system_test_seconds)}s total; stack
-                                    ${r.stack_seconds}s; scenarios
-                                    ${r.scenario_seconds}s.<//
-                                  >
-                                  <${Anchor}
-                                    href=${`https://app.buildbuddy.io/invocation/${r.invocation_id}`}
-                                    >BuildBuddy invocation<//
-                                  >
-                                <//>
-                              <//>`,
-                          )}
-                        <//>`
-                      : null;
-                return html`<${Paper} key=${w.id} withBorder p="md">
-                  <${Stack} gap="sm">
-                    <${Stack} gap=${4}>
-                      <${Anchor} fw=${600} href=${w.pr_url}
-                        >#${w.pr_number} · ${w.topic}<//
-                      >
-                      <${Text} size="sm" c="dimmed"
-                        >${w.status_at_observation}<//
-                      >
-                    <//>
-                    ${runCards}
-                    <${SimpleGrid} cols=${{ base: 1, md: 2 }} spacing="md">
-                      <${Stack} gap=${4}>
-                        <${Text} fw=${600} size="sm">Observed result<//>
-                        <${Text} size="sm">${observed}<//>
-                      <//>
-                      <${Stack} gap=${4}>
-                        <${Text} fw=${600} size="sm">What it establishes<//>
-                        <${Text} size="sm">${w.claim_limit}<//>
-                      <//>
-                    <//>
-                  <//>
-                <//>`;
-              })}
-            <//>
-            <section id="spike">
-              <${Title} order=${2}
-                >Bounded CRD-ordering spike: feasibility passed, speedup
-                unmeasured<//
-              ><${Text} my="sm"
-                >The isolated candidate moves the existing CRD apply loop
-                directly after PKI preparation, before waiting for fixture-image
-                imports. All ten inspected CRDs have no conversion-webhook
-                dependency. Image-import joins, virtualization API readiness,
-                the three real VM scenarios and cleanup are preserved. The
-                <${Anchor} href="./crd-ordering-spike.patch">reviewed patch<//>
-                has SHA-256
-                <code
-                  >28ab694a4c12c6f1e91de1b91bacfc905c32aebe38b4bb0beba145e0dd1677f5</code
-                >.<//
-              ><${Text} my="sm"
-                ><code
-                  >bbr test //agentplane/system_tests/suites:test_vm
-                  --nocache_test_results</code
-                >
-                passed in
-                <${Anchor} href=${inv("702e056c-1614-4175-9863-b2789dab8a76")}
-                  >the approved RBE run<//
-                >: 347.3s test time, 400.455s Bazel elapsed. The run was
-                prepared from local source
-                <code>97ebe3e463f4137e9878ee627ccf50e16d81883d</code> plus this
-                patch. The runner used a different base plus workspace patches;
-                their identity is recorded in evidence, and the final remote
-                tree was not independently hashed. The source edit was restored
-                after the test; the candidate is not deployed.<//
-              ><${Text}
-                >One fresh pass supports this ordering under the observed
-                conditions. Its CRD span was 3.564s and ended 42.086s before the
-                fixture-images-imported setup event; total setup was 81.979s.
-                Earlier VM CRD spans were 2.123s and 5.328s (Pod 1.964s and
-                2.267s), so the overlap ceiling is small and conditional on
-                import work still running. Different workers, caches and action
-                inputs prevent a causal speedup comparison. This spike does not
-                validate prepared-state reuse, KVM placement or a fleet
-                reliability improvement.<//
-              >
-            </section>
-            <section id="availability">
-              <${Title} order=${2}
-                >Readiness and agent-visible feedback clocks<//
-              ><${Text} my="sm"
-                >Current devel rules require
-                <code>bazel-ci / Test &amp; Build</code>,
-                <code>Pre-commit checks</code>, and
-                <code>Build artifacts + imports check</code>, zero approvals, no
-                code-owner approval, and no strict up-to-date requirement;
-                linear history and PR constraints still apply. Extra approval
-                can apply to unattributed changes. Draft, conflicts, review
-                state and GitHub mergeability were not reconstructed at each
-                gate timestamp. Therefore all timings are
-                <strong>CI gate-feedback proxies</strong>, not observed
-                auto-merge eligibility.<//
-              >
-              ${table(
-                ["Milestone", "Current evidence", "Distribution"],
+                ["Signal", "What was actually observed"],
                 [
                   [
-                    "Push → workflow creation",
-                    "Push/webhook start absent; first workflow creation is the labeled proxy",
-                    "Unobserved",
+                    "Required result",
+                    "Exact-head latest required checks and workflow timestamps for 144 heads, with ALL check attempts. Current terminal GitHub and BuildBuddy APIs were successfully read.",
                   ],
                   [
-                    "Required gate becomes terminal",
-                    "Exact-head job timestamps, latest visible attempts; above p50/p90",
-                    "94 green heads",
+                    "Push → creation / first log availability",
+                    "Historical push and first-access timestamps unavailable. Completed logs were downloaded; no first-queryability percentile manufactured.",
                   ],
                   [
-                    "BuildBuddy live test status",
-                    "Current YAML publishes deterministic invocation before remote step and settles test outcome before final job; source contract only",
-                    "Initial queryability/availability lag unobserved",
+                    "Advertised BuildBuddy URL",
+                    "Source publishes deterministic URL before execution. #16489’s empty selector advertised an invocation that never existed; green/no-op checks are not a fresh runtime pass.",
                   ],
                   [
-                    "Job/target logs accessible",
-                    "Selected completed GH and BuildBuddy logs were downloaded during this investigation",
-                    "First-access time not recovered",
-                  ],
-                  [
-                    "Webhook accepted → inbox → harness receipt",
-                    "Current notification source defaults to completed check_run/status; workflow_job needs explicit selection; repair freshness defaults600s",
-                    "No current subscription/inbox/harness clocks available; not inferred from check timestamps",
+                    "Webhook → subscription → inbox → harness",
+                    "Current source inspected; this agent has no connected subscription/inbox receipt clock. No delivery distribution inferred from provider check timestamps.",
                   ],
                 ],
-                900,
+                950,
               )}
-              <${Text} size="sm"
-                >A live deployment read found two ready notification replicas;
-                that does not prove current delivery. Historical October
-                acceptance is not remeasured here. CodeQL default setup is
-                currently not configured. No workflow, required gate, timeout,
-                deployed pool or notification policy was changed.<//
-              >
             </section>
-            <${Accordion} variant="contained" multiple=${true}
-              ><${Accordion.Item} value="continuity"
+            <${Accordion} variant="contained" multiple=${true}>
+              <${Accordion.Item} value="prior"
                 ><${Accordion.Control}
-                  >Prior findings and experiment dispositions<//
-                ><${Accordion.Panel}
-                  ><${Text} mb="md"
-                    >The complete preceding report and its evidence were
-                    reviewed. Original measurements keep their Nov8–9 windows
-                    and source identities;
-                    <${Anchor} href=${prior}>commit-pinned prior report<//>.
-                    Current status was rechecked against source and PR state.
-                    Git ancestry confirms all six inspected merged interventions
-                    are present in both selected mainline sources and the exact
-                    #15741 tested merge; source presence is distinct from a
-                    measured benefit.<//
+                  >Prior work: landed, rejected and still open<//
+                ><${Accordion.Panel}>
+                  <${Text} mb="md"
+                    >Complete prior HTML, manifest and substantive result
+                    summaries were read before selecting this sample; the
+                    working inventory drove the probes. Historical experiments
+                    retain their own windows, sources and caveats.
+                    ${link(e.prior_work.report_url, "Pinned prior report")} ·
+                    ${link(e.prior_work.evidence_url, "Pinned evidence")} ·
+                    ${link("../agentplane-test-architecture/", "Current architecture record")}<//
                   >
+                  ${table(["Workstream", "Current disposition"], oldRows, 1050)}
+                  <${Title} order=${3} mt="lg">Original ten-lane program<//>
                   ${table(
-                    ["Prior work", "Disposition"],
+                    ["Lane", "Original measured result / remaining trigger"],
+                    e.prior_work.lanes.map((l) => [
+                      l.title,
+                      `${l.observed} Follow-up: ${l.measurement}`,
+                    ]),
+                    1050,
+                  )}
+                  <${Text} size="sm" mt="sm"
+                    >The lane text is the historical 13 November result, not
+                    freshly measured exposure or current PR status; current
+                    statuses and dispositions are above and in evidence.
+                    Seven-day/50-fresh-run follow-ups for earlier repairs are
+                    not yet mature. Original lane 10 fleet refresh is partially
+                    advanced by this current latency sample; the separate
+                    reliability denominator was not recollected. Track completed
+                    measurements in issue#16034 and architecture qualification
+                    in#16099; no monitoring schedule is implied.<//
+                  >
+                <//><//
+              >
+              <${Accordion.Item} value="heads"
+                ><${Accordion.Control}>Exact heads and measurement limits<//
+                ><${Accordion.Panel}>
+                  ${table(
                     [
-                      [
-                        "Firecracker device-plugin trim #15099; PKI cleanup #15193",
-                        "Merged; current selected fresh actions contain post-change behavior, but no matched causal fleet effect is established. Historical allocator/HIL and two-cycle PKI proofs retained.",
-                      ],
-                      [
-                        "Pod 8CU #15212; harness ownership/order #15210/#15233",
-                        "8CU proposal closed as redundant; sequential per-harness Sandboxes/order changes merged. Historical admission fit remains useful if demand grows; do not recommend 8CU again without recurrence.",
-                      ],
-                      [
-                        "KVM CPU4→8, case slots2→3, old storage/RAM envelope",
-                        "Negative/local trials retained with original scope. Source now has measured 8GiB worker guests, 7GiB advertised and autoscaling; old retain 16GiB recommendation is superseded.",
-                      ],
-                      [
-                        "KVM capacity / graceful drain #15357/#15480",
-                        "Changed since prior incident; live/dashboard evidence above replaces one-worker assumption. No workload-level scale-in fault injection or end-to-end gain measured in this run.",
-                      ],
-                      [
-                        "Image splitting #15214; bulk import #15126",
-                        "Per-suite image split remains open. Bulk-import pilot had worker/suite confounds and no valid same-input comparison; deferred behind current measured setup work.",
-                      ],
-                      [
-                        "Fail-fast / unconditional cancellation / obsolete heads",
-                        "Unconditional cancellation was rejected because log transport errors can hide healthy remote work. Earlier tests proved terminal cancellation, not physical drain. Current analysis changes no cancellation policy.",
-                      ],
-                      [
-                        "VM early boot, tag guard #15144, root/intermediate PKI mismatch",
-                        "Tag guard and per-action CA cleanup merged; original early-kernel failure remains distinct. Current successful boots do not retroactively establish its cause.",
-                      ],
-                      [
-                        "MCP API/runtime stall; session retry #15493",
-                        "Candidate retry merged. Current exact-source VM OOM session loss remains a separate observed failure; source/runtime analysis in reliability, no elimination claim.",
-                      ],
-                      [
-                        "CA-at-runner projection hypothesis; explicit idle resume",
-                        "Projection producer/observer clocks were absent in prior trace; retain as hypothesis. Idle threshold is a real CRD minimum; reject shortening it as equivalent coverage.",
-                      ],
-                      [
-                        "Outer CPU, cache proxy, disk placement",
-                        "No current dominant admission/fetch evidence to justify infrastructure spending. Old disk correlations and ordered CPU experiments are historical; source pool and hardware assumptions changed.",
-                      ],
-                      [
-                        "Older module/YAML/cache/filter interventions",
-                        "Keep as resolved historical implementation context. Global graph fallback and prepared-state lifecycle remain open designs, not proven measured wins.",
-                      ],
-                      [
-                        "Old CodeQL and GitHub slot contention",
-                        "CodeQL disabled; current gate assignment distribution and selected occupancy replace stale incident claims. Provider/account capacity still unknown.",
-                      ],
+                      "PR / head",
+                      "Class",
+                      "Outcome",
+                      "CI-gate feedback",
+                      "Bazel checks",
                     ],
-                    900,
-                  )}<//
-                ><//
-              ><${Accordion.Item} value="historical-visuals"
+                    c.heads.map((h) => [
+                      html`${pr(h.pr)}<br /><${Code}>${h.head}<//>`,
+                      h.class,
+                      h.outcome,
+                      fmt(h.feedback_s),
+                      h.bazel_attempts,
+                    ]),
+                    1050,
+                  )}
+                  <${Stack} gap="sm" mt="md"
+                    >${c.limits.map((l) => html`<${Text} size="sm">${l}<//>`)}<//
+                  >
+                <//><//
+              >
+              <${Accordion.Item} value="methods"
                 ><${Accordion.Control}
-                  >Historical Nov8–9 resource and architecture experiment
-                  charts<//
+                  >Reproduction, privacy and unresolved evidence<//
                 ><${Accordion.Panel}
-                  ><${Alert} color="yellow" mb="md"
-                    >Historical evidence only. The dates, source, ordered
-                    CPU/TCG/KVM comparisons, and limits below are original.
-                    Current worker sizing, autoscaling and Pod proposal status
-                    have changed as described above; historical recommendations
-                    are superseded by the disposition table.<//
-                  ><${ResourceFollowup} /><//><//
-              ><${Accordion.Item} value="limits"
-                ><${Accordion.Control}
-                  >Methods, reproducibility and remaining boundaries<//
-                ><${Accordion.Panel}
-                  ><${Stack}
-                    >${data.limits.map((l) => html`<${Text}>${l}<//>`)}<${Text}
-                      >Collection uses the packaged collect/snapshot/evidence
-                      recipes, then a bounded resume preserving the complete run
-                      census, explicit sample design and active-pagination
-                      failure. Trusted fork linkage is a separately reviewed
-                      adaptation of the workflow’s exact-head naming contract.
-                      Nearest-rank percentiles; seconds in evidence. No Shapley
-                      attribution was measured.<//
-                    ><${Text}
-                      >Native phase data comes from exact GetExecution records
-                      and command.profile.gz, not cached summary duration. Tests
-                      are new-origin records; unique physical IDs are preserved.
-                      Missing CPU and invalid/inverted clocks remain unknown.
-                      OTel parent/child intervals overlap and are not summed.<//
-                    ><${Group}
-                      ><${Anchor} href="./evidence.json">Evidence JSON<//
-                      ><${Anchor} href="./manifest.json">Manifest<//
-                      ><${Anchor} href=${prior}>Previous report<//
-                      ><${Anchor}
-                        href=${source(".github/workflows/bazel-ci.yml")}
-                        >Inspected CI source<//
-                      ><${Anchor}
-                        href=${source("agentplane/crds/manifests/crd-sandboxes.yaml")}
-                        >Idle contract<//
-                      ><//
-                    ><//
-                  ><//
+                  ><${Stack} gap="sm">
+                    <${Text}
+                      >Search and files were paginated; sample caps and
+                      chronological indexes fixed before checks were read.
+                      GraphQL checkType=ALL retains retries; every check
+                      connection reports complete. Native source/physical IDs
+                      and NEW origin, valid queue/preparation/process clocks,
+                      JUnit and existing OTel phases were inspected. CPU
+                      missingness stays explicit. Runtime trace spans overlap;
+                      no nested sums or cross-resource totals.<//
+                    >
+                    <${Text}
+                      >The 90minute Actions census used packaged collect.py with
+                      verified 860-run pagination; a resumed job collector
+                      retained every attempt after the independent live sweep
+                      raced. Packaged snapshot/evidence recipes support
+                      occupancy; stock fork feedback is explicitly unlinked and
+                      is not substituted for the separate exact-head sample. Raw
+                      logs, RPC data, profiles, fixture diagnostics and metrics
+                      identities remain private. No attribution allocation
+                      measured.<//
+                    >
+                    <${Text}
+                      >Unknowns: provider/managed-account entitlement, initial
+                      queryability and agent receipt, exact causes of the older
+                      runtime outages, causal post-merge fleet improvement, safe
+                      extra KVM capacity, and a qualified 30% architecture. The
+                      smallest next comparisons and ownership constraints are
+                      stated above; no timeout, coverage, deployment or
+                      validation policy changed.<//
+                    >
+                    <${Group}
+                      >${link("./evidence.json", "Reviewed evidence")}${link("./manifest.json", "Source manifest")}${link(e.prior_work.report_url, "Previous report")}${link(`${gh}/blob/${e.source_devel_commit}/.github/workflows/ci.yml`, "Inspected workflow")}<//
+                    >
+                  <//><//
                 ><//
-              ><//
-            >
+              >
+            <//>
             <footer>
               <${Text} size="sm" c="dimmed"
-                >Latest snapshot replaces only this namespace. History remains
-                in gh-pages commits. Report source and cohort clocks are
-                separate from historical experiment clocks.<//
+                >Only latency/ is refreshed; the reliability report keeps its
+                own population. Report redeploys after its gh-pages PR merges.
+                Source pins, cohort clocks and historical experiment clocks are
+                distinct.<//
               >
-            </footer>
+            <//>
           <//><//
         >`;
       }
