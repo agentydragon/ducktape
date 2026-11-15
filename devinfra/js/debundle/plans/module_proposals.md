@@ -501,6 +501,14 @@ shims.
       apply and execute each witness. CLI scope, freshness, empty existing owners,
       atoms and repair regressions pass in
       [the edge-case run](https://app.buildbuddy.io/invocation/46bdb03a-dea3-40ee-a4d8-64197aad0922).
+      After rebasing, [19 focused targets passed](https://app.buildbuddy.io/invocation/fb3234d1-06e5-46f6-a578-1f3894fccdd1),
+      including the independent oracle, 32-case property suite and both packaged
+      recipes. A separate CLI regression now pins time-budget interruption while
+      required-unit filters skip exponentially many out-of-scope combinations
+      ([passing budget regression](https://app.buildbuddy.io/invocation/2153c2f7-732d-402e-9253-590d4c80a395)).
+      Another property run shrank identical literal declarations to a graph-valid
+      but selector-ambiguous peel; that case is retained as a named no-write CLI
+      regression. Graph completeness does not imply synthesis completeness.
 - [ ] **Prove a useful fixed-owner workflow end to end.** Run the common workflow
       against a real accepted partial spec, apply a returned plan exactly and
       materialize it through the normal pipeline. Check relevant emitted behavior

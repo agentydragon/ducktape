@@ -88,6 +88,54 @@ fn exhaustive_negative_and_explicit_budget_exhaustion_are_distinct() {
 }
 
 #[test]
+fn time_budget_also_interrupts_combinations_skipped_by_required_unit_filters() {
+    let mut source = String::from("const seed = 'alpha';\n");
+    for index in 0..30 {
+        let operand = if index == 0 {
+            "seed".to_string()
+        } else {
+            format!("value{}", index - 1)
+        };
+        source.push_str(&format!("const value{index} = {operand} + '-beta';\n"));
+    }
+    source.push_str("function lazyBack() { return value29; }\nexport { seed, lazyBack };\n");
+    let fixture = GraphFixture::new(&source, &[]);
+    let units: Vec<_> = (0..30)
+        .map(|index| fixture.source_unit_for_binding(&format!("value{index}")))
+        .collect();
+    let only = save(&fixture, "only.json", &json!(units));
+    let mut args = vec![
+        "modules".to_string(),
+        "propose".to_string(),
+        "--strategy".to_string(),
+        "complete".to_string(),
+        "--into".to_string(),
+        "a_before".to_string(),
+        "--only-units".to_string(),
+        only,
+        "--time-budget-ms".to_string(),
+        "50".to_string(),
+        "--format".to_string(),
+        "json".to_string(),
+    ];
+    for unit in units {
+        args.extend(["--require".to_string(), unit]);
+    }
+    // The sole permitted move rejects on global ESM evaluation. The remaining
+    // billion combinations are out of scope, but still must honor the budget.
+    let before = read_tree(&fixture.modules);
+    let started = std::time::Instant::now();
+    let output = fixture.command(&args.iter().map(String::as_str).collect::<Vec<_>>());
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    let report = parse_stdout_json(&output);
+    assert_eq!(report["status"], "incomplete", "{report}");
+    assert_eq!(report["stop_reason"], "time_budget", "{report}");
+    assert!(report["plan"].is_null());
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    assert_eq!(read_tree(&fixture.modules), before);
+}
+
+#[test]
 fn existing_destination_is_checked_in_place_and_fixed_owners_stay_fixed() {
     let fixture = GraphFixture::dependency_chain();
     let blocked = fixture.json(&[

@@ -12,6 +12,38 @@ fn batch(fixture: &GraphFixture, changes: Value) -> String {
 }
 
 #[test]
+fn graph_accepted_duplicate_literal_binding_has_no_unique_selector_and_writes_nothing() {
+    // Shrunk from the complete-search property run: graph acceptance does not
+    // promise a uniquely addressable structural selector for either `0`.
+    let fixture = GraphFixture::new(
+        "const anchor = 0;\nconst first = 0;\nconst second = first + 1;\nconst third = first + 1;\nconsole.log(first, second, third);\n",
+        &[(
+            "middle.yaml",
+            "members: [{selector: {binding: {name: anchor}}}]\n",
+        )],
+    );
+    let path = batch(
+        &fixture,
+        json!([
+            {"unit_id": fixture.source_unit_for_binding("first"), "module": "a_before"},
+        ]),
+    );
+    fixture.assert_success(&["modules", "check", "--batch", &path]);
+    fixture.assert_rejected_unchanged(
+        &["modules", "apply", "--assignments", &path],
+        &["no uniquely proven structural selector", "ambiguous"],
+    );
+    // The concrete graph assignment is valid through the normal pipeline when
+    // an author supplies an explicit selector instead of asking for synthesis.
+    fs::write(
+        fixture.modules.join("a_before.yaml"),
+        "members: [{selector: {binding: {name: first}}}]\n",
+    )
+    .unwrap();
+    fixture.assert_runs("0 1 1\n");
+}
+
+#[test]
 fn joint_multi_destination_batch_claims_anonymous_units_and_preserves_omitted_units() {
     let fixture = GraphFixture::new(
         "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nlet count = 0;\ncount += 1;\nconsole.log(anchor, consumer, count);\n",
