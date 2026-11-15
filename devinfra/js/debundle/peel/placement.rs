@@ -96,13 +96,6 @@ impl Partition {
         )
     }
 
-    fn block_for_unit(&self, unit: usize) -> Option<Token> {
-        self.blocks
-            .iter()
-            .find(|block| block.units.contains(&unit))
-            .map(Block::key)
-    }
-
     fn block(&self, key: &Token) -> Option<&Block> {
         self.blocks.iter().find(|block| block.key() == *key)
     }
@@ -201,6 +194,7 @@ struct Projection {
     candidate: Candidate,
     module_assignment: ModuleAssignment,
     block_by_module: BTreeMap<ModuleId, Token>,
+    block_by_unit: Vec<Token>,
     nodes: BTreeSet<ModuleId>,
     entry: ModuleId,
     pairs: BTreeSet<(ModuleId, ModuleId)>,
@@ -222,6 +216,7 @@ pub(super) fn search(
     problem: &AssignmentProblem<'_>,
     options: &SearchOptions,
 ) -> Result<SearchReport> {
+    let started = Instant::now();
     let (scope, required_names) = prepare_scope(problem, options)?;
     let movable_atoms = scope.atoms.len();
     let report = SearchReport {
@@ -250,7 +245,7 @@ pub(super) fn search(
         problem,
         options,
         scope,
-        started: Instant::now(),
+        started,
         visited: HashSet::new(),
         report,
     };
@@ -486,12 +481,18 @@ fn initial_partition(problem: &AssignmentProblem<'_>, scope: &Scope) -> Partitio
 impl Solver<'_, '_, '_> {
     fn visit(&mut self, mut state: Partition) -> Result<()> {
         loop {
+            let Some(normalized) = self.propagate_owner_domains(state)? else {
+                return Ok(());
+            };
+            state = normalized;
+            let key = state.key();
+            if self.visited.contains(&key) {
+                return Ok(());
+            }
             if self.stop_if_limited() {
                 return Ok(());
             }
-            if !self.visited.insert(state.key()) {
-                return Ok(());
-            }
+            self.visited.insert(key);
             self.report.checks = self
                 .report
                 .checks
@@ -499,33 +500,13 @@ impl Solver<'_, '_, '_> {
                 .context("placement quotient-state count overflow")?;
             self.report.work.partition_states = self.report.checks;
 
-            if state.blocks.iter().any(|block| {
-                block.owner.is_none() && !block.allow_fresh && block.allowed_owners.is_empty()
-            }) {
-                return Ok(());
-            }
-            if let Some((block, owner)) = state.blocks.iter().find_map(|block| {
-                if block.owner.is_none() && !block.allow_fresh && block.allowed_owners.len() == 1 {
-                    Some((block.key(), block.allowed_owners.first()?.clone()))
-                } else {
-                    None
-                }
-            }) {
-                let owner_block = Token::Owner(owner);
-                let Some(next) = self.try_forced_merge(&state, &block, &owner_block) else {
-                    return Ok(());
-                };
-                state = next;
-                continue;
-            }
-
             self.report.work.quotient_projections =
                 self.report.work.quotient_projections.saturating_add(1);
             let Some(projection) = self.project(&state)? else {
                 return Ok(());
             };
 
-            if let Some((left, right)) = self.cross_rebind_force(&state, &projection) {
+            if let Some((left, right)) = self.cross_rebind_force(&projection) {
                 let Some(next) = self.try_forced_merge(&state, &left, &right) else {
                     return Ok(());
                 };
@@ -618,6 +599,37 @@ impl Solver<'_, '_, '_> {
         }
     }
 
+    fn propagate_owner_domains(&mut self, mut state: Partition) -> Result<Option<Partition>> {
+        loop {
+            if self.stop_if_time() {
+                return Ok(None);
+            }
+            if state.blocks.iter().any(|block| {
+                block.owner.is_none() && !block.allow_fresh && block.allowed_owners.is_empty()
+            }) {
+                return Ok(None);
+            }
+            let forced = state.blocks.iter().find_map(|block| {
+                if block.owner.is_none() && !block.allow_fresh && block.allowed_owners.len() == 1 {
+                    Some((block.key(), block.allowed_owners.first()?.clone()))
+                } else {
+                    None
+                }
+            });
+            let Some((block, owner)) = forced else {
+                return Ok(Some(state));
+            };
+            let owner_block = Token::Owner(owner);
+            let Some(next) = self.try_forced_merge(&state, &block, &owner_block) else {
+                return Ok(None);
+            };
+            if next == state {
+                return Ok(None);
+            }
+            state = next;
+        }
+    }
+
     fn stop_if_limited(&mut self) -> bool {
         if self.stop_if_time() {
             return true;
@@ -653,9 +665,12 @@ impl Solver<'_, '_, '_> {
         left: &Token,
         right: &Token,
     ) -> Option<Partition> {
-        self.report.work.forced_contractions =
-            self.report.work.forced_contractions.saturating_add(1);
-        state.merge(left, right)
+        let merged = state.merge(left, right)?;
+        if merged != *state {
+            self.report.work.forced_contractions =
+                self.report.work.forced_contractions.saturating_add(1);
+        }
+        Some(merged)
     }
 
     fn try_branch_merge(
@@ -674,7 +689,7 @@ impl Solver<'_, '_, '_> {
             if self.report.status != SearchStatus::ExhaustedNoPeel {
                 break;
             }
-            if self.stop_if_limited() {
+            if self.stop_if_time() {
                 break;
             }
             self.visit(branch)?;
@@ -721,7 +736,14 @@ impl Solver<'_, '_, '_> {
             &nodes,
         );
         let mut block_by_module = BTreeMap::new();
+        let Some(first_block) = state.blocks.first() else {
+            return Ok(None);
+        };
+        let mut block_by_unit = vec![first_block.key(); candidate.assignment.len()];
         for block in &state.blocks {
+            for &unit in &block.units {
+                block_by_unit[unit] = block.key();
+            }
             let owner = candidate
                 .owners
                 .get(&block.key())
@@ -733,6 +755,9 @@ impl Solver<'_, '_, '_> {
         let mut supports =
             BTreeMap::<(ModuleId, ModuleId), Vec<(DependencyEdgeId, bool, Token)>>::new();
         for edge in self.problem.input.graph().iter_edges() {
+            if self.stop_if_time() {
+                return Ok(None);
+            }
             if !edge.reason.constrains_init_order() || edge.reason.is_rebind() {
                 continue;
             }
@@ -749,9 +774,7 @@ impl Solver<'_, '_, '_> {
                 EdgeRole::PromotedAtInit { callee_source_unit }
                     if callee_source_unit == edge.from
             );
-            let caller = state
-                .block_for_unit(edge.from.0)
-                .expect("typed source edge has a source owner block");
+            let caller = block_by_unit[edge.from.0].clone();
             supports
                 .entry((from, to))
                 .or_default()
@@ -775,6 +798,7 @@ impl Solver<'_, '_, '_> {
             candidate,
             module_assignment,
             block_by_module,
+            block_by_unit,
             nodes,
             entry,
             pairs,
@@ -799,12 +823,12 @@ impl Solver<'_, '_, '_> {
                 owners.insert(block.key(), owner.clone());
             }
         }
+        let mut suffix = 0usize;
         for block in &state.blocks {
             if block.owner.is_none() {
                 if self.stop_if_time() {
                     return Ok(None);
                 }
-                let mut suffix = 0usize;
                 let path = loop {
                     if self.stop_if_time() {
                         return Ok(None);
@@ -855,11 +879,7 @@ impl Solver<'_, '_, '_> {
         }))
     }
 
-    fn cross_rebind_force(
-        &self,
-        state: &Partition,
-        projection: &Projection,
-    ) -> Option<(Token, Token)> {
+    fn cross_rebind_force(&self, projection: &Projection) -> Option<(Token, Token)> {
         self.problem
             .input
             .graph()
@@ -873,8 +893,8 @@ impl Solver<'_, '_, '_> {
                 if endpoints.0 == endpoints.1 {
                     return None;
                 }
-                let left = state.block_for_unit(edge.from.0)?;
-                let right = state.block_for_unit(edge.to.0)?;
+                let left = projection.block_by_unit.get(edge.from.0)?.clone();
+                let right = projection.block_by_unit.get(edge.to.0)?.clone();
                 (left != right).then_some((left, right))
             })
     }
@@ -884,6 +904,9 @@ impl Solver<'_, '_, '_> {
         state: &Partition,
         projection: &Projection,
     ) -> Result<Option<Vec<Partition>>> {
+        if self.stop_if_time() {
+            return Ok(Some(Vec::new()));
+        }
         let mut graph = DiGraphMap::<ModuleId, ()>::new();
         for &node in &projection.nodes {
             graph.add_node(node);
@@ -896,6 +919,9 @@ impl Solver<'_, '_, '_> {
             .filter(|component| component.len() > 1)
             .map(|component| component.into_iter().collect())
             .collect();
+        if self.stop_if_time() {
+            return Ok(Some(Vec::new()));
+        }
         components.sort_by_key(|component| component.iter().next().copied());
         let Some(component) = components.into_iter().next() else {
             return Ok(None);
@@ -958,11 +984,15 @@ impl Solver<'_, '_, '_> {
             .branch_clauses
             .schedule_closure
             .saturating_add(1);
-        let in_closure: BTreeSet<_> = obstruction
-            .forward_closure
-            .iter()
-            .filter_map(|module| projection.block_by_module.get(module).cloned())
-            .collect();
+        let mut in_closure = BTreeSet::new();
+        for module in &obstruction.forward_closure {
+            if self.stop_if_time() {
+                return Ok(Vec::new());
+            }
+            if let Some(block) = projection.block_by_module.get(module) {
+                in_closure.insert(block.clone());
+            }
+        }
         let mut branches = Vec::new();
         for (index, left) in state.blocks.iter().enumerate() {
             if self.stop_if_time() {
