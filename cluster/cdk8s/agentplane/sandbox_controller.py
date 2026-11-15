@@ -87,6 +87,8 @@ class EnvironmentServiceAuthority:
 def environment_service_authority(
     env: Environment,
     *,
+    readers: Iterable[ServiceAccountRef] | None = None,
+    managers: Iterable[ServiceAccountRef] | None = None,
     operator_callers: Iterable[ServiceAccountRef],
     launchers: Iterable[ServiceAccountRef],
     operator_service_callers: frozenset[ServiceSPIFFEID],
@@ -107,8 +109,12 @@ def environment_service_authority(
         else ()
     )
     return EnvironmentServiceAuthority(
-        readers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
-        managers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
+        readers=frozenset(map(_account, readers))
+        if readers is not None
+        else frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
+        managers=frozenset(map(_account, managers))
+        if managers is not None
+        else frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
         launchers=launcher_accounts,
         operators=frozenset(map(_account, operator_callers)),
         service_readers=frozenset({APP_URI}),

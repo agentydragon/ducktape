@@ -888,15 +888,23 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
-def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfiles) -> None:
-    fixture = _filled_fixture(runfiles, "K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION")
+@pytest.mark.parametrize(
+    ("location", "central_enabled"),
+    [("K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION", True), ("K3S_POD_NATIVE_FIXTURE_RLOCATION", False)],
+)
+def test_native_recovery_profile_uses_bound_caller_without_app(
+    runfiles: Runfiles, location: str, central_enabled: bool
+) -> None:
+    fixture = _filled_fixture(runfiles, location)
+    assert fixture.central_sampler is central_enabled
     assert fixture.app_origin is None
     assert fixture.operator_tokens is None
     assert fixture.mcp_fixtures is None
     assert fixture.browser_services == []
     docs = fixture.objects
     deployments = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Deployment"}
-    assert {"runner-gateway", "history-service", "central-sampler", "notifications"} <= deployments
+    assert {"runner-gateway", "history-service", "notifications"} <= deployments
+    assert ("central-sampler" in deployments) is central_enabled
     assert not {"app", "dex", "mcp-edge"} & deployments
     assert not any(doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc", "app-config"} for doc in docs)
     native = fixture_chart.NATIVE_TEST_CLIENT
@@ -907,7 +915,8 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
     caller = f"{NAMESPACE}/{native}"
     assert "operator_callers" not in gateway
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
-    assert controller["environment_service"]["operators"] == [caller]
+    for role in ("operators", "readers", "managers"):
+        assert controller["environment_service"][role] == [caller]
     assert caller in gateway["dispatcher_callers"]
     assert caller in gateway["gateway_callers"]
     assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
@@ -917,6 +926,21 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
     assert (NAMESPACE, "app") not in readers
     bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
     assert "CREATE ROLE app " not in bootstrap
+
+
+def test_mcp_services_fixture_omits_sampler_and_keeps_app_and_oauth(runfiles: Runfiles) -> None:
+    full = _filled_fixture(runfiles)
+    services = _filled_fixture(runfiles, "K3S_MCP_SERVICES_FIXTURE_RLOCATION")
+    assert not services.central_sampler
+    assert services.app_origin == full.app_origin
+    assert services.mcp_fixtures == full.mcp_fixtures
+    full_deployments = {doc["metadata"]["name"] for doc in full.objects if doc["kind"] == "Deployment"}
+    deployments = {doc["metadata"]["name"] for doc in services.objects if doc["kind"] == "Deployment"}
+    assert deployments == full_deployments - {"central-sampler"}
+    assert {"app", "mcp-edge", "dex", "oauth-fixture", "mcp-everything"} <= deployments
+    assert not any(doc["metadata"]["name"] == "postgres-central-sampler" for doc in services.objects)
+    bootstrap = _resource(services.objects, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE central_sampler " not in bootstrap
 
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:

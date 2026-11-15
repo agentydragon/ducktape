@@ -703,6 +703,8 @@ def add_backend_services(
         gateway_control_target=control_target,
         authority=sandbox_controller.environment_service_authority(
             env,
+            readers=platform_callers,
+            managers=platform_callers,
             operator_callers=platform_callers,
             launchers=orchestration_caller,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
