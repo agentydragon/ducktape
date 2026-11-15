@@ -2,6 +2,7 @@
 
 # gazelle:include_dep //util/testing/frontend_visual:fixtures
 
+import asyncio
 import json
 import os
 from collections.abc import AsyncIterator
@@ -1604,6 +1605,13 @@ async def test_image_export_dialog(playwright_driver: Playwright, origin: str) -
         dialog = page.locator(".ImageExportModal")
         await expect(dialog).to_be_visible()
         await expect(dialog.locator(".ImageExportModal__settings")).to_be_visible()
+        async with page.expect_download() as download_info:
+            await dialog.get_by_role("button", name="Export to SVG").click()
+        download = await download_info.value
+        assert download.suggested_filename.endswith(".svg")
+        svg = await asyncio.to_thread(Path(await download.path()).read_text)
+        assert "<svg" in svg
+        assert "<path" in svg
         await page.keyboard.press("Escape")
         await expect(dialog).to_have_count(0)
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
