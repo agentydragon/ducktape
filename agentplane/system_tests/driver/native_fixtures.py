@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_platform import NativePlatformClients, native_platform_clients
@@ -20,7 +21,7 @@ async def native_platform(cluster: Cluster, tmp_path: Path) -> AsyncIterator[Nat
         yield clients
 
 
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def native_trust_pod(cluster: Cluster, native_platform: NativePlatformClients) -> AsyncIterator[Borrow]:
     async with shared_pod(cluster, native_platform) as borrow:
         yield borrow
