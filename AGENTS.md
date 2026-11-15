@@ -80,6 +80,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 - Never `git reset --soft` onto a moved base; rebase, then squash against `$(git merge-base HEAD origin/devel)`.
 - Committing on `devel` trips `no-commit-to-branch`; `SKIP=` it only with explicit user approval.
 - **A dirty checkout is the user's.** Never switch branches or commit on top of it unasked; if the work doesn't build on that state, use a fresh worktree; ask if ambiguous.
+- **Leave main branches available to the user.** In agent worktrees sharing `.git` with the user's repository, never check out or move local `main`, `master`, `devel`, or equivalent long-lived main/integration branches. Use a task branch or detached HEAD so the user can check out those branches in their own worktree. Do not bypass this with `--ignore-other-worktrees` or force options.
 - **Worktrees:** use the one you started in when suitable; else one harness worktree or a worktree under the task's scratch directory (see **Scratch**). Each costs ~250 MB, and once Bazel runs there ~2 GB RAM + 5–10 GB output base — reuse a worktree you've built in rather than multiplying them. `bbr` avoids the local cost.
 - **Gotcha:** parallel Bash calls share one cwd. Start every worktree command with `cd <worktree> &&`; never end a chain with a `cd` elsewhere.
 
