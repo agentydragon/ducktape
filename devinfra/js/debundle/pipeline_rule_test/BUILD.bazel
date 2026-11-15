@@ -1,6 +1,6 @@
 load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 load("//devinfra/python:defs.bzl", "py_test")
-load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "pipeline_report_flags_test", "shared_analysis_test")
+load(":pipeline_rule_test.bzl", "analysis_identity_inputs_test", "analysis_threads_action_test", "apply_projection_inputs_test", "package_root_fixture", "pipeline_report_flags_test", "shared_analysis_test")
 
 package(default_testonly = True)
 
@@ -22,9 +22,8 @@ filegroup(
     ],
 )
 
-filegroup(
-    name = "package_root_marker",
-    srcs = ["fixture/package_root_marker"],
+package_root_fixture(
+    name = "package_root",
 )
 
 debundle_analysis(
@@ -54,7 +53,7 @@ debundle_apply(
     name = "tree_projection_inputs",
     analysis = ":analysis",
     input_data = [":source"],
-    package_roots = {":package_root_marker": "fixture-package"},
+    package_roots = {":package_root": "fixture-package"},
     spec_tree_inputs = [":spec"],
     tags = ["manual"],
     tree_config = "fixture/config.yaml",
@@ -67,7 +66,7 @@ debundle_apply(
     name = "flat_projection_inputs",
     analysis = ":analysis",
     input_data = [":source"],
-    package_roots = {":package_root_marker": "fixture-package"},
+    package_roots = {":package_root": "fixture-package"},
     spec = "flat_spec.yaml",
     tags = ["manual"],
     tree_source_root = ":source",
@@ -77,7 +76,7 @@ apply_projection_inputs_test(
     name = "tree_projection_inputs_test",
     apply_only_inputs = [
         "fixture/js-files.txt",
-        "fixture/package_root_marker",
+        "pipeline_rule_test/package_root",
         "fixture/source/main.js",
     ],
     spec_inputs = [
@@ -92,7 +91,7 @@ apply_projection_inputs_test(
     name = "flat_projection_inputs_test",
     apply_only_inputs = [
         "fixture/js-files.txt",
-        "fixture/package_root_marker",
+        "pipeline_rule_test/package_root",
         "fixture/source/main.js",
     ],
     spec_inputs = ["flat_spec.yaml"],
