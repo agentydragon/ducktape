@@ -1,6 +1,7 @@
 //! A native own-data function reference has no heap observation of caller arrays.
 
 use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_support::saved_analysis::{assert_ok, assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 use serde_json::Value;
 
@@ -135,16 +136,77 @@ fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
 
 #[test]
 fn resolved_member_certifies_only_the_selected_relational_alias() {
+    const EXPECTED: &str = "[[\"alpha role\",true,false,true,\"alpha role\"],[\"beta role\",true,false,true,\"beta role\"]]\n";
     let source = format!(
-        "{}{}",
+        "{}{}\
+         const observe = Type => {{\
+           const instance = new Type();\
+           const descriptor = Object.getOwnPropertyDescriptor(Type.prototype, 'm');\
+           return [descriptor.value.call(instance), descriptor.writable, descriptor.enumerable, descriptor.configurable, instance.m()];\
+         }};\
+         console.log(JSON.stringify([observe(Alpha), observe(Beta)]));\n",
         decorator_trio("a", "Alpha", "alpha role"),
         decorator_trio("b", "Beta", "beta role")
     );
-    let fixture = run_fixture(relational_opts(
+    let (staged, _fixture) = staged(relational_opts(
         &source,
         relational_input(&source, "alpha", "alphaDefine"),
     ));
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct relational-alias run");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&saved.result, "saved-analysis relational-alias run");
+    assert_same_invocation_trees(&direct, &saved);
+
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            EXPECTED,
+            "",
+        );
+    }
+
+    let out_root = direct.output_root();
+    let app_root = out_root.join("app");
+    assert_module_exports(
+        &app_root,
+        "static/app/modules/alpha.js",
+        &["Alpha", "decorate"],
+        &["Beta"],
+    );
+    assert_module_exports(
+        &app_root,
+        "static/app/modules/beta.js",
+        &["Beta", "decorate"],
+        &["Alpha"],
+    );
+    assert_module_source(
+        &app_root,
+        "static/app/modules/alpha.js",
+        &[
+            "var alphaDefine = Object.defineProperty",
+            "var alphaGetter = Object.getOwnPropertyDescriptor",
+            "alphaGetter(target, key)",
+            "alphaDefine(target, key, desc)",
+            "class Alpha",
+        ],
+        &["class Beta", "betaDefine", "betaGetter"],
+    );
+    assert_module_source(
+        &app_root,
+        "static/app/modules/beta.js",
+        &[
+            "import { gb } from \"./residual/unhandled.js\";",
+            "var betaDefine = Object.defineProperty",
+            "gb(target, key)",
+            "betaDefine(target, key, desc)",
+            "class Beta",
+        ],
+        &["class Alpha", "alphaDefine", "alphaGetter"],
+    );
+
+    let graph: Value =
+        read_gzip_json(&out_root.join("reports/tree/static/app/dependency_graph.json.gz"));
     let selected = node(&graph, "pa");
     let other = node(&graph, "pb");
     let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
