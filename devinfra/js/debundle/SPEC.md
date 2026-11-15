@@ -3021,20 +3021,18 @@ artifact bytes. Changing the selected declaration or premise invalidates saved
 analysis. Reports render the current authored selector and rationale even when
 the facts came from a saved artifact.
 
-| Input                             | Selected source                                                                                                                                         | Asserted slots                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `text_encoder_empty`              | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                                   | Original global `TextEncoder` data binding                                  |
-| `map_empty`                       | Top-level simple binding initialized by direct bare zero-argument `new Map()`, or an object containing only such data fields                            | Original global `Map` data binding at each selected construction            |
-| `weak_map_empty`                  | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                                       | Original global `WeakMap` data binding                                      |
-| `set_empty`                       | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                                           | Original global `Set` data binding                                          |
-| `symbol`                          | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                                   | `%Symbol%`                                                                  |
-| `symbol_for`                      | The same with `Symbol.for(...)`                                                                                                                         | `%Symbol%`, `%Symbol.for%`                                                  |
-| `promise_resolve`                 | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                             | `%Promise%`, `%Promise.resolve%`                                            |
-| `set_from_primitive_array`        | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array              | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
-| `symbol_well_known_class_keys`    | Top-level simple class-variable initializer with direct `Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose` computed ordinary method keys | `%Symbol%` and the exact `%Symbol.<name>%` at each selected read            |
-| `symbol_primitive_class_keys`     | The same direct class-key shape, allowing primitive own-data values installed by checked guarded fills                                                  | Exact data reads yielding unknown primitives; no original-value identity    |
-| `callee: object_freeze`           | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                        | `%Object%`, `%Object.freeze%` at that call                                  |
-| `callee: set_empty_private_field` | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                                        | `%Set%` at that constructor                                                 |
+| Input                             | Selected source                                                                                                                            | Asserted slots                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `text_encoder_empty`              | Top-level simple binding initialized by direct bare zero-argument `new TextEncoder()`                                                      | Original global `TextEncoder` data binding                                  |
+| `map_empty`                       | Top-level simple binding initialized by direct bare zero-argument `new Map()`, or an object containing only such data fields               | Original global `Map` data binding at each selected construction            |
+| `weak_map_empty`                  | Top-level simple binding initialized by direct bare zero-argument `new WeakMap()`                                                          | Original global `WeakMap` data binding                                      |
+| `set_empty`                       | Top-level simple binding initialized by direct bare zero-argument `new Set()`                                                              | Original global `Set` data binding                                          |
+| `symbol`                          | Top-level simple binding initialized by a direct `Symbol(...)` call with zero or one syntactically primitive argument                      | `%Symbol%`                                                                  |
+| `symbol_for`                      | The same with `Symbol.for(...)`                                                                                                            | `%Symbol%`, `%Symbol.for%`                                                  |
+| `promise_resolve`                 | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                | `%Promise%`, `%Promise.resolve%`                                            |
+| `set_from_primitive_array`        | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
+| `callee: object_freeze`           | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                           | `%Object%`, `%Object.freeze%` at that call                                  |
+| `callee: set_empty_private_field` | Stable top-level class with an implicit constructor and one private field initialized by zero-argument `new Set`                           | `%Set%` at that constructor                                                 |
 
 Every call is ordinary, nonoptional and uncomputed on an unshadowed global;
 other shapes, dynamic scope and positively identified writes to an asserted
@@ -3042,8 +3040,6 @@ slot anywhere in the analyzed program (alias, reflective, deferred,
 cross-chunk, restored) reject the input. Opaque receiver or key writes remain
 census witnesses covered by the assertion: a write to an apparently unrelated
 property can still run a setter or Proxy trap.
-The separate `symbol_primitive_class_keys` capability has the narrowly checked
-guarded-fill exception below and does not assert original native slots.
 
 `chunk_analysis_options.<consumer>.imported_primitive_array_spread_inputs` is
 a distinct exact-site author premise. Its consumer selector captures one or
@@ -3173,75 +3169,6 @@ Shadowed or imported constructors and known contradicting global `Map` writes
 remain rejected. The object and its fields retain ordinary value and heap
 inference; the input does not make the selected binding a Map or certify heap
 locality, later collection behavior, or program-wide native integrity.
-
-`symbol_well_known_class_keys` selects one unambiguous direct top-level simple
-variable initialized by a class expression without `extends`, decorators or
-static blocks. At least one computed method key is required. Every computed
-key of that class must be an ordinary method key whose expression is exactly
-`Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose`, with an
-unshadowed bare global `Symbol` receiver and uncomputed member access. The
-supported names must also have primitive own-data rows in the builtin table;
-other primitive properties, function/object properties, computed fields,
-computed accessors, aliases, wrappers and other computed expressions are
-rejected. For example:
-`var Stream = class { [Symbol.asyncIterator]() {} [Symbol.asyncDispose]() {} };`.
-
-The author promises the original global `Symbol` data binding and original
-selected own data properties at each exact key read in every admitted
-initialization schedule. The audited parser-input digest is required. Known
-writes to the global binding or a selected property anywhere in the analyzed
-program, including deferred and cross-chunk writes, contradict the input;
-opaque mutation witnesses remain under the author's audit. Each read has its
-own resolved record, site axiom, evidence and proof dependencies, including
-after saved-analysis restoration. The existing own-data-read proof governs
-callback timing and heap ordering at that read. Instance field initializers,
-method bodies and static field initializers retain their ordinary analysis.
-The input establishes no whole-class purity, class result shape, heap locality,
-future method behavior or integrity at another Symbol read.
-
-`symbol_primitive_class_keys` uses the same class shape and three supported
-property names, but asserts a different read contract: at every selected key
-read in every admitted initialization schedule, the unshadowed global `Symbol`
-read resolves through a data binding to an ordinary non-Proxy receiver and
-the selected own data property yields a primitive. The primitive may vary with preceding writes. Native Symbols and
-Symbol-valued polyfills qualify; no original well-known value or particular
-primitive type is certified. The parser-input digest remains required.
-
-This capability is separate from `IntrinsicIntact` and authorizes neither
-original native identity nor any other read or call. Its abstract result is an
-unknown primitive. Getter invocation and `ToPropertyKey` callbacks are ruled
-out only at the selected reads. Each read retains separate evidence and proof
-dependencies, including after saved-analysis restoration.
-
-Global `Symbol` replacements and other positively identified selected-slot
-writes in any analyzed chunk reject this input. The sole eligible selected-slot
-write is a direct top-level statement of this exact AST shape (either `!=` or
-`!==` is accepted), for one of the three supported property names:
-
-```js
-if (typeof Symbol.asyncDispose != "symbol")
-  try {
-    Symbol.asyncDispose = Symbol.for("Symbol.asyncDispose");
-  } catch {}
-```
-
-The receiver must be bare and unshadowed; the probe, assignment key and string
-argument must agree. There may be no alternate, additional guarded work, catch
-binding, nonempty catch, finally block or wrapper expressions. Recognition
-makes the write eligible under the author's final-read contract; it proves
-neither that installation succeeds nor that `Symbol.for` is original. The
-guard read, call, assignment/setter and catch retain their ordinary effects,
-and the raw native write census remains intact.
-
-The selected reads retain opaque external-heap observations and ordinary heap
-ordering with preceding and following writes. External storage has no unique
-source-allocation birth: its observation seeds the chunk's heap timeline before
-any source allocation, including conservative deferred observations. The
-required saved heap fact retains this obligation, and initializer completion
-cannot discharge it. Static initializers and deferred instance code remain
-ordinary; the capability grants no whole-class purity, class shape or heap
-locality. It may remove callback constraints while heap ordering still requires
-co-location.
 
 ### Bundle-owned globals
 

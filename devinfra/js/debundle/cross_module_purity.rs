@@ -1566,42 +1566,6 @@ pub fn resolve_imported_callable_summaries(
             owner.0
         );
     }
-    for (provider, inputs) in &resolved_native_operation_inputs {
-        for input in inputs {
-            if !matches!(
-                input.evidence.operation,
-                NativeInputKind::Operation(
-                    spec::NativeOperationKind::SymbolWellKnownClassKeys
-                        | spec::NativeOperationKind::SymbolPrimitiveClassKeys
-                )
-            ) {
-                continue;
-            }
-            let (family, property) = prepared[provider]
-                .native_input_read_property(input)
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "{} lost its exact native own-data read during preparation",
-                        input.evidence.spec_location
-                    )
-                })?;
-            if let Some((module, owner)) = prepared.iter().find_map(|(module, facts)| {
-                facts
-                    .known_native_read_contradiction_owner(
-                        input.evidence.operation,
-                        family,
-                        property,
-                    )
-                    .map(|owner| (module, owner))
-            }) {
-                bail!(
-                    "{} is contradicted by a known {family:?} binding or {family:?}.{property} write in provider {module}, source unit {}",
-                    input.evidence.spec_location,
-                    owner.0
-                );
-            }
-        }
-    }
     // Source inference must finish before any root can seed structural flow.
     // The completed raw census is conservative; later branch refinement may
     // not retroactively introduce a root into an already solved flow.

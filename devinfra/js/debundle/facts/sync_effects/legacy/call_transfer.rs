@@ -184,23 +184,6 @@ impl Executor<'_, '_> {
             return CallTransfer::EffectsOnly;
         }
         if call.kind == CallKind::LocalMemberRead {
-            if let Some(premise) = self
-                .inputs
-                .index
-                .primitive_class_key_read_premise(call.span)
-            {
-                self.record_proof_dependencies(
-                    NativeIntegrityGuard::NativeCallIdentity,
-                    &premise.dependencies,
-                );
-                self.observations
-                    .record_inference_use(premise.inference_use);
-                // Data and primitive do not imply a constant property value.
-                // Keep its external heap observation on the ordinary timeline.
-                outcome.effects.heap_contents.opaque = true;
-                outcome.effects.heap_contents.observes_external_heap = true;
-                return CallTransfer::EffectsOnly;
-            }
             if self.native_member_lookup_is_data(&call.callee, Some(call.span.lo.0)) {
                 return CallTransfer::EffectsOnly;
             }

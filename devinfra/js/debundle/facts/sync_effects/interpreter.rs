@@ -13207,10 +13207,6 @@ impl PreparedSynchronousCallIndex {
         FreshRecordFreezeHeapProof { sites }
     }
 
-    pub(crate) fn primitive_class_key_read(&self, span: Span) -> bool {
-        self.index.primitive_class_key_read_premise(span).is_some()
-    }
-
     pub(crate) fn native_own_data_read(
         &self,
         span: Span,
