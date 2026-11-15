@@ -4,8 +4,15 @@
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
+const OPAQUE_FACTORY: &str = "globalThis.factory = callback => callback();\nexport {};\n";
+const OPAQUE_FACTORY_FILES: &[(&str, &str)] = &[
+    ("static/factory.js", OPAQUE_FACTORY),
+    ("static/app/factory.js", OPAQUE_FACTORY),
+];
+
 fn opaque_factory_source() -> &'static str {
-    r#"const seed = "ready";
+    r#"import './factory.js';
+const seed = "ready";
 const A = globalThis.factory(() => seed + "a");
 const B = globalThis.factory(() => seed + "b");
 const C = globalThis.factory(() => seed + "c");
@@ -14,57 +21,57 @@ export { seed, A, B, C };
 "#
 }
 
-fn split_factory_modules() -> Vec<LogicalModuleEntry> {
+fn factory_modules(with_initializer_purity: bool) -> Vec<LogicalModuleEntry> {
+    let member = |name, declaration| {
+        let member = Member::source_alpha_target(name, name, declaration);
+        if with_initializer_purity {
+            member.with_initializer_purity()
+        } else {
+            member
+        }
+    };
+    let mod_a = [
+        member("A", "const A = globalThis.factory(() => seed + \"a\");"),
+        member("C", "const C = globalThis.factory(() => seed + \"c\");"),
+    ];
+    let mod_b = [
+        member("B", "const B = globalThis.factory(() => seed + \"b\");"),
+        Member::new("seed"),
+    ];
     vec![
-        logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
-        logical_module("mod_b", &[Member::new("seed"), Member::new("B")]),
+        logical_module("mod_a", &mod_a),
+        logical_module("mod_b", &mod_b),
     ]
 }
 
 #[test]
 fn opaque_callback_factory_without_initializer_override_has_s_cycle() {
     expect_sequenced_cycle_rejection(
-        FixtureOpts::new(opaque_factory_source(), split_factory_modules()),
+        FixtureOpts::new(opaque_factory_source(), factory_modules(false))
+            .with_extra_files(OPAQUE_FACTORY_FILES),
         &["mod_a", "mod_b"],
     );
 }
 
 #[test]
 fn initializer_override_keeps_callback_read_dependency() {
-    let fixture = run_fixture(FixtureOpts::new(
-        opaque_factory_source(),
-        vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::source_alpha_target(
-                        "A",
-                        "A",
-                        "const A = globalThis.factory(() => seed + \"a\");",
-                    )
-                    .with_initializer_purity(),
-                    Member::source_alpha_target(
-                        "C",
-                        "C",
-                        "const C = globalThis.factory(() => seed + \"c\");",
-                    )
-                    .with_initializer_purity(),
-                ],
-            ),
-            logical_module(
-                "mod_b",
-                &[
-                    Member::source_alpha_target(
-                        "B",
-                        "B",
-                        "const B = globalThis.factory(() => seed + \"b\");",
-                    )
-                    .with_initializer_purity(),
-                    Member::new("seed"),
-                ],
-            ),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(opaque_factory_source(), factory_modules(true))
+            .with_extra_files(OPAQUE_FACTORY_FILES),
+    );
+
+    assert_preserved_entry_output(&fixture, "readya readyb readyc\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const mod_a = await import("./static/app/modules/mod_a.js");
+const mod_b = await import("./static/app/modules/mod_b.js");
+console.log(JSON.stringify({
+  mod_a: Object.keys(mod_a).sort(),
+  mod_b: Object.keys(mod_b).sort(),
+}));
+"#,
+        "{\"mod_a\":[\"A\",\"C\"],\"mod_b\":[\"B\",\"seed\"]}\n",
+    );
 
     let graph = fixture.dependency_graph();
     let caller_source_unit = source_unit_for_binding(&graph, "A");
