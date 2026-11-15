@@ -77,10 +77,10 @@ fn spec_module(module_id: &str, source_units: &[&str]) -> SpecModuleGroup {
 
 // ---------- Tests. ----------
 
-/// Moving a residual owner into an active module changes import order for the
-/// separate `ui/m5`–`ui/m6` I-SCC, exposing a TDZ there.
+/// A contraction changes preferred import order in a separate I-SCC.
+/// Constructing another concrete schedule must preserve its valid placement.
 #[test]
-fn original_home_merge_rejects_remote_tdz() {
+fn original_home_merge_constructs_a_schedule_for_the_remote_cycle() {
     let report = singleton_graph(
         vec![
             active_source_unit("unit:0", 1, &["B0"], 5, "ui/m5"),
@@ -142,14 +142,8 @@ fn original_home_merge_rejects_remote_tdz() {
         ),
         post_verdict,
     );
-    assert_eq!(post_verdict.unrealizable_sccs.len(), 1);
-    assert!(
-        !post_verdict.unrealizable_sccs[0]
-            .core
-            .modules
-            .contains(&target)
-    );
-    assert!(!q.contract_if_preserving(left, right));
+    assert!(post_verdict.is_realizable(), "{post_verdict:?}");
+    assert!(q.contract_if_preserving(left, right));
     assert!(q.realizability_verdict().is_realizable());
 }
 
@@ -864,7 +858,8 @@ fn planner_and_materializer_agree_on_corpus() {
     // agree on realizability (boolean). The fixtures cover:
     //   - empty / no edges (trivially realizable);
     //   - a single-module fixture with intra-module edges only;
-    //   - a single asymmetric I-cycle (unrealizable);
+    //   - an asymmetric I-cycle repaired by alternative scheduling;
+    //   - an intrinsically unschedulable import star;
     //   - a mutual constraining cycle (unrealizable);
     //   - a pair of modules with only lazy edges between them
     //     (realizable).
@@ -904,11 +899,9 @@ fn planner_and_materializer_agree_on_corpus() {
         });
     }
 
-    // Case 3: asymmetric I-cycle through a mediator (Lemma 2 cannot
-    // rescue). Mirrors the materializer's
-    // `mediator_reaches_asymmetric_cycle_test` shape — three
-    // modules, residual reaches the SCC only via a non-residual
-    // mediator. The SCC's constraining edge TDZs at runtime.
+    // Case 3: asymmetric I-cycle through a mediator. The old preferred
+    // order failed; an alternative concrete import order initializes the
+    // dependency first without changing any owner.
     {
         let entry = residual_source_unit("unit:entry", 0, &[], 1);
         let dep_value = active_source_unit("unit:dep_value", 1, &["BindingDepValue"], 5, "mod_dep");
@@ -1062,6 +1055,55 @@ fn planner_and_materializer_agree_on_corpus() {
         });
     }
 
+    // No first module in this star can satisfy both initialization edges:
+    // entering the center first traps one leaf behind it; entering either
+    // leaf first traps the center behind the active leaf.
+    cases.push(Case {
+        label: "intrinsically_unschedulable_star",
+        report: singleton_graph(
+            vec![
+                active_source_unit("unit:center", 0, &["Center"], 1, "center"),
+                active_source_unit("unit:left", 1, &["Left"], 1, "left"),
+                active_source_unit("unit:right", 2, &["Right"], 1, "right"),
+            ],
+            vec![
+                dependency_edge(
+                    "edge:cl",
+                    "unit:center",
+                    "unit:left",
+                    DepKind::LazyUse,
+                    false,
+                ),
+                dependency_edge(
+                    "edge:cr",
+                    "unit:center",
+                    "unit:right",
+                    DepKind::LazyUse,
+                    false,
+                ),
+                dependency_edge(
+                    "edge:lc",
+                    "unit:left",
+                    "unit:center",
+                    DepKind::EagerUse,
+                    true,
+                ),
+                dependency_edge(
+                    "edge:rc",
+                    "unit:right",
+                    "unit:center",
+                    DepKind::EagerUse,
+                    true,
+                ),
+            ],
+        ),
+        spec: vec![
+            spec_module("center", &["unit:center"]),
+            spec_module("left", &["unit:left"]),
+            spec_module("right", &["unit:right"]),
+        ],
+    });
+
     let mut materializer_unrealizable_labels = Vec::new();
     for case in &cases {
         // Materializer-side.
@@ -1095,8 +1137,8 @@ fn planner_and_materializer_agree_on_corpus() {
     // Without this, the agreement above passes vacuously when every case
     // is realizable.
     assert!(
-        materializer_unrealizable_labels.contains(&"asymmetric_i_cycle_via_mediator"),
-        "the mediator asymmetric I-cycle must be unrealizable per the materializer: \
+        materializer_unrealizable_labels.contains(&"intrinsically_unschedulable_star"),
+        "the import star must be unrealizable per the materializer: \
          {materializer_unrealizable_labels:?}",
     );
 }
