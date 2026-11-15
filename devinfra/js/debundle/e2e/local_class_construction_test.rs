@@ -362,7 +362,7 @@ const c = b ? a : 0;
 console.log(c);
 export { a, b, c, Registry };
 "#;
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
             "registry",
@@ -405,7 +405,7 @@ fn constructor_arguments_stay_sequenced() {
 #[test]
 fn asserted_pure_field_calls_do_not_supply_a_heap_certificate() {
     let source = "const values = [];\nconst a = (() => 1)();\nfunction read() { const first = values.length; values.push(42); return first; }\nclass Registry { value = read(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "registry",
@@ -435,7 +435,7 @@ fn asserted_pure_field_calls_do_not_supply_a_heap_certificate() {
 #[test]
 fn certified_new_keeps_other_same_statement_constructor_and_argument_effects() {
     let source = "const values = [];\nfunction read() { globalThis.observed = values.length; return 0; }\nclass Registry { value = 1; }\nconst { missing = new Registry(read()) } = new Registry();\nvalues.push(42);\nconsole.log(globalThis.observed, missing.value);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -767,7 +767,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
         "const unique = new Set(['a', 'b']);",
         &format!("{SET_MUTATION}\nconst unique = new Set(['a', 'b']);"),
     );
-    let mutated_fixture = run_fixture(
+    let mutated_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&mutated, vec![])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
@@ -779,8 +779,8 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     );
     // The adder write reaches `new Set(['a', 'b'])`, which calls it, but not
     // the empty `#values = new Set()`, which never reads it.
-    let graph =
-        run_rejection_fixture(composition_options(&mutated, &[SET_MUTATION])).dependency_graph();
+    let graph = run_rejection_fixture_with_graphs(composition_options(&mutated, &[SET_MUTATION]))
+        .dependency_graph();
     assert!(
         !node_declaring(&graph, "unique")
             .synchronous_execution
@@ -797,7 +797,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
         "#values = new Set();",
         "#values = (globalThis.runtimeSettings.events.push('field'), new Set());",
     );
-    let unsafe_fixture = run_fixture(
+    let unsafe_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&unsafe_field, vec![])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
@@ -817,7 +817,7 @@ fn composed_proof_rejects_rebound_class_bindings() {
         "const registry = new Registry();",
         &format!("{REBOUND_REGISTRY}\nconst registry = new Registry();"),
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
@@ -825,7 +825,8 @@ fn composed_proof_rejects_rebound_class_bindings() {
     );
     assert_preserved_entry_output(&fixture, COMPOSITION_OUTPUT);
 
-    let rejected = run_rejection_fixture(composition_options(&source, &[REBOUND_REGISTRY]));
+    let rejected =
+        run_rejection_fixture_with_graphs(composition_options(&source, &[REBOUND_REGISTRY]));
     let graph = rejected.dependency_graph();
     let construction = node_declaring(&graph, "registry");
     let Purity::NotPure { reasons } = &construction.purity else {

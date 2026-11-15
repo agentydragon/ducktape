@@ -62,7 +62,7 @@ use debundle_e2e_support::*;
 
 #[test]
 fn hoisted_factory_import_retains_runtime_evaluation_topology() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"function factory() { return { value: 1 }; }
 const command = factory();
 const list = [command.value];
@@ -89,6 +89,64 @@ export { factory, command, list, readList };
             && edge.edge_kind == DepKind::HoistedUse
             && !edge.constrains_init_order
     }));
+}
+
+#[test]
+fn tree_run_without_graph_export_keeps_output_and_gate_verdict() {
+    let fixture = TreeFixture {
+        chunks: &[(
+            "main",
+            "const value = 7; console.log(value); export { value };\n",
+        )],
+        module_roots: &[],
+        modules: &[],
+    };
+    let ordinary = run_tree_fixture(&fixture, &[]);
+    let with_graphs = run_tree_graph_fixture(&fixture, &[]);
+
+    assert_eq!(
+        ordinary.result.status.code(),
+        Some(0),
+        "{}",
+        ordinary.result.stderr
+    );
+    assert_eq!(
+        with_graphs.result.status.code(),
+        Some(0),
+        "{}",
+        with_graphs.result.stderr
+    );
+    let app_files = |run: &TreeRun| {
+        let root = run.out_root.join("app");
+        saved_analysis::module_snapshot(&root)
+            .into_iter()
+            .map(|(path, bytes)| (path.strip_prefix(&root).unwrap().to_path_buf(), bytes))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    assert_eq!(app_files(&ordinary), app_files(&with_graphs));
+    assert_node_output(&ordinary.out_root.join("app/main/entry.js"), "7\n", "");
+    assert_node_output(&with_graphs.out_root.join("app/main/entry.js"), "7\n", "");
+
+    let ordinary_assessment: serde_json::Value = read_json(
+        &ordinary
+            .report_root
+            .join("main/candidate_relocation_assessment.json"),
+    );
+    let graph_assessment: serde_json::Value = read_json(
+        &with_graphs
+            .report_root
+            .join("main/candidate_relocation_assessment.json"),
+    );
+    assert_eq!(
+        ordinary_assessment["status"],
+        "accepted_within_checked_scope"
+    );
+    assert_eq!(ordinary_assessment["legacy_gate_accepts"], true);
+    assert_eq!(ordinary_assessment["status"], graph_assessment["status"],);
+    assert_eq!(
+        ordinary_assessment["legacy_gate_accepts"],
+        graph_assessment["legacy_gate_accepts"],
+    );
 }
 
 #[test]
@@ -247,7 +305,7 @@ c.bump(1);
 console.log(c.read());
 export { counter, Counter, c };
 "#;
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_emit_on_rejection_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(
@@ -269,7 +327,7 @@ export { counter, Counter, c };
     );
     assert_node_error(&rejected.entry_path(), "Assignment to constant variable");
 
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(

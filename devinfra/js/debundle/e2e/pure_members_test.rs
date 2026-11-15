@@ -149,7 +149,7 @@ fn pure_members_member_call_does_not_promote_callback_body_reads() {
         .get_mut("ReactLike")
         .unwrap()
         .no_sync_callback_members = vec!["forwardRef".to_string()];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"import * as ns from "./vendor.js";
 const component = ns.forwardRef(() => later);

@@ -37,7 +37,7 @@ fn assert_odd_even_map_modules(fixture: &Fixture) {
 
 #[test]
 fn fresh_literal_map_constructors_split_and_preserve_runtime() {
-    let fixture = run_fixture(split());
+    let fixture = run_fixture_with_graphs(split());
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
     assert_all_emitted_js_checks(&fixture);
@@ -63,7 +63,7 @@ const a = new Map([["a", 1]]),
 console.log(a.get("a"), b.get("b"), c.get("c"), d.get("d"));
 export { a, b, c, d };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module("odd", &[Member::new("a"), Member::new("c")]),
@@ -170,7 +170,7 @@ fn unsafe_map_constructors_keep_the_opaque_heap_path() {
         ),
     ];
     for (label, source) in cases {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         let graph = fixture.dependency_graph();
         let node = node_declaring(&graph, "a");
         let frontier = node
@@ -191,7 +191,7 @@ fn poisoned_native_steps_remain_observable_at_runtime() {
         "const iteratorPrototype = Object.getPrototypeOf([][Symbol.iterator]()); const nativeNext = iteratorPrototype.next; let touched = 0; iteratorPrototype.next = function (...args) { touched++; return nativeNext.apply(this, args); }; const a = new Map([['k', 'v']]); console.log(touched > 0, a.get('k')); export { a };",
     ];
     for source in cases {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
         assert_preserved_entry_output(&fixture, "true v\n");
         assert_eq!(fixture.translation_validation()["accepts"], true);
         assert_all_emitted_js_checks(&fixture);

@@ -675,7 +675,7 @@ fn namespace_member_mutation_disables_retention_contract() {
 
 #[test]
 fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
-    let accepted = run_fixture(
+    let accepted = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              const callback = () => later;\n\
@@ -751,7 +751,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
     }
     source.push_str("later = 42;\n");
 
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -1489,7 +1489,7 @@ fn admitted_call_argument_retains_its_own_synchronous_effects() {
         .into_iter()
         .map(Member::new)
         .collect();
-    let colocated = run_fixture(
+    let colocated = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon("all", &all, &["later = 42;"])],

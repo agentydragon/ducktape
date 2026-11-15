@@ -20,7 +20,7 @@ fn finalization_registry_retains_cleanup_without_invoking_it() {
 class Later {}
 console.log(typeof registry);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module("registry/value", &[Member::new("registry")]),
@@ -63,7 +63,7 @@ const frozen = globalThis.Object.freeze({ callback: () => Later });
 class Later {}
 console.log(typeof values, typeof frozen.callback);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module_with_anon(
@@ -107,7 +107,7 @@ fn visible_native_replacement_keeps_the_call_out_of_shared_identity_proofs() {
 const normalized = Math.round(1);
 console.log(normalized);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
             "native/value",

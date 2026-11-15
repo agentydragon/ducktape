@@ -117,7 +117,7 @@ fn conflicts(cause: &Value) -> &Vec<Value> {
 
 #[test]
 fn cut_names_the_written_cell_and_both_summarized_endpoints() {
-    let rejected = run_rejection_fixture(dataflow_cycle_fixture());
+    let rejected = run_rejection_fixture_with_graphs(dataflow_cycle_fixture());
     let cycles = rejected.cycles();
     let tag_cell = json!({ "kind": "global_prop", "key": "tag" });
     let edge = cut_edges(&cycles)
@@ -154,7 +154,7 @@ fn cut_names_the_written_cell_and_both_summarized_endpoints() {
 
 #[test]
 fn cut_names_the_opaque_barrier_and_its_unknown_call() {
-    let rejected = run_rejection_fixture(dataflow_cycle_fixture());
+    let rejected = run_rejection_fixture_with_graphs(dataflow_cycle_fixture());
     let cycles = rejected.cycles();
     let opaque = json!({
         "kind": "opaque_barrier",
@@ -198,7 +198,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
 
     // Keep the original cut fixture stable: adding captured arrays changes
     // its binding timelines and therefore which edges the feedback cut picks.
-    let heap_rejected = run_rejection_fixture(heap_frontier_cycle_fixture());
+    let heap_rejected = run_rejection_fixture_with_graphs(heap_frontier_cycle_fixture());
     let heap_graph = heap_rejected.dependency_graph();
     let probe_node = heap_graph
         .nodes
@@ -277,7 +277,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     );
     assert!(described.contains("array contents #"), "{described}");
 
-    let pure_rejected = run_rejection_fixture(pure_wrapper_heap_frontier_fixture());
+    let pure_rejected = run_rejection_fixture_with_graphs(pure_wrapper_heap_frontier_fixture());
     let pure_cycles = pure_rejected.cycles();
     assert_eq!(
         pure_cycles[0]["rejection"], "mutual_constraining_cycle",
@@ -332,7 +332,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
 /// carries the allocation's heap evidence independently of purity.
 #[test]
 fn heap_content_cut_edges_explain_pure_allocation_targets() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"const items = [];
 const marks = [];
 const count = items.length;
@@ -433,7 +433,7 @@ export { items, marks, count, back };
 
 #[test]
 fn gate_cut_query_carries_the_same_explanations() {
-    let rejected = run_rejection_fixture(dataflow_cycle_fixture());
+    let rejected = run_rejection_fixture_with_graphs(dataflow_cycle_fixture());
     let graph = rejected
         .report_root
         .join("static/app/dependency_graph.json.gz");

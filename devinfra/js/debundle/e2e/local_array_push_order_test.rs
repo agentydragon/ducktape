@@ -237,7 +237,7 @@ fn one_shot_array_born_after_opaque_call_does_not_inherit_old_frontier() {
         let source = format!(
             "const old = [1];\nconst opaque = globalThis.makeSchema();\nconst fresh = [2];\nconst observed = fresh{member};\nconst retained = old{member};\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![
                 logical_module("old", &[Member::new("old")]),
@@ -260,7 +260,7 @@ fn repeated_callable_allocation_does_not_discharge_old_frontier() {
         let source = format!(
             "function make() {{ return [1]; }}\nconst early = make();\nconst opaque = globalThis.makeSchema();\nconst late = make();\nconst read = late{member};\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![
                 logical_module("factory", &[Member::new("make")]),
@@ -299,7 +299,7 @@ fn push_precedes_aliased_pure_reader_across_modules_in_both_modes() {
         if dataflow_aware {
             opts = opts.with_dataflow_aware_s_chain();
         }
-        let fixture = run_fixture(opts);
+        let fixture = run_fixture_with_graphs(opts);
         assert_preserved_entry_output(&fixture, "42\n");
         assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
     }
@@ -307,7 +307,7 @@ fn push_precedes_aliased_pure_reader_across_modules_in_both_modes() {
 
 #[test]
 fn pure_reader_stays_before_later_array_write() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "const values = [7];\nconst alias = values;\nfunction readFirst() { return alias[0]; }\nconst first = readFirst();\nvalues[0] = 42;\nconsole.log(first);\n",
             vec![
@@ -332,7 +332,7 @@ fn pure_reader_stays_before_later_array_write() {
 
 #[test]
 fn independent_array_readers_do_not_create_a_sequence_edge() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "const left = [1];\nconst right = [2];\nconst leftFirst = left[0];\nconst rightFirst = right[0];\nconsole.log(leftFirst, rightFirst);\n",
             vec![
@@ -352,7 +352,7 @@ fn independent_array_readers_do_not_create_a_sequence_edge() {
 
 #[test]
 fn unknown_call_after_nested_array_publication_stays_before_pure_reader() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [1];\nconst alias = values;\nfunction readFirst() { return alias[0]; }\nconst before = readFirst();\nglobalThis.saved = { nested: { values } };\nglobalThis.mutate = () => { globalThis.saved.nested.values[0] = 7; };\nglobalThis.mutate();\nconst after = readFirst();\nconsole.log(before, after);\n",
         vec![
             logical_module("values", &[Member::new("values"), Member::new("alias")]),
@@ -381,7 +381,7 @@ fn unknown_call_after_nested_array_publication_stays_before_pure_reader() {
 
 #[test]
 fn inline_reader_call_is_a_heap_barrier_when_call_summary_is_unavailable() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [7];\nconst first = (() => values[1])();\nvalues.push(42);\nconsole.log(first);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -416,7 +416,7 @@ fn returned_closure_call_is_a_heap_barrier_when_body_summary_is_unavailable() {
         if dataflow_aware {
             opts = opts.with_dataflow_aware_s_chain();
         }
-        let fixture = run_fixture(opts);
+        let fixture = run_fixture_with_graphs(opts);
         assert_preserved_entry_output(&fixture, "0\n");
         assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
     }
@@ -444,7 +444,7 @@ fn aliased_function_call_is_a_heap_barrier_when_body_summary_is_unavailable() {
         if dataflow_aware {
             opts = opts.with_dataflow_aware_s_chain();
         }
-        let fixture = run_fixture(opts);
+        let fixture = run_fixture_with_graphs(opts);
         assert_preserved_entry_output(&fixture, "0\n");
         assert_sequenced_edge(&fixture.dependency_graph(), 4, 3);
     }
@@ -452,7 +452,7 @@ fn aliased_function_call_is_a_heap_barrier_when_body_summary_is_unavailable() {
 
 #[test]
 fn pure_for_in_reader_precedes_later_array_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nfunction count() { let n = 0; for (const key in values) n++; return n; }\nconst first = count();\nvalues.push(42);\nconsole.log(first);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -473,7 +473,7 @@ fn pure_for_in_reader_precedes_later_array_write() {
 
 #[test]
 fn pure_coercion_reader_precedes_later_array_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nfunction text() { return '' + values; }\nconst before = text();\nvalues.push(42);\nconsole.log(before);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -494,7 +494,7 @@ fn pure_coercion_reader_precedes_later_array_write() {
 
 #[test]
 fn pure_getter_carrier_reader_precedes_later_array_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nconst box = { get value() { return values.length; } };\nfunction read() { return box.value; }\nconst before = read();\nvalues.push(42);\nconsole.log(before);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -516,7 +516,7 @@ fn pure_getter_carrier_reader_precedes_later_array_write() {
 
 #[test]
 fn pure_optional_reader_precedes_later_array_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nfunction read() { return values.length; }\nconst before = read?.();\nvalues.push(42);\nconsole.log(before);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -537,7 +537,7 @@ fn pure_optional_reader_precedes_later_array_write() {
 
 #[test]
 fn pure_tagged_template_reader_precedes_later_array_write() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nfunction tag() { return values.length; }\nconst first = tag``;\nvalues.push(42);\nconsole.log(first);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -558,7 +558,7 @@ fn pure_tagged_template_reader_precedes_later_array_write() {
 
 #[test]
 fn array_allocation_keeps_opaque_heap_frontier_live_without_read_syntax() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const values = [];\nglobalThis.noop = () => {};\nglobalThis.noop();\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -572,7 +572,7 @@ fn array_allocation_keeps_opaque_heap_frontier_live_without_read_syntax() {
 
 #[test]
 fn fresh_array_allocation_can_precede_an_earlier_opaque_call() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function opaque() { return globalThis.initial; }\nconst before = opaque();\nconst values = [42];\nconsole.log(values[0], before);\n",
         vec![
             logical_module("values", &[Member::new("values")]),
@@ -585,7 +585,7 @@ fn fresh_array_allocation_can_precede_an_earlier_opaque_call() {
 
 #[test]
 fn eager_native_array_input_does_not_inherit_pre_allocation_heap_barrier() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const before = (() => 1)();\nconst keys = Object.keys([10]);\nconsole.log(keys.length + before);\n",
         vec![logical_module("keys", &[Member::new("keys")])],
     ));
@@ -595,7 +595,7 @@ fn eager_native_array_input_does_not_inherit_pre_allocation_heap_barrier() {
 
 #[test]
 fn lazy_array_origins_keep_opaque_calls_live_before_lexical_allocation() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "globalThis.make = make;\nfunction make() { return []; }\nconst first = globalThis.make();\nconst second = globalThis.make();\nconsole.log(first.length, second.length);\n",
         vec![
             logical_module_with_anon("make", &[Member::new("make")], &["globalThis.make = make;"]),
@@ -628,7 +628,7 @@ fn fresh_allocation_still_preserves_an_earlier_binding_tdz_observation() {
 #[test]
 fn dense_array_primitive_push_does_not_invoke_published_callbacks() {
     let source = "globalThis.observe = () => Later;\nconst values = [];\nvalues.push(1, 2);\nclass Later {}\nconsole.log(values.join(','));\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module_with_anon(
@@ -660,7 +660,7 @@ fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
     use analysis::reports::schema::{BindingEffectAuthorityReport, LexicalBindingEffectBody};
 
     let source = "const values = [];\nfunction append() { return values.push(1, 2); }\nconst first = append();\nconst second = append();\nconst later = 42;\nconsole.log(first, second, values.join(','), later);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module(
@@ -716,7 +716,7 @@ fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
         let source = format!(
             "function make() {{ return []; }}\nconst values = make();\n{extra}function append() {{ return values.push(1); }}\nconst result = append();\nconsole.log(result, values.join(','));\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "1 1\n");
         let graph = fixture.dependency_graph();
         let execution = graph

@@ -45,7 +45,7 @@ fn build_report_from_source(
 ) -> DependencyGraphReport {
     let mut opts = FixtureOpts::new(source, logical_modules);
     opts.unassigned_mode = unassigned_mode_inline();
-    run_fixture(opts).dependency_graph()
+    run_fixture_with_graphs(opts).dependency_graph()
 }
 
 #[test]

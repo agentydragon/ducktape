@@ -36,7 +36,7 @@ fn group_for_binding<'a>(report: &'a Value, binding: &str) -> &'a Value {
 
 #[test]
 fn extracting_middle_of_residual_order_is_rejected_with_both_directions() {
-    let baseline = run_fixture_without_graphs_with_args(
+    let baseline = run_fixture_with_args(
         FixtureOpts::new(SOURCE, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         &["--full-report", "residual_extractions"],
     );
@@ -100,18 +100,16 @@ fn extracting_middle_of_residual_order_is_rejected_with_both_directions() {
             })
     }));
 
-    let rejected = run_rejection_fixture_without_graphs_with_args(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(SOURCE, vec![logical_module("b", &[Member::new("b")])])
             .with_unassigned_mode(unassigned_mode_inline()),
-        &[],
-        1,
     );
     let actual_cycles: Value = serde_json::from_slice(
         &std::fs::read(rejected.report_root.join("static/app/cycles.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(actual_cycles[0]["rejection"], "mutual_constraining_cycle");
-    let accepted = run_fixture_without_graphs_with_args(
+    let accepted = run_fixture_with_args(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -129,7 +127,7 @@ fn extracting_middle_of_residual_order_is_rejected_with_both_directions() {
 #[test]
 fn rejected_candidate_with_authored_commuting_premise_serializes_typed_evidence() {
     const SOURCE_WITH_PREMISE: &str = "const a = console.log('a');\nconst b = console.log('b');\nconst c = console.log('c');\nconst bar = console.log('bar');\nconst foo = 1;\nconsole.log('tail', foo);\nexport { a, b, c, bar, foo };\n";
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(SOURCE_WITH_PREMISE, vec![])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_commuting_statements(
@@ -166,7 +164,7 @@ fn rejected_candidate_with_authored_commuting_premise_serializes_typed_evidence(
 
 #[test]
 fn preexisting_structural_conflict_remains_a_candidate_blocker() {
-    let rejected = run_rejection_fixture_without_graphs_with_args(
+    let rejected = run_rejection_fixture_with_args(
         FixtureOpts::new(
             "export const a = 1;\nexport let b = 2;\nb += 1;\n",
             vec![logical_module("b", &[Member::new("b")])],
@@ -208,7 +206,7 @@ fn selection_and_ownership_subset_probe_the_exact_current_assignment() {
         )
         .with_unassigned_mode(unassigned_mode_inline())
     };
-    let without = run_fixture_without_graphs_with_args(
+    let without = run_fixture_with_args(
         opts(),
         &["--ownership-subset", subset.path().to_str().unwrap()],
     );
@@ -219,7 +217,7 @@ fn selection_and_ownership_subset_probe_the_exact_current_assignment() {
             .join("residual_extractions.json")
             .exists()
     );
-    let all = run_fixture_without_graphs_with_args(
+    let all = run_fixture_with_args(
         opts(),
         &[
             "--ownership-subset",
@@ -250,7 +248,7 @@ fn selection_and_ownership_subset_probe_the_exact_current_assignment() {
             })
     );
     let selected = group_for_binding(&all_report, "b")["id"].as_str().unwrap();
-    let one = run_fixture_without_graphs_with_args(
+    let one = run_fixture_with_args(
         opts(),
         &[
             "--ownership-subset",

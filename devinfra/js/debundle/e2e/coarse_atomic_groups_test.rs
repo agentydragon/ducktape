@@ -242,7 +242,7 @@ export const middle = early + 1;
 export const late = middle + 1;
 console.log(late);
 "#;
-    let rejected = run_emit_on_rejection_fixture(
+    let rejected = run_emit_on_rejection_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module(

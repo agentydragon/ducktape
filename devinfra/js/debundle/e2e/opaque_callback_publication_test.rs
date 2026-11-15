@@ -21,7 +21,7 @@ const later = 'value';
 console.log(result);
 "#
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, Vec::new())
             .with_extra_chunks(&peers)
             .with_unassigned_mode(unassigned_mode_inline()),

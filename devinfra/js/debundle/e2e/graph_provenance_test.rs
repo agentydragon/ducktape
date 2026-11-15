@@ -271,7 +271,7 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
 
 #[test]
 fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const answer = 42; console.log(answer);\n",
         vec![],
     ));

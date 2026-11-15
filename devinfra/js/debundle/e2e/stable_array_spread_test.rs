@@ -58,7 +58,7 @@ fn declaration(source: &str) -> &str {
 
 #[test]
 fn same_declaration_primitive_array_spreads_keep_three_modules_realizable() {
-    let fixture = run_fixture(FixtureOpts::new(SOURCE, modules()));
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(SOURCE, modules()));
     assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
     assert_module_exports(
         &fixture.out_root,
@@ -90,7 +90,7 @@ fn exact_source_input_preserves_runtime_and_reports_consumed_premise() {
         "static/app",
         vec![spread_input(SOURCE, declaration(SOURCE))],
     );
-    let fixture = run_fixture(opts);
+    let fixture = run_fixture_with_graphs(opts);
     assert_preserved_entry_output(&fixture, "before\nbase,a,b base,a,b\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert!(
@@ -276,7 +276,7 @@ fn spread_producers_cannot_be_materialized_in_another_module() {
             &[Member::new("second"), Member::new("scopes")],
         ),
     ];
-    let rejected = run_rejection_fixture(FixtureOpts::new(SOURCE, modules));
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules));
     let conflicts = rejected.atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {

@@ -83,7 +83,7 @@ fn valid_pairs_resolve_through_every_selector_form() {
 fn repeated_var_endpoint_selects_the_matched_declaration_site() {
     const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nvar shared = (globalThis.record(\"one\"), 1);\nglobalThis.record(\"boot\");\nvar shared = (globalThis.record(\"two\"), 2);\nconsole.log(shared, trace.slice().sort().join(\",\"));\nexport { shared };\n";
     const SECOND_SITE: &str = "var shared = (globalThis.record(\"two\"), 2);";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module_with_anon(

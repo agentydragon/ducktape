@@ -51,7 +51,7 @@ fn assert_refused(
     stdout: &str,
 ) {
     let source = source(mutations, declaration, output);
-    let rejected = run_rejection_fixture(opts(&source, member, &anonymous(mutations)));
+    let rejected = run_rejection_fixture_with_graphs(opts(&source, member, &anonymous(mutations)));
     assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
         let claims = conflict["claims"].as_array().expect("conflict claims");
         ["values/native", "values/later"].iter().all(|module| {
@@ -68,7 +68,7 @@ fn assert_refused(
         .find(|node| node["declared_bindings"][0]["binding"] == member)
         .expect("native source unit");
     assert_eq!(node["synchronous_execution"]["complete"], false, "{node}");
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
     assert_preserved_entry_output(&fixture, stdout);
 }
 

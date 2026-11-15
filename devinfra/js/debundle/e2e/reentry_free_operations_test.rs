@@ -136,7 +136,9 @@ console.log(Boolean(value), later);
             &["host/value", "host/later"],
             &[],
         );
-        let fixture = run_fixture(split(source, "value").with_host_behavior(policy(&[operation])));
+        let fixture = run_fixture_with_graphs(
+            split(source, "value").with_host_behavior(policy(&[operation])),
+        );
         assert_host_call_remains_impure(&fixture, "value");
         assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
         let graph = fixture.dependency_graph();
@@ -186,7 +188,7 @@ console.log(Boolean(value), later);
 
 #[test]
 fn unused_operation_assertion_is_not_evidence() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new("const value = 42; console.log(value);", vec![])
             .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
@@ -263,7 +265,7 @@ console.log(Boolean(store), later);
 
 #[test]
 fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site() {
-    let control = run_rejection_fixture(promise_reentry_split());
+    let control = run_rejection_fixture_with_graphs(promise_reentry_split());
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
     unknown_receiver_witness(&serde_json::to_value(control.program_graph()).unwrap());
     assert!(
@@ -282,10 +284,11 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         "gate"
     )));
 
-    let native_only = run_rejection_fixture(promise_reentry_split().with_native_operation_inputs(
-        "static/app",
-        vec![promise_input(PROMISE_REENTRY_SOURCE, "gate")],
-    ));
+    let native_only =
+        run_rejection_fixture_with_graphs(promise_reentry_split().with_native_operation_inputs(
+            "static/app",
+            vec![promise_input(PROMISE_REENTRY_SOURCE, "gate")],
+        ));
     assert!(
         native_only.atomic_group_conflicts().iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -327,7 +330,7 @@ fn promise_native_input_and_host_timing_are_both_required_at_the_selected_site()
         &[],
     );
 
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         promise_reentry_split()
             .with_native_operation_inputs(
                 "static/app",
@@ -407,7 +410,7 @@ fn unselected_promise_resolve_keeps_its_own_reentry_fallback() {
     .with_extra_files(REFLECT_FILES)
     .with_native_operation_inputs("static/app", vec![promise_input(source, "gate")])
     .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve]));
-    let rejected = run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture_with_graphs(opts);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     assert!(
         rejected.atomic_group_conflicts().iter().any(|conflict| {

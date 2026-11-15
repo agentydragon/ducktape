@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 fn residual_fixture(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
     let mut opts = FixtureOpts::new(source, modules);
     opts.unassigned_mode = unassigned_mode_inline();
-    run_fixture(opts)
+    run_fixture_with_graphs(opts)
 }
 
 fn factorize_residual(source: &str, modules: Vec<LogicalModuleEntry>) -> ProposalsReport {
@@ -459,7 +459,7 @@ export { anchor, SearchPopoverState };
             ),
         ],
     );
-    assert_preserved_entry_output(&run_fixture(promoted_opts), "boot\ntail\n");
+    assert_preserved_entry_output(&run_fixture_with_graphs(promoted_opts), "boot\ntail\n");
 }
 
 #[test]

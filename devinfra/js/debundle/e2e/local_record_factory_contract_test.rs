@@ -36,7 +36,7 @@ const readers = [first.value];
 const later = readers;
 console.log(later.length, later[0]());
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module(
@@ -132,7 +132,7 @@ const readers = {read};
 console.log(typeof readers?.[0] === 'function' ? readers[0]() : 0);
 "#
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -173,7 +173,7 @@ const searches = [first.search];
 const second = create({ callback: () => 2 });
 console.log(searches[0](), second.search());
 "#;
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -255,7 +255,7 @@ const second = create({{ callback: () => 2 }});
 console.log(searches[0](), second.search());
 "#
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -306,7 +306,7 @@ const searches = [first.search];
 const second = create({ callback: () => 2 });
 console.log(searches[0](), second.search());
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "all",
@@ -356,7 +356,7 @@ const searches = [read()];
 const second = create({ callback: () => 2 });
 console.log(searches[0]() === alias, globalThis.retained === alias);
 "#;
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -469,7 +469,7 @@ const NESTED_WRAPPER: &str = "function wrapper(label, execute) { return make({ n
 #[test]
 fn nested_record_factory_wrapper_preserves_a_split_cycle() {
     let source = nested_wrapper_source("", NESTED_FACTORY, NESTED_WRAPPER);
-    let split = run_fixture(
+    let split = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -506,7 +506,7 @@ fn nested_record_factory_wrapper_preserves_a_split_cycle() {
         Member::new("command"),
         Member::new("later"),
     ];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![logical_module_with_anon(
@@ -544,7 +544,7 @@ fn nested_record_factory_wrapper_preserves_a_split_cycle() {
 fn assert_nested_wrapper_falls_back(source: &str, extra_anon: &[&str]) {
     let mut anon = vec!["maybe.record = 1;"];
     anon.extend_from_slice(extra_anon);
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -648,7 +648,7 @@ const later = pair ? 7 : 0;
 console.log(pair[0].run() + pair[1].run());
 export { pair, later };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
             "all",
@@ -703,7 +703,7 @@ const second = create({ size: 2, items: [2], callback: () => shared.push(2) });
 console.log(first.size, second.size, first.run(), second.run(), shared.join(','));
 export { first, second, shared };
 "#;
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -845,7 +845,7 @@ const first = create({ items: mutateSharedArray() });
 const second = create({ items: [2] });
 console.log(shared.join(','), first.items[0], second.items[0]);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
             "all",
@@ -1069,7 +1069,7 @@ fn local_factory_result_rejection(
     } else {
         logical_module_with_anon("all", &members, anonymous_statements)
     };
-    let fixture = run_fixture(FixtureOpts::new(source, vec![all]));
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![all]));
     assert_preserved_entry_output(&fixture, "169 0\n");
     let graph = fixture.dependency_graph();
     let command = graph
@@ -1108,7 +1108,7 @@ fn annotation_admits_a_direct_fresh_record_to_the_checked_constructor_factory() 
         "",
         "console.log(command.run(), command.weight);",
     );
-    let fixture = run_fixture(fixture_opts(&source, true, &[], &[], &[]));
+    let fixture = run_fixture_with_graphs(fixture_opts(&source, true, &[], &[], &[]));
 
     assert_preserved_entry_output(&fixture, "169 0\n");
     let graph = fixture.dependency_graph();
@@ -1204,7 +1204,7 @@ fn escaped_class_members_report_the_first_global_member_write() {
     let source = format!(
         "{HOLDER}{factory}const first = create({{}});\nglobalThis.saved = first;\nconst command = create({{}});\nconsole.log(typeof command.run);\n"
     );
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module_with_anon(
             "all",
@@ -1338,7 +1338,7 @@ fn forwarding_fixture(
     );
     let mut statements = vec!["console.log(command.run(), command.weight);"];
     statements.extend_from_slice(additional_statements);
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module_with_anon(
             "all",
@@ -1483,7 +1483,7 @@ fn exported_factory_result_rejects_a_rebound_factory() {
         "create = function (record) { return new Holder(record); };\nconst command = create({ execute: () => later });",
     );
     let rebound_chunks = [("static/consumer", ACYCLIC_COMMAND_IMPORTER)];
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&rebound_provider, exported_record_factory_modules(&[]))
             .with_chunk_id("static/provider")
             .with_extra_chunks(&rebound_chunks),
@@ -1665,7 +1665,7 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
 }
 "#;
     let source = factory_effect_order_source("create({ execute: () => later })", holder);
-    let fixture = run_fixture(factory_effect_order_opts(&source, true));
+    let fixture = run_fixture_with_graphs(factory_effect_order_opts(&source, true));
     assert_preserved_entry_output(&fixture, "barrier\nExample 42 Example 42\n");
 
     let graph = fixture.dependency_graph();
@@ -1729,7 +1729,7 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
     // read and deferred callback graph.
     let literal =
         factory_effect_order_source("{ label, record: { execute: () => later } }", holder);
-    let literal_fixture = run_fixture(factory_effect_order_opts(&literal, true));
+    let literal_fixture = run_fixture_with_graphs(factory_effect_order_opts(&literal, true));
     assert_preserved_entry_output(&literal_fixture, "barrier\nExample 42 Example 42\n");
 }
 
@@ -2001,7 +2001,7 @@ fn constructor_effects_are_not_removed_by_the_factory_call_certificate() {
 }
 
 fn assert_admitted(source: &str, callback_members: &[&'static str], expected_output: &str) {
-    let fixture = run_fixture(fixture_opts(source, true, callback_members, &[], &[]));
+    let fixture = run_fixture_with_graphs(fixture_opts(source, true, callback_members, &[], &[]));
     assert_preserved_entry_output(&fixture, expected_output);
     let graph = fixture.dependency_graph();
     let reports: Vec<_> = graph
@@ -2077,7 +2077,7 @@ fn record_rejection(
             .filter(|name| before_command.contains(&format!("const {name} ")))
             .map(Member::new),
     );
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module_with_anon(
             "all",
@@ -2222,7 +2222,7 @@ fn logical_not_does_not_hide_an_effectful_constructor_operand() {
         Member::new("command"),
         Member::new("later"),
     ];
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module_with_anon(
             "all",

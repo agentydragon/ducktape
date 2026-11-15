@@ -27,7 +27,9 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
 fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
-    let fixture = run_fixture(FixtureOpts::new(&source, split_modules()).with_extra_chunks(&peers));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(&source, split_modules()).with_extra_chunks(&peers),
+    );
     assert_preserved_entry_output(&fixture, expected);
     let graph = fixture.dependency_graph();
     let computed = source_unit_for_binding(&graph, "computed");
@@ -137,7 +139,7 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -196,7 +198,7 @@ fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
         logical_module("anchors", &[Member::new("before"), Member::new("after")]),
     ];
 
-    let admitted = run_fixture(
+    let admitted = run_fixture_with_graphs(
         FixtureOpts::new(source, modules.clone())
             .with_extra_chunks(&peers)
             .with_host_behavior(HostBehavior {
@@ -216,7 +218,8 @@ fn imported_primitive_read_uses_only_admitted_builtin_provider_closures() {
     );
     assert_called_operation_receipt(&admitted, "computed", "add");
 
-    let conservative = run_fixture(FixtureOpts::new(source, modules).with_extra_chunks(&peers));
+    let conservative =
+        run_fixture_with_graphs(FixtureOpts::new(source, modules).with_extra_chunks(&peers));
     assert_preserved_entry_output(&conservative, "0 258 1\n");
     let conservative_assessment = conservative.effect_translation_validation();
     assert_eq!(
@@ -259,7 +262,7 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
                   const computed = add();\n\
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -310,7 +313,7 @@ fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
                   const computed = render();\n\
                   const after = 1;\n\
                   console.log(before, computed, after);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -505,7 +508,7 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
                   var first = bytes, second = first;\n\
                   const computed = 4 * second + 256;\n\
                   later = 42;\nconsole.log(computed, callback());\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -543,7 +546,7 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
                   var first = bytes, second = first;\n\
                   const after = 1;\n\
                   console.log(before, first, second, after);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![
@@ -708,7 +711,7 @@ fn replacing_a_primitive_copy_with_an_object_preserves_coercion_callbacks() {
 
 #[test]
 fn primitive_copies_keep_mixed_numeric_throws() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { limit } from './peer.js';\n\
              var copied = limit;\nconst computed = 4 * copied;\nconsole.log(computed);\n",
@@ -751,7 +754,7 @@ fn throwing_primitive_kinds_keep_the_coercion() {
              let computed;\ntry {{ computed = {expression}; }} catch (error) {{ computed = error.name; }}\n\
              const settled = {expression};\nconsole.log(computed);\n"
         );
-        let fixture = run_fixture(
+        let fixture = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -804,7 +807,9 @@ fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
              export const limit = amount;\n",
         ),
     ];
-    let fixture = run_fixture(FixtureOpts::new(source, split_modules()).with_extra_chunks(&peers));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(source, split_modules()).with_extra_chunks(&peers),
+    );
     assert_preserved_entry_output(&fixture, "coerce\ntool_notes_tool_notes_280 42\n");
 
     let graph = fixture.dependency_graph();

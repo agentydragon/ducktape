@@ -12,7 +12,7 @@ export { seed, result, readValue, value };
 
 #[test]
 fn cross_module_at_init_call_preserves_initialized_body_read() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         INITIALIZED_SOURCE,
         vec![
             logical_module("readers", &[Member::new("readValue")]),
@@ -74,7 +74,7 @@ export { state, setState };
 
 #[test]
 fn intra_module_at_init_call_preserves_initialized_body_read() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         INITIALIZED_SOURCE,
         vec![logical_module("values", &[Member::new("value")])],
     ));

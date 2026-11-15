@@ -197,7 +197,7 @@ fn a_premise_on_the_calling_function_keeps_the_slot() {
         "function call(method, key, value) { const run = () => root[method](key, value); run(); }";
     for declaration in [DIRECT, NESTED] {
         let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
-        let fixture = run_fixture(accessor_opts(
+        let fixture = run_fixture_with_graphs(accessor_opts(
             &source,
             no_accessor_install(declaration, "call"),
         ));

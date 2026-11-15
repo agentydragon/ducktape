@@ -281,7 +281,7 @@ export { A, B, C, D };
 // initialization closes it. The original source is valid; splitting it is not.
 #[test]
 fn at_init_call_closes_mixed_cycle() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"const A = 1;
 const B = A + 1;
 function readB() { return B; }
@@ -315,7 +315,7 @@ console.log(trigger);
 
 #[test]
 fn dependency_graph_report_is_written_for_successful_specs() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const A = "a-value";
 const B = "b-value";
 function readA() { return A; }
@@ -398,7 +398,7 @@ export { A, B, readA, readB };
 
 #[test]
 fn dependency_graph_report_identifies_pair_only_residual_atomic_group() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"var A = B || "fallback";
 var B = A + "-b";
 const Existing = B + "-existing";
@@ -439,7 +439,7 @@ export { Leaf, Dep, Existing };
         ChunkRenameEntry::new("ReadableDep", "Dep"),
     ]));
     opts.unassigned_mode = unassigned_mode_inline();
-    let fixture = run_fixture(opts);
+    let fixture = run_fixture_with_graphs(opts);
     assert_entry_output(&fixture, "existing\n");
 
     let graph = fixture.dependency_graph();
@@ -469,7 +469,7 @@ export { Leaf, Dep, Existing };
 
 #[test]
 fn dependency_graph_report_collapses_residual_written_binding_with_assigner() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"let a = 0;
 function b() {
   a = 1;
@@ -733,7 +733,7 @@ fn dependency_graph_report_is_written_before_rejection() {
     // mod_a (ordinal 0, 2) and mod_b (ordinal 1). The constraining-
     // edge subgraph has a bi-directional sequenced cycle that no
     // entry-import order can resolve.
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"const a1 = (globalThis.tag = "a1", 1);
 const b1 = (globalThis.tag = "b1", 2);
 const a2 = (globalThis.tag = "a2", 3);

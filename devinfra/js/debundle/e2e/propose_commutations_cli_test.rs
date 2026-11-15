@@ -196,7 +196,7 @@ fn draft_pairs(report: &Value) -> Vec<CommutingStatementsContract> {
 
 #[test]
 fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
-    let rejected = run_rejection_fixture(opaque_split(vec![]));
+    let rejected = run_rejection_fixture_with_graphs(opaque_split(vec![]));
     let draft_path = rejected.report_root.join("commutations.yaml");
     let report = propose_rejected(&rejected, &["--out", draft_path.to_str().unwrap()]);
 
@@ -328,7 +328,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 
     // Positive anchor: the single-pair cut alone clears the cycle under the
     // gate and the emitted bundle preserves the entry output.
-    let fixture = run_fixture(opaque_split(vec![first_entry]));
+    let fixture = run_fixture_with_graphs(opaque_split(vec![first_entry]));
     assert_preserved_entry_output(&fixture, OPAQUE_OUTPUT);
 
     let scc = only_scc(&report);
@@ -343,7 +343,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 /// read of alpha in place.
 #[test]
 fn proposal_cut_prediction_includes_preserved_order_closure() {
-    let rejected = run_rejection_fixture(preserved_order_frontier_fixture(vec![]));
+    let rejected = run_rejection_fixture_with_graphs(preserved_order_frontier_fixture(vec![]));
     let report = propose_rejected(&rejected, &[]);
     assert_eq!(array(&report, "proposals").len(), 1, "{report:#}");
     let proposal = array(&report, "proposals")
@@ -369,7 +369,7 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 
     let entry: CommutingStatementsContract =
         serde_json::from_value(proposal["entry"].clone()).expect("entry is a contract");
-    let applied = run_rejection_fixture(preserved_order_frontier_fixture(vec![entry]));
+    let applied = run_rejection_fixture_with_graphs(preserved_order_frontier_fixture(vec![entry]));
     let cycles = applied.cycles();
     assert!(
         cycles.iter().any(|cycle| {
@@ -646,7 +646,7 @@ fn duplicated_anonymous_endpoint_is_reported_without_a_selector() {
     // ticks and `beta` are opaque-call strict-chain adjacency, which a
     // premise could inert if the tick could be selected.
     const SOURCE: &str = "globalThis.record = (key) => { console.log(\"tick\", key); };\nglobalThis.record(\"tick\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nglobalThis.record(\"tick\");\nconsole.log(beta);\nexport { beta };\n";
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![logical_module("probes/inner", &[Member::new("beta")])],

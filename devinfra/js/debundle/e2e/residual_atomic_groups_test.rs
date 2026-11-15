@@ -44,7 +44,7 @@ fn subset_reports_residual_binding_and_anonymous_effect_as_one_atom() {
     ];
     let subset = subset();
     let opts = FixtureOpts::new(source, modules).with_unassigned_mode(unassigned_mode_inline());
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         opts,
         &[
             "--ownership-subset",
@@ -100,8 +100,7 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
     let opts = || {
         FixtureOpts::new(source, modules()).with_unassigned_mode(unassigned_mode_per_atomic_group())
     };
-    let without =
-        run_fixture_without_graphs_with_args(opts(), &["--ownership-subset", subset_path]);
+    let without = run_fixture_with_args(opts(), &["--ownership-subset", subset_path]);
     assert!(
         !without
             .report_root
@@ -109,7 +108,7 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
             .join("residual_atomic_groups.json")
             .exists()
     );
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         opts(),
         &[
             "--ownership-subset",
@@ -143,7 +142,7 @@ fn selected_and_omitted_anonymous_statements_follow_the_subset() {
         logical_module_with_anon("b", &[], &["console.log('omitted');"]),
     ];
     let subset = subset();
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(source, modules).with_unassigned_mode(unassigned_mode_inline()),
         &[
             "--ownership-subset",
@@ -179,7 +178,7 @@ fn rejected_split_atom_reports_both_destinations() {
         r#"{"modules":[{"chunk":"static/app","module":"b","anonymous_statements":[]}]}"#,
     )
     .unwrap();
-    let fixture = run_rejection_fixture_without_graphs_with_args(
+    let fixture = run_rejection_fixture_with_args(
         FixtureOpts::new(source, vec![module]).with_unassigned_mode(unassigned_mode_inline()),
         &[
             "--ownership-subset",
@@ -217,7 +216,7 @@ fn boundary_examples_are_bounded_and_marked_when_truncated() {
     let source = "const a = 1;\nconst b = 2;\nconst c = 3;\nconst d = 4;\nconst e = 5;\nconst f = 6;\nconst sum = a + b + c + d + e + f;\nconsole.log(sum);\n";
     let subset = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(subset.path(), r#"{"modules":[]}"#).unwrap();
-    let fixture = run_fixture_without_graphs_with_args(
+    let fixture = run_fixture_with_args(
         FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
         &[
             "--ownership-subset",

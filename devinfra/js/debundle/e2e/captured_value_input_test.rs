@@ -71,7 +71,7 @@ fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
         ("static/opaque.js", OPAQUE_ARRAY_CHILD),
         ("static/app/opaque.js", OPAQUE_ARRAY_CHILD),
     ];
-    run_fixture(
+    run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), copied.length);\nexport { queue, Later };\n",
             vec![
@@ -89,7 +89,7 @@ fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
 fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
     expect_atomic_conflict_rejection(fixture_opts(Vec::new()), &["queue", "later"], &[]);
 
-    let fixture = run_fixture(fixture_opts(vec![captured_input(PROVIDER)]));
+    let fixture = run_fixture_with_graphs(fixture_opts(vec![captured_input(PROVIDER)]));
     assert_preserved_entry_output(&fixture, "0 Later 0 2 capture,getter\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -214,7 +214,7 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
 fn captured_primitive_predicate_return_preserves_cli_runtime() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function isReady() { if (captured.ready) return false; return true; }\n";
     let chunks = [("static/peer", provider)];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { isReady } from './peer.js';\nconsole.log(isReady(), globalThis.runtimeSettings.events.join(','));\n",
             vec![],
@@ -255,7 +255,7 @@ fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
             "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n",
         ),
     ];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { childSize } from './peer.js';\nconsole.log(childSize(), globalThis.runtimeSettings.events.join(','));\n",
             vec![],
@@ -321,7 +321,7 @@ fn captured_fluent_and_derived_array_values_share_cli_analysis() {
     let fluent = [ChunkExportPurityBuilder::new("static/peer")
         .with_fluent_exports(&["e4"])
         .build()];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
@@ -533,7 +533,7 @@ fn mixed_primitive_and_recursive_return_producers_do_not_close_the_capture_flow(
 
 #[test]
 fn unrelated_object_literal_native_fields_do_not_create_no_input_aliases() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const receiver = { child: Array.prototype };\nreceiver[Symbol.iterator] = function evil() { return 0; };\nconsole.log('ready');\n",
         vec![],
     ));
@@ -638,7 +638,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
     let descendant = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured.child, {});\nfunction getCaptured() { return captured; }\nObject.assign(getCaptured(), {});\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
     let chunks = [("static/peer", descendant)];
     let input = captured_input(descendant);
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, queue.label(), Later.name);\nexport { queue, Later };\n",
             vec![
@@ -694,7 +694,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
     let before_init = "import { readLater } from './app.js';\nconst alias = captured;\nconst captured = globalThis.runtimeSettings.state;\nObject.assign(alias, {});\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
     let chunks = [("static/peer", before_init)];
     let input = captured_input(before_init);
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, queue.label(), Later.name);\nexport { queue, Later };\n",
             vec![
@@ -740,7 +740,7 @@ fn native_constructor_instance_does_not_inherit_constructor_root() {
         "static/peer",
         "const instance = new Map();\nObject.assign(instance, {});\n",
     )];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new("import './peer.js';\nconsole.log('ready');\n", vec![])
             .with_extra_chunks(&instance),
     );
@@ -769,7 +769,7 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
         ("static/peer", PROVIDER),
         ("static/native-mutation", mutation),
     ];
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport './native-mutation.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, queue.label().name);\nexport { queue, Later };\n",
             vec![
@@ -812,7 +812,7 @@ fn prototype_absence_keeps_captured_census_provenance() {
     let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Box { constructor(config) { this.value = config.value ?? 3; } }\nconst result = new Box({});\nconsole.log(result.value, marker);\n";
     let chunks = [("static/peer", provider)];
     let inputs = vec![captured_input(provider)];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
@@ -860,8 +860,9 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
             .with_extra_files(OPAQUE_FILES)
     };
 
-    let fixture =
-        run_fixture(base_opts().with_value_inputs("static/peer", vec![captured_input(provider)]));
+    let fixture = run_fixture_with_graphs(
+        base_opts().with_value_inputs("static/peer", vec![captured_input(provider)]),
+    );
     assert_preserved_entry_output(&fixture, "barrier\n3 42 1\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let command = graph["nodes"]
@@ -907,7 +908,7 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
         "this path is proved from source and native census evidence, not an annotation: {command}"
     );
 
-    let control = run_fixture(base_opts());
+    let control = run_fixture_with_graphs(base_opts());
     assert_preserved_entry_output(&control, "barrier\n3 42 1\n");
     let control_graph = serde_json::to_value(control.dependency_graph()).unwrap();
     let control_command = control_graph["nodes"]
@@ -952,7 +953,7 @@ fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
         &["collection", "value"],
         &[],
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
@@ -1025,7 +1026,7 @@ fn inferred_pure_imports_keep_captured_inputs_through_two_modules() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function make() { return new Set(['ready']); }\n";
     let middle = "import { make } from './peer.js';\nexport function forward() { return make(); }\nexport function unrelated() { return 7; }\n";
     let chunks = [("static/peer", provider), ("static/middle", middle)];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { forward, unrelated } from './middle.js';\nconst collection = forward();\nconst number = unrelated();\nconsole.log(collection.size, number);\n",
             vec![],

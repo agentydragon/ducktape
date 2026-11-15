@@ -21,7 +21,6 @@ const names = Object.getOwnPropertyNames({
 const later = 42;
 console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6], names[7], getterCalls);
 "#;
-
 fn own_name_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module("keys", &[Member::new("names"), Member::new("getterCalls")]),
@@ -31,6 +30,10 @@ fn own_name_modules() -> Vec<LogicalModuleEntry> {
 
 fn own_name_fixture() -> Fixture {
     run_fixture(FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()))
+}
+
+fn own_name_fixture_with_graphs() -> Fixture {
+    run_fixture_with_graphs(FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()))
 }
 
 fn assert_own_name_extraction(fixture: &Fixture) {
@@ -59,7 +62,7 @@ fn ordinary_own_property_names_preserve_order_and_do_not_read_values() {
 /// from the runtime property-name and getter behavior above.
 #[test]
 fn own_name_projection_reports_its_documented_inference_receipt() {
-    let fixture = own_name_fixture();
+    let fixture = own_name_fixture_with_graphs();
     assert_preserved_entry_output(&fixture, "2 10 4294967294 z 01 4294967295 a value 0\n");
     assert_own_name_extraction(&fixture);
 

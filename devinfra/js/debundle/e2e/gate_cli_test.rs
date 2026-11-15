@@ -57,7 +57,7 @@ export { A, B, C, D };
 }
 
 fn rejected_cycle_fixture() -> RejectedFixture {
-    run_rejection_fixture(cycle_fixture_opts())
+    run_rejection_fixture_with_graphs(cycle_fixture_opts())
 }
 
 fn graph_path(rejected: &RejectedFixture) -> PathBuf {
@@ -176,7 +176,7 @@ fn gate_list_reports_each_blocking_scc() {
 
 #[test]
 fn atomic_group_rejection_also_writes_current_cycle_report() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         "const alpha = beta;\nconst beta = alpha;\n",
         vec![
             logical_module("left", &[Member::new("alpha")]),
@@ -417,7 +417,7 @@ fn dry_run_rejection_materializes_gate_artifacts() {
     // dependency_graph.json.gz + cycles.json at the standard report location
     // so the documented `gate list/describe` follow-up works on the
     // rejection that was just reported.
-    let rejected = run_dry_run_rejection_fixture(cycle_fixture_opts());
+    let rejected = run_dry_run_rejection_fixture_with_graphs(cycle_fixture_opts());
     assert!(
         !rejected.out_root.join("app").exists(),
         "dry-run must not emit the JS tree"

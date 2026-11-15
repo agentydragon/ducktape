@@ -50,7 +50,7 @@ function foo() { e(); e(); return 0; }
 fn local_impure_call_reports_its_own_site_once() {
     let source =
         format!("{FUNCTIONS}const result = foo();\nconsole.log(result);\nexport {{ result }};\n");
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module("result_module", &[Member::new("result")])],
     ));
@@ -91,7 +91,7 @@ fn local_impure_call_reports_its_own_site_once() {
 #[test]
 fn imported_impure_call_reports_its_own_site_once() {
     let lib = format!("{FUNCTIONS}export {{ foo }};\n");
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             r#"import { foo } from "./lib.js";
 const result = foo();
@@ -151,7 +151,7 @@ fn assert_recursive_import_effects(effect: &str) {
          export function second(stop) {{\n{effect}\n\
          return stop === true ? 8 : first(true);\n}}\n"
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { first } from './first.js';\n\
              const result = first(false);\nconsole.log(result);\nexport { result };\n",

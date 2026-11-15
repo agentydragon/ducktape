@@ -54,7 +54,7 @@ fn opaque_callback_factory_without_initializer_override_has_s_cycle() {
 
 #[test]
 fn initializer_override_keeps_callback_read_dependency() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(opaque_factory_source(), factory_modules(true))
             .with_extra_files(OPAQUE_FACTORY_FILES),
     );

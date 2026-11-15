@@ -47,7 +47,7 @@ fn many_pairs_beside_many_unrelated_edges_fit_the_budget() {
         source.push_str("]; }\n");
     }
     source.push_str("console.log(step0, reader0);\n");
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&source, modules.into()).with_unassigned_mode(unassigned_mode_inline()),
     );
     let graph = rejected.report_path("dependency_graph.json.gz");

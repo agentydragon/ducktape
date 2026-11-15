@@ -112,7 +112,7 @@ export { foo, getFoo, alias, result };
 
 #[test]
 fn returned_object_without_mutation_remains_plain_data() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const foo = { value: 1 };
 function getFoo() { return foo; }
 const alias = getFoo();

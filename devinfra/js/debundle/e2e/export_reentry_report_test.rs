@@ -43,7 +43,7 @@ fn builtin_policy(leaves: &[NodeBuiltinModule]) -> HostBehavior {
 
 #[test]
 fn selected_builtin_leaves_are_reported_with_source_uses() {
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import { join } from 'path';\nimport { readFile } from 'node:fs/promises';\nexport const value = join('a', 'b');\n",
             vec![],
@@ -392,7 +392,7 @@ fn incomplete_artifact_is_reported_for_selected_chunk() {
 
 #[test]
 fn dry_run_rejection_keeps_report_and_accept_path_stays_silent() {
-    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_dry_run_rejection_fixture_with_graphs(FixtureOpts::new(
         r#"function wrap(x) { return { ref: x }; }
 const a = "a";
 const b = wrap(a);

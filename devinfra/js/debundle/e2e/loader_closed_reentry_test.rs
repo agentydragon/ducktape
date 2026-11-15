@@ -61,7 +61,7 @@ fn rejected_loader_derivation(
     extra_chunks: &[(&'static str, &'static str)],
     host: HostBehavior,
 ) -> Value {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(provider, provider_modules())
             .with_chunk_id(PROVIDER_CHUNK)
             .with_extra_chunks(extra_chunks)
@@ -193,7 +193,7 @@ fn closed_commonjs_request_keeps_the_static_importer_proof() {
             .with_extra_chunk_logical_modules(&provider_modules)
     };
     // Without the loader keys the same split is bound by the opaque call.
-    let conservative = run_rejection_fixture(opts());
+    let conservative = run_rejection_fixture_with_graphs(opts());
     let conflicts: Vec<Value> = read_json(
         &conservative
             .report_root

@@ -43,11 +43,11 @@ fn purity(fixture: &Fixture, binding: &str) -> String {
 
 #[test]
 fn selected_helper_borrow_preserves_enum_plain_data() {
-    let baseline = run_fixture(opts(SOURCE, None));
+    let baseline = run_fixture_with_graphs(opts(SOURCE, None));
     assert_preserved_entry_output(&baseline, "READY true\n");
     assert_ne!(purity(&baseline, "preferences"), "pure");
 
-    let fixture = run_fixture(opts(SOURCE, Some(input(SOURCE, DECLARATION))));
+    let fixture = run_fixture_with_graphs(opts(SOURCE, Some(input(SOURCE, DECLARATION))));
     assert_preserved_entry_output(&fixture, "READY true\n");
     assert_eq!(purity(&fixture, "preferences"), "pure");
     let graph = fixture.dependency_graph();

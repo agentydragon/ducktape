@@ -9,7 +9,7 @@ fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
 }
 
 fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis::PurityRule> {
-    let rejected = run_rejection_fixture(opts);
+    let rejected = run_rejection_fixture_with_graphs(opts);
     let graph = rejected.dependency_graph();
     let first = graph
         .nodes
@@ -66,7 +66,7 @@ const { selected: last } = factory();
 console.log(first, middle, last);
 export { first, middle, last };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
             logical_module("outer", &[Member::new("first"), Member::new("last")]),

@@ -102,7 +102,7 @@ export { VALUE, get, indirect, r };
 
 #[test]
 fn plain_array_collection_methods_do_not_promote_element_function_bodies() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const later = "ready";
 const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
 const toolCopies = tools.map((tool) => ({ ...tool }));
@@ -248,7 +248,7 @@ export { ids };
 
 #[test]
 fn global_event_listener_callback_is_not_promoted_as_at_init() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const later = "ready";
 typeof window < "u" &&
   window.addEventListener("beforeunload", () => {
@@ -280,7 +280,7 @@ export { later };
 
 #[test]
 fn dom_event_listener_callback_is_not_promoted_as_at_init() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         r#"const later = "ready";
 const document = {
   querySelector: () => ({ addEventListener() {} }),
