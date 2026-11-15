@@ -102,13 +102,14 @@ fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationIn
 
 fn project_analysis(opts: FixtureOpts<'_>) -> CommandResult {
     let fixture = write_validate_fixture_spec(opts);
-    let output = std::process::Command::new(debundler_path())
-        .args(["spec", "project-analysis", "--spec"])
-        .arg(&fixture.spec_path)
-        .arg("--out")
-        .arg(fixture.spec_path.with_extension("analysis.projection"))
-        .output()
-        .expect("spawn debundle spec project-analysis");
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .args(["spec", "project-analysis", "--spec"])
+            .arg(&fixture.spec_path)
+            .arg("--out")
+            .arg(fixture.spec_path.with_extension("analysis.projection")),
+    )
+    .expect("spawn debundle spec project-analysis");
     CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),

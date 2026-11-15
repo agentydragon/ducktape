@@ -4,7 +4,7 @@ use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-use debundle_e2e_support::parse_stdout_json;
+use debundle_e2e_support::{parse_stdout_json, process};
 use serde_yaml::Value;
 
 fn fixture() -> GraphFixture {
@@ -98,13 +98,14 @@ fn edit_mode_replaces_or_clears_the_prepopulated_comment() {
         // The editor must receive the existing text, not an empty buffer.
         fs::write(&editor, "#!/bin/sh\n[ \"$(cat \"$1\")\" = existing ] || exit 1\nprintf %s \"$REPLACEMENT\" > \"$1\"\n").unwrap();
         fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
-        let out = fixture
-            .process(&["bindings", "comment", "a", "--edit", "--format", "json"])
-            .env("EDITOR", &editor)
-            .env_remove("VISUAL")
-            .env("REPLACEMENT", replacement)
-            .output()
-            .unwrap();
+        let out = process::debundle_output(
+            fixture
+                .process(&["bindings", "comment", "a", "--edit", "--format", "json"])
+                .env("EDITOR", &editor)
+                .env_remove("VISUAL")
+                .env("REPLACEMENT", replacement),
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
         assert!(
             out.status.success(),
             "{}",
@@ -187,19 +188,20 @@ fn closed_stdout_does_not_replay_the_comment_editor_or_lose_the_written_comment(
     fs::set_permissions(&editor, fs::Permissions::from_mode(0o755)).unwrap();
     let (reader, writer) = std::io::pipe().unwrap();
     drop(reader);
-    let output = fixture
-        .process(&[
-            "modules",
-            "comment",
-            "runtime/plugin",
-            "--edit",
-            "--format",
-            "json",
-        ])
-        .env("EDITOR", editor)
-        .stdout(Stdio::from(writer))
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        fixture
+            .process(&[
+                "modules",
+                "comment",
+                "runtime/plugin",
+                "--edit",
+                "--format",
+                "json",
+            ])
+            .env("EDITOR", editor)
+            .stdout(Stdio::from(writer)),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(output.status.success(), "{output:?}");
     assert_eq!(fs::read_to_string(counter).unwrap().lines().count(), 1);
     let saved: Value =

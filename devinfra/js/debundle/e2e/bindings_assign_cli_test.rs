@@ -3,7 +3,7 @@
 use debundle_e2e_graph_support::GraphFixture;
 use std::fs;
 
-use debundle_e2e_support::write_text_file;
+use debundle_e2e_support::{process, write_text_file};
 use serde_json::{Value, json};
 
 fn module(fixture: &GraphFixture, path: &str) -> serde_yaml::Value {
@@ -40,7 +40,7 @@ fn module_readers_agree_on_invalid_yaml() {
     let before = fs::read(&malformed).unwrap();
     let mut merge = fixture.process(&["modules", "merge", "--target", "b", "a", "--no-verify"]);
     merge.env_remove("DEBUNDLE_GRAPH");
-    let output = merge.output().unwrap();
+    let output = process::debundle_output(&mut merge).unwrap_or_else(|err| panic!("{err}"));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(!output.status.success());
     assert!(stderr.contains("a.yaml"), "{stderr}");
@@ -336,7 +336,7 @@ fn rename_batch_swaps_members_and_source_matches_without_graph() {
         if dry_run {
             command.arg("--dry-run");
         }
-        let output = command.output().unwrap();
+        let output = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
         assert!(
             output.status.success(),
             "{}",
@@ -519,7 +519,6 @@ fn rename_batch_preflight_rejects_collisions_and_invalid_requests() {
 
 #[test]
 fn rename_batch_reads_stdin_and_renders_each_format() {
-    use std::io::Write;
     use std::process::Stdio;
     let fixture = GraphFixture::new(
         "const a = 1; console.log(a);",
@@ -540,14 +539,12 @@ fn rename_batch_reads_stdin_and_renders_each_format() {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = process.spawn().unwrap();
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(br#"[{"sym":"a","readable":"Readable"}]"#)
-            .unwrap();
-        let output = child.wait_with_output().unwrap();
+        let output = debundle_e2e_support::process::output_with_input(
+            &mut process,
+            br#"[{"sym":"a","readable":"Readable"}]"#,
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
+        debundle_e2e_support::process::assert_debundle_invariants(&output);
         assert!(
             output.status.success(),
             "{}",

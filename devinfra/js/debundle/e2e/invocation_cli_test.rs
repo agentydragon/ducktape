@@ -6,7 +6,8 @@ use serde_json::Value;
 use tempfile::TempDir;
 
 fn run_json(command: &mut Command) -> Value {
-    let output = command.output().expect("run debundle CLI");
+    let output = debundle_e2e_support::process::debundle_output(command)
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "stdout: {}\nstderr: {}",
@@ -368,7 +369,8 @@ fn option_looking_positional_text_after_double_dash_survives_capture_and_replay(
         .args(argv[1..].iter().map(|value| value.as_str().unwrap()))
         .current_dir(record["cwd"].as_str().unwrap())
         .env_remove("DEBUNDLE_MODULES");
-    let replayed = replay.output().expect("replay invocation argv");
+    let replayed = debundle_e2e_support::process::debundle_output(&mut replay)
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         replayed.status.success(),
         "{}",
@@ -589,17 +591,15 @@ fn flat_transform_ignores_tree_environment_defaults_in_replay() {
 #[test]
 fn explicit_projection_root_requires_projection_input() {
     let fixture = GraphFixture::new("const value = 1;", &[]);
-    let output = fixture
-        .process(&[
-            "run",
-            "--spec",
-            "not-read.yaml",
-            "--projection-root",
-            ".",
-            "--print-invocation",
-        ])
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(&mut fixture.process(&[
+        "run",
+        "--spec",
+        "not-read.yaml",
+        "--projection-root",
+        ".",
+        "--print-invocation",
+    ]))
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(!output.status.success());
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(error.contains("--apply-projection"), "{error}");
@@ -615,10 +615,14 @@ fn explicit_flat_tree_conflicts_are_refused_before_dispatch() {
         "--tree-source-root",
         "--out-root",
     ] {
-        let output = fixture
-            .process(&["run", "--spec", "not-read.yaml", flag, "explicit"])
-            .output()
-            .unwrap();
+        let output = debundle_e2e_support::process::debundle_output(&mut fixture.process(&[
+            "run",
+            "--spec",
+            "not-read.yaml",
+            flag,
+            "explicit",
+        ]))
+        .unwrap_or_else(|err| panic!("{err}"));
         assert!(!output.status.success());
         let error = String::from_utf8_lossy(&output.stderr);
         assert!(
@@ -626,19 +630,17 @@ fn explicit_flat_tree_conflicts_are_refused_before_dispatch() {
             "{error}"
         );
     }
-    let output = fixture
-        .process(&[
-            "spec",
-            "project-analysis",
-            "--spec",
-            "not-read.yaml",
-            "--tree-modules",
-            "explicit",
-            "--out",
-            "not-written",
-        ])
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(&mut fixture.process(&[
+        "spec",
+        "project-analysis",
+        "--spec",
+        "not-read.yaml",
+        "--tree-modules",
+        "explicit",
+        "--out",
+        "not-written",
+    ]))
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(!output.status.success());
     let error = String::from_utf8_lossy(&output.stderr);
     assert!(

@@ -146,7 +146,8 @@ fn sequenced_initializer_rejection_names_source_unit_location_rule_and_escape_ha
         [cause["source_unit_id"].as_str().unwrap()]
     .as_str()
     .expect("sequenced cause has runnable source inspection");
-    let inspected = Command::new("sh").arg("-c").arg(command).output().unwrap();
+    let inspected = process::output(Command::new("sh").arg("-c").arg(command))
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         inspected.status.success(),
         "{}",

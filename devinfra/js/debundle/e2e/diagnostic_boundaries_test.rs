@@ -238,7 +238,8 @@ fn progress_environment_controls_every_phase_without_changing_json() {
         if let Some(value) = value {
             command.env("DUCKTAPE_DEBUNDLE_PROGRESS", value);
         }
-        let result = command.output().unwrap();
+        let result = debundle_e2e_support::process::debundle_output(&mut command)
+            .unwrap_or_else(|err| panic!("{err}"));
         assert!(
             result.status.success(),
             "{}",

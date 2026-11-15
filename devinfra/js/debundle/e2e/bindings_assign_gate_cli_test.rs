@@ -1,7 +1,7 @@
 //! Real JS/spec workflows for assignment validation and atomic edits.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{parse_stdout_json, run_debundle, write_text_file};
+use debundle_e2e_support::{parse_stdout_json, process, run_debundle, write_text_file};
 use std::fs;
 
 #[test]
@@ -91,7 +91,7 @@ fn empty_assign_batch_does_not_parse_or_change_the_tree() {
         "json",
     ]);
     command.env_remove("DEBUNDLE_GRAPH");
-    let output = command.output().unwrap();
+    let output = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "{}",

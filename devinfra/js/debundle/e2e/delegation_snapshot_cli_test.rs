@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 
 fn checked(command: &mut Command) -> Value {
-    let output = command.output().expect("execute debundle");
+    let output = debundle_e2e_support::process::debundle_output(command)
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "{}",
@@ -28,11 +29,12 @@ fn create(graph: &Path, destination: &Path) -> Value {
 }
 
 fn verify(directory: &Path) -> Output {
-    Command::new(debundler_path())
-        .args(["snapshot", "verify"])
-        .arg(directory)
-        .output()
-        .expect("verify snapshot")
+    debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["snapshot", "verify"])
+            .arg(directory),
+    )
+    .expect("verify snapshot")
 }
 
 fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
@@ -126,7 +128,9 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     assert!(argv.contains(&"--packages-root"));
     assert!(argv.contains(&"--fail-fast"));
     assert!(!argv.iter().any(|arg| arg.starts_with("__packages_root__=")));
-    let replay = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    let replay =
+        debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
+            .unwrap();
     assert!(
         replay.status.success(),
         "{}",
@@ -161,13 +165,14 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
 
     let original_output_parent = TempDir::new().unwrap();
     let original_out = original_output_parent.path().join("outside output");
-    let original = Command::new(debundler_path())
-        .args(["run", "--graphs"])
-        .args(tree_spec_args(fixture.root()))
-        .arg("--out-root")
-        .arg(&original_out)
-        .output()
-        .unwrap();
+    let original = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["run", "--graphs"])
+            .args(tree_spec_args(fixture.root()))
+            .arg("--out-root")
+            .arg(&original_out),
+    )
+    .unwrap();
     assert!(
         original.status.success(),
         "{}",
@@ -192,20 +197,21 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let mut yaml = fs::read_to_string(&module).unwrap();
     yaml.push_str("# changed after snapshot\n");
     fs::write(&module, yaml).unwrap();
-    let stale = Command::new(debundler_path())
-        .args(["--spec-root"])
-        .arg(spec_root)
-        .arg("--graph-source-root")
-        .arg(graph_source_root)
-        .args(["coverage", "--graph"])
-        .arg(graph)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--source-root")
-        .arg(source_root)
-        .args(["--format", "json"])
-        .output()
-        .unwrap();
+    let stale = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["--spec-root"])
+            .arg(spec_root)
+            .arg("--graph-source-root")
+            .arg(graph_source_root)
+            .args(["coverage", "--graph"])
+            .arg(graph)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--source-root")
+            .arg(source_root)
+            .args(["--format", "json"]),
+    )
+    .unwrap();
     assert_eq!(
         stale.status.code(),
         Some(1),
@@ -237,11 +243,12 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
         spec_root.to_str().unwrap()
     );
 
-    let replay = Command::new(argv[0])
-        .args(&argv[1..])
-        .current_dir(spec_root)
-        .output()
-        .unwrap();
+    let replay = debundle_e2e_support::process::debundle_output(
+        Command::new(argv[0])
+            .args(&argv[1..])
+            .current_dir(spec_root),
+    )
+    .unwrap();
     assert!(
         replay.status.success(),
         "{}",
@@ -250,20 +257,21 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
     let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json.gz");
     assert!(refreshed_graph.is_file());
     assert!(out_root.join("app/main/entry.js").is_file());
-    let refreshed = Command::new(debundler_path())
-        .args(["--spec-root"])
-        .arg(spec_root)
-        .arg("--graph-source-root")
-        .arg(graph_source_root)
-        .args(["coverage", "--graph"])
-        .arg(&refreshed_graph)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--source-root")
-        .arg(source_root)
-        .args(["--format", "json"])
-        .output()
-        .unwrap();
+    let refreshed = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["--spec-root"])
+            .arg(spec_root)
+            .arg("--graph-source-root")
+            .arg(graph_source_root)
+            .args(["coverage", "--graph"])
+            .arg(&refreshed_graph)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--source-root")
+            .arg(source_root)
+            .args(["--format", "json"]),
+    )
+    .unwrap();
     assert!(
         refreshed.status.success(),
         "{}",
@@ -339,20 +347,21 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     .unwrap();
 
     fs::remove_dir_all(&fixture.out_root).unwrap();
-    let original = Command::new(debundler_path())
-        .args(["run", "--graphs"])
-        .args(tree_spec_args(fixture.root()))
-        .arg("--package-root")
-        .arg(format!("fixture-package={}", package.path().display()))
-        .arg("--package-root")
-        .arg(format!(
-            "fixture-directory-package={}",
-            directory_package.path().display()
-        ))
-        .arg("--out-root")
-        .arg(&fixture.out_root)
-        .output()
-        .unwrap();
+    let original = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["run", "--graphs"])
+            .args(tree_spec_args(fixture.root()))
+            .arg("--package-root")
+            .arg(format!("fixture-package={}", package.path().display()))
+            .arg("--package-root")
+            .arg(format!(
+                "fixture-directory-package={}",
+                directory_package.path().display()
+            ))
+            .arg("--out-root")
+            .arg(&fixture.out_root),
+    )
+    .unwrap();
     assert!(
         original.status.success(),
         "{}",
@@ -376,7 +385,9 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
         .iter()
         .map(|arg| arg.as_str().unwrap())
         .collect();
-    let replay = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    let replay =
+        debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
+            .unwrap();
     assert!(
         replay.status.success(),
         "{}",
@@ -429,13 +440,14 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
     let graph = fixture.report_root.join("main/dependency_graph.json.gz");
     create(&graph, &destination);
     let before = fs::read(destination.join("snapshot.json")).unwrap();
-    let repeated = Command::new(debundler_path())
-        .args(["snapshot", "create", "--graph"])
-        .arg(&graph)
-        .arg("--destination")
-        .arg(&destination)
-        .output()
-        .unwrap();
+    let repeated = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["snapshot", "create", "--graph"])
+            .arg(&graph)
+            .arg("--destination")
+            .arg(&destination),
+    )
+    .unwrap();
     assert!(!repeated.status.success());
     assert_eq!(fs::read(destination.join("snapshot.json")).unwrap(), before);
 
@@ -445,13 +457,14 @@ fn stale_inputs_and_existing_destinations_do_not_publish_or_overwrite_snapshots(
     )
     .unwrap();
     let stale_destination = workers.path().join("stale worker");
-    let stale = Command::new(debundler_path())
-        .args(["snapshot", "create", "--graph"])
-        .arg(&graph)
-        .arg("--destination")
-        .arg(&stale_destination)
-        .output()
-        .unwrap();
+    let stale = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["snapshot", "create", "--graph"])
+            .arg(&graph)
+            .arg("--destination")
+            .arg(&stale_destination),
+    )
+    .unwrap();
     assert!(!stale.status.success());
     assert!(!stale_destination.exists());
     assert!(verify(&destination).status.success());
@@ -522,13 +535,14 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     )
     .unwrap();
     fs::remove_dir_all(&fixture.out_root).unwrap();
-    let original = Command::new(debundler_path())
-        .args(["run", "--graphs"])
-        .args(tree_spec_args(fixture.root()))
-        .arg("--out-root")
-        .arg(&fixture.out_root)
-        .output()
-        .unwrap();
+    let original = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["run", "--graphs"])
+            .args(tree_spec_args(fixture.root()))
+            .arg("--out-root")
+            .arg(&fixture.out_root),
+    )
+    .unwrap();
     assert!(
         original.status.success(),
         "{}",
@@ -538,13 +552,14 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("browser worker");
     let nested_destination = fixture.root().join("snapshot/worker");
-    let nested = Command::new(debundler_path())
-        .args(["snapshot", "create", "--graph"])
-        .arg(fixture.report_root.join("main/dependency_graph.json.gz"))
-        .arg("--destination")
-        .arg(&nested_destination)
-        .output()
-        .unwrap();
+    let nested = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(["snapshot", "create", "--graph"])
+            .arg(fixture.report_root.join("main/dependency_graph.json.gz"))
+            .arg("--destination")
+            .arg(&nested_destination),
+    )
+    .unwrap();
     assert!(!nested.status.success());
     assert!(!nested_destination.exists());
     let report = create(
@@ -559,7 +574,9 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
         .iter()
         .map(|arg| arg.as_str().unwrap())
         .collect();
-    let replay = Command::new(argv[0]).args(&argv[1..]).output().unwrap();
+    let replay =
+        debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
+            .unwrap();
     assert!(
         replay.status.success(),
         "{}",

@@ -1,6 +1,7 @@
 //! Module trees of a tree-authored spec: several trees may scope to one chunk,
 //! and every chunk's selectors resolve as one program.
 
+use debundle_e2e_support::process;
 use debundle_e2e_support::{
     TreeFixture, TreeRun, assert_module_exports, assert_module_source, debundler_path,
     read_chunk_selector_outcomes, run_tree_fixture, tree_spec_args,
@@ -40,13 +41,14 @@ fn assert_failed(run: &TreeRun) {
 
 fn rerun_tree(run: &TreeRun, output_dir: &str) -> std::process::Output {
     let root = run.root();
-    Command::new(debundler_path())
-        .args(["run"])
-        .args(tree_spec_args(root))
-        .arg("--out-root")
-        .arg(root.join(output_dir))
-        .output()
-        .unwrap()
+    process::debundle_output(
+        Command::new(debundler_path())
+            .args(["run"])
+            .args(tree_spec_args(root))
+            .arg("--out-root")
+            .arg(root.join(output_dir)),
+    )
+    .unwrap_or_else(|err| panic!("{err}"))
 }
 
 fn assert_duplicate_config_rejected(run: &TreeRun, yaml: &str, output_dir: &str) {

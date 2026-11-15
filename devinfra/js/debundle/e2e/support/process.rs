@@ -3,30 +3,32 @@
 use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt;
-use std::io;
-use std::process::{Command, Output};
+use std::io::{self, Write};
+use std::process::{Command, Output, Stdio};
+use std::thread;
 
 const PURITY_COMPLETION_DISAGREEMENT: &str = "purity-completion-disagreement";
 
-/// Details for a child process that could not be spawned.
+/// A child process could not be started or its output could not be collected.
 #[derive(Debug)]
-pub struct SpawnError {
+pub struct ProcessError {
+    operation: &'static str,
     command: String,
     cwd: String,
     source: io::Error,
 }
 
-impl fmt::Display for SpawnError {
+impl fmt::Display for ProcessError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "failed to spawn command {} in cwd {}: {}",
-            self.command, self.cwd, self.source
+            "failed to {} command {} in cwd {}: {}",
+            self.operation, self.command, self.cwd, self.source,
         )
     }
 }
 
-impl Error for SpawnError {
+impl Error for ProcessError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         Some(&self.source)
     }
@@ -36,21 +38,64 @@ impl Error for SpawnError {
 ///
 /// A normal nonzero exit is returned in [`Output`]. Only spawn failures are
 /// errors, with the requested command and working directory attached.
-pub fn output(command: &mut Command) -> Result<Output, SpawnError> {
+pub fn output(command: &mut Command) -> Result<Output, ProcessError> {
     let description = describe_command(command);
     let cwd = describe_cwd(command);
-    command.output().map_err(|source| SpawnError {
+    command.output().map_err(|source| ProcessError {
+        operation: "spawn or collect output from",
         command: description,
         cwd,
         source,
     })
 }
 
+/// Run a child while sending exact input bytes to its stdin and retaining its
+/// exact output bytes and exit status. Stdout and stderr are captured into the
+/// returned [`Output`].
+///
+/// The writer runs concurrently with output collection, so a child that writes
+/// to stdout or stderr before reading all input cannot fill an unread pipe.
+pub fn output_with_input(command: &mut Command, input: &[u8]) -> Result<Output, ProcessError> {
+    let description = describe_command(command);
+    let cwd = describe_cwd(command);
+    let mut child = command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|source| ProcessError {
+            operation: "spawn",
+            command: description.clone(),
+            cwd: cwd.clone(),
+            source,
+        })?;
+    let mut stdin = child.stdin.take().expect("stdin was configured as a pipe");
+    let input = input.to_owned();
+    let writer = thread::spawn(move || stdin.write_all(&input));
+    let output_result = child.wait_with_output();
+    let input_result = writer
+        .join()
+        .unwrap_or_else(|_| Err(io::Error::other("stdin writer thread panicked")));
+    let output = output_result.map_err(|source| ProcessError {
+        operation: "collect output from",
+        command: description.clone(),
+        cwd: cwd.clone(),
+        source,
+    })?;
+    input_result.map_err(|source| ProcessError {
+        operation: "write stdin for",
+        command: description,
+        cwd,
+        source,
+    })?;
+    Ok(output)
+}
+
 /// Run a Debundle CLI, analyzer or projector and check its shared E2E invariant.
 ///
 /// Keep this explicit at Debundle invocation boundaries. Runtime observations
 /// from Node and Bun use [`output`] and remain independent of this check.
-pub fn debundle_output(command: &mut Command) -> Result<Output, SpawnError> {
+pub fn debundle_output(command: &mut Command) -> Result<Output, ProcessError> {
     let output = output(command)?;
     assert_debundle_invariants(&output);
     Ok(output)
@@ -112,6 +157,18 @@ mod tests {
         assert_eq!(result.status.code(), Some(17));
         assert_eq!(result.stdout, b"out");
         assert_eq!(result.stderr, b"err");
+    }
+
+    #[test]
+    fn output_with_input_preserves_stdin_and_stdout_bytes() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "cat"]);
+        let result = super::output_with_input(&mut command, &[0xff, b'\n'])
+            .expect("spawn shell and send stdin");
+
+        assert!(result.status.success());
+        assert_eq!(result.stdout, [0xff, b'\n']);
+        assert!(result.stderr.is_empty());
     }
 
     #[test]

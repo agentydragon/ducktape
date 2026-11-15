@@ -22,9 +22,9 @@ use std::fs;
 use debundle_e2e_support::{
     BindingGroup, Fixture, FixtureOpts, Member, assert_entry_output,
     assert_generated_module_after_entry_script, assert_module_source, logical_module,
-    logical_module_with_binding_groups, outcomes, parse_stdout_json, read_selector_outcomes,
-    run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture, run_match_selector,
-    run_source_only_validate, run_spec_validate, run_synthesize_selectors,
+    logical_module_with_binding_groups, outcomes, parse_stdout_json, process,
+    read_selector_outcomes, run_dry_run_fixture, run_dry_run_rejection_fixture, run_fixture,
+    run_match_selector, run_source_only_validate, run_spec_validate, run_synthesize_selectors,
     source_match_module_yaml, write_text_file, write_validate_fixture_spec,
 };
 use serde_json::{Value, json};
@@ -1095,7 +1095,7 @@ fn selector_commands_share_source_path_selection_without_changing_env_support() 
             if env {
                 command.env("DEBUNDLE_SOURCE_ROOT", root.path());
             }
-            command.output().unwrap()
+            process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"))
         };
         for args in [
             vec!["--source-file", "chunk.js"],
