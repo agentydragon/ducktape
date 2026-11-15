@@ -898,7 +898,7 @@ fn cross_module_pure_import_emits_no_s_cycle() {
 const A = wrap(function () { return "a"; });
 const B = wrap(function () { return "b"; });
 const C = wrap(function () { return "c"; });
-console.log(A, B, C);
+console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.impl()]]));
 export { A, B, C };
 "#,
             vec![
@@ -911,9 +911,26 @@ export { A, B, C };
             "export function wrap(f) { return { kind: \"wrapped\", impl: f }; }\n",
         )]),
     );
-    // The build accepting (no S-cycle rejection) is the assertion; confirm the
-    // peel actually emitted the split modules.
-    assert!(fixture.entry_path.exists());
+    assert_imported_wrapper_values_and_ownership(&fixture);
+}
+
+fn assert_imported_wrapper_values_and_ownership(fixture: &Fixture) {
+    assert_preserved_entry_output(
+        fixture,
+        "[[\"wrapped\",\"a\"],[\"wrapped\",\"b\"],[\"wrapped\",\"c\"]]\n",
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &["A", "C"],
+        &["B"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["B"],
+        &["A", "C"],
+    );
 }
 
 #[test]
@@ -928,7 +945,7 @@ fn cross_module_pure_import_follows_transitive_static_import_closure() {
 const A = wrap(function () { return "a"; });
 const B = wrap(function () { return "b"; });
 const C = wrap(function () { return "c"; });
-console.log(A, B, C);
+console.log(JSON.stringify([[A.kind, A.impl()], [B.kind, B.impl()], [C.kind, C.impl()]]));
 export { A, B, C };
 "#,
             vec![
@@ -948,7 +965,7 @@ export function callWrap(f) { return wrap(f); }\n",
             ),
         ]),
     );
-    assert!(fixture.entry_path.exists());
+    assert_imported_wrapper_values_and_ownership(&fixture);
 }
 
 #[test]
@@ -1348,7 +1365,7 @@ function B() { return 2; }
 B.displayName = "B";
 function C() { return 3; }
 C.displayName = "C";
-console.log(A, B, C);
+console.log(JSON.stringify([[A.displayName, A()], [B.displayName, B()], [C.displayName, C()]]));
 export { A, B, C };
 "#;
 
@@ -1388,7 +1405,29 @@ fn annotation_property_writes_with_policy_co_locate_and_realize() {
         FixtureOpts::new(ANNOTATION_WRITE_ENTRY, annotation_write_modules())
             .with_local_property_effects(),
     );
-    assert!(fixture.entry_path.exists());
+    assert_preserved_entry_output(&fixture, "[[\"A\",1],[\"B\",2],[\"C\",3]]\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &[
+            "function A()",
+            "function C()",
+            "A.displayName = \"A\";",
+            "C.displayName = \"C\";",
+        ],
+        &["function B()", "B.displayName ="],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["function B()", "B.displayName = \"B\";"],
+        &[
+            "function A()",
+            "function C()",
+            "A.displayName =",
+            "C.displayName =",
+        ],
+    );
 }
 
 #[test]
