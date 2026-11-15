@@ -50,6 +50,12 @@ systemd owns each component's distinct scope. Runtime opens its lifecycle store 
 COSI scope intent; process starts wait for the scope controller to fence prior owned services.
 See <../SPEC.md#durable-state-and-recovery> for storage, startup barriers and containment boundaries.
 
+Use History APIs to inspect live Session events. A read-only SQLite connection with an unfinished
+`SELECT` still holds a `SHARED` lock: decoding a full journal while its cursor remains open can block
+a DELETE-mode `COMMIT` until the writer fails. SQL diagnostics belong on a consistent offline copy,
+not a live Runtime journal. An ordinary file copy of an actively written database and its sidecars
+does not establish a consistent snapshot.
+
 The stdout reader commits in groups (`Journal.WithBatch`): the lines one pipe read delivered and the
 Events derived from them share a transaction, so a burst of output costs one commit rather than one
 per Event. It commits early before writing to the harness, so the record precedes the write, and

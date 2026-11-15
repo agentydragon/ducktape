@@ -580,6 +580,58 @@ func TestFailedCommitReleasesSQLiteLocks(t *testing.T) {
 	}
 }
 
+func TestUnfinishedReadOnlyScanFailsCommitAndLeavesJournalFailed(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "journal.sqlite")
+	journal, err := Open(ctx, path, "test-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = journal.Close() })
+	event := &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{Line: "retained frame"}}}
+	for range 2 {
+		if _, err := journal.Append(ctx, event, AppendOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := journal.RecoveryState()
+	reader, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	// A diagnostic decoder can hold this cursor open while processing each row,
+	// even though it opened read-only and never explicitly began a transaction.
+	rows, err := reader.QueryContext(ctx, "SELECT cursor, payload FROM event_entry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = rows.Close() })
+	if !rows.Next() {
+		t.Fatalf("read first retained row: %v", rows.Err())
+	}
+	staged := false
+	err = journal.WithBatch(ctx, func(ctx context.Context) error {
+		_, err := journal.Append(ctx, event, AppendOptions{})
+		staged = err == nil
+		return err
+	})
+	var storageErr *StorageError
+	var sqliteErr *sqlite.Error
+	if !staged || !errors.As(err, &storageErr) || !errors.As(err, &sqliteErr) || sqliteErr.Code() != sqlite3.SQLITE_BUSY {
+		t.Fatalf("commit behind unfinished scan: staged=%t, err=%v", staged, err)
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := journal.RecoveryState(); got != before {
+		t.Fatalf("failed commit changed checkpoint: before=%+v after=%+v", before, got)
+	}
+	if _, err := journal.Append(ctx, event, AppendOptions{}); !errors.Is(err, ErrFailed) {
+		t.Fatalf("journal after reader released its lock: %v", err)
+	}
+}
+
 func TestJournalSealReopensWithDurableReopenEvent(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "journal.sqlite")
