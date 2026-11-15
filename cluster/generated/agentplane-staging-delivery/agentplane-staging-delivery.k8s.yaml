@@ -358,6 +358,21 @@ data:
         cert_file: /run/agentplane/runner-tls/tls.crt
         key_file: /run/agentplane/runner-tls/tls.key
         ca_file: /run/agentplane/runner-tls/ca.crt
+    dispatcher_service_delegation:
+      actors:
+        - spiffe_id: spiffe://agentplane/actions
+          connection_provenance: false
+      methods:
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeModel
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ChangeReasoningEffort
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/InterruptTurn
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches
+        - /agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch
     dispatcher_service_callers:
       - spiffe://agentplane/app
       - spiffe://agentplane/notifications
@@ -377,6 +392,15 @@ data:
       - spiffe://agentplane/app
     environment_service_operators:
       - spiffe://agentplane/app
+    environment_service_delegation:
+      actors:
+        - spiffe_id: spiffe://agentplane/actions
+          connection_provenance: false
+      methods:
+        - /agentplane.environments.v1.EnvironmentService/ListEnvironments
+        - /agentplane.environments.v1.EnvironmentService/GetEnvironment
+        - /agentplane.environments.v1.EnvironmentService/WatchEnvironment
+        - /agentplane.environments.v1.EnvironmentService/ResumeEnvironment
     delegation:
       actor: agentplane-staging/actions
       identity_callers: true

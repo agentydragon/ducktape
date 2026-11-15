@@ -90,7 +90,7 @@ flowchart LR
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
-    actions -->|caller-delegated EnvironmentService list/get: gRPC| gw
+    actions -->|delegated EnvironmentService list/get/resume: gRPC, service actor grant available| gw
     actions -->|Session reads: broker or delegated caller, gRPC| hs
     app -->|gRPC| egress
     app --> electric

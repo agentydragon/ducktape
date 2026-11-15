@@ -235,6 +235,18 @@ def test_actions_delegation_is_explicit_for_each_receiving_backend(staging_manif
         "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
         "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
     ]
+    service_methods = set()
+    for key, prefix in (
+        ("dispatcher_service_delegation", "/agentplane.runner_gateway.dispatcher.SessionDispatcher/"),
+        ("environment_service_delegation", "/agentplane.environments.v1.EnvironmentService/"),
+    ):
+        grant = gateway[key]
+        assert grant["actors"] == [{"spiffe_id": ACTIONS_URI, "connection_provenance": False}]
+        assert grant["methods"] == [method for method in gateway_delegation["methods"] if method.startswith(prefix)]
+        service_methods.update(grant["methods"])
+    assert service_methods == set(gateway_delegation["methods"])
+    assert ACTIONS_URI not in gateway["operator_service_callers"]
+
     history_delegation = history["delegation"]
     assert history_delegation["actor"] == actions_account
     assert "caller_namespaces" not in history_delegation

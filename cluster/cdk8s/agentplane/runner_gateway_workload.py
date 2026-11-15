@@ -32,6 +32,7 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener as workload_listener
 from agentplane.net.peertls.config import (
+    ACTIONS_URI,
     APP_URI,
     CENTRAL_SAMPLER_URI,
     GATEWAY_ENVIRONMENTS_URI,
@@ -45,7 +46,13 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     ServiceSPIFFEID,
 )
-from agentplane.runner_gateway.settings import CentralSamplerTarget, DelegationSettings, Settings
+from agentplane.runner_gateway.settings import (
+    CentralSamplerTarget,
+    DelegationSettings,
+    ServiceDelegation,
+    ServiceDelegator,
+    Settings,
+)
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -261,6 +268,8 @@ class RunnerGateway(Construct):
         assert serving_tls.key_file is not None
         assert serving_tls.ca_file is not None
         delegation = None
+        dispatcher_service_delegation = None
+        environment_service_delegation = None
         if delegation_actor is not None:
             delegation = DelegationSettings(
                 actor=_account(delegation_actor),
@@ -281,6 +290,23 @@ class RunnerGateway(Construct):
                     "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
                     "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
                     *extra_delegated_methods,
+                ),
+            )
+            actor = ServiceDelegator(spiffe_id=ACTIONS_URI, connection_provenance=False)
+            dispatcher_service_delegation = ServiceDelegation(
+                actors=(actor,),
+                methods=tuple(
+                    method
+                    for method in delegation.methods
+                    if method.startswith("/agentplane.runner_gateway.dispatcher.SessionDispatcher/")
+                ),
+            )
+            environment_service_delegation = ServiceDelegation(
+                actors=(actor,),
+                methods=tuple(
+                    method
+                    for method in delegation.methods
+                    if method.startswith("/agentplane.environments.v1.EnvironmentService/")
                 ),
             )
         static_settings = Settings(
@@ -322,6 +348,8 @@ class RunnerGateway(Construct):
             environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
             environment_launchers=frozenset(map(_account, environment_launchers)),
             delegation=delegation,
+            dispatcher_service_delegation=dispatcher_service_delegation,
+            environment_service_delegation=environment_service_delegation,
             gateway_callers=gateway_accounts,
             wake_callers=wake_accounts or None,
             operator_callers=operator_accounts or None,
