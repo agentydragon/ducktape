@@ -108,6 +108,7 @@ func testServiceCertificateAdmissionAndDelegation(t *testing.T, serviceOnly bool
 		{name: "legacy delegated token cannot supplement certificate", tls: actorTLS, md: metadata.Pairs("authorization", "Agentplane-Delegated valid-token", auth.DelegationMetadataKey, string(encoded)), code: codes.Unauthenticated},
 		{name: "duplicate envelope", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(encoded), auth.DelegationMetadataKey, string(encoded)), code: codes.Unauthenticated},
 		{name: "malformed envelope", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, "broken"), code: codes.Unauthenticated},
+		{name: "legacy ServiceAccount effective caller", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(legacyServiceAccountEnvelope())), code: codes.Unauthenticated},
 		{name: "replaced effective Identity", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(wrongEncoded)), code: codes.PermissionDenied},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

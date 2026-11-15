@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
@@ -57,7 +56,7 @@ func TestSVIDResolvesTheRecordsSubjectAndPod(t *testing.T) {
 }
 
 // A standing workload's record has no owner and no binding: it proves its subject and no Pod, and a
-// reviewed-caller method admits it without one.
+// direct workload boundary admits it without one.
 func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 	workload, leaf := svidWorkload(t)
 	record := workload.Record
@@ -77,23 +76,15 @@ func TestSVIDResolvesAStandingWorkloadWithoutAPod(t *testing.T) {
 		t.Fatalf("principal = %#v, %v; want %#v", got, err, want)
 	}
 
-	resolver, err := newResolver(t, api.TokenReviews()).WithListenerAuthentication(authlistener.Config{
-		ListenAddress: "test",
-		TLS:           &authlistener.TLS{CertFile: "/test/tls.crt", KeyFile: "/test/tls.key"},
-		Auth:          []authlistener.Authentication{&authlistener.SPIFFEAuth{CAFile: "/test/ca.pem"}},
-	}, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
 	ctx := peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{
 		State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}},
 	}})
-	caller, err := resolver.ResolveSubject(ctx)
+	caller, err := svids.ResolveSubject(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if caller != want {
-		t.Fatalf("reviewed caller = %#v, want standing Identity subject %#v", caller, want)
+		t.Fatalf("caller = %#v, want standing Identity subject %#v", caller, want)
 	}
 }
 
