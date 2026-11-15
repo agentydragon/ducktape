@@ -62,7 +62,8 @@ func ValidateServiceCallers(callers []string) error {
 }
 
 // Services admits only verified client SVIDs in the exact service allowlist.
-// An empty list admits nobody; bearer and workload credentials are refused.
+// An empty list grants no direct access; service delegation requires its own grant.
+// Bearer and workload credentials are refused.
 func Services(callers []string) (Rule, error) {
 	return (Rule{kind: ruleServices}).AllowServiceCallers(callers)
 }
@@ -86,8 +87,8 @@ func (r Rule) AllowServiceCallers(callers []string) (Rule, error) {
 // AllowServiceDelegationFrom grants only service actors, independently of direct
 // callers and legacy token actors. The effective caller always remains an Identity.
 func (r Rule) AllowServiceDelegationFrom(actors []ServiceDelegator, identities IdentityUIDReader) (Rule, error) {
-	if !r.admitsIdentityCallers() || identities == nil || len(actors) == 0 {
-		return Rule{}, fmt.Errorf("service delegation requires an Identity-admitting rule, Identity reader and actors")
+	if (!r.admitsIdentityCallers() && r.kind != ruleServices) || identities == nil || len(actors) == 0 {
+		return Rule{}, fmt.Errorf("service delegation requires a service or Identity-admitting rule, Identity reader and actors")
 	}
 	callers := make([]string, 0, len(actors))
 	for _, actor := range actors {
