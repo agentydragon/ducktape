@@ -10,7 +10,6 @@ import (
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -21,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,25 +35,9 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
 	service, _ := newService(t, Timing{IdleAck: time.Hour, SilenceLimit: 2 * time.Hour})
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
-	rpc := listener.Config{
-		ListenAddress: "127.0.0.1:0",
-		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
-		Auth: []listener.Authentication{
-			&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile},
-			&listener.KubernetesBearerAuth{Audiences: []string{testAudience}},
-		},
-	}
-	resolver, err = resolver.WithListenerAuthentication(rpc, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS, err := rpc.ServerCredentials(transport.HistoryIngressURI)
+	serverTLS, err := serverCredentials.WorkloadServerTLSConfig(transport.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +45,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.SVIDOrAccounts(resolver, nil)}
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnySubject(svids)}
 	var pushHandlers atomic.Int32
 	server := grpc.NewServer(
 		grpc.ChainStreamInterceptor(methods.StreamInterceptor(time.Second), func(server any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
@@ -70,7 +54,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 			}
 			return handler(server, stream)
 		}),
-		grpc.Creds(serverTLS),
+		grpc.Creds(credentials.NewTLS(serverTLS)),
 	)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(listener) }()
@@ -80,7 +64,7 @@ func TestSVIDKeepsTheFirstWriterIdentityGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	idleService := &Service{History: service.History, Timing: Timing{IdleAck: testTiming.IdleAck, SilenceLimit: time.Hour}}
-	idleServer := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
+	idleServer := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(idleServer, idleService)
 	go func() { _ = idleServer.Serve(idleListener) }()
 	t.Cleanup(idleServer.Stop)
@@ -214,21 +198,8 @@ func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri
 	if err != nil {
 		t.Fatal(err)
 	}
-	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
 	serverCredentials := ca.Issue(t, transport.HistoryIngressURI)
-	rpc := listener.Config{
-		ListenAddress: "127.0.0.1:0",
-		TLS:           &listener.TLS{CertFile: serverCredentials.CertFile, KeyFile: serverCredentials.KeyFile},
-		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverCredentials.CAFile}},
-	}
-	principals, err = principals.WithListenerAuthentication(rpc, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverTLS, err := rpc.ServerCredentials(transport.HistoryIngressURI)
+	serverTLS, err := serverCredentials.WorkloadServerTLSConfig(transport.HistoryIngressURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,8 +207,8 @@ func serveSVIDIngress(t *testing.T, service *Service, namespace string) func(uri
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.SVIDOrAccounts(principals, nil)}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverTLS))...)
+	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: auth.AnySubject(svids)}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
 	go func() { _ = server.Serve(socket) }()
 	t.Cleanup(server.Stop)
