@@ -55,8 +55,14 @@ the [live-test instructions](#running-live) explain how to run them.
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
 own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
-cleanup. The storage case carries an explicit exclusivity marker and runs before the Pod pool is
-used. A case's timeout bounds its own coroutine, even while pytest is awaiting a different case.
+cleanup. The storage case carries an explicit exclusivity marker and runs before other Pod cases,
+so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
+even while pytest is awaiting a different case.
+
+The Pod pool owns every protocol-runner pair through fixture teardown; the batch runner alone limits
+concurrent cases to two. A fresh-guest case deletes every idle pair before opening its scripted,
+client, and Sandbox scopes. An active borrowed pair may finish alongside that case. Current Pod cases
+need at most four live test guests, within the retained node's capacity of five.
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and
@@ -84,8 +90,10 @@ for VM image layout and lifecycle.
 - `Agent.run` returns only after a completed turn. Non-completed statuses and a failed command or
   harness launch stop the case before assertions about tool effects; it does not replay admitted input.
 - Pod cases may reuse a pair of protocol runners, but each case creates fresh Sessions, HTTP streams
-  and model-request queues. Queue checks run when a case ends; a failed or cancelled lease destroys
-  the pair. Workspace storage runs alone before the pool is used ([`test_pod.py`](suites/test_pod.py),
+  and model-request queues. Queue checks run when a case ends; a body or identity-check failure, or
+  cancellation during that work, destroys the pair. If cancellation arrives while a clean borrow is
+  returning, the pool completes safe registration before surfacing cancellation. Workspace storage
+  runs alone before any pair is retained ([`test_pod.py`](suites/test_pod.py),
   [`pod_runners.py`](suites/pod_runners.py), [`pod_cases.py`](suites/pod_cases.py)).
 - Test markers must agree with the selected stack backend; deployment setup rejects scripted-model
   cases on the real-model stack and vice versa ([`pytest_plugin.py`](deployment/pytest_plugin.py)).

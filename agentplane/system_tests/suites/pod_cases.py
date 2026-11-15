@@ -39,10 +39,11 @@ class Resources:
     token: str
     scripted: ScriptedUpstream
     dispatcher: SessionDispatcherClient
-    borrow: pod_runners.Borrow
+    pool: pod_runners.Pool
 
     @asynccontextmanager
     async def open(self) -> AsyncIterator[tuple[Client, Sandboxes]]:
+        await self.pool.release_idle()
         async with (
             self.scripted.case_scope(),
             scenario.open_resources(self.cluster, self.base_url, self.token, tracer, native_diagnostics=False) as owned,
@@ -53,7 +54,7 @@ class Resources:
     async def shared(self) -> AsyncIterator[tuple[Client, pod_runners.Pair]]:
         # Settle the model queues before returning this pair to another case.
         async with (
-            self.borrow() as runners,
+            self.pool.borrow() as runners,
             self.scripted.case_scope(),
             Client.connect(base_url=self.base_url, token=self.token) as client,
         ):
@@ -263,7 +264,21 @@ async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(resources
 
 
 SCENARIOS = (
-    # CaseBatch runs storage exclusively first, then starts this first remaining case.
+    pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
+    pytest.param(
+        the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model
+    ),
+    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
+    pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
+    pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
+    pytest.param(
+        every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor, marks=pytest.mark.scripted_model
+    ),
+    pytest.param(
+        turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn,
+        marks=pytest.mark.scripted_model,
+    ),
+    # CaseBatch runs storage exclusively before the bounded shared/fresh case batch.
     pytest.param(
         operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_control,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
@@ -276,7 +291,6 @@ SCENARIOS = (
     pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
-    pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
     pytest.param(sandbox_cli_reaches_the_dispatcher_with_its_workload_svid, marks=pytest.mark.scripted_model),
     pytest.param(a_preset_launches_an_initialized_editable_codex_thread, marks=pytest.mark.scripted_model),
     pytest.param(cert_manager_reissues_a_deleted_tls_secret),
@@ -285,23 +299,7 @@ SCENARIOS = (
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],
     ),
     pytest.param(fresh_workspace_storage_survives_replacement, marks=pytest.mark.exclusive_case),
-    pytest.param(
-        the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model
-    ),
     pytest.param(codex_standing_instructions_after_suspend_and_compact, marks=pytest.mark.scripted_model),
     pytest.param(two_harness_threads_keep_their_context_after_sandbox_suspend_resume, marks=pytest.mark.scripted_model),
     pytest.param(an_unknown_history_session_is_not_found),
-    # The node holds five Sandboxes beside the stack, and the runner pool keeps every pair it creates
-    # until the suite ends. Two `shared` cases running together make a second pair, and an open case's
-    # two Sandboxes do not fit beside both, so adjacent `shared` cases go last.
-    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
-    pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
-    pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
-    pytest.param(
-        every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor, marks=pytest.mark.scripted_model
-    ),
-    pytest.param(
-        turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_input_its_own_turn,
-        marks=pytest.mark.scripted_model,
-    ),
 )

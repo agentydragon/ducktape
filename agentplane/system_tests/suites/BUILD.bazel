@@ -754,6 +754,7 @@ py_library(
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:session_pb2",
+        "//agentplane/system_tests/driver:cleanup",
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:scenario",
         "//agentplane/system_tests/driver:tracing",
@@ -909,5 +910,20 @@ py_library(
         "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+    ],
+)
+
+py_test(
+    name = "test_pod_runners",
+    srcs = ["test_pod_runners.py"],
+    deps = [
+        ":pod_runners",
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
