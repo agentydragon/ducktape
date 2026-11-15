@@ -12,15 +12,23 @@ from more_itertools import one
 from agentplane.action_service.settings import Settings as ActionSettings
 from agentplane.app.settings import Settings as AppSettings
 from agentplane.environments.settings import Settings
-from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, SANDBOX_CONTROLLER_URI, SESSION_DISPATCHER_URI
+from agentplane.net.peertls.config import (
+    ACTIONS_URI,
+    APP_URI,
+    GATEWAY_RUNTIME_PROXY_URI,
+    SANDBOX_CONTROLLER_URI,
+    SESSION_DISPATCHER_URI,
+)
 from agentplane.runner_gateway.settings import Settings as GatewaySettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
     app,
+    central_sampler,
     egress,
     environment_sandbox,
     environment_service,
+    notifications,
     runner_gateway,
     sandbox_controller,
     staging,
@@ -288,6 +296,46 @@ def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(
     assert verbs("", "serviceaccounts") == {"get", "list", "watch"}
 
 
+def test_runtime_proxy_receiver_matches_existing_service_grants_and_separates_binding_identity(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
+    controller = Settings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
+        )
+    )
+    gateway = GatewaySettings.model_validate(
+        yaml.safe_load(
+            _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
+        )
+    )
+    assert controller.environment_service is not None
+    proxy = controller.environment_service.runtime_proxy
+    assert proxy is not None
+    assert "audience" not in proxy.model_dump(mode="json")
+    assert set(proxy.readers) == set(gateway.runtime_proxy_readers)
+    assert set(proxy.session_callers) == set(gateway.runtime_proxy_session_callers)
+    assert set(proxy.controller_callers) == set(gateway.runtime_proxy_controller_callers)
+    assert set(proxy.executor_callers) == set(gateway.executor_service_callers)
+    assert proxy.runner_security.mode == "mtls"
+    assert controller.runner_security.mode == "mtls"
+    assert proxy.runner_security.tls.cert_file != controller.runner_security.tls.cert_file
+    certificate = _resource(
+        staging_manifests, "Certificate", f"{sandbox_controller.NAME}-runtime-proxy-client-workload"
+    )
+    assert certificate["spec"]["uris"] == [GATEWAY_RUNTIME_PROXY_URI]
+    deployment = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)
+    pod = deployment["spec"]["template"]["spec"]
+    volume = one(
+        volume
+        for volume in pod["volumes"]
+        if volume.get("secret", {}).get("secretName") == certificate["spec"]["secretName"]
+    )
+    mount = one(mount for mount in one(pod["containers"])["volumeMounts"] if mount["name"] == volume["name"])
+    assert mount["readOnly"]
+    assert proxy.runner_security.tls.cert_file == f"{mount['mountPath']}/tls.crt"
+
+
 def test_environment_receiver_network_reachability_matches_enabled_callers(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
@@ -303,7 +351,15 @@ def test_environment_receiver_network_reachability_matches_enabled_callers(
         )
         for source in rule.get("fromEndpoints", [])
     }
-    callers = [app.service(staging.ENV.namespace), egress.proxy(staging.ENV.namespace)]
+    callers = [
+        app.service(staging.ENV.namespace),
+        egress.proxy(staging.ENV.namespace),
+        runner_gateway.service(staging.ENV.namespace),
+        notifications.service(staging.ENV.namespace),
+        endpoint,
+    ]
+    if staging.ENV.central_sampler is not None:
+        callers.append(central_sampler.service(staging.ENV.namespace))
     if staging.ENV.actions.orchestration_v1 is not None or staging.ENV.actions.session_delegation is not None:
         callers.append(actions.service(staging.ENV.namespace))
     assert allowed == {caller.pods.selector["app.kubernetes.io/name"] for caller in callers}

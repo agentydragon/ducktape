@@ -477,3 +477,21 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "runtime_proxy",
+    srcs = ["runtime_proxy.py"],
+    deps = [
+        "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/grpc:calls",
+        "//agentplane/proto:session_pb2",
+        "//agentplane/runner_gateway:api",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:port_forward",
+        "//agentplane/system_tests/driver:tls",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+    ],
+)

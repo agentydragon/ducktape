@@ -62,6 +62,7 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     environment_sandbox,
+    environment_service,
     notifications,
     runner_gateway,
     sandbox_controller,
@@ -414,6 +415,7 @@ class RunnerGateway(Construct):
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
                 proxy.egress(),
+                environment_service.service(namespace).egress(),
                 EgressRule.to_endpoints(
                     environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
                 ),

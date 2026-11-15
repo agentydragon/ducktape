@@ -13,12 +13,12 @@ and guarded writes, with independent policy views and no Environments-to-Session
 Enabling `environment_service` requires the accepting Controller image to be pinned first; remove
 that configuration before rolling back to an image that cannot decode it.
 
-Optional `environment_service.runtime_proxy` also serves the existing Runtime proxy and Executor
-on every replica, with independent routing watches and narrow service SVID grants. Its outbound
-`runtime-proxy` certificate is separate from the Controller's binding observer certificate. Deployment
-configuration and callers keep the Gateway path until the receiver image and grants have rolled.
-See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
+Deployment enables `environment_service.runtime_proxy` to serve the existing Runtime proxy and
+Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
+service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
+binding observer certificate. Callers keep the Gateway target until this receiver's rollout is verified.
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
+See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs and, while running as the
 `Identity` its spec names, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
