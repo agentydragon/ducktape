@@ -68,8 +68,8 @@ func TestDispatchLineMapsUnknownStateToNamedUnknown(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(line, "UNKNOWN") || strings.Contains(line, "99") {
-			t.Fatalf("dispatchLine() = %q, want the named UNKNOWN state", line)
+		if !strings.Contains(line, "unknown") || strings.Contains(line, "99") {
+			t.Fatalf("dispatchLine() = %q, want the normalized unknown state", line)
 		}
 	}
 }

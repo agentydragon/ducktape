@@ -267,21 +267,29 @@ function normalizeDispatchResponseJson(value: JsonValue): JsonValue {
   return { ...value, dispatch: normalizeDispatchJson(value.dispatch) };
 }
 
-export function dispatchFromJson(value: unknown): Dispatch {
+function decodeDispatchFromJson(value: unknown, requireDestination: boolean): Dispatch {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Session Dispatcher returned an invalid Dispatch");
   }
   const normalized = normalizeDispatchJson(value);
   const row = normalized as Record<string, unknown>;
   if (
-    typeof row.commandId !== "string" ||
-    typeof row.sessionId !== "string" ||
+    (requireDestination && (typeof row.commandId !== "string" || typeof row.sessionId !== "string")) ||
     (typeof row.state !== "string" && typeof row.state !== "number")
   ) {
     throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
   }
   const dispatch = fromJson(DispatchSchema, normalized);
   return { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
+}
+
+export function dispatchFromJson(value: unknown): Dispatch {
+  return decodeDispatchFromJson(value, true);
+}
+
+/** Older local interrupt receipts omitted the command and Session fields. */
+export function savedInterruptResultFromJson(value: unknown): Dispatch {
+  return decodeDispatchFromJson(value, false);
 }
 
 /** A timeout, lost response, stale destination, or missing Sandbox does not prove an earlier
