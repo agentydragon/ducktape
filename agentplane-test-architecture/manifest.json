@@ -1,22 +1,22 @@
 {
-  "source_devel_commit": "aaa39328e439c7ceda96588ef7bd9b0d55c0125e",
-  "implementation_head_commit": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
+  "source_devel_commit": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
+  "implementation_head_commit": "22f982f5d9557f9844eb9058d62b79ae1e4e5754",
   "measured_implementation_commit": "49d109ff43eee720bfd84548330131bbbea0bd8d",
-  "audited_at_utc": "2026-11-15T10:56:40.111672+00:00",
+  "audited_at_utc": "2026-11-15T11:09:19.519616+00:00",
   "published_at_utc": null,
-  "scope": "Pinned experimental branch comparison plus independent devel port PR #16659. The six earlier 15-case actions and four new full 22-case actions are separate cohorts; complete required-feedback improvement remains unqualified.",
+  "scope": "Current experimental branch after rebasing onto the merged full-suite concurrency port; separate pinned 15-case and 22-case benchmark cohorts are preserved. No new timing trial or complete-feedback qualification.",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge.",
   "source_pr": "https://github.com/agentydragon/ducktape/pull/16489",
   "tracking_issue": "https://github.com/agentydragon/ducktape/issues/16099",
   "performance_goal_qualified": false,
-  "publication_base_gh_pages_commit": "196b4a5b4df4c3f9816ede2d837e0c33495c8a99",
+  "publication_base_gh_pages_commit": "f51409e51399ef32d95c1eb937b579293a425ca4",
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/196b4a5b4df4c3f9816ede2d837e0c33495c8a99/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/f51409e51399ef32d95c1eb937b579293a425ca4/agentplane-test-architecture/index.html",
+    "experiments": "https://github.com/agentydragon/ducktape/tree/22f982f5d9557f9844eb9058d62b79ae1e4e5754/agentplane/debug"
   },
-  "required_checks_passed": true,
+  "required_checks_passed": false,
   "report_sha256": "1d33aad58c9666b5b96a4bf8b7298585d8c7250ad425cfb15499a0d7e9e4140d",
-  "evidence_sha256": "680ac26063da6f690774402bea73cb6d3c626e9e474a5ef8c0a5ce6a3ff0bd89",
+  "evidence_sha256": "9caa48f2d1e96f4f3f725a4caf35342f841f10db11a482987d61b6e9ca09b330",
   "root_navigation_sha256": "f5dfa213826b74b2e5212336d771e875892666e05dd779c40cf67a82e938fee3",
   "shared_assets_sha256": {
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
@@ -24,57 +24,39 @@
   },
   "measured_source_archive_tag": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115",
   "visual_validation": {
-    "invocation": "https://app.buildbuddy.io/invocation/dfc96d99-da72-4824-a428-8f653940ca75",
+    "invocation": "https://app.buildbuddy.io/invocation/b8fe9150-3927-4d5d-966d-1949b93b23a5",
     "result": "PASSED; two real-browser cases; all eight captures manually reviewed",
     "viewport_widths_css_px": [1440, 390],
-    "coverage": "Real pinned CDN assets, desktop/mobile initial light/dark, live preference changes, table values and root navigation, no document horizontal overflow; deterministic_browser_context and VisualPage.capture.",
-    "source_head": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
-    "source_overlay": "Temporary preview package and frozen report archive only; report QA is separate from performance evidence.",
-    "preview_archive_sha256": "3e2be3a9f53f70fd49d460e30d97da09368c41b20256a4712bc1d7e1630a1c16",
+    "coverage": "Pinned CDN assets, desktop/mobile initial light/dark and live preference changes, visible new source pins and pending-CI badge, unchanged measurement table and root card; no document horizontal overflow.",
+    "browser_harness_source_commit": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
+    "source_overlay": "Temporary report preview package and frozen archive only; report QA is separate from rebased runtime validation.",
+    "preview_archive_sha256": "af9f705c539ecaf8ccaf90ed3ca4a6ad8509b3c4fa1a1b879d34aad2ef05e362",
     "capture_sha256": [
-      "140d607910a3e0e00a4b5e982c1292c76622261041eeee26bf3157a29496828b",
-      "2921f97851912bf34a75d89512a67b0a0dbc71f71c575c3e028bc0f857ccb309",
-      "dffdb29d5a3e92d08d5dba6e3d201206d450b3c8700fa1fe9dc40442cb187c8e",
-      "47166115f4bee69d021af9b6b521b84197519c6e948ff8e6b0f0cb4240a87394",
-      "3b12e0c59336b56f7d0b173fe0f1ed24b2e5567548a709158c6bd37684dc5162",
-      "2b294fb3af8780895dd7bc380d434fa83ffa20c85c0da8ff9d8b785a60774811",
-      "6e0f8ea876927812cf97cff8466c702c1a2ad19a4a7b916d1dcd0fc63a929e60",
-      "6810c71988a5ef4dd5a0934f4215aa23c89ec070ac176a5bf7f18e248e7bdd8d"
+      "757dd9fc706aa443aa2d919ce2d243c6c04a49aa9a72019c16721e47663f538c",
+      "9a3487cd5770c96b21799b97d9ddf8920ac261f81165b5fb9b1f617a4333eb9b",
+      "547edf2cc4b9c7cb72e455fe42afed13941fe7f4c1269d07b850b817162da407",
+      "682ba696ef3fce216a61f4da8922d68f0028426862429b4657aa87de9bab1ca9",
+      "481e60fdee5049c90e627cf2d05960a5d5df35f41bb216a0a4a8b89c0ceb079d",
+      "5531a709bb808f3b1db3dc2e4ebd682b7f4b1265cddd324316abe42c59696072",
+      "e3b5101cf4ef9a97c362553b87f11f734831acba3af12ca084c990555601ebd7",
+      "f14ca980fda2d14076faebd67caa7297b918a6d100adb780e0ebc68f9b13d8d8"
     ],
     "rendered_assets_sha256": {
       "agentplane-test-architecture/index.html": "1d33aad58c9666b5b96a4bf8b7298585d8c7250ad425cfb15499a0d7e9e4140d",
-      "agentplane-test-architecture/evidence.json": "680ac26063da6f690774402bea73cb6d3c626e9e474a5ef8c0a5ce6a3ff0bd89",
+      "agentplane-test-architecture/evidence.json": "9caa48f2d1e96f4f3f725a4caf35342f841f10db11a482987d61b6e9ca09b330",
       "index.html": "f5dfa213826b74b2e5212336d771e875892666e05dd779c40cf67a82e938fee3",
       "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
       "report.css": "0e902468b165b71f05fa63d3df18e2b3e16438d0c98c063dd94b8ca23cbafaaf"
     },
-    "manifest_post_capture_changes": "Visual proof metadata only; rendered audit stamp and assets unchanged.",
-    "earlier_preview_attempt": {
-      "invocation": "https://app.buildbuddy.io/invocation/80b73eb6-35ee-4d53-8a76-70dd5f4fae48",
-      "result": "Failed root-card readiness assertion because the copied preview expected the old word concurrency; corrected to the new all 22 cases text. Sibling manifests were also included in the final archive."
-    }
+    "manifest_post_capture_changes": "Visual proof metadata only; rendered audit stamp and assets unchanged."
   },
   "final_head_ci": {
-    "source_head": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
-    "status": "SUCCESS",
-    "verified_at_utc": "2026-11-15T10:22:17.055508+00:00",
-    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43702958335",
-    "invocation": "93c1b833-5432-5765-b2ea-eaaef5b52442",
-    "tested_merge": "f24717e1748790445c4eb1559e66653bc3ecac61",
-    "merge_parents": [
-      "37346bafb55c9d24ed41a9fd3981254bf8011309",
-      "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5"
-    ],
-    "test_target_summaries": 923,
-    "all_summaries_passed": true,
-    "all_fresh": false,
-    "rbe_internal_retry_count": "unknown",
-    "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43702958292",
-    "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43702958266",
-    "fresh_junit": {
-      "test_pod": 15,
-      "test_pod_platform": 7
-    }
+    "source_head": "22f982f5d9557f9844eb9058d62b79ae1e4e5754",
+    "status": "IN_PROGRESS",
+    "observed_at_utc": "2026-11-15T11:09:19.519616+00:00",
+    "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43707302660",
+    "precommit_status": "SUCCESS",
+    "artifact_import_status": "IN_PROGRESS"
   },
   "devel_port_source_commit": "d46827cb676f6e2c09044f6a3fce4a465440df0f",
   "devel_port_base_commit": "4cf5c0fc70082586047be40bc574ba6c755b0999",
@@ -104,5 +86,10 @@
     "precommit": "https://github.com/agentydragon/ducktape/actions/runs/43704519215",
     "artifact_import": "https://github.com/agentydragon/ducktape/actions/runs/43704519202",
     "scope": "Independent exact-head PR acceptance, not one of the four matched performance actions."
+  },
+  "devel_port_status": {
+    "pr": 16659,
+    "commit": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
+    "merged_at_utc": "2026-11-15T11:01:01Z"
   }
 }

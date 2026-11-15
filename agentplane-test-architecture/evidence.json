@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T10:56:40.111672+00:00",
+  "observed_at_utc": "2026-11-15T11:09:19.519616+00:00",
   "source": {
-    "base": "aaa39328e439c7ceda96588ef7bd9b0d55c0125e",
-    "head": "08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5",
+    "base": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
+    "head": "22f982f5d9557f9844eb9058d62b79ae1e4e5754",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -48,6 +48,11 @@
       "description": "Central-sampler LLM ingress uses service identity delegation; scripted requests route by verified Session attribution. The native client account remains explicit in the partitioned central scenarios.",
       "path": "agentplane/system_tests/driver/scripted_upstream.py",
       "label": "Verified Session routing"
+    },
+    {
+      "description": "Four Pod case slots and an explicit same-source experiment override, merged in PR #16659. The full 22-case devel screen and required PR check passed.",
+      "path": "agentplane/system_tests/suites/test_pod.py",
+      "label": "Pod case concurrency"
     }
   ],
   "remaining_changes": [
@@ -91,19 +96,13 @@
       "label": "Manual ordinary-pytest comparisons",
       "path": "agentplane/system_tests/suites/test_pod_sequential_spike.py",
       "change": "One unsharded control and two ordinary sequential pytest targets invoke the same scenario functions. All are manual experiments. The latest implementation uses devel\u2019s Worker owner.",
-      "retained": "All 15 case identities and marks are preserved; storage checks run first. Required CaseBatch now uses the measured four-worker bound."
-    },
-    {
-      "path": "agentplane/system_tests/suites/test_pod.py",
-      "label": "Four workers in one Pod stack",
-      "change": "Default the 15-case App Pod suite to four workers; an explicit test environment override supports identical-source experiments.",
-      "retained": "Same case bodies, Sessions, worker cleanup, exclusive storage ordering, Pod resources and outer executor request. Native-platform acceptance remains required separately."
+      "retained": "All 15 case identities and marks are preserved; storage checks run first. Required CaseBatch inherits the four-worker bound already on devel."
     }
   ],
   "next_steps": [
     {
       "title": "1. Qualify the four-worker setting in the real gate",
-      "action": "The larger unsplit devel inventory is now measured in independent PR #16659. Next measure a fixed-source selected required graph at two and four workers under concurrent CI demand.",
+      "action": "The larger unsplit devel inventory is measured and four slots landed in PR #16659. Next measure a fixed-source selected required graph at two and four slots under concurrent CI demand.",
       "acceptance": "Keep exact JUnit identities, resource requests/limits, cleanup and fresh Sessions; count complete required feedback, CPU, cold/warm conditions and failures. Do not generalize this two-run-per-setting warm action screen into a fleet reliability or 30% whole-PR claim."
     },
     {
@@ -123,33 +122,27 @@
     }
   ],
   "validation": {
-    "implementation_checks_passed": true,
-    "summary": "Experimental branch and devel port checks passed",
-    "detail": "All six fresh matched actions at benchmark source 49d109ff43eee720bfd84548330131bbbea0bd8d passed the same 15 JUnit cases, with identical input trees and executor properties. Each fixture completed cleanup. The displayed branch head changes the default to the tested four-worker setting and records the experiment; current-head required CI is recorded separately in the manifest. Existing scenario bodies, CaseBatch lifecycle machinery and resource settings are unchanged by this concurrency intervention. The independent devel port at d46827cb676f6e2c09044f6a3fce4a465440df0f also passed four fresh full 22-case actions plus required PR CI; these are separate from the earlier 15-case cohort.",
+    "implementation_checks_passed": false,
+    "summary": "Rebased-head CI in progress",
+    "detail": "Rebased head 22f982f5d9557f9844eb9058d62b79ae1e4e5754 includes devel b83d8b0f00cda1729fce43fc3085f343093bd1a2. Range-diff preserves the fixture and partition changes, drops the redundant concurrency knob commit, and retains updated experiment records. test_pod.py has no diff from devel. Fresh pre-commit passed; Bazel and artifact/import checks are still in progress at this snapshot. Earlier green runs remain commit-pinned evidence, not current-head validation.",
     "links": [
       {
-        "label": "Committed experiment record and reproduction commands",
-        "url": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
+        "label": "Rebased-head Bazel CI",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43707302660"
       },
       {
-        "label": "Permanent identical-source benchmark tag",
-        "url": "https://github.com/agentydragon/ducktape/tree/agentplane-pod-concurrency-20261115"
+        "label": "Rebased-head pre-commit passed",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43707302737"
       },
       {
-        "label": "Independent devel port and required CI",
+        "label": "Merged full-suite concurrency port",
         "url": "https://github.com/agentydragon/ducktape/pull/16659"
       }
-    ],
-    "explicit_build": {
-      "source": "d747cd1c39829b1e1a8fafde84594b7abeabcb05",
-      "invocation": "90016cc8-cbd7-4490-bbdb-9ab313dca925",
-      "targets": 5,
-      "status": "SUCCESS"
-    }
+    ]
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/9d3d923b0686c6e2dea570206e3a5bc6c416e212/agentplane-test-architecture/index.html",
-    "experiments": "https://github.com/agentydragon/ducktape/blob/08b3b7de08e28c94ee9c5fcd6ad7023ad29cd1b5/agentplane/debug/2026_11_15_pod_concurrency.md"
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/f51409e51399ef32d95c1eb937b579293a425ca4/agentplane-test-architecture/index.html",
+    "experiments": "https://github.com/agentydragon/ducktape/tree/22f982f5d9557f9844eb9058d62b79ae1e4e5754/agentplane/debug"
   },
   "limits": [
     "No fleet latency/reliability window refreshed.",
@@ -158,7 +151,7 @@
     "Complete required feedback and full historical PR selection have not been measured by the single-file selector screen.",
     "Selector and Pod timing screens predate the final Session-routing rebase; sources remain pinned. That integration is validated separately by current-head correctness checks."
   ],
-  "decision": "Keep four case slots in the independent devel port, PR #16659. All 22 cases passed in every matched run. Mean action time fell from 363.3s to 289.2s (20.4%); the case envelope fell 29.8%. Pod requests, memory limits and executor sizing stayed fixed. The App fixture and native partition work remains a separate draft experiment; complete-feedback qualification is open.",
+  "decision": "Four Pod case slots and the experiment override are now on devel via merged PR #16659. This rebased draft retains the explicit App fixture boundary, native suite partitions, checked Pod reuse and manual runner experiments. Fresh rebased-head CI is in progress; the complete-feedback goal remains unqualified.",
   "current_screens": [
     {
       "title": "Pinned configured runfiles",
@@ -847,7 +840,7 @@
       "Snapshot and ten-second sampling evidence is not exhaustive"
     ],
     "followups": [
-      "Full devel inventory comparison is recorded separately below; independent port PR #16659 awaits merge.",
+      "Full devel validation and independent port completed in merged PR #16659; the 22-case cohort is recorded separately.",
       "Measure the chosen setting in the selected required graph under concurrent demand",
       "Collect repeated warm/cold and failure observations before a reliability-rate claim"
     ]
@@ -1216,6 +1209,11 @@
         "four_slot_mean_action_seconds": 289.18868005275726,
         "relative_reduction": 0.13817457694147572
       }
+    },
+    "port_merge": {
+      "pr": 16659,
+      "commit": "b83d8b0f00cda1729fce43fc3085f343093bd1a2",
+      "merged_at_utc": "2026-11-15T11:01:01Z"
     }
   }
 }
