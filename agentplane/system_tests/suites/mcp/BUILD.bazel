@@ -132,6 +132,7 @@ py_test(
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:central_sampler",
+        "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -339,6 +340,7 @@ py_test(
         "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:port_forward",
         "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//grpcio",
         "@pypi//httpx",
         "@pypi//more_itertools",
@@ -401,11 +403,8 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
-        "//agentplane/system_tests/deployment:stack",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:operator_login",
         "//agentplane/system_tests/driver:policy_objects",
-        "@pypi//httpx",
         "@pypi//pytest",
     ],
 )
@@ -526,6 +525,7 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/scenarios:dcr",
         "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/suites/mcp:operator_fixtures",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -594,4 +594,15 @@ py_library(
 render_fixture(
     name = "mcp_services_manifests",
     renderer = ":mcp_services_deployment_bin",
+)
+
+py_library(
+    name = "operator_fixtures",
+    srcs = ["operator_fixtures.py"],
+    deps = [
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:operator_login",
+        "@pypi//httpx",
+        "@pypi//pytest",
+    ],
 )
