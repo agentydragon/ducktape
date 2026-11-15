@@ -148,6 +148,8 @@ class RunnerGateway(Construct):
         database_url: EnvValue,
         dispatcher_callers: Mapping[ServiceAccountRef, Pods],
         environment_launchers: Mapping[ServiceAccountRef, Pods],
+        environment_readers: frozenset[ServiceAccountRef] | None = None,
+        environment_managers: frozenset[ServiceAccountRef] | None = None,
         operator_callers: Mapping[ServiceAccountRef, Pods] | None = None,
         delegation_actor: ServiceAccountRef | None,
         extra_delegated_methods: tuple[str, ...] = (),
@@ -350,8 +352,12 @@ class RunnerGateway(Construct):
             environment_service_managers=frozenset({APP_URI}),
             environment_service_operators=operator_service_callers,
             wake_service_callers=wake_service_callers,
-            environment_readers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
-            environment_managers=frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
+            environment_readers=frozenset(map(_account, environment_readers))
+            if environment_readers is not None
+            else frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
+            environment_managers=frozenset(map(_account, environment_managers))
+            if environment_managers is not None
+            else frozenset({_account(ServiceAccountRef(namespace=namespace, name=app_component.NAME))}),
             environment_launchers=frozenset(map(_account, environment_launchers)),
             delegation=delegation,
             dispatcher_service_delegation=dispatcher_service_delegation,
