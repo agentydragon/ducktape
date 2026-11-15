@@ -24,6 +24,122 @@ fn project(spec: &Path, out: &Path) -> Vec<u8> {
     fs::read(out).unwrap()
 }
 
+#[test]
+fn combined_flat_projection_matches_both_standalone_artifacts() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "export const value = 42;",
+        vec![logical_module("values", &[Member::new("value")])],
+    ));
+    let expected_apply = staged.root().join("standalone.apply.json");
+    assert_ok(
+        &command(&[
+            "spec",
+            "project-apply",
+            "--spec",
+            path(&staged.spec),
+            "--projection-root",
+            path(staged.root()),
+            "--out",
+            path(&expected_apply),
+        ]),
+        "standalone flat apply projection",
+    );
+    let combined_analysis = staged.root().join("combined.analysis");
+    let combined_apply = staged.root().join("combined.apply.json");
+    assert_ok(
+        &command_with(
+            &projector_path(),
+            &[
+                "--spec",
+                path(&staged.spec),
+                "--out",
+                path(&combined_analysis),
+                "--apply-out",
+                path(&combined_apply),
+                "--projection-root",
+                path(staged.root()),
+            ],
+        ),
+        "combined flat projection",
+    );
+    assert_eq!(
+        fs::read(combined_analysis).unwrap(),
+        fs::read(&staged.projection).unwrap()
+    );
+    assert_eq!(
+        fs::read(combined_apply).unwrap(),
+        fs::read(expected_apply).unwrap()
+    );
+}
+
+#[test]
+fn combined_tree_projection_matches_standalone_with_distinct_output_roots() {
+    let staged = staged_tree(
+        &[("main", "export const value = 42;")],
+        &[(
+            "values.yaml",
+            "members:\n  - selector: { binding: { name: value } }\n",
+        )],
+    );
+    let combined_root = staged.root().join("combined-out");
+    let standalone_root = staged.root().join("standalone-out");
+    let combined_analysis = staged.root().join("combined.analysis");
+    let combined_apply = staged.root().join("combined.apply.json");
+    let standalone_apply = staged.root().join("standalone.apply.json");
+    let common = [
+        "--tree-config",
+        path(&staged.config),
+        "--tree-modules",
+        path(&staged.modules),
+        "--tree-vendor-marks",
+        path(&staged.vendor_marks),
+        "--tree-source-root",
+        path(staged.root()),
+    ];
+    let combined_args: Vec<&str> = common
+        .iter()
+        .copied()
+        .chain([
+            "--out-root",
+            path(&combined_root),
+            "--out",
+            path(&combined_analysis),
+            "--apply-out",
+            path(&combined_apply),
+            "--projection-root",
+            path(staged.root()),
+        ])
+        .collect();
+    assert_ok(
+        &command_with(&projector_path(), &combined_args),
+        "combined tree projection",
+    );
+    let standalone_args: Vec<&str> = ["spec", "project-apply"]
+        .into_iter()
+        .chain(common.iter().copied())
+        .chain([
+            "--out-root",
+            path(&standalone_root),
+            "--out",
+            path(&standalone_apply),
+            "--projection-root",
+            path(staged.root()),
+        ])
+        .collect();
+    assert_ok(
+        &command(&standalone_args),
+        "standalone tree apply projection",
+    );
+    assert_eq!(
+        fs::read(combined_analysis).unwrap(),
+        fs::read(&staged.projection).unwrap()
+    );
+    assert_eq!(
+        fs::read(combined_apply).unwrap(),
+        fs::read(standalone_apply).unwrap()
+    );
+}
+
 // Unlike saved_analysis::tree, retain every provenance field and byte.
 fn exact_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {

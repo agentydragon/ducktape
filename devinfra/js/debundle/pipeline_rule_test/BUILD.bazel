@@ -63,6 +63,22 @@ debundle_apply(
 )
 
 debundle_apply(
+    name = "tree_extra_spec_input",
+    analysis = ":analysis",
+    input_data = [":source"],
+    package_roots = {":package_root": "fixture-package"},
+    spec_tree_inputs = [
+        ":spec",
+        "flat_spec.yaml",
+    ],
+    tags = ["manual"],
+    tree_config = "fixture/config.yaml",
+    tree_modules = "fixture/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "fixture/vendor_marks.yaml",
+)
+
+debundle_apply(
     name = "flat_projection_inputs",
     analysis = ":analysis",
     input_data = [":source"],
@@ -83,8 +99,9 @@ apply_projection_inputs_test(
         "fixture/config.yaml",
         "fixture/modules/main/values.yaml",
         "fixture/vendor_marks.yaml",
+        "flat_spec.yaml",
     ],
-    target_under_test = ":tree_projection_inputs",
+    target_under_test = ":tree_extra_spec_input",
 )
 
 apply_projection_inputs_test(
@@ -263,6 +280,12 @@ shared_analysis_test(
         "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:a",
         "//devinfra/js/debundle/pipeline_rule_test/shared_analysis:b",
     ],
+)
+
+shared_analysis_test(
+    name = "same_spec_different_packages_test",
+    target_under_test = ":analysis",
+    variants = [":tree_projection_inputs"],
 )
 
 py_test(

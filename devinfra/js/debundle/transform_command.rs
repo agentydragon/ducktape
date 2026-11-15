@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use clap::{ArgMatches, Args as ClapArgs, parser::ValueSource};
 use package_args::{collect_package_roots, parse_package_root_kv};
-use pipeline::{RunOutput, TransformRequest, TransformSpecSource, project_analysis};
+use pipeline::{RunOutput, TransformRequest, TransformSpecSource, project_analysis_and_apply};
 use spec_tree::CompileSpecTreeOptions;
 
 /// Arguments for the standalone projection executable and
@@ -17,6 +17,12 @@ pub struct ProjectAnalysisArgs {
     /// Where to write the projection.
     #[arg(long)]
     out: PathBuf,
+    /// Also write the canonical apply projection from the same parsed spec.
+    #[arg(long)]
+    apply_out: Option<PathBuf>,
+    /// Root used to make paths in the apply projection relocatable.
+    #[arg(long, default_value = ".")]
+    projection_root: PathBuf,
 }
 
 impl ProjectAnalysisArgs {
@@ -24,7 +30,14 @@ impl ProjectAnalysisArgs {
     /// analysis projection.
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
-            project_analysis(&self.transform.context.resolve()?, &self.out, diagnostics)
+            project_analysis_and_apply(
+                &self.transform.context.resolve()?,
+                &self.out,
+                self.apply_out
+                    .as_ref()
+                    .map(|out| (self.projection_root.as_path(), out.as_path())),
+                diagnostics,
+            )
         })
     }
 }

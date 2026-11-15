@@ -28,7 +28,7 @@ def _pipeline_report_flags_test_impl(ctx):
     target = analysistest.target_under_test(env)
     actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
     baseline = {action.mnemonic: action for action in ctx.attr.baseline[_BaselineActions].actions}
-    expected_actions = ["DebundleApply", "DebundleProjectApply"]
+    expected_actions = ["DebundleApply"]
     if ctx.attr.readable:
         expected_actions.append("DebundleExportGraphs")
     asserts.equals(env, sorted(expected_actions), sorted(actions))
@@ -84,26 +84,17 @@ def _pipeline_report_flags_test_impl(ctx):
     analyzed = [file for file in groups.analysis.to_list() if file.extension == "analysis"][0]
     native_inputs = groups.native_inputs.to_list()
     projected = groups.apply_projection.to_list()[0]
-    projection_spec_inputs = [
-        file
-        for file in actions["DebundleProjectApply"].inputs.to_list()
-        if file.basename not in ["debundle", "debundle.runfiles"]
-    ]
     apply_source_inputs = [
         file
         for file in actions["DebundleApply"].inputs.to_list()
         if file not in [analyzed, projected] and file.basename not in ["debundle", "debundle.runfiles"]
     ]
-    expected_native_inputs = depset(projection_spec_inputs + apply_source_inputs).to_list()
     pipeline_inputs = actions["DebundleApply"].inputs.to_list()
     asserts.false(env, any([file.extension in ["yaml", "yml"] for file in pipeline_inputs]))
     asserts.true(env, projected in pipeline_inputs)
-    asserts.equals(env, [projected], actions["DebundleProjectApply"].outputs.to_list())
-    asserts.equals(
-        env,
-        sorted([file.path for file in expected_native_inputs]),
-        sorted([file.path for file in native_inputs]),
-    )
+    asserts.true(env, any([file.extension in ["yaml", "yml"] for file in native_inputs]))
+    for file in apply_source_inputs:
+        asserts.true(env, file in native_inputs)
     asserts.false(env, analyzed in native_inputs)
     asserts.false(env, any([file.basename == "debundle" for file in native_inputs]))
     if ctx.attr.readable:
@@ -196,9 +187,12 @@ analysis_identity_inputs_test = analysistest.make(_analysis_identity_inputs_test
 
 def _shared_analysis_test_impl(ctx):
     env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
     actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
     asserts.equals(env, ["DebundleAnalyze", "DebundleProjectAnalysis"], sorted(actions))
     analyzed = actions["DebundleAnalyze"].outputs.to_list()[0]
+    projected_analysis = [file for file in actions["DebundleProjectAnalysis"].outputs.to_list() if file.extension == "analysis_projection"][0]
+    projected_apply = [file for file in actions["DebundleProjectAnalysis"].outputs.to_list() if file.extension == "apply_projection"][0]
     analysis_inputs = actions["DebundleAnalyze"].inputs.to_list()
     asserts.true(env, any([file.basename == "debundle_analyze" for file in analysis_inputs]))
     asserts.false(env, any([file.extension in ["yaml", "yml"] for file in analysis_inputs]))
@@ -206,10 +200,15 @@ def _shared_analysis_test_impl(ctx):
     project_inputs = actions["DebundleProjectAnalysis"].inputs.to_list()
     asserts.true(env, any([file.basename == "debundle_project_analysis" for file in project_inputs]))
     asserts.false(env, any([file.basename in ["debundle", "debundle_analyze"] for file in project_inputs]))
+    asserts.equals(env, [projected_analysis, projected_apply], actions["DebundleProjectAnalysis"].outputs.to_list())
+    asserts.true(env, projected_analysis in analysis_inputs)
+    asserts.false(env, projected_apply in analysis_inputs)
+    asserts.equals(env, [projected_apply], target[OutputGroupInfo].apply_projection.to_list())
     for variant in ctx.attr.variants:
         applied = {action.mnemonic: action for action in variant[_BaselineActions].actions}
-        asserts.equals(env, ["DebundleApply", "DebundleProjectApply"], sorted(applied))
+        asserts.equals(env, ["DebundleApply"], sorted(applied))
         asserts.true(env, analyzed in applied["DebundleApply"].inputs.to_list())
+        asserts.true(env, projected_apply in applied["DebundleApply"].inputs.to_list())
     return analysistest.end(env)
 
 shared_analysis_test = analysistest.make(
