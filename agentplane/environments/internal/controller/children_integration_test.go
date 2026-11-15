@@ -328,7 +328,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	}
 	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
 	// The app and Runner Gateway hold patch on Sandboxes but not sandboxes/status: neither the main
-	// resource's status nor credential annotations on the Sandbox can rebind the runner credential.
+	// resource's status nor credential annotations on the Sandbox can rebind the Environment Runtime credential.
 	var pod corev1.Pod
 	var bound sandboxapi.RunnerCredential
 	eventually(t, func() bool {
@@ -344,7 +344,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if tlsVolume < 0 || pod.Spec.Volumes[tlsVolume].Projected == nil || !slices.ContainsFunc(pod.Spec.Volumes[tlsVolume].Projected.Sources, func(source corev1.VolumeProjection) bool {
 		return source.ConfigMap != nil && source.ConfigMap.Name == EnvironmentRuntimeWorkloadTrustBundleName && slices.Equal(source.ConfigMap.Items, []corev1.KeyToPath{{Key: EnvironmentRuntimeTrustBundleKey, Path: EnvironmentRuntimeWorkloadTrustFile}})
 	}) {
-		t.Fatalf("runner Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, EnvironmentRuntimeWorkloadTrustFile)
+		t.Fatalf("Environment Runtime Pod volumes = %#v, want the workload CA projected as %s", pod.Spec.Volumes, EnvironmentRuntimeWorkloadTrustFile)
 	}
 	const otherID = "fedcba9876543210fedcba9876543210"
 	if err := objects.Patch(ctx, sandbox, client.RawPatch(types.MergePatchType, fmt.Appendf(nil, `{

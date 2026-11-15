@@ -776,7 +776,7 @@ func TestGetReturnsTheCanonicalSandboxAndCurrentPodProjection(t *testing.T) {
 	sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: "vm-launcher", UID: "pod-uid-current"}
 	sandbox.Status.Conditions = []metav1.Condition{{
 		Type: sandboxapi.ConditionReady, Status: metav1.ConditionTrue, Reason: "RuntimeReady",
-		Message: "runner is accepting work", LastTransitionTime: createdAt,
+		Message: "Environment Runtime is accepting work", LastTransitionTime: createdAt,
 	}}
 	suspendedBy := sandboxapi.SuspendedByIdle
 	sandbox.Status.SuspendedBy = &suspendedBy

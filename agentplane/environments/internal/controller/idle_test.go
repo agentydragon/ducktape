@@ -17,10 +17,10 @@ import (
 
 const idleSuspendAfter = 10 * time.Minute
 
-// The runner's clock is an hour behind the controller's, which the idle timer must not read.
+// The Environment Runtime's clock is an hour behind the controller's, which the idle timer must not read.
 var runtimeIdleSince = testNow.Add(-time.Hour)
 
-// publishIdleSince simulates the runner's idle fact in a fresh Runtime snapshot.
+// publishIdleSince simulates the Environment Runtime's idle fact in a fresh Runtime snapshot.
 func publishIdleSince(t *testing.T, r *Reconciler, at *time.Time) {
 	t.Helper()
 	updateRuntimeFacts(t, r, func(facts *EnvironmentRuntimeFacts) {
@@ -64,7 +64,7 @@ func setIdleSuspendAfter(t *testing.T, c client.Client, after *time.Duration) {
 	}
 }
 
-// idleRuntime is a running Sandbox whose runner has gone idle, with a clock the test advances through now.
+// idleRuntime is a running Sandbox whose Environment Runtime has gone idle, with a clock the test advances through now.
 func idleRuntime(t *testing.T, after *time.Duration) (r *Reconciler, c client.Client, now *time.Time) {
 	t.Helper()
 	r, c = runningWithRuntime(t)
@@ -117,7 +117,7 @@ func TestARuntimeIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 	quiescer.result = QuiesceResult{Quiescing: true}
 
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != expectedIdleRecheck(idleSuspendAfter) {
-		t.Fatalf("first sight of the idle runner: quiesce calls = %d, requeue = %v; want 0 and the next idle or connection check", quiescer.calls, result.RequeueAfter)
+		t.Fatalf("first sight of the idle Environment Runtime: quiesce calls = %d, requeue = %v; want 0 and the next idle or connection check", quiescer.calls, result.RequeueAfter)
 	}
 	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(testNow.Add(idleSuspendAfter)); got == nil || !got.Equal(&want) {
 		t.Fatalf("idleSuspendAt = %v, want %v", got, want)
@@ -132,7 +132,7 @@ func TestARuntimeIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if quiescer.calls != 1 || quiescer.ifIdleSince == nil || !quiescer.ifIdleSince.Equal(runtimeIdleSince) {
-		t.Fatalf("quiesce calls = %d, ifIdleSince = %v; want one request carrying the runner's idle-since", quiescer.calls, quiescer.ifIdleSince)
+		t.Fatalf("quiesce calls = %d, ifIdleSince = %v; want one request carrying the Environment Runtime's idle-since", quiescer.calls, quiescer.ifIdleSince)
 	}
 	suspended := getSandbox(t, c)
 	if suspended.Status.SuspendedBy == nil || *suspended.Status.SuspendedBy != sandboxapi.SuspendedByIdle ||
@@ -150,7 +150,7 @@ func TestARuntimeIdleForIdleSuspendAfterSuspendsItsSandbox(t *testing.T) {
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("the idle Sandbox kept its Pod after its runner sealed")
+		t.Fatal("the idle Sandbox kept its Pod after its Environment Runtime sealed")
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("suspending an idle Sandbox deleted its state PVC")
@@ -250,7 +250,7 @@ func TestRuntimeReconnectWithSameIdleSinceRestartsTheFullIdleCountdown(t *testin
 	*now = now.Add(8 * time.Minute)
 	reconnectRuntimeSnapshot(t, r)
 	if result := reconcileResult(t, r); quiescer.calls != 0 || result.RequeueAfter != expectedIdleRecheck(idleSuspendAfter) {
-		t.Fatalf("reconnected runner with the same idle-since: quiesce calls = %d, requeue = %v; want 0 and a full countdown", quiescer.calls, result.RequeueAfter)
+		t.Fatalf("reconnected Environment Runtime with the same idle-since: quiesce calls = %d, requeue = %v; want 0 and a full countdown", quiescer.calls, result.RequeueAfter)
 	}
 	got := getSandbox(t, c).Status.IdleSuspendAt
 	wantReconnectDeadline := metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second))
@@ -296,7 +296,7 @@ func TestSettingIdleSuspendAfterOnAnAlreadyIdleSandboxCountsFromWhenTheControlle
 	publishIdleSince(t, r, &runtimeIdleSince)
 	reconcileOnce(t, r)
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 1 {
-		t.Fatalf("quiesce calls = %d, want 1: the runner had been idle longer than the new setting", calls)
+		t.Fatalf("quiesce calls = %d, want 1: the Environment Runtime had been idle longer than the new setting", calls)
 	}
 }
 
@@ -310,20 +310,20 @@ func TestARuntimeThatWorksAgainRestartsTheIdleTimer(t *testing.T) {
 	publishIdleSince(t, r, nil)
 	reconcileOnce(t, r)
 	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
-		t.Fatalf("idleSuspendAt = %v while runner is busy, want absent", got)
+		t.Fatalf("idleSuspendAt = %v while the Environment Runtime is busy, want absent", got)
 	}
 	workDone := now.Add(-time.Second)
 	publishIdleSince(t, r, &workDone)
 	reconcileOnce(t, r)
 	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(now.Add(idleSuspendAfter).Truncate(time.Second)); got == nil || !got.Equal(&want) {
-		t.Fatalf("idleSuspendAt = %v after runner became idle again, want %v", got, want)
+		t.Fatalf("idleSuspendAt = %v after the Environment Runtime became idle again, want %v", got, want)
 	}
 
 	*now = now.Add(idleSuspendAfter - time.Second)
 	publishIdleSince(t, r, &workDone)
 	reconcileOnce(t, r)
 	if quiescer.calls != 0 {
-		t.Fatal("the timer ran on from before the runner worked")
+		t.Fatal("the timer ran on from before the Environment Runtime worked")
 	}
 	*now = now.Add(time.Second)
 	publishIdleSince(t, r, &workDone)
@@ -366,7 +366,7 @@ func TestARuntimeThatRefusesToQuiesceKeepsItsSandboxRunningAndTheTimerStartsOver
 func TestAnUnreachableIdleRuntimeIsAskedAgainAtTheQuiesceDeadline(t *testing.T) {
 	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
 	quiescer := r.Quiescer.(*fakeQuiescer)
-	quiescer.err = errors.New("runner unreachable")
+	quiescer.err = errors.New("Environment Runtime unreachable")
 	reconcileOnce(t, r)
 	*now = now.Add(idleSuspendAfter)
 	publishIdleSince(t, r, &runtimeIdleSince)
@@ -375,7 +375,7 @@ func TestAnUnreachableIdleRuntimeIsAskedAgainAtTheQuiesceDeadline(t *testing.T) 
 		t.Fatalf("quiesce calls = %d, requeue = %v; want one failed request and a retry at the deadline", quiescer.calls, result.RequeueAfter)
 	}
 	if got, want := getSandbox(t, c).Status.IdleSuspendAt, metav1.NewTime(now.Add(quiesceDeadline).Truncate(time.Second)); got == nil || !got.Equal(&want) {
-		t.Fatalf("idleSuspendAt after an unreachable runner = %v, want %v", got, want)
+		t.Fatalf("idleSuspendAt after an unreachable Environment Runtime = %v, want %v", got, want)
 	}
 	if getSandbox(t, c).Status.OperatingMode != sandboxapi.OperatingModeRunning {
 		t.Fatal("a failed request suspended the Sandbox")
@@ -393,11 +393,11 @@ func TestAnUnreachableIdleRuntimeIsAskedAgainAtTheQuiesceDeadline(t *testing.T) 
 		t.Fatalf("quiesce calls = %d, mode = %s; want a second request that suspended the Sandbox", quiescer.calls, getSandbox(t, c).Status.OperatingMode)
 	}
 	if got := getSandbox(t, c).Status.IdleSuspendAt; got != nil {
-		t.Fatalf("idleSuspendAt = %v after the runner accepted suspension, want absent", got)
+		t.Fatalf("idleSuspendAt = %v after the Environment Runtime accepted suspension, want absent", got)
 	}
 }
 
-// A wake that lands while the runner enters lameduck leaves a runner that refuses every Session, so it is sealed
+// A wake that lands while the Environment Runtime enters lameduck leaves it refusing every Session, so it is sealed
 // and replaced rather than recorded as an idle suspension the wake would never end.
 func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 	r, c, now := idleRuntime(t, durationPtr(idleSuspendAfter))
@@ -425,12 +425,12 @@ func TestAWakeDuringTheIdleQuiesceReplacesTheIncarnation(t *testing.T) {
 	publishQuiesceStage(t, r, QuiesceDraining)
 	reconcileOnce(t, r)
 	if getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing || getPod(t, c) == nil {
-		t.Fatalf("a runner in lameduck was not sealed before it was replaced: stopStage = %q", getSandbox(t, c).Status.StopStage)
+		t.Fatalf("an Environment Runtime in lameduck was not sealed before it was replaced: stopStage = %q", getSandbox(t, c).Status.StopStage)
 	}
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {
-		t.Fatal("the woken Sandbox kept the incarnation whose runner quiesced")
+		t.Fatal("the woken Sandbox kept the incarnation whose Environment Runtime quiesced")
 	}
 }
 

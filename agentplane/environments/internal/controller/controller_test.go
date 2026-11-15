@@ -152,7 +152,7 @@ func reconcileOnce(t *testing.T, r *Reconciler) {
 			return
 		}
 	}
-	t.Fatalf("runner credential stayed pending after 5 fake-signer reconciles: %s", runningReason(t, r.Client))
+	t.Fatalf("Environment Runtime credential stayed pending after 5 fake-signer reconciles: %s", runningReason(t, r.Client))
 }
 
 func getSandbox(t *testing.T, c client.Client) *sandboxapi.Sandbox {
@@ -250,7 +250,7 @@ func TestSandboxIsReadyWhileItsPodIsReadyAndItsRuntimeConnected(t *testing.T) {
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Errorf("Ready = %s/%s with a Ready Pod and a connected runner, want True", got.Status, got.Reason)
+		t.Errorf("Ready = %s/%s with a Ready Pod and a connected Environment Runtime, want True", got.Status, got.Reason)
 	}
 	if got := getCondition(t, c, sandboxapi.ConditionWorkloadReady); got.Status != metav1.ConditionTrue {
 		t.Errorf("WorkloadReady = %s/%s, want True", got.Status, got.Reason)
@@ -338,7 +338,7 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 		t.Fatalf("Ready = %s/%s with a running bootstrap, want False/BootstrapRunning", got.Status, got.Reason)
 	}
 	if len(sandbox.Status.IdleSuspendBlockers) != 1 || sandbox.Status.IdleSuspendBlockers[0].Reason != sandboxapi.AutosuspendBlockerBootstrap {
-		t.Fatalf("blockers = %+v while the current runner is connected during bootstrap", sandbox.Status.IdleSuspendBlockers)
+		t.Fatalf("blockers = %+v while the current Environment Runtime is connected during bootstrap", sandbox.Status.IdleSuspendBlockers)
 	}
 	writes, resourceVersion := statusClient.statusUpdates, sandbox.ResourceVersion
 	reconcileOnce(t, r)
@@ -360,7 +360,7 @@ func TestAutosuspendBlockersRequireTheCurrentConnectedIncarnationAndDoNotChurn(t
 	r.Now = func() time.Time { return testNow.Add(2 * time.Minute) }
 	reconcileOnce(t, r)
 	if got := getSandbox(t, c).Status.IdleSuspendBlockers; len(got) != 0 {
-		t.Fatalf("expired runner facts were published: %+v", got)
+		t.Fatalf("expired Environment Runtime facts were published: %+v", got)
 	}
 	if got := getCondition(t, c, sandboxapi.ConditionEnvironmentRuntimeConnected); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
 		t.Fatalf("EnvironmentRuntimeConnected = %s/%s after Runtime state expired", got.Status, got.Reason)
@@ -397,7 +397,7 @@ func TestSandboxWhoseRuntimeNeverConnectedIsNotReady(t *testing.T) {
 		t.Errorf("Ready = %s/%s, want False/NeverConnected", got.Status, got.Reason)
 	}
 	if result.RequeueAfter != 0 {
-		t.Errorf("requeue = %s, want none: the RuntimeStates watch enqueues when the runner connects", result.RequeueAfter)
+		t.Errorf("requeue = %s, want none: the RuntimeStates watch enqueues when the Environment Runtime connects", result.RequeueAfter)
 	}
 }
 
@@ -422,7 +422,7 @@ func TestRuntimeObservationDropIsToleratedUntilTheGraceLapses(t *testing.T) {
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Fatalf("Ready = %s/%s with a connected runner, want True", got.Status, got.Reason)
+		t.Fatalf("Ready = %s/%s with a connected Environment Runtime, want True", got.Status, got.Reason)
 	}
 	// A lost stream remains connected through the one-minute reconnect grace.
 	r.Now = func() time.Time { return testNow.Add(45 * time.Second) }
@@ -733,7 +733,7 @@ func (f *fakeQuiescer) Quiesce(_ context.Context, _ *sandboxapi.Sandbox, ifIdleS
 	return f.result, f.err
 }
 
-// quiesceSessions is the runner publishing its completed stage after a connected Sandbox was asked to seal.
+// quiesceSessions is the Environment Runtime publishing its completed stage after a connected Sandbox was asked to seal.
 func quiesceSessions(t *testing.T, r *Reconciler) {
 	t.Helper()
 	publishQuiesceStage(t, r, QuiesceQuiesced)
@@ -805,7 +805,7 @@ func updateRuntimeFacts(t *testing.T, r *Reconciler, update func(*EnvironmentRun
 func TestDeletionSealsAnAcceptedIncarnationWithoutARuntimeSnapshot(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unavailable after controller takeover")
+	r.Quiescer.(*fakeQuiescer).err = errors.New("Environment Runtime unavailable after controller takeover")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
@@ -825,13 +825,13 @@ func TestDeletionWaitsForRuntimeToSealAndFlush(t *testing.T) {
 	connect(t, r, string(getPod(t, c).UID))
 	quiescer := r.Quiescer.(*fakeQuiescer)
 	deleteSandbox(t, c)
-	quiescer.err = errors.New("runner unreachable")
+	quiescer.err = errors.New("Environment Runtime unreachable")
 	result, err := r.Reconcile(context.Background(), request)
 	if err != nil || result.RequeueAfter != quiesceDeadline || quiescer.calls != 1 {
 		t.Fatalf("a failed quiesce schedules one bounded retry: calls=%d, %v, %v", quiescer.calls, result, err)
 	}
 	if getPod(t, c) == nil || meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, sandboxapi.ConditionQuiesced) {
-		t.Fatal("the Sandbox counted as sealed before the runner said so")
+		t.Fatal("the Sandbox counted as sealed before the Environment Runtime reported it")
 	}
 	quiescer.err = nil
 	quiescer.result = QuiesceResult{Quiescing: true}
@@ -843,7 +843,7 @@ func TestDeletionWaitsForRuntimeToSealAndFlush(t *testing.T) {
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("the Pod outlived a quiesced runner")
+		t.Fatal("the Pod outlived a quiesced Environment Runtime")
 	}
 }
 
@@ -858,14 +858,14 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	connect(t, r, string(getPod(t, c).UID))
-	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
+	r.Quiescer.(*fakeQuiescer).err = errors.New("Environment Runtime unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed the Pod or the state PVC before the Sessions were sealed")
 	}
 	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.Name != sandboxName || incarnation.UID != "uid-pod" {
-		t.Fatalf("deletion dropped the live runner route before it sealed: incarnation=%v", incarnation)
+		t.Fatalf("deletion dropped the live Environment Runtime route before it sealed: incarnation=%v", incarnation)
 	}
 	if stage := getSandbox(t, c).Status.StopStage; stage != sandboxapi.StopStageQuiescing {
 		t.Errorf("stopStage = %q, want Quiescing", stage)
@@ -923,7 +923,7 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	if getPVC(t, c) == nil {
 		t.Fatal("deleting a Sandbox deleted a state PVC it never created")
 	}
-	// It never had a state PVC, so never a runner or a Session to seal.
+	// It never had a state PVC, so never an Environment Runtime or a Session to seal.
 	if getPod(t, c) != nil {
 		t.Error("a Sandbox that never ran was started to seal")
 	}
@@ -933,7 +933,7 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	}
 }
 
-// runningWithRuntime is a running Sandbox whose Pod has a UID and whose runner connected from it.
+// runningWithRuntime is a running Sandbox whose Pod has a UID and whose Environment Runtime connected from it.
 func runningWithRuntime(t *testing.T) (*Reconciler, client.Client) {
 	t.Helper()
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
@@ -951,14 +951,14 @@ func runningWithRuntime(t *testing.T) (*Reconciler, client.Client) {
 func TestSuspensionWaitsForRuntimeToQuiesce(t *testing.T) {
 	r, c := runningWithRuntime(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
-	quiescer.err = errors.New("runner unreachable")
+	quiescer.err = errors.New("Environment Runtime unreachable")
 	setRunning(t, c, false)
 	result, err := r.Reconcile(context.Background(), request)
 	if err != nil || result.RequeueAfter == 0 {
 		t.Fatalf("a failed seal is asked again: %v, %v", result, err)
 	}
 	if getPod(t, c) == nil || getSandbox(t, c).Status.StopStage != sandboxapi.StopStageQuiescing {
-		t.Fatal("the Pod stopped before its runner sealed")
+		t.Fatal("the Pod stopped before its Environment Runtime sealed")
 	}
 
 	quiescer.err = nil
@@ -975,7 +975,7 @@ func TestSuspensionWaitsForRuntimeToQuiesce(t *testing.T) {
 	}
 }
 
-// publishQuiesceStage simulates the runner's current quiesce stage arriving in a Runtime snapshot.
+// publishQuiesceStage simulates the Environment Runtime's current quiesce stage arriving in a Runtime snapshot.
 func publishQuiesceStage(t *testing.T, r *Reconciler, stage QuiesceStage) {
 	t.Helper()
 	updateRuntimeFacts(t, r, func(facts *EnvironmentRuntimeFacts) {
@@ -1066,7 +1066,7 @@ func TestAQuiescedStageSealsTheSandboxWithoutAskingRuntime(t *testing.T) {
 		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
-		t.Errorf("asked a runner that reported itself quiesced %d times", calls)
+		t.Errorf("asked an Environment Runtime that reported itself quiesced %d times", calls)
 	}
 }
 
@@ -1098,7 +1098,7 @@ func TestAQuiescingRuntimeIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	if quiescer.calls != 1 {
-		t.Fatalf("asked %d times before the runner reported a stage, want 1", quiescer.calls)
+		t.Fatalf("asked %d times before the Environment Runtime reported a stage, want 1", quiescer.calls)
 	}
 	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-pod" || !attempt.AttemptedAt.Time.Equal(now) {
 		t.Fatalf("persisted quiesce attempt = %v, want uid-pod at %s", attempt, now)
@@ -1107,7 +1107,7 @@ func TestAQuiescingRuntimeIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 	publishQuiesceStage(t, r, QuiesceFlushing)
 	result, err := r.Reconcile(context.Background(), request)
 	if err != nil || quiescer.calls != 1 || result.RequeueAfter <= 0 || result.RequeueAfter > quiesceDeadline {
-		t.Fatalf("a runner reporting a stage is left alone until the deadline: calls=%d, %v, %v", quiescer.calls, result, err)
+		t.Fatalf("an Environment Runtime reporting a stage is left alone until the deadline: calls=%d, %v, %v", quiescer.calls, result, err)
 	}
 
 	now = now.Add(quiesceDeadline)
@@ -1159,17 +1159,17 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 		States:      NewRuntimeStates(nil, func() time.Time { return now }),
 		Credentials: r.Credentials, Now: func() time.Time { return now },
 	}
-	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
+	// A resume followed by another suspend continues this same Environment Runtime's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.
 	setRunning(t, c, true)
 	result, err = restarted.Reconcile(context.Background(), request)
 	if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
-		t.Fatalf("resume bypassed the runner's saved deadline: calls=%d, %v, %v", afterRestart.calls, result, err)
+		t.Fatalf("resume bypassed the Environment Runtime's saved deadline: calls=%d, %v, %v", afterRestart.calls, result, err)
 	}
 	setRunning(t, c, false)
 	result, err = restarted.Reconcile(context.Background(), request)
 	if err != nil || afterRestart.calls != 0 || result.RequeueAfter != quiesceDeadline {
-		t.Fatalf("a repeated suspend reopened the runner's retry budget: calls=%d, %v, %v", afterRestart.calls, result, err)
+		t.Fatalf("a repeated suspend reopened the Environment Runtime's retry budget: calls=%d, %v, %v", afterRestart.calls, result, err)
 	}
 	for _, event := range []string{"status update", "controller restart"} {
 		result, err = restarted.Reconcile(context.Background(), request)
@@ -1203,7 +1203,7 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 	}
 	reconcileOnce(t, restarted)
 	if getPod(t, c) != nil {
-		t.Fatal("the suspended Pod was removed before its runner reported quiesced")
+		t.Fatal("the suspended Pod was removed before its Environment Runtime reported quiesced")
 	}
 }
 
@@ -1225,7 +1225,7 @@ func TestFailedQuiesceAttemptStatusWriteDoesNotCallRuntime(t *testing.T) {
 		t.Fatalf("attempt status write error = %v, want conflict", err)
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
-		t.Fatalf("called runner %d times without a persisted attempt", calls)
+		t.Fatalf("called the Environment Runtime %d times without a persisted attempt", calls)
 	}
 	if getSandbox(t, c).Status.QuiesceAttempt != nil || getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("failed status write changed retry state or released deletion-protected state")
@@ -1244,7 +1244,7 @@ func TestQuiesceAttemptDoesNotThrottleANewRuntimeIncarnationDuringDeletion(t *te
 		t.Fatal("deletion did not keep the Pod and state PVC behind the failed quiesce")
 	}
 
-	// A replacement runner has a fresh credential, matching TLS Secret mount, and bound Pod UID; it
+	// A replacement Environment Runtime has a fresh credential, matching TLS Secret mount, and bound Pod UID; it
 	// must be asked immediately, even within the old deadline.
 	pod := getPod(t, c)
 	if err := c.Delete(context.Background(), pod); err != nil {
@@ -1277,16 +1277,16 @@ func TestQuiesceAttemptDoesNotThrottleANewRuntimeIncarnationDuringDeletion(t *te
 	}
 	reconcileOnce(t, r)
 	if quiescer.calls != 2 {
-		t.Fatalf("new runner was held to the old incarnation's deadline: calls=%d", quiescer.calls)
+		t.Fatalf("new Environment Runtime was held to the old incarnation's deadline: calls=%d", quiescer.calls)
 	}
 	if attempt := getSandbox(t, c).Status.QuiesceAttempt; attempt == nil || attempt.RunnerPodUID != "uid-next" {
-		t.Fatalf("new runner attempt = %v, want uid-next", attempt)
+		t.Fatalf("new Environment Runtime attempt = %v, want uid-next", attempt)
 	}
 	if incarnation := getSandbox(t, c).Status.Incarnation; incarnation == nil || incarnation.UID != "uid-next" {
 		t.Fatalf("bound replacement Pod route = %v, want UID uid-next (Running reason = %s)", incarnation, runningReason(t, c))
 	}
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
-		t.Fatal("deletion removed state before the new runner completed quiesce")
+		t.Fatal("deletion removed state before the new Environment Runtime completed quiesce")
 	}
 }
 
@@ -1303,7 +1303,7 @@ func TestSuspensionOfAnUnconnectedIncarnationSealsNothing(t *testing.T) {
 		t.Fatal("the Pod was held for a seal it had none to make")
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
-		t.Errorf("sealed %d times for an incarnation whose runner never connected", calls)
+		t.Errorf("sealed %d times for an incarnation whose Environment Runtime never connected", calls)
 	}
 }
 
@@ -1314,7 +1314,7 @@ func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("a resumed Sandbox kept the Pod whose runner sealed its Sessions")
+		t.Fatal("a resumed Sandbox kept the Pod whose Environment Runtime sealed its Sessions")
 	}
 }
 
@@ -1327,14 +1327,14 @@ func TestResumingWhileTheRuntimeQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
 	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, sandboxapi.ConditionReady) {
-		t.Fatal("a Sandbox whose runner refuses every Session read Ready while it was quiescing")
+		t.Fatal("a Sandbox whose Environment Runtime refuses every Session read Ready while it was quiescing")
 	}
 
 	quiescer.result = QuiesceResult{}
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {
-		t.Fatal("the resumed Sandbox kept the incarnation whose runner quiesced")
+		t.Fatal("the resumed Sandbox kept the incarnation whose Environment Runtime quiesced")
 	}
 }
 
@@ -1360,7 +1360,7 @@ func TestDeletingASuspendedSealedSandboxAsksNoRuntime(t *testing.T) {
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if got := r.Quiescer.(*fakeQuiescer).calls; got != calls || getPod(t, c) != nil {
-		t.Fatalf("seals %d -> %d, Pod present %v: the sealed runner is not asked again nor run once more", calls, got, getPod(t, c) != nil)
+		t.Fatalf("seals %d -> %d, Pod present %v: the sealed Environment Runtime is not asked again nor run once more", calls, got, getPod(t, c) != nil)
 	}
 }
 
@@ -1410,7 +1410,7 @@ func TestAStoppedSandboxIsSuspended(t *testing.T) {
 func TestControllerTakeoverConservativelySealsAcceptedIncarnation(t *testing.T) {
 	r, c := runningWithRuntime(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
-	quiescer.err = errors.New("runner unavailable after controller takeover")
+	quiescer.err = errors.New("Environment Runtime unavailable after controller takeover")
 	restarted := &Reconciler{
 		Client: c, Objects: c, KubeVirt: true, Quiescer: quiescer,
 		States:      NewRuntimeStates(nil, func() time.Time { return testNow }),

@@ -25,7 +25,7 @@ import (
 // quiesceTimeout bounds the whole idempotent handshake, including route-readiness retries.
 const quiesceTimeout = 30 * time.Second
 
-// GatewayQuiescer calls `Runner.Quiesce` through the stable Runner Gateway Service.
+// GatewayQuiescer calls the Environment Runtime's `Runner.Quiesce` RPC through the stable Runner Gateway Service.
 type GatewayQuiescer struct {
 	TLS *peertls.ClientTLS
 	// Target is a template of `{sandbox}` and `{namespace}`, typically

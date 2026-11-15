@@ -164,7 +164,7 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 		t.Fatalf("suspend replaced launcher or failed to request checkpoint: %v", got)
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
-		t.Fatalf("suspend quiesced the RAM-preserved runner %d times", calls)
+		t.Fatalf("suspend quiesced the RAM-preserved Environment Runtime %d times", calls)
 	}
 	status.state.Phase = "suspended"
 	if _, err := r.Reconcile(context.Background(), request); err != nil {
@@ -189,7 +189,7 @@ func TestFirecrackerReconcileSuspendsWithoutQuiescingOrDeletingPod(t *testing.T)
 		t.Fatalf("resume replaced launcher or failed to wake it: %v", got)
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
-		t.Fatalf("suspend/resume quiesced runner %d times", calls)
+		t.Fatalf("suspend/resume quiesced Environment Runtime %d times", calls)
 	}
 	credential := *getSandbox(t, c).Status.RunnerCredential
 	current := getPod(t, c)
