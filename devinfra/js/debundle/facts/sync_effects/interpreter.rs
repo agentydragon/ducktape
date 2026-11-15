@@ -52,7 +52,7 @@ use super::world::descriptor_heap::{
     self, DescriptorApplication, DescriptorContext, DescriptorHeap, OwnDescriptorMapState,
 };
 use super::world::object_surface::{AppliedAccessor, ObjectSurfaceStore};
-use super::world::prefix_values::{PrefixValues, TopBindings};
+use super::world::prefix_values::{PrefixValues, TopBindingOrdinal, TopBindings};
 use super::world::{World, WorldScope};
 use crate::analysis_inputs::{
     AnalysisInputs, ImportedPrimitiveRead, NativeInputKind, NativeIntrinsic, ProofDependencies,
@@ -898,6 +898,10 @@ pub(super) struct ExecutionInputs<'source> {
     /// Hashed: effect promotion tests every lazy read of every promoted
     /// callable against it. `binding_owner` holds the same bindings in order.
     pub(super) top_bindings: FxHashSet<Id>,
+    /// Callable reads projected once onto the run's prefix-value ordinals,
+    /// retaining binding order. Captured local cells are traversed separately.
+    callable_prefix_reads: FxHashMap<u32, Vec<TopBindingOrdinal>>,
+    prefix_binding_count: usize,
     binding_owner: BTreeMap<Id, SourceUnitOrdinal>,
     source_unit_read_closure: SourceUnitReadClosure,
     synchronous_owner_adjacency: Vec<Vec<SourceUnitOrdinal>>,
@@ -7663,7 +7667,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // This pass does not change prefix values. Distinct closure contexts
         // still expand their own captures below, but share each binding's
         // identical prefix expansion. A later pass starts with an empty set.
-        let mut expanded_prefix_reads = FxHashSet::default();
+        let mut expanded_prefix_reads = vec![false; self.inputs.prefix_binding_count];
         let mut changed = false;
         while let Some(value) = pending.pop() {
             if !visited.insert(value.clone()) {
@@ -7691,14 +7695,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 }
                 AbstractValue::Value(Value::Alloc(Kind::Function, key))
                 | AbstractValue::Closure(HeapAddress { callable: key, .. }, _) => {
-                    if let Some(callable) = self.inputs.index.callables.get(key) {
+                    if let Some(reads) = self.inputs.callable_prefix_reads.get(key) {
                         pending.extend(
-                            callable
-                                .reads
+                            reads
                                 .iter()
-                                .filter(|binding| expanded_prefix_reads.insert(*binding))
+                                .filter(|binding| {
+                                    !std::mem::replace(
+                                        &mut expanded_prefix_reads[binding.index()],
+                                        true,
+                                    )
+                                })
                                 .filter_map(|binding| {
-                                    self.state.world.module.prefix_values.get(binding)
+                                    self.state.world.module.prefix_values.get_ordinal(*binding)
                                 })
                                 .flatten()
                                 .cloned(),
@@ -13777,12 +13785,13 @@ pub(crate) fn annotate_synchronous_calls(
     } else {
         BTreeSet::new()
     };
-    let mut initial_values = PrefixValues::new(Arc::new(TopBindings::new(
+    let prefix_bindings = Arc::new(TopBindings::new(
         top_bindings
             .iter()
             .chain(index.hoisted_bindings.keys())
             .cloned(),
-    )));
+    ));
+    let mut initial_values = PrefixValues::new(prefix_bindings.clone());
     let mut initialized_bindings = BTreeSet::new();
     for (binding, key) in &index.hoisted_bindings {
         initial_values.insert(
@@ -13846,6 +13855,21 @@ pub(crate) fn annotate_synchronous_calls(
         initializer_call_effect_inputs: &hints.assumptions.initializer_call_effect_inputs,
         declared_pure_initializers: &hints.assumptions.declared_pure_initializers,
         callable_heap_contents: proofs.callable_heap_contents,
+        callable_prefix_reads: index
+            .callables
+            .iter()
+            .map(|(key, callable)| {
+                (
+                    *key,
+                    callable
+                        .reads
+                        .iter()
+                        .filter_map(|binding| prefix_bindings.ordinal(binding))
+                        .collect(),
+                )
+            })
+            .collect(),
+        prefix_binding_count: prefix_bindings.len(),
         top_bindings,
         binding_owner: facts
             .iter()
