@@ -235,7 +235,15 @@ struct ModuleSource {
 }
 
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
+    Ok(compile_spec_tree_with_roots(options)?.0)
+}
+
+/// Compile the tree and retain its graph scope from the same config parse.
+pub fn compile_spec_tree_with_roots(
+    options: &CompileSpecTreeOptions,
+) -> Result<(TransformSpec, BTreeMap<String, Vec<PathBuf>>)> {
     let config: AuthoringConfig = read_yaml(&options.config_path)?;
+    let roots = module_roots_from_config(&config)?;
     let source_root = options.source_root.as_deref();
     let input_root = source_path(source_root, config.inputs.root);
     let js_list_path = source_path(source_root, config.inputs.js_list_path);
@@ -249,7 +257,7 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
         &config.main_chunk_id,
         &config.module_roots,
     )?;
-    Ok(TransformSpec {
+    let spec = TransformSpec {
         host_behavior: config.host_behavior,
         program_premises: config.program_premises,
         inputs: LoadJsChunksArgs {
@@ -287,18 +295,23 @@ pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSp
                 snapshot_root: input_root,
             }
         }),
-    })
+    };
+    Ok((spec, roots))
 }
 
 pub fn graph_module_roots(config_path: &Path) -> Result<BTreeMap<String, Vec<PathBuf>>> {
     let config: AuthoringConfig = read_yaml(config_path)?;
+    module_roots_from_config(&config)
+}
+
+fn module_roots_from_config(config: &AuthoringConfig) -> Result<BTreeMap<String, Vec<PathBuf>>> {
     validate_module_roots(&config.module_roots)?;
     let mut roots: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     if config.module_roots.is_empty() {
-        roots.insert(config.main_chunk_id, vec![PathBuf::new()]);
+        roots.insert(config.main_chunk_id.clone(), vec![PathBuf::new()]);
     } else {
-        for (root, chunk) in config.module_roots {
-            roots.entry(chunk).or_default().push(root);
+        for (root, chunk) in &config.module_roots {
+            roots.entry(chunk.clone()).or_default().push(root.clone());
         }
     }
     Ok(roots)

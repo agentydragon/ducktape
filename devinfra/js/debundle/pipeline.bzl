@@ -20,6 +20,8 @@ DebundleAnalysisInfo = provider(
     fields = {
         "analysis": "The saved .analysis artifact.",
         "files": "Projection and saved analysis files.",
+        "apply_projection": "Apply projection from the same authored spec.",
+        "spec_identity": "Exact spec path and declared spec input identity, excluding output root.",
         "projector": "The executable that projects semantic analysis inputs.",
     },
 )
@@ -40,21 +42,23 @@ def _debundle_apply_impl(ctx):
         "projector": depset([saved.projector]),
         "native_inputs": depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
     }
-    projection = ctx.actions.declare_file(ctx.label.name + ".apply_projection")
-    _run_debundler(
-        ctx,
-        # project-apply parses and validates only the authored spec. Its
-        # source paths and package roots are path values; source/package files
-        # are read by analysis or the real apply action.
-        inputs = plan.spec_inputs,
-        outputs = [projection],
-        command = _shell_execroot_path(ctx.executable.debundler.path) + " " + " ".join(
-            ["spec", "project-apply"] + plan.spec_args +
-            ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
-        ),
-        mnemonic = "DebundleProjectApply",
-        progress = "Projecting debundle apply inputs for %{label}",
-    )
+    if plan.spec_identity == saved.spec_identity:
+        projection = saved.apply_projection
+    else:
+        projection = ctx.actions.declare_file(ctx.label.name + ".apply_projection")
+        _run_debundler(
+            ctx,
+            # A different authored spec may still share the saved semantic
+            # analysis. Its apply inputs must be projected independently.
+            inputs = plan.spec_inputs,
+            outputs = [projection],
+            command = _shell_execroot_path(ctx.executable.debundler.path) + " " + " ".join(
+                ["spec", "project-apply"] + plan.spec_args +
+                ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
+            ),
+            mnemonic = "DebundleProjectApply",
+            progress = "Projecting debundle apply inputs for %{label}",
+        )
     output_groups["apply_projection"] = depset([projection])
     _run_debundler(
         ctx,
@@ -96,14 +100,22 @@ def _debundle_analysis_impl(ctx):
     # `DebundleAnalyze` action hits the action cache and only
     # `DebundleApply` reruns.
     projection = ctx.actions.declare_file(ctx.label.name + ".analysis_projection")
+    apply_projection = ctx.actions.declare_file(ctx.label.name + ".apply_projection")
     analysis = ctx.actions.declare_file(ctx.label.name + ".analysis")
     _run_debundler(
         ctx,
         inputs = plan.inputs,
-        outputs = [projection],
+        outputs = [projection, apply_projection],
         command = _shell_execroot_path(ctx.executable.projector.path) + " " + " ".join(
             plan.spec_args + plan.package_args +
-            ["--out", shell.quote(projection.short_path)],
+            [
+                "--out",
+                shell.quote(projection.short_path),
+                "--apply-out",
+                shell.quote(apply_projection.short_path),
+                "--projection-root",
+                "\"${OLDPWD}\"",
+            ],
         ),
         mnemonic = "DebundleProjectAnalysis",
         progress = "Projecting debundle analysis inputs for %{label}",
@@ -130,8 +142,18 @@ def _debundle_analysis_impl(ctx):
     files = depset([projection, analysis])
     return [
         DefaultInfo(files = files),
-        DebundleAnalysisInfo(analysis = analysis, files = files, projector = ctx.executable.projector),
-        OutputGroupInfo(analysis = files, projection = depset([projection])),
+        DebundleAnalysisInfo(
+            analysis = analysis,
+            files = files,
+            apply_projection = apply_projection,
+            spec_identity = plan.spec_identity,
+            projector = ctx.executable.projector,
+        ),
+        OutputGroupInfo(
+            analysis = files,
+            projection = depset([projection]),
+            apply_projection = depset([apply_projection]),
+        ),
     ]
 
 def _apply_command(ctx, plan, analysis, extra_flags, allow_gate_rejection = False):
@@ -271,6 +293,10 @@ def _spec_plan(ctx, out_root):
         source_root = source_root,
         source_inputs = source_inputs,
         spec_inputs = spec_inputs,
+        spec_identity = (
+            tuple(spec_args if has_flat else spec_args[:-2]),
+            tuple(sorted([file.path for file in spec_inputs.to_list()])),
+        ),
         inputs = inputs,
         out_root = out_root,
     )
