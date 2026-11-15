@@ -174,6 +174,7 @@ fn projection_ignores_only_module_notes_and_yaml_presentation() {
     assert_eq!(report["host_behavior"]["note"], "current host audit note");
     let source = spec.inputs.input_root.join("static/app.js");
     fs::write(&source, "export const value = 43;").unwrap();
+    fs::remove_dir_all(out).unwrap();
     let stale = command(&[
         "run",
         "--spec",
@@ -195,7 +196,10 @@ fn projection_ignores_only_module_notes_and_yaml_presentation() {
 fn tree_projection_preserves_full_graph_authored_inventory() {
     let staged = staged_tree(
         &[("main", "export const value = 42;")],
-        &[("values", "members: [value]\n")],
+        &[(
+            "values.yaml",
+            "members:\n  - selector: { binding: { name: value } }\n",
+        )],
     );
     let out = staged.root().join("apply-out");
     let projection = staged.root().join("apply.json");
@@ -252,7 +256,10 @@ fn tree_projection_preserves_full_graph_authored_inventory() {
 fn projection_and_analysis_transfer_between_execution_roots() {
     let staged = staged_tree(
         &[("main", "export const value = 42;")],
-        &[("values", "members: [value]\n")],
+        &[(
+            "values.yaml",
+            "members:\n  - selector: { binding: { name: value } }\n",
+        )],
     );
     let out = staged.root().join("projected-out");
     let projection = staged.root().join("apply.json");
