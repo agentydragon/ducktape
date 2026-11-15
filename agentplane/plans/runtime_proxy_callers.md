@@ -61,7 +61,8 @@ App SVID. Active calls are `GetStatus`:
   check, not merely a display.
 
 **Disposition:** move raw process/boot/lifecycle inspection behind an explicit EnvironmentService
-Runtime-diagnostics RPC, restricted to reviewed diagnostic peers. The current
+Runtime-diagnostics RPC, restricted to reviewed diagnostic peers. **This direction was approved by
+the operator on 2026-11-15; the exact API and method grants remain implementation work.** The current
 [EnvironmentService API](../environments/v1/environment_service.proto) exposes environment inventory
 and lifecycle but not this full snapshot; its readiness descriptor is not a replacement for process
 or per-Session busy state. Preserve the browser's response during the backend migration.
@@ -95,7 +96,19 @@ exact recorded Identity UID, live-caller and destination authorization and sourc
 subscription creation must neither wake nor create a Session. Review this availability change
 explicitly before removing the Runtime check. It grants no broader cross-Identity subscription or
 new environment attachment authority. Broader environment-independent inbox/routing work remains
-with the Session/environment model.
+with [`CENTRAL_SESSION_NOTIFICATIONS`](task_dag.md#central_session_notifications--inboxes-for-sessions-without-environments).
+
+That broader work is necessary even after removing this proxy call: `sessionidentity.Target`
+currently refuses a Session without an Environment, subscription authorization compares that target
+with the caller's Sandbox, and the stored inbox owner includes its UID. The
+[delivery worker](../notification_service/internal/worker/destination.go) checks the stored Sandbox
+and its execution Identity before [submitting notice input](../notification_service/internal/worker/deliver.go)
+with `expected_sandbox_uid`. **Operator clarification, 2026-11-15:** Notifications must not require
+an attachment for subscription, inbox ownership/access or notice delivery. A central provider-only
+Session must receive notifications with zero attachments. The existing DAG node tracks the
+Session-authority, actor-authentication, storage and routing changes and their preservation tests;
+removing Runtime `ListSessions` alone does not implement this. Do not require a dummy Sandbox or
+select a first attachment as notification authority.
 
 If materialization is required instead, Sessions must expose an authorized materialization result
 with unavailable/unknown semantics; do not replace it with “the Session exists in Dispatcher.” No
@@ -179,7 +192,7 @@ The following is tracked work, not implementation release:
 | Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                      |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled. |
-| App raw diagnostics     | Add the narrow EnvironmentService method with exact Environment UID, explicit observation/incarnation/boot evidence and unavailable semantics; preserve operator diagnostic authorization and browser output. Retarget the App after the receiver is pinned.                                                                                          |
+| App raw diagnostics     | Direction approved by operator; add the narrow EnvironmentService method with exact Environment UID, explicit observation/incarnation/boot evidence and unavailable semantics; preserve operator diagnostic authorization and browser output. Retarget the App after the receiver is pinned.                                                          |
 | App archive safety      | Resolve `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, then replace this guard with the reviewed Session-status contract. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Remove the App proxy grant only after both active paths move.              |
 | Privileged transport    | `RUNTIME_PROXY_TO_ENVIRONMENTS` owns proxy/Executor and Controller-internal transport extraction. Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                             |
 
@@ -194,6 +207,7 @@ authentication mode, deployed name, proto wire name, data shape or staging resou
 
 ## Review question
 
-Approve the privileged backend dispositions above, including replacing Notifications' Runtime
-materialization check with admission/ownership validation so an otherwise authorized subscription
-can be created while its Runtime is offline or not yet materialized?
+Should authorized Session admission/ownership suffice for subscription creation before owner
+materialization, including while an attached Runtime is offline? The approved environment-independent
+direction removes the Sandbox prerequisite; this question distinguishes admission from proof that
+the Session owner materialized it.

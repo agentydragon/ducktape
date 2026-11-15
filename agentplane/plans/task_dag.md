@@ -2641,7 +2641,10 @@ boundaries without repeating this decision.
 with both attached and dormant Sessions, Runtime and Sandbox restart, and historical Sessions with
 no live Environment. Specify freshness and incarnation rules, user-facing distinctions and scoped
 implementation follow-ups. This decision authorizes no API migration, schema change or live data
-move.
+move. The App's busy-Thread archive guard is a concrete consumer of this contract
+([proxy audit](runtime_proxy_callers.md#app-live-diagnostics-and-archive-safety)); its replacement
+must distinguish confirmed idle from unknown/stale activity and handle zero or multiple environment
+attachments without requiring a Sandbox on every Session.
 
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
@@ -3051,6 +3054,21 @@ Dispatcher; do not fabricate one or silently retire a live Session's inbox becau
 is absent. Preserve pending messages, idempotency, source authorization, explicit acknowledgement
 and unattended wake where an actual Environment must be woken. Update affected backend, app and
 frontend consumers together; test no-Environment delivery, attachment loss and reconnect.
+
+**Operator clarification, 2026-11-15:** Notifications must not require a Sandbox or an attachment
+for a Session to subscribe, own/read/acknowledge its inbox or receive notifications. The
+[Runtime-proxy audit](runtime_proxy_callers.md#notifications-subscription-time-materialization-check)
+finds more coupling than the Runtime `ListSessions` call: subscription creation requires
+`sessionidentity.Target`, compares the caller's Sandbox with that target and stores its UID in the
+owner; inbox storage and the worker also require a Sandbox destination, and delivery supplies
+`expected_sandbox_uid`. Migrate those authority/storage/routing checks to the reviewed Session
+Identity and lifetime contract, preserving retained inboxes, subscriptions, unread entries and
+receipts. No fabricated Sandbox, arbitrary first attachment or new single-attachment requirement.
+Environment UID fences remain where a native placement or explicitly scoped operation needs them;
+they must not become mandatory for central Session notifications. **Acceptance:** a provider-only
+central Session with zero attachments subscribes, collects events, reads/acknowledges its inbox and
+receives a delivered notice across restart; detaching its last Environment does not retire the
+inbox or block those operations. Preserve wrong-Identity and stale-Identity denial.
 
 ### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
 
