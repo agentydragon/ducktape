@@ -1,9 +1,9 @@
 {
   "schema_version": 2,
-  "observed_at_utc": "2026-11-15T06:35:15.663577+00:00",
+  "observed_at_utc": "2026-11-15T07:02:45.919158+00:00",
   "source": {
-    "base": "d9397f272927840a202aeee677bd7bfe2bea08af",
-    "head": "322794bd281667307d41f9af857426a485da418b",
+    "base": "77e888907902e08c0183b7905fccf8e2ed7e513a",
+    "head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
     "pr": 16489,
     "branch": "agent/native-pod-services-partitions",
     "draft": true
@@ -28,6 +28,11 @@
       "description": "Explicit component configuration and one fixture finalizer; common EnvironmentService authority projection.",
       "path": "agentplane/system_tests/deployment/fixture_chart.py",
       "label": "Fixture chart"
+    },
+    {
+      "description": "EnvironmentService is served and authorized by the Controller; the Gateway retains Dispatcher and Runner control.",
+      "path": "cluster/cdk8s/agentplane/sandbox_controller.py",
+      "label": "EnvironmentService receiver"
     }
   ],
   "remaining_changes": [
@@ -46,8 +51,8 @@
     {
       "label": "Native transport and identity",
       "path": "agentplane/system_tests/driver/native_platform.py",
-      "change": "Explicit Pod-bound credentials, EnvironmentService and Gateway/History clients, with declared native fixture permissions.",
-      "retained": "Both Gateway and Controller receive the same reader/manager authority; production defaults remain."
+      "change": "Pod-bound native clients call EnvironmentService on the Controller at port 8082 with its audience, alongside separate Gateway/Dispatcher/History clients.",
+      "retained": "The Controller grants the native reader/manager/operator roles. Only native fixture profiles enable Kubernetes bearer authentication and TokenReview RBAC; production remains SPIFFE-only."
     },
     {
       "label": "Shared trust resources",
@@ -88,57 +93,55 @@
   "validation": {
     "required_checks_passed": true,
     "summary": "Required checks passed",
-    "detail": "All three required hosted checks pass for the displayed PR head. Ordinary CI has 921 passing test-target summaries on verified synthetic merge 271ddcc5ce, whose parents are devel cd73bfd40d and this PR head. Focused integration at the exact source head passes seven targets / 46 JUnit cases and four explicit library builds. The first pre-commit attempt failed during a Nix installer TLS download before hooks ran; its retry passed. Passing target summaries may include cached results.",
+    "detail": "All three required hosted checks pass for the displayed PR head. Ordinary CI has 921 passing test-target summaries on verified synthetic merge c6a3201630, whose parents are devel 00321e382b and this head. The native platform and central-service suites pass with Controller routing and Pod-bound fixture authentication. Three focused renderer, Controller and Gateway targets plus four explicit library builds pass at the exact source head. Passing summaries may include cached results.",
     "links": [
       {
-        "label": "Focused exact-head integration: 7 targets / 46 cases, four explicit libraries",
-        "url": "https://app.buildbuddy.io/invocation/d434db51-56f7-4cd0-87d5-b5e2bcbf770b"
+        "label": "Focused exact-head renderer and production-default checks: passed",
+        "url": "https://app.buildbuddy.io/invocation/9b3bdf78-0a0e-4f02-a9b4-5e6d349f6b97"
       },
       {
         "label": "Required Bazel CI: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43685324935"
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211943"
       },
       {
-        "label": "Required pre-commit: passed on retry",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43685324947"
+        "label": "Required pre-commit: passed",
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211984"
       },
       {
         "label": "Required artifact/import check: passed",
-        "url": "https://github.com/agentydragon/ducktape/actions/runs/43685325039"
+        "url": "https://github.com/agentydragon/ducktape/actions/runs/43687211892"
       },
       {
         "label": "Ordinary CI: 921 passing target summaries",
-        "url": "https://app.buildbuddy.io/invocation/a6ecd7c4-9755-58e7-b8a6-5bb220686e56"
+        "url": "https://app.buildbuddy.io/invocation/ce7ff66d-4816-50de-97c6-2ed08f3fcb44"
       }
     ],
     "focused": {
-      "invocation": "https://app.buildbuddy.io/invocation/d434db51-56f7-4cd0-87d5-b5e2bcbf770b",
-      "source_head": "322794bd281667307d41f9af857426a485da418b",
-      "test_targets": 7,
-      "junit_cases": 46,
+      "invocation": "https://app.buildbuddy.io/invocation/9b3bdf78-0a0e-4f02-a9b4-5e6d349f6b97",
+      "source_head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
+      "test_targets": 3,
       "library_targets_built_explicitly": 4,
       "result": "PASSED",
       "fresh_test_results": true
     },
     "ci": {
-      "source_head": "322794bd281667307d41f9af857426a485da418b",
-      "tested_merge": "271ddcc5ce3bc46debd4de466e1a496f5a2b4b8c",
+      "source_head": "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb",
+      "tested_merge": "c6a3201630d5c3f862d4a3086b2cc167cd5abbeb",
       "merge_parents": [
-        "cd73bfd40d649567d3b440a0064094824bc98b79",
-        "322794bd281667307d41f9af857426a485da418b"
+        "00321e382bbe4334f714bb4f06a708bfa140295f",
+        "cbce799899147a7b2d4cf3f426ccd31fafd1bdcb"
       ],
-      "invocation": "a6ecd7c4-9755-58e7-b8a6-5bb220686e56",
+      "invocation": "ce7ff66d-4816-50de-97c6-2ed08f3fcb44",
       "result": "SUCCESS",
       "test_target_summaries": 921,
       "all_summaries_passed": true,
       "all_fresh": false,
       "rbe_internal_retry_count": "unknown",
-      "precommit_attempts": 2,
-      "initial_precommit_failure": "TLS EOF downloading Nix installer; hooks had not run."
+      "precommit_attempts": 1
     }
   },
   "records": {
-    "previous_report": "https://github.com/agentydragon/ducktape/blob/d4a56390e4f657169f1ee7e95e0f6b4ade3febe3/agentplane-test-architecture/index.html",
+    "previous_report": "https://github.com/agentydragon/ducktape/blob/767f3e425def136d1e8bb74e36b22a722846a7e9/agentplane-test-architecture/index.html",
     "experiments": "https://github.com/agentydragon/ducktape/blob/60022daeed0e0ac9e26c974d09d24d8a79d93a3b/agentplane-test-architecture/pytest-fixtures.json"
   },
   "limits": [
