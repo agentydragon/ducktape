@@ -114,8 +114,8 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
     assert "database_url" not in config
     assert "executor_reconnect_timeout_seconds" not in config
     assert "turn_timeout_seconds" not in config
-    assert config["audience"] == central_sampler.TOKEN_AUDIENCE
-    assert config["allowed_accounts"] == [f"{namespace}/{runner_gateway.NAME}"]
+    assert "audience" not in config
+    assert "allowed_accounts" not in config
     assert config["service_callers"] == [GATEWAY_SESSIONS_URI]
     assert "listen" not in config
     assert config["health_listen"] == f"0.0.0.0:{central_sampler.HEALTH_PORT}"
