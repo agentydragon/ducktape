@@ -43,10 +43,13 @@ def _debundle_apply_impl(ctx):
     projection = ctx.actions.declare_file(ctx.label.name + ".apply_projection")
     _run_debundler(
         ctx,
-        inputs = plan.inputs,
+        # project-apply parses and validates only the authored spec. Its
+        # source paths and package roots are path values; source/package files
+        # are read by analysis or the real apply action.
+        inputs = plan.spec_inputs,
         outputs = [projection],
         command = _shell_execroot_path(ctx.executable.debundler.path) + " " + " ".join(
-            ["spec", "project-apply"] + plan.spec_args + plan.package_args +
+            ["spec", "project-apply"] + plan.spec_args +
             ["--projection-root", "\"${OLDPWD}\"", "--out", shell.quote(projection.short_path)],
         ),
         mnemonic = "DebundleProjectApply",
@@ -254,10 +257,12 @@ def _spec_plan(ctx, out_root):
                      [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
                      [ctx.attr.tree_source_root[DefaultInfo].files],
     )
-    inputs = depset(
+    spec_inputs = depset(
         direct = [ctx.file.spec] if ctx.file.spec else [ctx.file.tree_config, ctx.file.tree_vendor_marks],
-        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs] +
-                     [source_inputs],
+        transitive = [dep[DefaultInfo].files for dep in ctx.attr.spec_tree_inputs],
+    )
+    inputs = depset(
+        transitive = [spec_inputs, source_inputs],
     )
 
     return struct(
@@ -265,6 +270,7 @@ def _spec_plan(ctx, out_root):
         package_args = package_args,
         source_root = source_root,
         source_inputs = source_inputs,
+        spec_inputs = spec_inputs,
         inputs = inputs,
         out_root = out_root,
     )
