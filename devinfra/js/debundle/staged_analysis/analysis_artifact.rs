@@ -45,7 +45,6 @@ pub fn encode_header(header: &AnalysisArtifactHeader) -> Result<Vec<u8>> {
         analysis_engine_sha256: header.analysis_engine_sha256.clone(),
         projection: Some(header.projection.to_proto()?),
         chunk_sources: header.chunk_sources.clone(),
-        format_version: Some(1),
     }
     .encode_to_vec())
 }
@@ -103,10 +102,6 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
     );
     let (header, body) = rest.split_at(length);
     let header = wire::AnalysisHeader::decode(header).context("decode analysis artifact header")?;
-    ensure!(
-        header.format_version == Some(1),
-        "unsupported analysis artifact header format"
-    );
     ensure!(
         !header.analysis_engine_sha256.is_empty(),
         "analysis artifact header has no engine identity"

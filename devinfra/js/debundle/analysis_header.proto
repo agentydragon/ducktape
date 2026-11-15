@@ -10,5 +10,4 @@ message AnalysisHeader {
   string analysis_engine_sha256 = 1;
   .debundle.analysis_projection.AnalysisSpec projection = 2;
   map<string, string> chunk_sources = 3;
-  optional uint32 format_version = 4;
 }

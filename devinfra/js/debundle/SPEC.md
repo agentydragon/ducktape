@@ -356,6 +356,8 @@ compiled identities require regeneration; there is no compatibility fallback.
 The analysis header and both canonical projections use typed Protobuf schemas.
 The saved analysis body is one typed Protobuf message in a checksummed zstd
 frame; the header remains independently readable before body decompression.
+These stored Protobuf formats are internal to a Debundle version; readers do
+not promise compatibility with artifacts written by another version.
 Saved graphs and snapshots retain their full executable identity and their
 source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
