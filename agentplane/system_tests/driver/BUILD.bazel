@@ -618,21 +618,6 @@ py_library(
 )
 
 py_library(
-    name = "native_fixtures",
-    srcs = ["native_fixtures.py"],
-    deps = [
-        ":scripted_upstream",
-        ":tracing",
-        "//devinfra/testing:undeclared_outputs",
-        "//util:net",
-        "//util/testing:otel_tracing",
-        "@pypi//opentelemetry_api",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-    ],
-)
-
-py_library(
     name = "action_requests",
     srcs = ["action_requests.py"],
     deps = [

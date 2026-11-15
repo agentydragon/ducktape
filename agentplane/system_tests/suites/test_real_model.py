@@ -13,6 +13,9 @@ from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.scenarios import egress, session_instructions
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 
 @pytest.mark.real_model
 async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(

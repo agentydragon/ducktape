@@ -12,6 +12,9 @@ from agentplane.system_tests.vm import host_qemu
 from agentplane.system_tests.vm.shutdown_diagnostic import write_progress
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 pytestmark = pytest.mark.vm_sandboxes
 
 

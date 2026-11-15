@@ -13,11 +13,18 @@ import pytest
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.deployment import rendered_fixture
-from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM
+from agentplane.system_tests.deployment.rendered_fixture import Backend, LocalModel, PublicLiteLLM, SandboxRuntime
 from agentplane.system_tests.deployment.stack import Stack, StackInputs, running_stack
 from agentplane.system_tests.deployment.virtualization import VirtualizationFactory
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.firecracker.runtime import Runtime as FirecrackerRuntime
 from agentplane.system_tests.k3s.baseline import node_ip
+from agentplane.system_tests.vm import guest_logs
+from agentplane.system_tests.vm.runtime import VmRuntime
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
+
+# All suites use the same scenario hooks, including batched-case duration reporting.
+# gazelle:include_dep //agentplane/system_tests:conftest
 from util.net import Listener, listen_tcp
 
 
@@ -55,19 +62,32 @@ def _models(inputs: StackInputs, listener: Listener) -> rendered_fixture.Models:
 
 
 @pytest.fixture(scope="session")
-def virtualization_factory() -> VirtualizationFactory | None:
-    return None
+def stack_inputs(runfiles: Runfiles, k3s_binary: Path) -> StackInputs:
+    return load_stack_inputs(runfiles, k3s_binary)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
+def virtualization_factory(stack_inputs: StackInputs) -> Iterator[VirtualizationFactory | None]:
+    """Select the declared runtime without changing pytest's plugin set."""
+    match stack_inputs.fixture.runtime:
+        case SandboxRuntime.POD:
+            yield None
+        case SandboxRuntime.KUBEVIRT:
+            with pytest.MonkeyPatch.context() as environment:
+                environment.setenv(guest_logs.CONSOLES_ENV, str(undeclared_outputs_dir() / "vm-artifacts/consoles"))
+                yield VmRuntime
+        case SandboxRuntime.FIRECRACKER:
+            yield FirecrackerRuntime
+
+
+@pytest.fixture(scope="session")
 def deployment(
     request: pytest.FixtureRequest,
     scripted_listener: Listener,
     virtualization_factory: VirtualizationFactory | None,
-    runfiles: Runfiles,
-    k3s_binary: Path,
+    stack_inputs: StackInputs,
 ) -> Iterator[Stack]:
-    inputs = load_stack_inputs(runfiles, k3s_binary)
+    inputs = stack_inputs
     required_backend = "scripted_model" if inputs.fixture.backend is Backend.LOCAL_MODEL else "real_model"
     incompatible = "real_model" if required_backend == "scripted_model" else "scripted_model"
     for item in request.session.items:

@@ -15,6 +15,9 @@ from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario
 from agentplane.system_tests.scenarios import vm_sandbox
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 
 @pytest.mark.vm_sandboxes
 @pytest.mark.scripted_model

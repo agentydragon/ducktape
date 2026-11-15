@@ -9,6 +9,9 @@ from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.scenarios import dispatcher
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+
 
 @pytest.fixture
 def crictl_command(deployment: Stack) -> tuple[str, ...]:

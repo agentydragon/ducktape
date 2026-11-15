@@ -51,17 +51,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "pytest_plugin",
-    srcs = ["pytest_plugin.py"],
-    visibility = ["//agentplane/system_tests:__subpackages__"],
-    deps = [
-        ":runtime",
-        "//agentplane/system_tests/deployment:virtualization",
-        "@pypi//pytest",
-    ],
-)
-
 py_test(
     name = "test_runtime",
     srcs = ["test_runtime.py"],
