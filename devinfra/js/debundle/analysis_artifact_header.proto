@@ -1,0 +1,16 @@
+syntax = "proto3";
+package debundle.analysis_artifact_header;
+
+import "devinfra/js/debundle/analysis_projection_wire.proto";
+
+// Inputs that identify the saved analysis; readers check them before decoding
+// the compressed analysis body.
+message AnalysisArtifactHeader {
+  string analysis_engine_sha256 = 1;
+
+  // Canonical typed projection, retained whole so a mismatch can be explained.
+  debundle.analysis_projection.AnalysisSpec projection = 2;
+
+  // Parser-input SHA-256 for each analyzed chunk, keyed by chunk name.
+  map<string, string> chunk_sources = 3;
+}

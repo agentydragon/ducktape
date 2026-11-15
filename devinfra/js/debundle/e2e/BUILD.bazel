@@ -133,8 +133,8 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:analysis_projection",
         "//devinfra/js/debundle:staged_analysis",
-        "@crates//:rmp-serde",
         "@crates//:serde_yaml",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -166,8 +166,8 @@ debundle_e2e_test(
     saved_analysis_tools = True,
     deps = [
         "//devinfra/js/debundle:staged_analysis",
-        "@crates//:rmp-serde",
         "@crates//:serde_json",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 

@@ -17,6 +17,10 @@ reconstructs AST contexts, and resolves selectors; it checks the completed
 projection before consuming the restored facts. This is
 semantic-analysis reuse, not a parse-free apply cache.
 
+The artifact begins with a four-byte little-endian header length and a proto3
+`AnalysisArtifactHeader` containing a typed `AnalysisSpec`; the body keeps its
+existing zstd-compressed named MessagePack encoding.
+
 The saved fact codec in
 [`analysis_artifact.rs`](../staged_analysis/analysis_artifact.rs) serializes
 AST references as context ordinals, then maps those ordinals onto freshly

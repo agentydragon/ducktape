@@ -319,7 +319,7 @@ pub fn analyze_program(
         .collect::<Result<BTreeMap<_, _>>>()?;
     let header = AnalysisArtifactHeader {
         analysis_engine_sha256: analysis_engine_sha256.to_string(),
-        projection: spec.encode()?,
+        projection: Some(spec.to_proto()?),
         chunk_sources: chunk_source_digests(graph_provenance),
     };
     let body = AnalysisArtifactBody {
