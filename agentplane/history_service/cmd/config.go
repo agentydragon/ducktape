@@ -71,7 +71,7 @@ type serviceDelegationConfig struct {
 type ingressConfig struct {
 	// CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes. Ignored.
 	TokenAudience string `mapstructure:"token_audience"`
-	// WriterNamespaces are the namespaces whose ServiceAccounts may push: the ones Sandboxes run in.
+	// WriterNamespaces scopes the live workload Identity credential records resolved for journal writers.
 	WriterNamespaces []string `mapstructure:"writer_namespaces"`
 	// CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
 	// SamplerAccounts and SamplerIdentityCallers do not grant ingress access.

@@ -15,7 +15,6 @@ import pytest
 from google.protobuf.json_format import ParseDict
 
 from agentplane.action_service.api.contracts import action_service_pb2
-from agentplane.app.testing.client import Client
 from agentplane.central_sampler.api import sampler_pb2
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.grpc.calls import ServiceError
@@ -26,7 +25,6 @@ from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.system_tests.deployment import mcp_servers
 from agentplane.system_tests.driver.action_requests import action_request, assert_echoed_result, decide_pending_action
-from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.central_sampler import (
     MODEL,
     CentralStack,
@@ -34,7 +32,9 @@ from agentplane.system_tests.driver.central_sampler import (
     central_stack,
 )
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.environment_transport import EnvironmentServiceClient
 from agentplane.system_tests.driver.executor import Executor
+from agentplane.system_tests.driver.native_sandbox import wait_until_running
 from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -1825,7 +1825,11 @@ async def dispatcher_central_setup_tool_and_retained_answer(
 
 
 async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
-    cluster: Cluster, client: Client, tmp_path: Path, scripted: ScriptedUpstream, executor: Executor
+    cluster: Cluster,
+    environments: EnvironmentServiceClient,
+    tmp_path: Path,
+    scripted: ScriptedUpstream,
+    executor: Executor,
 ) -> None:
     """A resident central Session continues its next requested exec on the resumed Pod."""
     session_id = str(uuid4())
@@ -1898,10 +1902,10 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         )
 
         previous_incarnation = deployed.incarnation_uid
-        await client.suspend_sandbox(target)
+        await environments.suspend_environment(target)
         async with asyncio.timeout(SANDBOX_READY_SECONDS):
             while True:
-                suspended = await client.get_environment(target)
+                suspended = await environments.get_environment(target)
                 if (
                     suspended.observed_state.operating_mode == environment_service_pb2.OPERATING_MODE_SUSPENDED
                     and not suspended.kubernetes_diagnostics.HasField("pod")
@@ -1909,8 +1913,8 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
                     break
                 await asyncio.sleep(0.2)
 
-        await client.resume_sandbox(target)
-        resumed = await wait_until_running(client, target)
+        await environments.resume_environment(target)
+        resumed = await wait_until_running(environments, target)
         assert resumed.target.uid == deployed.sandbox_uid
         assert resumed.kubernetes_diagnostics.HasField("pod")
         assert resumed.kubernetes_diagnostics.pod.uid != previous_incarnation

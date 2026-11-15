@@ -1,7 +1,7 @@
-// Package ingress serves SessionJournalIngress: a runner pushes each Session's journal here, one call per Session.
+// Package ingress serves SessionJournalIngress: a journal writer pushes each Session's journal here, one call per Session.
 //
 // Contract: agentplane/docs/runner_control.md § Event ingress. Every acknowledgement follows a commit, so the
-// runner's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
+// writer's resume point is always durable here; Store.Append accepts exact replays and serializes concurrent
 // calls for one Session, so any replica serves any call.
 package ingress
 
@@ -34,7 +34,7 @@ const (
 	commitByteLimit  = 1024 * 1024
 )
 
-// Timing paces a call. Runners heartbeat on an idle call at the rate the protocol names, so a deployment
+// Timing paces a call. Journal writers heartbeat on an idle call at the rate the protocol names, so a deployment
 // serves with the protocol's values; only a test shortens them.
 type Timing struct {
 	// IdleAck is how long the ingress waits for a frame before it repeats its acknowledgement.
@@ -284,7 +284,7 @@ func (c *pushCall) receive(ctx context.Context, j *journal) error {
 		frame, timedOut, err := c.frames.next(c.timing.IdleAck)
 		switch {
 		case errors.Is(err, io.EOF):
-			// The runner reconnects and resumes after the last acknowledgement; keep what arrived.
+			// The writer reconnects and resumes after the last acknowledgement; keep what arrived.
 			return j.commit(ctx)
 		case err != nil:
 			return err
@@ -374,7 +374,7 @@ func (c *pushCall) failure(err error) error {
 	}
 }
 
-// journal is one call's view of a Session: what it committed and what the runner may send next.
+// journal is one call's view of a Session: what it committed and what the writer may send next.
 type journal struct {
 	history    *storage.Store
 	sessionID  uuid.UUID
@@ -474,7 +474,7 @@ func (f *frameReader) stop() { close(f.done) }
 
 func (f *frameReader) ready() bool { return len(f.queue) > 0 }
 
-// next returns the next frame; io.EOF once the runner has closed its side of the call; or timedOut after
+// next returns the next frame; io.EOF once the writer has closed its side of the call; or timedOut after
 // timeout without either.
 func (f *frameReader) next(timeout time.Duration) (frame *session_ingresspb.PushFrame, timedOut bool, err error) {
 	timer := time.NewTimer(timeout)
