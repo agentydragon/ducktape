@@ -1,0 +1,732 @@
+syntax = "proto3";
+package debundle.spec;
+
+// Shared compiled spec vocabulary. Paths are Linux OsStr bytes.
+// Nonoptional collections use proto3 empty defaults. Scalar-key maps are
+// generated as BTreeMap for deterministic encoding; enum-key entries use domain order.
+
+message Unit {}
+
+message TransformSpec {
+  LoadJsChunksArgs inputs = 1;
+  HostBehavior host_behavior = 2;
+  ProgramPremises program_premises = 3;
+  map<string, VendorMark> vendor = 4;
+  map<string, LogicalModules> logical_modules = 5;
+  map<string, ChunkRenames> chunk_renames = 6;
+  map<string, UnassignedMode> unassigned_mode = 7;
+  map<string, DependencyGraphOptions> chunk_analysis_options = 8;
+  map<string, ChunkExportPurity> chunk_export_purity = 9;
+  SwapVendorChunksConfig swap_vendor_chunks = 10;
+  MaterializeLogicalModulesConfig materialize_logical_modules = 11;
+  optional WriteJsTreeConfig write_js_tree = 12;
+  optional EmitBrowserHarnessConfig emit_browser_harness = 13;
+}
+
+message LoadJsChunksArgs {
+  optional bytes input_root = 1;
+  optional bytes js_list_path = 2;
+  optional bytes embedded_loaders_path = 3;
+}
+
+message HostBehavior {
+  optional SynchronousModuleLoader synchronous_module_loader = 1;
+  optional LoaderResultForEvaluatingModule loader_result_for_evaluating_module = 2;
+  optional SynchronousLoadRunsAppCallbacks synchronous_load_runs_app_callbacks = 3;
+  optional SynchronousLoadDrainsMicrotasks synchronous_load_drains_microtasks = 4;
+  repeated NodeBuiltinModule reentry_free_builtin_modules = 5;
+  repeated BunModule reentry_free_bun_modules = 6;
+  repeated EmbeddedLoader reentry_free_embedded_loaders = 7;
+  repeated ReentryFreeOperation reentry_free_operations = 8;
+  optional PredefinedGlobals predefined_globals = 9;
+  optional string note = 10;
+}
+
+enum SynchronousModuleLoader {
+  SYNCHRONOUS_MODULE_LOADER_PRESENT = 0;
+  SYNCHRONOUS_MODULE_LOADER_NONE = 1;
+}
+
+enum LoaderResultForEvaluatingModule {
+  LOADER_RESULT_FOR_EVALUATING_MODULE_THROWS = 0;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_RETURNS_PARTIAL_NAMESPACE = 1;
+  LOADER_RESULT_FOR_EVALUATING_MODULE_UNKNOWN = 2;
+}
+
+enum SynchronousLoadRunsAppCallbacks {
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_NEVER = 0;
+  SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS_UNKNOWN = 1;
+}
+
+enum SynchronousLoadDrainsMicrotasks {
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_NEVER = 0;
+  SYNCHRONOUS_LOAD_DRAINS_MICROTASKS_UNKNOWN = 1;
+}
+
+enum NodeBuiltinModule {
+  NODE_BUILTIN_MODULE_ASSERT = 0;
+  NODE_BUILTIN_MODULE_ASYNC_HOOKS = 1;
+  NODE_BUILTIN_MODULE_BUFFER = 2;
+  NODE_BUILTIN_MODULE_CHILD_PROCESS = 3;
+  NODE_BUILTIN_MODULE_CONSTANTS = 4;
+  NODE_BUILTIN_MODULE_CRYPTO = 5;
+  NODE_BUILTIN_MODULE_DNS = 6;
+  NODE_BUILTIN_MODULE_DNS_PROMISES = 7;
+  NODE_BUILTIN_MODULE_EVENTS = 8;
+  NODE_BUILTIN_MODULE_FS = 9;
+  NODE_BUILTIN_MODULE_FS_PROMISES = 10;
+  NODE_BUILTIN_MODULE_HTTP = 11;
+  NODE_BUILTIN_MODULE_HTTP2 = 12;
+  NODE_BUILTIN_MODULE_HTTPS = 13;
+  NODE_BUILTIN_MODULE_NET = 14;
+  NODE_BUILTIN_MODULE_OS = 15;
+  NODE_BUILTIN_MODULE_PATH = 16;
+  NODE_BUILTIN_MODULE_PATH_POSIX = 17;
+  NODE_BUILTIN_MODULE_PATH_WIN32 = 18;
+  NODE_BUILTIN_MODULE_PERF_HOOKS = 19;
+  NODE_BUILTIN_MODULE_PROCESS = 20;
+  NODE_BUILTIN_MODULE_QUERYSTRING = 21;
+  NODE_BUILTIN_MODULE_READLINE = 22;
+  NODE_BUILTIN_MODULE_STREAM = 23;
+  NODE_BUILTIN_MODULE_STREAM_CONSUMERS = 24;
+  NODE_BUILTIN_MODULE_STREAM_PROMISES = 25;
+  NODE_BUILTIN_MODULE_STRING_DECODER = 26;
+  NODE_BUILTIN_MODULE_TIMERS_PROMISES = 27;
+  NODE_BUILTIN_MODULE_TLS = 28;
+  NODE_BUILTIN_MODULE_TTY = 29;
+  NODE_BUILTIN_MODULE_URL = 30;
+  NODE_BUILTIN_MODULE_UTIL = 31;
+  NODE_BUILTIN_MODULE_UTIL_TYPES = 32;
+  NODE_BUILTIN_MODULE_VM = 33;
+  NODE_BUILTIN_MODULE_WORKER_THREADS = 34;
+  NODE_BUILTIN_MODULE_ZLIB = 35;
+  NODE_BUILTIN_MODULE_MODULE = 36;
+}
+
+enum BunModule {
+  BUN_MODULE_BUN_FFI = 0;
+  BUN_MODULE_UNDICI = 1;
+  BUN_MODULE_WS = 2;
+}
+
+enum EmbeddedLoader {
+  // The file's text, as a string.
+  EMBEDDED_LOADER_TEXT = 0;
+  // A native addon: the host runs only its initializer.
+  EMBEDDED_LOADER_NAPI = 1;
+}
+
+enum ReentryFreeOperation {
+  REENTRY_FREE_OPERATION_ASYNC_LOCAL_STORAGE_CONSTRUCT = 0;
+  REENTRY_FREE_OPERATION_PROMISE_RESOLVE = 1;
+}
+
+enum PredefinedGlobals {
+  // Any property, with any value.
+  PREDEFINED_GLOBALS_UNKNOWN = 0;
+  // Only names in the standard global lists (SPEC.md, Predefined globals),
+  // each with its standard definition.
+  PREDEFINED_GLOBALS_STANDARD = 1;
+  // The standard names plus Bun's own globals (SPEC.md, Predefined globals),
+  // each with its documented definition.
+  PREDEFINED_GLOBALS_BUN = 2;
+}
+
+message ProgramPremises {
+  optional ProcessPrototypeChainAccessors process_prototype_chain_accessors = 1;
+  optional NonLiteralLoaderCalls non_literal_loader_calls = 2;
+  optional IntrinsicsNeverWritten intrinsics_never_written = 3;
+  optional string note = 4;
+}
+
+enum ProcessPrototypeChainAccessors {
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_UNKNOWN = 0;
+  // No code in the program defines or redefines an accessor property on
+  // `process` or any object in its prototype chain, or changes that chain.
+  PROCESS_PROTOTYPE_CHAIN_ACCESSORS_NONE = 1;
+}
+
+enum NonLiteralLoaderCalls {
+  NON_LITERAL_LOADER_CALLS_UNKNOWN = 0;
+  // Every such call fails or loads a native addon, and no native addon's
+  // initializer calls application JavaScript or a module loader.
+  NON_LITERAL_LOADER_CALLS_NATIVE_ADDONS_ONLY = 1;
+}
+
+message IntrinsicsNeverWritten {
+  IntrinsicFamilies families = 1;
+  optional string note = 2;
+}
+
+message IntrinsicFamilies {
+  oneof value {
+    AllIntrinsicFamilies all = 1;
+    IntrinsicFamilySelection listed = 2;
+  }
+}
+
+enum AllIntrinsicFamilies {
+  ALL_INTRINSIC_FAMILIES_ALL = 0;
+}
+
+enum IntrinsicFamily {
+  INTRINSIC_FAMILY_ERROR = 0;
+  INTRINSIC_FAMILY_FINALIZATION_REGISTRY = 1;
+  INTRINSIC_FAMILY_FUNCTION = 2;
+  INTRINSIC_FAMILY_OBJECT = 3;
+  INTRINSIC_FAMILY_ARRAY = 4;
+  INTRINSIC_FAMILY_MATH = 5;
+  INTRINSIC_FAMILY_REG_EXP = 6;
+  INTRINSIC_FAMILY_SYMBOL = 7;
+  INTRINSIC_FAMILY_PROMISE = 8;
+  INTRINSIC_FAMILY_MAP = 9;
+  INTRINSIC_FAMILY_SET = 10;
+  INTRINSIC_FAMILY_WEAK_MAP = 11;
+  INTRINSIC_FAMILY_WEAK_SET = 12;
+}
+
+message VendorMark {
+  optional string identity = 1;
+  VendorLevel level = 3;
+}
+
+message VendorLevel {
+  oneof value {
+    SwapMark swap = 3;
+    PartialSwapMark partial_swap = 4;
+    BundledPartialSwapMark bundled_partial_swap = 5;
+  }
+}
+
+message SwapMark {
+  optional string package = 1;
+  optional string version = 2;
+  optional string subpath = 3;
+  optional WrapperShape wrapper_shape = 4;
+  repeated string default_export_aliases = 5;
+}
+
+enum WrapperShape {
+  WRAPPER_SHAPE_NAMED_FROM_DEFAULT = 0;
+  WRAPPER_SHAPE_NAMED_FROM_JSON_DEFAULT = 1;
+  WRAPPER_SHAPE_NAMED_FROM_MODULE_DEFAULT = 2;
+}
+
+message PartialSwapMark {
+  map<string, PartialSwapPackage> packages = 1;
+  map<string, PartialSwapSymbol> symbols = 2;
+}
+
+message PartialSwapPackage {
+  optional string version = 1;
+  optional string subpath = 2;
+  optional string namespace = 3;
+}
+
+message PartialSwapSymbol {
+  optional string package = 1;
+  optional PartialSwapKind kind = 2;
+  optional string upstream_export = 3;
+  optional string local = 4;
+}
+
+enum PartialSwapKind {
+  // Per-symbol member-access rewrite (zod-style). Emits one
+  // `import * as <namespace> from "<package>"` per file that uses
+  // the package and rewrites each `<local_binding>(...)` reference
+  // to `<namespace>.<upstream_export>(...)`. Dots in `upstream_export`
+  // separate nested properties; each segment is emitted as a safe
+  // property access. In contrast, `kind: named` uses a literal export name.
+  PARTIAL_SWAP_KIND_MEMBER = 0;
+  // Whole-namespace import. The chunk's export is itself the
+  // package's namespace object (e.g. `import { a as React } from
+  // "../chunk"` where `a` is React's default-namespace export and
+  // callers use `React.useState(...)` etc.). Rewrites the import
+  // to `import * as <local_binding> from "<package>"`; leaves
+  // every `<local_binding>.xxx` reference alone.
+  PARTIAL_SWAP_KIND_NAMESPACE = 1;
+  // Default import. The chunk's export is the package's default
+  // (e.g. `import { aQ as z } from "../chunk"` where `z` is
+  // clsx's default function). Rewrites the import to
+  // `import <local_binding> from "<package>"`; leaves every
+  // `<local_binding>(...)` reference alone.
+  PARTIAL_SWAP_KIND_DEFAULT = 2;
+  // Named import. The chunk's export is a single named export of
+  // the package (e.g. `import { o as mobxObserver } from
+  // "../chunk"` where `o` is `mobx-react-lite`'s `observer`).
+  // Rewrites the import to
+  // `import { <upstream_export> as <local_binding> } from "<package>"`
+  // (or `import { <name> } from "<package>"` when the local
+  // binding name matches the upstream export); leaves every
+  // `<local_binding>(...)` reference alone.
+  PARTIAL_SWAP_KIND_NAMED = 3;
+}
+
+message BundledPartialSwapMark {
+  BundledPartialSwapBundle bundle = 1;
+  map<string, BundledPartialSwapPackage> packages = 2;
+  map<string, PartialSwapSymbol> symbols = 3;
+}
+
+message BundledPartialSwapBundle {
+  optional bytes path = 1;
+}
+
+message BundledPartialSwapPackage {
+  optional string version = 1;
+  optional string subpath = 2;
+  optional string bundle_export = 3;
+  optional string namespace = 4;
+}
+
+message LogicalModule {
+  repeated Member members = 1;
+  repeated SourceMatchClaim source_matches = 2;
+  map<string, BindingAnnotation> annotations = 3;
+  repeated AnonymousStatement anonymous_statements = 4;
+  optional string comment = 5;
+  optional string note = 6;
+}
+
+message Member {
+  optional string name = 1;
+  RawMemberSelector selector = 2;
+}
+
+message RawMemberSelector {
+  optional BindingSelector binding = 1;
+  optional CrossRefSelector cross_ref = 2;
+  optional ReadsMemberSelector reads_member = 3;
+  optional MemberOfModuleSelector member_of_module = 4;
+  optional PassedToCallSelector passed_to_call = 5;
+  optional MakesDecorateCallSelector makes_decorate_call = 6;
+  optional IntrinsicAliasSelector intrinsic_alias = 7;
+}
+
+message BindingSelector {
+  optional string name = 1;
+  optional BindingSourceKind kind = 2;
+}
+
+enum BindingSourceKind {
+  // The bound name comes from an import specifier. The materializer rewrites
+  // that import to a re-import in the destination module.
+  BINDING_SOURCE_KIND_IMPORT_SPECIFIER = 0;
+  // Top-level var/let/const declaration; documentation only.
+  BINDING_SOURCE_KIND_VARIABLE_DECLARATOR = 1;
+  // Top-level function declaration.
+  BINDING_SOURCE_KIND_FUNCTION_DECLARATION = 2;
+  // Top-level class declaration.
+  BINDING_SOURCE_KIND_CLASS_DECLARATION = 3;
+}
+
+message CrossRefSelector {
+  optional string references = 1;
+  optional BindingSourceKind kind = 3;
+}
+
+message ReadsMemberSelector {
+  optional string member = 1;
+  optional string object = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message MemberOfModuleSelector {
+  optional string module = 1;
+  optional string member = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message PassedToCallSelector {
+  optional string callee_member = 1;
+  optional string object = 2;
+  optional uint64 arg_index = 3;
+  optional BindingSourceKind kind = 4;
+}
+
+message MakesDecorateCallSelector {
+  optional string class = 1;
+  optional string member = 2;
+  optional BindingSourceKind kind = 3;
+}
+
+message IntrinsicAliasSelector {
+  optional string property = 1;
+  optional string referenced_by = 2;
+}
+
+message SourceMatchClaim {
+  optional SourceMatchIdentifierMode identifiers = 1;
+  optional string match_source = 2;
+  repeated SourceMatchBinding bindings = 3;
+  optional string note = 4;
+}
+
+enum SourceMatchIdentifierMode {
+  // The public `source_match` identifier policy.
+  SOURCE_MATCH_IDENTIFIER_MODE_ALPHA_ALL = 0;
+  // Internal exact identifier constraints for native lowering / solver tests.
+  // Public `SourceMatch` deserialization rejects this spelling.
+  SOURCE_MATCH_IDENTIFIER_MODE_EXACT = 1;
+}
+
+message SourceMatchBinding {
+  oneof value {
+    string local = 1;
+    SourceMatchBindingDetail detailed = 2;
+  }
+}
+
+message SourceMatchBindingDetail {
+  string local = 1;
+  optional string name = 2;
+}
+
+message BindingAnnotation {
+  optional bool retained_record_factory = 1;
+  optional MemberPurity purity = 2;
+  optional InitializerPurity initializer_purity = 3;
+  optional InitializerBindingEffects initializer_binding_effects = 4;
+  optional InitializerExternalEffects initializer_external_effects = 5;
+  optional MemberEffect effect = 6;
+  repeated string pure_members = 7;
+  repeated string no_sync_callback_members = 8;
+  optional string comment = 9;
+  optional string note = 10;
+}
+
+enum MemberPurity {
+  MEMBER_PURITY_DEFAULT = 0;
+  // Author asserts that calls to the bound function have no observable side
+  // effects. Validator drops S edges for call sites (design.md A9).
+  MEMBER_PURITY_PURE = 1;
+  // Author asserts that construction has no observable effects beyond its
+  // arguments. Each argument must still classify pure; calls are unaffected.
+  MEMBER_PURITY_PURE_NEW = 2;
+}
+
+enum InitializerPurity {
+  INITIALIZER_PURITY_DEFAULT = 0;
+  INITIALIZER_PURITY_PURE = 1;
+}
+
+enum InitializerBindingEffects {
+  // Evaluation reads and rebinds no top-level lexical bindings beyond the
+  // initializer's syntactic eager-read and rebind footprint.
+  INITIALIZER_BINDING_EFFECTS_SOURCE_ONLY = 0;
+}
+
+enum InitializerExternalEffects {
+  // No mutable pre-existing heap, global-property or host/environment state
+  // is accessed. Heap writes touch only this evaluation's fresh allocations.
+  // Stable protocol metadata is an author lifetime promise; lexical
+  // dependencies and abrupt completion remain separate.
+  INITIALIZER_EXTERNAL_EFFECTS_ISOLATED = 0;
+  // Provider metadata writes use fresh result-owned identities, with no
+  // interception, enumeration or publication except through the result.
+  // Provider/configuration/environment observations are stable across all
+  // admitted schedules; private capability memoization is observationally
+  // idempotent. No application reentry or observable host/global writes.
+  // Known heap cells and other effect domains remain independently checked.
+  INITIALIZER_EXTERNAL_EFFECTS_PRIVATE_METADATA = 1;
+}
+
+enum MemberEffect {
+  MEMBER_EFFECT_DEFAULT = 0;
+  // Recognized calls have a TypeScript __decorate-style target-local mutation
+  // effect, shape-checked by the analyzer (design.md A10).
+  MEMBER_EFFECT_TYPESCRIPT_DECORATE_HELPER = 1;
+  // Every recognized member decoration records metadata only on the target;
+  // neither helper nor decorator invokes target behavior, publishes callbacks,
+  // or synchronously reenters caller, host, or export callbacks (SPEC.md).
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 2;
+  // Also admits an audited one-hop static member of an imported decorator provider.
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_WITH_MEMBER_DECORATORS = 3;
+  // Standalone three-argument property application; the helper determines its
+  // descriptor without a kind argument.
+  MEMBER_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_THREE_ARGS = 4;
+}
+
+message AnonymousStatement {
+  optional string match_source = 1;
+  optional SourceMatch source_match = 2;
+  optional NoReentryCall no_reentry_call = 3;
+  optional string note = 4;
+  optional string comment = 5;
+}
+
+message SourceMatch {
+  optional SourceMatchIdentifierMode identifiers = 1;
+  optional string target_binding = 2;
+  optional string match_source = 3;
+}
+
+message NoReentryCall {
+  repeated uint64 callback_arguments = 1;
+}
+
+message ChunkRenames {
+  repeated ChunkRenameMember members = 1;
+  map<string, BindingAnnotation> annotations = 2;
+}
+
+message ChunkRenameMember {
+  optional string name = 1;
+  ChunkRenameSelector selector = 2;
+}
+
+message ChunkRenameSelector {
+  BindingSelector binding = 1;
+}
+
+message UnassignedModeCatchallFile {
+  optional string target = 1;
+}
+
+message UnassignedModeCoarseAtomicGroups {
+  repeated string complete_partial_atomic_groups_for = 1;
+}
+
+message UnassignedMode {
+  oneof value {
+    Unit inline_in_entry = 1;
+    UnassignedModeCatchallFile catchall_file = 2;
+    Unit per_atomic_group = 3;
+    UnassignedModeCoarseAtomicGroups coarse_atomic_groups = 4;
+  }
+}
+
+message DependencyGraphOptions {
+  repeated ValueInputContract value_inputs = 1;
+  repeated NativeOperationInputContract native_operation_inputs = 2;
+  repeated InitializerCallEffectInputContract initializer_call_effect_inputs = 3;
+  repeated ImportedPrimitiveArraySpreadInputContract imported_primitive_array_spread_inputs = 4;
+  repeated CommutingStatementsContract commuting_statements = 5;
+  repeated NativeCallIdentityInputContract native_call_identity_inputs = 6;
+  repeated ArgumentInputContract argument_inputs = 7;
+  repeated NoAccessorInstallCallableContract no_accessor_install_callables = 8;
+  repeated GlobalNames deferred_global_publications = 9;
+  repeated GlobalNames non_reentrant_global_membership = 10;
+  optional bool dataflow_aware_s_chain = 11;
+  optional bool trusted_dataflow_summaries = 12;
+  AdmissionOverrides admission_overrides = 13;
+  optional bool local_property_effects = 14;
+}
+
+message ValueInputContract {
+  SourceMatchClaim source_match = 1;
+  CapturedValueContract value = 2;
+  optional string audited_source_sha256 = 3;
+  optional string expected_export = 4;
+  optional string note = 5;
+}
+
+message CapturedValueContract {
+  optional CapturedValueKind kind = 1;
+}
+
+enum CapturedValueKind {
+  CAPTURED_VALUE_KIND_ORDINARY_OBJECT = 0;
+}
+
+message NativeOperationInputContract {
+  SourceUnitSelector selector = 1;
+  optional NativeOperationKind operation = 2;
+  optional string audited_source_sha256 = 3;
+  optional string note = 4;
+}
+
+message SourceUnitSelector {
+  oneof value {
+    SourceMatchClaim source_match = 1;
+    ResolvedMemberSelector resolved_member = 2;
+  }
+}
+
+message ResolvedMemberSelector {
+  string module = 1;
+  string name = 2;
+}
+
+enum NativeOperationKind {
+  // Direct zero-argument construction through the original global data binding.
+  NATIVE_OPERATION_KIND_TEXT_ENCODER_EMPTY = 0;
+  NATIVE_OPERATION_KIND_MAP_EMPTY = 1;
+  NATIVE_OPERATION_KIND_WEAK_MAP_EMPTY = 2;
+  NATIVE_OPERATION_KIND_SET_EMPTY = 3;
+  NATIVE_OPERATION_KIND_SYMBOL = 4;
+  NATIVE_OPERATION_KIND_SET_FROM_PRIMITIVE_ARRAY = 5;
+}
+
+message InitializerCallEffectInputContract {
+  ResolvedMemberSelector resolved_member = 1;
+  optional string audited_source_sha256 = 2;
+  optional string provider_chunk = 3;
+  optional string provider_export = 4;
+  optional string audited_provider_sha256 = 5;
+  optional bool returns_opaque_function_from_const_primitive = 6;
+  optional InitializerCallEffectiveReplacement effective_replacement = 7;
+  optional string note = 8;
+}
+
+message InitializerCallEffectiveReplacement {
+  optional string package = 1;
+  optional string bundle_export = 2;
+  optional PartialSwapKind symbol_kind = 3;
+  optional string upstream_export = 4;
+  optional string audited_bundle_sha256 = 5;
+}
+
+message ImportedPrimitiveArraySpreadInputContract {
+  SourceMatchClaim source_match = 1;
+  repeated ImportedPrimitiveArrayOperandContract operands = 2;
+  optional string audited_source_sha256 = 3;
+  ImportedPrimitiveArrayLifetimeContract lifetime = 4;
+  optional string note = 5;
+}
+
+message ImportedPrimitiveArrayOperandContract {
+  optional string selector_local = 1;
+  optional string provider_chunk = 2;
+  SourceMatchClaim provider_source_match = 3;
+  optional string audited_provider_source_sha256 = 4;
+}
+
+message ImportedPrimitiveArrayLifetimeContract {
+  optional bool identity_unchanged_through_spread = 1;
+  optional bool dense_own_data_primitive_contents_unchanged_through_spread = 2;
+  optional bool ordinary_array_prototype_chain_unchanged_through_spread = 3;
+  optional bool no_own_iterator_or_accessors_through_spread = 4;
+  optional bool no_rebinding_through_spread = 5;
+}
+
+message CommutingStatementsContract {
+  SourceUnitSelector a = 1;
+  SourceUnitSelector b = 2;
+  optional string note = 3;
+}
+
+message NativeCallIdentityInputContract {
+  SourceMatchClaim source_match = 1;
+  optional NativeCallIdentityKind callee = 2;
+  optional string audited_source_sha256 = 3;
+  optional string note = 4;
+}
+
+enum NativeCallIdentityKind {
+  NATIVE_CALL_IDENTITY_KIND_OBJECT_FREEZE = 0;
+}
+
+message ArgumentInputContract {
+  SourceMatchClaim source_match = 1;
+  optional uint64 parameter_index = 2;
+  optional uint64 exact_arity = 3;
+  optional string audited_source_sha256 = 4;
+  optional string note = 5;
+}
+
+message NoAccessorInstallCallableContract {
+  SourceMatchClaim source_match = 1;
+  optional string note = 2;
+}
+
+enum BuiltinGlobalRoot {
+  BUILTIN_GLOBAL_ROOT_GLOBAL_THIS = 0;
+  BUILTIN_GLOBAL_ROOT_WINDOW = 1;
+}
+
+message AdmissionOverrides {
+  optional bool a1_eval = 1;
+  optional bool a3_dynamic_import = 2;
+  optional bool a5_import_meta = 3;
+}
+
+message ChunkExportPurity {
+  // Absence selects defaults; a present empty message explicitly selects none.
+  SourceMarkers source_markers = 1;
+  repeated string pure_exports = 2;
+  repeated string fluent_exports = 5;
+  repeated string callback_factory_exports = 6;
+  repeated string inline_callback_factory_exports = 7;
+  map<string, MemberNames> callback_factory_members = 8;
+  map<string, CallbackOverloads> retained_callback_factory_exports = 9;
+  map<string, DescriptorCopyOverloads> descriptor_copy_factory_exports = 10;
+  map<string, MemberCallbackOverloads> retained_callback_factory_members = 11;
+  map<string, CallbackOverloads> retained_callback_constructor_exports = 12;
+  repeated string no_reentry_exports = 13;
+  map<string, CallbackOverloads> no_reentry_callback_exports = 14;
+  map<string, MemberNames> no_reentry_members = 15;
+  map<string, MemberNames> no_reentry_record_members = 16;
+  map<string, MemberNames> namespace_independent_members = 17;
+}
+
+message RetainedCallbackSignature {
+  optional uint64 argument_count = 1;
+  repeated uint64 callback_arguments = 2;
+}
+
+message DescriptorCopyFactorySignature {
+  optional uint64 argument_count = 1;
+  optional uint64 object_argument = 2;
+  repeated string eager_own_data_keys = 3;
+  repeated string assigned_data_keys = 4;
+}
+
+message SwapVendorChunksConfig {
+  optional bytes output_manifest_path = 1;
+  optional bytes output_wrapper_dir = 2;
+  optional bool write = 3;
+}
+
+message MaterializeLogicalModulesConfig {
+  optional string file = 1;
+  optional bool prune_other_chunks = 2;
+  optional bytes report_out_dir = 3;
+  optional string target_dir = 4;
+}
+
+message WriteJsTreeConfig {
+  optional bytes out_dir = 1;
+}
+
+message EmitBrowserHarnessConfig {
+  optional bytes asset_summary_path = 1;
+  optional bytes out_dir = 2;
+  optional bytes snapshot_root = 3;
+}
+
+// A message is necessary for the listed branch of the families oneof.
+message IntrinsicFamilySelection {
+  repeated IntrinsicFamily families = 1;
+}
+
+message SourceMarkers {
+  repeated string markers = 1;
+}
+
+// Enum keys cannot be protobuf map keys.
+message GlobalNames {
+  optional BuiltinGlobalRoot root = 1;
+  repeated string names = 2;
+}
+
+// Protobuf map values cannot be repeated fields or maps directly.
+message MemberNames {
+  repeated string names = 1;
+}
+
+message CallbackOverloads {
+  repeated RetainedCallbackSignature signatures = 1;
+}
+
+message DescriptorCopyOverloads {
+  repeated DescriptorCopyFactorySignature signatures = 1;
+}
+
+message MemberCallbackOverloads {
+  map<string, CallbackOverloads> members = 1;
+}
+
+message LogicalModules {
+  map<string, LogicalModule> modules = 1;
+}

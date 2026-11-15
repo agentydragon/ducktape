@@ -22,8 +22,10 @@ use analysis::analysis_inputs::{NativeOperationSelectorProvenance, SourceDeclara
 use analysis::{GraphOptions, LocalEffectPolicy};
 use anyhow::{Context, Result, ensure};
 use artifact::{ArtifactIndexes, ChunkBundle};
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
+
 use spec::{
     AdmissionOverrides, ArgumentInputContract, BuiltinGlobalRoot, ChunkExportPurity,
     CommutingStatementsContract, DependencyGraphOptions, HostBehavior,
@@ -32,6 +34,9 @@ use spec::{
     NoAccessorInstallCallableContract, ProgramPremises, TransformSpec, ValueInputContract,
     VendorLevel, VendorMark,
 };
+
+#[path = "analysis_projection_wire.rs"]
+mod wire;
 
 /// Native premises after resolving layout-relative references at the selector boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -620,96 +625,90 @@ impl AnalysisSpec {
         }
     }
 
-    /// Canonical bytes: named MessagePack over ordered maps.
+    /// Canonical Protobuf bytes over ordered maps and sets.
     pub fn encode(&self) -> Result<Vec<u8>> {
-        Ok(rmp_serde::to_vec_named(self)?)
+        Ok(self.to_proto()?.encode_to_vec())
     }
 
     pub fn decode(bytes: &[u8]) -> Result<Self> {
-        rmp_serde::from_slice(bytes).context("decode analysis projection")
+        let value =
+            analysis_projection_wire_proto::debundle::analysis_projection::AnalysisSpec::decode(
+                bytes,
+            )
+            .context("decode analysis projection protobuf")?;
+        Self::from_proto(value)
+    }
+
+    fn to_proto(
+        &self,
+    ) -> Result<analysis_projection_wire_proto::debundle::analysis_projection::AnalysisSpec> {
+        wire::encode_projection(self)
+    }
+
+    fn from_proto(
+        value: analysis_projection_wire_proto::debundle::analysis_projection::AnalysisSpec,
+    ) -> Result<Self> {
+        wire::decode_projection(value).context("decode analysis projection")
     }
 
     /// The fields, and per-chunk entries, in which `self` and `other` differ.
     pub fn differences(&self, other: &Self) -> Result<Vec<String>> {
-        let mut differing = Vec::new();
-        let mut field = |name: &str, a: Vec<u8>, b: Vec<u8>| {
-            if a != b {
-                differing.push(name.to_owned());
-            }
-        };
-        field(
-            "inputs",
-            rmp_serde::to_vec_named(&self.inputs)?,
-            rmp_serde::to_vec_named(&other.inputs)?,
-        );
-        field(
-            "host_behavior",
-            rmp_serde::to_vec_named(&self.host_behavior)?,
-            rmp_serde::to_vec_named(&other.host_behavior)?,
-        );
-        field(
-            "program_premises",
-            rmp_serde::to_vec_named(&self.program_premises)?,
-            rmp_serde::to_vec_named(&other.program_premises)?,
-        );
-        field(
-            "analysed_chunks",
-            rmp_serde::to_vec_named(&self.analysed_chunks)?,
-            rmp_serde::to_vec_named(&other.analysed_chunks)?,
-        );
-        field(
-            "entry_file",
-            rmp_serde::to_vec_named(&self.entry_file)?,
-            rmp_serde::to_vec_named(&other.entry_file)?,
-        );
-        field(
-            "prune_other_chunks",
-            rmp_serde::to_vec_named(&self.prune_other_chunks)?,
-            rmp_serde::to_vec_named(&other.prune_other_chunks)?,
-        );
-        field(
-            "native_operation_inputs",
-            rmp_serde::to_vec_named(&self.native_operation_inputs)?,
-            rmp_serde::to_vec_named(&other.native_operation_inputs)?,
-        );
-        field(
-            "source_sites",
-            rmp_serde::to_vec_named(&self.source_sites)?,
-            rmp_serde::to_vec_named(&other.source_sites)?,
-        );
-        differing.extend(keyed_differences("vendor", &self.vendor, &other.vendor)?);
+        let left = self.to_proto()?;
+        let right = other.to_proto()?;
+        let mut differing: Vec<String> = [
+            ("inputs", left.inputs != right.inputs),
+            ("host_behavior", left.host_behavior != right.host_behavior),
+            (
+                "program_premises",
+                left.program_premises != right.program_premises,
+            ),
+            (
+                "analysed_chunks",
+                left.analysed_chunks != right.analysed_chunks,
+            ),
+            ("entry_file", left.entry_file != right.entry_file),
+            (
+                "prune_other_chunks",
+                left.prune_other_chunks != right.prune_other_chunks,
+            ),
+            (
+                "native_operation_inputs",
+                left.native_operation_inputs != right.native_operation_inputs,
+            ),
+            ("source_sites", left.source_sites != right.source_sites),
+        ]
+        .into_iter()
+        .filter(|(_, differs)| *differs)
+        .map(|(name, _)| name.to_owned())
+        .collect();
+        differing.extend(keyed_differences("vendor", &left.vendor, &right.vendor));
         differing.extend(keyed_differences(
             "chunk_export_purity",
-            &self.chunk_export_purity,
-            &other.chunk_export_purity,
-        )?);
+            &left.chunk_export_purity,
+            &right.chunk_export_purity,
+        ));
         differing.extend(keyed_differences(
             "chunk_analysis_inputs",
-            &self.chunk_analysis_inputs,
-            &other.chunk_analysis_inputs,
-        )?);
+            &left.chunk_analysis_inputs,
+            &right.chunk_analysis_inputs,
+        ));
         differing.extend(keyed_differences(
             "declared assumptions",
-            &self.declared_assumptions,
-            &other.declared_assumptions,
-        )?);
+            &left.declared_assumptions,
+            &right.declared_assumptions,
+        ));
         Ok(differing)
     }
 }
 
-fn keyed_differences<T: Serialize>(
+fn keyed_differences<T: PartialEq>(
     field: &str,
     a: &BTreeMap<String, T>,
     b: &BTreeMap<String, T>,
-) -> Result<Vec<String>> {
+) -> Vec<String> {
     let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
-    let mut differing = Vec::new();
-    for key in keys {
-        let left = a.get(key).map(rmp_serde::to_vec_named).transpose()?;
-        let right = b.get(key).map(rmp_serde::to_vec_named).transpose()?;
-        if left != right {
-            differing.push(format!("{field}.{key}"));
-        }
-    }
-    Ok(differing)
+    keys.into_iter()
+        .filter(|key| a.get(*key) != b.get(*key))
+        .map(|key| format!("{field}.{key}"))
+        .collect()
 }

@@ -1,0 +1,156 @@
+syntax = "proto3";
+package debundle.analysis_projection;
+
+import "devinfra/js/debundle/spec_wire.proto";
+
+// Resolved source-analysis inputs; authored vocabulary lives in spec_wire.proto.
+// Scalar-key maps use deterministic BTreeMap encoding in the Rust boundary.
+
+enum LocalEffectPolicy {
+  LOCAL_EFFECT_POLICY_KNOWN_EFFECTS_ONLY = 0;
+  LOCAL_EFFECT_POLICY_VENDOR_PRUNE = 1;
+  // Treat a whole-statement property write to a chunk-top binding as a local
+  // effect. The author opts in via chunk_analysis_options.local_property_effects.
+  LOCAL_EFFECT_POLICY_LOCAL_PROPERTY_WRITES = 2;
+}
+
+message ChunkAnalysisInputs {
+  optional bool trusted_dataflow_summaries = 1;
+  repeated debundle.spec.GlobalNames deferred_global_publications = 2;
+  repeated debundle.spec.GlobalNames non_reentrant_global_membership = 3;
+  optional LocalEffectPolicy local_effect_policy = 4;
+  debundle.spec.AdmissionOverrides admission_overrides = 5;
+  repeated debundle.spec.ValueInputContract value_inputs = 6;
+  repeated debundle.spec.NativeCallIdentityInputContract native_call_identity_inputs = 7;
+  repeated debundle.spec.InitializerCallEffectInputContract initializer_call_effect_inputs = 8;
+  repeated debundle.spec.ArgumentInputContract argument_inputs = 9;
+  repeated debundle.spec.NoAccessorInstallCallableContract no_accessor_install_callables = 10;
+}
+
+enum KnownEffect {
+  KNOWN_EFFECT_TYPESCRIPT_DECORATE_HELPER = 0;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 1;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_WITH_MEMBER_DECORATORS = 2;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_THREE_ARGS = 3;
+}
+
+// A source span is a composite key, so this collection uses repeated entries.
+message StatementCallback {
+  optional uint32 start = 1;
+  optional uint32 end = 2;
+  debundle.spec.RetainedCallbackSignature signature = 3;
+}
+
+message AnalysisAssumptions {
+  repeated string retained_record_factories = 1;
+  repeated debundle.spec.ReentryFreeOperation reentry_free_operations = 2;
+  optional debundle.spec.PredefinedGlobals predefined_globals = 3;
+  .debundle.analysis_projection.BundleGlobalNames bundle_globals = 4;
+  repeated debundle.spec.GlobalNames deferred_global_publications = 5;
+  repeated debundle.spec.GlobalNames non_reentrant_global_membership = 6;
+  repeated string declared_pure = 7;
+  repeated string declared_pure_new = 8;
+  repeated string declared_pure_initializers = 9;
+  map<string, debundle.spec.MemberNames> declared_pure_members = 10;
+  map<string, debundle.spec.MemberNames> no_sync_callback_members = 11;
+  map<string, KnownEffect> known_effects = 12;
+  optional bool trusted_dataflow_summaries = 13;
+  repeated string inline_callback_factories = 14;
+  map<string, debundle.spec.MemberNames> callback_factory_members = 15;
+  map<string, debundle.spec.CallbackOverloads> retained_callback_factories = 16;
+  map<string, debundle.spec.MemberCallbackOverloads> retained_callback_factory_members = 17;
+  map<string, debundle.spec.CallbackOverloads> retained_callback_constructors = 18;
+  repeated string no_reentry_exports = 19;
+  map<string, debundle.spec.CallbackOverloads> no_reentry_callback_exports = 20;
+  repeated StatementCallback no_reentry_statement_calls = 21;
+  map<string, debundle.spec.MemberNames> no_reentry_members = 22;
+  map<string, debundle.spec.MemberNames> no_reentry_record_members = 23;
+  map<string, debundle.spec.MemberNames> namespace_independent_members = 24;
+  repeated string fluent_bindings = 25;
+}
+
+message ChunkSourceDeclarations {
+  repeated .debundle.analysis_projection.SourceDeclaration declarations = 1;
+}
+
+message AnalysisImportedPrimitiveArrayOperand {
+  optional string selector_local = 1;
+  optional string consumer_binding = 2;
+  optional string provider_chunk = 3;
+  debundle.spec.SourceMatchClaim provider_source_match = 4;
+  .debundle.analysis_projection.SourceDeclaration provider_declaration = 5;
+  optional string audited_provider_source_sha256 = 6;
+}
+
+message AnalysisImportedPrimitiveArraySpreadInput {
+  .debundle.analysis_projection.SourceDeclaration consumer_declaration = 1;
+  debundle.spec.SourceMatchClaim source_match = 2;
+  optional string audited_source_sha256 = 3;
+  repeated AnalysisImportedPrimitiveArrayOperand operands = 4;
+  debundle.spec.ImportedPrimitiveArrayLifetimeContract lifetime = 5;
+}
+
+message ChunkImportedPrimitiveArrayInputs {
+  repeated AnalysisImportedPrimitiveArraySpreadInput inputs = 1;
+}
+
+message AnalysisSourceSites {
+  map<string, string> source_sha256 = 1;
+  map<string, ChunkSourceDeclarations> value_inputs = 2;
+  map<string, ChunkSourceDeclarations> native_call_identity_inputs = 3;
+  map<string, ChunkSourceDeclarations> initializer_call_effect_inputs = 4;
+  map<string, ChunkSourceDeclarations> argument_inputs = 5;
+  map<string, ChunkSourceDeclarations> no_accessor_install_callables = 6;
+  map<string, ChunkImportedPrimitiveArrayInputs> imported_primitive_array_spread_inputs = 7;
+}
+
+message AnalysisNativeOperationInput {
+  .debundle.analysis_projection.SourceDeclaration declaration = 1;
+  .debundle.analysis_projection.NativeOperationSelectorProvenance selector = 2;
+  optional debundle.spec.NativeOperationKind operation = 3;
+  optional string audited_source_sha256 = 4;
+}
+
+message ChunkNativeOperationInputs {
+  repeated AnalysisNativeOperationInput inputs = 1;
+}
+
+message AnalysisSpec {
+  debundle.spec.LoadJsChunksArgs inputs = 1;
+  debundle.spec.HostBehavior host_behavior = 2;
+  debundle.spec.ProgramPremises program_premises = 3;
+  map<string, debundle.spec.VendorMark> vendor = 4;
+  map<string, debundle.spec.ChunkExportPurity> chunk_export_purity = 5;
+  map<string, ChunkAnalysisInputs> chunk_analysis_inputs = 6;
+  repeated string analysed_chunks = 7;
+  optional string entry_file = 8;
+  optional bool prune_other_chunks = 9;
+  map<string, AnalysisAssumptions> declared_assumptions = 10;
+  AnalysisSourceSites source_sites = 11;
+  map<string, ChunkNativeOperationInputs> native_operation_inputs = 12;
+}
+
+message NoAccessorInstallRef {
+  optional string defining_chunk = 1;
+  optional uint64 input_index = 2;
+}
+
+message BundleGlobalNames {
+  repeated string names = 1;
+  optional bool registered_symbols = 2;
+  optional bool fresh_collections = 3;
+  repeated NoAccessorInstallRef no_accessor_install_callables = 4;
+}
+
+message SourceDeclaration {
+  optional string binding = 1;
+  optional uint64 body_index = 2;
+}
+
+message NativeOperationSelectorProvenance {
+  oneof kind {
+    debundle.spec.SourceMatchClaim source_match = 1;
+    SourceDeclaration declaration = 2;
+    debundle.spec.ResolvedMemberSelector resolved_member = 3;
+  }
+}

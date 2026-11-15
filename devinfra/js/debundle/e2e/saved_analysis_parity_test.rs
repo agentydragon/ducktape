@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
+use analysis_projection::AnalysisSpec;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
@@ -332,13 +333,15 @@ fn captured_value_bindings_survive_saved_program_summary() {
     let (staged, _fixture) = staged(opts);
     // The premise provider belongs to the static-request closure, but is not a
     // materialization root. Analyze must retain it from canonical source sites.
-    let projection: Value = rmp_serde::from_slice(&fs::read(&staged.projection).unwrap()).unwrap();
-    assert_eq!(projection["analysed_chunks"], json!(["static/app"]));
+    let projection = AnalysisSpec::decode(&fs::read(&staged.projection).unwrap()).unwrap();
+    assert_eq!(projection.analysed_chunks(), ["static/app"]);
+    let declaration = &projection.source_sites.value_inputs["static/peer"][0];
+    assert_eq!(declaration.binding, "captured");
+    assert_eq!(declaration.body_index, 0);
     assert_eq!(
-        projection["source_sites"]["value_inputs"]["static/peer"][0],
-        json!({"binding": "captured", "body_index": 0}),
+        projection.source_sites.source_sha256["static/peer"],
+        source_sha256(PROVIDER)
     );
-    assert!(projection["source_sites"]["source_sha256"]["static/peer"].is_string());
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct captured-value run");
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
@@ -381,12 +384,11 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
 
     // The source premise belongs to the request closure, while only the
     // consumer remains a selected analysis root.
-    let projection: Value = rmp_serde::from_slice(&fs::read(&staged.projection).unwrap()).unwrap();
-    assert_eq!(projection["analysed_chunks"], json!(["static/app"]));
-    assert_eq!(
-        projection["source_sites"]["value_inputs"]["static/peer"][0],
-        json!({"binding": "captured", "body_index": 0}),
-    );
+    let projection = AnalysisSpec::decode(&fs::read(&staged.projection).unwrap()).unwrap();
+    assert_eq!(projection.analysed_chunks(), ["static/app"]);
+    let declaration = &projection.source_sites.value_inputs["static/peer"][0];
+    assert_eq!(declaration.binding, "captured");
+    assert_eq!(declaration.body_index, 0);
 
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct re-exported captured-value run");

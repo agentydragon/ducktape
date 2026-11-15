@@ -379,6 +379,11 @@ source/package inputs. Each apply action reads its selected apply projection,
 saved analysis, and its own source/package inputs; native compatibility checks
 still reject stale or mismatched facts.
 
+The analysis and apply projection files use typed proto3 messages. Their generated
+Rust types are built by Bazel. Stored projections have no cross-version
+compatibility guarantee and must be regenerated with the consuming engine.
+Saved analysis continues to use compressed MessagePack.
+
 The analysis projection omits only fields explicitly declared as author-note
 provenance. Semantic map entries remain data even when a chunk, export, or
 property name is literally `note`. Graph-only commuting-statement notes remain

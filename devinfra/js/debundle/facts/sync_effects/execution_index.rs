@@ -6820,7 +6820,7 @@ impl ExecutionIndex {
     /// object, the start of the greatest fixed point (SPEC.md § Bundle-owned
     /// globals).
     pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
-        if self.census_globals.predefined.is_unknown() {
+        if self.census_globals.predefined == spec::PredefinedGlobals::Unknown {
             return BundleGlobalNames::default();
         }
         let declared = self.declared_bindings();
@@ -6950,7 +6950,7 @@ impl ExecutionIndex {
         candidates: &BundleGlobalNames,
         premises: &[ResolvedNoAccessorInstall],
     ) -> BundleGlobalNames {
-        if self.census_globals.predefined.is_unknown() {
+        if self.census_globals.predefined == spec::PredefinedGlobals::Unknown {
             return BundleGlobalNames::default();
         }
         let declared = self.declared_bindings();
@@ -8631,7 +8631,7 @@ impl ExecutionIndex {
         let global_guards_requested = !hints.assumptions.deferred_global_publications.is_empty()
             || !hints.assumptions.non_reentrant_global_membership.is_empty();
         // A standard host defines `global` only as Node's global object.
-        let node_global = !hints.assumptions.predefined_globals.is_unknown()
+        let node_global = hints.assumptions.predefined_globals != spec::PredefinedGlobals::Unknown
             && unshadowed_global_names(body, &["global"]).contains("global");
         let mut index = Self {
             source_chunk_id: hints.current_chunk_id.clone(),
@@ -9162,7 +9162,7 @@ impl ExecutionIndex {
                 .collect();
             index.importer_cell_reads.insert(binding.clone(), cells);
         }
-        if !index.census_globals.predefined.is_unknown() {
+        if index.census_globals.predefined != spec::PredefinedGlobals::Unknown {
             index.census_globals.bundle =
                 index.bundle_globals(&hints.assumptions.bundle_globals, &declared);
         }

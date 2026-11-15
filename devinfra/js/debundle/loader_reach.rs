@@ -22,6 +22,7 @@
 //! exported under a name can be followed to each module that calls it and a
 //! `module` import can be classified by its uses.
 
+use spec::NodeBuiltinModuleExt;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use swc_common::Spanned;

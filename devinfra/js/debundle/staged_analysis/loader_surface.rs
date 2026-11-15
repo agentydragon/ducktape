@@ -2,6 +2,7 @@
 //! export-reentry policy (SPEC.md § Host behavior).
 
 use source_identity::ChunkId;
+use spec::NodeBuiltinModuleExt;
 use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::analysis_inputs::{HostBehaviorKey, ProgramPremiseKey};

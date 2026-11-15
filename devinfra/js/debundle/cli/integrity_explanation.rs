@@ -222,7 +222,7 @@ fn possible_discharges(
     reach: SlotReach,
     family: NativeIntrinsic,
 ) -> Vec<PossibleDischarge> {
-    let mut possible_discharges = spec::IntrinsicFamily::ALL
+    let mut possible_discharges = spec::ALL_INTRINSIC_FAMILIES
         .into_iter()
         .any(|author_family| NativeIntrinsic::from(author_family) == family)
         .then_some(PossibleDischarge::IntrinsicsNeverWritten)
