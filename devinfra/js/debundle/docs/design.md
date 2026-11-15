@@ -1011,13 +1011,21 @@ The predicate has two forms:
    validator (`validate_assignment`) calls it on the spec's actual
    assignment; a non-empty verdict stops materialization.
 2. **`RealizabilityIndex`**, a stateful index over a working assignment for
-   callers that ask many hypothetical questions — the peel kernel
-   (`peel/quotient.rs`). Its only mutator, `apply`, commits a
-   `ModuleAssignmentDelta`, updating quotient edge buckets and graph adjacency only
-   for the dependency edges incident to the moved source units. Speculative moves never
-   mutate it: they go through a non-mutating overlay of the same state, since
-   the `CondensationOrder` union-find cannot be rolled back and reverting a
-   move that merged SCCs costs an `O(|V| + |E|)` rebuild.
+   callers that ask many hypothetical questions. `apply` commits the legacy
+   single-target `ModuleAssignmentDelta`; `apply_batch` commits one final mapping
+   for several source units and destinations. Both update quotient edge buckets
+   and graph adjacency through the same edge-contribution primitive, once per
+   impacted edge. Speculative moves use a non-mutating overlay because the
+   `CondensationOrder` union-find cannot be rolled back and reverting a move
+   that merged SCCs costs an `O(|V| + |E|)` rebuild.
+
+   A batch is simultaneous: all moved units receive their final destinations
+   before incident edges are reprojected. An edge whose two endpoints move is
+   projected once from the original assignment to the final assignment; no
+   intermediate single-move verdict is part of the batch result. The index
+   requires a caller-fixed module universe and entry `ModuleId`. Callers rebuild
+   it if path insertion or ordering changes those IDs; it does not assume that
+   module IDs remain invariant under path insertion.
 
 Differential tests (`realizability/tests.rs`,
 `peel/gate_differential_test.rs`) assert that the two forms agree.
@@ -1072,9 +1080,13 @@ quotient. The index patches its maintained canonical I-graph, constraining
 edge evidence, and cross-rebinds with the proposed incident-edge overlay;
 the pure reference and this overlay use the same full SCC and ESM simulator
 gate body. A merge can change global ESM import order and expose a TDZ in an
-I-SCC outside the merged module, which a touching verdict cannot see. General
-seed/greedy contractions can start from an unrealizable assignment while
-repairing it; the final proposal verdict checks their result.
+I-SCC outside the merged module, which a touching verdict cannot see.
+`verdict_after_batch` evaluates the global canonical verdict after overlaying
+the entire final mapping, including remote SCC diagnoses; the exact residual
+placement search uses this path for each constructed candidate. It does not
+turn a touching-only verdict into a global decision. General seed/greedy
+contractions can start from an unrealizable assignment while repairing it; the
+final proposal verdict checks their result.
 
 #### Cost and the tier ladder
 
@@ -1134,13 +1146,12 @@ source-unit-level evidence (through the index's non-mutating
 `verdict_after_moving_source_units_touching` overlay) only on a reject —
 one entry point, two output shapes. Each query reads SCCs touching
 the hypothetical destination only — `O(|cone|)`, not
-`O(|V| + |E|)`. Speculative deltas are single-target by
-construction: a merge contracts two classes into one, so
-`compute_merge_deltas` only ever emits `MoveSourceUnits` deltas
-targeting the single post-merge module; the ladder dispatch asserts
-this invariant, and a future non-merge speculative mutation must
-implement a multi-target overlay deliberately rather than inherit
-the merge path.
+`O(|V| + |E|)`. This remains a merge-specific diagnostic optimization and
+does not certify arbitrary final placements. Multi-target prediction uses a
+typed batch overlay: it applies one final mapping and projects each impacted
+edge once, then obtains the full global canonical verdict from the shared
+index. The committed batch and hypothetical batch therefore share edge
+contribution semantics, while the verdict still includes remote ESM TDZs.
 
 #### References
 

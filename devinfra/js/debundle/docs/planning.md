@@ -40,12 +40,16 @@ Choose the operation from the task chooser:
   and the actual destination, including an existing owner. This checks the whole
   assignment without editing selectors or spec files; graph acceptance does not
   imply the applicator can yet realize every shape. Recheck combined batches.
-- For residual extraction, use [complete fixed-owner search](module_search.md).
-  A `found` plan is checked for its exact snapshot; `exhausted_no_peel` is a
-  negative decision only within its recorded scope. Budget exhaustion is
-  incomplete. The default/auto proposal queue remains advisory. Send the exact
-  accepted plan and source evidence to intake; changing its destinations needs
-  another complete check.
+- For residual extraction, inspect the graph and source first, then use [exact
+  residual placement](module_search.md) with `modules propose --strategy
+complete`. Review the complete mapping and destinations, check the plan,
+  preview and apply that same plan, then regenerate and run behavior checks. A
+  `found` result is graph acceptance only; selector resolution and runtime
+  behavior are separate. `exhausted_no_peel` is scoped to its reported graph
+  constraints and permitted moves. Budget exhaustion is incomplete. The
+  default/auto factorizer remains advisory and cannot establish impossibility.
+  Send the exact accepted plan and source evidence to intake; changing its
+  destinations needs another complete check.
 - For existing claims, follow [decompose and refine](spec_editing.md#workflow-reorganizing-existing-modules).
   Preserve selector anchors when needed, inspect the complete candidate's coverage,
   verdict, conflicts, and resolved names, and choose semantic destinations rather
@@ -68,13 +72,15 @@ Use short source slices to infer purpose from implementations, callers, stable
 strings/properties, and source proximity. If choosing a destination requires
 broad architectural discovery, mark low confidence and route to the architect.
 
-A complete-search result has one snapshot-bound `plan`, rather than a queue of
+An exact-placement result has one snapshot-bound `plan`, rather than a queue of
 independent `proposals[]` rows. Preserve that whole plan as one worker packet,
 including jointly required atoms and all its destinations. Add semantic names
 and source evidence separately; changing the plan's destinations or combining
 plans requires planning to recheck the resulting complete batch. A graph witness
 still needs selector realization, materialization and behavioral evidence.
-`incomplete` is not a blocked-code or no-peel conclusion.
+`incomplete` is not a blocked-code or no-peel conclusion. `exhausted_no_peel`
+only covers the request's owner policy, destination set, required units and
+other recorded scope.
 
 For each `proposals[]` row with `landable_today: true`, classify it as `fresh`,
 `extend_active`, or `side_effect_cell`, keep its complete source-unit set, and

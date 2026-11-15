@@ -85,21 +85,40 @@ extraction uses the proposal workflow below; focused binding moves use
 
 ## Workflow: proposing new modules
 
-Use [complete fixed-owner search](module_search.md) to decide what can still be
-peeled and return an exact checked plan. Save `.plan` only from a `found` result,
-review its semantic ownership, check it with `modules check --plan`, preview with
-`modules apply --plan --dry-run`, then apply that same plan. Run normal
-materialization and relevant behavior checks, and refresh the graph before the
-next operation. The linked guide defines scope, exhaustive versus incomplete
-outcomes, context identity and the finite search model.
+Use [exact residual placement](module_search.md) to decide whether a positive-
+gain placement exists under the request's fixed authored ownership and
+destination scope. Follow this sequence:
 
-The default/auto proposer remains an advisory inventory for source review:
+1. **Inspect.** Review `graph-summary`, residual `atoms`, and relevant source
+   and edge evidence with `describe` and `inspect-source --id`.
+2. **Propose a complete placement.** Run
+   `debundle modules propose --strategy complete --format json` and save the
+   `.plan` only when the status is `found`.
+3. **Review.** Check the full source-unit-to-destination map, semantic module
+   boundaries, fresh paths, and required companions. Do not split or combine
+   the plan without rechecking the resulting complete mapping.
+4. **Check and preview.** Run `modules check --plan plan.json`, then
+   `modules apply --plan plan.json --dry-run --format json`. Review selector
+   synthesis and the resolved final assignment.
+5. **Apply and run.** Apply the same plan, regenerate through the project's
+   normal materialization command, run relevant behavioral checks, and refresh
+   the graph before the next graph-backed edit.
+
+`found` is graph acceptance. Selector resolution, materialization and runtime
+behavior remain separate evidence. `exhausted_no_peel` applies only to the
+reported permitted scope; `incomplete` and errors do not establish that no
+placement exists. The linked guide describes the exact graph contract, context
+identity and complexity limits.
+
+The default/auto factorizer remains an advisory inventory for source review
+while migration to exact placement is pending. It cannot establish that no
+peel exists:
 
 For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml`
 to both `modules propose` and `modules apply` so proposals and the edit gate
 use the module roots mapped to the graph's chunk.
 
-1. **`debundle modules propose --format json > proposals.json`** —
+1. **`debundle modules propose --strategy auto --format json > proposals.json`** —
    proposer proposals + diagnostics derived from the atomic DAG.
 2. **Skim the diagnostics.** Each diagnostic carries a `reason`
    explaining why a closed atomic-DAG set could not become a proposal
@@ -134,8 +153,8 @@ proposal and diagnostic counts matter; the default is a fast graph
 summary.
 
 For a bounded owner pass, choose `graph-summary --limit N` when looking for
-large residual atomic groups or `modules propose --limit N` when choosing among
-proposals. Put the owners to inspect in `owners.json`, then query their raw
+large residual atomic groups or `modules propose --strategy auto --limit N`
+when choosing among heuristic proposals. Put the owners to inspect in `owners.json`, then query their raw
 incoming edges with `debundle describe --batch owners.json --direction incoming
 --limit N`; add repeated `--reason KIND` filters when they narrow the question.
 The report's `edge_census` keeps the complete filtered counts by dependency kind

@@ -1274,9 +1274,13 @@ array. The rest are rejected:
 
 For a residual-peel decision, use
 [`modules propose --strategy complete`](module_search.md). It returns a
-snapshot-bound `.plan`, an exhaustive no-peel result in its reported scope, or an
-explicitly incomplete result. It supports joint atoms and multiple destinations;
-default/auto factorizer readiness has a narrower advisory meaning.
+snapshot-bound `.plan`, a scoped `exhausted_no_peel` result, or an explicitly
+incomplete result. It constructs graph-constrained placements directly, including
+joint atoms and multiple destinations; it does not enumerate the Cartesian
+product of atom-to-destination choices. `--max-checks` and `--time-budget-ms`
+limit analyzed partition states and wall-clock time. Work counts summarize
+projections, contractions, branch attempts and final certification. Default/auto
+factorizer readiness remains advisory and cannot establish that no peel exists.
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,

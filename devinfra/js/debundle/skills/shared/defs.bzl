@@ -88,6 +88,7 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle/docs:cli.md",
             "//devinfra/js/debundle/docs:integration.md",
             "//devinfra/js/debundle/docs:module_search.md",
+            "//devinfra/js/debundle/docs:module_placement.md",
             "//devinfra/js/debundle/docs:naming.md",
             "//devinfra/js/debundle/docs:planning.md",
             "//devinfra/js/debundle/docs:selectors.md",

@@ -86,13 +86,16 @@ For a runnable composition of one reviewed `modules merge`, starting after
 runs the dry-run, applies with invocation capture, and regenerates explicitly;
 it is an example of that edit flow, not a generic adapter framework.
 
-For residual extraction from an accepted partial spec, use
-[complete fixed-owner search](../../docs/module_search.md) and the shipped
-[`examples/peel_more.py`](examples/peel_more.py) recipe. It saves an exact plan,
-checks its graph/program identity, previews and applies the same changes, then
-regenerates. Its explicit search budget may fail as incomplete; this is not a
-no-peel proof. Review ownership and synthesized selectors, and retain separate
-adapter behavioral evidence.
+For residual extraction from an accepted partial spec, inspect the graph and
+source, then use [exact residual placement](../../docs/module_search.md) and the
+shipped [`examples/peel_more.py`](examples/peel_more.py) recipe. It saves one
+snapshot-bound plan, checks its graph/program identity, previews and applies the
+same changes, then regenerates. Its `--max-checks` budget limits analyzed
+partition states; the report's work counts show projections, contractions,
+branch attempts and final certifications. Budget exhaustion is `incomplete`,
+not a no-peel proof. Review ownership and synthesized selectors,
+and retain separate adapter behavioral evidence. The complete search produces
+a graph placement witness, while the default/auto factorizer remains advisory.
 These shared Python recipes import sibling helpers. Include their `examples`
 directory on `PYTHONPATH` when using an isolated interpreter that omits the
 script directory from its import path; the archive test supplies that scaffold.
