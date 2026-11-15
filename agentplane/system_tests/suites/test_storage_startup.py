@@ -17,7 +17,8 @@ from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.scenarios import storage
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
 
 @asynccontextmanager

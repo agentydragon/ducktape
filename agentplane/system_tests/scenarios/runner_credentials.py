@@ -13,8 +13,9 @@ from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.agent import WORKING_DIRECTORY, Agent, scripted_turn_with_admission_and_history
+from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
-from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 
