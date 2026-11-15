@@ -1,10 +1,10 @@
 # Constructive residual placement and exact import schedules
 
-Design derivation, 2026-11-15. The concrete schedule representation and shared
-validation/emission path are implemented. The construction below is the
-implementation contract; completion remains tracked in
-`plans/module_placement.md`. The arguments describe the specified algorithms,
-not a claim that finite tests establish universal correctness.
+Design derivation, 2026-11-15. Concrete schedules, shared validation/emission,
+and constraint-driven placement construction implement the algorithms below.
+Delivery evidence and remaining acceptance checks are tracked in
+`plans/module_placement.md`. The arguments establish the algorithmic contracts;
+finite tests independently check the implementation and its edge cases.
 
 ## Model and boundary
 
@@ -140,8 +140,9 @@ constraints and a separate proof; the boolean domain alone would be insufficient
 
 ## Constraint worklist and necessary contraction clauses
 
-After every contraction, update incident canonical quotient buckets and propagate
-these clauses to a fixed point. Each clause records its source edges, domains,
+After every contraction, project the canonical quotient and propagate these
+clauses to a fixed point. The current constructor rebuilds from the prepared
+source graph; the separate batch-prediction API maintains incident-edge buckets. Each clause records its source edges, domains,
 fixed-owner premises and query cap. A clause's alternatives need not individually
 be sufficient; every valid completion must satisfy at least one alternative.
 
@@ -195,9 +196,9 @@ contradiction. At least one of the clause's contractions is necessary.
 
 ## Constructor and coverage
 
-Maintain a rollback DSU/partition, domain intersections, anchor identities,
-quotient edge buckets, and a worklist of typed constraints. Reuse the prepared
-source graph. Propagate deterministic contractions and contradictions first.
+Maintain a canonical partition, domain intersections, anchor identities, and
+typed constraint clauses. Clone partitions for alternative contractions and
+reuse the prepared source graph for each quotient projection. Propagate deterministic contractions and contradictions first.
 When a necessary disjunction remains, choose a small explicit clause, try its
 compatible contraction alternatives, and recursively propagate. Deduplicate
 partitions by canonical block membership plus scope/domain state. Do not invoke
@@ -238,10 +239,10 @@ black-box acceptance callback. Whether broad closure clauses are fast enough
 requires measurement; do not describe this derivation alone as completing the
 production performance obligation.
 
-Track preparations, incident source edges, quotient rebuild/update work,
-propagation visits, forced contractions, branch clauses by kind/width, contraction
-attempts, unique partitions, SCC work, reachability visits, scheduler trial states,
-rolled-back failed trials, committed successful subtrees and final certifications.
+The report counts analyzed partitions, quotient projections, forced contractions,
+contraction attempts, clause categories and final certifications. Optimized
+profiles separately assess source preparation, SCC/reachability work, failed
+schedule trials and memory; these are not all separate report counters.
 For chains/fanouts with unrestricted new ownership the finest partition should
 already yield maximal extraction. With one fresh owner, deterministic compatible
 merges should take linear many contractions, not enumerate subsets. Fixed-entry
