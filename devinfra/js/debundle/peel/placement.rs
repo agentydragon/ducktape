@@ -555,6 +555,41 @@ impl Solver<'_, '_, '_> {
                 continue;
             }
 
+            // Domain and owner-count clauses are cheap necessary constraints.
+            // Avoid exact scheduling of a partition already outside move scope.
+            let cap_branches = self.new_owner_cap_branches(&state)?;
+            if let Some(branches) = cap_branches {
+                self.visit_branches(branches)?;
+                return Ok(());
+            }
+
+            if let Some(block) = state
+                .blocks
+                .iter()
+                .find(|block| block.owner.is_none() && !block.allow_fresh)
+            {
+                self.report.work.branch_clauses.owner_domain = self
+                    .report
+                    .work
+                    .branch_clauses
+                    .owner_domain
+                    .saturating_add(1);
+                let mut branches = Vec::new();
+                for owner in &block.allowed_owners {
+                    if self.stop_if_time() {
+                        return Ok(());
+                    }
+                    let owner_block = Token::Owner(owner.clone());
+                    if let Some(next) = self.try_branch_merge(&state, &block.key(), &owner_block)
+                        && next != state
+                    {
+                        branches.push(next);
+                    }
+                }
+                self.visit_branches(branches)?;
+                return Ok(());
+            }
+
             if self.stop_if_time() {
                 return Ok(());
             }
@@ -594,39 +629,6 @@ impl Solver<'_, '_, '_> {
                     return Ok(());
                 }
             };
-
-            let cap_branches = self.new_owner_cap_branches(&state)?;
-            if let Some(branches) = cap_branches {
-                self.visit_branches(branches)?;
-                return Ok(());
-            }
-
-            if let Some(block) = state
-                .blocks
-                .iter()
-                .find(|block| block.owner.is_none() && !block.allow_fresh)
-            {
-                self.report.work.branch_clauses.owner_domain = self
-                    .report
-                    .work
-                    .branch_clauses
-                    .owner_domain
-                    .saturating_add(1);
-                let mut branches = Vec::new();
-                for owner in &block.allowed_owners {
-                    if self.stop_if_time() {
-                        return Ok(());
-                    }
-                    let owner_block = Token::Owner(owner.clone());
-                    if let Some(next) = self.try_branch_merge(&state, &block.key(), &owner_block)
-                        && next != state
-                    {
-                        branches.push(next);
-                    }
-                }
-                self.visit_branches(branches)?;
-                return Ok(());
-            }
 
             self.certify_candidate(projection, &schedule)?;
             return Ok(());

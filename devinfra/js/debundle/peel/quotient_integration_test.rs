@@ -1771,7 +1771,9 @@ mod placement_kernel_tests {
         // four closure blocks: C(8,2) - C(4,2) = 22 attempts. In particular it
         // includes X/Y, which creates A -> X/Y -> B without merging any two SCC
         // members, and omits the irrelevant Y/Z pair.
-        let bounded = options(Destinations::Both, &[], &[], 1, Some(1));
+        // Keep the owner cap nonbinding so this query isolates the schedule
+        // obstruction rather than the cheaper cardinality clause.
+        let bounded = options(Destinations::Both, &[], &[], 6, Some(1));
         let bounded_report = search(&problem, &bounded).unwrap();
         assert!(matches!(bounded_report.status, SearchStatus::Incomplete));
         assert_eq!(bounded_report.checks, 1);
