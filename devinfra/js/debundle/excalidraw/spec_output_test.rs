@@ -60,6 +60,10 @@ fn claimed_modules_export_their_entry_points() {
             &["SearchMenu", "getMatchPreview", "getMatchedLines"],
         ),
         (
+            "main/packages/excalidraw/element/textWysiwyg.js",
+            &["textWysiwyg"],
+        ),
+        (
             "editor/packages/excalidraw/element/textWrapping.js",
             &["containsCJK", "wrapText"],
         ),
