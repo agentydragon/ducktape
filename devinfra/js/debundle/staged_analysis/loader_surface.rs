@@ -944,17 +944,22 @@ impl ProtoConvert<proto::ExportReentryLoaderRequest> for ExportReentryLoaderRequ
 impl ProtoConvert<proto::ExportReentryLoaderFailure> for ExportReentryLoaderFailure {
     fn to_proto(&self) -> Result<proto::ExportReentryLoaderFailure> {
         Ok(proto::ExportReentryLoaderFailure {
-            reason: Some(self.reason.to_proto()?),
+            reason: Some(self.reason as i32),
             occurrences: Some(self.occurrences.to_proto()?),
             first: Some(self.first.to_proto()?),
         })
     }
     fn from_proto(value: proto::ExportReentryLoaderFailure) -> Result<Self> {
+        let reason = proto::LoaderClosureFailureKind::try_from(required(
+            value.reason,
+            "ExportReentryLoaderFailure.reason",
+        )?)?;
+        ensure!(
+            reason != proto::LoaderClosureFailureKind::Unspecified,
+            "unspecified saved-analysis loader closure failure"
+        );
         Ok(Self {
-            reason: LoaderClosureFailureKind::from_proto(required(
-                value.reason,
-                "ExportReentryLoaderFailure.reason",
-            )?)?,
+            reason,
             occurrences: ProtoConvert::from_proto(required(
                 value.occurrences,
                 "ExportReentryLoaderFailure.occurrences",

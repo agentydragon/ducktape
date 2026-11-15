@@ -1945,6 +1945,10 @@ rust_prost_transform(
         "type_attribute=ducktape.debundle.saved_analysis.ProgramPremiseKey=#[serde(rename_all = \"snake_case\")]",
         "type_attribute=ducktape.debundle.saved_analysis.ProgramPremiseKey=#[strum(serialize_all = \"snake_case\")]",
         "field_attribute=ducktape.debundle.saved_analysis.ProgramPremiseKey.PROGRAM_PREMISE_KEY_UNSPECIFIED=#[serde(skip)]",
+        "type_attribute=ducktape.debundle.saved_analysis.LoaderClosureFailureKind=#[derive(::serde::Serialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.LoaderClosureFailureKind=#[derive(::serde::Deserialize)]",
+        "type_attribute=ducktape.debundle.saved_analysis.LoaderClosureFailureKind=#[serde(rename_all = \"snake_case\")]",
+        "field_attribute=ducktape.debundle.saved_analysis.LoaderClosureFailureKind.LOADER_CLOSURE_FAILURE_KIND_UNSPECIFIED=#[serde(skip)]",
     ],
     deps = [
         "@crates//:serde",

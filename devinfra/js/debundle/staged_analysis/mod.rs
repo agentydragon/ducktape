@@ -1069,6 +1069,15 @@ mod protobuf_tests {
                 serde_json::to_value(&restored).unwrap(),
                 serde_json::to_value(&original).unwrap()
             );
+            let json = serde_json::to_value(&original).unwrap();
+            assert_eq!(
+                json["loader"]["failures"][0]["reason"],
+                "loader_request_reaches_target"
+            );
+            assert_eq!(
+                json["loader"]["failures"][1]["reason"],
+                "undeclared_host_behavior"
+            );
             assert!(!restored.loader.permits_export_reentry_proof());
             encodings.push(bytes);
         }
@@ -1152,7 +1161,14 @@ mod protobuf_tests {
             .is_err()
         );
         for kind in [0, i32::MAX] {
-            assert!(LoaderClosureFailureKind::from_proto(kind).is_err());
+            let mut malformed = report(None).to_proto().unwrap();
+            let Some(proto::export_reentry_loader_derivation::Value::LoaderClosure(closure)) =
+                &mut malformed.loader.as_mut().unwrap().value
+            else {
+                unreachable!()
+            };
+            closure.failures[0].reason = Some(kind);
+            assert!(ExportReentryReport::from_proto(malformed).is_err());
         }
         for value in [0, i32::MAX] {
             assert!(

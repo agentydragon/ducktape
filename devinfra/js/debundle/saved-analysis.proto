@@ -781,15 +781,31 @@ enum Kind {
   KIND_PROXY = 11;
 }
 
+// Why a target is not loader-closed. A report keeps the first witness and the
+// occurrence count per kind.
 enum LoaderClosureFailureKind {
   LOADER_CLOSURE_FAILURE_KIND_UNSPECIFIED = 0;
+  // A loader key the derivation reads is omitted or `unknown`.
   LOADER_CLOSURE_FAILURE_KIND_UNDECLARED_HOST_BEHAVIOR = 1;
+  // A loader value or call whose target the source does not fix: non-literal
+  // or aliased `import.meta.require`, global `require`, `module`, or
+  // `import.meta` as a value.
   LOADER_CLOSURE_FAILURE_KIND_OPAQUE_LOADER_SITE = 2;
+  // A request for the `module` builtin, whose `createRequire` makes loaders.
   LOADER_CLOSURE_FAILURE_KIND_LOADER_FACTORY_REQUEST = 3;
+  // A literal loader request that names no analyzed chunk entry and no
+  // recognized builtin.
   LOADER_CLOSURE_FAILURE_KIND_UNRESOLVABLE_LOADER_REQUEST = 4;
+  // A literal loader request for a host module absent from
+  // `reentry_free_builtin_modules` and `reentry_free_bun_modules`.
   LOADER_CLOSURE_FAILURE_KIND_NON_REENTRY_FREE_BUILTIN_REQUEST = 5;
+  // A literal loader request for an embedded file whose host loader is absent
+  // from `reentry_free_embedded_loaders`.
   LOADER_CLOSURE_FAILURE_KIND_NON_REENTRY_FREE_EMBEDDED_FILE = 6;
+  // A literal loader request whose loaded closure contains the target.
   LOADER_CLOSURE_FAILURE_KIND_LOADER_REQUEST_REACHES_TARGET = 7;
+  // A static request in a loaded closure that is not a resolved ordinary
+  // request for an analyzed chunk entry or a declared reentry-free builtin.
   LOADER_CLOSURE_FAILURE_KIND_LOADED_CLOSURE_REQUEST = 8;
   LOADER_CLOSURE_FAILURE_KIND_LOADED_CLOSURE_TOP_LEVEL_AWAIT = 9;
 }

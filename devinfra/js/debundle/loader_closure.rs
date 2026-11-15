@@ -20,7 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::saved_proto::{ProtoConvert, proto, required};
-use anyhow::{Result, bail};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use spec::{
     EmbeddedLoader, HostBehavior, HostModule, LoaderResultForEvaluatingModule,
@@ -33,33 +33,7 @@ use source_identity::ChunkId;
 
 /// Why a target is not loader-closed. A report keeps the first witness and the
 /// occurrence count per kind.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LoaderClosureFailureKind {
-    /// A loader key the derivation reads is omitted or `unknown`.
-    UndeclaredHostBehavior,
-    /// A loader value or call whose target the source does not fix: non-literal
-    /// or aliased `import.meta.require`, global `require`, `module`,
-    /// `import.meta` as a value.
-    OpaqueLoaderSite,
-    /// A request for the `module` builtin, whose `createRequire` makes loaders.
-    LoaderFactoryRequest,
-    /// A literal loader request that names no analyzed chunk entry and no
-    /// recognized builtin.
-    UnresolvableLoaderRequest,
-    /// A literal loader request for a host module absent from
-    /// `reentry_free_builtin_modules` and `reentry_free_bun_modules`.
-    NonReentryFreeBuiltinRequest,
-    /// A literal loader request for an embedded file whose host loader is
-    /// absent from `reentry_free_embedded_loaders`.
-    NonReentryFreeEmbeddedFile,
-    /// A literal loader request whose loaded closure contains the target.
-    LoaderRequestReachesTarget,
-    /// A static request in a loaded closure that is not a resolved ordinary
-    /// request for an analyzed chunk entry or a declared reentry-free builtin.
-    LoadedClosureRequest,
-    LoadedClosureTopLevelAwait,
-}
+pub use crate::saved_proto::proto::LoaderClosureFailureKind;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub enum LoaderRequestTarget {
@@ -574,63 +548,6 @@ impl<W: Clone + Ord> IterativeRules for LoaderClosureRules<'_, W> {
     }
 }
 
-impl ProtoConvert<i32> for LoaderClosureFailureKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::UndeclaredHostBehavior => {
-                proto::LoaderClosureFailureKind::UndeclaredHostBehavior as i32
-            }
-            Self::OpaqueLoaderSite => proto::LoaderClosureFailureKind::OpaqueLoaderSite as i32,
-            Self::LoaderFactoryRequest => {
-                proto::LoaderClosureFailureKind::LoaderFactoryRequest as i32
-            }
-            Self::UnresolvableLoaderRequest => {
-                proto::LoaderClosureFailureKind::UnresolvableLoaderRequest as i32
-            }
-            Self::NonReentryFreeBuiltinRequest => {
-                proto::LoaderClosureFailureKind::NonReentryFreeBuiltinRequest as i32
-            }
-            Self::NonReentryFreeEmbeddedFile => {
-                proto::LoaderClosureFailureKind::NonReentryFreeEmbeddedFile as i32
-            }
-            Self::LoaderRequestReachesTarget => {
-                proto::LoaderClosureFailureKind::LoaderRequestReachesTarget as i32
-            }
-            Self::LoadedClosureRequest => {
-                proto::LoaderClosureFailureKind::LoadedClosureRequest as i32
-            }
-            Self::LoadedClosureTopLevelAwait => {
-                proto::LoaderClosureFailureKind::LoadedClosureTopLevelAwait as i32
-            }
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::LoaderClosureFailureKind::try_from(value)? {
-            proto::LoaderClosureFailureKind::UndeclaredHostBehavior => Self::UndeclaredHostBehavior,
-            proto::LoaderClosureFailureKind::OpaqueLoaderSite => Self::OpaqueLoaderSite,
-            proto::LoaderClosureFailureKind::LoaderFactoryRequest => Self::LoaderFactoryRequest,
-            proto::LoaderClosureFailureKind::UnresolvableLoaderRequest => {
-                Self::UnresolvableLoaderRequest
-            }
-            proto::LoaderClosureFailureKind::NonReentryFreeBuiltinRequest => {
-                Self::NonReentryFreeBuiltinRequest
-            }
-            proto::LoaderClosureFailureKind::NonReentryFreeEmbeddedFile => {
-                Self::NonReentryFreeEmbeddedFile
-            }
-            proto::LoaderClosureFailureKind::LoaderRequestReachesTarget => {
-                Self::LoaderRequestReachesTarget
-            }
-            proto::LoaderClosureFailureKind::LoadedClosureRequest => Self::LoadedClosureRequest,
-            proto::LoaderClosureFailureKind::LoadedClosureTopLevelAwait => {
-                Self::LoadedClosureTopLevelAwait
-            }
-            proto::LoaderClosureFailureKind::Unspecified => {
-                bail!("unspecified saved-analysis loader closure failure")
-            }
-        })
-    }
-}
 impl<W: ProtoConvert<proto::LoaderSiteWitness>> ProtoConvert<proto::LoaderClosureWitness>
     for LoaderClosureWitness<W>
 {
