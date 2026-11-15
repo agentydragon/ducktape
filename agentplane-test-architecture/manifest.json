@@ -68,7 +68,7 @@
     "iteration15.json": "0e5f99643ef17a6f0044e733de13747aedd2eb1ef67dffdee023e2dad90b0316",
     "evidence.json": "8875b9d2ea91b3feb4e5c692b8d7871ad1a14fdc3e2a72a374af6abaf26d275a",
     "iteration16.json": "e7e89850197c5ce9e397206bf78a255bb00f7176a4f1089619cc7c4601fb8c93",
-    "five-port-dispatch.json": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b"
+    "five-port-dispatch.json": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4"
   },
   "previous_live_verified_at_utc": "2026-11-13T15:04:10.895450+00:00",
   "visual_validation_status": "Report16 visual validation pending; prior screenshot evidence applies only to the previous snapshot.",
@@ -527,10 +527,17 @@
   "observed_at_utc": "2026-11-14T18:10:20Z",
   "current_dispatch_refresh": {
     "dispatch_evidence": "five-port-dispatch.json",
-    "dispatch_evidence_sha256": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "dispatch_evidence_sha256": "6be05e6281183d4ef8e734e9ed7d216666f5c6ffd37368faa83c2d19dbbfedd4",
     "visual_dispatch_record_sha256_at_capture": "d0544c6bc1636b7adfdfeb0ac01b62f58763cb706ab9c9f82520d0ebc6259c71",
     "visual_validation": "visual-validation.json#current_five_port_dispatch_refresh",
     "page_sha256": "44a608afe8b6ec279379155ba0bf124af6c76f42803c649299304e1a31ca9e2a",
-    "historical_report16_status_preserved": true
+    "historical_report16_status_preserved": true,
+    "latest_visual_dispatch_record_sha256_at_capture": "b646f8992ccd774f512be2348679c5dbff2d4764a934919414fcef8e5db3838b",
+    "latest_visual_validation": "visual-validation.json#current_dispatch_card_follow_up",
+    "dispatch_source_pr_state": "merged",
+    "dispatch_record_as_of_utc": "2026-11-15T03:23:43Z",
+    "dispatch_source_pr_merge_sha": "afb571b3b362d8c84ce2431bd75e148bf29cc63c",
+    "dispatch_source_pr_merged_at_utc": "2026-11-15T03:15:16Z",
+    "dispatch_source_pr_number": 16485
   }
 }

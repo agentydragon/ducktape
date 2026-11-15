@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "as_of_utc": "2026-11-15T03:04:38Z",
+  "as_of_utc": "2026-11-15T03:23:43Z",
   "source_devel_commit": "a18b1ea43730e2cd93e6fc187ece230f1ce2dcf7",
   "scope": "Current dispatch and validation status for five Agentplane test ports. Required acceptance coverage and existing selection policy remain; no selector substitutions or optional tests. Target boundaries are partitioned (14 suite targets to 17 in the measured candidate). No KVM, resource, or concurrency change; historical fleet measurements remain unchanged.",
   "ports": [
@@ -70,13 +70,16 @@
         "number": 16485,
         "title": "Add App-independent Session test driver",
         "url": "https://github.com/agentydragon/ducktape/pull/16485",
-        "state": "open",
+        "state": "merged",
         "is_draft": false,
         "head_sha": "b6c2e93fdec51c158ff391ae141e35d403f97ba2",
         "head_url": "https://github.com/agentydragon/ducktape/commit/b6c2e93fdec51c158ff391ae141e35d403f97ba2",
         "base_branch": "devel",
         "base_sha_observed": "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
-        "mergeable": true
+        "mergeable": null,
+        "merge_url": "https://github.com/agentydragon/ducktape/commit/afb571b3b362d8c84ce2431bd75e148bf29cc63c",
+        "merge_sha": "afb571b3b362d8c84ce2431bd75e148bf29cc63c",
+        "merged_at_utc": "2026-11-15T03:15:16Z"
       },
       "summary": "Adds a native Session test driver without pulling App-owned test fixtures into the backend target. Rebased onto current devel with a range-diff-identical patch; the sole BUILD conflict was resolved by retaining both registrations.",
       "prior_head_validation": {
@@ -88,21 +91,30 @@
         "note": "All required checks passed on the prior head before rebasing; this is not current-head validation."
       },
       "required_ci": {
-        "status": "in_progress",
+        "status": "passed",
         "source_sha": "b6c2e93fdec51c158ff391ae141e35d403f97ba2",
         "base_sha": "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
         "run_url": "https://github.com/agentydragon/ducktape/actions/runs/43670308652",
         "buildbuddy_invocation_id": "97687ff6-5b52-5403-9602-cf77e7fa5e70",
         "buildbuddy_url": "https://app.buildbuddy.io/invocation/97687ff6-5b52-5403-9602-cf77e7fa5e70",
-        "checks_in_progress": ["Bazel CI", "Build artifacts/imports"],
         "precommit": "passed",
-        "mergeable": true,
-        "note": "Pre-commit passed on this head at 2026-11-15T03:00:54Z; Bazel CI and artifacts/imports are still running.",
+        "mergeable": null,
+        "note": "All required checks passed on exact source head b6c2e93fdec51c158ff391ae141e35d403f97ba2. Bazel CI completed 2026-11-15T03:13:01Z, Build artifacts + imports completed 03:01:27Z, pre-commit completed 03:00:54Z, and ordinary BuildBuddy tests passed. PR merged 2026-11-15T03:15:16Z as afb571b3b362d8c84ce2431bd75e148bf29cc63c.",
         "buildbuddy_synthetic_merge_sha": "05d873fc8f5c2284470ad7ed9e626a30cddecf61",
         "buildbuddy_synthetic_merge_parents": [
           "1a6a14c481c9b02721abdd01b58fc6881a32bc25",
           "b6c2e93fdec51c158ff391ae141e35d403f97ba2"
-        ]
+        ],
+        "checks_passed": [
+          "Bazel CI / Test & Build",
+          "Build artifacts + imports check",
+          "Pre-commit checks",
+          "BuildBuddy / Bazel ordinary tests"
+        ],
+        "visual_review": {
+          "status": "neutral",
+          "url": "https://github.com/agentydragon/ducktape/runs/132678830018"
+        }
       }
     },
     {
