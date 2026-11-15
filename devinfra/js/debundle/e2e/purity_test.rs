@@ -1207,7 +1207,7 @@ const Base = k.object({ id: 1 });
 const A = k.object({ a: 1 }).describe("a");
 const B = Base.extend({ b: 2 }).describe("b");
 const C = k.object({ c: 1 }).describe("c");
-console.log(A, B, C);
+console.log(A.shape.a, A.d, B.shape.b, B.d, C.shape.c, C.d);
 export { A, B, C };
 "#;
 
@@ -1253,7 +1253,19 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
             .with_fluent_exports(&["e4"])
             .build()]),
     );
-    assert!(fixture.entry_path.exists());
+    assert_preserved_entry_output(&fixture, "1 a 2 b 1 c\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_a.js",
+        &["A", "C"],
+        &["B"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_b.js",
+        &["B"],
+        &["A", "C"],
+    );
 }
 
 /// React annotation idiom: each component declaration is followed by
