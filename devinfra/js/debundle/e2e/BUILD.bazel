@@ -445,6 +445,8 @@ rust_library(
         "support/fixture_spec.rs",
         "support/mod.rs",
         "support/saved_analysis.rs",
+        "support/tree_assertions.rs",
+        "support/workspace.rs",
     ],
     crate_name = "debundle_e2e_support",
     crate_root = "support/mod.rs",
@@ -1625,3 +1627,5 @@ debundle_e2e_test(
         "@crates//:tempfile",
     ],
 )
+
+debundle_e2e_test(name = "fixture_workspace_test")

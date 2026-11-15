@@ -5,7 +5,13 @@ The library's existing public test helpers are re-exported by `mod.rs`:
 - `fixture_spec.rs` owns fixture inputs, selectors, annotations, and typed transform-spec construction.
 - `ast_assertions.rs` owns JavaScript parsing and structural assertions independent of printer whitespace.
 - `saved_analysis.rs` (`debundle_e2e_support::saved_analysis`) owns staged-analysis fixtures, `spec project-analysis`/`analyze`/`run --analysis` command builders, and direct-versus-staged output comparison.
-- `mod.rs` owns filesystem setup, CLI/Node execution, emitted-tree checks, and report
+- `workspace.rs` owns tree input materialization and execution. `write_tree_fixture`
+  prepares editable source/spec inputs without running the CLI; `TreeWorkspace::run`
+  executes them. Staged tree fixtures analyze once and reuse that artifact for the
+  initial graph-producing run.
+- `tree_assertions.rs` collects relative paths and raw bytes; exact-tree comparison
+  and staged report normalization apply their separate policies to that collection.
+- `mod.rs` owns flat-fixture setup, CLI/Node execution, and report
   fixtures. An unexpected CLI exit preserves the spec, available per-chunk reports,
   root program graph, and any emitted `app/` tree under undeclared outputs; outputs not
   reached before an early failure remain absent. Runtime-only `extra_files` are mirrored
