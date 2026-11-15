@@ -45,13 +45,10 @@ pub(crate) fn resolve_imported_binding(
         } else if info.src.starts_with('.') || info.src.starts_with('/') {
             // Source path doesn't reference a known chunk (e.g. a
             // synthetic e2e snapshot file with no entry in the artifact).
-            // Resolve relative to the source chunk's directory in the
-            // output tree (chunk_id includes the directory prefix; the
-            // runtime file is chunk-relative).
-            let chunk_runtime_abs = join_module_path(&[
-                &module_path_dirname(source_chunk_id),
-                &module_path_dirname(source_runtime_file),
-            ]);
+            // Resolve from the source chunk root in the output tree; the
+            // runtime file path is relative to that root.
+            let chunk_runtime_abs =
+                join_module_path(&[source_chunk_id, &module_path_dirname(source_runtime_file)]);
             ImportedSourceTarget::OutputPath(join_module_path(&[&chunk_runtime_abs, &info.src]))
         } else {
             ImportedSourceTarget::ExternalSpecifier(info.src.clone())
