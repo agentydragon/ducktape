@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "source_sha": "34507c2f0c3756193eab9834e743032ccfb7b99e",
-  "observed_at_utc": "2026-11-15T12:20:00Z",
+  "observed_at_utc": "2026-11-15T12:10:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1319,
