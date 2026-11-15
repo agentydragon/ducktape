@@ -4,7 +4,7 @@
 # local endpoint. The vector-talos-logs DaemonSet (cluster/generated/vector-talos-logs/) joins
 # the host network and binds only host loopback on :13333, which forwards the logs to
 # cluster Loki. The node-vendor=talos label scopes that DaemonSet to Talos nodes (NixOS
-# nodes ship their journal via the promtail-journal HelmRelease instead).
+# nodes ship their journal via the alloy-journal HelmRelease instead).
 #
 # machine.logging and machine.nodeLabels are non-reboot fields, applied live. Land the
 # DaemonSet before applying this so the endpoint has a listener (see

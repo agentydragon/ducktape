@@ -1,5 +1,4 @@
-"""Loki (SimpleScalable) with its SeaweedFS bucket, identity and credentials, the two promtail
-DaemonSets shipping pod logs and the NixOS journal, and Loki's CiliumNetworkPolicy.
+"""Loki (SimpleScalable) with its SeaweedFS bucket, identity, credentials and CiliumNetworkPolicy.
 
 External access goes through the Authentik proxy outpost (native blueprint in
 cluster/k8s/authentik/app/blueprints/): Gateway → ak-outpost-loki-outpost (auth) → loki
@@ -24,7 +23,6 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
-from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -45,10 +43,6 @@ READ_URL = "http://loki-read.loki.svc.cluster.local:3100"
 PUSH_URL = f"{WRITE_URL}/loki/api/v1/push"
 _CREDENTIALS_ENV_FROM = [{"secretRef": {"name": _CREDENTIALS_SECRET}}]
 _GOLDILOCKS_OFF = {"goldilocks.fairwinds.com/enabled": "false"}
-# Per-node cutover protocol; pod-logs.alloy uses the sanitized Node-label spelling.
-POD_COLLECTOR_LABEL = "observability.allegedly.works/pod-collector"
-JOURNAL_COLLECTOR_LABEL = "observability.allegedly.works/journal-collector"
-_TOLERATE_NO_SCHEDULE = [{"effect": "NoSchedule", "operator": "Exists"}]
 
 
 def _storage(chart: Chart) -> None:
@@ -220,88 +214,6 @@ def _loki_values() -> dict[str, object]:
     }
 
 
-def _legacy_collector_affinity(label: str) -> dict[str, object]:
-    # Missing labels retain legacy collection. Draining is separate from activation
-    # so an operator can stop the writer before snapshotting its final checkpoint.
-    return {
-        "nodeAffinity": {
-            "requiredDuringSchedulingIgnoredDuringExecution": {
-                "nodeSelectorTerms": [
-                    {"matchExpressions": [{"key": label, "operator": "NotIn", "values": ["drained", "alloy"]}]}
-                ]
-            }
-        }
-    }
-
-
-def _promtail_values() -> dict[str, object]:
-    return {
-        "affinity": _legacy_collector_affinity(POD_COLLECTOR_LABEL),
-        "config": {
-            "clients": [
-                # SimpleScalable writes through loki-write; the old single-binary
-                # `loki` Service no longer exists.
-                {"url": PUSH_URL}
-            ],
-            "snippets": {
-                # Drop the default `filename` label: its per-Pod UID churns streams,
-                # growing the retained index; cardinality, not ingest volume, drives
-                # that cost, while namespace/pod/container already identify the source.
-                # Drop it in a pipeline stage because Promtail
-                # adds it after relabeling. `pipelineStages` replaces chart defaults,
-                # so keep the `cri` stage here too.
-                "pipelineStages": [{"cri": {}}, {"labeldrop": ["filename"]}]
-            },
-        },
-        "resources": {
-            "requests": {
-                "cpu": "50m",
-                # cgroup v2 charges tailed-file page cache here; a 128Mi cap caused
-                # eviction/re-read thrash that starved etcd. Keep ample headroom above
-                # the tail working set; measurements are in
-                # `cluster/docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md`.
-                "memory": "256Mi",
-            },
-            "limits": {"cpu": "500m", "memory": "1Gi"},
-        },
-        "tolerations": _TOLERATE_NO_SCHEDULE,
-    }
-
-
-def _promtail_journal_values() -> dict[str, object]:
-    return {
-        "nodeSelector": node_scheduling.NIXOS_NODE_SELECTOR,
-        "affinity": _legacy_collector_affinity(JOURNAL_COLLECTOR_LABEL),
-        "tolerations": _TOLERATE_NO_SCHEDULE,
-        "config": {
-            "clients": [{"url": PUSH_URL}],
-            "snippets": {
-                # Main Promtail already collects pod logs on every node; avoid duplicates.
-                "scrapeConfigs": "",
-                "extraScrapeConfigs": (
-                    Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/journal-scrape.yaml"
-                ).read_text(),
-            },
-        },
-        "extraVolumes": [
-            {"name": "journal", "hostPath": {"path": "/var/log/journal"}},
-            {"name": "machine-id", "hostPath": {"path": "/etc/machine-id"}},
-        ],
-        "extraVolumeMounts": [
-            {"name": "journal", "mountPath": "/var/log/journal", "readOnly": True},
-            {"name": "machine-id", "mountPath": "/etc/machine-id", "readOnly": True},
-        ],
-        "resources": {
-            "requests": {
-                "cpu": "50m",
-                # Same cgroup page-cache/etcd I/O constraint as pod-log Promtail above.
-                "memory": "256Mi",
-            },
-            "limits": {"cpu": "500m", "memory": "512Mi"},
-        },
-    }
-
-
 def _helm_releases(chart: Chart) -> None:
     helm_release(
         chart,
@@ -314,33 +226,6 @@ def _helm_releases(chart: Chart) -> None:
         chart_interval="12h",
         install=RETRY_FAILED_INSTALL,
         values=_loki_values(),
-    )
-    helm_release(
-        chart,
-        "promtail",
-        NAME,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart="promtail",
-        version="6.x",
-        interval="30m",
-        chart_interval="12h",
-        install=RETRY_FAILED_INSTALL,
-        values=_promtail_values(),
-    )
-    # Journal-only deviation: keep NixOS kernel events (including GPU Xid 79) in
-    # cluster-retained Loki logs beyond local journal retention. Talos uses
-    # `cluster/cdk8s/vector_talos_logs.py`; both Promtails remain available for per-node rollback.
-    helm_release(
-        chart,
-        "promtail-journal",
-        NAME,
-        repository=grafana_helmrepository.SOURCE_REF,
-        chart="promtail",
-        version="6.x",
-        interval="30m",
-        chart_interval="12h",
-        install=RETRY_FAILED_INSTALL,
-        values=_promtail_journal_values(),
     )
 
 
@@ -384,11 +269,6 @@ def _network_policy(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector={"app.kubernetes.io/name": NAME},
         ingress=[
-            # Promtail → Loki (log push)
-            CiliumNetworkPolicySpecIngress(
-                from_endpoints=_from_pods({"app.kubernetes.io/name": "promtail", namespace_label: NAME}),
-                to_ports=_ingress_tcp("3100"),
-            ),
             # Vector Talos-log receiver → Loki (Talos node logs). The receiver runs in
             # hostNetwork so it can bind only 127.0.0.1:13333; Cilium represents it as
             # host on the local node and remote-node after a cross-node service hop.

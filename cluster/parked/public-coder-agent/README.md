@@ -43,7 +43,7 @@ bearer substitution. Resuming OpenClaw does not restore Kubernetes API access. T
 separate narrow Roles that Haku and Agentplane Sandboxes still use remain owned by
 `public-coder-agent-access`.
 
-Promtail scrapes ordinary pod stdout/stderr from the application and Console into Loki. The current
+Node-local Alloy scrapes ordinary pod stdout/stderr from the application and Console into Loki. The current
 Loki configuration enables compactor retention but sets no finite `retention_period`, so these
 records are not subject to age-based deletion. Console logs map authorization decisions to the
 Agent and grant, while the durable grant row maps the grant to its source ToolCall.

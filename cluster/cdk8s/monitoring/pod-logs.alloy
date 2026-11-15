@@ -1,24 +1,13 @@
-// The node label is the per-node migration gate (loki.POD_COLLECTOR_LABEL).
-// Import requires a stopped Promtail snapshot and a first-start reset of ONLY this
-// log component's unused state: see docs/promtail-alloy-cutover.md.
 discovery.kubernetes "pod_logs" {
   role = "pod"
   selectors {
     role  = "pod"
     field = string.format("spec.nodeName=%s", sys.env("NODE_NAME"))
   }
-  attach_metadata {
-    node = true
-  }
 }
 
 discovery.relabel "pod_logs" {
   targets = discovery.kubernetes.pod_logs.targets
-  rule {
-    source_labels = ["__meta_kubernetes_node_label_observability_allegedly_works_pod_collector"]
-    regex         = "alloy"
-    action        = "keep"
-  }
   // Match Promtail chart 6.x's app fallback and its useful, bounded labels.
   rule {
     source_labels = ["__meta_kubernetes_pod_controller_name"]
@@ -82,9 +71,8 @@ local.file_match "pods" {
 }
 
 loki.source.file "pods" {
-  targets               = local.file_match.pods.targets
-  legacy_positions_file = "/var/lib/alloy-node/legacy-pod-positions.yaml"
-  forward_to            = [loki.process.pods.receiver]
+  targets    = local.file_match.pods.targets
+  forward_to = [loki.process.pods.receiver]
 }
 
 loki.process "pods" {

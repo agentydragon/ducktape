@@ -1,7 +1,7 @@
 """Central, node-local, NixOS journal and syslog Alloy releases.
 
-Node-local pod logs and NixOS journals use explicit migration gates; the staged
-handoff and pending retirement checks are in docs/promtail-alloy-cutover.md.
+Node-local Alloy collects pod logs on every node and journals on NixOS nodes.
+State preservation and rollback are documented in docs/alloy.md.
 """
 
 from __future__ import annotations
@@ -59,28 +59,6 @@ _CONFIG_ENV = {
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    # Flux owns only these migration gates; never prune the kubelet-owned Node.
-    for node in (
-        "iguana",
-        "optiplex",
-        "ovh-ns1001419",
-        "ovh-ns102453",
-        "ovh-ns103656",
-        "ovh-ns103711",
-        "ovh-ns104952",
-        "ovh-ns104963",
-        "rugged",
-        "wyrm2",
-    ):
-        k8s.KubeNode(
-            chart,
-            f"{node}-log-collectors",
-            metadata=k8s.ObjectMeta(
-                name=node,
-                labels={loki.POD_COLLECTOR_LABEL: "alloy", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
-                annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
-            ),
-        )
     runfiles_root = Runfiles.CreateOrRaise().root()
     config_map, node_config_map, syslog_config_map, journal_config_map = (
         ConfigMap(
@@ -176,21 +154,6 @@ def chart(app: App) -> Chart:
             },
             "controller": {
                 "type": "daemonset",
-                # `drained` stops both writers before first-import state preparation;
-                # removing it restarts metrics against the same persistent WAL.
-                "affinity": {
-                    "nodeAffinity": {
-                        "requiredDuringSchedulingIgnoredDuringExecution": {
-                            "nodeSelectorTerms": [
-                                {
-                                    "matchExpressions": [
-                                        {"key": loki.POD_COLLECTOR_LABEL, "operator": "NotIn", "values": ["drained"]}
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                },
                 "volumes": {
                     "extra": [
                         {"name": "wal", "hostPath": {"path": _NODE_STORAGE_PATH, "type": "DirectoryOrCreate"}},
@@ -244,7 +207,7 @@ def chart(app: App) -> Chart:
             },
             "controller": {
                 "type": "daemonset",
-                "nodeSelector": dict(node_scheduling.NIXOS_NODE_SELECTOR) | {loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
+                "nodeSelector": node_scheduling.NIXOS_NODE_SELECTOR,
                 "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
                 "volumes": {
                     "extra": [
