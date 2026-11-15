@@ -5,6 +5,8 @@ from typing import Any
 
 from agentplane.environments.v1 import environment_service_pb2
 
+# gazelle:include_dep @pypi//protobuf
+
 POD_TEMPLATE = "environment-tools"
 ENVIRONMENT_RUNTIME_CONTAINER = "environment-runtime"
 VM_TEMPLATE = "environment-vm"
