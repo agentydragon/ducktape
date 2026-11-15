@@ -3742,14 +3742,13 @@ implementation remains held. The readiness audit prepares its sequence without r
 **Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
 verification, rotation, caller denial and delegation without a bearer fallback.
 
-State at 2026-11-15 07:08 UTC: stages 1–3 and most stage 4 caller switches have landed.
-The [stage 1 inventory](service_svid_authentication.md) is a dated baseline; the
-[cutover readiness audit](service_svid_stage5_readiness.md) checks fresh devel, pinned images,
-actual Pods and mounted settings. Actions still selects bearers for direct and delegated
-Dispatcher/History calls; the sampler still selects a bearer for LLM ingress. The Actions direct
-Dispatcher grant (#16467) is now merged and live. Finish those separate caller cutovers before
-receiver removal. The sampler provider cutover must preserve retained Session shapes and the
-selected zero-or-several central environment attachments. Stage 5 is not released: its plan
+State at 2026-11-15 09:00 UTC: stages 1–3 and the stage 4 caller switches identified by the
+[cutover readiness audit](service_svid_stage5_readiness.md) have landed and rolled out. Actions'
+direct/delegated Dispatcher and History peers switched in #16620; the sampler's LLM ingress peer
+switched in #16624. The audit records the live delegated reads and completed central Session smoke
+through the SVID provider, Executor and History export. The
+[stage 1 inventory](service_svid_authentication.md) remains a dated baseline. Retained Session shapes
+and zero-or-several central environment attachments are preserved. Stage 5 is not released: its plan
 lists receiver-specific admission removal, manifests-before-fields gates, token cleanup and RBAC
 removal last. App OIDC, MCP OAuth and Kubernetes API credentials retain their own contracts.
 
