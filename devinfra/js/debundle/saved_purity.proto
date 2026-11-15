@@ -1,0 +1,120 @@
+syntax = "proto3";
+package debundle.saved_purity;
+
+import "devinfra/js/debundle/spec_wire.proto";
+
+// Nodes precede every verdict that refers to them. References are table indices.
+message PurityGraph {
+  repeated Purity nodes = 1;
+}
+
+message Purity {
+  oneof verdict {
+    ProofDependencies pure = 1;
+    Reasons not_pure = 2;
+  }
+}
+
+message Reasons {
+  repeated Reason reasons = 1;
+}
+
+message Reason {
+  optional PurityRule rule = 1;
+  SourceLocation source_location = 2;
+  optional string detail = 3;
+  optional string author_guidance = 4;
+  optional string cause_ref = 5;
+  optional uint32 cause = 6;
+  Span span = 7;
+}
+
+message Span {
+  uint32 start = 1;
+  uint32 end = 2;
+}
+
+message SourceLocation {
+  string source_path = 1;
+  uint64 start_line = 2;
+  uint64 end_line = 3;
+  optional uint64 start_column = 4;
+}
+
+// The containing field identifies the author-input vocabulary being referenced.
+message AuthorInputRef {
+  string defining_chunk = 1;
+  uint64 input_index = 2;
+}
+
+message DescriptorCopyAuthorRef {
+  string defining_module = 1;
+  string export = 2;
+  string spec_location = 3;
+}
+
+message ProofDependencies {
+  repeated AuthorInputRef value_inputs = 1;
+  repeated AuthorInputRef native_operation_inputs = 2;
+  repeated AuthorInputRef initializer_call_effect_inputs = 3;
+  repeated AuthorInputRef imported_primitive_array_spread_inputs = 4;
+  repeated DescriptorCopyAuthorRef descriptor_copy_authors = 5;
+  repeated AuthorInputRef argument_inputs = 6;
+  repeated HostBehaviorKey host_behavior = 7;
+  repeated ProgramPremiseKey program_premises = 8;
+  repeated AuthorInputRef no_accessor_install_callables = 9;
+}
+
+message HostBehaviorKey {
+  oneof key {
+    HostBehaviorFlag flag = 1;
+    debundle.spec.NodeBuiltinModule builtin_module = 2;
+    debundle.spec.BunModule bun_module = 3;
+    debundle.spec.EmbeddedLoader embedded_loader = 4;
+    debundle.spec.ReentryFreeOperation operation = 5;
+  }
+}
+
+enum HostBehaviorFlag {
+  HOST_BEHAVIOR_FLAG_LOADER_RESULT_FOR_EVALUATING_MODULE = 0;
+  HOST_BEHAVIOR_FLAG_SYNCHRONOUS_LOAD_RUNS_APP_CALLBACKS = 1;
+  HOST_BEHAVIOR_FLAG_SYNCHRONOUS_LOAD_DRAINS_MICROTASKS = 2;
+  HOST_BEHAVIOR_FLAG_PREDEFINED_GLOBALS = 3;
+}
+
+enum ProgramPremiseKey {
+  PROGRAM_PREMISE_KEY_PROCESS_PROTOTYPE_CHAIN_ACCESSORS = 0;
+  PROGRAM_PREMISE_KEY_NON_LITERAL_LOADER_CALLS = 1;
+  PROGRAM_PREMISE_KEY_INTRINSICS_NEVER_WRITTEN = 2;
+}
+
+enum PurityRule {
+  PURITY_RULE_ASSIGN_OR_UPDATE = 0;
+  PURITY_RULE_AWAIT_OR_YIELD = 1;
+  PURITY_RULE_DELETE_OPERATOR = 2;
+  PURITY_RULE_THROW_STMT = 3;
+  PURITY_RULE_DEBUGGER_STMT = 4;
+  PURITY_RULE_UNKNOWN_CALL = 5;
+  // Direct call to a known impure function. Its verdict remains a shared cause.
+  PURITY_RULE_IMPURE_FUNCTION_CALL = 6;
+  PURITY_RULE_UNKNOWN_NEW = 7;
+  PURITY_RULE_UNKNOWN_MEMBER = 8;
+  PURITY_RULE_SUPER_PROP = 9;
+  PURITY_RULE_TAGGED_TPL = 10;
+  PURITY_RULE_ARRAY_SPREAD = 11;
+  PURITY_RULE_OBJECT_SPREAD = 12;
+  PURITY_RULE_OBJECT_ASSIGN_PROP = 13;
+  PURITY_RULE_CLASS_STATIC_OBSERVABLE = 14;
+  PURITY_RULE_BARE_CONTROL_FLOW = 15;
+  // An operand may run ToPrimitive, coercion hooks, or a proxy trap.
+  PURITY_RULE_COERCING_OPERATOR = 16;
+  // A computed key may run ToPropertyKey hooks.
+  PURITY_RULE_TO_PROPERTY_KEY_COERCION = 17;
+  // Iteration may run the iterator protocol or proxy enumeration traps.
+  PURITY_RULE_ITERATION_PROTOCOL = 18;
+  // Destructuring may run property getters or the iterator protocol.
+  PURITY_RULE_DESTRUCTURING_PATTERN = 19;
+  // The reader's graph cannot order the writers of another chunk's cell.
+  PURITY_RULE_ORDER_DEPENDENT_READ = 20;
+  PURITY_RULE_OTHER = 21;
+}

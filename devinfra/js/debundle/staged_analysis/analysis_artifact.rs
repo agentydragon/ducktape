@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use analysis::facts::ChunkFactAnalysis;
 use analysis::facts::saved::SavedChunkFactAnalysis;
-use analysis::purity::saved::{PuritySnapshot, SavedPurityGraph};
+use analysis::purity::saved::{PuritySnapshot, RestoredPurities};
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
@@ -48,7 +48,8 @@ pub struct AnalysisArtifactBody {
 /// here instead of implementing Serde on the runtime containers.
 #[derive(Serialize, Deserialize)]
 struct SavedAnalysisBody<'a> {
-    purity_graph: SavedPurityGraph,
+    // Native protobuf; verdict fields below contain indices into this table.
+    purity_graph: Vec<u8>,
     program_summary: SavedProgramSummary<'a>,
     export_reentry: Cow<'a, BTreeMap<String, ExportReentryReport>>,
     chunks: BTreeMap<String, SavedChunkFactAnalysis<'a>>,
@@ -70,7 +71,7 @@ impl<'a> SavedAnalysisBody<'a> {
             })
             .collect::<Result<_>>()?;
         Ok(Self {
-            purity_graph: purities.finish(),
+            purity_graph: purities.encode(),
             program_summary,
             export_reentry: Cow::Borrowed(&body.export_reentry),
             chunks,
@@ -78,7 +79,7 @@ impl<'a> SavedAnalysisBody<'a> {
     }
 
     fn restore(self, ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
-        let purities = self.purity_graph.restore()?;
+        let purities = RestoredPurities::decode(&self.purity_graph)?;
         Ok(AnalysisArtifactBody {
             program_summary: self.program_summary.restore(ordinals, &purities)?,
             export_reentry: self.export_reentry.into_owned(),

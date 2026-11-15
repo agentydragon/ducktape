@@ -4,6 +4,8 @@ use crate::facts::abstract_domain::effect::{CoerceOperand, CoerceOperands};
 use analysis_model::PrimKinds;
 use std::sync::Arc;
 
+pub use saved_purity_proto::debundle::saved_purity::PurityRule;
+
 /// Two-state expression-level purity with structured reasons.
 ///
 /// `Pure` means the expression is statically provably free of
@@ -84,60 +86,6 @@ impl PurityReason {
         self.cause = Some(cause);
         self
     }
-}
-
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum PurityRule {
-    AssignOrUpdate,
-    AwaitOrYield,
-    DeleteOperator,
-    ThrowStmt,
-    DebuggerStmt,
-    UnknownCall,
-    /// A direct call to a chunk-top or imported function whose body was
-    /// classified as impure. Record this call site once rather than copying
-    /// the callee's (possibly shared) transitive reason list.
-    ImpureFunctionCall,
-    UnknownNew,
-    UnknownMember,
-    SuperProp,
-    TaggedTpl,
-    ArraySpread,
-    ObjectSpread,
-    ObjectAssignProp,
-    ClassStaticObservable,
-    BareControlFlow,
-    /// A coercing operator (`+`, `-`, relational, loose equality,
-    /// `~`, unary `+`/`-`, template interpolation, `in`,
-    /// `instanceof`) whose operand is not statically known to be a
-    /// primitive. ToPrimitive / ToNumber / ToString /
-    /// `[Symbol.hasInstance]` / proxy-`has` on an object operand
-    /// fires user code.
-    CoercingOperator,
-    /// A computed property key (`obj[key]`, `{[key]: v}`,
-    /// `class { [key]() {} }`) whose key expression is not
-    /// statically known to be a primitive (or a whitelisted
-    /// `Symbol.*` well-known symbol). ToPropertyKey on an object
-    /// key fires `toString` / `[Symbol.toPrimitive]`.
-    ToPropertyKeyCoercion,
-    /// `for-of` / `for await-of` / `for-in` — iteration fires the
-    /// iterator protocol or proxy enumeration traps on the
-    /// iterated value.
-    IterationProtocol,
-    /// A destructuring pattern (declarator name or function
-    /// parameter) — object patterns fire `[[Get]]`, array patterns
-    /// fire the iterator protocol on the bound value.
-    DestructuringPattern,
-    /// A read of another chunk's cell: an import whose provider binding can
-    /// be rebound, or, inside an exported function, module state of its own
-    /// chunk. The reader's dependency graph has no node for that cell's
-    /// writers, so the read is ordered with every impure statement.
-    OrderDependentRead,
-    Other,
 }
 
 /// The effects of evaluating source, in evaluation order, with the proof

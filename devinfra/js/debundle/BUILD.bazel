@@ -796,6 +796,7 @@ rust_library(
         "purity/redundant_hints.rs",
         "purity/redundant_hints_tests.rs",
         "purity/saved.rs",
+        "purity/saved_dependencies.rs",
         "purity/ts_enum_iife.rs",
         "reports/author_inputs.rs",
         "reports/mod.rs",
@@ -816,6 +817,7 @@ rust_library(
         ":graph_provenance",
         ":js_ast",
         ":report_io",
+        ":saved_purity_rust_proto",
         ":selector_outcome",
         ":source_identity",
         ":spec",
@@ -833,6 +835,7 @@ rust_library(
         "@crates//:swc_ecma_ast",
         "@crates//:swc_ecma_visit",
         "@crates//:thiserror",
+        "@rules_rust_prost//private/3rdparty/crates:prost",
     ],
 )
 
@@ -2227,6 +2230,39 @@ proto_library(
     data = [":analysis_projection_wire_options"],
     deps = [
         ":spec_wire_proto",
+    ],
+)
+
+proto_library(
+    name = "saved_purity_proto",
+    srcs = ["saved_purity.proto"],
+    data = [":saved_purity_options"],
+    deps = [":spec_wire_proto"],
+)
+
+rust_prost_library(
+    name = "saved_purity_rust_proto",
+    proto = ":saved_purity_proto",
+)
+
+rust_prost_transform(
+    name = "saved_purity_options",
+    prost_opts = [
+        "type_attribute=debundle.saved_purity.PurityRule=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_purity.PurityRule=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_purity.PurityRule=#[derive(::strum::Display)]",
+        "type_attribute=debundle.saved_purity.PurityRule=#[derive(::strum::IntoStaticStr)]",
+        "type_attribute=debundle.saved_purity.PurityRule=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_purity.PurityRule=#[strum(serialize_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[derive(::strum::Display)]",
+        "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_purity.ProgramPremiseKey=#[strum(serialize_all = \"snake_case\")]",
+    ],
+    deps = [
+        "@crates//:serde",
+        "@crates//:strum",
     ],
 )
 
