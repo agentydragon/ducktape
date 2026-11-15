@@ -53,7 +53,7 @@ func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Con
 		Namespace: namespace, RunnerSecurity: c.RunnerSecurity,
 		RuntimeReaders: c.Readers, SessionServices: c.SessionCallers,
 		ControllerServices: c.ControllerCallers, ExecutorServices: c.ExecutorCallers,
-	}, nil, inventory, health)
+	}, inventory, health)
 	if err != nil {
 		return nil, err
 	}
