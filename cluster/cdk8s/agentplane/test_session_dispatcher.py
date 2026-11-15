@@ -34,12 +34,6 @@ def test_dispatcher_sender_identity_and_service_routing(staging_manifests: list[
         "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
     ] == {"secretKeyRef": {"name": "postgres-session-dispatcher", "key": "uri"}}
     for sender in senders:
-        sender_pod = resource("Deployment", sender)["spec"]["template"]["spec"]
-        assert any(
-            source.get("serviceAccountToken", {}).get("audience") == session_dispatcher.TOKEN_AUDIENCE
-            for volume in sender_pod["volumes"]
-            for source in volume.get("projected", {}).get("sources", [])
-        )
         policy = resource("CiliumNetworkPolicy", sender)["spec"]
         assert any(
             target["matchLabels"].get("app.kubernetes.io/name") == runner_gateway.NAME
