@@ -8,6 +8,117 @@ use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
 #[test]
+fn saved_analysis_reuses_strict_subsets_with_an_omitted_native_anchor() {
+    const SOURCE: &str = r#"var alias = Object.defineProperty;
+var other = Object.getOwnPropertyDescriptor;
+const first = alias;
+const second = other;
+console.log(first({}, "value", { value: 7 }).value, second({ value: 8 }, "value").value);
+export { first, second };
+"#;
+    let mut options = native_member_fixture();
+    options.source = SOURCE;
+    options.native_operation_inputs[0].1[0].audited_source_sha256 = source_sha256(SOURCE);
+    options.logical_modules.extend([
+        logical_module(
+            "values/chosen",
+            &[
+                Member::renamed("readableFirst", "first"),
+                Member::renamed("readableSecond", "second"),
+            ],
+        ),
+        logical_module_with_anon("run", &[], &["console.log(first({}, \"value\", { value: 7 }).value, second({ value: 8 }, \"value\").value);"]),
+    ]);
+    let (staged, _fixture) = staged(options);
+    let artifact = fs::read(&staged.artifact).unwrap();
+    let source_path = staged.root().join("snapshot/static/app.js");
+    assert_node_output(&source_path, "7 8\n", "");
+    let selection = staged.root().join("ownership_subset.json");
+    for (selected, kept, released) in [
+        ("readableFirst", "first", "second"),
+        ("readableSecond", "second", "first"),
+    ] {
+        fs::write(&selection, format!(
+            r#"{{"modules":[{{"chunk":"static/app","module":"values/chosen","bindings":["{selected}"]}},{{"chunk":"static/app","module":"run"}}]}}"#,
+        )).unwrap();
+        let direct = staged.run_without_graphs(&["--ownership-subset", path(&selection)]);
+        assert_ok(&direct.result, "direct strict ownership subset");
+        let reused = staged.run_without_graphs(&[
+            "--analysis",
+            path(&staged.artifact),
+            "--ownership-subset",
+            path(&selection),
+        ]);
+        assert_ok(&reused.result, "saved strict ownership subset");
+        assert_same_invocation_trees(&direct, &reused);
+        for invocation in [&direct, &reused] {
+            let app = invocation.output_root().join("app");
+            assert_node_output(&app.join("static/app/entry.js"), "7 8\n", "");
+            assert_module_source(
+                &app,
+                "static/app/modules/values/chosen.js",
+                &[&format!("const {selected}")],
+                &[&format!("const {released}"), "var alias", "var other"],
+            );
+            assert_module_source(
+                &app,
+                "static/app/modules/residual/unhandled.js",
+                &["var alias", "var other", &format!("const {released}")],
+                &[&format!("const {selected}"), &format!("const {kept}")],
+            );
+            assert!(
+                !app.join("static/app/modules/native.js").exists(),
+                "the resolved-member anchor's owner is omitted"
+            );
+        }
+        assert_eq!(
+            fs::read(&staged.artifact).unwrap(),
+            artifact,
+            "changing ownership must not rewrite the analysis artifact"
+        );
+    }
+
+    fs::write(&source_path, format!("{SOURCE}// changed source\n")).unwrap();
+    let stale_source = staged.run_without_graphs(&[
+        "--analysis",
+        path(&staged.artifact),
+        "--ownership-subset",
+        path(&selection),
+    ]);
+    assert!(
+        !stale_source.result.status.success(),
+        "changed source reused the analysis artifact"
+    );
+    assert!(
+        stale_source.result.stderr.contains("other parser inputs"),
+        "{}",
+        stale_source.result.stderr
+    );
+    fs::write(&source_path, SOURCE).unwrap();
+
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0]["operation"] =
+        "map_empty".into();
+    write_yaml_file(&staged.spec, &spec);
+    let stale_premise = staged.run_without_graphs(&[
+        "--analysis",
+        path(&staged.artifact),
+        "--ownership-subset",
+        path(&selection),
+    ]);
+    assert!(
+        !stale_premise.result.status.success(),
+        "changed native premise reused the analysis artifact"
+    );
+    assert!(
+        stale_premise.result.stderr.contains("another projection"),
+        "{}",
+        stale_premise.result.stderr
+    );
+}
+
+#[test]
 fn resolved_member_layout_edits_keep_analysis_identity() {
     let (staged, _fixture) = staged(native_member_fixture());
     let original_artifact = fs::read(&staged.artifact).unwrap();
