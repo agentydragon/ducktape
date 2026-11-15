@@ -176,23 +176,19 @@ class Notifications(Construct):
             notice_debounce=env.notifications_debounce,
             actions=ActionsSettings(
                 url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
-                token_file=Path("/var/run/secrets/notifications/actions"),
-                tls=workload_tls.client_tls(ACTIONS_URI),
+                tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
             ),
             runner_gateway=RunnerGatewaySettings(
                 control_target=gateway_control_target,
-                token_file=Path("/var/run/secrets/notifications/gateway"),
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             history_service=HistoryServiceSettings(
                 target=f"{history.fqdn}:{history.pod_port}",
-                token_file=Path("/var/run/secrets/notifications/history"),
-                tls=workload_tls.client_tls(HISTORY_SERVICE_URI),
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
             ),
             session_dispatcher=SessionDispatcherSettings(
                 target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                token_file=Path("/var/run/secrets/notifications/dispatcher"),
-                tls=workload_tls.client_tls(SESSION_DISPATCHER_URI),
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             github=GitHubSettings(app_id=github.app_id) if github is not None else None,
             http_port=http.pod_port,

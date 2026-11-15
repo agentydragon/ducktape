@@ -9035,30 +9035,38 @@ data:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/actions
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/notifications
       url: https://actions.agentplane-staging.svc.cluster.local:8080/
-      token_file: /var/run/secrets/notifications/actions
       request_timeout_s: 5
     runner_gateway:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/notifications
       control_target: runner-gateway.{namespace}.svc:8080
       request_timeout_s: 5
-      token_file: /var/run/secrets/notifications/gateway
     session_dispatcher:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/session-dispatcher
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/notifications
       target: session-dispatcher.agentplane-staging.svc.cluster.local:8080
       request_timeout_s: 15
-      token_file: /var/run/secrets/notifications/dispatcher
     history_service:
       tls:
         ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         server_uri: spiffe://agentplane/history-ingress
+        cert_file: /run/agentplane/workload-tls/tls.crt
+        key_file: /run/agentplane/workload-tls/tls.key
+        client_uri: spiffe://agentplane/notifications
       target: history-service.agentplane-staging.svc.cluster.local:8080
       request_timeout_s: 20
-      token_file: /var/run/secrets/notifications/history
     token_audience: agentplane-notifications
     operator_reader_account: app
     operator_reader_services:

@@ -153,17 +153,19 @@ the settings owned by its packages decode and validate them. The database URL, G
 secret are read explicitly from their Secret-backed environment inputs and are not fields in the static file.
 Configuration changes require a service restart.
 
-`actions` retains its `url` and `token_file` settings, plus optional `request_timeout_s` (default 5).
+`actions` retains its `url`, plus optional `request_timeout_s` (default 5).
 The URL must be an HTTP(S) origin; Go derives the gRPC host and port from it, using h2c for `http`
-and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA
-without presenting a client certificate. This block applies independently of the legacy Actions URL scheme.
-`runner_gateway` uses `control_target` and `token_file` for runner proxy calls through the stable
+and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE URI and CA.
+With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
+requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
+`runner_gateway` uses `control_target` for runner proxy calls through the stable
 Runner Gateway Service.
-`history_service` and `session_dispatcher` each contain a `target` and `token_file`
-(`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks
-its own token audience, so each token file holds a token projected for that service. Token paths refer
-to rotating projected ServiceAccount tokens, not static secrets. The Action Service client rereads its
-token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
+`history_service` and `session_dispatcher` each contain a `target`
+(`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects
+service SVIDs for all four peers, with no bearer fallback. The projected tokens and account RBAC
+remain mounted for rollback. A bearer-configured peer instead sets `token_file` to its rotating,
+audience-specific projected ServiceAccount token and sends no client certificate. The Action
+Service client rereads that token file for each RPC. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
 
 The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means

@@ -88,7 +88,7 @@ flowchart LR
     app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
-    notif -->|Action history: gRPC| actions
+    notif -->|Action history: gRPC mTLS, Notifications SVID| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
     actions -->|delegated EnvironmentService list/get/resume: gRPC, service actor grant available| gw
     actions -->|Session reads: broker or delegated caller, gRPC| hs
@@ -614,11 +614,11 @@ flowchart LR
     app -->|gRPC operator watches + health; optional exact service-SVID reader| notifications
     github --> notifications
     notifications --> github
-    notifications -->|Action history: gRPC| actions
+    notifications -->|Action history: gRPC mTLS, Notifications SVID| actions
     notifications -->|Sandbox identity, watched send grants| k8s
-    notifications -->|Session validation| gateway
-    notifications -->|SubmitInput| dispatcher
-    notifications -->|command receipts, Session's Sandbox| history
+    notifications -->|Session validation: mTLS, Notifications SVID| gateway
+    notifications -->|SubmitInput: mTLS, Notifications SVID| dispatcher
+    notifications -->|command receipts: mTLS, Notifications SVID| history
 ```
 
 Sandboxes keep their existing HTTP service URL. Their sidecar or relay recognizes the exact origin,

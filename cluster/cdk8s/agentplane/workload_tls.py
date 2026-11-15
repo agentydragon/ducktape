@@ -41,6 +41,17 @@ def client_tls(server_uri: str) -> ClientTLS:
     return ClientTLS(ca_file=Path(TRUST_BUNDLE_FILE), server_uri=server_uri)
 
 
+def service_client_tls(server_uri: str, *, client_uri: str) -> ClientTLS:
+    """Use the service SVID mounted by `service_certificate` and verify an exact receiver."""
+    return ClientTLS(
+        ca_file=Path(TRUST_BUNDLE_FILE),
+        server_uri=server_uri,
+        cert_file=Path(CERT_FILE),
+        key_file=Path(KEY_FILE),
+        client_uri=client_uri,
+    )
+
+
 def service_certificate(scope: Construct, env: Environment, *, container: Container, name: str, uri: str) -> TLS:
     """Mount the service's client-and-server SVID and workload-CA trust bundle."""
     secret_name = f"{name}-workload-tls"
