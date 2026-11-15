@@ -70,7 +70,10 @@ def settings(
     return Settings(
         database_url=database_url,
         listen_tls=ServerTLSListener(
-            listen="127.0.0.1:0", cert_file=Path("/fixture/tls.crt"), key_file=Path("/fixture/tls.key"), client_ca_file=Path("/fixture/ca.crt")
+            listen="127.0.0.1:0",
+            cert_file=Path("/fixture/tls.crt"),
+            key_file=Path("/fixture/tls.key"),
+            client_ca_file=Path("/fixture/ca.crt"),
         ),
         connections={
             "provider": ConnectionConfig(
