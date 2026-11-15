@@ -423,7 +423,7 @@ py_test(
     tags = K3S_TAGS + ["manual"],
     deps = [
         ":pod_cases",
-        ":pod_runners",
+        ":pod_worker",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
