@@ -23,7 +23,7 @@ The `system_test.images.check_usable` span records this check, and each import s
 At import-group boundaries, the stack removes untagged, unpinned CRI images
 that no container uses. Named caches stay warm, including k3s's own images. Before importing, it also
 removes unused fixture-local images (`git.allegedly.works/ducktape-ci/…`) the target's manifest does
-not declare: Pod and MCP suites share a recycling key, while their stack profiles can select
+not declare: Pod and MCP suites share a recycling key, while their deployment recipes can select
 different service images. A later MCP suite imports any edge or fixture-server images it needs.
 Cleanup also runs with
 the kubelet stopped during a cold rebuild, before restored obsolete layers can trigger evictions
@@ -150,16 +150,17 @@ Actions and Notifications apply Goose migrations from their serving processes be
 listeners or starting workers. Their startup probes wait for initialization; the fixture renders no
 separate migration containers for either service.
 The fixture selects that runtime explicitly; staging selects its own independently.
-The full `pod`, `deletion`, `real_model` and `mcp` stack profiles include the standalone MCP edge
-because the app's Connection Service endpoint targets it. Its PostgreSQL database, embedded Goose
-migrations, caller-token RBAC and startup/readiness probes are rendered through the shared
-construct. The `pod_scenarios`, VM and Firecracker profiles omit the edge because their scenarios do not exercise
-external Connections; the app retains its unused Connection routes and reports the service
-unavailable. MCP fixture stacks still include the edge and add its OAuth Secret and Dex trust.
-One PostgreSQL 18 Deployment uses the
-pinned published CNPG minimal image, an emptyDir data volume and
-[`postgres_entrypoint.sh`](postgres_entrypoint.sh) with [`bootstrap.sql`](bootstrap.sql) to create
-the service-owned databases. Unsupported Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
+The `probe_manifests`, `real_model_manifests`, `history_manifests` and `mcp_manifests` recipes add
+the standalone MCP edge because the app's Connection Service endpoint targets it. The edge's
+PostgreSQL database, embedded Goose migrations, caller-token RBAC and startup/readiness probes use
+the shared construct. The Pod and deletion (`pod_manifests`), recovery (`recovery_manifests`), VM and
+Firecracker recipes omit the edge because their scenarios do not exercise external Connections; the
+app retains its unused Connection routes and reports the service unavailable. The MCP recipe also
+adds the edge's OAuth Secret and Dex trust.
+One PostgreSQL 18 Deployment uses the pinned published CNPG minimal image and an emptyDir data
+volume. [`postgres_entrypoint.sh`](postgres_entrypoint.sh) runs bootstrap SQL assembled by
+[`fixture_database.py`](fixture_database.py) to create the service-owned databases. Unsupported
+Cilium, Gateway API, Prometheus and External Secrets resources are omitted during
 construction. VM stacks install Kyverno for the launcher relay. The chart instantiates the Go Runner Gateway
 directly with one gRPC listener on port 8080; the stable `runner-gateway` and `session-dispatcher`
 Service names remain. The serving process applies the embedded Dispatcher migrations before opening
@@ -184,8 +185,9 @@ bootstrap failures include the last probe result and k3s log tail and stop the s
 The image list includes the serving binaries, which apply their embedded migrations at startup. A fast
 [`test_render`](BUILD.bazel) check validates this fixture composition and its endpoint/Service wiring
 without starting Kubernetes.
-`k3s/defs.bzl` declares each suite's image references directly alongside its image targets. A small
-analysis rule writes the selected fixture, PKI, VM and guest mappings into one JSON manifest and
+[`../k3s/defs.bzl`](../k3s/defs.bzl) exports shared image facts, while each suite composes its
+own image manifest next to its test target. A small analysis rule writes the selected fixture, PKI,
+VM and guest mappings into one JSON manifest and
 carries those layouts in runfiles. The suite owns these artifacts; importing the stack library does
 not bring in service images or k3s. The importer
 combines index descriptors with those references and streams each distinct blob once, without
