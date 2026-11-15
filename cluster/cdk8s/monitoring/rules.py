@@ -134,38 +134,24 @@ _FLUX = [
     # services, exhausting ntfy's quota in the 2026-08-05 outage.
     # `unless` matches label sets, not values: require `== 1`. Unset suspend has no
     # series; explicit `suspend: false` yields 0 and must not suppress a broken service.
-    Rule.alert(
-        "FluxKustomizationNotReady",
-        (_PROMQL_DIR / "flux-kustomization-not-ready-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        summary="Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
-        description=(
-            "Flux Kustomization {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} "
-            "for more than 15 minutes."
-        ),
-    ),
-    Rule.alert(
-        "FluxHelmReleaseNotReady",
-        (_PROMQL_DIR / "flux-helm-release-not-ready-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        summary="Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
-        description=(
-            "Flux HelmRelease {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} for "
-            "more than 15 minutes."
-        ),
-    ),
-    Rule.alert(
-        "FluxGitRepositoryNotReady",
-        (_PROMQL_DIR / "flux-git-repository-not-ready-warning.promql").read_text(),
-        for_="15m",
-        labels={"severity": "warning"},
-        summary="Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} is not Ready",
-        description=(
-            "Flux GitRepository {{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} "
-            "for more than 15 minutes."
-        ),
+    *(
+        Rule.alert(
+            f"Flux{kind}NotReady",
+            (_PROMQL_DIR / f"flux-{filename}-not-ready-warning.promql").read_text(),
+            for_="15m",
+            labels={"severity": "warning"},
+            summary=f"Flux {kind} " + "{{ $labels.namespace }}/{{ $labels.name }} is not Ready",
+            description=(
+                f"Flux {kind} "
+                "{{ $labels.namespace }}/{{ $labels.name }} has reported Ready={{ $labels.status }} "
+                "for more than 15 minutes."
+            ),
+        )
+        for kind, filename in (
+            ("Kustomization", "kustomization"),
+            ("HelmRelease", "helm-release"),
+            ("GitRepository", "git-repository"),
+        )
     ),
     Rule.alert(
         "FluxMainGitRepositoryArtifactLarge",
@@ -537,63 +523,27 @@ _ROAMING_NODE_WORKLOAD = [
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    PrometheusRule(
-        chart,
-        "control-plane-io-alerts",
-        metadata=ApiObjectMetadata(name="control-plane-io-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("control-plane-io", _CONTROL_PLANE_IO)]),
-    )
-    PrometheusRule(
-        chart,
-        "disk-usage-rules",
-        metadata=ApiObjectMetadata(name="disk-usage-rules", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)]),
-    )
-    PrometheusRule(
-        chart,
-        "external-secrets-alerts",
-        metadata=ApiObjectMetadata(name="external-secrets-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("external-secrets", _EXTERNAL_SECRETS)]),
-    )
-    PrometheusRule(
-        chart,
-        "flux-alerts",
-        metadata=ApiObjectMetadata(name="flux-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("flux", _FLUX)]),
-    )
-    PrometheusRule(
-        chart,
-        "github-quota-alerts",
-        metadata=ApiObjectMetadata(name="github-quota-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("github-quota", _GITHUB_QUOTA)]),
-    )
-    PrometheusRule(
-        chart,
-        "grocy-mcp-alerts",
-        metadata=ApiObjectMetadata(name="grocy-mcp-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("grocy-mcp", _GROCY_MCP)]),
-    )
-    PrometheusRule(
-        chart,
-        "io-pressure-alerts",
-        metadata=ApiObjectMetadata(name="io-pressure-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("io-pressure", _IO_PRESSURE)]),
-    )
-    PrometheusRule(
-        chart,
-        "mcp-auth-alerts",
-        metadata=ApiObjectMetadata(name="mcp-auth-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(groups=[group("mcp-auth", _MCP_AUTH)]),
-    )
-    PrometheusRule(
-        chart,
-        "roaming-node-alerts",
-        metadata=ApiObjectMetadata(name="roaming-node-alerts", namespace=NAMESPACE),
-        spec=PrometheusRuleSpec(
-            groups=[
+    for name, groups in (
+        ("control-plane-io-alerts", [group("control-plane-io", _CONTROL_PLANE_IO)]),
+        ("disk-usage-rules", [group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)]),
+        ("external-secrets-alerts", [group("external-secrets", _EXTERNAL_SECRETS)]),
+        ("flux-alerts", [group("flux", _FLUX)]),
+        ("github-quota-alerts", [group("github-quota", _GITHUB_QUOTA)]),
+        ("grocy-mcp-alerts", [group("grocy-mcp", _GROCY_MCP)]),
+        ("io-pressure-alerts", [group("io-pressure", _IO_PRESSURE)]),
+        ("mcp-auth-alerts", [group("mcp-auth", _MCP_AUTH)]),
+        (
+            "roaming-node-alerts",
+            [
                 group("roaming-node-alerts", _ROAMING_NODE),
                 group("roaming-node-workload-alerts", _ROAMING_NODE_WORKLOAD),
-            ]
+            ],
         ),
-    )
+    ):
+        PrometheusRule(
+            chart,
+            name,
+            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
+            spec=PrometheusRuleSpec(groups=groups),
+        )
     return chart
