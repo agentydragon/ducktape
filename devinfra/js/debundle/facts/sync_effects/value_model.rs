@@ -5,7 +5,7 @@ use crate::facts::abstract_domain::builtins::IterationRow;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::value_flow::static_prop as static_string_prop;
 use analysis_model::PrimKinds;
-use imbl::{OrdMap, OrdSet};
+use imbl::OrdMap;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -30,8 +30,19 @@ pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     })
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct Values(OrdSet<AbstractValue>);
+/// Sorted unique values. `None` is the only empty representation, so derived
+/// ordering remains the lexicographic element order. Clones share immutable
+/// storage until a write, including snapshots used by pointer witnesses.
+#[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Values(Option<Arc<Vec<AbstractValue>>>);
+
+impl std::fmt::Debug for Values {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Values(")?;
+        f.debug_set().entries(self.iter()).finish()?;
+        f.write_str(")")
+    }
+}
 
 impl Hash for Values {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -48,36 +59,74 @@ impl Values {
     }
 
     pub(super) fn first(&self) -> Option<&AbstractValue> {
-        self.0.get_min()
+        self.as_slice().first()
+    }
+
+    fn as_slice(&self) -> &[AbstractValue] {
+        self.0.as_deref().map_or(&[], Vec::as_slice)
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    pub(super) fn iter(&self) -> std::slice::Iter<'_, AbstractValue> {
+        self.as_slice().iter()
+    }
+
+    pub(super) fn contains(&self, value: &AbstractValue) -> bool {
+        self.as_slice().binary_search(value).is_ok()
+    }
+
+    pub(super) fn ptr_eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
     }
 
     pub(super) fn insert(&mut self, value: AbstractValue) -> bool {
-        self.0.insert(value).is_none()
+        let Err(index) = self.as_slice().binary_search(&value) else {
+            return false;
+        };
+        match &mut self.0 {
+            Some(values) => Arc::make_mut(values).insert(index, value),
+            None => self.0 = Some(Arc::new(vec![value])),
+        }
+        true
     }
 
     /// Insert the values not already present and report whether any was.
-    /// A probe copies nothing, while a persistent insert copies its path even
-    /// for a present value.
+    /// Duplicate-only inputs leave shared storage untouched.
     pub(super) fn extend_absent<'v>(
         &mut self,
         values: impl IntoIterator<Item = &'v AbstractValue>,
     ) -> bool {
         let absent: Vec<_> = values
             .into_iter()
-            .filter(|value| !self.0.contains(*value))
+            .filter(|value| !self.contains(value))
             .cloned()
             .collect();
         let changed = !absent.is_empty();
-        self.0.extend(absent);
+        self.extend(absent);
         changed
     }
 
     pub(super) fn remove(&mut self, value: &AbstractValue) -> bool {
-        self.0.remove(value).is_some()
+        let Ok(index) = self.as_slice().binary_search(value) else {
+            return false;
+        };
+        if self.len() == 1 {
+            self.0 = None;
+        } else {
+            Arc::make_mut(self.0.as_mut().unwrap()).remove(index);
+        }
+        true
     }
 
     pub(super) fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.0.is_none()
     }
 
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
@@ -97,23 +146,39 @@ pub(super) fn ordered_values(
     values
 }
 
-impl std::ops::Deref for Values {
-    type Target = OrdSet<AbstractValue>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl Extend<AbstractValue> for Values {
     fn extend<T: IntoIterator<Item = AbstractValue>>(&mut self, values: T) {
-        self.0.extend(values);
+        let incoming = ordered_values(values);
+        if incoming.iter().all(|value| self.contains(value)) {
+            return;
+        }
+        let Some(existing) = self.0.take() else {
+            self.0 = Some(Arc::new(incoming));
+            return;
+        };
+        let mut merged = Vec::with_capacity(existing.len() + incoming.len());
+        let mut existing = Arc::unwrap_or_clone(existing).into_iter().peekable();
+        let mut incoming = incoming.into_iter().peekable();
+        while let (Some(left), Some(right)) = (existing.peek(), incoming.peek()) {
+            match left.cmp(right) {
+                Ordering::Less => merged.push(existing.next().unwrap()),
+                Ordering::Equal => {
+                    incoming.next();
+                    merged.push(existing.next().unwrap());
+                }
+                Ordering::Greater => merged.push(incoming.next().unwrap()),
+            }
+        }
+        merged.extend(existing);
+        merged.extend(incoming);
+        self.0 = Some(Arc::new(merged));
     }
 }
 
 impl FromIterator<AbstractValue> for Values {
     fn from_iter<T: IntoIterator<Item = AbstractValue>>(values: T) -> Self {
-        Self(values.into_iter().collect())
+        let values = ordered_values(values);
+        Self((!values.is_empty()).then(|| Arc::new(values)))
     }
 }
 
@@ -125,21 +190,72 @@ impl<const N: usize> From<[AbstractValue; N]> for Values {
 
 impl IntoIterator for Values {
     type Item = AbstractValue;
-    type IntoIter = <OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+    type IntoIter = ValuesIntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+        match self.0.map(Arc::try_unwrap) {
+            None => ValuesIntoIter::Owned(Vec::new().into_iter()),
+            Some(Ok(values)) => ValuesIntoIter::Owned(values.into_iter()),
+            Some(Err(values)) => ValuesIntoIter::Shared {
+                remaining: 0..values.len(),
+                values,
+            },
+        }
     }
 }
 
 impl<'a> IntoIterator for &'a Values {
     type Item = &'a AbstractValue;
-    type IntoIter = <&'a OrdSet<AbstractValue> as IntoIterator>::IntoIter;
+    type IntoIter = std::slice::Iter<'a, AbstractValue>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.iter()
     }
 }
+
+/// A shared consuming iterator clones only the elements it yields.
+#[derive(Clone)]
+pub(super) enum ValuesIntoIter {
+    Owned(std::vec::IntoIter<AbstractValue>),
+    Shared {
+        remaining: std::ops::Range<usize>,
+        values: Arc<Vec<AbstractValue>>,
+    },
+}
+
+impl Iterator for ValuesIntoIter {
+    type Item = AbstractValue;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Owned(values) => values.next(),
+            Self::Shared { remaining, values } => {
+                remaining.next().map(|index| values[index].clone())
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Owned(values) => values.size_hint(),
+            Self::Shared { remaining, .. } => remaining.size_hint(),
+        }
+    }
+}
+
+impl DoubleEndedIterator for ValuesIntoIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Owned(values) => values.next_back(),
+            Self::Shared { remaining, values } => {
+                remaining.next_back().map(|index| values[index].clone())
+            }
+        }
+    }
+}
+
+impl ExactSizeIterator for ValuesIntoIter {}
+impl std::iter::FusedIterator for ValuesIntoIter {}
 
 pub(super) type Context = OrdMap<Id, Values>;
 
@@ -1892,5 +2008,155 @@ pub(super) fn object_data_property_name(name: &PropName) -> Option<String> {
         PropName::Ident(ident) if ident.sym == "__proto__" => None,
         PropName::Str(string) if string.value.to_string_lossy() == "__proto__" => None,
         _ => static_property_name(name),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        AbstractValue, CaptureInterner, HeapAddress, InstanceOrigin, LexicalCaptures, Values,
+    };
+    use crate::facts::sync_effects::world::WorldScope;
+    use imbl::OrdSet;
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    use std::sync::Arc;
+
+    fn universe() -> Vec<AbstractValue> {
+        let mut contexts = CaptureInterner::<LexicalCaptures>::default();
+        let context = contexts.intern(LexicalCaptures::default());
+        assert_eq!(context, contexts.intern(LexicalCaptures::default()));
+        let mut retained = CaptureInterner::<Values>::default();
+        let first = retained.intern(Values::from([AbstractValue::UNDEFINED]));
+        let second = retained.intern(Values::from([AbstractValue::PRIMITIVE]));
+        assert_ne!(first, second);
+        assert_eq!(
+            first,
+            retained.intern(Values::from([AbstractValue::UNDEFINED]))
+        );
+        vec![
+            AbstractValue::UNDEFINED,
+            AbstractValue::PRIMITIVE,
+            AbstractValue::Closure(
+                HeapAddress {
+                    scope: WorldScope::Application,
+                    callable: 1,
+                },
+                context,
+            ),
+            AbstractValue::DeferredCallbacks(first.clone()),
+            AbstractValue::DeferredCallbacks(second),
+            AbstractValue::Instance(1, first, InstanceOrigin::Constructed),
+        ]
+    }
+
+    fn assert_contents(values: &Values, expected: &OrdSet<AbstractValue>) {
+        assert_eq!(values.len(), expected.len());
+        assert_eq!(values.is_empty(), expected.is_empty());
+        assert_eq!(values.first(), expected.get_min());
+        assert!(values.iter().eq(expected.iter()));
+        assert!(values.into_iter().rev().eq(expected.iter().rev()));
+        assert!(values.clone().into_iter().eq(expected.iter().cloned()));
+        assert!(
+            expected
+                .iter()
+                .cloned()
+                .collect::<Values>()
+                .into_iter()
+                .rev()
+                .eq(expected.iter().rev().cloned())
+        );
+        assert_eq!(format!("{values:?}"), format!("Values({expected:?})"));
+        let mut actual_hash = DefaultHasher::new();
+        values.hash(&mut actual_hash);
+        let mut expected_hash = DefaultHasher::new();
+        expected.len().hash(&mut expected_hash);
+        for value in expected {
+            value.hash(&mut expected_hash);
+        }
+        assert_eq!(actual_hash.finish(), expected_hash.finish());
+        assert_eq!(values.0.is_none(), expected.is_empty());
+    }
+
+    #[test]
+    fn flat_values_match_ordered_set_operations_with_interned_captures() {
+        let universe = universe();
+        let sets: Vec<_> = (0..1 << universe.len())
+            .map(|mask| {
+                let input: Vec<_> = universe
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| mask & (1 << index) != 0)
+                    .map(|(_, value)| value.clone())
+                    .rev()
+                    .collect();
+                let input: Vec<_> = input.iter().chain(&input).cloned().collect();
+                let values = input.iter().cloned().collect::<Values>();
+                let expected = input.into_iter().collect::<OrdSet<_>>();
+                assert_contents(&values, &expected);
+                (values, expected)
+            })
+            .collect();
+        assert!(Values::new().ptr_eq(&Values::new()));
+        for (values, expected) in &sets {
+            for value in &universe {
+                assert_eq!(values.contains(value), expected.contains(value));
+                let mut inserted = values.clone();
+                let mut inserted_expected = expected.clone();
+                let changed = inserted_expected.insert(value.clone()).is_none();
+                assert_eq!(inserted.insert(value.clone()), changed);
+                assert_eq!(inserted.ptr_eq(values), !changed);
+                assert_contents(&inserted, &inserted_expected);
+                let mut removed = values.clone();
+                let mut removed_expected = expected.clone();
+                let changed = removed_expected.remove(value).is_some();
+                assert_eq!(removed.remove(value), changed);
+                assert_eq!(removed.ptr_eq(values), !changed);
+                assert_contents(&removed, &removed_expected);
+                assert_contents(values, expected);
+            }
+            for (other, other_expected) in &sets {
+                assert_eq!(values == other, expected == other_expected);
+                assert_eq!(values.cmp(other), expected.cmp(other_expected));
+                assert_eq!(
+                    values.is_disjoint(other),
+                    expected.iter().all(|value| !other_expected.contains(value))
+                );
+                let mut extended_expected = expected.clone();
+                extended_expected.extend(other_expected.iter().cloned());
+                let changed = extended_expected.len() != expected.len();
+                let mut extended = values.clone();
+                extended.extend(other.iter().chain(other).cloned());
+                assert_eq!(extended.ptr_eq(values), !changed);
+                assert_contents(&extended, &extended_expected);
+                let mut absent = values.clone();
+                assert_eq!(absent.extend_absent(other.iter().chain(other)), changed);
+                assert_eq!(absent.ptr_eq(values), !changed);
+                assert_contents(&absent, &extended_expected);
+                assert_contents(values, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn shared_owned_iteration_clones_only_yielded_values() {
+        let mut interner = CaptureInterner::<Values>::default();
+        let captured = interner.intern(Values::from([AbstractValue::UNDEFINED]));
+        let values = Values::from([
+            AbstractValue::DeferredCallbacks(captured.clone()),
+            AbstractValue::UNDEFINED,
+        ]);
+        let owners = Arc::strong_count(&captured.values);
+        let mut iter = values.clone().into_iter();
+        assert_eq!(Arc::strong_count(&captured.values), owners);
+        assert_eq!(iter.len(), 2);
+        let retained = iter.next_back().unwrap();
+        assert_eq!(Arc::strong_count(&captured.values), owners + 1);
+        assert_eq!(iter.len(), 1);
+        assert_eq!(iter.next(), Some(AbstractValue::UNDEFINED));
+        assert_eq!(iter.len(), 0);
+        assert!(iter.next().is_none());
+        assert!(iter.next_back().is_none());
+        drop(retained);
+        assert_eq!(Arc::strong_count(&captured.values), owners);
     }
 }
