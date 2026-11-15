@@ -10,7 +10,7 @@
   `foundation.py`. The owning generator embeds `JSONEncoder().encode(...)` directly
   in the `GrafanaDashboard`; keep symbolic datasource references and explicit Operator
   mappings to provisioned UIDs.
-- Add the builder to `//cluster/cdk8s:dashboard_json_bin` for candidate/browser-test
+- Add the builder to `//cluster/cdk8s/monitoring/dashboards:export_json_bin` for candidate/browser-test
   artifacts. The shared exporter writes unformatted JSON; no per-dashboard binary or
   checked-in JSON copy is needed.
 - Don't hand over dashboards with unresolved macros, empty frames, datasource errors, or

@@ -481,6 +481,4 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ),
         ],
-        templating=dashboard.DashboardDashboardTemplating(list_val=[]),
-        annotations=dashboard.AnnotationContainer(list_val=[]),
     )

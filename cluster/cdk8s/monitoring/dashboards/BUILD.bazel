@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 package(default_visibility = ["//cluster/cdk8s:__subpackages__"])
@@ -14,98 +14,98 @@ py_library(
 
 grafana_dashboard_visual_test(
     name = "cpap_gateway_disk_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:cpap-gateway-disk.json",
+    dashboard = ":cpap-gateway-disk.json",
     fixture_data = ":visual_fixtures/cpap-gateway-disk.json",
 )
 
 grafana_dashboard_visual_test(
     name = "buildbuddy_executor_pool_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:buildbuddy-executor-pool.json",
+    dashboard = ":buildbuddy-executor-pool.json",
     fixture_data = ":visual_fixtures/buildbuddy-executor-pool.json",
 )
 
 grafana_dashboard_visual_test(
     name = "piraeus_query_backed_visual_test",
     src = "test_piraeus_dashboard_visual.py",
-    dashboard = "//cluster/cdk8s:piraeus-storage.json",
+    dashboard = ":piraeus-storage.json",
     fixture = ":piraeus_metrics",
 )
 
 grafana_dashboard_visual_test(
     name = "piraeus_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:piraeus-storage.json",
+    dashboard = ":piraeus-storage.json",
     fixture_data = ":visual_fixtures/piraeus-storage.json",
 )
 
 grafana_dashboard_visual_test(
     name = "cluster_disk_usage_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:cluster-disk-usage.json",
+    dashboard = ":cluster-disk-usage.json",
     fixture_data = ":visual_fixtures/cluster-disk-usage.json",
 )
 
 grafana_dashboard_visual_test(
     name = "cluster_storage_io_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:cluster-storage-io.json",
+    dashboard = ":cluster-storage-io.json",
     fixture_data = ":visual_fixtures/cluster-storage-io.json",
 )
 
 grafana_dashboard_visual_test(
     name = "flux_cluster_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:flux-cluster.json",
+    dashboard = ":flux-cluster.json",
     fixture_data = ":visual_fixtures/flux-cluster.json",
 )
 
 grafana_dashboard_visual_test(
     name = "home_network_overview_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:home-network-overview.json",
+    dashboard = ":home-network-overview.json",
     fixture_data = ":visual_fixtures/home-network-overview.json",
 )
 
 grafana_dashboard_visual_test(
     name = "interface_flap_frequency_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:interface-flap-frequency.json",
+    dashboard = ":interface-flap-frequency.json",
     fixture_data = ":visual_fixtures/interface-flap-frequency.json",
 )
 
 grafana_dashboard_visual_test(
     name = "io_pressure_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:io-pressure.json",
+    dashboard = ":io-pressure.json",
     fixture_data = ":visual_fixtures/io-pressure.json",
 )
 
 grafana_dashboard_visual_test(
     name = "node_memory_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:node-memory.json",
+    dashboard = ":node-memory.json",
     fixture_data = ":visual_fixtures/node-memory.json",
 )
 
 grafana_dashboard_visual_test(
     name = "rugged_power_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:rugged-power.json",
+    dashboard = ":rugged-power.json",
     fixture_data = ":visual_fixtures/rugged-power.json",
 )
 
 grafana_dashboard_visual_test(
     name = "s3_operations_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:s3-operations.json",
+    dashboard = ":s3-operations.json",
     fixture_data = ":visual_fixtures/s3-operations.json",
 )
 
 grafana_dashboard_visual_test(
     name = "storage_service_details_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:storage-service-details.json",
+    dashboard = ":storage-service-details.json",
     fixture_data = ":visual_fixtures/storage-service-details.json",
 )
 
 grafana_dashboard_visual_test(
     name = "aiquota_history_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:aiquota-history.json",
+    dashboard = ":aiquota-history.json",
     fixture_data = ":visual_fixtures/aiquota-history.json",
 )
 
 grafana_dashboard_visual_test(
     name = "zot_cache_image_pulls_dashboard_visual_test",
-    dashboard = "//cluster/cdk8s:zot-cache-image-pulls.json",
+    dashboard = ":zot-cache-image-pulls.json",
     fixture_data = ":visual_fixtures/zot-cache-image-pulls.json",
 )
 
@@ -246,6 +246,70 @@ py_library(
     srcs = ["aiquota_history.py"],
     deps = [
         ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+py_binary(
+    name = "export_json_bin",
+    testonly = True,
+    main_module = "cluster.cdk8s.monitoring.dashboards.export_json",
+    deps = [":export_json"],
+)
+
+genrule(
+    name = "json_files",
+    testonly = True,
+    outs = [
+        "buildbuddy-executor-pool.json",
+        "zot-cache-image-pulls.json",
+        "interface-flap-frequency.json",
+        "node-memory.json",
+        "cluster-storage-io.json",
+        "s3-operations.json",
+        "cluster-disk-usage.json",
+        "piraeus-storage.json",
+        "storage-service-details.json",
+        "io-pressure.json",
+        "home-network-overview.json",
+        "cpap-gateway-disk.json",
+        "flux-cluster.json",
+        "rugged-power.json",
+        "aiquota-history.json",
+        "home-gateway.json",
+        "github-api-quotas.json",
+        "ci-workflow-timings.json",
+        "ci-commit-feedback.json",
+    ],
+    cmd = "$(location :export_json_bin) $(@D)",
+    tools = [":export_json_bin"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+py_library(
+    name = "export_json",
+    testonly = True,
+    srcs = ["export_json.py"],
+    deps = [
+        ":aiquota_history",
+        ":buildbuddy_executor_pool",
+        ":cluster_disk_usage",
+        ":cluster_storage_io",
+        ":cpap_gateway_disk",
+        ":flux_cluster",
+        ":home_network_overview",
+        ":interface_flap_frequency",
+        ":io_pressure",
+        ":node_memory",
+        ":piraeus_storage",
+        ":rugged_power",
+        ":s3_operations",
+        ":storage_service_details",
+        ":zot_cache_image_pulls",
+        "//cluster/cdk8s/att_gateway_exporter:home_gateway",
+        "//cluster/cdk8s/cdviz:commit_feedback",
+        "//cluster/cdk8s/cdviz:workflow_timings",
+        "//cluster/cdk8s/github_exporter:github_api_quotas",
         "@pypi//grafana_foundation_sdk",
     ],
 )

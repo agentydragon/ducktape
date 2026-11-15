@@ -1,6 +1,6 @@
 """AIQuota history dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, table, timeseries
+from grafana_foundation_sdk.models import common, dashboard, timeseries
 
 from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_query
 
@@ -13,7 +13,6 @@ def build_dashboard() -> dashboard.Dashboard:
         editable=False,
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-30d"),
-        timepicker=dashboard.TimePickerConfig(),
         refresh="5m",
         schema_version=41,
         version=1,
@@ -29,8 +28,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Current quota by provider and window",
                 datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
                 grid_pos=dashboard.GridPos(h=10, w=24),
-                options=table.Options(),
-                field_config=dashboard.FieldConfigSource(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -70,8 +67,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Raw upstream observation metadata",
                 datasource=common.DataSourceRef(type_val="grafana-clickhouse-datasource", uid="clickhouse"),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=20),
-                options=table.Options(),
-                field_config=dashboard.FieldConfigSource(),
             ),
             dashboard.Panel(
                 type_val="timeseries",
@@ -100,6 +95,4 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ),
         ],
-        templating=dashboard.DashboardDashboardTemplating(list_val=[]),
-        annotations=dashboard.AnnotationContainer(list_val=[]),
     )

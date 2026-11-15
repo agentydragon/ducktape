@@ -3,7 +3,11 @@
 from grafana_foundation_sdk.builders import loki, prometheus, timeseries
 from grafana_foundation_sdk.builders.common import VizTooltipOptions
 from grafana_foundation_sdk.cog.runtime import UnknownDataquery
-from grafana_foundation_sdk.models import common, timeseries as timeseries_model  # Builder/model name collision.
+from grafana_foundation_sdk.models import (  # Builder/model name collision.
+    common,
+    dashboard,
+    timeseries as timeseries_model,
+)
 
 
 def mimir() -> common.DataSourceRef:
@@ -40,6 +44,14 @@ def loki_query(expr: str, legend: str | None = None, ref_id: str = "A") -> loki.
     if legend is not None:
         query.legend_format(legend)
     return query
+
+
+class HeaderLink(dashboard.DashboardLink):
+    def to_json(self) -> dict[str, object]:
+        payload = super().to_json()
+        # The SDK cannot omit placement; Grafana requires it absent for header links.
+        payload.pop("placement")
+        return payload
 
 
 def last_value() -> common.ReduceDataOptions:

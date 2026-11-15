@@ -1,6 +1,6 @@
 """Storage workload and collector details dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, prometheus, table, text
+from grafana_foundation_sdk.models import common, dashboard, prometheus, text
 
 from cluster.cdk8s.monitoring.dashboards.foundation import mimir, mimir_query, series_options
 
@@ -12,7 +12,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "workload", "collector"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="5m",
         schema_version=39,
@@ -50,7 +49,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -94,7 +92,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -135,7 +132,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -181,7 +177,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -222,7 +217,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(
@@ -266,7 +260,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.Panel(

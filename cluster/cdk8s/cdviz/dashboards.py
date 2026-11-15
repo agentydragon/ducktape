@@ -13,7 +13,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
 )
 
-from cluster.cdk8s.cdviz import config, dashboard, feedback_dashboard
+from cluster.cdk8s.cdviz import commit_feedback, config, workflow_timings
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.monitoring import grafana_instance
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
@@ -78,8 +78,8 @@ def chart(app: App) -> Chart:
         ],
     )
     for name, definition in (
-        ("cdviz-ci", dashboard.build_dashboard()),
-        ("cdviz-ci-feedback", feedback_dashboard.build_dashboard()),
+        ("ci-workflow-timings", workflow_timings.build_dashboard()),
+        ("ci-commit-feedback", commit_feedback.build_dashboard()),
     ):
         GrafanaDashboard(
             chart,

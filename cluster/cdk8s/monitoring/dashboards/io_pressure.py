@@ -12,7 +12,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "io", "pressure"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="1m",
         schema_version=39,

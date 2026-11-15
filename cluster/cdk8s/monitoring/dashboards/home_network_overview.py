@@ -3,12 +3,12 @@
 from grafana_foundation_sdk.models import common, dashboard, logs, loki, prometheus, stat, statetimeline
 
 from cluster.cdk8s.monitoring.dashboards.foundation import (
+    HeaderLink,
     last_value,
     line_style,
     loki_datasource,
     mimir,
     mimir_query,
-    series_options,
 )
 
 
@@ -256,6 +256,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=6),
                 options=statetimeline.Options(
+                    per_page=None,
                     show_value=common.VisibilityMode.NEVER,
                     row_height=0.8,
                     tooltip=common.VizTooltipOptions(sort=common.SortOrder.NONE),
@@ -301,7 +302,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Traffic through the gateway's WAN port. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=14),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bps",
@@ -352,7 +352,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Traffic on each home node's Nebula interface, which carries all of its cluster traffic to OVH, including metrics remote-write. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=14),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bps",
@@ -395,7 +394,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Actual negotiated Ethernet speed between CRS310 ether1 and the AT&T BGW320 gateway, sampled every 30 seconds. Compare its transitions with the independent host ping-loss panels beside it.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=22),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bps",
@@ -430,7 +428,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Share of pings from optiplex (5/s per target) that got no reply. Loss to the gateway with none to the switch is the uplink fault in debug/home_network_connectivity/2026_10_gateway_uplink_loss.md.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=22),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
                     overrides=[
@@ -459,7 +456,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Loss is the unanswered fraction of 5 pings/s, averaged over 5 minutes. Compare with optiplex beside it; a gap means missing observations.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=22),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
                     overrides=[
@@ -494,7 +490,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Mean round-trip time of answered pings from optiplex, per target.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=30),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
                     overrides=[
@@ -523,7 +518,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="ICMP probes from wyrm2 to the AT&T gateway, MikroTik switch, optiplex LAN address (192.168.1.10), and ovh-ns104952 over Nebula. Mean round-trip time of answered pings, per target.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=30),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
                     overrides=[
@@ -558,7 +552,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Latest reported Netwatch batch, sent by the CRS310 itself: 200 pings at 150 ms intervals once per minute, with a 1 s reply timeout and no early termination. Unlike host smokeping, this is batch loss, not a rolling 5-minute ratio. Scraped every 30 seconds; gaps cannot reconstruct missed batches.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=38),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percentunit", min_val=0, custom=line_style()),
                     overrides=[
@@ -593,7 +586,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Mean RTT of answered pings in the latest reported switch-originated Netwatch batch. 200 pings at 150 ms intervals, once per minute; scraped every 30 seconds. A zero RTT during 100% loss does not mean a fast response.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=38),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style()),
                     overrides=[
@@ -628,7 +620,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="UNRELIABLE: captures at OptiPlex found invalid ICMP checksums in Netwatch requests; reported loss matched the malformed requests, and enabling a concurrent probe changed the pattern. These measurements cannot establish network delivery or outage frequency. Use the independent OptiPlex and wyrm2 host probes for reliability. Estimated failed batches in the trailing hour, from reset-aware increase of RouterOS cumulative failed-tests (exported as a gauge by mktxp). Each batch tests 200 pings once per minute; a 5% loss threshold and 1 s RTT thresholds determine failure. This measures failed batches, not distinct outage episodes. Counts can survive missed scrapes unless a probe resets; increase may produce fractional estimates.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=46),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", decimals=1, min_val=0, custom=line_style()),
                     overrides=[
@@ -663,7 +654,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Number of one-minute classifications with at least 1% unanswered host ICMP pings. This is measured affected time, up to 60 minutes per hour, per source and target. A minute is classified only with fresh, reset-free request and reply counters and roughly 5 requests/s. Missing observations are excluded; compare the coverage panel. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=54),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="m",
@@ -696,7 +686,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="An episode starts when an observed healthy minute (under 1% loss) is followed immediately by an affected minute (at least 1% loss). A return from a telemetry gap is left-censored and does not start a new counted episode. Zero requires at least one observed minute. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=54),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="none",
@@ -728,7 +717,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Coverage for affected-time and episode counts. Each source/target can contribute at most 60 classified minutes per trailing hour. Missing scrapes, stopped probes, and counter resets reduce coverage; low coverage prevents a claim of reliable delivery. Computed from raw probe samples when queried, so buffered samples can fill historical gaps after delivery. Legacy unlabelled smokeping Pod samples are attributed to optiplex. A two-minute window spanning more than one Pod stays unclassified during a rollout.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=62),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="m",
@@ -765,7 +753,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Optical power the gateway receives from the fiber, against the gateway's own warning and alarm bounds. A slow drift toward the low bound points at the fiber or a connector.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=71),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="dBm", custom=line_style()),
                     overrides=[
@@ -801,7 +788,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Optical power the gateway transmits, against its warning and alarm bounds.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=71),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="dBm", custom=line_style()),
                     overrides=[
@@ -837,7 +823,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Temperature of the gateway's optical module, against its warning and alarm bounds.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=71),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="celsius", custom=line_style()),
                     overrides=[
@@ -879,7 +864,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Errors and drops on the gateway's WAN interface, per 5 minutes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, y=79),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -923,7 +907,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Errors and drops on each gateway LAN port, per 5 minutes. Port 1 is the uplink to the home switch.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=6, y=79),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -942,6 +925,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=12, y=79),
                 options=statetimeline.Options(
+                    per_page=None,
                     show_value=common.VisibilityMode.NEVER,
                     row_height=0.8,
                     tooltip=common.VizTooltipOptions(sort=common.SortOrder.NONE),
@@ -981,7 +965,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Leases the gateway has handed out, and how many it has left.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=18, y=79),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1003,7 +986,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Entries in the gateway's NAT session table against its capacity. A full table drops new connections.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=6, y=87),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1213,7 +1195,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Traffic on each switch port, as the switch counts it. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=98),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bps",
@@ -1256,7 +1237,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Receive and transmit errors plus drops on each switch port, per 5 minutes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=12, y=98),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1277,7 +1257,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Times each switch port's link went down, per hour.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=18, y=98),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1299,6 +1278,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=106),
                 options=statetimeline.Options(
+                    per_page=None,
                     show_value=common.VisibilityMode.NEVER,
                     row_height=0.8,
                     tooltip=common.VizTooltipOptions(sort=common.SortOrder.NONE),
@@ -1346,7 +1326,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Temperatures the switch reports.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=106),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="celsius", custom=line_style())
                 ),
@@ -1394,7 +1373,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Traffic on each home node's physical NIC. Traffic scale selects linear or base-10 symlog; the log view remains linear below 1 bit/s so zero stays visible.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=125),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="bps",
@@ -1437,7 +1415,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Receive and transmit errors plus drops on each home node's physical NIC, per 5 minutes.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=12, y=125),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1458,7 +1435,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Carrier changes (cable or switch port going down and up) on each home node's physical NIC, per hour.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=6, x=18, y=125),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1482,7 +1458,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="How far each home Alloy's delivered data trails what it has collected. It is reported by the Alloy itself, so an outage shows up here only once its backlog is replayed.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=134),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style())
                 ),
@@ -1503,7 +1478,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Samples each home Alloy holds in its send queue.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=134),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1524,7 +1498,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Active series in each home Alloy's write-ahead log.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=134),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="short", min_val=0, custom=line_style())
                 ),
@@ -1548,7 +1521,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Failure percentage among probe samples recorded in the preceding 5 minutes, split by source_node and target. 0% means all recorded probes passed. No data means no probe samples were available and is not treated as success.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, y=143),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percent", min_val=0, max_val=100, custom=line_style())
                 ),
@@ -1569,7 +1541,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Blackbox exporter probe duration in seconds for each source_node and target. HTTPS duration includes DNS, TCP connection, TLS verification, and the HTTP request.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=8, y=143),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="s", min_val=0, custom=line_style())
                 ),
@@ -1590,7 +1561,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 description="Observed probe samples as a percentage of the 30 expected samples in each 5-minute window (10-second scrape interval). Missing series remain No data; reduced values show missing observations.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, w=8, x=16, y=143),
-                options=series_options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="percent", min_val=0, max_val=100, custom=line_style())
                 ),
@@ -1612,6 +1582,5 @@ def build_dashboard() -> dashboard.Dashboard:
                 )
             ]
         ),
-        annotations=dashboard.AnnotationContainer(list_val=[]),
-        links=[dashboard.DashboardLink(title="Home gateway", icon="dashboard", url="/d/home-gateway")],
+        links=[HeaderLink(title="Home gateway", icon="dashboard", url="/d/home-gateway")],
     )

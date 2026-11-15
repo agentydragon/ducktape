@@ -1,6 +1,6 @@
 """The AT&T gateway exporter (`att_gateway/`): its Deployment on a node on
 the gateway's LAN, Service, ServiceMonitor and the "Home gateway" dashboard
-(`dashboard.py` beside this module). Also the CronJob running the image's syslog
+(`home_gateway.py` beside this module). Also the CronJob running the image's syslog
 reconciler, which keeps the gateway sending its firewall log to alloy-syslog.
 
 The image tag is a placeholder; the hand-written `PINS_DIR` Component sets it via Flux's
@@ -25,7 +25,7 @@ from pydantic_settings import BaseSettings
 
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.att_gateway_exporter import access_code, dashboard
+from cluster.cdk8s.att_gateway_exporter import access_code, home_gateway
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.home_lan import HOME_LAN
@@ -208,7 +208,7 @@ def chart(app: App) -> Chart:
             GrafanaDashboardSpecDatasources(input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID),
             GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
         ],
-        json=JSONEncoder().encode(dashboard.build_dashboard()),
+        json=JSONEncoder().encode(home_gateway.build_dashboard()),
     )
     return chart
 

@@ -141,5 +141,4 @@ def build_dashboard() -> dashboard.Dashboard:
                 ),
             ),
         ],
-        annotations=dashboard.AnnotationContainer(list_val=[]),
     )

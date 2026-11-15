@@ -1,6 +1,6 @@
 """Piraeus LVM storage dashboard."""
 
-from grafana_foundation_sdk.models import barchart, common, dashboard, prometheus, stat, table, text
+from grafana_foundation_sdk.models import barchart, common, dashboard, prometheus, stat, text
 
 from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query, series_options
 
@@ -12,7 +12,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "piraeus", "lvm"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-24h"),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="5m",
         schema_version=39,
@@ -476,7 +475,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         id_val="sortBy", options={"fields": {}, "sort": [{"field": "Physical used", "desc": True}]}
                     ),
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
                     overrides=[
@@ -791,7 +789,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"fields": {}, "sort": [{"field": "Estimated allocated bytes", "desc": True}]},
                     ),
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="bytes")),
             ),
             dashboard.RowPanel(
@@ -898,7 +895,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         id_val="sortBy", options={"fields": {}, "sort": [{"field": "Filesystem used", "desc": True}]}
                     ),
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(unit="bytes"),
                     overrides=[

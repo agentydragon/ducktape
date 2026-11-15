@@ -19,7 +19,7 @@ def _filesystem_panel(id: int, title: str, x: int) -> timeseries.Panel:
         .description(
             "Guest root filesystem. Used bytes are size minus free; root-reserved blocks are included in free. Capacity is the filesystem visible inside the VM, separate from KubeVirt and host storage. Only the CPAP gateway guest filesystem collector is scraped by monitoring Alloy."
         )
-        .grid_pos(dashboard.GridPos(h=8, w=12, x=x, y=0))
+        .grid_pos(dashboard.GridPos(h=8, x=x))
         .line_interpolation(common.LineInterpolation.LINEAR)
         .legend(
             VizLegendOptions().display_mode(common.LegendDisplayMode.TABLE).show_legend(True).calcs(["lastNotNull"])

@@ -2,14 +2,14 @@
 
 from textwrap import dedent
 
-from grafana_foundation_sdk.models import common, dashboard, stat, table, timeseries
+from grafana_foundation_sdk.models import common, dashboard, stat, timeseries
 
 from cluster.cdk8s.monitoring.dashboards.foundation import last_value, postgres_query
 
 
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
-        uid="ducktape-ci",
+        uid="ci-workflow-timings",
         title="CI workflow and job timings",
         description="Workflow attempts and jobs from GitHub Actions. Select a workflow, branch, or explicitly associated PR to inspect runtimes.",
         tags=["ci", "github-actions"],
@@ -328,7 +328,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Recent workflow attempts",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=11),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=0, custom=common.TableFieldOptions(width=90, min_width=60)
@@ -425,7 +424,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="Recent jobs",
                 datasource=common.DataSourceRef(type_val="grafana-postgresql-datasource", uid="cdviz"),
                 grid_pos=dashboard.GridPos(h=8, w=24, y=19),
-                options=table.Options(),
                 field_config=dashboard.FieldConfigSource(
                     defaults=dashboard.FieldConfig(
                         unit="short", decimals=0, custom=common.TableFieldOptions(width=90, min_width=60)

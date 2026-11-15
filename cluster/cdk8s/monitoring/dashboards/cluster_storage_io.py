@@ -1,6 +1,6 @@
 """Storage I/O dashboard."""
 
-from grafana_foundation_sdk.models import common, dashboard, prometheus, stat, table, text
+from grafana_foundation_sdk.models import common, dashboard, prometheus, stat, text
 
 from cluster.cdk8s.monitoring.dashboards.foundation import (
     last_value,
@@ -19,7 +19,6 @@ def build_dashboard() -> dashboard.Dashboard:
         tags=["cluster", "storage", "io"],
         graph_tooltip=dashboard.DashboardCursorSync.CROSSHAIR,
         time=dashboard.DashboardDashboardTime(from_val="now-1h"),
-        timepicker=dashboard.TimePickerConfig(),
         week_start="",
         refresh="1m",
         schema_version=39,
@@ -106,7 +105,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
@@ -131,7 +129,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="ops")),
             ),
             dashboard.RowPanel(
@@ -161,7 +158,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
@@ -186,7 +182,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="Bps")),
             ),
             dashboard.Panel(
@@ -239,7 +234,6 @@ def build_dashboard() -> dashboard.Dashboard:
                         options={"excludeByName": {"Time": True}, "indexByName": {}, "renameByName": {}},
                     )
                 ],
-                options=table.Options(footer=common.TableFooterOptions()),
                 field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="ops")),
             ),
             dashboard.Panel(

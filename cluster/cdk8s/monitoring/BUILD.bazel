@@ -511,7 +511,7 @@ py_test(
     srcs = ["test_smokeping.py"],
     data = [
         "testdata/smokeping_rules.yaml",
-        "//cluster/cdk8s:home-network-overview.json",
+        "//cluster/cdk8s/monitoring/dashboards:home-network-overview.json",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
