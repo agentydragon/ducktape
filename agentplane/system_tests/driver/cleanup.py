@@ -3,12 +3,38 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 
 
 class CleanupError(RuntimeError):
     """Owned resources could not be released; further allocations are unsafe."""
+
+
+async def close_resources(resources: AsyncExitStack, error: BaseException | None = None) -> None:
+    result = await finish_cleanup(resources.aclose())
+    if result.failure is not None:
+        cause = (
+            result.failure if error is None else BaseExceptionGroup("Case and cleanup failed", [error, result.failure])
+        )
+        raise CleanupError("Owned test resources could not be released") from cause
+    if error is None and result.cancellation is not None:
+        raise result.cancellation
+
+
+@asynccontextmanager
+async def resource_scope() -> AsyncIterator[AsyncExitStack]:
+    async with AsyncExitStack() as resources:
+        error: BaseException | None = None
+        try:
+            yield resources
+        except BaseException as caught:
+            error = caught
+            raise
+        finally:
+            # No body exception enters the resource exits: failed deletion must remain visible.
+            await close_resources(resources.pop_all(), error)
 
 
 @dataclass(frozen=True)
