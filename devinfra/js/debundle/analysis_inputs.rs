@@ -307,7 +307,7 @@ pub enum NativeIntrinsic {
     GlobalObject,
     /// A global slot may hold any native value; descendants retain this root.
     UnknownGlobalValue,
-    /// Host census only; not part of author `IntrinsicFamily::ALL`.
+    /// Host census only; not part of the author `ALL_INTRINSIC_FAMILIES` vocabulary.
     TextEncoder,
     Error,
     FinalizationRegistry,

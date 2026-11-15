@@ -316,8 +316,12 @@ impl Wire for spec::HostBehavior {
                 .iter()
                 .map(|value| *value as i32)
                 .collect(),
-            reentry_free_operations: self.reentry_free_operations.to_proto(),
-            predefined_globals: Some(self.predefined_globals.to_proto()),
+            reentry_free_operations: self
+                .reentry_free_operations
+                .iter()
+                .map(|operation| *operation as i32)
+                .collect(),
+            predefined_globals: Some(self.predefined_globals as i32),
             note: self.note.clone(),
         }
     }
@@ -354,8 +358,14 @@ impl Wire for spec::HostBehavior {
                     .into_iter()
                     .map(|value| Ok(pb::EmbeddedLoader::try_from(value)?)),
             )?,
-            reentry_free_operations: Wire::from_proto(v.reentry_free_operations)?,
-            predefined_globals: required(v.predefined_globals)?,
+            reentry_free_operations: unique_set(
+                v.reentry_free_operations
+                    .into_iter()
+                    .map(|value| Ok(pb::ReentryFreeOperation::try_from(value)?)),
+            )?,
+            predefined_globals: pb::PredefinedGlobals::try_from(
+                v.predefined_globals.context("missing predefined globals")?,
+            )?,
             note: v.note,
         })
     }
@@ -408,7 +418,7 @@ impl Wire for spec::IntrinsicFamilies {
             value: Some(match self {
                 Self::All(v) => Value::All(*v as i32),
                 Self::Listed(v) => Value::Listed(pb::IntrinsicFamilySelection {
-                    families: v.to_proto(),
+                    families: v.iter().map(|family| *family as i32).collect(),
                 }),
             }),
         }
@@ -417,7 +427,11 @@ impl Wire for spec::IntrinsicFamilies {
         use pb::intrinsic_families::Value;
         Ok(match v.value.context("missing intrinsic families")? {
             Value::All(v) => Self::All(pb::AllIntrinsicFamilies::try_from(v)?),
-            Value::Listed(v) => Self::Listed(Wire::from_proto(v.families)?),
+            Value::Listed(v) => Self::Listed(unique_set(
+                v.families
+                    .into_iter()
+                    .map(|value| Ok(pb::IntrinsicFamily::try_from(value)?)),
+            )?),
         })
     }
 }
@@ -830,7 +844,9 @@ impl Wire for spec::BindingAnnotation {
             initializer_binding_effects: self
                 .initializer_binding_effects
                 .map(|effects| effects as i32),
-            initializer_external_effects: self.initializer_external_effects.to_proto(),
+            initializer_external_effects: self
+                .initializer_external_effects
+                .map(|effects| effects as i32),
             effect: Some(self.effect as i32),
             pure_members: self.pure_members.to_proto(),
             no_sync_callback_members: self.no_sync_callback_members.to_proto(),
@@ -849,7 +865,10 @@ impl Wire for spec::BindingAnnotation {
                 .initializer_binding_effects
                 .map(pb::InitializerBindingEffects::try_from)
                 .transpose()?,
-            initializer_external_effects: Wire::from_proto(v.initializer_external_effects)?,
+            initializer_external_effects: v
+                .initializer_external_effects
+                .map(pb::InitializerExternalEffects::try_from)
+                .transpose()?,
             effect: pb::MemberEffect::try_from(v.effect.context("missing member effect")?)?,
             pure_members: Wire::from_proto(v.pure_members)?,
             no_sync_callback_members: Wire::from_proto(v.no_sync_callback_members)?,
@@ -1547,102 +1566,6 @@ impl Wire for spec::EmitBrowserHarnessConfig {
             asset_summary_path: required(v.asset_summary_path)?,
             out_dir: required(v.out_dir)?,
             snapshot_root: required(v.snapshot_root)?,
-        })
-    }
-}
-
-impl Wire for spec::ReentryFreeOperation {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::AsyncLocalStorageConstruct => {
-                pb::ReentryFreeOperation::AsyncLocalStorageConstruct as i32
-            }
-            Self::PromiseResolve => pb::ReentryFreeOperation::PromiseResolve as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::ReentryFreeOperation::try_from(v)? {
-            pb::ReentryFreeOperation::AsyncLocalStorageConstruct => {
-                Self::AsyncLocalStorageConstruct
-            }
-            pb::ReentryFreeOperation::PromiseResolve => Self::PromiseResolve,
-            pb::ReentryFreeOperation::Unspecified => bail!("unspecified reentry-free operation"),
-        })
-    }
-}
-impl Wire for spec::PredefinedGlobals {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Unknown => pb::PredefinedGlobals::Unknown as i32,
-            Self::Standard => pb::PredefinedGlobals::Standard as i32,
-            Self::Bun => pb::PredefinedGlobals::Bun as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::PredefinedGlobals::try_from(v)? {
-            pb::PredefinedGlobals::Unknown => Self::Unknown,
-            pb::PredefinedGlobals::Standard => Self::Standard,
-            pb::PredefinedGlobals::Bun => Self::Bun,
-            pb::PredefinedGlobals::Unspecified => bail!("unspecified predefined globals"),
-        })
-    }
-}
-
-impl Wire for spec::InitializerExternalEffects {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Isolated => pb::InitializerExternalEffects::Isolated as i32,
-            Self::PrivateMetadata => pb::InitializerExternalEffects::PrivateMetadata as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::InitializerExternalEffects::try_from(v)? {
-            pb::InitializerExternalEffects::Isolated => Self::Isolated,
-            pb::InitializerExternalEffects::PrivateMetadata => Self::PrivateMetadata,
-            pb::InitializerExternalEffects::Unspecified => {
-                bail!("unspecified initializer external effects")
-            }
-        })
-    }
-}
-impl Wire for spec::IntrinsicFamily {
-    type Proto = i32;
-    fn to_proto(&self) -> i32 {
-        match self {
-            Self::Error => pb::IntrinsicFamily::Error as i32,
-            Self::FinalizationRegistry => pb::IntrinsicFamily::FinalizationRegistry as i32,
-            Self::Function => pb::IntrinsicFamily::Function as i32,
-            Self::Object => pb::IntrinsicFamily::Object as i32,
-            Self::Array => pb::IntrinsicFamily::Array as i32,
-            Self::Math => pb::IntrinsicFamily::Math as i32,
-            Self::RegExp => pb::IntrinsicFamily::RegExp as i32,
-            Self::Symbol => pb::IntrinsicFamily::Symbol as i32,
-            Self::Promise => pb::IntrinsicFamily::Promise as i32,
-            Self::Map => pb::IntrinsicFamily::Map as i32,
-            Self::Set => pb::IntrinsicFamily::Set as i32,
-            Self::WeakMap => pb::IntrinsicFamily::WeakMap as i32,
-            Self::WeakSet => pb::IntrinsicFamily::WeakSet as i32,
-        }
-    }
-    fn from_proto(v: i32) -> Result<Self> {
-        Ok(match pb::IntrinsicFamily::try_from(v)? {
-            pb::IntrinsicFamily::Error => Self::Error,
-            pb::IntrinsicFamily::FinalizationRegistry => Self::FinalizationRegistry,
-            pb::IntrinsicFamily::Function => Self::Function,
-            pb::IntrinsicFamily::Object => Self::Object,
-            pb::IntrinsicFamily::Array => Self::Array,
-            pb::IntrinsicFamily::Math => Self::Math,
-            pb::IntrinsicFamily::RegExp => Self::RegExp,
-            pb::IntrinsicFamily::Symbol => Self::Symbol,
-            pb::IntrinsicFamily::Promise => Self::Promise,
-            pb::IntrinsicFamily::Map => Self::Map,
-            pb::IntrinsicFamily::Set => Self::Set,
-            pb::IntrinsicFamily::WeakMap => Self::WeakMap,
-            pb::IntrinsicFamily::WeakSet => Self::WeakSet,
-            pb::IntrinsicFamily::Unspecified => bail!("unspecified intrinsic family"),
         })
     }
 }

@@ -214,7 +214,7 @@ The `text_encoder_empty` initializer premise certifies only a direct bare
 zero-argument `new TextEncoder()` site. Its original global data binding is
 checked against known exact-slot writes in every analyzed chunk. It uses the
 shared constructor row and leaves the result opaque. Adding this host census
-family does not expand the `IntrinsicFamily::ALL` author-premise vocabulary.
+family does not expand the `ALL_INTRINSIC_FAMILIES` author-premise vocabulary.
 The `map_empty`, `weak_map_empty`, and `set_empty` initializer premises certify
 the original global data binding at one direct bare zero-argument constructor
 site. WeakMap shares the checked collection-construction effect transfer with

@@ -150,7 +150,7 @@ pub struct HostBehavior {
     pub reentry_free_operations: BTreeSet<ReentryFreeOperation>,
     /// Which properties the host defines on the global object, own or
     /// inherited through its host prototypes, before the program runs.
-    #[serde(default, skip_serializing_if = "PredefinedGlobals::is_unknown")]
+    #[serde(default, skip_serializing_if = "predefined_globals_is_unknown")]
     pub predefined_globals: PredefinedGlobals,
     /// Audit provenance (executable identity, revision, digest). YAML-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,46 +201,28 @@ pub enum IntrinsicFamilies {
 pub use spec_wire_proto::debundle::spec::AllIntrinsicFamilies;
 
 /// A native census family, named by its global binding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum IntrinsicFamily {
-    Error,
-    FinalizationRegistry,
-    Function,
-    Object,
-    Array,
-    Math,
-    RegExp,
-    Symbol,
-    Promise,
-    Map,
-    Set,
-    WeakMap,
-    WeakSet,
-}
+pub use spec_wire_proto::debundle::spec::IntrinsicFamily;
 
-impl IntrinsicFamily {
-    pub const ALL: [Self; 13] = [
-        Self::Error,
-        Self::FinalizationRegistry,
-        Self::Function,
-        Self::Object,
-        Self::Array,
-        Self::Math,
-        Self::RegExp,
-        Self::Symbol,
-        Self::Promise,
-        Self::Map,
-        Self::Set,
-        Self::WeakMap,
-        Self::WeakSet,
-    ];
-}
+pub const ALL_INTRINSIC_FAMILIES: [IntrinsicFamily; 13] = [
+    IntrinsicFamily::Error,
+    IntrinsicFamily::FinalizationRegistry,
+    IntrinsicFamily::Function,
+    IntrinsicFamily::Object,
+    IntrinsicFamily::Array,
+    IntrinsicFamily::Math,
+    IntrinsicFamily::RegExp,
+    IntrinsicFamily::Symbol,
+    IntrinsicFamily::Promise,
+    IntrinsicFamily::Map,
+    IntrinsicFamily::Set,
+    IntrinsicFamily::WeakMap,
+    IntrinsicFamily::WeakSet,
+];
 
 impl IntrinsicFamilies {
     pub fn families(&self) -> BTreeSet<IntrinsicFamily> {
         match self {
-            Self::All(_) => IntrinsicFamily::ALL.into_iter().collect(),
+            Self::All(_) => ALL_INTRINSIC_FAMILIES.into_iter().collect(),
             Self::Listed(families) => families.clone(),
         }
     }
@@ -261,24 +243,10 @@ fn is_unknown_non_literal_loader_calls(value: &NonLiteralLoaderCalls) -> bool {
 }
 
 /// The global object's host-defined properties before the program runs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PredefinedGlobals {
-    /// Any property, with any value.
-    #[default]
-    Unknown,
-    /// Only names in the standard global lists (SPEC.md § Predefined
-    /// globals), each with its standard definition.
-    Standard,
-    /// The standard names plus Bun's own globals (SPEC.md § Predefined
-    /// globals), each with its documented definition.
-    Bun,
-}
+pub use spec_wire_proto::debundle::spec::PredefinedGlobals;
 
-impl PredefinedGlobals {
-    pub fn is_unknown(&self) -> bool {
-        *self == Self::Unknown
-    }
+fn predefined_globals_is_unknown(value: &PredefinedGlobals) -> bool {
+    *value == PredefinedGlobals::Unknown
 }
 
 /// Whether any host API can synchronously obtain a module namespace while that
@@ -293,15 +261,7 @@ pub use spec_wire_proto::debundle::spec::SynchronousLoadDrainsMicrotasks;
 
 /// Exact zero-argument host operations recognized by the synchronous-effect
 /// interpreter (SPEC.md § Host behavior).
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum ReentryFreeOperation {
-    AsyncLocalStorageConstruct,
-    PromiseResolve,
-}
+pub use spec_wire_proto::debundle::spec::ReentryFreeOperation;
 
 /// Exact Node builtin module identities admissible in
 /// `reentry_free_builtin_modules`. Unknown bare packages are absent; Bun's
@@ -2473,23 +2433,7 @@ pub use spec_wire_proto::debundle::spec::InitializerPurity;
 pub use spec_wire_proto::debundle::spec::InitializerBindingEffects;
 
 /// External effects of one selected simple top-level variable initializer.
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Eq, PartialEq, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum InitializerExternalEffects {
-    /// No mutable pre-existing heap, global-property or host/environment
-    /// state is accessed. Heap writes touch only this evaluation's fresh
-    /// allocations. Stable protocol metadata is an author lifetime promise;
-    /// lexical dependencies and abrupt completion remain separate.
-    Isolated,
-    /// Provider metadata writes use fresh result-owned identities, with no
-    /// interception, enumeration or publication except through the result.
-    /// Provider/configuration/environment observations are stable across all
-    /// admitted schedules; private capability memoization is observationally
-    /// idempotent. No application reentry or observable host/global writes.
-    /// Known heap cells and other effect domains remain independently checked.
-    PrivateMetadata,
-}
+pub use spec_wire_proto::debundle::spec::InitializerExternalEffects;
 
 pub use spec_wire_proto::debundle::spec::MemberEffect;
 
@@ -2545,6 +2489,19 @@ mod tests {
             NonLiteralLoaderCalls::NativeAddonsOnly,
             "native_addons_only",
         );
+        check(
+            IntrinsicFamily::FinalizationRegistry,
+            "finalization_registry",
+        );
+        check(PredefinedGlobals::Standard, "standard");
+        check(
+            ReentryFreeOperation::AsyncLocalStorageConstruct,
+            "async_local_storage_construct",
+        );
+        check(
+            InitializerExternalEffects::PrivateMetadata,
+            "private_metadata",
+        );
 
         assert_eq!(VendorRole::default(), VendorRole::Module);
         assert_eq!(MemberPurity::default(), MemberPurity::Default);
@@ -2567,6 +2524,7 @@ mod tests {
             NonLiteralLoaderCalls::default(),
             NonLiteralLoaderCalls::Unknown
         );
+        assert_eq!(PredefinedGlobals::default(), PredefinedGlobals::Unknown);
     }
 
     #[test]

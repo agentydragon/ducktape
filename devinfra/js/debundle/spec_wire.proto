@@ -117,16 +117,19 @@ enum EmbeddedLoader {
 }
 
 enum ReentryFreeOperation {
-  REENTRY_FREE_OPERATION_UNSPECIFIED = 0;
-  REENTRY_FREE_OPERATION_ASYNC_LOCAL_STORAGE_CONSTRUCT = 1;
-  REENTRY_FREE_OPERATION_PROMISE_RESOLVE = 2;
+  REENTRY_FREE_OPERATION_ASYNC_LOCAL_STORAGE_CONSTRUCT = 0;
+  REENTRY_FREE_OPERATION_PROMISE_RESOLVE = 1;
 }
 
 enum PredefinedGlobals {
-  PREDEFINED_GLOBALS_UNSPECIFIED = 0;
-  PREDEFINED_GLOBALS_UNKNOWN = 1;
-  PREDEFINED_GLOBALS_STANDARD = 2;
-  PREDEFINED_GLOBALS_BUN = 3;
+  // Any property, with any value.
+  PREDEFINED_GLOBALS_UNKNOWN = 0;
+  // Only names in the standard global lists (SPEC.md, Predefined globals),
+  // each with its standard definition.
+  PREDEFINED_GLOBALS_STANDARD = 1;
+  // The standard names plus Bun's own globals (SPEC.md, Predefined globals),
+  // each with its documented definition.
+  PREDEFINED_GLOBALS_BUN = 2;
 }
 
 message ProgramPremises {
@@ -167,20 +170,19 @@ enum AllIntrinsicFamilies {
 }
 
 enum IntrinsicFamily {
-  INTRINSIC_FAMILY_UNSPECIFIED = 0;
-  INTRINSIC_FAMILY_ERROR = 1;
-  INTRINSIC_FAMILY_FINALIZATION_REGISTRY = 2;
-  INTRINSIC_FAMILY_FUNCTION = 3;
-  INTRINSIC_FAMILY_OBJECT = 4;
-  INTRINSIC_FAMILY_ARRAY = 5;
-  INTRINSIC_FAMILY_MATH = 6;
-  INTRINSIC_FAMILY_REG_EXP = 7;
-  INTRINSIC_FAMILY_SYMBOL = 8;
-  INTRINSIC_FAMILY_PROMISE = 9;
-  INTRINSIC_FAMILY_MAP = 10;
-  INTRINSIC_FAMILY_SET = 11;
-  INTRINSIC_FAMILY_WEAK_MAP = 12;
-  INTRINSIC_FAMILY_WEAK_SET = 13;
+  INTRINSIC_FAMILY_ERROR = 0;
+  INTRINSIC_FAMILY_FINALIZATION_REGISTRY = 1;
+  INTRINSIC_FAMILY_FUNCTION = 2;
+  INTRINSIC_FAMILY_OBJECT = 3;
+  INTRINSIC_FAMILY_ARRAY = 4;
+  INTRINSIC_FAMILY_MATH = 5;
+  INTRINSIC_FAMILY_REG_EXP = 6;
+  INTRINSIC_FAMILY_SYMBOL = 7;
+  INTRINSIC_FAMILY_PROMISE = 8;
+  INTRINSIC_FAMILY_MAP = 9;
+  INTRINSIC_FAMILY_SET = 10;
+  INTRINSIC_FAMILY_WEAK_MAP = 11;
+  INTRINSIC_FAMILY_WEAK_SET = 12;
 }
 
 message VendorMark {
@@ -422,9 +424,18 @@ enum InitializerBindingEffects {
 }
 
 enum InitializerExternalEffects {
-  INITIALIZER_EXTERNAL_EFFECTS_UNSPECIFIED = 0;
-  INITIALIZER_EXTERNAL_EFFECTS_ISOLATED = 1;
-  INITIALIZER_EXTERNAL_EFFECTS_PRIVATE_METADATA = 2;
+  // No mutable pre-existing heap, global-property or host/environment state
+  // is accessed. Heap writes touch only this evaluation's fresh allocations.
+  // Stable protocol metadata is an author lifetime promise; lexical
+  // dependencies and abrupt completion remain separate.
+  INITIALIZER_EXTERNAL_EFFECTS_ISOLATED = 0;
+  // Provider metadata writes use fresh result-owned identities, with no
+  // interception, enumeration or publication except through the result.
+  // Provider/configuration/environment observations are stable across all
+  // admitted schedules; private capability memoization is observationally
+  // idempotent. No application reentry or observable host/global writes.
+  // Known heap cells and other effect domains remain independently checked.
+  INITIALIZER_EXTERNAL_EFFECTS_PRIVATE_METADATA = 1;
 }
 
 enum MemberEffect {

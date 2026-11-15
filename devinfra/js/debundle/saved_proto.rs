@@ -18,44 +18,6 @@ pub fn required<T>(value: Option<T>, field: &str) -> Result<T> {
     value.with_context(|| format!("missing saved-analysis field {field}"))
 }
 
-// Domain-owned spec enums use the same Protobuf vocabulary in both projection
-// and saved artifacts. Keep their conversion in spec_wire rather than
-// maintaining a second set of enum mappings here. Generated spec enums are
-// cast only at their Protobuf fields.
-impl ProtoConvert<i32> for spec::IntrinsicFamily {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-
-impl ProtoConvert<i32> for spec::ReentryFreeOperation {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::InitializerExternalEffects {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-impl ProtoConvert<i32> for spec::PredefinedGlobals {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(spec_wire::Wire::to_proto(self))
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        spec_wire::Wire::from_proto(value)
-    }
-}
-
 impl ProtoConvert<String> for String {
     fn to_proto(&self) -> Result<String> {
         Ok(self.clone())
@@ -342,6 +304,26 @@ where
     Ok(values)
 }
 
+pub(crate) fn encode_native_intrinsics(
+    items: &BTreeSet<crate::analysis_inputs::NativeIntrinsic>,
+) -> Result<Vec<i32>> {
+    items
+        .iter()
+        .map(|item| Ok(item.to_proto()? as i32))
+        .collect()
+}
+
+pub(crate) fn decode_native_intrinsics(
+    items: Vec<i32>,
+) -> Result<BTreeSet<crate::analysis_inputs::NativeIntrinsic>> {
+    decode_set(
+        items
+            .into_iter()
+            .map(proto::NativeIntrinsic::try_from)
+            .collect::<std::result::Result<Vec<_>, _>>()?,
+    )
+}
+
 fn descriptor_copy_signature_is_valid(
     signature: &spec::DescriptorCopyFactorySignature,
 ) -> Result<()> {
@@ -419,9 +401,9 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
             reentry_free_operations: self
                 .reentry_free_operations
                 .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
-            predefined_globals: Some(self.predefined_globals.to_proto()?),
+                .map(|operation| *operation as i32)
+                .collect(),
+            predefined_globals: Some(self.predefined_globals as i32),
             note: self.note.clone(),
         })
     }
@@ -461,11 +443,16 @@ impl ProtoConvert<proto::HostBehavior> for spec::HostBehavior {
                     .into_iter()
                     .map(|value| Ok(spec::EmbeddedLoader::try_from(value)?)),
             )?,
-            reentry_free_operations: decode_set(value.reentry_free_operations)?,
-            predefined_globals: read_domain(
+            reentry_free_operations: spec_wire::unique_set(
+                value
+                    .reentry_free_operations
+                    .into_iter()
+                    .map(|value| Ok(spec::ReentryFreeOperation::try_from(value)?)),
+            )?,
+            predefined_globals: spec::PredefinedGlobals::try_from(required(
                 value.predefined_globals,
                 "HostBehavior.predefined_globals",
-            )?,
+            )?)?,
             note: value.note,
         })
     }
@@ -541,10 +528,7 @@ impl ProtoConvert<proto::IntrinsicFamilies> for spec::IntrinsicFamilies {
             value: Some(match self {
                 Self::All(all) => Value::All(*all as i32),
                 Self::Listed(families) => Value::Listed(ListedIntrinsics {
-                    families: families
-                        .iter()
-                        .map(ProtoConvert::to_proto)
-                        .collect::<Result<_>>()?,
+                    families: families.iter().map(|family| *family as i32).collect(),
                 }),
             }),
         })
@@ -553,7 +537,12 @@ impl ProtoConvert<proto::IntrinsicFamilies> for spec::IntrinsicFamilies {
         use proto::intrinsic_families::Value;
         Ok(match required(value.value, "IntrinsicFamilies.value")? {
             Value::All(value) => Self::All(spec::AllIntrinsicFamilies::try_from(value)?),
-            Value::Listed(value) => Self::Listed(decode_set(value.families)?),
+            Value::Listed(value) => Self::Listed(spec_wire::unique_set(
+                value
+                    .families
+                    .into_iter()
+                    .map(|value| Ok(spec::IntrinsicFamily::try_from(value)?)),
+            )?),
         })
     }
 }
@@ -801,7 +790,7 @@ mod tests {
         assert!(
             spec::IntrinsicFamilies::from_proto(proto::IntrinsicFamilies { value: None }).is_err()
         );
-        let family = spec::IntrinsicFamily::Array.to_proto().unwrap();
+        let family = spec::IntrinsicFamily::Array as i32;
         assert!(
             spec::IntrinsicFamilies::from_proto(proto::IntrinsicFamilies {
                 value: Some(proto::intrinsic_families::Value::Listed(

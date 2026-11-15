@@ -16,7 +16,9 @@ use super::schema::{
     NeverWrittenReach, RecordFactoryRejectionReason, ReentryFreeOperationUse,
 };
 use crate::analysis_inputs::ProgramPremiseKey;
-use crate::saved_proto::{ProtoConvert, decode_set, proto, required};
+use crate::saved_proto::{
+    ProtoConvert, decode_native_intrinsics, decode_set, encode_native_intrinsics, proto, required,
+};
 
 fn read<T, P>(value: Option<P>, field: &str) -> Result<T>
 where
@@ -103,13 +105,16 @@ impl ProtoConvert<proto::InitializerExternalEffectsUse> for InitializerExternalE
     fn to_proto(&self) -> Result<proto::InitializerExternalEffectsUse> {
         Ok(proto::InitializerExternalEffectsUse {
             binding: Some(self.binding.clone()),
-            effects: Some(self.effects.to_proto()?),
+            effects: Some(self.effects as i32),
         })
     }
     fn from_proto(value: proto::InitializerExternalEffectsUse) -> Result<Self> {
         Ok(Self {
             binding: required(value.binding, "InitializerExternalEffectsUse.binding")?,
-            effects: read(value.effects, "InitializerExternalEffectsUse.effects")?,
+            effects: spec::InitializerExternalEffects::try_from(required(
+                value.effects,
+                "InitializerExternalEffectsUse.effects",
+            )?)?,
         })
     }
 }
@@ -192,7 +197,7 @@ impl ProtoConvert<proto::NativeIntegrityCheck> for NativeIntegrityCheck {
         Ok(proto::NativeIntegrityCheck {
             guard: Some(self.guard as i32),
             slots: encode_items(&self.slots)?,
-            affected_roots: encode_items(&self.affected_roots)?,
+            affected_roots: encode_native_intrinsics(&self.affected_roots)?,
         })
     }
     fn from_proto(value: proto::NativeIntegrityCheck) -> Result<Self> {
@@ -202,7 +207,7 @@ impl ProtoConvert<proto::NativeIntegrityCheck> for NativeIntegrityCheck {
                 "NativeIntegrityCheck.guard",
             )?)?,
             slots: decode_set(value.slots)?,
-            affected_roots: decode_set(value.affected_roots)?,
+            affected_roots: decode_native_intrinsics(value.affected_roots)?,
         })
     }
 }
@@ -247,13 +252,15 @@ impl ProtoConvert<proto::NativeMutationWitness> for NativeMutationWitness {
             statement_ordinal: Some(self.statement_ordinal.to_proto()?),
             source_location: encode_optional(&self.source_location)?,
             operation: Some(self.operation as i32),
-            receiver_roots: encode_items(&self.receiver_roots)?,
+            receiver_roots: encode_native_intrinsics(&self.receiver_roots)?,
             through_local_alias: Some(self.through_local_alias),
             receiver_global: self.receiver_global.clone(),
-            affected_roots: encode_items(&self.affected_roots)?,
+            affected_roots: encode_native_intrinsics(&self.affected_roots)?,
             target_slots: encode_items(&self.target_slots)?,
-            key_dependencies: encode_items(&self.key_dependencies)?,
-            invalidated_key_dependencies: encode_items(&self.invalidated_key_dependencies)?,
+            key_dependencies: encode_native_intrinsics(&self.key_dependencies)?,
+            invalidated_key_dependencies: encode_native_intrinsics(
+                &self.invalidated_key_dependencies,
+            )?,
             value_input_refs: encode_items(&self.value_input_refs)?,
             value_input_evidence: encode_items(&self.value_input_evidence)?,
             unreachable_branch: encode_optional(&self.unreachable_branch)?,
@@ -272,16 +279,18 @@ impl ProtoConvert<proto::NativeMutationWitness> for NativeMutationWitness {
                 value.operation,
                 "NativeMutationWitness.operation",
             )?)?,
-            receiver_roots: decode_set(value.receiver_roots)?,
+            receiver_roots: decode_native_intrinsics(value.receiver_roots)?,
             through_local_alias: required(
                 value.through_local_alias,
                 "NativeMutationWitness.through_local_alias",
             )?,
             receiver_global: value.receiver_global,
-            affected_roots: decode_set(value.affected_roots)?,
+            affected_roots: decode_native_intrinsics(value.affected_roots)?,
             target_slots: decode_set(value.target_slots)?,
-            key_dependencies: decode_set(value.key_dependencies)?,
-            invalidated_key_dependencies: decode_set(value.invalidated_key_dependencies)?,
+            key_dependencies: decode_native_intrinsics(value.key_dependencies)?,
+            invalidated_key_dependencies: decode_native_intrinsics(
+                value.invalidated_key_dependencies,
+            )?,
             value_input_refs: decode_set(value.value_input_refs)?,
             value_input_evidence: decode_items(value.value_input_evidence)?,
             unreachable_branch: decode_optional(value.unreachable_branch)?,
@@ -313,7 +322,7 @@ impl ProtoConvert<proto::NativePrefixObservation> for NativePrefixObservation {
             guard: Some(self.guard as i32),
             program_point_path: encode_items(&self.program_point_path)?,
             property: self.property.clone(),
-            prior_affected_roots: encode_items(&self.prior_affected_roots)?,
+            prior_affected_roots: encode_native_intrinsics(&self.prior_affected_roots)?,
             prior_blocking_prototype_mutations: Some(
                 self.prior_blocking_prototype_mutations.to_proto()?,
             ),
@@ -328,7 +337,7 @@ impl ProtoConvert<proto::NativePrefixObservation> for NativePrefixObservation {
             )?)?,
             program_point_path: decode_items(value.program_point_path)?,
             property: value.property,
-            prior_affected_roots: decode_set(value.prior_affected_roots)?,
+            prior_affected_roots: decode_native_intrinsics(value.prior_affected_roots)?,
             prior_blocking_prototype_mutations: read(
                 value.prior_blocking_prototype_mutations,
                 "NativePrefixObservation.prior_blocking_prototype_mutations",
@@ -371,7 +380,7 @@ impl ProtoConvert<proto::NativePrototypeMutation> for NativePrototypeMutation {
                     names: properties.iter().cloned().collect(),
                 }
             }),
-            key_dependencies: encode_items(&self.key_dependencies)?,
+            key_dependencies: encode_native_intrinsics(&self.key_dependencies)?,
             span: Some(self.span.to_proto()?),
         })
     }
@@ -391,7 +400,7 @@ impl ProtoConvert<proto::NativePrototypeMutation> for NativePrototypeMutation {
                 .properties
                 .map(|properties| decode_set(properties.names))
                 .transpose()?,
-            key_dependencies: decode_set(value.key_dependencies)?,
+            key_dependencies: decode_native_intrinsics(value.key_dependencies)?,
             span: read(value.span, "NativePrototypeMutation.span")?,
         })
     }
@@ -471,7 +480,7 @@ impl ProtoConvert<proto::NeverWrittenOverride> for NeverWrittenOverride {
             witness: Some(self.witness.to_proto()?),
             chunk_id: Some(self.chunk_id.clone()),
             source_location: encode_optional(&self.source_location)?,
-            families: encode_items(&self.families)?,
+            families: encode_native_intrinsics(&self.families)?,
             reach: Some(self.reach as i32),
         })
     }
@@ -480,7 +489,7 @@ impl ProtoConvert<proto::NeverWrittenOverride> for NeverWrittenOverride {
             witness: read(value.witness, "NeverWrittenOverride.witness")?,
             chunk_id: required(value.chunk_id, "NeverWrittenOverride.chunk_id")?,
             source_location: decode_optional(value.source_location)?,
-            families: decode_set(value.families)?,
+            families: decode_native_intrinsics(value.families)?,
             reach: NeverWrittenReach::try_from(required(
                 value.reach,
                 "NeverWrittenOverride.reach",
@@ -492,14 +501,17 @@ impl ProtoConvert<proto::NeverWrittenOverride> for NeverWrittenOverride {
 impl ProtoConvert<proto::ReentryFreeOperationUse> for ReentryFreeOperationUse {
     fn to_proto(&self) -> Result<proto::ReentryFreeOperationUse> {
         Ok(proto::ReentryFreeOperationUse {
-            operation: Some(self.operation.to_proto()?),
+            operation: Some(self.operation as i32),
             source_location: encode_optional(&self.source_location)?,
             span: Some(self.span.to_proto()?),
         })
     }
     fn from_proto(value: proto::ReentryFreeOperationUse) -> Result<Self> {
         Ok(Self {
-            operation: read(value.operation, "ReentryFreeOperationUse.operation")?,
+            operation: spec::ReentryFreeOperation::try_from(required(
+                value.operation,
+                "ReentryFreeOperationUse.operation",
+            )?)?,
             source_location: decode_optional(value.source_location)?,
             span: read(value.span, "ReentryFreeOperationUse.span")?,
         })
@@ -574,9 +586,9 @@ impl ProtoConvert<proto::NativeReceiverPath> for NativeReceiverPath {
         Ok(proto::NativeReceiverPath {
             value: Some(match self {
                 Self::GlobalObject => Value::GlobalObject(Default::default()),
-                Self::Constructor(root) => Value::Constructor(root.to_proto()?),
-                Self::Prototype(root) => Value::Prototype(root.to_proto()?),
-                Self::Descendant(root) => Value::Descendant(root.to_proto()?),
+                Self::Constructor(root) => Value::Constructor(root.to_proto()? as i32),
+                Self::Prototype(root) => Value::Prototype(root.to_proto()? as i32),
+                Self::Descendant(root) => Value::Descendant(root.to_proto()? as i32),
                 Self::ArrayIteratorPrototype => Value::ArrayIteratorPrototype(Default::default()),
                 Self::SetIteratorPrototype => Value::SetIteratorPrototype(Default::default()),
                 Self::Unknown => Value::Unknown(Default::default()),
@@ -588,13 +600,19 @@ impl ProtoConvert<proto::NativeReceiverPath> for NativeReceiverPath {
         Ok(match required(value.value, "NativeReceiverPath.value")? {
             Value::GlobalObject(_) => Self::GlobalObject,
             Value::Constructor(value) => {
-                Self::Constructor(crate::analysis_inputs::NativeIntrinsic::from_proto(value)?)
+                Self::Constructor(crate::analysis_inputs::NativeIntrinsic::from_proto(
+                    proto::NativeIntrinsic::try_from(value)?,
+                )?)
             }
             Value::Prototype(value) => {
-                Self::Prototype(crate::analysis_inputs::NativeIntrinsic::from_proto(value)?)
+                Self::Prototype(crate::analysis_inputs::NativeIntrinsic::from_proto(
+                    proto::NativeIntrinsic::try_from(value)?,
+                )?)
             }
             Value::Descendant(value) => {
-                Self::Descendant(crate::analysis_inputs::NativeIntrinsic::from_proto(value)?)
+                Self::Descendant(crate::analysis_inputs::NativeIntrinsic::from_proto(
+                    proto::NativeIntrinsic::try_from(value)?,
+                )?)
             }
             Value::ArrayIteratorPrototype(_) => Self::ArrayIteratorPrototype,
             Value::SetIteratorPrototype(_) => Self::SetIteratorPrototype,

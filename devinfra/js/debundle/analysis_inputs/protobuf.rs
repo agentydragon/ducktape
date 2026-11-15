@@ -20,7 +20,9 @@ use super::{
     ImportedPrimitiveArrayOperandEvidence, NativeInputKind, NativeIntrinsic,
     NativeOperationSelectorProvenance, ProgramPremiseKey,
 };
-use crate::saved_proto::{ProtoConvert, decode_set, proto, required};
+use crate::saved_proto::{
+    ProtoConvert, decode_native_intrinsics, decode_set, encode_native_intrinsics, proto, required,
+};
 
 impl ProtoConvert<proto::CallbackFactoryEvidence> for CallbackFactoryEvidence {
     fn to_proto(&self) -> Result<proto::CallbackFactoryEvidence> {
@@ -135,7 +137,7 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
                     Value::ReentryFreeEmbeddedLoader(*loader as i32)
                 }
                 Self::ReentryFreeOperation(operation) => {
-                    Value::ReentryFreeOperation(operation.to_proto()?)
+                    Value::ReentryFreeOperation(*operation as i32)
                 }
                 Self::PredefinedGlobals => Value::PredefinedGlobals(Default::default()),
             }),
@@ -158,7 +160,7 @@ impl ProtoConvert<proto::HostBehaviorKey> for HostBehaviorKey {
                 Self::ReentryFreeEmbeddedLoader(spec::EmbeddedLoader::try_from(value)?)
             }
             Value::ReentryFreeOperation(value) => {
-                Self::ReentryFreeOperation(spec::ReentryFreeOperation::from_proto(value)?)
+                Self::ReentryFreeOperation(spec::ReentryFreeOperation::try_from(value)?)
             }
             Value::PredefinedGlobals(_) => Self::PredefinedGlobals,
         })
@@ -328,8 +330,8 @@ impl ProtoConvert<proto::ImportedPrimitiveArrayOperandEvidence>
     }
 }
 
-impl ProtoConvert<i32> for NativeIntrinsic {
-    fn to_proto(&self) -> Result<i32> {
+impl ProtoConvert<proto::NativeIntrinsic> for NativeIntrinsic {
+    fn to_proto(&self) -> Result<proto::NativeIntrinsic> {
         Ok(match self {
             Self::GlobalObject => proto::NativeIntrinsic::GlobalObject,
             Self::UnknownGlobalValue => proto::NativeIntrinsic::UnknownGlobalValue,
@@ -347,11 +349,11 @@ impl ProtoConvert<i32> for NativeIntrinsic {
             Self::Set => proto::NativeIntrinsic::Set,
             Self::WeakMap => proto::NativeIntrinsic::WeakMap,
             Self::WeakSet => proto::NativeIntrinsic::WeakSet,
-        } as i32)
+        })
     }
 
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::NativeIntrinsic::try_from(value)? {
+    fn from_proto(value: proto::NativeIntrinsic) -> Result<Self> {
+        Ok(match value {
             proto::NativeIntrinsic::GlobalObject => Self::GlobalObject,
             proto::NativeIntrinsic::UnknownGlobalValue => Self::UnknownGlobalValue,
             proto::NativeIntrinsic::TextEncoder => Self::TextEncoder,
@@ -397,11 +399,7 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
                 .collect::<Result<_>>()?,
             retained_provider_captures: self.retained_provider_captures.iter().cloned().collect(),
             provider_cell_reads: self.provider_cell_reads.iter().cloned().collect(),
-            native_constructions: self
-                .native_constructions
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            native_constructions: encode_native_intrinsics(&self.native_constructions)?,
             replacement_package: self.replacement_package.clone(),
             dependencies: Some(self.dependencies.to_proto()?),
         })
@@ -425,7 +423,7 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
             retained_arguments: decode_set(value.retained_arguments)?,
             retained_provider_captures: decode_set(value.retained_provider_captures)?,
             provider_cell_reads: decode_set(value.provider_cell_reads)?,
-            native_constructions: decode_set(value.native_constructions)?,
+            native_constructions: decode_native_intrinsics(value.native_constructions)?,
             replacement_package: value.replacement_package,
             dependencies: ProtoConvert::from_proto(required(
                 value.dependencies,
@@ -1281,11 +1279,7 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
             })
             .collect::<Result<_>>()?;
         Ok(proto::NativeIntegrity {
-            mutated: self
-                .mutated
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            mutated: encode_native_intrinsics(&self.mutated)?,
             prototype_mutations: self
                 .prototype_mutations
                 .iter()
@@ -1307,11 +1301,7 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
                 .iter()
                 .map(ProtoConvert::to_proto)
                 .collect::<Result<_>>()?,
-            never_written: self
-                .never_written
-                .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+            never_written: encode_native_intrinsics(&self.never_written)?,
             never_written_overrides: self
                 .never_written_overrides
                 .iter()
@@ -1332,7 +1322,7 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
             );
         }
         Ok(Self {
-            mutated: decode_set(value.mutated)?,
+            mutated: decode_native_intrinsics(value.mutated)?,
             prototype_mutations: Arc::new(
                 value
                     .prototype_mutations
@@ -1350,7 +1340,7 @@ impl ProtoConvert<proto::NativeIntegrity> for NativeIntegrity {
             value_input_evidence,
             consumed_value_inputs: decode_set(value.consumed_value_inputs)?,
             consumed_host_behavior: decode_set(value.consumed_host_behavior)?,
-            never_written: decode_set(value.never_written)?,
+            never_written: decode_native_intrinsics(value.never_written)?,
             never_written_overrides: value
                 .never_written_overrides
                 .into_iter()
@@ -1395,7 +1385,7 @@ mod tests {
         for value in [
             None,
             Some(Value::ReentryFreeBuiltinModule(i32::MAX)),
-            Some(Value::ReentryFreeOperation(0)),
+            Some(Value::ReentryFreeOperation(999)),
         ] {
             assert!(HostBehaviorKey::from_proto(proto::HostBehaviorKey { value }).is_err());
         }
