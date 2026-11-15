@@ -777,6 +777,7 @@ py_library(
         ":sandbox",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",
     ],
 )
 
