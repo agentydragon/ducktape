@@ -8,16 +8,20 @@ from __future__ import annotations
 
 import json
 from http import HTTPStatus
+from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from google.protobuf import json_format
+from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.action_service.api.contracts import action_service_pb2, operator_action_service_pb2
 from agentplane.action_service.policies.resources import ACTION_RULE_TYPE
 from agentplane.app.testing.client import Client
+from agentplane.mcp_edge.api.connection import connection_service_pb2
+from agentplane.net.peertls.config import MCP_EDGE_URI
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
@@ -31,6 +35,7 @@ from agentplane.system_tests.driver.action_requests import (
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, TURN_SECONDS, WORKING_DIRECTORY
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS
+from agentplane.system_tests.driver.mcp_connection import connected_session
 from agentplane.system_tests.driver.operator_login import (
     LoginBlockedError,
     OperatorCredentials,
@@ -50,6 +55,82 @@ async def _submit_echo(
     agent: ScriptedAgent, group: str, message: str, *, wait: bool
 ) -> action_service_pb2.ActionRequest:
     return await agent.submit(group, mcp_servers.ECHO, {"message": message}, title="Echo a test marker", wait=wait)
+
+
+async def external_mcp_connection_uses_its_consented_identity(
+    operator_bff: httpx.AsyncClient, operator_credentials: OperatorCredentials, *, server: str, ca_bundle: Path
+) -> None:
+    """Use an external OAuth grant to call Actions as the Identity approved in the App."""
+    response = await operator_bff.get("/upstream/connections/v1/operator/connection-identities")
+    assert response.status_code == HTTPStatus.OK
+    inventory = json_format.ParseDict(response.json(), connection_service_pb2.ListConnectionIdentitiesResponse())
+    identity = one(candidate for candidate in inventory.identities if candidate.name == "mcp-edge-test-caller")
+    response = await operator_bff.get("/upstream/connections/v1/operator/connections")
+    assert response.status_code == HTTPStatus.OK
+    connections_before = json_format.ParseDict(response.json(), connection_service_pb2.ListConnectionsResponse())
+    connection_ids_before = {connection.id for connection in connections_before.connections}
+    async with connected_session(
+        server=server,
+        operator=operator_bff,
+        credentials=operator_credentials,
+        identity=identity,
+        ca_bundle=ca_bundle,
+    ) as session:
+        catalog = await session.list_tools()
+        assert "get_action_policy" in {tool.name for tool in catalog.tools}
+        policy = await session.call_tool("get_action_policy", arguments={"include_fields": ["subject"]})
+        assert not policy.is_error
+        assert policy.structured_content == {"subject": {"name": identity.name, "uid": identity.uid}}
+
+        response = await operator_bff.get("/upstream/connections/v1/operator/connections")
+        assert response.status_code == HTTPStatus.OK
+        connections_after = json_format.ParseDict(response.json(), connection_service_pb2.ListConnectionsResponse())
+        connection = one(
+            candidate for candidate in connections_after.connections if candidate.id not in connection_ids_before
+        )
+        assert connection.bound_identity == identity
+        grant = one(
+            candidate
+            for candidate in connection.grants
+            if candidate.status == connection_service_pb2.GRANT_STATUS_ACTIVE
+        )
+
+        action_marker = f"external-MCP-{connection.id}"
+        submitted = await session.call_tool(
+            "request_action",
+            arguments={
+                "request": {
+                    "idempotency_key": f"system-test-{connection.id}",
+                    "action": {"group": mcp_servers.EVERYTHING_GROUP, "name": mcp_servers.ECHO},
+                    "arguments": {"message": action_marker},
+                    "title": "Record an external MCP receipt",
+                },
+                "respond_with": "receipt",
+                "include_fields": ["id"],
+            },
+        )
+        assert not submitted.is_error
+        assert isinstance(submitted.structured_content, dict)
+        request_id = submitted.structured_content.get("id")
+        assert isinstance(request_id, str)
+
+        # Deny the pending request before inspecting its retained receipt.
+        await decide_pending_action(operator_bff, request_id, action_service_pb2.VERDICT_DENY)
+        receipt_response = await operator_bff.get(f"/upstream/actions/v1/action-requests/{request_id}")
+        assert receipt_response.status_code == HTTPStatus.OK
+        receipt = action_request(receipt_response)
+        assert receipt.state == action_service_pb2.ACTION_STATE_DENIED
+        assert receipt.action.group == mcp_servers.EVERYTHING_GROUP
+        assert receipt.action.name == mcp_servers.ECHO
+        assert receipt.arguments.fields["message"].string_value == action_marker
+        assert receipt.HasField("caller_identity")
+        assert not receipt.HasField("caller")
+        assert receipt.caller_identity == identity
+        assert receipt.delegating_actor.WhichOneof("actor") == "service_spiffe_id"
+        assert receipt.delegating_actor.service_spiffe_id == MCP_EDGE_URI
+        assert receipt.WhichOneof("provenance") == "connection_provenance"
+        assert receipt.connection_provenance.connection_id == connection.id
+        assert receipt.connection_provenance.grant_id == grant.id
 
 
 async def agent_executes_mcp_action(
