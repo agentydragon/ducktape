@@ -2,7 +2,7 @@
 
 use super::case_commands;
 use super::{
-    APP_DIR, CommandResult, Fixture, PreparedFixture, command_result, current_test_prefix, process,
+    APP_DIR, CommandResult, Fixture, PreparedFixture, command_result, current_test_prefix,
     spawn_transform_with_args,
 };
 use artifact::paths::path_from_module_path;
@@ -61,7 +61,7 @@ pub fn assert_preserved_entry_error(fixture: &Fixture, expected_error: &str) {
 /// Compare both files under the pinned Bun release supplied in this test's
 /// runfiles. Node execution alone cannot validate a Bun-specific host premise.
 pub fn assert_preserved_entry_output_with_bun(fixture: &Fixture, expected_stdout: &str) {
-    let bun = bun_1_3_10_path();
+    let bun = bun_1_3_10_path(&fixture.source_path);
     for path in [&fixture.source_path, &fixture.entry_path] {
         let output = case_commands::fixture_output(Command::new(&bun).arg(path), path)
             .unwrap_or_else(|err| panic!("{err}"));
@@ -84,7 +84,7 @@ pub fn assert_preserved_entry_output_with_bun(fixture: &Fixture, expected_stdout
 /// Exercise Bun's standalone embedding path for one runtime-premise probe.
 /// This tests the public release binary, not any third-party embedded artifact.
 pub fn assert_compiled_bun_entry_output(fixture: &Fixture, expected_stdout: &str) {
-    let bun = bun_1_3_10_path();
+    let bun = bun_1_3_10_path(&fixture.source_path);
     let dir = fixture._root.child();
     let executable = dir.path().join("probe");
     let compile = case_commands::fixture_output(
@@ -119,13 +119,13 @@ pub fn assert_compiled_bun_entry_output(fixture: &Fixture, expected_stdout: &str
     );
 }
 
-fn bun_1_3_10_path() -> PathBuf {
+fn bun_1_3_10_path(hint: &Path) -> PathBuf {
     let relative = std::env::var("DEBUNDLE_TEST_BUN").expect("DEBUNDLE_TEST_BUN runfile label");
     let runfiles = Runfiles::create().expect("create runfiles");
     let bun = rlocation!(runfiles, relative.as_str())
         .unwrap_or_else(|| panic!("resolve Bun runfile: {relative}"));
-    let version =
-        process::output(Command::new(&bun).arg("--version")).unwrap_or_else(|err| panic!("{err}"));
+    let version = case_commands::fixture_output(Command::new(&bun).arg("--version"), hint)
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(version.status.success(), "Bun version check failed");
     assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.3.10");
     bun
