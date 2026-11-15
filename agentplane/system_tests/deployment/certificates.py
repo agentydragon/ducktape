@@ -135,13 +135,9 @@ def report(kubectl: Kubectl, objects: list[dict[str, Any]]) -> None:
 
 
 @tracer.start_as_current_span("system_test.pki.issuance")
-def wait_for_issuance(kubectl: Kubectl, namespace: str, bundles: Sequence[str]) -> None:
+def wait_for_issuance(kubectl: Kubectl, bundles: Sequence[str]) -> None:
     kubectl(
         "-n", NAMESPACE, "wait", "--for=condition=Ready", "certificate/agentplane-workload-ca",
-        f"--timeout={READY_SECONDS}s",
-    )  # fmt: skip
-    kubectl(
-        "-n", namespace, "wait", "--for=condition=Ready", "certificate/agentplane-runner-gateway",
         f"--timeout={READY_SECONDS}s",
     )  # fmt: skip
     kubectl(

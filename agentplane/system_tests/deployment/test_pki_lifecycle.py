@@ -30,12 +30,7 @@ def test_fixture_cas_are_fresh_on_the_same_controllers(tmp_path: Path) -> None:
         doc
         for doc in template.objects
         if doc["kind"] in {"Namespace", "ClusterIssuer", "Bundle"}
-        or (
-            doc["kind"] == "Certificate"
-            and (
-                doc["metadata"]["namespace"] == "cert-manager" or doc["metadata"]["name"] == "agentplane-runner-gateway"
-            )
-        )
+        or (doc["kind"] == "Certificate" and doc["metadata"]["namespace"] == "cert-manager")
     ]
     fixture = template.model_copy(update={"objects": objects})
     cert_manager, trust_manager = pki_infrastructure.releases()
@@ -66,7 +61,7 @@ def test_fixture_cas_are_fresh_on_the_same_controllers(tmp_path: Path) -> None:
                 "apply", "-f", "-", input_text=yaml.safe_dump_all(doc for doc in objects if doc["kind"] != "Namespace")
             )
             certificates.wait_for_issuance(
-                node.kubectl, fixture.namespace, ("cluster-internal-ca-bundle", "agentplane-workload-ca-bundle")
+                node.kubectl, ("cluster-internal-ca-bundle", "agentplane-workload-ca-bundle")
             )
             root = _public_certificate(node, "test-runner-root")
             workload = _public_certificate(node, "agentplane-workload-ca")
