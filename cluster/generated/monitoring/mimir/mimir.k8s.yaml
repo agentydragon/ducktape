@@ -72,15 +72,6 @@ spec:
     name: mimir-seaweedfs-credentials
     secretKeyField: AWS_SECRET_ACCESS_KEY
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-  name: mimir-s3-credentials
-  namespace: monitoring
-type: Opaque
----
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

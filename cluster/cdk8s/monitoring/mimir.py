@@ -4,7 +4,6 @@ and credentials."""
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import node_scheduling
@@ -64,8 +63,6 @@ def _component(replicas: int, cpu: str, memory: str, **extra: object) -> dict[st
 
 def _storage(chart: Chart) -> None:
     # Tenant-local ownership for Mimir's existing Seaweed buckets and credentials.
-    # The old seaweedfs-namespace resources remain until the consumer cutover and
-    # data-path verification are complete.
     identity = s3.identity(chart, "identity", name=NAME, namespace=_NAMESPACE)
     for bucket, description in (("mimir-blocks", "Mimir blocks."), ("mimir-ruler", "Mimir ruler state.")):
         s3.bucket(
@@ -82,22 +79,9 @@ def _storage(chart: Chart) -> None:
         "credentials",
         identity=identity.name,
         namespace=_NAMESPACE,
-        # A new Secret during the staged handoff: the existing one is populated by the old
-        # cross-namespace S3Credentials object and cannot be adopted here.
         secret=_CREDENTIALS_SECRET,
         key_fields=s3.AWS_ENV_KEY_FIELDS,
         description="Mimir's tenant-local SeaweedFS credentials.",
-    )
-    # Retain the previous credential Secret during the staged handoff. The old
-    # S3Credentials resource is retired separately; revoking its retained key and
-    # removing this rollback Secret is an explicit follow-up.
-    k8s.KubeSecret(
-        chart,
-        "legacy-credentials",
-        metadata=k8s.ObjectMeta(
-            name="mimir-s3-credentials", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
-        ),
-        type="Opaque",
     )
 
 

@@ -1,8 +1,8 @@
 # S3 migration retirement gates
 
 Observed on 2026-11-15 UTC against `api.allegedly.works`, SeaweedFS `4.53`
-and operator `1.0.39`. No IAM, bucket, object or GitOps mutations were used to
-collect this evidence. Follow the [retirement runbook](../docs/runbooks/seaweedfs_s3_retirement.md)
+and operator `1.0.39`. The initial inventory used read-only operations; the later
+approved application probes and obsolete-key revocations are recorded below. Follow the [retirement runbook](../docs/runbooks/seaweedfs_s3_retirement.md)
 for each later stage; do not publish the next removal before its live gate.
 
 ## Session archive: stage reclaim policies
@@ -34,28 +34,46 @@ identity and one credential claimant. Both retained session resources had
 `reclaimPolicy: Delete`, generation 2 and observed generation 2, Ready, no deletion
 timestamp, and their respective protection finalizers present.
 
-This change removes only the obsolete S3Credentials. Keep the dedicated identity
-present until credential finalization, all-key absence through both filers and
-owned Secret deletion are verified. Remove the identity in a later change, then
-verify no user/key recreation after reconciliation. The Action stopped on an
-unrelated Mimir consumer preflight before any probes or IAM mutations; its
-session policy observations passed independently.
+The credential-only PR [#16664](https://github.com/agentydragon/ducktape/pull/16664)
+merged at 10:48:45. At 10:49:41 its credential was still present, so credential
+finalization is still a live gate. Keep the dedicated identity present until
+all-key absence through both filers and owned Secret deletion are verified.
+Remove the identity in a later change, then verify no user/key recreation after
+reconciliation. The first Action stopped on an unrelated Mimir consumer preflight
+before any probes or IAM mutations; its session policy observations passed
+independently.
 
-## Mimir, Tempo and Langfuse: retained keys still require retirement
+## Mimir, Tempo and Langfuse: obsolete keys revoked
 
-All observed live Pods, Deployments, StatefulSets and HelmReleases in `monitoring`,
-`langfuse`, `session-backup` and `seaweedfs` had no references to the three legacy
-rollback Secrets. The applications reference their tenant-local
-`*-seaweedfs-credentials`; all three HelmReleases were Ready at their observed
-spec generations (Mimir 17, Tempo 5, Langfuse 31).
+The applications reference their tenant-local `*-seaweedfs-credentials`. The old
+and current access-key fields were present and different for each tenant
+(compared only in memory). Each current Secret is owned by its tenant-local
+S3Credentials; each rollback Secret has no controller owner and is Flux-managed.
+The complete IAM inventory found exactly one identity and one credential claimant
+per application.
 
-The old and current access-key fields were present and different for each tenant
-(compared only in memory). Each filer reported two IAM keys per tenant. The
-current Secret is owned by the tenant-local S3Credentials; each rollback Secret
-has no controller owner and remains Flux-managed. These facts prove configured
-cutover, not actual replacement reads/writes or obsolete-key revocation. Verify
-those paths, identify and revoke only the obsolete key, then confirm absence
-through each filer before removing its rollback Secret. Preserve all data buckets.
+A broad consumer preflight initially stopped on the historical
+`reloader.stakater.com/last-reloaded-from` annotation in Mimir's gateway Deployment
+and Tempo's StatefulSet. A separate read projected the matching object names and
+paths. The revised preflight excluded only that annotation within
+`metadata.annotations`; every other specification and annotation remained in the
+check. All Pods, Deployments, StatefulSets, CronJobs and HelmReleases in each
+application namespace passed with zero legacy Secret consumer references.
 
-Read-only Action receipts: `41063c2d-ea07-4b7e-b5c5-283bc9490508` (inventory)
-and `6372eb74-3b4d-4f4e-9e96-ab8187612d52` (direct filer and policy reads).
+At 10:49:41–10:50:25, approved Action
+`e3dcf294-25a8-4443-9a45-82b6fdc9c0ba` verified replacement credentials against
+`mimir-blocks`, `mimir-ruler`, `tempo` and `langfuse`. Each probe conditionally
+created a unique tiny object, read back identical bytes, deleted precisely its
+created object and confirmed absence with a 404. No existing objects were changed.
+
+Only after every probe and the exact two-key IAM preconditions passed did the
+Action revoke the three obsolete keys. Independent reads through both filers
+confirmed exactly one active current key and no obsolete key for every tenant,
+then repeated those checks after ten seconds. The Action exited 0 with no output
+truncation. No credentials were printed or persisted. This permits removal of the
+three legacy rollback Secret resources; preserve all existing data buckets,
+current credentials, identities and grants.
+
+Initial read-only Action receipts: `41063c2d-ea07-4b7e-b5c5-283bc9490508`
+(inventory) and `6372eb74-3b4d-4f4e-9e96-ab8187612d52` (direct filer and policy
+reads).
