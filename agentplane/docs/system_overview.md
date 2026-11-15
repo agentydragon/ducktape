@@ -416,8 +416,8 @@ flowchart LR
 The sampler's TLS listener trusts the workload bundle and admits exactly
 `spiffe://agentplane/sessions`, the owner stored by the explicit Gateway-account Session rewrite.
 The Gateway authenticates with its mounted Sessions role certificate and verifies the sampler server SVID.
-The sampler retains its bearer account allowlist. Application RPCs use only the TLS listener; the
-plaintext gRPC listener on port 8080 is removed, and port 8081 serves health checks only.
+Sampler application RPCs require the admitted Sessions service SVID. Bearer settings no longer
+grant access. Application RPCs use only the TLS listener; port 8081 serves health checks only.
 
 The staging picker gives direct Anthropic models only to the central sampler, keeping them out of the
 subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing
@@ -451,16 +451,17 @@ provider continuation format: the sampler owns that state in its database. Wrapp
 harnesses keep their current local sampling, execution and persistence paths. See the
 [standalone API and recovery contract](../central_sampler/SPEC.md).
 
-### Staged Sampler service admission
+### Sampler service admission
 
-The sampler can admit explicitly configured Sessions service SVIDs alongside current bearer callers.
+The sampler admits only explicitly configured Sessions service SVIDs and performs no TokenReview.
 Service ownership is stored as the real SPIFFE ID, separately from ServiceAccount UID ownership.
 The explicit Gateway-account ownership rewrite preserves the retained Session IDs and History
 references before the caller switch. The Gateway uses the same Sessions SPIFFE ID as the new owner.
 
 ```mermaid
 flowchart LR
-    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: exact Sampler method grant| sampler[Central Sampler]
+    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: exact Sampler method grant| sampler[Central Sampler: SVID only]
+    bearer[Kubernetes bearer] -.->|denied before handler| sampler
     sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
 ```
 

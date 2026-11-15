@@ -8,11 +8,11 @@ the authenticated caller’s exact service SPIFFE ID as its owner key, plus the 
 Dispatcher and sampler require the spec environment and executor destination to match. The
 Dispatcher requires and supplies the complete execution Identity named by the executor's Sandbox,
 retaining it in the immutable configuration across retries and restarts. The authenticated sampler
-actor remains the journal producer identity and is retained separately by History. History and
-Gateway connections accept either their existing projected ServiceAccount token or a central
-sampler service SVID; SVID mode verifies the exact receiver service URI and presents
-`spiffe://agentplane/central-sampler` as its caller. The deployed token mode changes only when
-separately configured. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
+actor remains the journal producer identity and is retained separately by History. Deployed History and
+Gateway connections verify the exact receiver service URI and present
+`spiffe://agentplane/central-sampler` over mTLS. Their typed client settings retain a legacy token
+choice until the separate outbound-setting cleanup; a selected SVID connection never falls back
+to a bearer. During the Runtime proxy cutover, `gateway_tls.server_uri` may pin
 `spiffe://agentplane/session-dispatcher` (Gateway) or `spiffe://agentplane/sandbox-controller`
 (Environments). Each connection verifies only its configured identity; it never falls back between
 receivers. Caller manifests remain on Gateway until the Environments receiver and accepting caller
@@ -27,10 +27,10 @@ TLS with the configured trust bundle and never falls back to bearer verification
 `audience` and `allowed_accounts` settings remain decodable but are optional and do not grant access.
 
 The sampler acts for that Identity under the [delegated authorization contract](../docs/delegated_authorization.md): it
-authenticates as itself with its own projected token or central sampler service SVID and holds no
+authenticates as itself with its central sampler service SVID and holds no
 agent key, and each History push names the retained Identity as effective caller and the Session as
 provenance. LLM ingress receives the same typed proof when the connection selects
-`auth.type: agentplane_ingress`; it can authenticate with the projected token or a central sampler
+`auth.type: agentplane_ingress`; the deployed connection uses the central sampler
 service SVID. Neither JavaScript nor tool arguments can name or override the typed delegation; History
 refuses a push whose announced Identity, Session or journal kind differs from the envelope, and both
 receivers refuse an Identity incarnation that no longer exists, as they refuse a Sandbox whose

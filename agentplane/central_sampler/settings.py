@@ -245,12 +245,14 @@ class Settings(BaseModel):
     models: dict[str, ModelConfig] = Field(min_length=1)
 
     platform_instructions: str | None = Field(default=None, min_length=1)
+    # CLEANUP(added 2026-11-15): Remove after manifests omit audience and that rollout completes. Ignored.
     audience: str | None = None
     service_callers: list[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=list,
         description="Exact service SPIFFE IDs admitted on the mTLS listener.",
     )
+    # CLEANUP(added 2026-11-15): Remove after manifests omit allowed_accounts and that rollout completes. Ignored.
     allowed_accounts: set[str] = Field(default_factory=set, exclude_if=lambda value: not value)
     code_mode_host: Path
     executor_codex: str
@@ -313,6 +315,7 @@ class Settings(BaseModel):
     )
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
+    # CLEANUP(added 2026-11-15): Remove after manifests omit kubeconfig and that rollout completes. Ignored.
     kubeconfig: Path | None = None
 
     @model_validator(mode="after")

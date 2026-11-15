@@ -15,41 +15,44 @@ type Actions struct {
 }
 
 type Settings struct {
-	Actions                              *Actions                    `json:"actions,omitempty"`
-	ServiceCallers                       []string                    `json:"service_callers,omitempty"`
-	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
-	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
-	ListenTLS                            *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`
-	HealthListen                         *string                     `json:"health_listen,omitempty"`
-	Models                               map[string]ModelConfig      `json:"models"`
-	Connections                          map[string]ConnectionConfig `json:"connections"`
-	DatabaseURL                          string                      `json:"database_url"`
-	Audience                             string                      `json:"audience"`
-	AllowedAccounts                      []string                    `json:"allowed_accounts"`
-	PlatformInstructions                 *string                     `json:"platform_instructions,omitempty"`
-	CodeModeHost                         string                      `json:"code_mode_host"`
-	ExecutorCodex                        string                      `json:"executor_codex"`
-	Logs                                 string                      `json:"logs"`
-	HistoryTarget                        string                      `json:"history_target"`
-	HistoryTokenFile                     string                      `json:"history_token_file"`
-	GatewayTarget                        string                      `json:"gateway_target"`
-	GatewayTokenFile                     string                      `json:"gateway_token_file"`
-	DirectExecutorTarget                 string                      `json:"direct_executor_target"`
-	DirectExecutorInsecureLocaltest      bool                        `json:"direct_executor_insecure_localtest"`
-	MaxLiveSessions                      int                         `json:"max_live_sessions"`
-	ProviderResponseHeaderTimeoutSeconds *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
-	ProviderIdleTimeoutSeconds           *int                        `json:"provider_idle_timeout_seconds,omitempty"`
-	TurnTimeoutSeconds                   *int                        `json:"turn_timeout_seconds,omitempty"`
-	RPCTimeoutSeconds                    int                         `json:"rpc_timeout_seconds"`
-	CodeModeObservationTimeoutSeconds    *int                        `json:"code_mode_observation_timeout_seconds,omitempty"`
-	ExecutorInitializeTimeoutSeconds     *int                        `json:"executor_initialize_timeout_seconds,omitempty"`
-	ExecutorReconnectTimeoutSeconds      *int                        `json:"executor_reconnect_timeout_seconds,omitempty"`
-	ShutdownDrainSeconds                 *int                        `json:"shutdown_drain_seconds,omitempty"`
-	ShutdownBudgetSeconds                *int                        `json:"shutdown_budget_seconds,omitempty"`
-	LeaseSeconds                         int                         `json:"lease_seconds"`
-	AutoCompactTokens                    *int                        `json:"auto_compact_tokens"`
-	Kubeconfig                           string                      `json:"kubeconfig"`
-	SetupTimeoutSeconds                  *int                        `json:"setup_timeout_seconds,omitempty"`
+	Actions        *Actions                    `json:"actions,omitempty"`
+	ServiceCallers []string                    `json:"service_callers,omitempty"`
+	GatewayTLS     *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
+	HistoryTLS     *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
+	ListenTLS      *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`
+	HealthListen   *string                     `json:"health_listen,omitempty"`
+	Models         map[string]ModelConfig      `json:"models"`
+	Connections    map[string]ConnectionConfig `json:"connections"`
+	DatabaseURL    string                      `json:"database_url"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit audience and that rollout completes. Ignored.
+	Audience string `json:"audience"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit allowed_accounts and that rollout completes. Ignored.
+	AllowedAccounts                      []string `json:"allowed_accounts"`
+	PlatformInstructions                 *string  `json:"platform_instructions,omitempty"`
+	CodeModeHost                         string   `json:"code_mode_host"`
+	ExecutorCodex                        string   `json:"executor_codex"`
+	Logs                                 string   `json:"logs"`
+	HistoryTarget                        string   `json:"history_target"`
+	HistoryTokenFile                     string   `json:"history_token_file"`
+	GatewayTarget                        string   `json:"gateway_target"`
+	GatewayTokenFile                     string   `json:"gateway_token_file"`
+	DirectExecutorTarget                 string   `json:"direct_executor_target"`
+	DirectExecutorInsecureLocaltest      bool     `json:"direct_executor_insecure_localtest"`
+	MaxLiveSessions                      int      `json:"max_live_sessions"`
+	ProviderResponseHeaderTimeoutSeconds *int     `json:"provider_response_header_timeout_seconds,omitempty"`
+	ProviderIdleTimeoutSeconds           *int     `json:"provider_idle_timeout_seconds,omitempty"`
+	TurnTimeoutSeconds                   *int     `json:"turn_timeout_seconds,omitempty"`
+	RPCTimeoutSeconds                    int      `json:"rpc_timeout_seconds"`
+	CodeModeObservationTimeoutSeconds    *int     `json:"code_mode_observation_timeout_seconds,omitempty"`
+	ExecutorInitializeTimeoutSeconds     *int     `json:"executor_initialize_timeout_seconds,omitempty"`
+	ExecutorReconnectTimeoutSeconds      *int     `json:"executor_reconnect_timeout_seconds,omitempty"`
+	ShutdownDrainSeconds                 *int     `json:"shutdown_drain_seconds,omitempty"`
+	ShutdownBudgetSeconds                *int     `json:"shutdown_budget_seconds,omitempty"`
+	LeaseSeconds                         int      `json:"lease_seconds"`
+	AutoCompactTokens                    *int     `json:"auto_compact_tokens"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit kubeconfig and that rollout completes. Ignored.
+	Kubeconfig          string `json:"kubeconfig"`
+	SetupTimeoutSeconds *int   `json:"setup_timeout_seconds,omitempty"`
 }
 
 const defaultHealthListen = ":8081"
