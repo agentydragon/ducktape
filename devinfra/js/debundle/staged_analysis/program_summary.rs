@@ -77,6 +77,7 @@ pub struct ReparsedEntry {
     imports: Vec<ImportRecord>,
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
+    function_import_reads: BTreeMap<String, BTreeSet<String>>,
     static_requests: Vec<StaticModuleRequest>,
 }
 
@@ -365,6 +366,7 @@ pub fn reparse_unretained_entries(
                         imports: analysis.imports,
                         export_aliases: analysis.export_aliases,
                         stable_export_values: analysis.runtime_facts.stable_export_values,
+                        function_import_reads: analysis.runtime_facts.function_import_reads,
                         static_requests: analysis.runtime_facts.static_requests,
                     },
                 );
@@ -399,6 +401,7 @@ pub fn collect_program_summary(
     // Pass 2: assemble each chunk's oracle inputs from whichever body is
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
+    let mut function_import_reads = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
@@ -432,6 +435,13 @@ pub fn collect_program_summary(
             Some(entry) => &entry.stable_export_values,
             None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
         };
+        function_import_reads.insert(
+            chunk_name.to_string(),
+            match reparsed.get(&chunk_artifact.chunk_id) {
+                Some(entry) => &entry.function_import_reads,
+                None => &chunk_artifact.analysis.runtime_facts.function_import_reads,
+            },
+        );
         let module_static_requests = match reparsed.get(&chunk_artifact.chunk_id) {
             Some(entry) => &entry.static_requests,
             None => &chunk_artifact.analysis.runtime_facts.static_requests,
@@ -762,6 +772,41 @@ pub fn collect_program_summary(
         },
         diagnostics,
     )?;
+    // Preserve positive cell-access obligations even when an impure provider
+    // has no sealed call summary. Resolve each name through both modules'
+    // existing import/export identity, never by matching unrelated spellings.
+    for (caller, module) in &modules {
+        for (callee, target) in &module.imports {
+            let Some(provider) = modules.get(&target.module) else {
+                continue;
+            };
+            let Some(function) = provider.exports.get(&target.export) else {
+                continue;
+            };
+            let Some(reads) = function_import_reads
+                .get(&target.module)
+                .and_then(|functions| functions.get(function))
+            else {
+                continue;
+            };
+            let cells: BTreeSet<_> = reads
+                .iter()
+                .filter_map(|read| provider.imports.get(read))
+                .filter(|read| &read.module == caller)
+                .filter_map(|read| module.exports.get(&read.export).cloned())
+                .collect();
+            if !cells.is_empty() {
+                callable_summaries
+                    .imported_callables
+                    .entry(caller.clone())
+                    .or_default()
+                    .entry(callee.clone())
+                    .or_default()
+                    .may_read_importer_cells
+                    .extend(cells);
+            }
+        }
+    }
     let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
     let bindings = resolve_imported_purities(
         &modules,

@@ -1967,10 +1967,18 @@ The policy stays conservative when:
 
 Each of these hands out the whole namespace. Under `reentry_through`, only the
 named exports (`default` for the default export) are synthetic execution
-roots and exposed capabilities for unknown-call fallback. Unknown execution
-can observe their binding cells before initialization, even when they do not
-yet hold callbacks. Those reads retain the source initialization order;
-callback discovery uses only values available at the current source prefix.
+roots and exposed capabilities for unknown-call fallback.
+
+Separately, direct named/default calls of source function declarations retain
+positive may-read obligations for provider imports that resolve back to the
+caller's exported cells. Local export and import aliases preserve cell identity.
+The canonical shallow source walk includes deferred descendant bodies, so these
+reads carry fallback provenance and supply no observed-effect or completion
+receipt. They apply before call-summary substitution and do not suppress opaque
+execution. Their absence proves nothing about other provider effects. This
+partial path does not cover arbitrary unknown callees, transitive calls, or
+re-export chains; the remaining future-export-cell observation gap is tracked in
+`TODO.md` and `debug/2026_11_14_cyclic_export_cells.md`.
 
 Soundness: while the target evaluates, its bindings are reachable only from
 the target itself, from chunks that evaluated before it (which cannot import

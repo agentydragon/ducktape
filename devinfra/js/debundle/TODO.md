@@ -72,6 +72,19 @@ The sections below hold details, not competing priority queues.
    decision before implementation. Prefer deleting redundant setup over deleting
    behavioral assertions or adding test frameworks.
 
+### Cyclic export-cell observation soundness
+
+- Cover future export-cell observations by arbitrary unknown execution.
+  The partial source-derived may-read path handles direct imported function
+  declarations and local aliases; it does not cover transitive calls,
+  re-export chains, namespace calls or host/global callees. The broad fence
+  tried in draft #16539 rejects the frozen Excalidraw spec (868-unit atomic
+  group). <debug/2026_11_14_cyclic_export_cells.md> records the reproduction,
+  exact checks, policy blockers and witness. Next lane: establish loader
+  reachability or transport the missing cell-access obligations without
+  weakening the gate. Close when the opaque observer counterexample is
+  rejected and the unchanged canonical reconstruction passes.
+
 ### Architecture review follow-ups
 
 These IDs identify remaining work; dispatch order stays above. Existing plans

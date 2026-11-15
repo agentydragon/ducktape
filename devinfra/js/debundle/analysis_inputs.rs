@@ -198,6 +198,11 @@ pub struct CallableSummary {
     pub descriptor_copy_factory: Option<DescriptorCopyFactorySummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foreign_call: Option<ForeignCallSummary>,
+    /// Caller-local exported cells referenced by this provider's function
+    /// body or deferred descendants. Positive may-read obligations only;
+    /// absence says nothing about effects, reentry or completion.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub may_read_importer_cells: BTreeSet<String>,
 }
 
 impl CallableSummary {
@@ -209,6 +214,7 @@ impl CallableSummary {
             callback_object_arguments: None,
             descriptor_copy_factory: None,
             foreign_call: None,
+            may_read_importer_cells: BTreeSet::new(),
         }
     }
 
@@ -249,6 +255,8 @@ impl CallableSummary {
     }
 
     pub fn merge(&mut self, other: Self) {
+        self.may_read_importer_cells
+            .extend(other.may_read_importer_cells);
         if let Some(call) = other.foreign_call {
             assert!(
                 self.foreign_call

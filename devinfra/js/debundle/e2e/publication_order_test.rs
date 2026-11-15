@@ -1,6 +1,8 @@
 //! Real CLI fixtures for private definition visibility and cyclic export availability.
 
+use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
+use spec::{BindingAnnotation, InitializerBindingEffects};
 
 const CLASS_OBSERVER: &str = r#"export function inspect(value) {
   console.log(typeof value.get());
@@ -142,4 +144,55 @@ fn acyclic_observer_does_not_block_export_initialization_relocation() {
         &chunks,
     ));
     assert_preserved_entry_output(&fixture, "observed\n");
+}
+
+#[test]
+fn aliased_provider_and_importer_cells_reject_in_direct_and_saved_analysis() {
+    let source = "import { observe as inspect } from './observer.js';\ninspect();\nvar callback = () => 1;\nexport { callback as published };\n";
+    let chunks = [(
+        "static/observer",
+        "import { published as value } from './app.js';\nfunction read() { console.log(typeof value); }\nexport { read as observe };\n",
+    )];
+    let (staged, _fixture) = staged(exported_callback_fixture(source, &chunks));
+    for args in [
+        vec!["--emit-on-rejection"],
+        vec!["--emit-on-rejection", "--analysis", path(&staged.artifact)],
+    ] {
+        let invocation = staged.run(&args);
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(3),
+            "{}",
+            invocation.result.stderr
+        );
+    }
+}
+
+#[test]
+fn deferred_descendant_reads_are_assumptions_not_observed_initializer_effects() {
+    let source = "import { make } from './observer.js';\nconst delayed = make();\nexport var callback = () => 1;\nconsole.log(delayed());\n";
+    let chunks = [(
+        "static/observer",
+        "import { callback } from './app.js';\nexport function make() { return () => typeof callback; }\n",
+    )];
+    let mut deferred = logical_module("readers/deferred", &[Member::new("delayed")]);
+    deferred.1.annotations.insert(
+        "delayed".to_owned(),
+        BindingAnnotation {
+            initializer_binding_effects: Some(InitializerBindingEffects::SourceOnly),
+            ..Default::default()
+        },
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                deferred,
+                logical_module("callbacks/value", &[Member::new("callback")]),
+            ],
+        )
+        .with_extra_chunks(&chunks)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "function\n");
 }

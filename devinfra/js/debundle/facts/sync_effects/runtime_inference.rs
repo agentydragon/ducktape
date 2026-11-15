@@ -620,6 +620,7 @@ impl RuntimeRules<'_, '_> {
                 mut outcome,
                 operands,
             } => {
+                executor.promote_importer_cell_reads(&call, &mut outcome);
                 let transfer = match operands {
                     Some(operands) => executor.execute_supplied_call(
                         &call,
