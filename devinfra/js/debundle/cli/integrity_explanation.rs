@@ -3,7 +3,7 @@
 
 use crate::emit_report;
 use analysis::ProgramGraphReport;
-use analysis::analysis_inputs::{NativeIntrinsic, NativeIntrinsicExt, native_intrinsic_from_spec};
+use analysis::analysis_inputs::{NativeIntrinsic, native_intrinsic_from_spec};
 use analysis::execution_evidence::{
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
 };
