@@ -1,6 +1,6 @@
 # EnvironmentService on every Environments replica
 
-Approved serving contract (operator, 2026-11-15); implementation in progress. The
+Approved serving contract (operator, 2026-11-15); implemented. The
 [agreed binary shape](https://agentydragon.github.io/ducktape/agentplane-organization/#binaries)
 puts EnvironmentService beside the Sandbox Controller in `agentplane/environments/`.
 Source baseline: devel `ae73f98d0fd17a12edd6ee62d77b6a4cbfb4bd07` (2026-11-14).
@@ -34,16 +34,17 @@ fail authorization closed. No RPC uses the leader's in-memory Runtime facts as i
 Every replica serves every EnvironmentService RPC, including mutations. Preserve
 [the service's uncached watch client](../environments/internal/service/service.go),
 [management authorization](../environments/internal/service/management.go), and
-[explicit resume's guarded patch](../runner_gateway/environments/lifecycle/manager.go): exact
+[explicit resume's guarded patch](../environments/internal/resume/manager.go): exact
 Sandbox UID, live caller and execution Identity, resume-token/wake-generation precondition,
 resource-version conflict checks with reauthorization, and an uncertain outcome without automatic
 replay. `REQUESTED` means desired state was accepted; the leader subsequently reconciles it.
 Readiness, quiesce before suspend, and incarnation fencing remain Controller responsibilities.
 
-Move explicit resume without its current constructor's mandatory `WakeBudget`: it reserves no budget
-already ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)). Split the automatic
-wake implementation into Sessions, which keeps its own policy reader, guarded writes and PostgreSQL
-budget. Environments acquires no database and makes no call to Sessions. Sessions keeps checking the
+Explicit resume now lives in `environments/internal/resume`, whose constructor accepts no budget: it
+reserves no budget ([lifecycle contract](../environments/lifecycle/SPEC.md)). The automatic
+wake executor and budget contract live in `runner_gateway/dispatcher/wake`; Sessions keeps its own
+policy reader and PostgreSQL budget. Both owners use `environments/lifecycle` for the same guarded
+write algorithm. Environments acquires no database and makes no call to Sessions. Sessions keeps checking the
 live Identity at admission ([Dispatcher](../runner_gateway/dispatcher/api.go)). Shared
 [`environments/access`](../environments/access/policy.go) lives outside `internal/`, so Sessions
 imports its `bind_session` rules without importing the serving package.
@@ -120,8 +121,8 @@ Service caller routing:
    registration and obsolete decoders;
    then remove unused RBAC only after that accepting image is pinned and running. Move the serving
    implementation internal with an Environments-owned test fixture for the remaining Actions
-   consumer tests. Split the still-shared lifecycle manager separately; preserve automatic wake
-   execution and budget ownership with Sessions.
+   consumer tests. The lifecycle split puts explicit RPC handling inside Environments and automatic wake execution
+   and its budget contract beside Dispatcher, sharing only policy and guarded writes.
 
 Rollback switches caller configuration back to the still-serving Gateway first, keeping service
 SVID authentication and exact method grants. After Flux applies it, check caller rollouts, list/get
@@ -137,3 +138,15 @@ delegation, watch, explicit/automatic wake and Controller tests. Run the affecte
 suites and name their exact targets in each implementation PR. Service/RBAC/Cilium changes also need
 staging verification because those deployment objects have no system test. This note changes no
 code, manifests, wire names or deployed behavior.
+
+## Implementation boundary
+
+The serving implementation is internal to Environments (`internal/service`, #16613); its explicit
+resume handler is `internal/resume`. Dispatcher owns `runner_gateway/dispatcher/wake` and its
+PostgreSQL budget. Their shared `environments/lifecycle` package owns authorization and the guarded
+write loop, with no budget implementation or EnvironmentService wire dependency. Gateway registration
+retired in #16601, followed by its unused management RBAC in #16616 after the removal image rolled.
+That image, `devel-20261115070016-fe1f0b6`, was pinned on devel and both staging Gateway replicas
+rolled Ready without restarts at 07:01 UTC on 2026-11-15. Dispatcher wake patches, authentication
+reads and delivery Leases remain.
+Runtime proxy/Executor extraction and the direct-caller audit remain separate DAG nodes.

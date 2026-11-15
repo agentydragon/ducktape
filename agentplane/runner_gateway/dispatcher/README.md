@@ -167,3 +167,8 @@ The serving binary and image live under `//agentplane/runner_gateway` and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving binary applies the embedded Goose queue migrations before opening the Gateway
 listener; the same binary accepts `--migrate-only` for explicit fixture or maintenance use. The
 startup probe waits for initialization before `grpc.health.v1` readiness on the shared listener.
+
+Automatic wake execution and its budget contract live in [`wake`](wake/manager.go). Environments
+owns explicit resume; both use the shared [`lifecycle` policy and guarded writes](../../environments/lifecycle/SPEC.md).
+Only automatic wake reserves the shared PostgreSQL budget, after current authorization and before
+an optimistic patch; an uncertain patch outcome is never replayed.

@@ -8,12 +8,12 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
 )
 
 // ReserveWakeAttempt counts distinct guarded wake generations per authenticated
 // caller across replicas. A retry of the same generation spends no new budget.
-func (s *Store) ReserveWakeAttempt(ctx context.Context, caller lifecycle.WakeBudgetKey, sandboxUID string, generation int64) (time.Duration, error) {
+func (s *Store) ReserveWakeAttempt(ctx context.Context, caller wake.WakeBudgetKey, sandboxUID string, generation int64) (time.Duration, error) {
 	if caller.ServiceSPIFFEID != "" {
 		if caller.Namespace != "" || caller.Name != "" || caller.UID != "" {
 			return 0, errors.New("service wake budget cannot contain account fields")

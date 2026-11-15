@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -15,7 +16,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -167,7 +168,7 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 func TestServiceWakeBudgetDoesNotSpendAccountOrOtherServiceBudget(t *testing.T) {
 	store := testStore(t, 10)
 	target := uuid.NewString()
-	key := lifecycle.WakeBudgetKey{ServiceSPIFFEID: peertls.NotificationsURI}
+	key := wake.WakeBudgetKey{ServiceSPIFFEID: peertls.NotificationsURI}
 	for generation := int64(1); generation <= WakeLimit; generation++ {
 		if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, generation); err != nil || wait != 0 {
 			t.Fatalf("reserve %d: %s %v", generation, wait, err)
@@ -179,10 +180,10 @@ func TestServiceWakeBudgetDoesNotSpendAccountOrOtherServiceBudget(t *testing.T) 
 	if wait, err := store.ReserveWakeAttempt(t.Context(), key, target, 1); err != nil || wait != 0 {
 		t.Fatalf("retry: %s %v", wait, err)
 	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), lifecycle.WakeBudgetKey{ServiceSPIFFEID: peertls.AppURI}, target, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(t.Context(), wake.WakeBudgetKey{ServiceSPIFFEID: peertls.AppURI}, target, 1); err != nil || wait != 0 {
 		t.Fatalf("other service: %s %v", wait, err)
 	}
-	if wait, err := store.ReserveWakeAttempt(t.Context(), lifecycle.WakeBudgetKey{Namespace: "test", Name: "notifications", UID: "real-account-uid"}, target, 1); err != nil || wait != 0 {
+	if wait, err := store.ReserveWakeAttempt(t.Context(), wake.WakeBudgetKey{Namespace: "test", Name: "notifications", UID: "real-account-uid"}, target, 1); err != nil || wait != 0 {
 		t.Fatalf("account budget: %s %v", wait, err)
 	}
 }

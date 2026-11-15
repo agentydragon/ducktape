@@ -110,8 +110,8 @@ Reliability contracts live in the
 [acceptance record](../central_sampler/docs/rollout_acceptance.md)
 retains the deployed exporter evidence and its limits.
 The shared explicit/automatic resume authority and uncertain-outcome contract live in the
-[lifecycle manager specification](../runner_gateway/environments/lifecycle/SPEC.md) and concise
-[lifecycle README](../runner_gateway/environments/lifecycle/README.md).
+[lifecycle manager specification](../environments/lifecycle/SPEC.md) and concise
+[lifecycle README](../environments/lifecycle/README.md).
 
 **Operator decision, 2026-10-31 UTC:** skip the dedicated continuation/disruption exercise,
 coverage audit and additional acceptance tests. The operator will evaluate reliability through
@@ -193,7 +193,6 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | Central code-mode tools as Actions | 20:04, same release                     | `CENTRAL_SESSION_DELEGATED_ACTING`                                  | Merged #16418, #16422, #16423                                                                                                                                      |
 | Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Most callers switched; [readiness audit](service_svid_stage5_readiness.md) finds Actions→Dispatcher/History and sampler→LLM still on bearers; #16467 grant merged  |
 | Dead Dispatcher command states     | 21:15, card "Delete dead states only"   | `DISPATCHER_HARNESS_CONFIRMATION`                                   | Stored rows rewritten (#16438); removing `HARNESS_CONFIRMED` and `NO_OP` follows                                                                                   |
-| EnvironmentService serving note    | 23:13, card "Serving design note first" | `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`                               | Serving contract approved and implementation released by operator, 2026-11-15; receiver code precedes configuration                                                |
 
 Finished since and deleted: the environment rule slices (`resume` #16346, `bind_session` #16351),
 Sessions re-checking the live Identity (#16373), explicit resume reserving no wake budget (#16375),
@@ -209,7 +208,6 @@ flowchart LR
         PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs and TLS on every hop]
     end
     subgraph SPLIT_TRACK[Two-binary split, section 17]
-        ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[In flight: EnvironmentService into Environments]
     end
     CENTRAL_SESSION_DELEGATED_ACTING[In flight: code-mode tools as Actions]
     DISPATCHER_HARNESS_CONFIRMATION[In flight: delete the dead command states first]
@@ -3984,21 +3982,21 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
 (pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                                                                   |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3. The two-binary moves         | `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`, `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                                     |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                           |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                                                               |
+| Plan stage                      | DAG node                                                                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 3. The two-binary moves         | `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                              |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`    |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                        |
 
-EnvironmentService implementation is released after operator approval of its serving contract
-(2026-11-15). The other remaining stage 3 moves are not released. Sessions re-checking the live
+EnvironmentService now serves from Environments under the approved
+[serving contract](environment_service_serving.md), with explicit resume internal and automatic wake
+execution/budgeting beside Dispatcher. The remaining stage 3 moves are not released. Sessions re-checking the live
 Identity landed in #16373.
 
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: service SVIDs, section 15]
-    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS[In flight: EnvironmentService into Environments]
     RUNTIME_PROXY_CALLER_AUDIT[Unscheduled: audit direct Runtime-proxy callers]
     RUNTIME_PROXY_TO_ENVIRONMENTS[Agreed: Runtime proxy and Executor into Environments]
     SESSIONS_BINARY_DIRECTORY[Held: the rest moves to session_dispatcher/]
@@ -4006,37 +4004,9 @@ flowchart LR
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
     PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
-    ENVIRONMENT_SERVICE_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
     SESSIONS_BINARY_DIRECTORY --> RUNNER_GATEWAY_RENAME
 ```
-
-### `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS` — EnvironmentService moves into the Environments binary
-
-**In flight; operator approved the [serving contract](environment_service_serving.md) and released
-implementation on 2026-11-15.** Every replica serves mutations as well as reads, readiness never
-waits for leadership, authorization fails closed, and rollout uses separate image/config PRs.
-Receiver configuration landed in #16556 after the accepting image pin; both staging replicas are
-Ready on that configuration (2026-11-15). App and Actions retargeting landed in #16565 and #16573;
-both services have rolled on staging. Config-first retirement removes the Gateway component
-EnvironmentService grants before decoder/registration removal, retaining automatic wake grants. CLI support
-(#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
-Config retirement (#16593) and Gateway registration/decoder removal (#16601, including the App
-fixture migration) are merged. The removal image `devel-20261115070016-fe1f0b6` is pinned
-on devel and both staging Gateway replicas rolled Ready without restarts at 07:01 UTC on
-2026-11-15. The separate RBAC reduction retires Sandbox create/delete and SandboxTemplate
-reads; Dispatcher automatic-wake patches, authentication reads and delivery Leases remain.
-The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
-Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
-The package-boundary slice moves handlers,
-`management` and `view` into `environments/internal/service`; Actions orchestration tests use an
-Environments-owned fixture exposing only the wire interface. The shared lifecycle manager remains
-at `runner_gateway/environments/lifecycle` for a separate split: explicit resume moves inside
-Environments, while automatic wake execution and budget ownership stay with Dispatcher. The shared
-policy reader remains at `environments/access` (Sessions imports it for `bind_session`). No database
-moves. Image before config; update the [system overview](../docs/system_overview.md) in the same PR.
-**Exit:** the Environments binary serves EnvironmentService on every replica, with its wire API and
-per-method authorization unchanged.
 
 ### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
 

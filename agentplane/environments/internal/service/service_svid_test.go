@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -14,7 +16,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/google/uuid"
@@ -39,15 +40,6 @@ func (c serviceCreateWithUIDClient) Create(ctx context.Context, object client.Ob
 	return c.WithWatch.Create(ctx, object, options...)
 }
 
-type serviceRoleWakeBudget struct {
-	calls int
-}
-
-func (b *serviceRoleWakeBudget) ReserveWakeAttempt(_ context.Context, _ lifecycle.WakeBudgetKey, _ string, _ int64) (time.Duration, error) {
-	b.calls++
-	return 0, nil
-}
-
 func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	const (
 		readerID   = peertls.CentralSamplerURI
@@ -64,9 +56,8 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	objects := serviceCreateWithUIDClient{WithWatch: readerWithObjects(t, sandbox, executionAccountObject(sandbox.UID), &policyapi.Identity{
 		ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: "agent", UID: "agent-uid"},
 	})}
-	budget := &serviceRoleWakeBudget{}
-	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeBudget: budget,
+	lifecycleManager, err := resume.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects,
 		OperatorServiceCallers: []string{operatorID},
 	})
 	if err != nil {
@@ -166,9 +157,6 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED {
 		t.Fatalf("service operator resume = %v, %v", response, err)
 	}
-	if budget.calls != 0 {
-		t.Fatalf("explicit service operator resume reserved wake budget %d times", budget.calls)
-	}
 	var updated sandboxapi.Sandbox
 	if err := objects.Get(t.Context(), types.NamespacedName{Namespace: discoveryNamespace, Name: sandboxName}, &updated); err != nil {
 		t.Fatal(err)
@@ -218,8 +206,8 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: identityName, UID: identityUID}},
 		&policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: discoveryNamespace, Name: otherName, UID: otherUID}},
 	)
-	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeBudget: &serviceRoleWakeBudget{}, OperatorServiceCallers: []string{actionsID},
+	lifecycleManager, err := resume.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects, OperatorServiceCallers: []string{actionsID},
 	})
 	if err != nil {
 		t.Fatal(err)

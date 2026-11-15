@@ -30,7 +30,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/sandboxinventory"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/migrations"
@@ -123,19 +123,6 @@ func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional 
 		}
 	}
 	return sets.List(names)
-}
-
-type lifecycleWakeBudget struct {
-	store *dispatcher.Store
-}
-
-func (b lifecycleWakeBudget) ReserveWakeAttempt(
-	ctx context.Context,
-	caller lifecycle.WakeBudgetKey,
-	sandboxUID string,
-	generation int64,
-) (time.Duration, error) {
-	return b.store.ReserveWakeAttempt(ctx, caller, sandboxUID, generation)
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
@@ -253,8 +240,8 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	store := dispatcher.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: c.Namespace, Objects: objects, WakeBudget: lifecycleWakeBudget{store: store},
+	wakeManager, err := wake.NewManager(wake.Options{
+		Namespace: c.Namespace, Objects: objects, WakeBudget: store,
 		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
 	})
 	if err != nil {
@@ -336,7 +323,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
-		Store: store, Catalog: catalog, Wake: lifecycleManager,
+		Store: store, Catalog: catalog, Wake: wakeManager,
 		Leases: dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
 		Runner: runner, Hub: hub, Ready: ready,
 	}

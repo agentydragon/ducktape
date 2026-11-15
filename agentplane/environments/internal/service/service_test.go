@@ -7,15 +7,16 @@ import (
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -34,8 +35,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 )
 
 const (
@@ -65,16 +64,10 @@ func (resolver fixedSubjectResolver) ResolveSubject(context.Context) (auth.Subje
 	return resolver.subject, nil
 }
 
-type unusedWakeBudget struct{}
-
-func (unusedWakeBudget) ReserveWakeAttempt(context.Context, lifecycle.WakeBudgetKey, string, int64) (time.Duration, error) {
-	return 0, nil
-}
-
-func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []auth.Account) *lifecycle.Manager {
+func discoveryLifecycle(t *testing.T, objects client.WithWatch, wakeCallers []auth.Account) *resume.Manager {
 	t.Helper()
-	manager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeBudget: unusedWakeBudget{}, WakeCallers: wakeCallers,
+	manager, err := resume.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects, WakeCallers: wakeCallers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -195,8 +188,8 @@ func serveDiscoveryWithComponentReader(
 	} else if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: discoveryNamespace, Objects: objects, WakeBudget: unusedWakeBudget{}, WakeCallers: wakeCallers,
+	manager, err := resume.NewManager(lifecycle.Options{
+		Namespace: discoveryNamespace, Objects: objects, WakeCallers: wakeCallers,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -396,7 +389,7 @@ func serveIdentityDiscovery(
 
 func serveIdentityDiscoveryWithLifecycle(
 	t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog,
-	readers sets.Set[auth.Account], manager *lifecycle.Manager,
+	readers sets.Set[auth.Account], manager *resume.Manager,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
 	service, err := New(discoveryNamespace, objects, catalog, manager, readers, ManagementOptions{})

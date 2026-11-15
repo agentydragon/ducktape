@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
 	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
@@ -19,7 +21,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -88,7 +89,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err := reader.WatchRules(watches, rules, c.PolicyNamespace, access.Ready); err != nil {
 		return nil, err
 	}
-	manager, err := lifecycle.NewEnvironmentServiceManager(lifecycle.EnvironmentServiceOptions{
+	manager, err := resume.NewManager(lifecycle.Options{
 		Namespace: namespace, Objects: objects, EnvironmentRules: rules,
 		PolicyReady: func() error {
 			if !policyHealth.Available() {

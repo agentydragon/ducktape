@@ -43,7 +43,7 @@ entries and cannot widen access. Broad direct readers may page over the namespac
 continuation token.
 
 `ResumeEnvironment` separately checks the exact target and either an explicit Identity `resume`
-rule or direct operator authority through the shared [lifecycle manager](../../../runner_gateway/environments/lifecycle/README.md).
+rule or direct operator authority through the shared [lifecycle manager](../../lifecycle/README.md).
 Identity grants cannot override operator stops. Ordinary ServiceAccount self-resume remains denied. Listing or reading a target does not authorize
 changing it. The observed wake generation and opaque resume precondition bind an ordinary request to
 that Sandbox UID and generation; the backend rechecks current identity, policy and state when the
@@ -112,6 +112,6 @@ with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed 
 separately from the Action origin.
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
-`environments/testing/servicefixture`; production consumers use gRPC. The shared lifecycle manager
-remains at `runner_gateway/environments/lifecycle` until its explicit and automatic halves are split;
-automatic wake execution and budget ownership stay with Dispatcher.
+`environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its
+budget contract live at `runner_gateway/dispatcher/wake`. Both use the shared authorization and
+guarded-write implementation at `environments/lifecycle`.

@@ -8,17 +8,18 @@ import (
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
 	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
@@ -93,12 +94,12 @@ type testWakeBudget struct {
 }
 
 type budgetCall struct {
-	caller lifecycle.WakeBudgetKey
+	caller wake.WakeBudgetKey
 	target string
 	gen    int64
 }
 
-func (b *testWakeBudget) ReserveWakeAttempt(_ context.Context, caller lifecycle.WakeBudgetKey, target string, generation int64) (time.Duration, error) {
+func (b *testWakeBudget) ReserveWakeAttempt(_ context.Context, caller wake.WakeBudgetKey, target string, generation int64) (time.Duration, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.calls = append(b.calls, budgetCall{caller: caller, target: target, gen: generation})
@@ -119,7 +120,8 @@ func (c testPatchClient) Patch(ctx context.Context, object client.Object, patch 
 
 type lifecycleHarness struct {
 	client  client.WithWatch
-	service *lifecycle.Manager
+	service *resume.Manager
+	wake    *wake.Manager
 	budget  *testWakeBudget
 	conn    *grpc.ClientConn
 }
@@ -148,8 +150,8 @@ func newConfiguredHarness(
 ) lifecycleHarness {
 	t.Helper()
 	budget := &testWakeBudget{}
-	service, err := lifecycle.NewManager(lifecycle.Options{
-		Namespace: testNamespace, Objects: object, WakeBudget: budget,
+	service, err := resume.NewManager(lifecycle.Options{
+		Namespace: testNamespace, Objects: object,
 		WakeCallers:      []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
 		OperatorCallers:  operatorCallers,
 		EnvironmentRules: rules, PolicyReady: policyReady,
@@ -157,14 +159,21 @@ func newConfiguredHarness(
 	if err != nil {
 		t.Fatal(err)
 	}
+	automatic, err := wake.NewManager(wake.Options{
+		Namespace: testNamespace, Objects: object, WakeBudget: budget,
+		WakeCallers: []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	connection := serveEnvironmentService(t, object, service, identityDelegation)
-	return lifecycleHarness{client: object, service: service, budget: budget, conn: connection}
+	return lifecycleHarness{client: object, service: service, wake: automatic, budget: budget, conn: connection}
 }
 
 func serveEnvironmentService(
 	t *testing.T,
 	object client.WithWatch,
-	lifecycleManager lifecycle.EnvironmentServiceLifecycle,
+	lifecycleManager *resume.Manager,
 	identityDelegation bool,
 ) *grpc.ClientConn {
 	t.Helper()
@@ -714,14 +723,14 @@ func TestExplicitResumeDoesNotReserveWakeBudget(t *testing.T) {
 
 func TestNewManagerRequiresWakeBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
-	if _, err := lifecycle.NewManager(lifecycle.Options{Namespace: testNamespace, Objects: objects}); err == nil {
+	if _, err := wake.NewManager(wake.Options{Namespace: testNamespace, Objects: objects}); err == nil {
 		t.Fatal("automatic-wake manager was constructed without a shared wake budget")
 	}
 }
 
 func TestEnvironmentServiceManagerResumesWithoutWakeBudget(t *testing.T) {
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 4), executionUID)
-	manager, err := lifecycle.NewEnvironmentServiceManager(lifecycle.EnvironmentServiceOptions{
+	manager, err := resume.NewManager(lifecycle.Options{
 		Namespace: testNamespace, Objects: objects,
 		WakeCallers:     []auth.Account{{Namespace: testNamespace, Name: "notifications"}},
 		OperatorCallers: []auth.Account{operatorAccount},
@@ -930,7 +939,7 @@ func TestAutomaticWakeSharesPolicyBudgetAndReportsRetryFacts(t *testing.T) {
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED {
 			t.Fatalf("AssessAutomaticWake = %+v, %v", assessment, err)
 		}
-		assessment, err = h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
+		assessment, err = h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED || len(h.budget.calls) != 0 {
 			t.Fatalf("RequestWake = %+v, %v, budget %+v; want denied without reservation", assessment, err, h.budget.calls)
 		}
@@ -940,7 +949,7 @@ func TestAutomaticWakeSharesPolicyBudgetAndReportsRetryFacts(t *testing.T) {
 		objects := testIdentityObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
 		h := newHarness(t, objects, nil)
 		h.budget.delay = 30 * time.Second
-		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
+		assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_RATE_LIMITED || assessment.GetRetryAt() == nil {
 			t.Fatalf("rate limited RequestWake = %+v, %v", assessment, err)
 		}
@@ -949,7 +958,7 @@ func TestAutomaticWakeSharesPolicyBudgetAndReportsRetryFacts(t *testing.T) {
 		objects := testIdentityObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{AllowOwnServiceAccount: true}, true, sandboxapi.SuspendedByIdle, 2), executionUID)
 		h := newHarness(t, objects, nil)
 		h.budget.err = errors.New("storage unavailable")
-		assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
+		assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, wakeIdentity)
 		if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED || assessment.GetError().GetCode() != int32(codes.Unavailable) {
 			t.Fatalf("budget error RequestWake = %+v, %v", assessment, err)
 		}
@@ -960,7 +969,7 @@ func TestConfiguredServiceWakeUsesItsSPIFFEIDBudget(t *testing.T) {
 	serviceID := "spiffe://agentplane/notifications"
 	objects := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 7), executionUID)
 	budget := &testWakeBudget{}
-	manager, err := lifecycle.NewManager(lifecycle.Options{
+	manager, err := wake.NewManager(wake.Options{
 		Namespace: testNamespace, Objects: objects, WakeBudget: budget, WakeServiceCallers: []string{serviceID},
 	})
 	if err != nil {
@@ -971,7 +980,7 @@ func TestConfiguredServiceWakeUsesItsSPIFFEIDBudget(t *testing.T) {
 	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED {
 		t.Fatalf("configured service RequestWake = %+v, %v", assessment, err)
 	}
-	if len(budget.calls) != 1 || budget.calls[0].caller != (lifecycle.WakeBudgetKey{ServiceSPIFFEID: serviceID}) {
+	if len(budget.calls) != 1 || budget.calls[0].caller != (wake.WakeBudgetKey{ServiceSPIFFEID: serviceID}) {
 		t.Fatalf("service wake budget keys = %+v, want exact SPIFFE caller", budget.calls)
 	}
 	assessment, err = manager.RequestWake(t.Context(), target, lifecycle.ServiceWakeCaller{SPIFFEID: "spiffe://agentplane/actions"})
@@ -985,7 +994,7 @@ func TestAutomaticWakeBrokerDoesNotOverrideRequestedStop(t *testing.T) {
 	sandbox := suspendedSandbox(&sandboxapi.ResumePolicy{}, false, sandboxapi.SuspendedByRequested, 1)
 	objects := testObjects(t, sandbox, executionUID)
 	h := newHarness(t, objects, nil)
-	assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
+	assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, lifecycle.AccountWakeCaller{Account: caller})
 	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED || assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_OPERATOR_REQUESTED_STOP {
 		t.Fatalf("broker wake of requested stop = %+v, %v", assessment, err)
 	}
@@ -1036,7 +1045,7 @@ func TestAutomaticWakeDeletionRacesGuardedPatch(t *testing.T) {
 	}}
 	h := newHarness(t, objects, nil)
 	caller := lifecycle.IdentityWakeCaller{Identity: &identitypb.Identity{Name: executionIdentityName, Uid: executionIdentityUID}}
-	assessment, err := h.service.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
+	assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
 	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_FAILED || assessment.GetReason() != environmentlifecyclepb.WakeReason_WAKE_REASON_TARGET_CHANGED {
 		t.Fatalf("wake racing deletion = %+v, %v", assessment, err)
 	}
@@ -1082,7 +1091,7 @@ func TestAutomaticWakeAuthorizesTheSandboxesOwnIdentity(t *testing.T) {
 			if err != nil || assessment.GetState() != tc.state || assessment.GetReason() != tc.reason {
 				t.Fatalf("AssessAutomaticWake = %+v, %v; want %v %v", assessment, err, tc.state, tc.reason)
 			}
-			assessment, err = h.service.RequestWake(t.Context(), target, tc.caller)
+			assessment, err = h.wake.RequestWake(t.Context(), target, tc.caller)
 			if tc.state != environmentlifecyclepb.WakeState_WAKE_STATE_ELIGIBLE {
 				if err != nil || assessment.GetState() != tc.state || assessment.GetReason() != tc.reason || len(h.budget.calls) != 0 {
 					t.Fatalf("RequestWake = %+v, %v, budget %+v; want the same refusal and no reservation", assessment, err, h.budget.calls)
@@ -1092,10 +1101,67 @@ func TestAutomaticWakeAuthorizesTheSandboxesOwnIdentity(t *testing.T) {
 			if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_REQUESTED || assessment.GetTargetGeneration() != 2 {
 				t.Fatalf("RequestWake = %+v, %v", assessment, err)
 			}
-			want := lifecycle.WakeBudgetKey{Namespace: testNamespace, Name: "agent", UID: identityUID}
+			want := wake.WakeBudgetKey{Namespace: testNamespace, Name: "agent", UID: identityUID}
 			if len(h.budget.calls) != 1 || h.budget.calls[0].caller != want || h.budget.calls[0].target != testSandboxUID || h.budget.calls[0].gen != 2 {
 				t.Fatalf("wake budget calls = %+v, want one for %+v", h.budget.calls, want)
 			}
 		})
+	}
+}
+
+func TestAutomaticWakeConflictWithExplicitResumeAdvancesOneGeneration(t *testing.T) {
+	base := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 9), executionUID)
+	patches := 0
+	var rpc environmentpb.EnvironmentServiceClient
+	objects := testPatchClient{WithWatch: base, patch: func(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+		patches++
+		if patches == 1 {
+			// The automatic path has authorized and reserved generation 10. Let the separately
+			// constructed explicit owner win before its patch reaches the API server.
+			response, err := rpc.ResumeEnvironment(directContext(t, "operator"), resumeRequest(testSandboxUID, 9))
+			if err != nil || response.GetOutcome() != environmentpb.ResumeOutcome_RESUME_OUTCOME_REQUESTED {
+				return fmt.Errorf("explicit contender = %+v, %v", response, err)
+			}
+		}
+		return base.Patch(ctx, object, patch, options...)
+	}}
+	h := newHarness(t, objects, []auth.Account{operatorAccount})
+	rpc = environmentpb.NewEnvironmentServiceClient(h.conn)
+	caller := lifecycle.AccountWakeCaller{Account: &lifecycle.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "notifications"}, Uid: notificationUID,
+	}}
+	assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_NOT_NEEDED || assessment.GetTargetGeneration() != 10 {
+		t.Fatalf("automatic contender = %+v, %v", assessment, err)
+	}
+	if patches != 2 || len(h.budget.calls) != 1 || h.budget.calls[0].gen != 10 {
+		t.Fatalf("patches=%d budget=%+v, want one patch per owner and one automatic reservation", patches, h.budget.calls)
+	}
+}
+
+func TestAutomaticWakeLostPatchReplyIsUnknownAndNeverReplayed(t *testing.T) {
+	base := testObjects(t, suspendedSandbox(&sandboxapi.ResumePolicy{}, true, sandboxapi.SuspendedByIdle, 9), executionUID)
+	patches := 0
+	objects := testPatchClient{WithWatch: base, patch: func(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+		patches++
+		if err := base.Patch(ctx, object, patch, options...); err != nil {
+			return err
+		}
+		return errors.New("reply lost after automatic patch committed")
+	}}
+	h := newHarness(t, objects, nil)
+	caller := lifecycle.AccountWakeCaller{Account: &lifecycle.ServiceAccountIdentity{
+		Account: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "notifications"}, Uid: notificationUID,
+	}}
+	assessment, err := h.wake.RequestWake(t.Context(), &lifecycle.Target{Namespace: testNamespace, Name: testSandbox, Uid: testSandboxUID}, caller)
+	if err != nil || assessment.GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN || assessment.GetTargetGeneration() != 9 {
+		t.Fatalf("lost automatic reply = %+v, %v", assessment, err)
+	}
+	var current sandboxapi.Sandbox
+	if err := base.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: testSandbox}, &current); err != nil {
+		t.Fatal(err)
+	}
+	if patches != 1 || len(h.budget.calls) != 1 || current.Spec.WakeGeneration != 10 {
+		t.Fatalf("patches=%d budget=%+v generation=%d, want one attempt with committed generation 10", patches, h.budget.calls, current.Spec.WakeGeneration)
 	}
 }

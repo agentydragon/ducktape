@@ -4,11 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/environments/internal/resume"
 	environmentservice "github.com/agentydragon/ducktape/agentplane/environments/internal/service"
+	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
@@ -92,7 +93,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 		}},
 	}}
 	objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, executionAccount).Build()
-	lifecycleManager, err := lifecycle.NewEnvironmentServiceManager(lifecycle.EnvironmentServiceOptions{
+	lifecycleManager, err := resume.NewManager(lifecycle.Options{
 		Namespace: "agentplane", Objects: objects,
 	})
 	if err != nil {
