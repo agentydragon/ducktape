@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from enum import StrEnum
+
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ConfigMap,
@@ -25,7 +28,6 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from python.runfiles import Runfiles
 
-from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.secret_ref import SecretRef
 
 NAME = "postgres"
@@ -34,8 +36,29 @@ PORT = 5432
 IMAGE = "git.allegedly.works/ducktape-ci/agentplane-postgres:unset"
 
 _PASSWORD = "test-k3s-database-password"
-_ROLES = ("app", "actions", "egress", "mcp_edge", "notifications", "sandbox_service", "session_dispatcher")
 _LABELS = {"app.kubernetes.io/name": NAME}
+
+
+class Database(StrEnum):
+    APP = "app"
+    ACTIONS = "actions"
+    EGRESS = "egress"
+    MCP_EDGE = "mcp_edge"
+    NOTIFICATIONS = "notifications"
+    HISTORY = "sandbox_service"
+    SESSION_DISPATCHER = "session_dispatcher"
+    CENTRAL_SAMPLER = "central_sampler"
+
+    @property
+    def secret_name(self) -> str:
+        return f"postgres-{self.replace('_', '-')}"
+
+    @property
+    def password_env(self) -> str:
+        return f"AGENTPLANE_DB_PASSWORD_{self.upper()}"
+
+    def url(self, scope: Construct, *, namespace: str, key: str = "uri") -> EnvValue:
+        return SecretRef(namespace=namespace, name=self.secret_name).key(key).env_value(scope, f"{self}-database-url")
 
 
 def _fixture_file(name: str) -> str:
@@ -44,54 +67,54 @@ def _fixture_file(name: str) -> str:
     )
 
 
-def _database_secret(
-    scope: Construct, env: Environment, *, role: str, database: str, password: str, async_uri: bool = False
-) -> None:
-    host = f"{SERVICE}.{env.namespace}.svc"
+def _database_secret(scope: Construct, *, namespace: str, database: Database) -> None:
+    host = f"{SERVICE}.{namespace}.svc"
     # This fixture's PostgreSQL listener has no TLS; lib/pq otherwise requires it.
-    uri = f"postgresql://{role}:{password}@{host}:{PORT}/{database}?sslmode=disable"
-    data = {"password": password, "uri": uri}
-    if async_uri:
-        data["async-uri"] = f"postgresql+asyncpg://{role}:{password}@{host}:{PORT}/{database}?sslmode=disable"
+    uri = f"postgresql://{database}:{_PASSWORD}@{host}:{PORT}/{database}?sslmode=disable"
+    data = {"password": _PASSWORD, "uri": uri}
+    if database is Database.APP:
+        data["async-uri"] = f"postgresql+asyncpg://{database}:{_PASSWORD}@{host}:{PORT}/{database}?sslmode=disable"
     Secret(
         scope,
-        f"credentials-{role}",
-        metadata=ApiObjectMetadata(name=f"postgres-{role.replace('_', '-')}", namespace=env.namespace),
+        f"credentials-{database}",
+        metadata=ApiObjectMetadata(name=database.secret_name, namespace=namespace),
         string_data=data,
     )
 
 
-def add_database(scope: Construct, env: Environment, *, include_app: bool = True) -> Construct:
+def add_database(scope: Construct, *, namespace: str, databases: Sequence[Database]) -> Construct:
     """Build the fixture database and its connection Secrets."""
     db_scope = Construct(scope, "db")
-    roles = tuple(role for role in _ROLES if include_app or role != "app")
-    roles += ("central_sampler",) if env.central_sampler is not None else ()
-
     Secret(
         db_scope,
         "bootstrap-credentials",
-        metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap-credentials", namespace=env.namespace),
+        metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap-credentials", namespace=namespace),
         string_data={"password": _PASSWORD},
     )
-    for role in roles:
-        _database_secret(db_scope, env, role=role, database=role, password=_PASSWORD, async_uri=role == "app")
-
-    bootstrap_sql = _fixture_file("bootstrap.sql")
-    if include_app:
-        bootstrap_sql = _fixture_file("bootstrap_app.sql") + "\n" + bootstrap_sql
-    if env.central_sampler is not None:
-        bootstrap_sql += "\n" + _fixture_file("bootstrap_central_sampler.sql")
+    bootstrap_statements = []
+    for database in databases:
+        _database_secret(db_scope, namespace=namespace, database=database)
+        bootstrap_statements.extend(
+            (
+                f"\\getenv {database}_password {database.password_env}",
+                f"CREATE ROLE {database} WITH LOGIN PASSWORD :'{database}_password';",
+                f"CREATE DATABASE {database} OWNER {database};",
+            )
+        )
     bootstrap = ConfigMap(
         db_scope,
         "bootstrap-config",
-        metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap", namespace=env.namespace),
-        data={"bootstrap.sql": bootstrap_sql, "postgres_entrypoint.sh": _fixture_file("postgres_entrypoint.sh")},
+        metadata=ApiObjectMetadata(name=f"{NAME}-bootstrap", namespace=namespace),
+        data={
+            "bootstrap.sql": "\n".join(bootstrap_statements),
+            "postgres_entrypoint.sh": _fixture_file("postgres_entrypoint.sh"),
+        },
     )
     labels = _LABELS
     deployment = Deployment(
         db_scope,
         "deployment",
-        metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace, labels=labels),
+        metadata=ApiObjectMetadata(name=NAME, namespace=namespace, labels=labels),
         pod_metadata=ApiObjectMetadata(labels=labels),
         replicas=1,
         strategy=DeploymentStrategy.recreate(),
@@ -101,15 +124,15 @@ def add_database(scope: Construct, env: Environment, *, include_app: bool = True
     env_variables = {
         "PGDATA": EnvValue.from_value("/var/lib/postgresql/18/docker"),
         "POSTGRES_USER": EnvValue.from_value("fixture_admin"),
-        "POSTGRES_PASSWORD": SecretRef(namespace=env.namespace, name=f"{NAME}-bootstrap-credentials")
+        "POSTGRES_PASSWORD": SecretRef(namespace=namespace, name=f"{NAME}-bootstrap-credentials")
         .key("password")
         .env_value(db_scope, "postgres-bootstrap-password"),
     }
-    for role in roles:
-        env_variables[f"AGENTPLANE_DB_PASSWORD_{role.upper()}"] = (
-            SecretRef(namespace=env.namespace, name=f"postgres-{role.replace('_', '-')}")
+    for database in databases:
+        env_variables[database.password_env] = (
+            SecretRef(namespace=namespace, name=database.secret_name)
             .key("password")
-            .env_value(db_scope, f"postgres-{role}-password")
+            .env_value(db_scope, f"postgres-{database}-password")
         )
 
     container = deployment.add_container(
@@ -134,7 +157,7 @@ def add_database(scope: Construct, env: Environment, *, include_app: bool = True
     Service(
         db_scope,
         "service",
-        metadata=ApiObjectMetadata(name=SERVICE, namespace=env.namespace),
+        metadata=ApiObjectMetadata(name=SERVICE, namespace=namespace),
         selector=deployment,
         ports=[ServicePort(name="postgres", port=PORT, target_port=PORT)],
     )
