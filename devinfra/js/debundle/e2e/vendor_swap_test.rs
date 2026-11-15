@@ -2597,99 +2597,7 @@ fn partial_swap_rejects_consumers_that_would_lose_swapped_exports() {
 }
 
 #[test]
-fn boundary_rename_rewrites_caller_imports_end_to_end() {
-    const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new("vendor-boundary-rename-");
-    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
-    ws.write_chunk(
-        APP_PATH,
-        "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
-    );
-    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
-
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            VENDOR_PATH: { "level": "boundary_rename", "identity": "boundary rename fixture" },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[]);
-    assert_success(&result);
-
-    assert_source_file(
-        &ws.out_root.join("app/static/app/entry.js"),
-        &["import { alpha as a }"],
-        &[],
-    );
-    let probe_path = ws.out_root.join("__run_boundary_rename.mjs");
-    write_text_file(
-        &probe_path,
-        "await import(\"./app/static/app/entry.js\");\n",
-    );
-    assert_node_output(&probe_path, "1\n", "");
-}
-
-#[test]
-fn boundary_rename_rewrites_every_vendor_and_vendor_to_vendor_imports_in_one_run() {
-    // `app` imports both vendors and `vendor-a` imports `vendor-b`: a rewrite
-    // that stops at the first vendor, or skips vendor chunks as callers, leaves
-    // an import of a name its target no longer exports.
-    let ws = VendorTestWorkspace::new("vendor-boundary-rename-multi-");
-    ws.write_chunk(
-        "static/app.js",
-        "import { a } from \"../vendor-a/entry.js\";\nimport { b as localB } from \"../vendor-b/entry.js\";\nconsole.log(a, localB);\n",
-    );
-    ws.write_chunk(
-        "static/vendor-a.js",
-        "import { b } from \"../vendor-b/entry.js\";\nconst a = 1;\nexport { a as alpha };\nconsole.log(b);\n",
-    );
-    ws.write_chunk(
-        "static/vendor-b.js",
-        "const b = 2;\nexport { b as beta };\n",
-    );
-    ws.write_js_list("static/app.js\nstatic/vendor-a.js\nstatic/vendor-b.js\n");
-
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            "static/vendor-a.js": { "level": "boundary_rename", "identity": "boundary rename vendor a" },
-            "static/vendor-b.js": { "level": "boundary_rename", "identity": "boundary rename vendor b" },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
-    assert_success(&run_debundler(&spec_path, &[]));
-
-    assert_module_source(
-        &ws.out_root,
-        "app/static/app/entry.js",
-        &[
-            "import { alpha as a } from \"../vendor-a/entry.js\"",
-            "import { beta as localB } from \"../vendor-b/entry.js\"",
-        ],
-        &[],
-    );
-    assert_module_source(
-        &ws.out_root,
-        "app/static/vendor-a/entry.js",
-        &["import { beta as b } from \"../vendor-b/entry.js\""],
-        &[],
-    );
-    let probe_path = ws.out_root.join("__run_boundary_rename_multi.mjs");
-    write_text_file(
-        &probe_path,
-        "await import(\"./app/static/app/entry.js\");\n",
-    );
-    assert_node_output(&probe_path, "2\n1 2\n", "");
-}
-
-#[test]
-fn boundary_rename_bails_when_mapping_key_is_a_real_export_of_another_local() {
+fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
     // The boundary mapping is keyed by vendor-LOCAL name (`export { a as
     // alpha }` → a→alpha). If the vendor ALSO genuinely exports the name
     // `a` bound to a *different* local (`export { z as a }`), a caller's
@@ -2698,7 +2606,7 @@ fn boundary_rename_bails_when_mapping_key_is_a_real_export_of_another_local() {
     // bail on the colliding shape.
     const VENDOR_PATH: &str = "static/vendor.js";
     const APP_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new("vendor-boundary-rename-collision-");
+    let ws = VendorTestWorkspace::new("vendor-full-swap-boundary-collision-");
     ws.write_chunk(
         VENDOR_PATH,
         "const a = \"local-a\";\nconst z = \"local-z\";\nexport { a as alpha, z as a };\n",
@@ -2712,7 +2620,10 @@ fn boundary_rename_bails_when_mapping_key_is_a_real_export_of_another_local() {
     let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
-            VENDOR_PATH: { "level": "boundary_rename", "identity": "boundary rename collision fixture" },
+            VENDOR_PATH: {
+                "level": "swap", "identity": "boundary collision fixture",
+                "package": "fixture-package", "version": "1.0.0", "subpath": "index.js",
+            },
         },
         "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "write_js_tree": { "out_dir": &ws.out_root },
@@ -2729,88 +2640,6 @@ fn boundary_rename_bails_when_mapping_key_is_a_real_export_of_another_local() {
         result.stderr.contains("collides") && result.stderr.contains("`a`"),
         "expected boundary-rename collision diagnostic in stderr:\n{}",
         result.stderr,
-    );
-}
-
-#[test]
-fn suppress_vendor_chunk_passes_through_unchanged() {
-    // `level: suppress` is annotation-only: no boundary rename, no swap,
-    // no strip. The chunk and its callers must pass through untouched.
-    const VENDOR_PATH: &str = "static/vendor.js";
-    const APP_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new("vendor-suppress-");
-    ws.write_chunk(VENDOR_PATH, "const a = 1;\nexport { a as alpha };\n");
-    ws.write_chunk(
-        APP_PATH,
-        "import { alpha } from \"../vendor/entry.js\";\nconsole.log(alpha);\n",
-    );
-    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
-
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            VENDOR_PATH: { "level": "suppress", "identity": "suppress fixture" },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[]);
-    assert_success(&result);
-
-    assert_source_file(
-        &ws.out_root.join("app/static/vendor/entry.js"),
-        &["export { a as alpha }"],
-        &[],
-    );
-    assert_source_file(
-        &ws.out_root.join("app/static/app/entry.js"),
-        &["import { alpha } from \"../vendor/entry.js\""],
-        &[],
-    );
-    let probe_path = ws.out_root.join("__run_suppress.mjs");
-    write_text_file(
-        &probe_path,
-        "await import(\"./app/static/app/entry.js\");\n",
-    );
-    assert_node_output(&probe_path, "1\n", "");
-}
-
-#[test]
-fn suppress_vendor_chunk_skips_specifier_canonicalization() {
-    // Golden pin for the suppress contract: suppress means hands-off,
-    // so the pass-through emission rewriter skips
-    // suppress-marked chunks entirely — even directives the
-    // canonicalizer rewrites in every other chunk (`./helper-X.js` →
-    // `../helper-X/entry.js`) keep their original spelling, making the
-    // documented byte-compat contract true. (The old always-on stage 0
-    // canonicalized suppress chunks too; this diff is intentional.)
-    const VENDOR_PATH: &str = "static/vendor.js";
-    const HELPER_PATH: &str = "static/helper-X.js";
-    let ws = VendorTestWorkspace::new("vendor-suppress-canonicalize-");
-    ws.write_chunk(
-        VENDOR_PATH,
-        "import { h } from \"./helper-X.js\";\nexport const a = h;\n",
-    );
-    ws.write_chunk(HELPER_PATH, "export const h = 1;\n");
-    ws.write_js_list(&format!("{VENDOR_PATH}\n{HELPER_PATH}\n"));
-
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = json!({
-        "vendor": {
-            VENDOR_PATH: { "level": "suppress", "identity": "suppress canonicalization fixture" },
-        },
-        "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
-        "write_js_tree": { "out_dir": &ws.out_root },
-    });
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[]);
-    assert_success(&result);
-
-    assert_source_file(
-        &ws.out_root.join("app/static/vendor/entry.js"),
-        &["\"./helper-X.js\""],
-        &["../helper-X/entry.js"],
     );
 }
 

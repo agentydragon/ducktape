@@ -69,7 +69,7 @@ pub(super) fn collect_and_validate_boundary_mapping(
                 .map(|local| format!("local `{local}`"))
                 .unwrap_or_else(|| "a non-local origin".to_string());
             bail!(
-                "boundary_rename vendor entry {chunk_path}: boundary mapping key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
+                "vendor boundary mapping for {chunk_path}: key `{local_name}` collides with a genuine export named `{local_name}` bound to {bound_to}; rewriting caller imports of `{local_name}` would silently rebind them to the wrong value",
             );
         }
     }

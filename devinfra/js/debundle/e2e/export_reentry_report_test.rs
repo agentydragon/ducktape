@@ -301,13 +301,12 @@ fn static_import_of_empty_source_does_not_block_export_reentry_proof() {
 
 #[test]
 fn reports_independent_global_and_static_closure_blockers() {
+    let bundle_root = CaseWorkspace::default();
+    let bundle_path = bundle_root.path().join("replacement.mjs");
+    write_text_file(&bundle_path, "export const replacement = { other: 1 };\n");
     let vendor_marks = [(
         "static/vendor.js",
-        VendorMark {
-            identity: "fake-package".to_string(),
-            role: Default::default(),
-            level: VendorLevel::Suppress,
-        },
+        bundled_vendor_mark(bundle_path, &["other"]),
     )];
     let extra_chunks = [(
         "static/vendor",

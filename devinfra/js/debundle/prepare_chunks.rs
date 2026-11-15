@@ -359,7 +359,7 @@ mod tests {
             )
             .unwrap();
             let spec: spec::TransformSpec = serde_yaml::from_str(
-                "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: suppress}\n",
+                "inputs: {input_root: '.', js_list_path: js-files.txt}\nvendor:\n  vendor.js: {identity: fixture, level: swap, package: fixture-package, version: 1.0.0, subpath: index.js}\n",
             ).unwrap();
             let loaded = artifact::load_js_chunks(root.path(), &list).unwrap();
             let prepared = prepare_js_chunks(

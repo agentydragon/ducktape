@@ -1449,7 +1449,7 @@ fn is_default_vendor_role(role: &VendorRole) -> bool {
 
 /// One vendor annotation, keyed in the spec by chunk path
 /// (e.g. `"static/lib.js"`). The `level` discriminator selects between
-/// `suppress` / `boundary-rename` / `swap`; only `swap` requires the
+/// `swap` / `partial_swap` / `bundled_partial_swap`; `swap` carries the
 /// `package`/`version`/`subpath` triple, encoded as the
 /// [`VendorLevel::Swap`] variant carrying those fields.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1465,8 +1465,6 @@ pub struct VendorMark {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "level", rename_all = "snake_case")]
 pub enum VendorLevel {
-    Suppress,
-    BoundaryRename,
     Swap(SwapMark),
     PartialSwap(PartialSwapMark),
     BundledPartialSwap(BundledPartialSwapMark),

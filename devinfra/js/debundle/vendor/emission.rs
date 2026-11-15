@@ -6,8 +6,7 @@
 //!   non-vendor chunks get the unified directive rewriter
 //!   (`passthrough::rewrite_passthrough_module`: canonicalization,
 //!   boundary-rename mapping, partial-swap consumer surgery).
-//!   Suppress-marked chunks are skipped (hands-off); full-swap chunks
-//!   are excluded from the emission set and never rewritten;
+//!   Full-swap chunks are excluded from the emission set and never rewritten;
 //!   partially-swapped chunks are handled by the residual composition
 //!   below.
 //! * **Vendor residual emission** — each partially / bundled-partially
@@ -75,8 +74,7 @@ pub fn apply_emission_rewrites_in_place(
     let mut jobs = Vec::new();
     for (chunk_index, chunk_artifact) in artifact.chunks.iter_mut().enumerate() {
         let chunk_id = chunk_artifact.chunk_id;
-        if plan.is_suppressed(chunk_id)
-            || full_swap_chunks.contains(&chunk_id)
+        if full_swap_chunks.contains(&chunk_id)
             || plan.partial_swaps.contains_key(&chunk_id)
             || plan.bundled_partial_swaps.contains_key(&chunk_id)
         {

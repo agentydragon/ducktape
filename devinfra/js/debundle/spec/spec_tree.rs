@@ -209,8 +209,6 @@ struct VendorMarkSource {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum VendorLevelSource {
-    Suppress,
-    BoundaryRename,
     Swap,
     PartialSwap,
     BundledPartialSwap,
@@ -489,16 +487,6 @@ fn vendor_map(
 impl VendorMarkSource {
     fn into_vendor_level(self, source_root: Option<&Path>) -> Result<VendorLevel> {
         match self.level {
-            VendorLevelSource::Suppress => {
-                self.ensure_no_swap_payload()?;
-                self.ensure_no_partial_swap_payload()?;
-                Ok(VendorLevel::Suppress)
-            }
-            VendorLevelSource::BoundaryRename => {
-                self.ensure_no_swap_payload()?;
-                self.ensure_no_partial_swap_payload()?;
-                Ok(VendorLevel::BoundaryRename)
-            }
             VendorLevelSource::Swap => {
                 self.ensure_no_partial_swap_payload()?;
                 Ok(VendorLevel::Swap(SwapMark {

@@ -18,6 +18,40 @@ use spec::{
 use spec::{MemberEffect, MemberPurity};
 use std::collections::BTreeMap;
 
+/// One fixture package projected from a prebuilt ESM bundle's `replacement` export.
+pub fn bundled_vendor_mark(bundle_path: std::path::PathBuf, exports: &[&str]) -> spec::VendorMark {
+    spec::VendorMark {
+        identity: "fixture-provider".into(),
+        role: Default::default(),
+        level: spec::VendorLevel::BundledPartialSwap(spec::BundledPartialSwapMark {
+            bundle: spec::BundledPartialSwapBundle { path: bundle_path },
+            packages: BTreeMap::from([(
+                "fixture-provider".into(),
+                spec::BundledPartialSwapPackage {
+                    version: "1.0.0".into(),
+                    subpath: "index.js".into(),
+                    bundle_export: "replacement".into(),
+                    namespace: Some("replacement".into()),
+                },
+            )]),
+            symbols: exports
+                .iter()
+                .map(|export| {
+                    (
+                        (*export).into(),
+                        spec::PartialSwapSymbol {
+                            package: "fixture-provider".into(),
+                            kind: spec::PartialSwapKind::Named,
+                            upstream_export: Some((*export).into()),
+                            local: None,
+                        },
+                    )
+                })
+                .collect(),
+        }),
+    }
+}
+
 /// Nested return-value calls and repeated source evaluation exercise the
 /// operation ledger, including a native guard's proof dependency.
 pub fn composed_global_access_fixture() -> FixtureOpts<'static> {
@@ -1480,7 +1514,11 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
         unassigned_mode,
         chunk_analysis_options,
         chunk_export_purity,
-        swap_vendor_chunks: SwapVendorChunksConfig::default(),
+        swap_vendor_chunks: SwapVendorChunksConfig {
+            output_manifest_path: Some(setup.out_root.join("reports/vendor_swaps.json")),
+            output_wrapper_dir: Some(setup.out_root.join("app/vendors/generated")),
+            ..Default::default()
+        },
         materialize_logical_modules: MaterializeLogicalModulesConfig {
             prune_other_chunks: opts.prune_other_chunks,
             report_out_dir: Some(setup.report_root.clone()),

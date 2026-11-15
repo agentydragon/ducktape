@@ -25,8 +25,8 @@ pub use ast_assertions::{
 use fixture_spec::build_spec;
 pub use fixture_spec::{
     BindingGroup, ChunkExportPurityBuilder, FixtureOpts, LogicalModuleEntry, Member,
-    anonymous_source_unit, commuting_pair, composed_global_access_fixture, declared_source_unit,
-    logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
+    anonymous_source_unit, bundled_vendor_mark, commuting_pair, composed_global_access_fixture,
+    declared_source_unit, logical_module, logical_module_with_anon, logical_module_with_anon_alpha,
     logical_module_with_anon_comment, logical_module_with_binding_groups,
     logical_module_with_comment, member_source_unit, mixed_selector_failure_fixture,
     source_match_module_yaml, source_match_selector, source_sha256, unassigned_mode_catchall_file,

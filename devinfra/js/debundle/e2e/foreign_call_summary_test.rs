@@ -928,14 +928,13 @@ fn a_provider_reading_exported_state_stays_unknown() {
 
 #[test]
 fn a_vendor_marked_provider_keeps_its_summary() {
-    let vendor_marks = [(
-        "static/peer.js",
-        VendorMark {
-            identity: "replaced-provider".into(),
-            role: Default::default(),
-            level: VendorLevel::Suppress,
-        },
-    )];
+    let bundle_root = CaseWorkspace::default();
+    let bundle_path = bundle_root.path().join("replacement.mjs");
+    write_text_file(
+        &bundle_path,
+        &format!("{BOX}\nexport const replacement = {{ Box }};\n"),
+    );
+    let vendor_marks = [("static/peer.js", bundled_vendor_mark(bundle_path, &["Box"]))];
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",

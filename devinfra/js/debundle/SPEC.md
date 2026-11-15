@@ -2192,6 +2192,11 @@ runtime requirement.
 
 ## Vendor swap equivalence
 
+Vendor marks select `swap`, `partial_swap`, or `bundled_partial_swap`.
+Whole-chunk `swap` maps caller imports from vendor-local binding names to
+public export names before replacing the chunk; the partial modes rewrite
+only the selected exports.
+
 A `swap`, `partial_swap` or `bundled_partial_swap` mark is the author's
 promise that each replacement behaves like the bundled code it replaces, in
 everything the engine reasons about: purity, whether and when callbacks run
