@@ -1,5 +1,6 @@
-"""Selectable Pod cases sharing one stack and two concurrent case slots."""
+"""Selectable Pod cases sharing one stack and bounded concurrent case slots."""
 
+import os
 from collections.abc import AsyncIterator
 from functools import partial
 from typing import cast
@@ -20,7 +21,7 @@ from util.net import Listener
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 
 pytestmark = [pytest.mark.case_batch, pytest.mark.asyncio(loop_scope="module")]
-CASE_LIMIT = 2
+CASE_LIMIT = int(os.environ.get("AGENTPLANE_POD_CASE_LIMIT", "4"))
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
