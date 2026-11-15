@@ -88,7 +88,7 @@ class Settings(BaseModel):
         default="",
         description="Exact Central Sampler service SPIFFE ID allowed to delegate Session operations.",
     )
-    # CLEANUP(stage 5): remove these ignored legacy receiver keys after generated manifests
+    # CLEANUP(2026-11-15, stage 5): remove these ignored legacy receiver keys after generated manifests
     # omit them and the service-SVID-only receiver rollout completes.
     reader_accounts: frozenset[ServiceAccountRef] = Field(
         default=frozenset(), description="Ignored legacy reader setting."

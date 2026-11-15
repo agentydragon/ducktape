@@ -38,8 +38,8 @@ type config struct {
 	RPC                         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces scopes live WorkloadCredential reads and policy index watches.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
-	// Legacy receiver settings are decoded but ignored. Remove after generated manifests omit
-	// them and the service-SVID-only receiver rollout completes (stage 5 cleanup).
+	// CLEANUP(2026-11-15, stage 5): legacy receiver settings are decoded but ignored.
+	// Remove after generated manifests omit them and the service-SVID-only rollout completes.
 	ConnectionDelegationActor *auth.Account  `mapstructure:"connection_delegation_actor"`
 	ReaderAccounts            []auth.Account `mapstructure:"reader_accounts"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
@@ -142,7 +142,8 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	// Legacy kubernetes_bearer entries remain decodable during rollout, but grant no admission.
+	// CLEANUP(2026-11-15, stage 5): legacy kubernetes_bearer entries remain decodable
+	// until manifests omit them and rollout completes, but grant no admission.
 	if !c.RPC.Has(listener.SPIFFE) {
 		return errors.New("rpc must configure TLS and spiffe client trust")
 	}
