@@ -253,6 +253,109 @@ fn tree_projection_preserves_full_graph_authored_inventory() {
 }
 
 #[test]
+fn tree_projection_is_shared_across_consumer_output_roots() {
+    fn project_tree(context: &[String], projection: &Path) -> Vec<u8> {
+        let args: Vec<&str> = ["spec", "project-apply"]
+            .into_iter()
+            .chain(context[..10].iter().map(String::as_str))
+            .chain(["--out", path(projection)])
+            .collect();
+        assert_ok(&command(&args), "tree apply projection");
+        fs::read(projection).unwrap()
+    }
+
+    let staged = staged_tree(
+        &[("main", "export const value = 42;")],
+        &[(
+            "values.yaml",
+            "members:\n  - selector: { binding: { name: value } }\n",
+        )],
+    );
+    let first_out = staged.root().join("first-out");
+    let second_out = staged.root().join("second-out");
+    let projection = staged.root().join("apply.json");
+    let first_context = staged.analysis_args(&staged.artifact, &first_out);
+    let second_context = staged.analysis_args(&staged.artifact, &second_out);
+    let first_projection = project_tree(&first_context, &projection);
+    assert_eq!(project_tree(&second_context, &projection), first_projection);
+    assert!(
+        !String::from_utf8_lossy(&first_projection).contains("first-out"),
+        "consumer output root leaked into projection"
+    );
+
+    let run_args: Vec<&str> = ["run"]
+        .into_iter()
+        .chain(second_context.iter().map(String::as_str))
+        .chain(["--apply-projection", path(&projection)])
+        .collect();
+    assert_ok(&command(&run_args), "apply at second output root");
+    assert_source_file(&second_out.join("app/main/values.js"), &["42"], &[]);
+    assert!(
+        !first_out.exists(),
+        "apply wrote to the producer's output root"
+    );
+
+    let other_config = staged.root().join("other-config.yaml");
+    fs::copy(&staged.config, &other_config).unwrap();
+    let other_config_path = path(&other_config);
+    let mut wrong_spec = run_args.clone();
+    let config_arg = wrong_spec
+        .iter()
+        .position(|arg| *arg == path(&staged.config))
+        .unwrap();
+    wrong_spec[config_arg] = other_config_path;
+    let rejected = command(&wrong_spec);
+    assert_eq!(rejected.status.code(), Some(1), "{}", rejected.stderr);
+    assert!(
+        rejected.stderr.contains("other spec paths"),
+        "{}",
+        rejected.stderr
+    );
+
+    let mut wrong_source = run_args.clone();
+    let source_arg = wrong_source
+        .iter()
+        .position(|arg| *arg == "--tree-source-root")
+        .unwrap()
+        + 1;
+    wrong_source[source_arg] = path(&first_out);
+    let rejected = command(&wrong_source);
+    assert_eq!(rejected.status.code(), Some(1), "{}", rejected.stderr);
+    assert!(
+        rejected.stderr.contains("other spec paths"),
+        "{}",
+        rejected.stderr
+    );
+}
+
+#[test]
+fn flat_projection_still_requires_its_authored_spec_path() {
+    let (staged, _fixture) = staged(FixtureOpts::new(
+        "export const value = 42;",
+        vec![logical_module("values", &[Member::new("value")])],
+    ));
+    let projection = staged.root().join("apply.json");
+    project(&staged.spec, &projection);
+    let alternate = staged.root().join("other.yaml");
+    fs::copy(&staged.spec, &alternate).unwrap();
+    let result = command(&[
+        "run",
+        "--spec",
+        path(&alternate),
+        "--analysis",
+        path(&staged.artifact),
+        "--apply-projection",
+        path(&projection),
+    ]);
+    assert_eq!(result.status.code(), Some(1), "{}", result.stderr);
+    assert!(
+        result.stderr.contains("other spec paths"),
+        "{}",
+        result.stderr
+    );
+}
+
+#[test]
 fn projection_and_analysis_transfer_between_execution_roots() {
     let staged = staged_tree(
         &[("main", "export const value = 42;")],

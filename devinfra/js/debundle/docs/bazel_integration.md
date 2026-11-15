@@ -80,12 +80,16 @@ and apply, so they stay in those actions' input closures.
 the optional ownership subset. Metadata-only changes that preserve the projection
 therefore reuse its cached output. Emitted `comment`, report notes, and
 conflict-relevant annotation notes remain inputs. Paths under the action execroot
-are stored relative to it and restored under the consumer's execroot.
+are stored relative to it and restored under the consumer's execroot. For tree
+specs, generated output paths are stored relative to an output-root placeholder
+and bound to each apply target's `--out-root`; matching authored YAML therefore
+produces identical projection bytes across targets with different output roots.
+Flat specs keep their authored output paths.
 
 `apply_projection` exposes this canonical input. The hidden
 `spec project-apply` and `run --apply-projection` commands are an internal Bazel
 action interface. The projection is the authoritative spec; context flags identify
-report locations and do not check current YAML freshness. Bazel's declared
+report locations and the tree output root, and do not check current YAML freshness. Bazel's declared
 producer inputs enforce that freshness. Native runs should use ordinary `run`
 with authored YAML. Full graphs refuse projected input and use the original YAML
 capture, including exact bytes and directory membership.
