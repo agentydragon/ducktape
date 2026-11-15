@@ -282,7 +282,7 @@ async def serve_gateway(sandbox: SandboxCluster, directory: Path) -> AsyncIterat
     )
     gateway_directory = directory / "gateway-client-tls"
     gateway_directory.mkdir()
-    gateway_cert, gateway_key = issue_workload_leaf(ca, "spiffe://agentplane/runner-gateway", gateway_directory)
+    gateway_cert, gateway_key = issue_workload_leaf(ca, "spiffe://agentplane/runtime-proxy", gateway_directory)
     credentials = grpc.ssl_channel_credentials(
         root_certificates=ca.cert_pem, private_key=gateway_key.read_bytes(), certificate_chain=gateway_cert.read_bytes()
     )

@@ -14,7 +14,7 @@ reads do not require leadership. App and Actions use this receiver with service 
 preserves typed delegation. EnvironmentService rejects Kubernetes bearer credentials and performs no
 TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. Legacy
 receiver audience/account/delegation settings decode without authority until manifest omission and
-rollout; RBAC cleanup follows receiver retirement. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
+rollout. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
 EnvironmentService and opens no direct Runtime watch.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.

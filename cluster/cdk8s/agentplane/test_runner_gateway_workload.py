@@ -112,10 +112,15 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         "key_file": "/run/agentplane/workload-tls/tls.key",
     }
     assert settings["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
-    assert settings["runtime_proxy_readers"] == [APP_URI, NOTIFICATIONS_URI]
-    assert settings["runtime_proxy_session_callers"] == [GATEWAY_SESSIONS_URI]
-    assert settings["runtime_proxy_controller_callers"] == [SANDBOX_CONTROLLER_URI]
-    assert settings["executor_service_callers"] == [CENTRAL_SAMPLER_URI]
+    assert (
+        not {
+            "runtime_proxy_readers",
+            "runtime_proxy_session_callers",
+            "runtime_proxy_controller_callers",
+            "executor_service_callers",
+        }
+        & settings.keys()
+    )
     assert settings["gateway_tls"] == {
         "ca_file": "/run/agentplane/workload-trust/ca-certificates.crt",
         "server_uri": SANDBOX_CONTROLLER_URI,
@@ -159,9 +164,9 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     }
     assert (app.NAME, "8080") in ingress
     assert (notifications.NAME, "8080") in ingress
-    assert (runner_gateway.NAME, "8080") in ingress
+    assert (runner_gateway.NAME, "8080") not in ingress
     assert (egress.NAME, str(runner_gateway.service(staging.ENV.namespace).pod_port)) in ingress
-    assert (sandbox_controller.NAME, "8080") in ingress
+    assert (sandbox_controller.NAME, "8080") not in ingress
     runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
     assert (runner_label, "8090") not in ingress
     runner_egress = {
@@ -170,10 +175,23 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         for endpoint in rule.get("toEndpoints", [])
         for port in rule.get("toPorts", [{}])[0].get("ports", [])
     }
-    assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) in runner_egress
+    assert (runner_label, str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)) not in runner_egress
     role = _resource(docs, "Role", runner_gateway.NAME.removeprefix("agentplane-"))
     resources = {resource for rule in role["rules"] for resource in rule["resources"]}
-    assert resources >= {"pods", "sandboxes", "leases", "virtualmachines", "virtualmachineinstances"}
+    assert resources >= {
+        "serviceaccounts",
+        "sandboxes",
+        "leases",
+        "workloadcredentials",
+        "identities",
+        "policysets",
+        "policybindings",
+    }
+    assert not {"pods", "virtualmachines", "virtualmachineinstances"} & resources
+    assert not any(
+        doc["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "token-reviewer" in doc["metadata"]["name"]
+        for doc in docs
+    )
     assert "endpointslices" not in resources
     assert one(rule for rule in role["rules"] if rule["resources"] == ["leases"])["verbs"] == [
         "get",
@@ -278,7 +296,7 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
         for port in target["ports"]
     )
     runner_label = environment_sandbox.pods(staging.ENV.namespace).selector["app.kubernetes.io/name"]
-    assert any(
+    assert not any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == runner_label
         and any(
             port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)
@@ -290,7 +308,7 @@ def test_runner_mtls_is_direct_and_outside_platform_routes(staging_manifests: li
     )
     runner_listener = _resource(staging_manifests, "CiliumNetworkPolicy", "environment-tools-listener")["spec"]
     gateway_label = runner_gateway.service(staging.ENV.namespace).pods.selector["app.kubernetes.io/name"]
-    assert any(
+    assert not any(
         endpoint["matchLabels"].get("app.kubernetes.io/name") == gateway_label
         and any(
             port["port"] == str(environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT)

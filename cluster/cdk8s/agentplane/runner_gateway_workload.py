@@ -51,7 +51,6 @@ from cluster.cdk8s.agentplane import (
     central_sampler,
     database,
     egress,
-    environment_sandbox,
     environment_service,
     notifications,
     runner_gateway,
@@ -69,7 +68,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
-from cluster.cdk8s.token_reviewer_rbac import token_reviewer_cluster_rbac
 
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset"
 _GRPC_PORT = 8080
@@ -132,9 +130,7 @@ class RunnerGateway(Construct):
         orchestration_callers: Mapping[ServiceAccountRef, Pods],
         delegation_actor: ServiceAccountRef | None,
         wake_service_callers: frozenset[ServiceSPIFFEID] = frozenset(),
-        gateway_callers: Mapping[ServiceAccountRef, Pods],
         wake_callers: frozenset[ServiceAccountRef],
-        controller_peer: tuple[ServiceAccountRef, Pods],
         registry_secret_name: str | None = "forgejo-images-creds",
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
         container_env: Mapping[str, EnvValue] | None = None,
@@ -143,17 +139,15 @@ class RunnerGateway(Construct):
         image: str = _IMAGE,
     ) -> None:
         super().__init__(scope, id)
-        if not dispatcher_callers or not gateway_callers:
-            raise ValueError("Runner Gateway needs explicit Dispatcher and proxy caller grants")
+        if not dispatcher_callers:
+            raise ValueError("Runner Gateway needs explicit Dispatcher caller grants")
         if not wake_callers <= dispatcher_callers.keys():
             raise ValueError("wake callers must also be Dispatcher callers")
 
         namespace = env.namespace
         self.env = env
         self.dispatcher_callers = dispatcher_callers
-        self.sandbox_controller_pods = controller_peer[1]
         proxy = runner_gateway.service(namespace)
-        own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
         # Only orchestration_v1 grants direct Actions Dispatcher authority.
         # The direct Actions SVID roles follow that exact feature gate; delegated session tools
         # do not make the Actions service a direct component caller.
@@ -162,10 +156,6 @@ class RunnerGateway(Construct):
             if ServiceAccountRef(namespace=namespace, name=actions.NAME) in orchestration_callers
             else frozenset()
         )
-        # A delivery worker may run on a different replica from the holder. It calls
-        # the stable Runner Gateway Service with its Sessions SVID.
-        proxy_callers = {**gateway_callers, own_account: proxy.pods}
-        self.proxy_callers = proxy_callers
         workload = add_service_workload(
             self,
             env,
@@ -273,10 +263,6 @@ class RunnerGateway(Construct):
                 client_uri=GATEWAY_SESSIONS_URI,
             ),
             runner_control_target_template=environment_service.control_target(namespace),
-            runtime_proxy_readers=[APP_URI, NOTIFICATIONS_URI],
-            runtime_proxy_session_callers=[GATEWAY_SESSIONS_URI],
-            runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
-            executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             wake_service_callers=wake_service_callers,
             dispatcher_service_delegation=dispatcher_service_delegation,
@@ -303,57 +289,30 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=runner_gateway.NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=proxy.pods.selector,
             ingress=[
-                *(pods.admit(proxy.pod_port) for pods in self.proxy_callers.values()),
-                *(
-                    [central_sampler.pods(namespace).admit(proxy.pod_port)]
-                    if self.env.central_sampler is not None
-                    else []
-                ),
                 # Managed Sandboxes reach the Dispatcher through the central proxy; the Gateway
                 # authenticates them by their Sandbox SVID.
                 egress.proxy(namespace).pods.admit(dispatcher.pod_port),
-                self.sandbox_controller_pods.admit(proxy.pod_port),
                 *(pods.admit(dispatcher.pod_port) for pods in self.dispatcher_callers.values()),
             ],
             egress=[
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 database.egress(namespace),
-                proxy.egress(),
                 environment_service.service(namespace).egress(),
-                EgressRule.to_endpoints(
-                    environment_sandbox.pods(namespace).cilium, environment_sandbox.ENVIRONMENT_RUNTIME_SERVICE_PORT
-                ),
                 *([central_sampler.service(namespace).egress()] if self.env.central_sampler is not None else []),
             ],
         )
 
     def _add_rbac(self, service_account: ServiceAccount, namespace: str) -> None:
         role_name = runner_gateway.NAME.removeprefix("agentplane-")
-        token_reviewer_cluster_rbac(
-            self,
-            "token-reviewer",
-            name=f"{namespace}-runner-gateway-token-reviewer",
-            service_account_name=runner_gateway.NAME,
-            namespace=namespace,
-        )
         Role(
             self,
             "role",
             metadata=ApiObjectMetadata(name=role_name, namespace=namespace),
             rules=[
-                # Flux can apply RBAC before the image rolls: older Gateways still read workloads directly.
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # Session admission rechecks the live Sandbox execution account.
                 RolePolicyRule(
                     resources=[cast(IApiResource, ApiResource.SERVICE_ACCOUNTS)], verbs=["get", "list", "watch"]
-                ),
-                RolePolicyRule(
-                    resources=[
-                        custom_resource("kubevirt.io", "virtualmachineinstances"),
-                        custom_resource("kubevirt.io", "virtualmachines"),
-                    ],
-                    verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
@@ -408,13 +367,8 @@ def serving_chart(
         orchestration_callers=orchestration,
         delegation_actor=(sandbox_controller.action_delegation_actor(env)),
         wake_service_callers=wake_service_callers,
-        gateway_callers=callers,
         # The orchestration_v1 group sends input that wakes a Sandbox launched with wakeOnSend.
         wake_callers=env.wake_caller_accounts | orchestration.keys(),
-        controller_peer=(
-            ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
-            sandbox_controller.pods(env.namespace),
-        ),
     ).add_platform_resources()
     return chart
 

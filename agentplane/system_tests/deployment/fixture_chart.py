@@ -676,13 +676,8 @@ def add_backend_services(
         orchestration_callers=orchestration_caller,
         wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
         delegation_actor=environment_service_delegation_actor,
-        gateway_callers=gateway_callers,
         wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
         database_url=dispatcher_database_url,
-        controller_peer=(
-            ServiceAccountRef(namespace=NAMESPACE, name=sandbox_controller.NAME),
-            sandbox_controller.pods(NAMESPACE),
-        ),
         registry_secret_name=None,
         placement=None,
         container_env=database_env,
@@ -711,7 +706,6 @@ def add_backend_services(
         chart,
         "sandbox-controller",
         env,
-        gateway=runner_gateway.service(NAMESPACE),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
         authority=sandbox_controller.environment_service_authority(

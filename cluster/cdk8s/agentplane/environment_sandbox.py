@@ -52,7 +52,6 @@ from cluster.cdk8s.agentplane import (
     history_service,
     llm_ingress,
     platform_routes,
-    runner_gateway,
     sandbox_pod,
     telemetry,
     workload_routes,
@@ -469,10 +468,9 @@ class EnvironmentSandboxTemplate(Construct):
             metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=[
-                runner_gateway.service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT),
                 IngressRule.from_endpoints(
                     {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
                     ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
-                ),
+                )
             ],
         )

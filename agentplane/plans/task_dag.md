@@ -189,7 +189,7 @@ States as of 14:55 UTC.
 | Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
-| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Caller cutover (#16723) rolled and traffic verified; retiring the Gateway receiver, then obsolete config and grants after its image pin                                                                                                                                        |
+| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Receiver retired (#16760), pinned and rolled; credential/config cleanup #16768, then the final obsolete permission/grant removal                                                                                                                                               |
 | Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
 | Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | Starts after the Runtime proxy move's exit                                                                                                                                                                                                                                     |
 
@@ -3903,8 +3903,9 @@ verified all five workloads 2/2 Ready without restarts or auth/TLS errors, and D
 reached Runtime admission through Environments. The Gateway receiver and direct Runtime watches
 are removed (#16760, merged as `84561b7e`), and Claude verified Gateway/Controller/App/Notifications
 `6147538` pins and rolls at 22:40–22:43 UTC (2026-11-15), all 2/2 Ready with no restarts or auth/TLS
-errors. Credential/mount and `runner_security` manifest cleanup is in progress. RBAC, network and
-grant removal is its own final step. Retired settings stay decodable until manifests omit them
+errors. Credential/mount and `runner_security` manifest cleanup is #16768. The final permission step
+removes unused Gateway Pod/VM and TokenReview RBAC, direct Runtime network rules, ignored proxy
+grants and Runtime admission for the retired Gateway SVID, preserving Dispatcher authority. Retired settings stay decodable until manifests omit them
 and that configuration has rolled.
 After the receiver-removal image is pinned and running, remove only the obsolete Gateway Runtime
 certificate/mounts, network permissions and proxy grants, and Runtime's old Gateway-SVID admission.

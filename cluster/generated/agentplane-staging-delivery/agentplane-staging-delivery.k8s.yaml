@@ -246,15 +246,6 @@ data:
       key_file: /run/agentplane/runner-gateway-sessions-client-tls/tls.key
       client_uri: spiffe://agentplane/sessions
     runner_control_target_template: sandbox-controller.{namespace}.svc:8082
-    runtime_proxy_readers:
-      - spiffe://agentplane/app
-      - spiffe://agentplane/notifications
-    runtime_proxy_session_callers:
-      - spiffe://agentplane/sessions
-    runtime_proxy_controller_callers:
-      - spiffe://agentplane/sandbox-controller
-    executor_service_callers:
-      - spiffe://agentplane/central-sampler
     dispatcher_service_delegation:
       actors:
         - spiffe_id: spiffe://agentplane/actions
@@ -291,32 +282,6 @@ data:
 immutable: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-runner-gateway-token-reviewer
-rules:
-  - apiGroups:
-      - authentication.k8s.io
-    resources:
-      - tokenreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-runner-gateway-token-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-runner-gateway-token-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: runner-gateway
-    namespace: agentplane-staging
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: runner-gateway
@@ -325,31 +290,7 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - pods
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
       - serviceaccounts
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - kubevirt.io
-    resources:
-      - virtualmachineinstances
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - kubevirt.io
-    resources:
-      - virtualmachines
     verbs:
       - get
       - list
@@ -452,27 +393,11 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: sandbox-controller
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
             - port: "8082"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-environment-runtime
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "9090"
               protocol: TCP
     - toEndpoints:
         - matchLabels:
@@ -488,47 +413,7 @@ spec:
   ingress:
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: app
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: central-sampler
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: egress
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: sandbox-controller
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

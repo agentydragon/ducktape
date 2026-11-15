@@ -157,7 +157,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerCredentials, err := f.runnerTLS.ServerCredentials(peertls.GatewayURI)
+	runnerCredentials, err := f.runnerTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}

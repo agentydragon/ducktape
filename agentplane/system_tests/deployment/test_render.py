@@ -369,9 +369,11 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert endpoint in notifications["data"]["settings.yaml"]
     role = _resource(docs, "Role", fixture_chart.RUNNER_GATEWAY)
     assert any("sandboxes" in rule["resources"] and "patch" in rule["verbs"] for rule in role["rules"])
-    assert _resource(docs, "ClusterRole", f"{NAMESPACE}-runner-gateway-token-reviewer")["rules"] == [
-        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
-    ]
+    assert not any(
+        doc["kind"] in {"ClusterRole", "ClusterRoleBinding"}
+        and doc["metadata"]["name"] == f"{NAMESPACE}-runner-gateway-token-reviewer"
+        for doc in docs
+    )
     postgres = _resource(docs, "Deployment", fixture_database.NAME)
     postgres_container = next(
         container for container in postgres["spec"]["template"]["spec"]["containers"] if container["name"] == "postgres"
@@ -820,7 +822,10 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
     sampler_certificate = _resource(docs, "Certificate", f"{central_sampler.NAME}-workload")["spec"]
-    assert set(sampler_certificate["uris"]) <= set(gateway_config["executor_service_callers"])
+    controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
+    assert set(sampler_certificate["uris"]) <= set(
+        controller["environment_service"]["runtime_proxy"]["executor_callers"]
+    )
     history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert history_config["migration_timeout_s"] == 600
     assert history_config["fold_concurrency"] == 4
@@ -894,7 +899,7 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
     assert controller["environment_service"]["operators"] == [caller]
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
-    assert set(certificate["uris"]) <= set(gateway["runtime_proxy_readers"])
+    assert set(certificate["uris"]) <= set(controller["environment_service"]["runtime_proxy"]["readers"])
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(history["reader_service_callers"])
     bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]

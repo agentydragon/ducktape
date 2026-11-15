@@ -1,7 +1,7 @@
 # Environment Runtime
 
 Environment Runtime owns one Sandbox environment lifetime: identity, bootstrap, environment lock,
-incarnation seal, Gateway-facing control, Session management, retained records, journals, native
+incarnation seal, proxy-facing control, Session management, retained records, journals, native
 harness controllers, History delivery and Execution. Components have direct dependencies and
 independent COSI observations inside Runtime's single engine. The public `EnvironmentRuntime` API
 retains both environment and Session operations. A future independent Session domain and storage
@@ -108,17 +108,17 @@ the Runtime reserves that UID and completes its ordinary lifecycle adoption befo
 first facts snapshot. The Runtime listener serves before this observation, and each Runtime
 process creates a fresh boot ID. Once bound, the UID cannot change during that process lifetime,
 including after a failed or uncertain adoption callback; reconnects may settle only the same UID.
-This lets a replacement workload restore retained state without allowing a Gateway to select or
+This lets a replacement workload restore retained state without allowing a proxy to select or
 advance the workload identity. The Controller can open only passive watches with its exact SPIFFE
-identity; every control and Executor call still requires the exact Gateway identity or the
-role-specific `spiffe://agentplane/runtime-proxy` service SVID. The latter is admitted before its
-separate caller cutover; `spiffe://agentplane/sessions` has no direct Runtime grant.
+identity; every control and Executor call requires the exact
+`spiffe://agentplane/runtime-proxy` service SVID. The retired
+`spiffe://agentplane/runner-gateway` and the Sessions SVID have no direct Runtime grant.
 
-Gateway calls authorize against the Controller-bound incarnation and this Runtime boot,
-independently of Gateway state-watch lifetime. Any authenticated Gateway replica may call; Gateway
+Proxy calls authorize against the Controller-bound incarnation and this Runtime boot,
+independently of proxy state-watch lifetime. Any authenticated Environments proxy replica may call;
 watch loss and same-incarnation observer replacement do not revoke that authority or cancel
 Runtime-owned admitted work. A changed Sandbox UID, incarnation UID, or boot ID invalidates it.
-Gateway watches may observe only the already-bound incarnation and cannot establish or replace it.
+Proxy watches may observe only the already-bound incarnation and cannot establish or replace it.
 Direct Session admission uses that authority and Runtime's gate. `CreateSession` acknowledges a durable
 reservation, without promising process readiness. Model lookup occurs outside the gate; the
 reservation rechecks its authorization and accepted revision before its retained write.
