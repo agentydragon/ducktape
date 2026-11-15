@@ -89,6 +89,9 @@ def objects(
     fixture = fixture_chart.build_chart(
         ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
     )
+    assert fixture.app is not None
+    assert fixture.app_login is not None
+    assert fixture.mcp_linkage is not None
     assert fixture.mcp_edge is not None
     fixture_chart.add_secret(
         fixture.chart,

@@ -663,8 +663,6 @@ def build_chart(
         env,
         dispatcher_callers=gateway_callers | orchestration_caller,
         environment_launchers=orchestration_caller,
-        environment_readers=frozenset(platform_callers),
-        environment_managers=frozenset(platform_callers),
         operator_callers=platform_callers,
         operator_service_callers=frozenset({APP_URI}),
         wake_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),

@@ -903,7 +903,7 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
     assert pod["automountServiceAccountToken"] is False
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     caller = f"{NAMESPACE}/{native}"
-    for role in ("operator_callers", "environment_readers", "environment_managers"):
+    for role in ("operator_callers",):
         assert gateway[role] == [caller]
     assert caller in gateway["dispatcher_callers"]
     assert caller in gateway["gateway_callers"]
