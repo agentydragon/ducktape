@@ -17,7 +17,7 @@ from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo
+from cluster.cdk8s.monitoring import grafana_helmrepository, loki, mimir, tempo, wyrm2_cutover_job
 
 _NAME = "alloy"
 NAMESPACE = "monitoring"
@@ -60,20 +60,17 @@ _CONFIG_ENV = {
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
     runfiles_root = Runfiles.CreateOrRaise().root()
-    config_map, node_config_map, syslog_config_map, journal_config_map = (
-        ConfigMap(
-            chart,
-            name,
-            metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            data={
-                key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
-                + (
-                    (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
-                    if key == _NODE_CONFIG_KEY
-                    else ""
-                )
-            },
+    configs = {
+        key: (runfiles_root / f"ducktape/cluster/cdk8s/monitoring/{key}").read_text()
+        + (
+            (runfiles_root / "ducktape/cluster/cdk8s/monitoring/pod-logs.alloy").read_text()
+            if key == _NODE_CONFIG_KEY
+            else ""
         )
+        for key in (_CONFIG_KEY, _NODE_CONFIG_KEY, _SYSLOG_CONFIG_KEY, "journal.alloy")
+    }
+    config_map, node_config_map, syslog_config_map, journal_config_map = (
+        ConfigMap(chart, name, metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE), data={key: configs[key]})
         for name, key in (
             (_CONFIG_MAP, _CONFIG_KEY),
             (_NODE_CONFIG_MAP, _NODE_CONFIG_KEY),
@@ -81,6 +78,7 @@ def chart(app: App) -> Chart:
             ("alloy-journal-config", "journal.alloy"),
         )
     )
+    wyrm2_cutover_job.add(chart, node_config=configs[_NODE_CONFIG_KEY], journal_config=configs["journal.alloy"])
     helm_release(
         chart,
         _NAME,
