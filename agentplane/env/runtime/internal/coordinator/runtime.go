@@ -364,7 +364,7 @@ func (r *Runtime) initializeLifecycle(ctx context.Context) error {
 	if err := engine.RegisterQController(r.bootstrapHost.Controller()); err != nil {
 		return err
 	}
-	r.operationCoordinator = &runtimeOperationCoordinator{r: r, transition: runtimeTransitionSequence{r: r}, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{}), done: make(chan struct{})}
+	r.operationCoordinator = &runtimeOperationCoordinator{r: r, requests: make(chan *runtimeTransitionRequest), stopped: make(chan struct{}), done: make(chan struct{})}
 	r.lifecycleCoordinator = &runtimeCloseController{r: r, stopped: make(chan struct{})}
 	if err := engine.RegisterController(r.lifecycleCoordinator); err != nil {
 		return err

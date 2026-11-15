@@ -115,7 +115,10 @@ restarts within the process and publish completion facts before their owning con
 Runtime transition requests, cancellation and completion remain inside its Go-owned operation
 coordinator. Each caller waits for its accepted operation to settle, even after caller cancellation;
 Close cancels active transition work before waiting for the successor generation. Runtime starts the
-coordinator with the engine and joins it on engine exit. It wakes callers before joining workers on
+coordinator with the engine and joins it on engine exit. Each accepted operation runs in one worker;
+adoption and Quiesce call their barriers sequentially and check caller and engine cancellation
+between effects. Interrupted Execution starts and fences settle before the caller can admit a
+successor. The coordinator wakes callers before joining its worker on
 exit and never replays accepted transition preparation after a COSI controller restart. Only Close
 reconciliation is a COSI controller; its workers do not take the transition mutex.
 The separate live Runtime Close status reports the Close worker's exact generation, stage and failure.

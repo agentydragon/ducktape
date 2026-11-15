@@ -33,17 +33,3 @@ type runtimeTransitionRequest struct {
 	HasIdleSince    bool
 	IdleSinceMicros int64
 }
-
-type runtimeTransitionStepKind uint8
-
-const (
-	runtimeTransitionPlanning runtimeTransitionStepKind = iota
-	runtimeTransitionNativeStopping
-	runtimeTransitionExecutionStarting
-	runtimeTransitionDesiredPublishing
-	runtimeTransitionExecutionFencing
-	runtimeTransitionHistoryAcknowledging
-	runtimeTransitionIncarnationAdopting
-	runtimeTransitionBootstrapRequesting
-	runtimeTransitionQuiesceSealing
-)
