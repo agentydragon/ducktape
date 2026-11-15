@@ -3,10 +3,12 @@
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from typing import cast
 from unittest.mock import AsyncMock, create_autospec
 
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
 # gazelle:include_dep @pypi//protobuf
@@ -18,12 +20,13 @@ from agentplane.system_tests.driver.cluster import Cluster
 def _cluster() -> Cluster:
     cluster = create_autospec(Cluster, instance=True)
     cluster.namespace = "test"
-    return cluster
+    return cast(Cluster, cluster)
 
 
 async def test_unknown_create_outcome_is_not_replayed_or_assumed_gone(monkeypatch: pytest.MonkeyPatch) -> None:
     cluster = _cluster()
-    cluster.kubectl.side_effect = TimeoutError("create response was lost")
+    kubectl = cast(AsyncMock, cluster.kubectl)
+    kubectl.side_effect = TimeoutError("create response was lost")
     identity = {"namespace": "test", "name": "owned-identity", "uid": "identity-uid"}
     create_identity = AsyncMock(return_value=identity)
     delete_identity = AsyncMock()
@@ -35,7 +38,7 @@ async def test_unknown_create_outcome_is_not_replayed_or_assumed_gone(monkeypatc
             pytest.fail("an unknown create must not enter the Sandbox scope")
 
     create_identity.assert_awaited_once()
-    cluster.kubectl.assert_awaited_once()
+    kubectl.assert_awaited_once()
     delete_identity.assert_not_awaited()
 
 
@@ -44,7 +47,7 @@ async def test_acknowledged_native_sandbox_waits_for_release_after_cancellation(
 ) -> None:
     cluster = _cluster()
     created = {"metadata": {"namespace": "test", "name": "owned-sandbox", "uid": "owned-uid"}}
-    cluster.kubectl.return_value = json.dumps(created)
+    cast(AsyncMock, cluster.kubectl).return_value = json.dumps(created)
     identity = {"namespace": "test", "name": "owned-identity", "uid": "identity-uid"}
     delete_identity = AsyncMock()
     monkeypatch.setattr(central_sampler, "create_scenario_identity", AsyncMock(return_value=identity))
@@ -94,7 +97,7 @@ async def test_native_cleanup_keeps_scenario_failure_and_records_cleanup_failure
 ) -> None:
     cluster = _cluster()
     created = {"metadata": {"namespace": "test", "name": "owned-sandbox", "uid": "owned-uid"}}
-    cluster.kubectl.return_value = json.dumps(created)
+    cast(AsyncMock, cluster.kubectl).return_value = json.dumps(created)
     identity = {"namespace": "test", "name": "owned-identity", "uid": "identity-uid"}
     events: list[str] = []
     scenario_error = AssertionError("scenario failed")
@@ -122,16 +125,17 @@ async def test_native_cleanup_keeps_scenario_failure_and_records_cleanup_failure
 
 async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pytest.MonkeyPatch) -> None:
     cluster = _cluster()
-    cluster.kubectl.return_value = ""
+    kubectl = cast(AsyncMock, cluster.kubectl)
+    kubectl.return_value = ""
     current_uid = "replacement-uid"
-    delete_options = []
+    delete_options: list[k8s.V1DeleteOptions] = []
 
     class FakeCustomObjectsApi:
         def __init__(self, _connection: object) -> None:
             pass
 
         async def delete_namespaced_custom_object(self, **kwargs: object) -> None:
-            body = kwargs["body"]
+            body = cast(k8s.V1DeleteOptions, kwargs["body"])
             delete_options.append(body)
             assert body.preconditions.uid == "owned-uid"
             assert body.preconditions.uid != current_uid
@@ -141,7 +145,7 @@ async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pyt
     async def api_client():
         yield object()
 
-    cluster.api_client = api_client
+    monkeypatch.setattr(cluster, "api_client", api_client)
     monkeypatch.setattr(central_sampler.k8s, "CustomObjectsApi", FakeCustomObjectsApi)
 
     with pytest.raises(ApiException) as raised:
@@ -149,7 +153,7 @@ async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pyt
 
     assert raised.value.status == 409
     assert len(delete_options) == 1
-    assert cluster.kubectl.await_count == 3
+    assert kubectl.await_count == 3
 
 
 if __name__ == "__main__":
