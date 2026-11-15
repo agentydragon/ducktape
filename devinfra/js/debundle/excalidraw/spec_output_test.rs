@@ -80,6 +80,10 @@ fn claimed_modules_export_their_entry_points() {
             &["SearchMenu", "getMatchPreview", "getMatchedLines"],
         ),
         (
+            "main/packages/excalidraw/components/Stats/DragInput.js",
+            &["StatsDragInput"],
+        ),
+        (
             "main/packages/excalidraw/element/textWysiwyg.js",
             &["textWysiwyg"],
         ),
