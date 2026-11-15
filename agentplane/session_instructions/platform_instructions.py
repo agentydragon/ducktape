@@ -14,7 +14,12 @@ class SessionRuntime(StrEnum):
 
 
 def render_platform_instructions(
-    *, egress_api_url: str, actions_service_url: str, sessions_service_url: str, session_runtime: SessionRuntime
+    *,
+    egress_api_url: str,
+    actions_service_url: str,
+    sessions_service_url: str,
+    environments_service_url: str,
+    session_runtime: SessionRuntime,
 ) -> str:
     """Render the complete deployment-wide prompt from service URLs and shared guidance."""
     template = Template(
@@ -26,6 +31,7 @@ def render_platform_instructions(
             egress_api_url=egress_api_url,
             actions_service_url=actions_service_url,
             sessions_service_url=sessions_service_url,
+            environments_service_url=environments_service_url,
             session_runtime=session_runtime,
         )
     ).strip()

@@ -26,7 +26,14 @@ from agentplane.net.peertls.config import (
 )
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, app as app_component, environment_sandbox, workload_tls
+from cluster.cdk8s.agentplane import (
+    actions,
+    app as app_component,
+    egress,
+    environment_sandbox,
+    environment_service,
+    workload_tls,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -40,12 +47,10 @@ from cluster.cdk8s.settings_file import SettingsFile
 _GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 _SETTINGS_PATH = "/etc/agentplane-sandbox-controller/config.yaml"
 
-NAME = "sandbox-controller"
-_LABELS = {"app.kubernetes.io/name": NAME}
+NAME = environment_service.NAME
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
 _GROUP = "agentplane.allegedly.works"
 _HEALTH_PORT = 8081
-_ENVIRONMENT_SERVICE_PORT = 8082
 _ENVIRONMENT_SERVICE = "/agentplane.environments.v1.EnvironmentService/"
 _ENVIRONMENT_SERVICE_READ_METHODS = (
     f"{_ENVIRONMENT_SERVICE}ListEnvironments",
@@ -55,11 +60,6 @@ _ENVIRONMENT_SERVICE_READ_METHODS = (
 OPERATOR_SERVICE_CALLERS = frozenset({APP_URI})
 WAKE_SERVICE_CALLERS = frozenset({APP_URI, NOTIFICATIONS_URI})
 _RESUME_METHOD = f"{_ENVIRONMENT_SERVICE}ResumeEnvironment"
-
-
-def service(namespace: str) -> ServiceRef:
-    """The Controller's stable every-replica EnvironmentService listener."""
-    return ServiceRef(name=NAME, port=Port(name="grpc", number=_ENVIRONMENT_SERVICE_PORT), pods=pods(namespace))
 
 
 def _account(account: ServiceAccountRef) -> str:
@@ -144,7 +144,7 @@ _DEFAULT_MEMORY_LIMIT = Size.mebibytes(256)
 
 def metrics(namespace: str) -> ServiceRef:
     return ServiceRef(
-        name=NAME, port=Port(name="metrics", number=8080), pods=Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+        name=NAME, port=Port(name="metrics", number=8080), pods=environment_service.service(namespace).pods
     )
 
 
@@ -177,7 +177,7 @@ class SandboxController(Construct):
         self.authority = authority
         namespace = env.namespace
         endpoint = metrics(namespace)
-        environment_endpoint = service(namespace)
+        environment_endpoint = environment_service.service(namespace)
         workload = add_service_workload(
             self,
             env,
@@ -202,7 +202,7 @@ class SandboxController(Construct):
         assert runner_tls.cert_file is not None
         assert runner_tls.key_file is not None
         assert runner_tls.ca_file is not None
-        environment_service = EnvironmentService(
+        serving = EnvironmentService(
             rpc=workload_listener.Listener(
                 listen_address=f"0.0.0.0:{environment_endpoint.port.number}",
                 tls=workload_listener.TLS(cert_file=Path(runner_tls.cert_file), key_file=Path(runner_tls.key_file)),
@@ -231,7 +231,7 @@ class SandboxController(Construct):
             runtime_catalog=env.runtime_catalog,
         )
         settings = Settings(
-            environment_service=environment_service,
+            environment_service=serving,
             runner_gateway_tls=ClientTLS(
                 ca_file=Path(runner_tls.ca_file),
                 server_uri=SESSION_DISPATCHER_URI,
@@ -335,8 +335,8 @@ class SandboxController(Construct):
         """Add the scoped receiver network policy and metrics scrape."""
         namespace = self.env.namespace
         endpoint = metrics(namespace)
-        environment_endpoint = service(namespace)
-        environment_callers = []
+        environment_endpoint = environment_service.service(namespace)
+        environment_callers = [egress.proxy(namespace).pods]
         if self.env.app is not None:
             environment_callers.append(app_component.service(namespace).pods)
         if self.authority.service_delegation_actor is not None:

@@ -14,6 +14,11 @@ reads do not require leadership. App and Actions still call the Gateway during r
 caller retargeting follows verification of the new listener on every replica. Runtime-proxy calls
 remain at the Gateway.
 
+Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
+Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
+`sandbox-controller:8082`; Session calls keep their Gateway route. Existing Sandbox processes keep
+their launch-time URLs, so Gateway EnvironmentService remains registered until those callers move.
+
 ```mermaid
 flowchart LR
     browser([Browser])
@@ -137,6 +142,7 @@ flowchart LR
     guest_agent -.->|local Rules gRPC :3130| relay
     relay -.->|service SVID TLS through CONNECT| egress
     egress -.->|opaque Action gRPC TLS, verified by the service| actions
+    egress -.->|opaque Sandbox SVID TLS: EnvironmentService :8082| sandboxctl
     runner -.->|OTLP/gRPC telemetry route| sidecar
     sidecar -->|OTLP/gRPC| alloy
     guest -.->|OTLP/gRPC telemetry route| relay
@@ -148,12 +154,12 @@ flowchart LR
     egress -.->|opaque SessionJournalIngress.Push TLS| hs
     agent -.->|managed CLI History gRPC :3130| sidecar
     sidecar -.->|Sandbox SVID TLS through CONNECT; verifies History SVID| egress
-    agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| sidecar
+    agent -.->|Session gRPC through HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| sidecar
     guest -.->|History mTLS through CONNECT| relay
     relay -.->|opaque History TLS| egress
     guest_agent -.->|managed CLI History gRPC :3130| relay
     relay -.->|Sandbox SVID TLS through CONNECT; verifies History SVID| egress
-    guest_agent -.->|Session and EnvironmentService gRPC through HTTPS_PROXY/CONNECT| relay
+    guest_agent -.->|Session gRPC through HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| relay
     egress -.->|opaque Dispatcher SVID TLS| gw
 
     egress -.->|opaque TLS; Rules verifies SVID :8081| egressRules
@@ -298,12 +304,13 @@ flowchart LR
     dispatcher -->|Sandbox + independent environment-policy watches| k8s
     dispatcher -->|automatic wake assessment + request| lifecycle
     lifecycle -->|guarded running + generation update| k8s
-    pod -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| sidecar
-    guest -.->|Session and EnvironmentService gRPC over HTTPS_PROXY/CONNECT| relay
+    pod -.->|Session gRPC over HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| sidecar
+    guest -.->|Session gRPC over HTTPS_PROXY/CONNECT; EnvironmentService gRPC :3130| relay
     sidecar -.->|mTLS proxy hop and CONNECT| egress
     relay -.->|mTLS proxy hop and CONNECT| egress
     egress -.->|Opaque Runner SVID TLS to :8080| rpc
-    rpc -->|Method-authorized Session and EnvironmentService calls| dispatcher
+    egress -.->|Sandbox SVID TLS: EnvironmentService| sandboxctl
+    rpc -->|Method-authorized Session and legacy EnvironmentService calls| dispatcher
 ```
 
 Managed Pod and VM callers receive the `AGENTPLANE_SESSIONS_URL`, but no bearer credential for the

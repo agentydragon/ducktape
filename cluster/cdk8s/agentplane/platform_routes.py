@@ -22,8 +22,14 @@ from agentplane.egress.platform_routes import (
     PlatformRouteTransport,
     TLSConnectRouteTransport,
 )
-from agentplane.net.peertls.config import EGRESS_PROXY_URI, HISTORY_SERVICE_URI, LLM_INGRESS_URI, NOTIFICATIONS_URI
-from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, notifications, telemetry
+from agentplane.net.peertls.config import (
+    EGRESS_PROXY_URI,
+    HISTORY_SERVICE_URI,
+    LLM_INGRESS_URI,
+    NOTIFICATIONS_URI,
+    SANDBOX_CONTROLLER_URI,
+)
+from cluster.cdk8s.agentplane import egress, environment_service, history_service, llm_ingress, notifications, telemetry
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, ServiceRef
 
@@ -81,6 +87,15 @@ def history_grpc(namespace: str) -> Route:
     )
 
 
+def environments_grpc(namespace: str) -> Route:
+    return Route(
+        "environments",
+        environment_service.service(namespace),
+        TLSConnectRouteTransport(server_uri=SANDBOX_CONTROLLER_URI),
+        ("/agentplane.environments.v1.EnvironmentService/",),
+    )
+
+
 def telemetry_route() -> Route:
     """The runner's local, unauthenticated gRPC hop to Alloy."""
     return Route(
@@ -102,6 +117,7 @@ def routes(namespace: str) -> tuple[Route, ...]:
         notifications_grpc(namespace),
         model_config(namespace),
         history_grpc(namespace),
+        environments_grpc(namespace),
     )
 
 

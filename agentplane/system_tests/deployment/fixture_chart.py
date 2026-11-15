@@ -91,6 +91,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     egress,
     environment_sandbox,
+    environment_service,
     environment_vm,
     history_service,
     llm_ingress,
@@ -600,6 +601,7 @@ def add_backend_services(
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
             runner_gateway.service(env.namespace),
+            environment_service.service(env.namespace),
             actions.service(NAMESPACE),
         ],
     )
@@ -691,7 +693,7 @@ def add_backend_services(
         dispatcher=runner_gateway_workload.dispatcher_service(NAMESPACE),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         environment_service_endpoint=(
-            sandbox_controller.service(NAMESPACE) if environment_service_delegation_actor is not None else None
+            environment_service.service(NAMESPACE) if environment_service_delegation_actor is not None else None
         ),
         placement=None,
         registry_secret_name=None,
@@ -739,7 +741,7 @@ def add_app(chart: Chart, env: Environment) -> AppFixture:
         env,
         electric=None,
         database_url=app_database_url,
-        environment_service_endpoint=sandbox_controller.service(NAMESPACE),
+        environment_service_endpoint=environment_service.service(NAMESPACE),
         placement=None,
         registry_secret_name=None,
         memory_request=Size.mebibytes(48),

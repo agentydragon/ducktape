@@ -27,6 +27,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     electric,
     environment_sandbox,
+    environment_service,
     frontend,
     history_service,
     llm_ingress,
@@ -151,6 +152,7 @@ def environment_chart(
             llm_ingress.service(env.namespace),
             notifications.service(env.namespace),
             runner_gateway.service(env.namespace),
+            environment_service.service(env.namespace),
             actions.service(env.namespace),
         ],
     ).add_platform_resources()
@@ -200,7 +202,7 @@ def environment_chart(
         env,
         electric=electric.service(env.namespace),
         database_url=app_database_url,
-        environment_service_endpoint=sandbox_controller.service(env.namespace),
+        environment_service_endpoint=environment_service.service(env.namespace),
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
@@ -244,7 +246,7 @@ def environment_chart(
         dispatcher=session_dispatcher.service(env.namespace),
         dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         environment_service_endpoint=(
-            sandbox_controller.service(env.namespace)
+            environment_service.service(env.namespace)
             if sandbox_controller.action_delegation_actor(env) is not None
             else None
         ),

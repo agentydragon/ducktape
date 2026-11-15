@@ -56,7 +56,7 @@ from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications, runner_gateway
+from cluster.cdk8s.agentplane import actions, database, environment_service, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
 from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
@@ -859,6 +859,7 @@ class Egress(Construct):
                 llm_ingress.service(namespace).egress(),
                 actions.service(namespace).egress(),
                 runner_gateway.service(namespace).egress(),
+                environment_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),
                 forgejo.HTTP.egress(),
                 ollama.AUTH_PROXY.egress(),
