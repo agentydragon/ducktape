@@ -891,90 +891,59 @@ pub(super) struct NamespaceValueFacts {
     unstable_class_bindings: BTreeSet<Id>,
 }
 
-fn array_iterator_prototype_expression(call: &CallExpr) -> bool {
+fn iterator_prototype_receiver(call: &CallExpr) -> Option<&Expr> {
     let Callee::Expr(outer_callee) = &call.callee else {
-        return false;
+        return None;
     };
     let Expr::Member(outer_member) = outer_callee.unwrap_parens() else {
-        return false;
+        return None;
     };
     if !matches!(outer_member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
         || !matches!(&outer_member.prop, MemberProp::Ident(id) if id.sym == "getPrototypeOf")
     {
-        return false;
+        return None;
     }
     let [argument] = call.args.as_slice() else {
-        return false;
+        return None;
     };
     if argument.spread.is_some() {
-        return false;
+        return None;
     }
     let Expr::Call(iterator_call) = argument.expr.unwrap_parens() else {
-        return false;
+        return None;
     };
     if !iterator_call.args.is_empty() {
-        return false;
+        return None;
     }
     let Callee::Expr(iterator_callee) = &iterator_call.callee else {
-        return false;
+        return None;
     };
     let Expr::Member(iterator_member) = iterator_callee.unwrap_parens() else {
-        return false;
+        return None;
     };
-    let Expr::Array(array) = iterator_member.obj.unwrap_parens() else {
-        return false;
-    };
-    if !array.elems.is_empty() {
-        return false;
-    }
-    matches!(&iterator_member.prop, MemberProp::Computed(key)
+    if !matches!(&iterator_member.prop, MemberProp::Computed(key)
         if matches!(key.expr.unwrap_parens(), Expr::Member(symbol)
             if matches!(symbol.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol")
                 && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
+    {
+        return None;
+    }
+    Some(iterator_member.obj.unwrap_parens())
+}
+
+fn array_iterator_prototype_expression(call: &CallExpr) -> bool {
+    let Some(Expr::Array(array)) = iterator_prototype_receiver(call) else {
+        return false;
+    };
+    array.elems.is_empty()
 }
 
 fn set_iterator_prototype_expression(call: &CallExpr) -> bool {
-    let Callee::Expr(outer_callee) = &call.callee else {
+    let Some(Expr::New(set)) = iterator_prototype_receiver(call) else {
         return false;
     };
-    let Expr::Member(outer_member) = outer_callee.unwrap_parens() else {
-        return false;
-    };
-    if !matches!(outer_member.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Object")
-        || !matches!(&outer_member.prop, MemberProp::Ident(id) if id.sym == "getPrototypeOf")
-    {
-        return false;
-    }
-    let [argument] = call.args.as_slice() else {
-        return false;
-    };
-    if argument.spread.is_some() {
-        return false;
-    }
-    let Expr::Call(iterator_call) = argument.expr.unwrap_parens() else {
-        return false;
-    };
-    if !iterator_call.args.is_empty() {
-        return false;
-    }
-    let Callee::Expr(iterator_callee) = &iterator_call.callee else {
-        return false;
-    };
-    let Expr::Member(iterator_member) = iterator_callee.unwrap_parens() else {
-        return false;
-    };
-    let Expr::New(set) = iterator_member.obj.unwrap_parens() else {
-        return false;
-    };
-    if !matches!(set.callee.unwrap_parens(), Expr::Ident(id) if id.sym == "Set")
-        || !set.args.as_deref().is_none_or(|args| args.is_empty())
-    {
-        return false;
-    }
-    matches!(&iterator_member.prop, MemberProp::Computed(key)
-        if matches!(key.expr.unwrap_parens(), Expr::Member(symbol)
-            if matches!(symbol.obj.unwrap_parens(), Expr::Ident(id) if id.sym == "Symbol")
-                && matches!(&symbol.prop, MemberProp::Ident(id) if id.sym == "iterator")))
+    matches!(set.callee.unwrap_parens(), Expr::Ident(id) if id.sym == "Set")
+        && set.args.as_deref().is_none_or(|args| args.is_empty())
 }
 
 impl ValueExpr {
