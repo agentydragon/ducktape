@@ -1015,10 +1015,7 @@ impl ProtoConvert<proto::ExportReentryLoaderDerivation> for ExportReentryLoaderD
                         .iter()
                         .map(ProtoConvert::to_proto)
                         .collect::<Result<_>>()?,
-                    premise_keys: premise_keys
-                        .iter()
-                        .map(ProtoConvert::to_proto)
-                        .collect::<Result<_>>()?,
+                    premise_keys: premise_keys.iter().map(|key| *key as i32).collect(),
                     requests: requests
                         .iter()
                         .map(ProtoConvert::to_proto)
@@ -1053,7 +1050,18 @@ impl ProtoConvert<proto::ExportReentryLoaderDerivation> for ExportReentryLoaderD
                         "ExportReentryLoaderDerivation.loader_closure.closed",
                     )?,
                     host_keys: restore_loader_set(value.host_keys)?,
-                    premise_keys: restore_loader_set(value.premise_keys)?,
+                    premise_keys: value.premise_keys.into_iter().try_fold(
+                        BTreeSet::new(),
+                        |mut keys, key| {
+                            let key = ProgramPremiseKey::try_from(key)?;
+                            ensure!(
+                                key != ProgramPremiseKey::Unspecified,
+                                "unspecified program premise"
+                            );
+                            ensure!(keys.insert(key), "duplicate program premise");
+                            Ok(keys)
+                        },
+                    )?,
                     requests: value
                         .requests
                         .into_iter()

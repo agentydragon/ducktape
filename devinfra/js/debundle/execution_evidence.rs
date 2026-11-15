@@ -5,11 +5,15 @@
 //! construction own their meaning here.
 
 use crate::saved_proto::{ProtoConvert, proto, required};
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use js_ast::SourceLineIndex;
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
 use swc_common::{BytePos, Span};
+
+pub use crate::saved_proto::proto::{
+    ExecutionOperation, GlobalReachCause, OrderedCallAdmissionRefusal, OrderedFieldReadRefusal,
+};
 
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceLocation {
@@ -73,57 +77,6 @@ pub enum PossibleGetterPromotion {
     /// Raw callbacks reachable through the receiver were promoted without a
     /// single source owner identifying that callback set.
     RawCallbacks,
-}
-
-/// The first failed condition in the ordered local own-data field guard.
-/// This is diagnostic evidence only and does not affect admission.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum OrderedFieldReadRefusal {
-    ReceiverNotSingleton,
-    ReceiverNotObject,
-    BorrowedReceiver,
-    UnsupportedRecordShape,
-    /// The allocation site is not marked fresh in this frame. This may be a
-    /// reused site; it does not identify a distinct runtime allocation.
-    AllocationNotFresh,
-    UnsettledReceiver,
-    MissingField,
-    NonDataField,
-    MissingHeapValue,
-}
-
-/// The first ordered call admission condition that rejected the evaluated
-/// target and receiver. This describes the refusal only; it does not change
-/// target classification or the conservative fallback.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum OrderedCallAdmissionRefusal {
-    UnknownTarget,
-    MultipleTargets,
-    NonLocalTarget,
-    UnsupportedReceiver,
-    /// An `Array.prototype` iteration method without a kernel row: the
-    /// early-exit rows (`some`, `every`, `find`, `findIndex`), `flatMap`,
-    /// and `reduce` without an initial value.
-    ArrayIterationRowUnsupported,
-    /// After the arguments or a callback, a slot the row reads
-    /// (`Array.prototype` method, element reads, `ArraySpeciesCreate`) is no
-    /// longer proved intact.
-    ArrayIterationIntrinsicsChanged,
-    /// The receiver's exact length, own-property shape or dense contents are
-    /// not proved, or changed while the row ran.
-    ArrayIterationReceiverUnproved,
-    /// The callback is not one local, synchronous, non-generator callable
-    /// with simple parameters.
-    ArrayIterationCallbackUnsupported,
-    /// The callback retains live lexical captures.
-    ArrayIterationCapturingCallback,
-    /// A callback invocation did not complete with an exact normal result
-    /// the row can retain.
-    ArrayIterationCallbackIncomplete,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -196,32 +149,6 @@ pub enum HavocReach {
     Global {
         cause: GlobalReachCause,
     },
-}
-
-/// The first collapse rule that made a reach `global`.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GlobalReachCause {
-    /// The code calls, directly or through the synchronous read closure, a
-    /// callee the source does not name: an import, a global, a parameter, an
-    /// unknown member, or an opaque body.
-    UnknownCallee,
-    /// An input reaches a value opaque code may hold or have changed: an
-    /// unknown value, a tainted object, an escaped callable, or a global
-    /// object alias.
-    TaintedInput,
-    /// A class the code runs is published, escaped or tainted, so its methods
-    /// may run on a borrowed receiver.
-    BorrowedReceiver,
-    /// Dynamic scope (`eval`, `with`) makes the read closure incomplete.
-    DynamicScope,
-    /// An input is a foreign deferred record.
-    ForeignRecord,
-    /// The operation itself is unmodelled; values the interpreter does not
-    /// know choose the code it may run.
-    UnmodelledOperation,
-    /// The callbacks unknown code may invoke: the prefix-wide escape pool.
-    EscapedCallbackPool,
 }
 
 /// Why a local class construction kept the conservative path.
@@ -407,27 +334,6 @@ impl AssumedEffectReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum ExecutionOperation {
-    MembershipProtocol,
-    InstanceOfProtocol,
-    DestructuringProtocol,
-    MemberRead,
-    ObjectSpread,
-    ArraySpread,
-    ImplicitCoercion,
-    PropertyWrite,
-    ReturnedCallback,
-    SuperclassConstruction,
-    ObjectAssign,
-    OpaqueExecution,
-    GeneratorParameters,
-    CallableInputs,
-    ArrayIteration,
-}
-
 impl ProtoConvert<proto::SourceLocation> for SourceLocation {
     fn to_proto(&self) -> Result<proto::SourceLocation> {
         Ok(proto::SourceLocation {
@@ -547,7 +453,7 @@ impl ProtoConvert<proto::HavocReach> for HavocReach {
         Ok(proto::HavocReach {
             value: Some(match self {
                 Self::Bounded => Value::Bounded(Default::default()),
-                Self::Global { cause } => Value::Global(cause.to_proto()?),
+                Self::Global { cause } => Value::Global(*cause as i32),
             }),
         })
     }
@@ -555,9 +461,14 @@ impl ProtoConvert<proto::HavocReach> for HavocReach {
         use proto::havoc_reach::Value;
         Ok(match required(value.value, "HavocReach.value")? {
             Value::Bounded(_) => Self::Bounded,
-            Value::Global(cause) => Self::Global {
-                cause: GlobalReachCause::from_proto(cause)?,
-            },
+            Value::Global(cause) => {
+                let cause = GlobalReachCause::try_from(cause)?;
+                ensure!(
+                    cause != GlobalReachCause::Unspecified,
+                    "unspecified global reach cause"
+                );
+                Self::Global { cause }
+            }
         })
     }
 }
@@ -575,15 +486,13 @@ impl ProtoConvert<proto::ExecutionPrecisionLossReason> for ExecutionPrecisionLos
                     ordered_field_read_refusal,
                     ordered_call_admission_refusal,
                 } => Value::UnsupportedOperation(UnsupportedOperation {
-                    operation: Some(operation.to_proto()?),
+                    operation: Some(*operation as i32),
                     ordered_field_read_refusal: ordered_field_read_refusal
                         .as_ref()
-                        .map(ProtoConvert::to_proto)
-                        .transpose()?,
+                        .map(|value| *value as i32),
                     ordered_call_admission_refusal: ordered_call_admission_refusal
                         .as_ref()
-                        .map(ProtoConvert::to_proto)
-                        .transpose()?,
+                        .map(|value| *value as i32),
                 }),
                 Self::UnsupportedConstruction { rejection } => {
                     Value::UnsupportedConstruction(rejection.to_proto()?)
@@ -610,20 +519,38 @@ impl ProtoConvert<proto::ExecutionPrecisionLossReason> for ExecutionPrecisionLos
             match required(value.value, "ExecutionPrecisionLossReason.value")? {
                 Value::UnknownCallTarget(_) => Self::UnknownCallTarget,
                 Value::MissingCallResult(_) => Self::MissingCallResult,
-                Value::UnsupportedOperation(value) => Self::UnsupportedOperation {
-                    operation: ExecutionOperation::from_proto(required(
+                Value::UnsupportedOperation(value) => {
+                    let operation = ExecutionOperation::try_from(required(
                         value.operation,
                         "ExecutionPrecisionLossReason.unsupported_operation.operation",
-                    )?)?,
-                    ordered_field_read_refusal: value
+                    )?)?;
+                    ensure!(
+                        operation != ExecutionOperation::Unspecified,
+                        "unspecified execution operation"
+                    );
+                    let ordered_field_read_refusal = value
                         .ordered_field_read_refusal
-                        .map(OrderedFieldReadRefusal::from_proto)
-                        .transpose()?,
-                    ordered_call_admission_refusal: value
+                        .map(OrderedFieldReadRefusal::try_from)
+                        .transpose()?;
+                    ensure!(
+                        ordered_field_read_refusal != Some(OrderedFieldReadRefusal::Unspecified),
+                        "unspecified ordered field read refusal"
+                    );
+                    let ordered_call_admission_refusal = value
                         .ordered_call_admission_refusal
-                        .map(OrderedCallAdmissionRefusal::from_proto)
-                        .transpose()?,
-                },
+                        .map(OrderedCallAdmissionRefusal::try_from)
+                        .transpose()?;
+                    ensure!(
+                        ordered_call_admission_refusal
+                            != Some(OrderedCallAdmissionRefusal::Unspecified),
+                        "unspecified ordered call admission refusal"
+                    );
+                    Self::UnsupportedOperation {
+                        operation,
+                        ordered_field_read_refusal,
+                        ordered_call_admission_refusal,
+                    }
+                }
                 Value::UnsupportedConstruction(value) => Self::UnsupportedConstruction {
                     rejection: ConstructionRejection::from_proto(value)?,
                 },
@@ -716,7 +643,7 @@ impl ProtoConvert<proto::AssumedEffectReason> for AssumedEffectReason {
                     })
                 }
                 Self::WholeBodyPromotion { operation } => {
-                    Value::WholeBodyPromotion(operation.to_proto()?)
+                    Value::WholeBodyPromotion(*operation as i32)
                 }
                 Self::PrivateConstructorRestore => {
                     Value::PrivateConstructorRestore(Default::default())
@@ -744,177 +671,16 @@ impl ProtoConvert<proto::AssumedEffectReason> for AssumedEffectReason {
                     "AssumedEffectReason.possible_getter.promotion",
                 )?)?,
             },
-            Value::WholeBodyPromotion(operation) => Self::WholeBodyPromotion {
-                operation: ExecutionOperation::from_proto(operation)?,
-            },
+            Value::WholeBodyPromotion(operation) => {
+                let operation = ExecutionOperation::try_from(operation)?;
+                ensure!(
+                    operation != ExecutionOperation::Unspecified,
+                    "unspecified execution operation"
+                );
+                Self::WholeBodyPromotion { operation }
+            }
             Value::PrivateConstructorRestore(_) => Self::PrivateConstructorRestore,
             Value::UnresolvedCallClosure(_) => Self::UnresolvedCallClosure,
-        })
-    }
-}
-impl ProtoConvert<i32> for ExecutionOperation {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::MembershipProtocol => proto::ExecutionOperation::MembershipProtocol as i32,
-            Self::InstanceOfProtocol => proto::ExecutionOperation::InstanceOfProtocol as i32,
-            Self::DestructuringProtocol => proto::ExecutionOperation::DestructuringProtocol as i32,
-            Self::MemberRead => proto::ExecutionOperation::MemberRead as i32,
-            Self::ObjectSpread => proto::ExecutionOperation::ObjectSpread as i32,
-            Self::ArraySpread => proto::ExecutionOperation::ArraySpread as i32,
-            Self::ImplicitCoercion => proto::ExecutionOperation::ImplicitCoercion as i32,
-            Self::PropertyWrite => proto::ExecutionOperation::PropertyWrite as i32,
-            Self::ReturnedCallback => proto::ExecutionOperation::ReturnedCallback as i32,
-            Self::SuperclassConstruction => {
-                proto::ExecutionOperation::SuperclassConstruction as i32
-            }
-            Self::ObjectAssign => proto::ExecutionOperation::ObjectAssign as i32,
-            Self::OpaqueExecution => proto::ExecutionOperation::OpaqueExecution as i32,
-            Self::GeneratorParameters => proto::ExecutionOperation::GeneratorParameters as i32,
-            Self::CallableInputs => proto::ExecutionOperation::CallableInputs as i32,
-            Self::ArrayIteration => proto::ExecutionOperation::ArrayIteration as i32,
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::ExecutionOperation::try_from(value)? {
-            proto::ExecutionOperation::MembershipProtocol => Self::MembershipProtocol,
-            proto::ExecutionOperation::InstanceOfProtocol => Self::InstanceOfProtocol,
-            proto::ExecutionOperation::DestructuringProtocol => Self::DestructuringProtocol,
-            proto::ExecutionOperation::MemberRead => Self::MemberRead,
-            proto::ExecutionOperation::ObjectSpread => Self::ObjectSpread,
-            proto::ExecutionOperation::ArraySpread => Self::ArraySpread,
-            proto::ExecutionOperation::ImplicitCoercion => Self::ImplicitCoercion,
-            proto::ExecutionOperation::PropertyWrite => Self::PropertyWrite,
-            proto::ExecutionOperation::ReturnedCallback => Self::ReturnedCallback,
-            proto::ExecutionOperation::SuperclassConstruction => Self::SuperclassConstruction,
-            proto::ExecutionOperation::ObjectAssign => Self::ObjectAssign,
-            proto::ExecutionOperation::OpaqueExecution => Self::OpaqueExecution,
-            proto::ExecutionOperation::GeneratorParameters => Self::GeneratorParameters,
-            proto::ExecutionOperation::CallableInputs => Self::CallableInputs,
-            proto::ExecutionOperation::ArrayIteration => Self::ArrayIteration,
-            proto::ExecutionOperation::Unspecified => {
-                bail!("unspecified saved-analysis execution operation")
-            }
-        })
-    }
-}
-impl ProtoConvert<i32> for GlobalReachCause {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::UnknownCallee => proto::GlobalReachCause::UnknownCallee as i32,
-            Self::TaintedInput => proto::GlobalReachCause::TaintedInput as i32,
-            Self::BorrowedReceiver => proto::GlobalReachCause::BorrowedReceiver as i32,
-            Self::DynamicScope => proto::GlobalReachCause::DynamicScope as i32,
-            Self::ForeignRecord => proto::GlobalReachCause::ForeignRecord as i32,
-            Self::UnmodelledOperation => proto::GlobalReachCause::UnmodelledOperation as i32,
-            Self::EscapedCallbackPool => proto::GlobalReachCause::EscapedCallbackPool as i32,
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::GlobalReachCause::try_from(value)? {
-            proto::GlobalReachCause::UnknownCallee => Self::UnknownCallee,
-            proto::GlobalReachCause::TaintedInput => Self::TaintedInput,
-            proto::GlobalReachCause::BorrowedReceiver => Self::BorrowedReceiver,
-            proto::GlobalReachCause::DynamicScope => Self::DynamicScope,
-            proto::GlobalReachCause::ForeignRecord => Self::ForeignRecord,
-            proto::GlobalReachCause::UnmodelledOperation => Self::UnmodelledOperation,
-            proto::GlobalReachCause::EscapedCallbackPool => Self::EscapedCallbackPool,
-            proto::GlobalReachCause::Unspecified => {
-                bail!("unspecified saved-analysis global reach cause")
-            }
-        })
-    }
-}
-impl ProtoConvert<i32> for OrderedFieldReadRefusal {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::ReceiverNotSingleton => {
-                proto::OrderedFieldReadRefusal::ReceiverNotSingleton as i32
-            }
-            Self::ReceiverNotObject => proto::OrderedFieldReadRefusal::ReceiverNotObject as i32,
-            Self::BorrowedReceiver => proto::OrderedFieldReadRefusal::BorrowedReceiver as i32,
-            Self::UnsupportedRecordShape => {
-                proto::OrderedFieldReadRefusal::UnsupportedRecordShape as i32
-            }
-            Self::AllocationNotFresh => proto::OrderedFieldReadRefusal::AllocationNotFresh as i32,
-            Self::UnsettledReceiver => proto::OrderedFieldReadRefusal::UnsettledReceiver as i32,
-            Self::MissingField => proto::OrderedFieldReadRefusal::MissingField as i32,
-            Self::NonDataField => proto::OrderedFieldReadRefusal::NonDataField as i32,
-            Self::MissingHeapValue => proto::OrderedFieldReadRefusal::MissingHeapValue as i32,
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::OrderedFieldReadRefusal::try_from(value)? {
-            proto::OrderedFieldReadRefusal::ReceiverNotSingleton => Self::ReceiverNotSingleton,
-            proto::OrderedFieldReadRefusal::ReceiverNotObject => Self::ReceiverNotObject,
-            proto::OrderedFieldReadRefusal::BorrowedReceiver => Self::BorrowedReceiver,
-            proto::OrderedFieldReadRefusal::UnsupportedRecordShape => Self::UnsupportedRecordShape,
-            proto::OrderedFieldReadRefusal::AllocationNotFresh => Self::AllocationNotFresh,
-            proto::OrderedFieldReadRefusal::UnsettledReceiver => Self::UnsettledReceiver,
-            proto::OrderedFieldReadRefusal::MissingField => Self::MissingField,
-            proto::OrderedFieldReadRefusal::NonDataField => Self::NonDataField,
-            proto::OrderedFieldReadRefusal::MissingHeapValue => Self::MissingHeapValue,
-            proto::OrderedFieldReadRefusal::Unspecified => {
-                bail!("unspecified saved-analysis ordered field read refusal")
-            }
-        })
-    }
-}
-impl ProtoConvert<i32> for OrderedCallAdmissionRefusal {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::UnknownTarget => proto::OrderedCallAdmissionRefusal::UnknownTarget as i32,
-            Self::MultipleTargets => proto::OrderedCallAdmissionRefusal::MultipleTargets as i32,
-            Self::NonLocalTarget => proto::OrderedCallAdmissionRefusal::NonLocalTarget as i32,
-            Self::UnsupportedReceiver => {
-                proto::OrderedCallAdmissionRefusal::UnsupportedReceiver as i32
-            }
-            Self::ArrayIterationRowUnsupported => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationRowUnsupported as i32
-            }
-            Self::ArrayIterationIntrinsicsChanged => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationIntrinsicsChanged as i32
-            }
-            Self::ArrayIterationReceiverUnproved => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationReceiverUnproved as i32
-            }
-            Self::ArrayIterationCallbackUnsupported => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported as i32
-            }
-            Self::ArrayIterationCapturingCallback => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback as i32
-            }
-            Self::ArrayIterationCallbackIncomplete => {
-                proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackIncomplete as i32
-            }
-        })
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::OrderedCallAdmissionRefusal::try_from(value)? {
-            proto::OrderedCallAdmissionRefusal::UnknownTarget => Self::UnknownTarget,
-            proto::OrderedCallAdmissionRefusal::MultipleTargets => Self::MultipleTargets,
-            proto::OrderedCallAdmissionRefusal::NonLocalTarget => Self::NonLocalTarget,
-            proto::OrderedCallAdmissionRefusal::UnsupportedReceiver => Self::UnsupportedReceiver,
-            proto::OrderedCallAdmissionRefusal::ArrayIterationRowUnsupported => {
-                Self::ArrayIterationRowUnsupported
-            }
-            proto::OrderedCallAdmissionRefusal::ArrayIterationIntrinsicsChanged => {
-                Self::ArrayIterationIntrinsicsChanged
-            }
-            proto::OrderedCallAdmissionRefusal::ArrayIterationReceiverUnproved => {
-                Self::ArrayIterationReceiverUnproved
-            }
-            proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackUnsupported => {
-                Self::ArrayIterationCallbackUnsupported
-            }
-            proto::OrderedCallAdmissionRefusal::ArrayIterationCapturingCallback => {
-                Self::ArrayIterationCapturingCallback
-            }
-            proto::OrderedCallAdmissionRefusal::ArrayIterationCallbackIncomplete => {
-                Self::ArrayIterationCallbackIncomplete
-            }
-            proto::OrderedCallAdmissionRefusal::Unspecified => {
-                bail!("unspecified saved-analysis ordered call admission refusal")
-            }
         })
     }
 }

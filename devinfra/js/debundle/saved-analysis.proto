@@ -545,14 +545,28 @@ message GlobalAccessSite {
   optional string property = 5;
 }
 
+// The first collapse rule that made a reach global.
 enum GlobalReachCause {
   GLOBAL_REACH_CAUSE_UNSPECIFIED = 0;
+  // The code calls, directly or through the synchronous read closure, a
+  // callee the source does not name: an import, a global, a parameter, an
+  // unknown member, or an opaque body.
   GLOBAL_REACH_CAUSE_UNKNOWN_CALLEE = 1;
+  // An input reaches a value opaque code may hold or have changed: an
+  // unknown value, a tainted object, an escaped callable, or a global
+  // object alias.
   GLOBAL_REACH_CAUSE_TAINTED_INPUT = 2;
+  // A class the code runs is published, escaped or tainted, so its methods
+  // may run on a borrowed receiver.
   GLOBAL_REACH_CAUSE_BORROWED_RECEIVER = 3;
+  // Dynamic scope (eval, with) makes the read closure incomplete.
   GLOBAL_REACH_CAUSE_DYNAMIC_SCOPE = 4;
+  // An input is a foreign deferred record.
   GLOBAL_REACH_CAUSE_FOREIGN_RECORD = 5;
+  // The operation itself is unmodelled; values the interpreter does not
+  // know choose the code it may run.
   GLOBAL_REACH_CAUSE_UNMODELLED_OPERATION = 6;
+  // The callbacks unknown code may invoke: the prefix-wide escape pool.
   GLOBAL_REACH_CAUSE_ESCAPED_CALLBACK_POOL = 7;
 }
 
@@ -1139,26 +1153,45 @@ message NoAccessorInstallRef {
   optional uint64 input_index = 2;
 }
 
+// The first ordered call admission condition that rejected the target and
+// receiver. This describes the refusal only; it does not change target
+// classification or the conservative fallback.
 enum OrderedCallAdmissionRefusal {
   ORDERED_CALL_ADMISSION_REFUSAL_UNSPECIFIED = 0;
   ORDERED_CALL_ADMISSION_REFUSAL_UNKNOWN_TARGET = 1;
   ORDERED_CALL_ADMISSION_REFUSAL_MULTIPLE_TARGETS = 2;
   ORDERED_CALL_ADMISSION_REFUSAL_NON_LOCAL_TARGET = 3;
   ORDERED_CALL_ADMISSION_REFUSAL_UNSUPPORTED_RECEIVER = 4;
+  // An Array.prototype iteration method without a kernel row: the early-exit
+  // rows (some, every, find, findIndex), flatMap, and reduce without an
+  // initial value.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_ROW_UNSUPPORTED = 5;
+  // After the arguments or a callback, a slot the row reads (Array.prototype
+  // method, element reads, ArraySpeciesCreate) is no longer proved intact.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_INTRINSICS_CHANGED = 6;
+  // The receiver's exact length, own-property shape or dense contents are
+  // not proved, or changed while the row ran.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_RECEIVER_UNPROVED = 7;
+  // The callback is not one local, synchronous, non-generator callable with
+  // simple parameters.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CALLBACK_UNSUPPORTED = 8;
+  // The callback retains live lexical captures.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CAPTURING_CALLBACK = 9;
+  // A callback invocation did not complete with an exact normal result
+  // the row can retain.
   ORDERED_CALL_ADMISSION_REFUSAL_ARRAY_ITERATION_CALLBACK_INCOMPLETE = 10;
 }
 
+// The first failed condition in the ordered local own-data field guard.
+// Diagnostic evidence only; it does not affect admission.
 enum OrderedFieldReadRefusal {
   ORDERED_FIELD_READ_REFUSAL_UNSPECIFIED = 0;
   ORDERED_FIELD_READ_REFUSAL_RECEIVER_NOT_SINGLETON = 1;
   ORDERED_FIELD_READ_REFUSAL_RECEIVER_NOT_OBJECT = 2;
   ORDERED_FIELD_READ_REFUSAL_BORROWED_RECEIVER = 3;
   ORDERED_FIELD_READ_REFUSAL_UNSUPPORTED_RECORD_SHAPE = 4;
+  // The allocation site is not marked fresh in this frame. A reused site
+  // does not identify a distinct runtime allocation.
   ORDERED_FIELD_READ_REFUSAL_ALLOCATION_NOT_FRESH = 5;
   ORDERED_FIELD_READ_REFUSAL_UNSETTLED_RECEIVER = 6;
   ORDERED_FIELD_READ_REFUSAL_MISSING_FIELD = 7;

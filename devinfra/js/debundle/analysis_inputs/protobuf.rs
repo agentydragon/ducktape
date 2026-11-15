@@ -1,6 +1,6 @@
 //! Protobuf persistence for callable capabilities and native census data.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::{Result, ensure};
@@ -330,48 +330,6 @@ impl ProtoConvert<proto::ImportedPrimitiveArrayOperandEvidence>
     }
 }
 
-impl ProtoConvert<i32> for ForeignInvocation {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Call => proto::ForeignInvocation::Call,
-            Self::Construct => proto::ForeignInvocation::Construct,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::ForeignInvocation::try_from(value)? {
-            proto::ForeignInvocation::Call => Self::Call,
-            proto::ForeignInvocation::Construct => Self::Construct,
-            proto::ForeignInvocation::Unspecified => {
-                anyhow::bail!("unspecified foreign invocation")
-            }
-        })
-    }
-}
-
-impl ProtoConvert<i32> for ProgramPremiseKey {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::ProcessPrototypeChainAccessors => {
-                proto::ProgramPremiseKey::ProcessPrototypeChainAccessors
-            }
-            Self::NonLiteralLoaderCalls => proto::ProgramPremiseKey::NonLiteralLoaderCalls,
-            Self::IntrinsicsNeverWritten => proto::ProgramPremiseKey::IntrinsicsNeverWritten,
-        } as i32)
-    }
-
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::ProgramPremiseKey::try_from(value)? {
-            proto::ProgramPremiseKey::ProcessPrototypeChainAccessors => {
-                Self::ProcessPrototypeChainAccessors
-            }
-            proto::ProgramPremiseKey::NonLiteralLoaderCalls => Self::NonLiteralLoaderCalls,
-            proto::ProgramPremiseKey::IntrinsicsNeverWritten => Self::IntrinsicsNeverWritten,
-            proto::ProgramPremiseKey::Unspecified => anyhow::bail!("unspecified program premise"),
-        })
-    }
-}
-
 impl ProtoConvert<i32> for NativeIntrinsic {
     fn to_proto(&self) -> Result<i32> {
         Ok(match self {
@@ -428,7 +386,7 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
                 .as_ref()
                 .map(ProtoConvert::to_proto)
                 .transpose()?,
-            invocation: Some(self.invocation.to_proto()?),
+            invocation: Some(self.invocation as i32),
             returns: self
                 .returns
                 .iter()
@@ -452,6 +410,14 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
     }
 
     fn from_proto(value: proto::ForeignCallSummary) -> Result<Self> {
+        let invocation = ForeignInvocation::try_from(required(
+            value.invocation,
+            "ForeignCallSummary.invocation",
+        )?)?;
+        ensure!(
+            invocation != ForeignInvocation::Unspecified,
+            "unspecified foreign invocation"
+        );
         Ok(Self {
             defining_module: required(value.defining_module, "ForeignCallSummary.defining_module")?,
             export: required(value.export, "ForeignCallSummary.export")?,
@@ -460,10 +426,7 @@ impl ProtoConvert<proto::ForeignCallSummary> for ForeignCallSummary {
                 .source_location
                 .map(ProtoConvert::from_proto)
                 .transpose()?,
-            invocation: ProtoConvert::from_proto(required(
-                value.invocation,
-                "ForeignCallSummary.invocation",
-            )?)?,
+            invocation,
             returns: decode_set(value.returns)?,
             retained_arguments: decode_set(value.retained_arguments)?,
             retained_provider_captures: decode_set(value.retained_provider_captures)?,
@@ -1181,8 +1144,8 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
             program_premises: self
                 .program_premises
                 .iter()
-                .map(ProtoConvert::to_proto)
-                .collect::<Result<_>>()?,
+                .map(|value| *value as i32)
+                .collect(),
             no_accessor_install_callables: self
                 .no_accessor_install_callables
                 .iter()
@@ -1192,6 +1155,15 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
     }
 
     fn from_proto(value: proto::ProofDependencies) -> Result<Self> {
+        let mut program_premises = BTreeSet::new();
+        for key in value.program_premises {
+            let key = ProgramPremiseKey::try_from(key)?;
+            ensure!(
+                key != ProgramPremiseKey::Unspecified,
+                "unspecified program premise"
+            );
+            ensure!(program_premises.insert(key), "duplicate program premise");
+        }
         Ok(Self {
             value_inputs: decode_set(value.value_inputs)?,
             native_operation_inputs: decode_set(value.native_operation_inputs)?,
@@ -1202,7 +1174,7 @@ impl ProtoConvert<proto::ProofDependencies> for ProofDependencies {
             descriptor_copy_authors: decode_set(value.descriptor_copy_authors)?,
             argument_inputs: decode_set(value.argument_inputs)?,
             host_behavior: decode_set(value.host_behavior)?,
-            program_premises: decode_set(value.program_premises)?,
+            program_premises,
             no_accessor_install_callables: decode_set(value.no_accessor_install_callables)?,
         })
     }

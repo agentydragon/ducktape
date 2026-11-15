@@ -126,12 +126,7 @@ pub struct DescriptorCopyFactorySummary {
 
 /// How the importer must invoke a derived foreign callable for its summary to
 /// apply: a class only through `new`, a function only through an ordinary call.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ForeignInvocation {
-    Call,
-    Construct,
-}
+pub use crate::saved_proto::proto::ForeignInvocation;
 
 /// One possible result of a derived foreign call.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -577,16 +572,7 @@ pub struct ImportedPrimitiveRead {
 
 /// One `program_premises` assertion consumed by a proof (SPEC.md § Program
 /// premises).
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum ProgramPremiseKey {
-    ProcessPrototypeChainAccessors,
-    NonLiteralLoaderCalls,
-    IntrinsicsNeverWritten,
-}
+pub use crate::saved_proto::proto::ProgramPremiseKey;
 
 /// Global properties that hold only fresh ordinary objects created by
 /// analyzed code (SPEC.md § Bundle-owned globals).

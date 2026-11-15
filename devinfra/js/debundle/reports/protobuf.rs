@@ -1,6 +1,7 @@
 //! Saved report evidence; report enrichment stays outside the stage boundary.
 
 use anyhow::{Result, ensure};
+use std::collections::BTreeSet;
 
 use super::schema::{
     BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
@@ -14,6 +15,7 @@ use super::schema::{
     NativeReceiverPath, NativeUnreachableBranch, NativeWriteSlot, NeverWrittenOverride,
     NeverWrittenReach, RecordFactoryRejectionReason, ReentryFreeOperationUse,
 };
+use crate::analysis_inputs::ProgramPremiseKey;
 use crate::saved_proto::{ProtoConvert, decode_set, proto, required};
 
 fn read<T, P>(value: Option<P>, field: &str) -> Result<T>
@@ -211,7 +213,11 @@ impl ProtoConvert<proto::NativeIntegrityUse> for NativeIntegrityUse {
             guard: Some(self.guard as i32),
             value_input_refs: encode_items(&self.value_input_refs)?,
             no_accessor_install_refs: encode_items(&self.no_accessor_install_refs)?,
-            program_premises: encode_items(&self.program_premises)?,
+            program_premises: self
+                .program_premises
+                .iter()
+                .map(|key| *key as i32)
+                .collect(),
         })
     }
     fn from_proto(value: proto::NativeIntegrityUse) -> Result<Self> {
@@ -222,7 +228,18 @@ impl ProtoConvert<proto::NativeIntegrityUse> for NativeIntegrityUse {
             )?)?,
             value_input_refs: decode_set(value.value_input_refs)?,
             no_accessor_install_refs: decode_set(value.no_accessor_install_refs)?,
-            program_premises: decode_set(value.program_premises)?,
+            program_premises: value.program_premises.into_iter().try_fold(
+                BTreeSet::new(),
+                |mut keys, key| {
+                    let key = ProgramPremiseKey::try_from(key)?;
+                    ensure!(
+                        key != ProgramPremiseKey::Unspecified,
+                        "unspecified program premise"
+                    );
+                    ensure!(keys.insert(key), "duplicate program premise");
+                    Ok(keys)
+                },
+            )?,
         })
     }
 }
