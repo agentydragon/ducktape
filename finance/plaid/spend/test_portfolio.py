@@ -60,7 +60,12 @@ def _policy(
 
 
 def _balance(
-    account_id: str, current: int, captured_at: datetime, *, account_type: str = "depository"
+    account_id: str,
+    current: int,
+    captured_at: datetime,
+    *,
+    account_type: str = "depository",
+    holding_capture_id: int | None = None,
 ) -> AccountObservation:
     return AccountObservation(
         account_id=account_id,
@@ -69,8 +74,31 @@ def _balance(
         current=Decimal(current),
         balance_currency="USD",
         captured_at=captured_at,
-        holding_capture_id=1 if account_type == "investment" else None,
+        holding_capture_id=holding_capture_id,
         holding_capture_covered=True if account_type == "investment" else None,
+    )
+
+
+def _portfolio_balances(
+    captured_at: datetime, *, checking: int, investment: int, credit: int, capture_id: int
+) -> list[AccountObservation]:
+    return [
+        _balance("asset-checking", checking, captured_at),
+        _balance("asset-brokerage", investment, captured_at, account_type="investment", holding_capture_id=capture_id),
+        _balance("card-account", credit, captured_at, account_type="credit"),
+    ]
+
+
+def _holding(
+    security_id: str, value: Decimal, captured_at: datetime, *, capture_id: int, currency: str
+) -> HoldingObservation:
+    return HoldingObservation(
+        account_id="asset-brokerage",
+        security_id=security_id,
+        capture_id=capture_id,
+        captured_at=captured_at,
+        institution_value=value,
+        holding_currency=currency,
     )
 
 
@@ -256,21 +284,8 @@ async def test_plaid_values_use_latest_balances_signed_liabilities_and_coherent_
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, captured_at),
-            _balance("asset-brokerage", 250, captured_at, account_type="investment"),
-            _balance("card-account", 250, captured_at, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-fake-1",
-                capture_id=1,
-                captured_at=captured_at,
-                institution_value=Decimal(125),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(captured_at, checking=1000, investment=250, credit=250, capture_id=1),
+        holdings=[_holding("security-fake-1", Decimal(125), captured_at, capture_id=1, currency="USD")],
     )
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
@@ -296,21 +311,8 @@ async def test_holding_correction_uses_balance_from_the_same_capture(
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, captured_at),
-            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
-            _balance("card-account", 0, captured_at, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-fake-1",
-                capture_id=1,
-                captured_at=captured_at,
-                institution_value=Decimal(1000),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(captured_at, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-fake-1", Decimal(1000), captured_at, capture_id=1, currency="USD")],
     )
     newer_balance_at = captured_at + timedelta(minutes=1)
     with postgres_engine.begin() as connection:
@@ -343,26 +345,12 @@ async def test_correction_reconciles_with_independent_capture_times_across_accou
     )
     balances = [
         _balance("asset-checking", 1000, now - timedelta(minutes=5)),
-        _balance("asset-brokerage", 2000, now - timedelta(minutes=15), account_type="investment"),
+        _balance("asset-brokerage", 2000, now - timedelta(minutes=15), account_type="investment", holding_capture_id=1),
         _balance("card-account", 0, now - timedelta(minutes=8), account_type="credit"),
     ]
     holdings = [
-        HoldingObservation(
-            account_id="asset-brokerage",
-            security_id="security-fake-1",
-            capture_id=1,
-            captured_at=now - timedelta(minutes=15),
-            institution_value=Decimal(10),
-            holding_currency="USD",
-        ),
-        HoldingObservation(
-            account_id="asset-brokerage",
-            security_id="security-unadjusted",
-            capture_id=1,
-            captured_at=now - timedelta(minutes=15),
-            institution_value=Decimal(1000),
-            holding_currency="USD",
-        ),
+        _holding("security-fake-1", Decimal(10), now - timedelta(minutes=15), capture_id=1, currency="USD"),
+        _holding("security-unadjusted", Decimal(1000), now - timedelta(minutes=15), capture_id=1, currency="USD"),
     ]
 
     _seed_plaid(postgres_engine, balances=balances, holdings=holdings)
@@ -404,19 +392,14 @@ def test_plaid_adjustments_reject_inconsistent_timestamps_within_capture(
             else []
         ),
     )
-    accounts = [
-        _balance("asset-checking", 0, captured_at),
-        _balance("asset-brokerage", 200, captured_at, account_type="investment"),
-        _balance("card-account", 0, captured_at, account_type="credit"),
-    ]
+    accounts = _portfolio_balances(captured_at, checking=0, investment=200, credit=0, capture_id=1)
     holdings = [
-        HoldingObservation(
-            account_id="asset-brokerage",
-            security_id="security-fake-1",
+        _holding(
+            "security-fake-1",
+            Decimal(100 if adjustment == "correction" else 200),
+            captured_at + timedelta(minutes=holding_offset_minutes),
             capture_id=1,
-            captured_at=captured_at + timedelta(minutes=holding_offset_minutes),
-            institution_value=Decimal(100 if adjustment == "correction" else 200),
-            holding_currency="USD",
+            currency="USD",
         )
     ]
 
@@ -438,19 +421,10 @@ def test_plaid_adjustments_match_capture_ids_even_when_timestamps_match() -> Non
     )
     accounts = [
         _balance("asset-checking", 0, now),
-        _balance("asset-brokerage", 200, now, account_type="investment").model_copy(update={"holding_capture_id": 2}),
+        _balance("asset-brokerage", 200, now, account_type="investment", holding_capture_id=2),
         _balance("card-account", 0, now, account_type="credit"),
     ]
-    holdings = [
-        HoldingObservation(
-            account_id="asset-brokerage",
-            security_id="security-fake-1",
-            capture_id=1,
-            captured_at=now,
-            institution_value=Decimal(100),
-            holding_currency="USD",
-        )
-    ]
+    holdings = [_holding("security-fake-1", Decimal(100), now, capture_id=1, currency="USD")]
 
     with pytest.raises(PlaidValuationError, match="latest capture"):
         value_plaid_rows(policy, account_rows=accounts, holding_rows=holdings, now=now)
@@ -464,11 +438,7 @@ def test_covered_empty_correction_capture_is_zero_and_still_reconciles(current: 
             {"account_id": "asset-brokerage", "security_ids": ["security-fake-1"], "value_multiplier": Decimal(2)}
         ]
     )
-    accounts = [
-        _balance("asset-checking", 0, now),
-        _balance("asset-brokerage", current, now, account_type="investment"),
-        _balance("card-account", 0, now, account_type="credit"),
-    ]
+    accounts = _portfolio_balances(now, checking=0, investment=current, credit=0, capture_id=1)
 
     if expected_ready:
         result = value_plaid_rows(policy, account_rows=accounts, holding_rows=[], now=now)
@@ -490,21 +460,8 @@ async def test_corrected_holdings_that_do_not_reconcile_fail_closed(
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, now),
-            _balance("asset-brokerage", 2000, now, account_type="investment"),
-            _balance("card-account", 0, now, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-fake-1",
-                capture_id=1,
-                captured_at=now,
-                institution_value=Decimal(100),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(now, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-fake-1", Decimal(100), now, capture_id=1, currency="USD")],
     )
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
@@ -532,21 +489,8 @@ async def test_complete_capture_treats_missing_excluded_position_as_absent(
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, captured_at),
-            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
-            _balance("card-account", 0, captured_at, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-still-held",
-                capture_id=1,
-                captured_at=captured_at,
-                institution_value=Decimal(2000),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(captured_at, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-still-held", Decimal(2000), captured_at, capture_id=1, currency="USD")],
     )
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
@@ -569,21 +513,8 @@ async def test_complete_capture_treats_missing_corrected_position_as_absent(
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, captured_at),
-            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
-            _balance("card-account", 0, captured_at, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-still-held",
-                capture_id=1,
-                captured_at=captured_at,
-                institution_value=Decimal(2000),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(captured_at, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-still-held", Decimal(2000), captured_at, capture_id=1, currency="USD")],
     )
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
@@ -608,12 +539,7 @@ async def test_covered_empty_holding_capture_has_zero_current_holdings(
         ]
     )
     _seed_plaid(
-        postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, now),
-            _balance("asset-brokerage", 2000, now, account_type="investment"),
-            _balance("card-account", 0, now, account_type="credit"),
-        ],
+        postgres_engine, balances=_portfolio_balances(now, checking=1000, investment=2000, credit=0, capture_id=1)
     )
 
     view = await read_portfolio(postgres_session_factory, policy, now=now)
@@ -634,21 +560,8 @@ async def test_spend_does_not_fall_back_when_latest_item_capture_lacks_account_c
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, captured_at),
-            _balance("asset-brokerage", 2000, captured_at, account_type="investment"),
-            _balance("card-account", 0, captured_at, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-fake-1",
-                capture_id=1,
-                captured_at=captured_at,
-                institution_value=Decimal(1000),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(captured_at, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-fake-1", Decimal(1000), captured_at, capture_id=1, currency="USD")],
     )
     newest_at = captured_at + timedelta(minutes=1)
     with postgres_engine.begin() as connection:
@@ -687,21 +600,8 @@ async def test_fresh_capture_supersedes_an_unapplied_holdings_receipt(
     )
     _seed_plaid(
         postgres_engine,
-        balances=[
-            _balance("asset-checking", 1000, now),
-            _balance("asset-brokerage", 2000, now, account_type="investment"),
-            _balance("card-account", 0, now, account_type="credit"),
-        ],
-        holdings=[
-            HoldingObservation(
-                account_id="asset-brokerage",
-                security_id="security-fake-1",
-                capture_id=1,
-                captured_at=now,
-                institution_value=Decimal(1000),
-                holding_currency="USD",
-            )
-        ],
+        balances=_portfolio_balances(now, checking=1000, investment=2000, credit=0, capture_id=1),
+        holdings=[_holding("security-fake-1", Decimal(1000), now, capture_id=1, currency="USD")],
     )
     with postgres_engine.begin() as connection:
         connection.execute(
@@ -776,12 +676,7 @@ async def test_negative_credit_balance_is_preserved_as_a_liability_credit(
 ) -> None:
     now = datetime.now(UTC)
     _seed_plaid(
-        postgres_engine,
-        balances=[
-            _balance("asset-checking", 100, now),
-            _balance("asset-brokerage", 0, now, account_type="investment"),
-            _balance("card-account", -50, now, account_type="credit"),
-        ],
+        postgres_engine, balances=_portfolio_balances(now, checking=100, investment=0, credit=-50, capture_id=1)
     )
 
     view = await read_portfolio(postgres_session_factory, _policy(), now=now)
@@ -802,7 +697,7 @@ async def test_stale_plaid_fails_closed(
         postgres_engine,
         balances=[
             _balance("asset-checking", 100, now),
-            _balance("asset-brokerage", 0, now, account_type="investment"),
+            _balance("asset-brokerage", 0, now, account_type="investment", holding_capture_id=1),
             _balance("card-account", -50, stale, account_type="credit"),
         ],
     )
