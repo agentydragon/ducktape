@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log/slog"
+	"fmt"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -20,6 +20,13 @@ import (
 const stalledMessage = "Session history projection stalled; retained events and the last verified view are unchanged."
 
 var errCheckpointAdvanced = errors.New("projection checkpoint advanced during fetch; retry from checkpoint")
+
+// permanentError marks an unfoldable prefix after its failure was retained under the lease.
+// Without a materialized checkpoint, the runner's diagnostic is the only failure surface.
+type permanentError struct{ cause error }
+
+func (e *permanentError) Error() string { return e.cause.Error() }
+func (e *permanentError) Unwrap() error { return e.cause }
 
 // Progress is how far a batch folded a Session, and how far its history is committed.
 type Progress struct{ ThroughCursor, CommittedCursor uint64 }
@@ -42,8 +49,9 @@ func (p *Projector) ProjectBatch(ctx context.Context, threadID uuid.UUID, lease 
 	progress, err := p.projectPrefix(ctx, threadID, lease, after)
 	if err != nil && isUnfoldable(err) {
 		if retained := p.recordFailure(ctx, threadID, lease, after, err); retained != nil {
-			slog.WarnContext(ctx, "could not retain projection failure", "thread_id", threadID, "error", retained)
+			return progress, errors.Join(err, fmt.Errorf("retain projection failure: %w", retained))
 		}
+		return progress, &permanentError{cause: err}
 	}
 	return progress, err
 }
@@ -67,8 +75,11 @@ func (p *Projector) recordFailure(ctx context.Context, threadID uuid.UUID, lease
 		if err != nil {
 			return err
 		}
-		if checkpoint == nil || checkpoint.throughCursor != after {
-			return nil // no materialized view, or a newer batch already recovered
+		if checkpoint == nil {
+			return nil // no materialized view to mark failed
+		}
+		if checkpoint.throughCursor != after {
+			return errCheckpointAdvanced
 		}
 		var errorCursor *uint64
 		var replicationError *ReplicationError

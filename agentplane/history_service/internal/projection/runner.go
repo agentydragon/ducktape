@@ -66,6 +66,7 @@ type FoldRunner struct {
 
 	mu     sync.Mutex
 	leases map[uuid.UUID]Lease
+	parked map[uuid.UUID]int64
 }
 
 // NewFoldRunner folds `history`'s Sessions into the fold tables of `db`, which holds both and is the only
@@ -76,6 +77,7 @@ func NewFoldRunner(db *sql.DB, history *storage.Store, concurrency, pageSize int
 		projector:   &Projector{DB: db, History: history, Epoch: FoldEpoch, PageSize: pageSize},
 		concurrency: concurrency,
 		leases:      map[uuid.UUID]Lease{},
+		parked:      map[uuid.UUID]int64{},
 	}
 }
 
@@ -220,6 +222,9 @@ func (r *FoldRunner) claim(ctx context.Context) ([]claim, error) {
 	}
 	r.mu.Lock()
 	for _, c := range claims {
+		if previous := r.leases[c.lease.SessionID]; previous.held.Holder != c.lease.held.Holder {
+			delete(r.parked, c.lease.SessionID)
+		}
 		r.leases[c.lease.SessionID] = c.lease
 	}
 	r.mu.Unlock()
@@ -238,11 +243,16 @@ func renewOrAcquire(ctx context.Context, tx *sql.Tx, held map[uuid.UUID]Lease, s
 	return AcquireLease(ctx, tx, sessionID, LeaseDuration)
 }
 
-// advance folds one page of the claimed Session, or returns nil when its history or the database failed. One
-// Session's unfoldable history or lost lease or connection must not stop the others; it stays pending and
-// the next cycle retries it.
+// advance leaves permanent failures pending but parks their version under this owner. A new pending
+// version or lease owner gets another attempt; transient failures retry on the next cycle.
 func (r *FoldRunner) advance(ctx context.Context, c claim) *Progress {
 	sessionID := c.lease.SessionID
+	r.mu.Lock()
+	version, parked := r.parked[sessionID]
+	r.mu.Unlock()
+	if parked && version == c.version {
+		return nil
+	}
 	progress, err := r.projector.ProjectBatch(ctx, sessionID, c.lease)
 	if err == nil {
 		slog.DebugContext(ctx, "Thread fold", "session_id", sessionID, "through", progress.ThroughCursor,
@@ -255,6 +265,15 @@ func (r *FoldRunner) advance(ctx context.Context, c claim) *Progress {
 		}
 	}
 	if ctx.Err() == nil {
+		var permanent *permanentError
+		if errors.As(err, &permanent) {
+			r.mu.Lock()
+			r.parked[sessionID] = c.version
+			r.mu.Unlock()
+			slog.ErrorContext(ctx, "Thread fold stalled; pending version parked", "session_id", sessionID,
+				"pending_version", c.version, "error", err)
+			return nil
+		}
 		slog.WarnContext(ctx, "Thread fold stalled; will retry", "session_id", sessionID, "error", err)
 	}
 	return nil
@@ -281,6 +300,7 @@ func (r *FoldRunner) caughtUp(ctx context.Context, c claim) error {
 	if err == nil && settled {
 		r.mu.Lock()
 		delete(r.leases, c.lease.SessionID)
+		delete(r.parked, c.lease.SessionID)
 		r.mu.Unlock()
 	}
 	return err
@@ -300,6 +320,7 @@ func (r *FoldRunner) release(ctx context.Context, sessionID uuid.UUID) error {
 	r.mu.Lock()
 	lease, found := r.leases[sessionID]
 	delete(r.leases, sessionID)
+	delete(r.parked, sessionID)
 	r.mu.Unlock()
 	if !found {
 		return nil
