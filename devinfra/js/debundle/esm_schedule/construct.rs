@@ -2,11 +2,11 @@
 //! enumerating import-list permutations. See docs/module_placement.md for the
 //! successor-closure and completion-preservation proofs.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use analysis::ids::ModuleId;
 use petgraph::{
-    algo::{tarjan_scc, toposort},
+    algo::{kosaraju_scc, toposort},
     graphmap::DiGraphMap,
 };
 
@@ -21,16 +21,36 @@ pub struct ScheduleObstruction {
     pub forward_closure: BTreeSet<ModuleId>,
 }
 
-#[derive(Clone, Default)]
-struct Traversal {
-    active: BTreeSet<ModuleId>,
-    finished: BTreeSet<ModuleId>,
-    imports: BTreeMap<ModuleId, Vec<ModuleId>>,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Color {
+    White,
+    Active,
+    Finished,
+}
+
+struct Frame {
+    root: usize,
+    checkpoint: usize,
+    pending: VecDeque<usize>,
+    failures: usize,
 }
 
 struct Constructor<'a, E> {
-    imports: &'a BTreeMap<ModuleId, Vec<ModuleId>>,
-    constraints: &'a BTreeMap<ModuleId, Vec<ModuleId>>,
+    modules: Vec<ModuleId>,
+    indices: BTreeMap<ModuleId, usize>,
+    imports: Vec<Vec<usize>>,
+    consumers: Vec<Vec<usize>>,
+    colors: Vec<Color>,
+    white: Vec<u64>,
+    ordered: Vec<Vec<usize>>,
+    trail: Vec<usize>,
+    seen: Vec<u64>,
+    forbidden: Vec<u64>,
+    generation: u64,
+    work: Vec<usize>,
+    failures: Vec<HashSet<Vec<u64>>>,
+    cached_failures: usize,
+    failure_cache_limit: usize,
     poll: &'a mut dyn FnMut() -> Result<(), E>,
 }
 
@@ -82,7 +102,7 @@ impl EsmImportSchedule {
         }
 
         // Entry can enter every component after its dependencies have finished.
-        // Keep recursive trials local: downstream components cannot affect the
+        // Keep completion trials local: downstream components cannot affect the
         // existence of an internal schedule, and need not be traversed again.
         let mut graph = DiGraphMap::<ModuleId, ()>::new();
         for &node in nodes {
@@ -101,7 +121,8 @@ impl EsmImportSchedule {
             }
         }
         poll()?;
-        let components = tarjan_scc(&graph);
+        // Kosaraju's explicit walkers also avoid recursion on deep I graphs.
+        let components = kosaraju_scc(&graph);
         let mut component_of = BTreeMap::new();
         let mut condensation = DiGraphMap::<usize, ()>::new();
         for (index, component) in components.iter().enumerate() {
@@ -168,11 +189,8 @@ impl EsmImportSchedule {
                 constrained_dependencies.insert(dependency);
             }
             let chosen = {
-                let mut constructor = Constructor {
-                    imports: &internal_imports[index],
-                    constraints,
-                    poll: &mut poll,
-                };
+                let mut constructor =
+                    Constructor::new(&internal_imports[index], constraints, &mut poll)?;
                 let mut chosen = None;
                 for root in candidates {
                     constructor.poll()?;
@@ -181,9 +199,8 @@ impl EsmImportSchedule {
                     if constrained_dependencies.contains(&root) {
                         continue;
                     }
-                    let mut state = Traversal::default();
-                    if constructor.complete(root, &mut state)? {
-                        chosen = Some((root, state.imports));
+                    if constructor.complete(root)? {
+                        chosen = Some((root, constructor.schedule()?));
                         break;
                     }
                 }
@@ -267,101 +284,234 @@ fn obstruction<E>(
     })
 }
 
-impl<E> Constructor<'_, E> {
+impl<'a, E> Constructor<'a, E> {
+    fn new(
+        imports: &BTreeMap<ModuleId, Vec<ModuleId>>,
+        constraints: &BTreeMap<ModuleId, Vec<ModuleId>>,
+        poll: &'a mut dyn FnMut() -> Result<(), E>,
+    ) -> Result<Self, E> {
+        let modules: Vec<_> = imports.keys().copied().collect();
+        let indices: BTreeMap<_, _> = modules
+            .iter()
+            .enumerate()
+            .map(|(index, &module)| (module, index))
+            .collect();
+        let count = modules.len();
+        let mut adjacency = vec![Vec::new(); count];
+        let mut consumers = vec![Vec::new(); count];
+        for (&module, targets) in imports {
+            poll()?;
+            for target in targets {
+                poll()?;
+                adjacency[indices[&module]].push(indices[target]);
+            }
+        }
+        for (consumer, dependencies) in constraints {
+            poll()?;
+            for dependency in dependencies {
+                poll()?;
+                consumers[indices[dependency]].push(indices[consumer]);
+            }
+        }
+        let mut white = vec![u64::MAX; count.div_ceil(64)];
+        if count % 64 != 0 {
+            *white.last_mut().expect("nonempty component") = (1 << (count % 64)) - 1;
+        }
+        let payload_bytes = white.len().saturating_mul(size_of::<u64>()).max(1);
+        Ok(Self {
+            modules,
+            indices,
+            imports: adjacency,
+            consumers,
+            colors: vec![Color::White; count],
+            white,
+            ordered: vec![Vec::new(); count],
+            trail: Vec::new(),
+            seen: vec![0; count],
+            forbidden: vec![0; count],
+            generation: 0,
+            work: Vec::new(),
+            failures: vec![HashSet::new(); count],
+            cached_failures: 0,
+            failure_cache_limit: 4_096.min((8 * 1024 * 1024) / payload_bytes),
+            poll,
+        })
+    }
+
     fn poll(&mut self) -> Result<(), E> {
         (self.poll)()
     }
 
-    fn white(&self, node: ModuleId, state: &Traversal) -> bool {
-        !state.active.contains(&node) && !state.finished.contains(&node)
+    fn next_generation(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        if self.generation == 0 {
+            self.seen.fill(0);
+            self.forbidden.fill(0);
+            self.generation = 1;
+        }
+        self.generation
     }
 
-    fn complete(&mut self, root: ModuleId, state: &mut Traversal) -> Result<bool, E> {
+    fn remember_failure(&mut self, root: usize) {
+        // Cache capacity only bounds storage: every miss still runs the exact
+        // constructor. Bound both entry overhead and stored white-bit payload.
+        if self.cached_failures < self.failure_cache_limit
+            && self.failures[root].insert(self.white.clone())
+        {
+            self.cached_failures += 1;
+        }
+    }
+
+    fn admissible(&mut self, root: usize) -> Result<bool, E> {
         self.poll()?;
-        if self.conflicts_with_ancestor(root, root, state)? {
+        if !self.failures[root].is_empty() && self.failures[root].contains(&self.white) {
             return Ok(false);
         }
-        let mut reachable = BTreeSet::from([root]);
-        let mut work = vec![root];
-        while let Some(node) = work.pop() {
+        let generation = self.next_generation();
+        let mut has_white_consumer = false;
+        for index in 0..self.consumers[root].len() {
             self.poll()?;
-            for &target in self.imports[&node].as_slice() {
+            let consumer = self.consumers[root][index];
+            if self.colors[consumer] == Color::White {
+                self.forbidden[consumer] = generation;
+                has_white_consumer = true;
+            }
+        }
+        if !has_white_consumer {
+            return Ok(true);
+        }
+        // Ancestors already rejected all then-white reachable reads into
+        // themselves. White vertices/reachability only shrink, so the only new
+        // forbidden dependency is this root. No incoming white C means no walk.
+        self.work.clear();
+        self.work.push(root);
+        self.seen[root] = generation;
+        if self.forbidden[root] == generation {
+            self.remember_failure(root);
+            return Ok(false);
+        }
+        while let Some(node) = self.work.pop() {
+            self.poll()?;
+            for index in 0..self.imports[node].len() {
                 self.poll()?;
-                if self.white(target, state) && reachable.insert(target) {
-                    if self.conflicts_with_ancestor(target, root, state)? {
+                let target = self.imports[node][index];
+                if self.colors[target] == Color::White && self.seen[target] != generation {
+                    if self.forbidden[target] == generation {
+                        self.remember_failure(root);
                         return Ok(false);
                     }
-                    work.push(target);
+                    self.seen[target] = generation;
+                    self.work.push(target);
                 }
             }
         }
-        state.active.insert(root);
-        state.imports.insert(root, Vec::new());
-        loop {
-            self.poll()?;
-            let mut candidates = Vec::new();
-            for &target in self.imports[&root].as_slice() {
-                self.poll()?;
-                if self.white(target, state) {
-                    candidates.push(target);
-                }
-            }
-            if candidates.is_empty() {
-                break;
-            }
-            let mut success = false;
-            for target in candidates {
-                self.poll()?;
-                let mut trial = state.clone();
-                trial
-                    .imports
-                    .get_mut(&root)
-                    .expect("active root")
-                    .push(target);
-                if self.complete(target, &mut trial)? {
-                    // A completed subtree is successor-closed among the old
-                    // white vertices. Finishing it earlier preserves every
-                    // possible outside completion; no sibling backtracking.
-                    self.poll()?;
-                    *state = trial;
-                    success = true;
-                    break;
-                }
-            }
-            if !success {
-                return Ok(false);
-            }
-        }
-        let ordered = state.imports.get_mut(&root).expect("active root");
-        for &target in self.imports[&root].as_slice() {
-            self.poll()?;
-            if !ordered.contains(&target) {
-                ordered.push(target);
-            }
-        }
-        state.active.remove(&root);
-        state.finished.insert(root);
         Ok(true)
     }
 
-    /// Every initially-white reachable consumer finishes before root and its
-    /// active ancestors. Check exactly those consumers as they are discovered,
-    /// stopping before the rest of an already impossible closure is visited.
-    fn conflicts_with_ancestor(
-        &mut self,
-        consumer: ModuleId,
-        root: ModuleId,
-        state: &Traversal,
-    ) -> Result<bool, E> {
-        if let Some(dependencies) = self.constraints.get(&consumer) {
-            for &dependency in dependencies {
-                self.poll()?;
-                if dependency == root || state.active.contains(&dependency) {
+    fn enter(&mut self, root: usize) -> Frame {
+        let checkpoint = self.trail.len();
+        self.trail.push(root);
+        self.colors[root] = Color::Active;
+        self.white[root / 64] &= !(1 << (root % 64));
+        Frame {
+            root,
+            checkpoint,
+            pending: self.imports[root].iter().copied().collect(),
+            failures: 0,
+        }
+    }
+
+    fn rollback(&mut self, checkpoint: usize) -> Result<(), E> {
+        while self.trail.len() > checkpoint {
+            self.poll()?;
+            let node = self.trail.pop().expect("entry after checkpoint");
+            self.colors[node] = Color::White;
+            self.white[node / 64] |= 1 << (node % 64);
+            self.ordered[node].clear();
+        }
+        Ok(())
+    }
+
+    fn finish(&mut self, root: usize) -> Result<(), E> {
+        // Chosen white children go first; every other canonical target is now
+        // nonwhite. Stamp chosen targets instead of quadratic Vec::contains.
+        let generation = self.next_generation();
+        for index in 0..self.ordered[root].len() {
+            self.poll()?;
+            self.seen[self.ordered[root][index]] = generation;
+        }
+        for index in 0..self.imports[root].len() {
+            self.poll()?;
+            let target = self.imports[root][index];
+            if self.seen[target] != generation {
+                self.ordered[root].push(target);
+            }
+        }
+        self.colors[root] = Color::Finished;
+        Ok(())
+    }
+
+    fn complete(&mut self, root: ModuleId) -> Result<bool, E> {
+        let root = self.indices[&root];
+        debug_assert!(self.colors[root] == Color::White);
+        if !self.admissible(root)? {
+            return Ok(false);
+        }
+        let mut frames = vec![self.enter(root)];
+        while let Some(frame) = frames.last_mut() {
+            self.poll()?;
+            let root = frame.root;
+            let failed = frame.failures > 0 && frame.failures == frame.pending.len();
+            if !failed && let Some(target) = frame.pending.pop_front() {
+                if self.colors[target] == Color::White {
+                    if self.admissible(target)? {
+                        frames.push(self.enter(target));
+                    } else {
+                        frame.pending.push_back(target);
+                        frame.failures += 1;
+                    }
+                }
+                continue;
+            }
+            let frame = frames.pop().expect("current completion frame");
+            if failed {
+                self.rollback(frame.checkpoint)?;
+                self.remember_failure(root);
+                if let Some(parent) = frames.last_mut() {
+                    parent.pending.push_back(root);
+                    parent.failures += 1;
+                } else {
+                    return Ok(false);
+                }
+            } else {
+                self.finish(root)?;
+                if let Some(parent) = frames.last_mut() {
+                    self.ordered[parent.root].push(root);
+                    // Failed children may now be feasible with the successful
+                    // successor-closed subtree black. Only pending imports need
+                    // retrying; completed imports never return to the queue.
+                    parent.failures = 0;
+                } else {
                     return Ok(true);
                 }
             }
         }
-        Ok(false)
+        unreachable!("the root frame returns its completion result")
+    }
+
+    fn schedule(&mut self) -> Result<BTreeMap<ModuleId, Vec<ModuleId>>, E> {
+        let mut imports = BTreeMap::new();
+        for index in 0..self.modules.len() {
+            self.poll()?;
+            debug_assert!(self.colors[index] == Color::Finished);
+            let mut targets = Vec::new();
+            for target in &self.ordered[index] {
+                (self.poll)()?;
+                targets.push(self.modules[*target]);
+            }
+            imports.insert(self.modules[index], targets);
+        }
+        Ok(imports)
     }
 }
 
@@ -381,29 +531,30 @@ mod tests {
             for node in 2..active.0 {
                 imports.insert(ModuleId(node), vec![root]);
             }
-            // Preserve both terms of the rejection predicate: the current
-            // root and any already active ancestor.
             for dependency in [root, active] {
                 let constraints = BTreeMap::from([(consumer, vec![dependency])]);
-                let mut state = Traversal {
-                    active: BTreeSet::from([active]),
-                    ..Traversal::default()
-                };
-                let mut checkpoints = 0;
+                let checkpoints = std::cell::Cell::new(0);
                 let mut poll = || {
-                    checkpoints += 1;
+                    checkpoints.set(checkpoints.get() + 1);
                     Ok::<_, ()>(())
                 };
-                let mut constructor = Constructor {
-                    imports: &imports,
-                    constraints: &constraints,
-                    poll: &mut poll,
-                };
-                assert!(!constructor.complete(root, &mut state).unwrap());
-                assert_eq!(state.active, BTreeSet::from([active]));
-                assert!(state.finished.is_empty());
-                assert!(state.imports.is_empty());
-                assert!(checkpoints < 10, "{tail_size}: {checkpoints} checkpoints");
+                let mut constructor = Constructor::new(&imports, &constraints, &mut poll).unwrap();
+                checkpoints.set(0);
+                // Enter through the actual ancestor, so its entry predicate
+                // establishes the invariant inherited by subsequent frames.
+                assert!(!constructor.complete(active).unwrap());
+                assert!(
+                    constructor
+                        .colors
+                        .iter()
+                        .all(|color| *color == Color::White)
+                );
+                assert!(constructor.ordered.iter().all(Vec::is_empty));
+                assert!(
+                    checkpoints.get() < 20,
+                    "{tail_size}: {} checkpoints",
+                    checkpoints.get()
+                );
             }
         }
     }
@@ -413,7 +564,7 @@ mod tests {
         for finished_count in [2, 32, 4_096] {
             let (root, active) = (ModuleId(0), ModuleId(1));
             let mut imports =
-                BTreeMap::from([(root, vec![active]), (active, vec![root, ModuleId(2)])]);
+                BTreeMap::from([(root, vec![active]), (active, vec![ModuleId(2), root])]);
             let mut constraints = BTreeMap::new();
             for node in 2..finished_count + 2 {
                 let next = if node == finished_count + 1 {
@@ -426,31 +577,135 @@ mod tests {
                     constraints.insert(ModuleId(node), vec![next]);
                 }
             }
-            // The chain was a successful sibling subtree inside this same
-            // original SCC. Only root is still white in the parent frame.
-            let mut state = Traversal {
-                active: BTreeSet::from([active]),
-                finished: (2..finished_count + 2).map(ModuleId).collect(),
-                ..Traversal::default()
+            let checkpoints = std::cell::Cell::new(0);
+            let mut poll = || {
+                checkpoints.set(checkpoints.get() + 1);
+                Ok::<_, ()>(())
             };
-            let mut checkpoints = 0;
+            let mut constructor = Constructor::new(&imports, &constraints, &mut poll).unwrap();
+            let active_index = constructor.indices[&active];
+            assert!(constructor.admissible(active_index).unwrap());
+            constructor.enter(active_index);
+            assert!(constructor.complete(ModuleId(2)).unwrap());
+            // The successful chain is a committed sibling; only root is white.
+            checkpoints.set(0);
+            assert!(constructor.complete(root).unwrap());
+            assert_eq!(
+                constructor.ordered[constructor.indices[&root]],
+                vec![active_index]
+            );
+            assert!(
+                checkpoints.get() < 10,
+                "{finished_count}: {} checkpoints",
+                checkpoints.get()
+            );
+        }
+    }
+
+    #[test]
+    fn deep_constrained_scc_and_wide_fanout_take_linear_work() {
+        for count in [32, 1_024, 20_000] {
+            let mut imports: BTreeMap<_, _> = (0..count)
+                .map(|node| (ModuleId(node), vec![ModuleId((node + 1) % count)]))
+                .collect();
+            imports
+                .get_mut(&ModuleId(0))
+                .unwrap()
+                .push(ModuleId(count - 1));
+            let constraints = BTreeMap::from([(ModuleId(0), vec![ModuleId(count - 1)])]);
+            let checkpoints = std::cell::Cell::new(0);
+            let mut poll = || {
+                checkpoints.set(checkpoints.get() + 1);
+                Ok::<_, ()>(())
+            };
+            let mut constructor = Constructor::new(&imports, &constraints, &mut poll).unwrap();
+            assert!(constructor.complete(ModuleId(0)).unwrap());
+            assert!(
+                constructor
+                    .colors
+                    .iter()
+                    .all(|color| *color == Color::Finished)
+            );
+            assert!(
+                checkpoints.get() < 20 * count,
+                "deep {count}: {} checkpoints",
+                checkpoints.get()
+            );
+            eprintln!("deep SCC: {count} nodes, {} checkpoints", checkpoints.get());
+
+            // A hub with independent successful children must not rescan its
+            // already completed import prefix after each child returns.
+            let mut imports = BTreeMap::from([(ModuleId(0), (1..count).map(ModuleId).collect())]);
+            for node in 1..count {
+                imports.insert(ModuleId(node), vec![ModuleId(0)]);
+            }
+            let constraints = BTreeMap::from([(ModuleId(0), vec![ModuleId(count - 1)])]);
+            checkpoints.set(0);
+            let mut constructor = Constructor::new(&imports, &constraints, &mut poll).unwrap();
+            assert!(constructor.complete(ModuleId(0)).unwrap());
+            assert_eq!(constructor.ordered[0].len(), count - 1);
+            assert!(
+                checkpoints.get() < 25 * count,
+                "wide {count}: {} checkpoints",
+                checkpoints.get()
+            );
+            eprintln!("wide SCC: {count} nodes, {} checkpoints", checkpoints.get());
+        }
+    }
+
+    #[test]
+    fn failed_white_states_are_reused_across_different_active_paths() {
+        // Lazy prefix vertices can be visited in many orders, all leading to
+        // the same intrinsically impossible C-star. Different path orders with
+        // the same white set must not re-solve the same completion problem.
+        let prefix_count = 8;
+        let (left, right, dependency) = (
+            ModuleId(prefix_count),
+            ModuleId(prefix_count + 1),
+            ModuleId(prefix_count + 2),
+        );
+        let mut imports = BTreeMap::new();
+        for node in 0..prefix_count {
+            imports.insert(
+                ModuleId(node),
+                (0..prefix_count + 3)
+                    .filter(|&target| target != node)
+                    .map(ModuleId)
+                    .collect(),
+            );
+        }
+        imports.insert(left, vec![dependency]);
+        imports.insert(right, vec![dependency]);
+        imports.insert(dependency, (0..prefix_count + 2).map(ModuleId).collect());
+        let constraints = BTreeMap::from([(left, vec![dependency]), (right, vec![dependency])]);
+        let measure = |memoize: bool| {
+            let mut checkpoints = 0usize;
             let mut poll = || {
                 checkpoints += 1;
                 Ok::<_, ()>(())
             };
-            let mut constructor = Constructor {
-                imports: &imports,
-                constraints: &constraints,
-                poll: &mut poll,
-            };
-            assert!(constructor.complete(root, &mut state).unwrap());
-            assert!(state.finished.contains(&root));
-            assert_eq!(state.imports[&root], vec![active]);
+            let mut constructor = Constructor::new(&imports, &constraints, &mut poll).unwrap();
+            if !memoize {
+                constructor.failure_cache_limit = 0;
+            }
+            assert!(!constructor.complete(ModuleId(0)).unwrap());
             assert!(
-                checkpoints < 10,
-                "{finished_count}: {checkpoints} checkpoints"
+                constructor
+                    .colors
+                    .iter()
+                    .all(|color| *color == Color::White)
             );
-        }
+            assert!(constructor.ordered.iter().all(Vec::is_empty));
+            assert_eq!(constructor.cached_failures > 0, memoize);
+            checkpoints
+        };
+        let cached = measure(true);
+        let uncached = measure(false);
+        eprintln!("repeated failed states: {cached} cached checkpoints, {uncached} uncached");
+        assert!(
+            cached * 4 < uncached,
+            "cached {cached}, uncached {uncached}"
+        );
     }
 
     #[test]
@@ -495,7 +750,7 @@ mod tests {
         let policy = EsmImportOrder::build(&pairs, &successors, &nodes);
 
         // This graph requires changing the preferred route, so successful
-        // construction exercises reachability, recursive trials, and the SCC
+        // construction exercises reachability, completion trials, and the SCC
         // fallback checks below.
         let mut total_polls = 0;
         let result = EsmImportSchedule::construct_with_poll(
@@ -615,7 +870,7 @@ mod tests {
             }
             assert!(
                 checkpoints < 1_000 + 80 * independent_components,
-                "independent components enlarged recursive work: {independent_components} components, {checkpoints} checkpoints",
+                "independent components enlarged trial work: {independent_components} components, {checkpoints} checkpoints",
             );
         }
     }

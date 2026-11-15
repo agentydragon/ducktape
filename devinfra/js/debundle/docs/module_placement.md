@@ -55,21 +55,27 @@ entry. These external targets are restored to each completed module's import
 list. Entry first imports the chosen component roots in dependency-first order,
 then its remaining required targets, which have already been visited.
 
-Before trying white v, compute R = Reach(I induced by current white vertices, v).
-Reject this trial if there is a C edge w -> a with w in R and a either v or a
-current gray ancestor. Otherwise enter v and recursively attempt to complete its
-frame. When a child trial succeeds, COMMIT that entire successful subtree and
-restart consideration of remaining white successors. When a trial fails, roll
-back its entire subtree, including successful descendants within that failed
-trial. If a full pass over current white successors finds no successful trial,
-the frame fails. When none remain, finish u, checking its C successors are black,
-and return success. Prefer the existing policy's successor order for determinism.
+Before trying white v, let R = Reach(I induced by current white vertices, v).
+Reject if there is a C edge w -> v with w in R. The implementation indexes C by
+dependency, so a root with no currently white C predecessor needs no reachability
+walk. Otherwise use reusable stamped arrays to search only until a forbidden
+consumer is found. Gray-ancestor constraints are inherited: at each ancestor's
+entry its entire then-white reachable set was checked, and subsequent white
+sets and their reachability only shrink. Thus no descendant trial can introduce
+a new reachable constraint into that ancestor. For v itself, the rejection is
+equivalently an incoming C edge from v's current white I SCC. Do not substitute
+roots of arbitrary SCCs for actual available import successors.
 
-Checking the active-ancestor part of the entry rejection is useful defensively;
-with the reachability invariant it is already implied by successful ancestor
-entry checks. For v itself, the test is equivalently an incoming C edge to v
-from within v's SCC in the current white I graph. Do not substitute roots of
-arbitrary SCCs for actual available import successors.
+Use explicit completion frames with queues of pending actual imports, in initial
+policy order. Failed children return to the tail of the queue. A successful child
+is committed; other queued targets it finished are skipped, and previously failed
+children may be retried with the smaller white set. Failure after every pending
+child fails without intervening progress is exact. A node-entry trail records all
+vertices touched by a trial. Rolling back to the frame's checkpoint restores their
+white colors and clears their trial import lists, including successful descendants
+of the failed trial. No traversal state is cloned. Finishing a frame appends its
+remaining nonwhite canonical targets; stamped membership avoids rescanning the
+chosen target prefix. SCC decomposition and completion both use iterative walkers.
 
 ### Scheduler proof
 
@@ -92,17 +98,38 @@ and constraints within R are satisfied by the successful trial. The modified
 execution is therefore a valid DFS completion.
 
 Induct on the number of white vertices to prove frame completeness. If a valid
-completion exists, its next white child has a valid subtree and recursive trial
-will succeed. Trying other children first either fails without state change or
+completion exists, its next white child has a valid subtree and its completion
+trial will succeed. Trying other children first either fails without state change or
 commits a successful subtree, which preserves existence by the lemma. Each
 success reduces the white set. Consequently failure after all currently possible
 children fail is exact, and there is no need to backtrack over previously
 successful sibling subtrees. The returned target lists are still checked by the
 independent schedule verifier.
 
-This proves exactness, not polynomial complexity. Failed nested trials may repeat
-substantial work. Instrument them, memoize only full relevant states, and use
-independent tiny raw-import-permutation oracles.
+### Exact failed-state reuse and cost
+
+For a candidate root, the induced white graph determines its complete subtree.
+The ancestor invariant excludes constraints from that subtree into gray modules;
+imports to gray or black modules both skip traversal, and constraints to black
+modules are already satisfied. Earlier import order and gray-versus-black status
+outside the white set therefore cannot change whether the candidate can complete.
+Consequently `(root, exact white bitset)` is a sufficient failure-cache key.
+Record failures only after restoring the trial's entry white set, or before entry
+when its reachability rejection is proved. Cache hits reuse an exact negative
+result, never a cutoff or a hash-only approximation.
+
+The cache stores at most 4,096 keys and 8 MiB of white-bitset payload per active
+component, plus collection overhead. Once full, every uncached state still runs
+the exact algorithm. Cancellation returns an error separately from failure.
+Dense indexing, frame queues, adjacency, import orders and rollback storage are
+linear in the component's vertices and edges; cached keys add the stated storage.
+Roots with no white incoming C need no reachability scan, and completed imports
+are removed from queues instead of being rescanned after each successful child.
+Deep lazy routes and independent successful children therefore add linear work,
+even inside one constrained SCC. Constrained roots can still require reachability,
+and distinct failed states or states not retained by the cache can repeat work.
+This proves exactness, not polynomial complexity. Independent tiny raw-import
+permutation oracles remain the completeness reference.
 
 ### Independent SCC formulation and UNSAT evidence
 
@@ -120,18 +147,10 @@ This equivalence supplies an intrinsically UNSAT SCC S: every possible first roo
 fails its exact local scheduler. A failure at one entry point or one partial DFS
 state alone is NOT such a certificate.
 
-The constructor applies this decomposition before recursive trials. Independent
-components therefore do not enlarge a trial's visited sets, constraint scans or
+The constructor applies this decomposition before completion trials. Independent
+components therefore do not enlarge a trial's visited arrays, cache keys or
 rollback state. The global work is decomposition, bucketing and final schedule
-verification; recursive search depends on individual constrained components.
-Within each component, bucket C edges by consumer once. As a trial discovers a
-white I-reachable consumer, check its C dependencies against the root and active
-ancestors immediately. This tests the same rejection predicate as collecting
-the complete reachable set and then scanning C: every discovered vertex belongs
-to that set, and a successful walk checks every member. A conflict can therefore
-stop reachability early, and unreachable or finished consumers add no constraint
-scans to that trial. Failed nested trials can still repeat work; this change
-does not establish a polynomial bound.
+verification; combinatorial search depends on individual constrained components.
 
 ## Finest partition and domains
 
