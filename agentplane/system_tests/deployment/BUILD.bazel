@@ -174,7 +174,6 @@ py_test(
         "//cluster/cdk8s/agentplane:llm_ingress",
         "//cluster/cdk8s/agentplane:mcp_edge",
         "//cluster/cdk8s/agentplane:runner_gateway",
-        "//cluster/cdk8s/agentplane:session_dispatcher",
         "//cluster/cdk8s/agentplane:workload_tls",
         "//util:settings_contract",
         "@pypi//bcrypt",

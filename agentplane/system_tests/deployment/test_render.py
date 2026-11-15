@@ -45,7 +45,6 @@ from cluster.cdk8s.agentplane import (
     llm_ingress,
     mcp_edge,
     runner_gateway,
-    session_dispatcher,
     workload_tls,
 )
 from util.settings_contract import env_name
@@ -329,9 +328,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
         "cert_file": "/run/agentplane/workload-tls/tls.crt",
         "key_file": "/run/agentplane/workload-tls/tls.key",
     }
-    bearer_auth = next(item for item in gateway_config["rpc"]["auth"] if item["mode"] == "kubernetes_bearer")
-    assert set(bearer_auth["audiences"]) == {session_dispatcher.TOKEN_AUDIENCE, runner_gateway.TOKEN_AUDIENCE}
-    assert {item["mode"] for item in gateway_config["rpc"]["auth"]} == {"kubernetes_bearer", "spiffe"}
+    assert gateway_config["rpc"]["auth"] == [{"mode": "spiffe", "ca_file": workload_tls.TRUST_BUNDLE_FILE}]
     assert gateway_config["runner_security"] == {
         "mode": "mtls",
         "tls": {
@@ -340,7 +337,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
             "ca_file": f"{runner_gateway.GATEWAY_TLS_MOUNT_PATH}/ca.crt",
         },
     }
-    assert f"{NAMESPACE}/app" in gateway_config["wake_callers"]
+    app_certificate = _resource(docs, "Certificate", "app-workload")["spec"]
+    assert set(app_certificate["uris"]) <= set(gateway_config["wake_service_callers"])
 
     gateway_pod_labels = gateway["spec"]["template"]["metadata"]["labels"]
     gateway_listener_ports = {port["name"]: port["containerPort"] for port in container["ports"]}
@@ -824,7 +822,8 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert sampler_target["tls"]["client_uri"] == GATEWAY_SESSIONS_URI
     for field in ("cert_file", "key_file", "ca_file"):
         assert sampler_target["tls"][field] == gateway_config["gateway_tls"][field]
-    assert f"{NAMESPACE}/{central_sampler.NAME}" in gateway_config["executor_callers"]
+    sampler_certificate = _resource(docs, "Certificate", f"{central_sampler.NAME}-workload")["spec"]
+    assert set(sampler_certificate["uris"]) <= set(gateway_config["executor_service_callers"])
     history_config = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert history_config["migration_timeout_s"] == 600
     assert history_config["fold_concurrency"] == 4
@@ -897,9 +896,8 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert "operator_callers" not in gateway
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
     assert controller["environment_service"]["operators"] == [caller]
-    assert caller in gateway["dispatcher_callers"]
-    assert caller in gateway["gateway_callers"]
-    assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
+    assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
+    assert set(certificate["uris"]) <= set(gateway["runtime_proxy_readers"])
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     readers = {(account["namespace"], account["name"]) for account in history["reader_accounts"]}
     assert (NAMESPACE, native) in readers
