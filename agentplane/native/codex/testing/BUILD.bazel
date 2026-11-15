@@ -76,3 +76,17 @@ py_library(
     srcs = ["responses_sse.py"],
     deps = ["//agentplane/native/testing:model_endpoint"],
 )
+
+py_library(
+    name = "probe_support",
+    srcs = ["probe_support.py"],
+    deps = [
+        ":harness",
+        ":responses",
+        "//agentplane/native/codex:driver",
+        "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex:wire",
+        "//agentplane/native/testing:async_process",
+        "@pypi//pydantic",
+    ],
+)
