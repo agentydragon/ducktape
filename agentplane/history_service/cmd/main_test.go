@@ -21,6 +21,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -32,7 +33,6 @@ import (
 	"github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -400,9 +400,7 @@ func TestAWatchRenewsAtTheConfiguredLease(t *testing.T) {
 }
 
 func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
-	c := defaultConfig()
-	c.DatabaseURL = integrationDatabase.URL
-	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
+	c := svidConfig(t, peertlstesting.NewCA(t))
 	closed, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -410,7 +408,7 @@ func TestAListenerThatFailsEndsTheServiceWithItsError(t *testing.T) {
 	closed.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	if err := serve(ctx, c, closed); err == nil || errors.Is(err, context.Canceled) {
+	if err := serve(ctx, c, closed); !errors.Is(err, net.ErrClosed) {
 		t.Errorf("serve returned %v, want the listener's error", err)
 	}
 }
@@ -464,9 +462,8 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	t.Cleanup(func() { readerListener.Close() })
 	readerAddress := readerListener.Addr().(*net.TCPAddr)
 	readerFD := duplicateListenerFD(t, readerListener)
-	c := defaultConfig()
-	c.DatabaseURL = integrationDatabase.URL
-	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
+	ca := peertlstesting.NewCA(t)
+	c := svidConfig(t, ca)
 	c.RPC.ListenAddress = fmt.Sprintf("fd:%d", readerFD)
 	c.Kubeconfig = kubeconfig
 	ctx, cancel := context.WithCancel(t.Context())
@@ -477,8 +474,13 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 		<-served
 	})
 	readTarget := net.JoinHostPort("127.0.0.1", strconv.Itoa(readerAddress.Port))
+	clientTLS := peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.HistoryIngressURI}
+	security, err := clientTLS.Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
 	dial := func(target string) *grpc.ClientConn {
-		connection, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		connection, err := grpc.NewClient(target, grpc.WithTransportCredentials(security))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -501,6 +503,6 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 		return err
 	}
 	if got := status.Code(push(readTarget)); got != codes.Unauthenticated {
-		t.Errorf("Push without an SVID resolver: %v, want Unauthenticated", got)
+		t.Errorf("Push without a client certificate: %v, want Unauthenticated", got)
 	}
 }
