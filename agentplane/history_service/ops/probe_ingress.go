@@ -1,6 +1,6 @@
 // probe_ingress verifies live packing with one explicit, dedicated synthetic journal. It starts no
-// harness or provider request. Credentials are short-lived pod-bound bearer files supplied by the
-// operator; server identity uses the same verified SPIFFE transport as service clients.
+// harness or provider request. Operator-supplied service certificates authenticate the sampler
+// writer and a configured backend reader; both peers verify the History server SVID.
 package main
 
 import (
@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
@@ -21,48 +20,46 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 )
 
-func bearing(ctx context.Context, path string) (context.Context, error) {
-	token, err := os.ReadFile(path)
+func dial(target, caFile, certFile, keyFile, clientURI string) (*grpc.ClientConn, error) {
+	credentials, err := (&transport.ClientTLS{
+		CAFile: caFile, ServerURI: transport.HistoryIngressURI,
+		CertFile: certFile, KeyFile: keyFile, ClientURI: clientURI,
+	}).Credentials()
 	if err != nil {
 		return nil, err
 	}
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+strings.TrimSpace(string(token))), nil
+	return grpc.NewClient(target, grpc.WithTransportCredentials(credentials), grpc.WithDisableRetry())
 }
 
 func run() error {
 	target := flag.String("target", "", "History RPC host:port")
 	caFile := flag.String("ca-file", "", "absolute path to workload trust roots")
-	writerToken := flag.String("writer-token-file", "", "pod-bound sampler bearer file, ingress audience")
-	readerToken := flag.String("reader-token-file", "", "pod-bound backend reader bearer file, History audience")
+	writerCert := flag.String("writer-cert-file", "", "absolute path to the sampler service certificate")
+	writerKey := flag.String("writer-key-file", "", "absolute path to the sampler private key")
+	readerCert := flag.String("reader-cert-file", "", "absolute path to an admitted reader service certificate")
+	readerKey := flag.String("reader-key-file", "", "absolute path to the reader private key")
+	readerURI := flag.String("reader-uri", transport.AppURI, "exact configured reader service SPIFFE URI")
 	session := flag.String("session-id", "", "dedicated synthetic Session UUID, retained for retry/readback")
 	flag.Parse()
 	id, err := uuid.Parse(*session)
-	if err != nil || id == uuid.Nil || *target == "" || *caFile == "" || *writerToken == "" || *readerToken == "" {
-		return fmt.Errorf("target, CA, writer/reader token files and explicit Session UUID are required")
+	if err != nil || id == uuid.Nil || *target == "" || *caFile == "" {
+		return fmt.Errorf("target, CA and explicit Session UUID are required")
 	}
-	credentials, err := (&transport.ClientTLS{CAFile: *caFile, ServerURI: transport.HistoryIngressURI}).Credentials()
+	writer, err := dial(*target, *caFile, *writerCert, *writerKey, transport.CentralSamplerURI)
 	if err != nil {
-		return err
+		return fmt.Errorf("writer TLS: %w", err)
 	}
-	connection, err := grpc.NewClient(*target, grpc.WithTransportCredentials(credentials), grpc.WithDisableRetry())
+	defer writer.Close()
+	reader, err := dial(*target, *caFile, *readerCert, *readerKey, *readerURI)
 	if err != nil {
-		return err
+		return fmt.Errorf("reader TLS: %w", err)
 	}
-	defer connection.Close()
+	defer reader.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	writeCtx, err := bearing(ctx, *writerToken)
-	if err != nil {
-		return err
-	}
-	readCtx, err := bearing(ctx, *readerToken)
-	if err != nil {
-		return err
-	}
 	chunks := make([]string, 80)
 	for index := range chunks {
 		chunks[index] = "history packing probe "
@@ -73,7 +70,7 @@ func run() error {
 		entry.Origin.SourceId = id.String()
 	}
 	fmt.Fprintln(os.Stderr, "synthetic History Session:", id)
-	push, err := ingresspb.NewSessionJournalIngressClient(connection).Push(writeCtx)
+	push, err := ingresspb.NewSessionJournalIngressClient(writer).Push(ctx)
 	if err != nil {
 		return err
 	}
@@ -121,12 +118,12 @@ func run() error {
 			return err
 		}
 	}
-	client := historypb.NewHistoryServiceClient(connection)
+	client := historypb.NewHistoryServiceClient(reader)
 	for _, page := range []struct {
 		after uint64
 		limit uint32
 	}{{0, 1000}, {17, 11}} {
-		response, err := client.ReadSessionEvents(readCtx, &historypb.ReadSessionEventsRequest{SessionId: id.String(), AfterCursor: page.after, Limit: page.limit})
+		response, err := client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: id.String(), AfterCursor: page.after, Limit: page.limit})
 		if err != nil {
 			return err
 		}
