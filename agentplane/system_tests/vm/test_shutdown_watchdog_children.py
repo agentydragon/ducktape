@@ -126,5 +126,53 @@ def test_watchdog_counts_only_findmnt_processes_with_recorded_snapshots(tmp_path
     assert output.count("role=findmnt") == 15
 
 
+def test_unterminated_proc_value_cannot_absorb_a_concurrent_shutdown_receipt(tmp_path: Path) -> None:
+    proc_root = tmp_path / "proc"
+    _write_process(proc_root, 1, "systemd", children=[41])
+    _write_process(proc_root, 41, "findmnt")
+    ready = tmp_path / "ready"
+    release = tmp_path / "release"
+    os.mkfifo(release)
+    shim = tmp_path / "busybox"
+    shim.write_text(
+        "#!/bin/sh\n"
+        "command=$1\nshift\n"
+        f'if [ "$command" = head ] && [ "$3" = "{proc_root}/41/wchan" ]; then\n'
+        "  printf do_epoll_wait\n"
+        f'  : > "{ready}"\n'
+        f'  read -r release < "{release}"\n'
+        'else\n  exec "$command" "$@"\nfi\n'
+    )
+    shim.chmod(0o755)
+    script = Runfiles.CreateOrRaise().Rlocation(os.environ["SHUTDOWN_WATCHDOG_CHILD_SCAN_RLOCATION"])
+    output = tmp_path / "console"
+    with output.open("wb", buffering=0) as console:
+        process = subprocess.Popen(
+            ["/bin/sh", str(script), str(proc_root), str(shim)], stdout=console, start_new_session=True
+        )
+        try:
+            for attempt in Retrying(
+                stop=stop_after_delay(2),
+                wait=wait_fixed(0.01),
+                retry=retry_if_exception_type(AssertionError),
+                reraise=True,
+            ):
+                with attempt:
+                    assert ready.exists()
+            # The proc reader has produced an unterminated value and remains alive.
+            # A proof writer sharing its console must still leave an exact receipt.
+            console.write(b"AGENTPLANE_GUEST_SHUTDOWN_COMPLETE\n")
+            release.write_text("continue\n")
+            assert process.wait(timeout=2) == 0
+        finally:
+            if process.poll() is None:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=2)
+    lines = output.read_text().splitlines()
+    assert "AGENTPLANE_GUEST_SHUTDOWN_COMPLETE" in lines
+    assert "do_epoll_wait" in lines
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
