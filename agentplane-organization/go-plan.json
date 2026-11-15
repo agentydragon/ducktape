@@ -10564,27 +10564,31 @@
       "proposed_file_targets": [],
       "source_owner": null,
       "id": "gateway-replica-ownership",
-      "title": "Decide what replaces the Dispatcher's ownership Lease",
+      "title": "Replace the Dispatcher's ownership Lease with a per-Session Postgres lease",
       "components": ["runner_gateway"],
-      "status": "OPEN DIRECTION",
+      "status": "AGREED DIRECTION",
       "kind": "service boundary design",
       "stage": 5,
       "priority": 8,
-      "summary": "With the connection Lease and the `-control` EndpointSlice gone (#16365), the Dispatcher's own per-Sandbox ownership Lease (`dispatcher/ownership.go`) is the last Kubernetes Lease in delivery, while History, Notifications and the sampler use `postgres/lease`. The Gateway's name question (`RUNNER_GATEWAY_RENAME`, operator 2026-10-31: Environment Gateway) is dropped: the agreed two-binary shape removes the Gateway, and the binaries' directories are decided (`environments/`, `session_dispatcher/`; operator 2026-11-14 05:49 UTC); deployed names stay until their own migration.",
+      "summary": "Decided (operator 2026-11-15 00:06 UTC, card \"Record it\"; recorded in the DAG node `DISPATCHER_PERSISTENCE_MODEL_DESIGN` by #16458): a `postgres/lease` per Session replaces the Dispatcher's per-Sandbox Kubernetes ownership Lease (`dispatcher/ownership.go`) and its database ownership generation. No replica owns a Sandbox or a queue: any Sessions replica dequeues a runnable Session head and takes that Session's lease. The key is the Session because it is the ordering unit with at most one head in flight, the step starts before any command is claimed (wake, Session materialization), and a Session needs no Sandbox. It is a timed lease, not a lock held in a transaction, because the claim outlives the delivery RPC and the delivery attempt commits before it.",
       "how": [
-        "Decide what, if anything, replaces the Dispatcher's ownership Lease.",
-        "Then design the Dispatcher store split (runner-gateway-dispatcher-store) once, with the decided ownership."
+        "Any Sessions replica dequeues a runnable Session head and takes that Session's `postgres/lease` (database-clock expiry, holder fencing token) for the whole head step: wake, Session materialization, delivery. Every write in the step fences on it, replacing `ownerMatch`; the lease ends when the head settles.",
+        "On expiry any replica takes the lease and requeues that Session's in-flight work, replacing `RecoverSandbox`. Per-Session order (a command waits while an earlier one is queued or delivering) and the Runtime's command-ID dedupe stay as they are.",
+        "Roll so old (Kubernetes Lease) and new replicas never both deliver to one Session, then delete `ownership.go`, the `dispatcher-<sandbox UID>` Leases and the runner-gateway Role's Lease grant; controller leader election is unaffected.",
+        "Then design the Dispatcher store split (runner-gateway-dispatcher-store) once, on this ownership."
       ],
-      "gate": "Open.",
-      "preserve": "Generation and incarnation fencing of deliveries.",
+      "gate": "Not released. It lands as its own change after the Sessions binary move (`SESSIONS_BINARY_DIRECTORY`), with a system test in which a replica dies mid-delivery and another takes over.",
+      "preserve": "Per-Session order, one deliverer per Session head, fencing of a stale deliverer's writes, and incarnation fencing of deliveries.",
       "validation": [
         "//agentplane/runner_gateway/dispatcher:store_integration_test"
       ],
       "evidence_paths": [
         "agentplane/runner_gateway/dispatcher/ownership.go",
-        "agentplane/postgres/lease/lease.go"
+        "agentplane/postgres/lease/lease.go",
+        "agentplane/runner_gateway/dispatcher/store.go",
+        "agentplane/env/runtime/journal/journal.go"
       ],
-      "review_size": "Design first; the Gateway layout follows as its own PRs."
+      "review_size": "One build PR after the Sessions binary move; the decision itself is recorded."
     },
     {
       "id": "runner-gateway-connections-proxy",
@@ -10657,7 +10661,7 @@
         "Keep integration tests spanning caller-visible outcomes.",
         "Do not move shared receiver methods wholesale."
       ],
-      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. The Dispatcher's ownership Lease is in scope of gateway-replica-ownership; design the store after it.",
+      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence becomes the per-Session `postgres/lease` decided in gateway-replica-ownership; design the store after that lands.",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/runner_gateway/dispatcher:methods_test",
@@ -10977,7 +10981,7 @@
         "history-journals",
         "settings-single-source"
       ],
-      "result": "The Notification split, the Dispatcher's ownership Lease, the Journal service and a single settings source are open. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
+      "result": "The Notification split, the Journal service and a single settings source are open; the Dispatcher's ownership Lease is decided (a per-Session `postgres/lease`) but its build is not released. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
     },
     {
       "stage": 6,
