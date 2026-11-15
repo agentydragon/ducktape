@@ -4,6 +4,10 @@
 verification and final Promtail retirement are pending.** Do not remove the old
 releases merely because Helm or render checks succeed. No deployment was performed.
 
+The [wyrm2 canary](wyrm2-alloy-canary.md) is an active-on-deployment one-node replay
+proposal. Deploying its Job accepts retained-file duplicates and up to 12h journal
+replay; it does not claim a shared legacy checkpoint is independently trustworthy.
+
 Pod-file logs join the existing `alloy-node` process and its persistent host
 storage. A separate `alloy-journal` runs only on opted-in NixOS nodes: journal
 mounts cannot be conditional within the all-node DaemonSet's Pod template. It

@@ -114,6 +114,7 @@ py_library(
         ":loki",
         ":mimir",
         ":tempo",
+        ":wyrm2_cutover_job",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -546,5 +547,36 @@ py_test(
         "@pypi//docker",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "wyrm2_cutover",
+    srcs = ["wyrm2_cutover.py"],
+)
+
+py_library(
+    name = "wyrm2_cutover_job",
+    srcs = ["wyrm2_cutover_job.py"],
+    data = ["wyrm2_cutover.py"],
+    deps = [
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_wyrm2_cutover",
+    srcs = ["test_wyrm2_cutover.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":wyrm2_cutover",
+        "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
