@@ -21,6 +21,10 @@ the validator enforces) before working on the splitting pipeline.
   apply only justified edits, validate the exact source/spec pair, and report
   remaining mismatches.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
+- Use `modules check` for explicit destination batches. Whole-assignment acceptance
+  includes structural atoms and global ESM evaluation; local probes and proposal
+  readiness labels cannot replace it. Recheck combined batches, and keep graph
+  acceptance distinct from selector realization and emitted runtime evidence.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
   follow <docs/bug_reproductions.md> before working around it. Keep private source

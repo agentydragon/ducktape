@@ -15,6 +15,12 @@ inspection, residual, decomposition, or selector recipe. The planning guide owns
 query selection, atomic coverage, selector anchors, and the distinction between
 heuristic proposals and source-backed facts.
 
+Use `modules check --batch` to validate a reviewed explicit destination batch
+against the complete accepted assignment, including residual units and anonymous
+statements. Keep omitted units in place and check the actual destination. A
+successful check is graph evidence; selector realization and emission are separate.
+Recheck the union of independently accepted batches before recommending it.
+
 To inspect separability, compare
 [atomic decomposition including residuals](references/docs/cli.md#refining-existing-modules-modules-decompose)
 (`modules decompose --atomic --include-residual`) with a candidate using
