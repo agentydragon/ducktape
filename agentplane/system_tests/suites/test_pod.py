@@ -36,10 +36,10 @@ async def pod_cases(
     async with (
         native_client(cluster, tmp_path_factory.mktemp("pod-dispatcher") / "token") as dispatcher,
         upstream.serving(listener=scripted_listener.socket),
-        pod_runners.pool(cluster, base_url, token, limit=CASE_LIMIT) as borrow,
+        pod_runners.Pool(cluster, base_url, token) as runner_pool,
     ):
         resources = Resources(
-            cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, borrow=borrow
+            cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, pool=runner_pool
         )
         cases = {
             item.nodeid: Case.for_item(item, partial(cast(Scenario, item.callspec.params["case"]), resources))
