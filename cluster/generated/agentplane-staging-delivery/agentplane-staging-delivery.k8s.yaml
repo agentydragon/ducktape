@@ -437,8 +437,11 @@ data:
     dispatcher_watch_lease_seconds: 300
     runner_request_timeout_seconds: 10
     central_sampler:
-      target: central-sampler.agentplane-staging.svc.cluster.local:8080
+      target: central-sampler.agentplane-staging.svc.cluster.local:8083
       token_file: /var/run/secrets/agentplane-runner-gateway/central-sampler
+      tls:
+        ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+        server_uri: spiffe://agentplane/central-sampler
     executor_callers:
       - agentplane-staging/central-sampler
     runtime_catalog:
@@ -786,7 +789,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8083"
               protocol: TCP
   endpointSelector:
     matchLabels:
