@@ -288,7 +288,7 @@ def environment_chart(
             harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
             image_pull_secret_name=sandbox_pod.SECRET_NAME,
         )
-    runner_template.add_platform_resources()
+    runner_template.add_platform_resources(runner_scope)
     sandbox_controller.SandboxController(
         chart,
         "sandbox-controller",

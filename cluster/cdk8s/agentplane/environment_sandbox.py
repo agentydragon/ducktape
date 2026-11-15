@@ -449,21 +449,21 @@ class EnvironmentSandboxTemplate(Construct):
         ).add_json_patch(JsonPatch.add("/spec", spec))
         return spec
 
-    def add_platform_resources(self) -> None:
+    def add_platform_resources(self, scope: Construct) -> None:
         """Add the network and platform-route fences for every environment runtime Pod."""
         namespace = self.env.namespace
         proxy_egress = [cilium.dns_egress(), egress.proxy(namespace).egress()]
         NetworkPolicy(
-            self,
+            scope,
             "networkpolicy",
             metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
             endpoint_selector=pods(namespace).selector,
             ingress=isolate_ingress(),
             egress=proxy_egress,
         )
-        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        platform_routes.PlatformRouteFences(scope, "platform-routes", namespace=namespace, clients=pods(namespace))
         NetworkPolicy(
-            self,
+            scope,
             "environment-runtime-listener",
             metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
             endpoint_selector=pods(namespace).selector,
