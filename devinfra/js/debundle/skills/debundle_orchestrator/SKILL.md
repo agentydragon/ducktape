@@ -26,12 +26,15 @@ obvious inexpensive repair, use the shared workflow's
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
 
-For an accepted partial spec, use
-[complete fixed-owner discovery](references/docs/module_search.md) to answer
-whether a residual peel exists. Keep exhaustive negative results scoped to the
-reported move domain; budgets, interruptions and empty advisory inventories do
-not establish impossibility. Require exact-plan selector realization, normal
-materialization and relevant behavior after a graph witness.
+For an accepted partial spec, inspect the graph and source, then use
+[exact residual placement](references/docs/module_search.md) with
+`modules propose --strategy complete`. Review the full mapping, check and
+preview/apply its snapshot-bound plan, then regenerate and run relevant behavior
+checks. `exhausted_no_peel` is scoped to the reported owner policy and move
+domain; budgets, interruptions, errors and empty advisory inventories do not
+establish impossibility. The auto factorizer remains advisory pending migration
+to exact placement. A graph witness still needs selector realization, normal
+materialization and runtime evidence.
 
 For structural inventory, ask planning for
 [atomic residual decomposition and gate-driven coarsening](references/docs/cli.md#refining-existing-modules-modules-decompose),

@@ -1130,15 +1130,25 @@ The invocation record retains the batch-file path, not its contents.
 
 ## Explicit destination checks
 
-`modules propose --strategy complete` decides existence of a positive-gain
-residual peel with authored owners fixed, over the whole reported permitted move
-scope. It returns a full-checker-accepted plan, `exhausted_no_peel` after exhaustive
-enumeration, or `incomplete` after an explicit budget. Errors and interruption
-never establish no peel. Complete mode has no implicit size/check/time budget.
-Its finite representation preserves module-order distinctions and covers joint
-multi-atom, multi-destination assignments. Scope, coverage argument and test
-obligations are defined in [complete residual search](docs/module_search.md).
-Default/auto factorizer output is advisory and has no completeness guarantee.
+`modules propose --strategy complete` decides whether a positive-gain residual
+placement exists with authored source-unit ownership fixed, over the whole
+reported permitted move scope. It returns one snapshot-bound plan accepted by
+the full canonical graph gate, `exhausted_no_peel` after every compatible
+constraint-contraction branch in that scope has been exhausted, or `incomplete`
+after an explicit work/time budget. Errors and interruption never establish no
+peel. Complete mode has no implicit size/check/time budget. Placement is
+constructed from graph constraints and exact import scheduling; the proposer
+does not enumerate the Cartesian product of atom-to-destination choices. Its
+necessary contraction clauses can branch, so the worst case can be exponential.
+The status is relative to the captured graph, assumptions, owner policy and
+destination scope. Selector realization and emitted runtime behavior remain
+separate checks. See [exact residual placement](docs/module_search.md) for the
+CLI workflow and [module placement](docs/module_placement.md) for its
+constructive coverage proof.
+
+Default/auto factorizer output remains advisory pending migration to exact
+placement. Readiness labels and empty output do not establish that no peel
+exists.
 
 `modules check` overlays a JSON batch of source-unit destination changes on the
 accepted graph assignment, retaining the destination of every omitted unit.

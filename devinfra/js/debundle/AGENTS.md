@@ -25,12 +25,21 @@ the validator enforces) before working on the splitting pipeline.
   includes structural atoms and global ESM evaluation; local probes and proposal
   readiness labels cannot replace it. Recheck combined batches, and keep graph
   acceptance distinct from selector realization and emitted runtime evidence.
-- Use `modules propose --strategy complete` for the residual-peel decision.
-  Only `exhausted_no_peel` is a negative conclusion in its reported fixed-owner
-  scope; budgets and interrupted/failed searches are inconclusive. The finite
-  model and independent CLI/property-test obligations live in
-  <docs/module_search.md>. Preserve those tests when changing candidate generation,
-  gate checks, module ordering or plan application.
+- For residual placement, inspect the graph/source, then use
+  `modules propose --strategy complete`, review the full mapping, check and
+  preview/apply its saved plan, and run materialization plus relevant behavior
+  checks. Only `exhausted_no_peel` rules out a placement in the reported fixed-
+  authored-owner and destination scope. Budgets, interruption, errors, and empty
+  advisory output are inconclusive. The search propagates necessary graph
+  constraints and can branch across partitions with Bell-number worst cases;
+  it does not enumerate the Cartesian product of atom assignments.
+  `--max-checks` budgets analyzed partition states, not arbitrary complete-
+  assignment retries. Keep graph
+  acceptance distinct from selector realization and runtime evidence. The CLI
+  workflow is in <docs/module_search.md>; the construction proof is in
+  <docs/module_placement.md>. Preserve the real-source CLI and property/oracle
+  tests when changing candidate generation, scheduling, gate checks, or plan
+  application.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
   follow <docs/bug_reproductions.md> before working around it. Keep private source

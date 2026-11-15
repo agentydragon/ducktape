@@ -21,10 +21,14 @@ statements. Keep omitted units in place and check the actual destination. A
 successful check is graph evidence; selector realization and emission are separate.
 Recheck the union of independently accepted batches before recommending it.
 
-For "can anything still be peeled?", use
-[complete fixed-owner search](references/docs/module_search.md). Preserve the
-snapshot-bound plan and reported move scope. A budget-stopped search is
-incomplete; advisory empty output is not a negative decision. Recheck a plan
+For "can anything still be peeled?", inspect the current graph and source, then
+use [exact residual placement](references/docs/module_search.md) with
+`modules propose --strategy complete`. Review the complete ownership map and
+destinations, check and preview/apply the same snapshot-bound plan, then
+regenerate and run behavior checks. `found` establishes graph acceptance only;
+selector realization and runtime behavior are separate. `exhausted_no_peel` is
+limited to the recorded owner and destination scope. Budget exhaustion is
+incomplete, and empty advisory output is not a negative decision. Recheck a plan
 after editing its destinations or combining it with another batch.
 
 For a structural inventory, compare

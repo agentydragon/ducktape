@@ -8,6 +8,7 @@ exports_files([
     "integration.md",
     "module_placement.md",
     "module_search.md",
+    "module_placement.md",
     "naming.md",
     "peel_proposer.md",
     "planning.md",

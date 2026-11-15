@@ -1,6 +1,6 @@
 ---
 name: debundle_intake
-description: Turn `debundle modules propose` output into named, dispatchable seed clusters for debundle lane workers. Use for reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing seeds.json without editing the spec or running gates.
+description: Turn advisory `debundle modules propose --strategy auto` output into named, dispatchable seed clusters for debundle lane workers. Use for reading factorizer proposals, lightly grounding source meaning, choosing tentative destinations, and producing seeds.json without editing the spec or running gates.
 ---
 
 # Debundle Intake
@@ -16,7 +16,9 @@ dependency-closure handling, source-grounding scope, ordering, and the
 for source inspection. A graph-ready proposal still needs the worker's selector
 proof and edit gate.
 
-For [complete discovery](references/docs/module_search.md), keep the returned
+The auto factorizer is an advisory inventory only; neither empty output nor its
+readiness labels establish impossibility. For an exact residual decision, use
+[complete placement](references/docs/module_search.md) in planning. Keep its
 snapshot-bound plan as one packet; its joint changes are not independently
 accepted proposals. Preserve destinations and attach semantic/source review
 separately. Route destination edits or combined batches back to planning for a

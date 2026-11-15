@@ -63,7 +63,7 @@ def main() -> None:
     parser.add_argument("--module-subdir", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument(
-        "--max-checks", type=int, required=True, help="Explicit budget; exhaustion is incomplete and fails"
+        "--max-checks", type=int, required=True, help="Maximum partition states; exhaustion is incomplete and fails"
     )
     args = parser.parse_args()
     peel_more(
