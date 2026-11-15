@@ -2,8 +2,8 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    TreeFixture, assert_module_exports, assert_node_output, debundler_path, run_tree_graph_fixture,
-    tree_spec_args,
+    TreeFixture, assert_module_exports, assert_node_output, debundler_path, process,
+    run_tree_graph_fixture, tree_spec_args,
 };
 use serde_json::json;
 use std::fs;
@@ -87,16 +87,17 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     let graph = run.report_root.join("main/dependency_graph.json.gz");
     let source = run.root().join("snapshot");
     let config = run.root().join("spec_config.yaml");
-    let proposed = Command::new(debundler_path())
-        .args(["modules", "propose", "--graph"])
-        .arg(&graph)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--tree-config")
-        .arg(&config)
-        .args(["--size-cap-lines", "1", "--format", "json"])
-        .output()
-        .unwrap();
+    let proposed = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["modules", "propose", "--graph"])
+            .arg(&graph)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--tree-config")
+            .arg(&config)
+            .args(["--size-cap-lines", "1", "--format", "json"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         proposed.status.success(),
         "{}",
@@ -125,21 +126,22 @@ fn apply_ignores_modules_owned_by_other_chunks() {
         .unwrap(),
     )
     .unwrap();
-    let applied = Command::new(debundler_path())
-        .args(["modules", "apply", "--batch"])
-        .arg(&batch)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--tree-config")
-        .arg(&config)
-        .arg("--graph")
-        .arg(&graph)
-        .arg("--source-root")
-        .arg(&source)
-        .args(["--size-cap-lines", "1"])
-        .arg("--dry-run")
-        .output()
-        .unwrap();
+    let applied = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["modules", "apply", "--batch"])
+            .arg(&batch)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--tree-config")
+            .arg(&config)
+            .arg("--graph")
+            .arg(&graph)
+            .arg("--source-root")
+            .arg(&source)
+            .args(["--size-cap-lines", "1"])
+            .arg("--dry-run"),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         applied.status.success(),
         "{}",
@@ -161,16 +163,17 @@ fn apply_preserves_case_sensitive_chunk_root() {
     let modules = run.root().join("modules");
     let graph = run.report_root.join("main/dependency_graph.json.gz");
     let config = run.root().join("spec_config.yaml");
-    let proposed = Command::new(debundler_path())
-        .args(["modules", "propose", "--graph"])
-        .arg(&graph)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--tree-config")
-        .arg(&config)
-        .args(["--size-cap-lines", "1", "--format", "json"])
-        .output()
-        .unwrap();
+    let proposed = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["modules", "propose", "--graph"])
+            .arg(&graph)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--tree-config")
+            .arg(&config)
+            .args(["--size-cap-lines", "1", "--format", "json"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         proposed.status.success(),
         "{}",
@@ -199,20 +202,21 @@ fn apply_preserves_case_sensitive_chunk_root() {
         .unwrap(),
     )
     .unwrap();
-    let applied = Command::new(debundler_path())
-        .args(["modules", "apply", "--batch"])
-        .arg(&batch)
-        .arg("--modules")
-        .arg(&modules)
-        .arg("--tree-config")
-        .arg(&config)
-        .arg("--graph")
-        .arg(&graph)
-        .arg("--source-root")
-        .arg(run.root().join("snapshot"))
-        .args(["--size-cap-lines", "1"])
-        .output()
-        .unwrap();
+    let applied = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["modules", "apply", "--batch"])
+            .arg(&batch)
+            .arg("--modules")
+            .arg(&modules)
+            .arg("--tree-config")
+            .arg(&config)
+            .arg("--graph")
+            .arg(&graph)
+            .arg("--source-root")
+            .arg(run.root().join("snapshot"))
+            .args(["--size-cap-lines", "1"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         applied.status.success(),
         "{}",
@@ -221,13 +225,14 @@ fn apply_preserves_case_sensitive_chunk_root() {
     assert!(modules.join("chunks/Main/services/foo.yaml").is_file());
     assert!(!modules.join("chunks/main/services/foo.yaml").exists());
     let out_root = run.root().join("rerun");
-    let emitted = Command::new(debundler_path())
-        .args(["run", "--graphs"])
-        .args(tree_spec_args(run.root()))
-        .arg("--out-root")
-        .arg(&out_root)
-        .output()
-        .unwrap();
+    let emitted = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["run", "--graphs"])
+            .args(tree_spec_args(run.root()))
+            .arg("--out-root")
+            .arg(&out_root),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         emitted.status.success(),
         "{}",

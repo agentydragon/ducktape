@@ -88,20 +88,21 @@ fn joint_scope_command_with_roots(
     let root = run.root();
     let graph = root.join("out/reports/tree/main/dependency_graph.json.gz");
     let source_root = root.join("snapshot");
-    Command::new(debundler_path())
-        .args(args)
-        .arg("--graph")
-        .arg(graph)
-        .arg("--modules")
-        .arg(modules)
-        .arg("--tree-config")
-        .arg(config)
-        .arg("--source-root")
-        .arg(source_root)
-        .arg("--format")
-        .arg("json")
-        .output()
-        .expect("run scoped describe")
+    debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .args(args)
+            .arg("--graph")
+            .arg(graph)
+            .arg("--modules")
+            .arg(modules)
+            .arg("--tree-config")
+            .arg(config)
+            .arg("--source-root")
+            .arg(source_root)
+            .arg("--format")
+            .arg("json"),
+    )
+    .expect("run scoped describe")
 }
 
 #[test]
@@ -561,14 +562,15 @@ fn resolved_invocation_replays_the_explicit_batch_file() {
         argv.windows(2)
             .any(|pair| pair == [json!("--batch"), json!(&path)])
     );
-    let output = std::process::Command::new(argv[0].as_str().unwrap())
-        .args(argv[1..].iter().map(|arg| arg.as_str().unwrap()))
-        .current_dir(record["cwd"].as_str().unwrap())
-        .env_remove("DEBUNDLE_GRAPH")
-        .env_remove("DEBUNDLE_MODULES")
-        .env_remove("DEBUNDLE_SOURCE_ROOT")
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(argv[0].as_str().unwrap())
+            .args(argv[1..].iter().map(|arg| arg.as_str().unwrap()))
+            .current_dir(record["cwd"].as_str().unwrap())
+            .env_remove("DEBUNDLE_GRAPH")
+            .env_remove("DEBUNDLE_MODULES")
+            .env_remove("DEBUNDLE_SOURCE_ROOT"),
+    )
+    .unwrap();
     assert!(
         output.status.success(),
         "{}",

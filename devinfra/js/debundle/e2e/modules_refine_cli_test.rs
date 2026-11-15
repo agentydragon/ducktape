@@ -1,6 +1,7 @@
 //! Reviewed source_unit-to-module batches preserve existing selector metadata.
 
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::process;
 use debundle_e2e_support::{TreeFixture, debundler_path, read_gzip_json, run_tree_graph_fixture};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -312,19 +313,20 @@ fn refines_only_the_selected_chunk_under_tree_config() {
         .unwrap(),
     )
     .unwrap();
-    let output = Command::new(debundler_path())
-        .args(["modules", "refine", "--batch"])
-        .arg(&batch)
-        .args(["--modules"])
-        .arg(&modules)
-        .args(["--graph"])
-        .arg(&graph)
-        .args(["--source-root"])
-        .arg(run.root().join("snapshot"))
-        .args(["--tree-config"])
-        .arg(run.root().join("spec_config.yaml"))
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["modules", "refine", "--batch"])
+            .arg(&batch)
+            .args(["--modules"])
+            .arg(&modules)
+            .args(["--graph"])
+            .arg(&graph)
+            .args(["--source-root"])
+            .arg(run.root().join("snapshot"))
+            .args(["--tree-config"])
+            .arg(run.root().join("spec_config.yaml")),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "{}",

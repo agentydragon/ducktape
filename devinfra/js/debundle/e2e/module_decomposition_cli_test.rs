@@ -1,7 +1,7 @@
 //! Read-only module decomposition from gated same-module seed fragments.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::tree_spec_args;
+use debundle_e2e_support::{process, tree_spec_args};
 use serde_json::{Value, json};
 use std::fs;
 use std::process::Command;
@@ -14,13 +14,14 @@ fn assert_emitted_layout_and_output(
     let source_path = fixture.source_path();
     let root = source_path.parent().unwrap().parent().unwrap();
     let output_root = tempfile::tempdir_in(root).unwrap();
-    let output = Command::new(debundle_e2e_support::debundler_path())
-        .arg("run")
-        .args(tree_spec_args(root))
-        .arg("--out-root")
-        .arg(output_root.path())
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        Command::new(debundle_e2e_support::debundler_path())
+            .arg("run")
+            .args(tree_spec_args(root))
+            .arg("--out-root")
+            .arg(output_root.path()),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         output.status.success(),
         "{}",

@@ -5,6 +5,7 @@
 
 use std::process::Command;
 
+use debundle_e2e_support::process;
 use debundle_e2e_support::{
     CommandResult, FixtureOpts, Member, debundler_path, find_outcome, logical_module,
     logical_module_with_anon, mixed_selector_failure_fixture, outcomes, run_source_only_validate,
@@ -157,12 +158,13 @@ export { renderCard, importedValue };
         json!({"success": true, "checked": 3, "matched": 3})
     );
 
-    let default = Command::new(debundler_path())
-        .args(["spec", "validate", "--spec"])
-        .arg(&fixture.spec_path)
-        .args(["--format", "json"])
-        .output()
-        .unwrap();
+    let default = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["spec", "validate", "--spec"])
+            .arg(&fixture.spec_path)
+            .args(["--format", "json"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(default.status.success(), "stderr={:?}", default.stderr);
 }
 
@@ -244,12 +246,13 @@ fn validate_empty_selection_reports_zero_counts_in_every_format_and_mode() {
 #[test]
 fn validate_reports_all_outcomes_before_failing_by_default() {
     let fixture = write_validate_fixture_spec(mixed_selector_failure_fixture());
-    let output = Command::new(debundler_path())
-        .args(["spec", "validate", "--spec"])
-        .arg(&fixture.spec_path)
-        .args(["--format", "json"])
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["spec", "validate", "--spec"])
+            .arg(&fixture.spec_path)
+            .args(["--format", "json"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     let out = CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -286,12 +289,13 @@ fn validate_preserves_fail_fast_pipeline_error_after_chunk_reports() {
         .with_extra_chunks(&[("static/later", "const available = 1;\n")])
         .with_extra_chunk_logical_modules(&[("static/later", extra_modules)]),
     );
-    let output = Command::new(debundler_path())
-        .args(["spec", "validate", "--spec"])
-        .arg(&fixture.spec_path)
-        .args(["--fail-fast", "--format", "json"])
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["spec", "validate", "--spec"])
+            .arg(&fixture.spec_path)
+            .args(["--fail-fast", "--format", "json"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -312,14 +316,15 @@ fn validate_preserves_fail_fast_pipeline_error_after_chunk_reports() {
 #[test]
 fn validate_source_only_fails_by_default_after_ndjson_report() {
     let fixture = write_source_only_validate_fixture();
-    let output = Command::new(debundler_path())
-        .args(["spec", "validate", "--modules"])
-        .arg(&fixture.modules_root)
-        .arg("--source-file")
-        .arg(&fixture.source_file)
-        .args(["--format", "ndjson"])
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["spec", "validate", "--modules"])
+            .arg(&fixture.modules_root)
+            .arg("--source-file")
+            .arg(&fixture.source_file)
+            .args(["--format", "ndjson"]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(!output.status.success(), "stdout:\n{:?}", output.stdout);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let summary: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
@@ -346,17 +351,18 @@ export { renderCard };
     );
     let fixture = write_validate_fixture_spec(opts);
     let bin = debundler_path();
-    let output = Command::new(&bin)
-        .arg("spec")
-        .arg("validate")
-        .arg("--spec")
-        .arg(&fixture.spec_path)
-        .arg("--format")
-        .arg("json")
-        .env("DEBUNDLE_MODULES", "/definitely/not/source/modules")
-        .env("DEBUNDLE_SOURCE_ROOT", "/definitely/not/source/root")
-        .output()
-        .unwrap_or_else(|e| panic!("spawn debundler {}: {e}", bin.display()));
+    let output = process::debundle_output(
+        Command::new(&bin)
+            .arg("spec")
+            .arg("validate")
+            .arg("--spec")
+            .arg(&fixture.spec_path)
+            .arg("--format")
+            .arg("json")
+            .env("DEBUNDLE_MODULES", "/definitely/not/source/modules")
+            .env("DEBUNDLE_SOURCE_ROOT", "/definitely/not/source/root"),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     let out = CommandResult {
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),

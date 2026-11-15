@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use debundle_e2e_support::{debundler_path, run_match_selector, write_text_file};
+use debundle_e2e_support::{debundler_path, process, run_match_selector, write_text_file};
 use serde_json::{Value, json};
 
 /// The one outcome a match-selector report carries.
@@ -67,7 +67,7 @@ fn addressed_selectors_use_the_full_typed_spec_schema() {
         if flat_spec {
             command.arg("--spec").arg(&flat);
         }
-        command.output().unwrap()
+        process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"))
     };
 
     let module_selector = format!("{}#/source_matches/0", module.display());
@@ -182,20 +182,21 @@ fn no_match_identifies_the_first_differing_declarator() {
         }),
         "{report:#}"
     );
-    let text = Command::new(debundler_path())
-        .args(["spec", "match-selector", "--source-file"])
-        .arg(&source)
-        .args([
-            "--match",
-            "const first = 1, second = 4;",
-            "--target-binding",
-            "second",
-            "--no-slack",
-            "--format",
-            "text",
-        ])
-        .output()
-        .unwrap();
+    let text = process::debundle_output(
+        Command::new(debundler_path())
+            .args(["spec", "match-selector", "--source-file"])
+            .arg(&source)
+            .args([
+                "--match",
+                "const first = 1, second = 4;",
+                "--target-binding",
+                "second",
+                "--no-slack",
+                "--format",
+                "text",
+            ]),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     let output = String::from_utf8(text.stdout).unwrap();
     assert!(
         output.contains("variable declarator #1 differs: selector `second = 4`, candidate `b = 2`"),
@@ -623,12 +624,13 @@ fn invalid_selector_reports_keep_native_parser_diagnostics_and_source_context() 
                 assert!(range["end"].as_u64().unwrap() <= selector.len() as u64);
             }
         }
-        let text = Command::new(debundler_path())
-            .args(["spec", "match-selector", "--source-file"])
-            .arg(&source)
-            .args(["--match", selector, "--no-slack", "--format", "text"])
-            .output()
-            .unwrap();
+        let text = process::debundle_output(
+            Command::new(debundler_path())
+                .args(["spec", "match-selector", "--source-file"])
+                .arg(&source)
+                .args(["--match", selector, "--no-slack", "--format", "text"]),
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
         assert!(
             text.status.success(),
             "{}",
@@ -661,15 +663,16 @@ fn solver_stop_and_operational_settings_failure_remain_distinct() {
         "source_matches:\n  - match: 'const first = renderPanel(EXPR);'\n    bindings: [first]\n  - match: 'const second = renderPanel(EXPR);'\n    bindings: [second]\n",
     );
     let run = |limit: &str, format: &str| {
-        Command::new(debundler_path())
-            .args(["spec", "validate", "--modules"])
-            .arg(&modules)
-            .arg("--source-file")
-            .arg(&source)
-            .args(["--report-only", "--format", format])
-            .env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS", limit)
-            .output()
-            .unwrap()
+        process::debundle_output(
+            Command::new(debundler_path())
+                .args(["spec", "validate", "--modules"])
+                .arg(&modules)
+                .arg("--source-file")
+                .arg(&source)
+                .args(["--report-only", "--format", format])
+                .env("DUCKTAPE_DEBUNDLE_ORTOOLS_CPSAT_MAX_TIME_SECONDS", limit),
+        )
+        .unwrap_or_else(|err| panic!("{err}"))
     };
     // Smaller than the clock's resolution: CP-SAT stops before its initial
     // search. No assertion depends on elapsed time or machine performance.

@@ -266,12 +266,13 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
     let out = root.join("ambient-out");
 
     let ambient_args = staged.apply_args(&batch, None, true, false, false, &out);
-    let ambient = std::process::Command::new(debundler_path())
-        .args(ambient_args.iter().map(String::as_str))
-        .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
-        .env("DEBUNDLE_OUT", &out)
-        .output()
-        .expect("spawn debundler with ambient transform defaults");
+    let ambient = process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .args(ambient_args.iter().map(String::as_str))
+            .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
+            .env("DEBUNDLE_OUT", &out),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         ambient.status.success(),
         "ambient transform defaults changed ordinary apply behavior:\n{}",
@@ -286,12 +287,13 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
         "--out-root".to_string(),
         path(&out).to_string(),
     ]);
-    let explicit = std::process::Command::new(debundler_path())
-        .args(explicit_args.iter().map(String::as_str))
-        .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
-        .env("DEBUNDLE_OUT", &out)
-        .output()
-        .expect("spawn debundler with explicit auxiliary inputs matching environment");
+    let explicit = process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .args(explicit_args.iter().map(String::as_str))
+            .env("DEBUNDLE_TREE_SOURCE_ROOT", root)
+            .env("DEBUNDLE_OUT", &out),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert_eq!(explicit.status.code(), Some(1));
     assert!(
         String::from_utf8_lossy(&explicit.stderr).contains("require --analysis"),
@@ -657,28 +659,29 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
     assert_eq!(module_snapshot(&staged.modules), before);
 
     let env_defaults = {
-        let output = Command::new(debundler_path())
-            .args([
-                "modules",
-                "refine",
-                "--batch",
-                path(&batch),
-                "--modules",
-                path(&staged.modules),
-                "--graph",
-                path(&staged.graph),
-                "--source-root",
-                path(&staged.root().join("snapshot")),
-                "--tree-config",
-                path(&staged.config),
-                "--dry-run",
-                "--format",
-                "json",
-            ])
-            .env("DEBUNDLE_TREE_SOURCE_ROOT", staged.root())
-            .env("DEBUNDLE_OUT", staged.root().join("ambient-output"))
-            .output()
-            .expect("spawn debundler with transform environment defaults");
+        let output = process::debundle_output(
+            Command::new(debundler_path())
+                .args([
+                    "modules",
+                    "refine",
+                    "--batch",
+                    path(&batch),
+                    "--modules",
+                    path(&staged.modules),
+                    "--graph",
+                    path(&staged.graph),
+                    "--source-root",
+                    path(&staged.root().join("snapshot")),
+                    "--tree-config",
+                    path(&staged.config),
+                    "--dry-run",
+                    "--format",
+                    "json",
+                ])
+                .env("DEBUNDLE_TREE_SOURCE_ROOT", staged.root())
+                .env("DEBUNDLE_OUT", staged.root().join("ambient-output")),
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
         CommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -694,32 +697,33 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
     let explicit_auxiliary_matching_environment = {
         let source_root = staged.root().to_path_buf();
         let out_root = staged.root().join("ambient-output");
-        let output = Command::new(debundler_path())
-            .args([
-                "modules",
-                "refine",
-                "--batch",
-                path(&batch),
-                "--modules",
-                path(&staged.modules),
-                "--graph",
-                path(&staged.graph),
-                "--source-root",
-                path(&source_root.join("snapshot")),
-                "--tree-config",
-                path(&staged.config),
-                "--tree-source-root",
-                path(&source_root),
-                "--out-root",
-                path(&out_root),
-                "--dry-run",
-                "--format",
-                "json",
-            ])
-            .env("DEBUNDLE_TREE_SOURCE_ROOT", &source_root)
-            .env("DEBUNDLE_OUT", &out_root)
-            .output()
-            .expect("spawn debundler with explicit transform inputs matching environment defaults");
+        let output = process::debundle_output(
+            Command::new(debundler_path())
+                .args([
+                    "modules",
+                    "refine",
+                    "--batch",
+                    path(&batch),
+                    "--modules",
+                    path(&staged.modules),
+                    "--graph",
+                    path(&staged.graph),
+                    "--source-root",
+                    path(&source_root.join("snapshot")),
+                    "--tree-config",
+                    path(&staged.config),
+                    "--tree-source-root",
+                    path(&source_root),
+                    "--out-root",
+                    path(&out_root),
+                    "--dry-run",
+                    "--format",
+                    "json",
+                ])
+                .env("DEBUNDLE_TREE_SOURCE_ROOT", &source_root)
+                .env("DEBUNDLE_OUT", &out_root),
+        )
+        .unwrap_or_else(|err| panic!("{err}"));
         CommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),

@@ -905,12 +905,13 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
         binary_dir.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let inspected = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(inspection)
-        .env("PATH", path)
-        .output()
-        .expect("execute generated inspection command");
+    let inspected = process::output(
+        std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(inspection)
+            .env("PATH", path),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         inspected.status.success(),
         "generated inspection command failed\nstdout:\n{}\nstderr:\n{}",
@@ -1058,11 +1059,12 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
     let inspection = trace["first_rejected_guard"]["witness"]["inspection_command"]
         .as_str()
         .unwrap();
-    let inspected = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(inspection)
-        .output()
-        .expect("execute generated inspection command");
+    let inspected = process::output(
+        std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg(inspection),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(inspected.status.success());
     assert!(
         parse_stdout_json(&inspected)["files"][0]["statements"]
@@ -1190,11 +1192,8 @@ fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
         witness["call_span_start"].as_u64().unwrap() < witness["call_span_end"].as_u64().unwrap()
     );
     let command = witness["inspection_command"].as_str().unwrap();
-    let inspected = std::process::Command::new("/bin/sh")
-        .arg("-c")
-        .arg(command)
-        .output()
-        .unwrap();
+    let inspected = process::output(std::process::Command::new("/bin/sh").arg("-c").arg(command))
+        .unwrap_or_else(|err| panic!("{err}"));
     assert!(
         inspected.status.success(),
         "{}",

@@ -62,14 +62,15 @@ impl AliasGraphFixture {
         let vendor_marks = root.path().join("vendor_marks.yaml");
         fs::write(&vendor_marks, "vendor_marks: []\n").unwrap();
         let out_root = root.path().join("out");
-        let output = Command::new(debundler_path())
-            .arg("run")
-            .arg("--graphs")
-            .args(tree_spec_args(root.path()))
-            .arg("--out-root")
-            .arg(&out_root)
-            .output()
-            .unwrap();
+        let output = debundle_e2e_support::process::debundle_output(
+            Command::new(debundler_path())
+                .arg("run")
+                .arg("--graphs")
+                .args(tree_spec_args(root.path()))
+                .arg("--out-root")
+                .arg(&out_root),
+        )
+        .unwrap();
         assert!(
             output.status.success(),
             "{}",
@@ -105,7 +106,8 @@ impl AliasGraphFixture {
         if let Some(graph_source_root) = graph_source_root {
             command.arg("--graph-source-root").arg(graph_source_root);
         }
-        command.output().unwrap()
+        debundle_e2e_support::process::debundle_output(&mut command)
+            .unwrap_or_else(|err| panic!("{err}"))
     }
 }
 
@@ -291,19 +293,20 @@ fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
         .expect("flat fixture source unit")
         .id;
     let inspect = |selection: &str, selector_root: &Path| {
-        std::process::Command::new(debundler_path())
-            .arg("inspect-source")
-            .arg("--id")
-            .arg(selection)
-            .arg("--graph")
-            .arg(&graph)
-            .arg("--modules")
-            .arg(&modules)
-            .arg("--source-root")
-            .arg(selector_root)
-            .args(["--format", "json"])
-            .output()
-            .unwrap()
+        debundle_e2e_support::process::debundle_output(
+            std::process::Command::new(debundler_path())
+                .arg("inspect-source")
+                .arg("--id")
+                .arg(selection)
+                .arg("--graph")
+                .arg(&graph)
+                .arg("--modules")
+                .arg(&modules)
+                .arg("--source-root")
+                .arg(selector_root)
+                .args(["--format", "json"]),
+        )
+        .unwrap()
     };
     let output = inspect(&unit, &source_root);
     assert!(output.status.success(), "{}", stderr(&output));
@@ -379,11 +382,12 @@ fn fallback_source_search_cannot_shadow_analyzed_file() {
     let fixture = GraphFixture::acyclic_pair();
     let shadow = fixture.modules.parent().unwrap().join("main.js");
     fs::copy(fixture.source_path(), shadow).unwrap();
-    let output = fixture
-        .process(&["coverage", "--format", "json"])
-        .env_remove("DEBUNDLE_SOURCE_ROOT")
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(
+        fixture
+            .process(&["coverage", "--format", "json"])
+            .env_remove("DEBUNDLE_SOURCE_ROOT"),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rejection["mismatch"]["reason"], "selector_source_root");
@@ -465,14 +469,15 @@ fn provider_chunk_analysis_option_invalidates_consumer_graph() {
     let mut text = fs::read_to_string(&config).unwrap();
     text.push_str("chunk_analysis_options:\n  provider:\n    trusted_dataflow_summaries: true\n");
     fs::write(config, text).unwrap();
-    let output = std::process::Command::new(debundler_path())
-        .args(["coverage", "--graph"])
-        .arg(run.report_root.join("main/dependency_graph.json.gz"))
-        .arg("--modules")
-        .arg(run.root().join("modules/main"))
-        .args(["--format", "json"])
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .args(["coverage", "--graph"])
+            .arg(run.report_root.join("main/dependency_graph.json.gz"))
+            .arg("--modules")
+            .arg(run.root().join("modules/main"))
+            .args(["--format", "json"]),
+    )
+    .unwrap();
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rejection["mismatch"]["reason"], "file");
@@ -534,16 +539,17 @@ fn wrong_chunk_scope_with_same_binding_is_rejected() {
     assert!(run.result.status.success(), "{}", run.result.stderr);
     let graph = run.report_root.join("main/dependency_graph.json.gz");
     let wrong = run.root().join("modules/dependency");
-    let output = std::process::Command::new(debundler_path())
-        .arg("coverage")
-        .arg("--graph")
-        .arg(&graph)
-        .arg("--modules")
-        .arg(&wrong)
-        .arg("--format")
-        .arg("json")
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .arg("coverage")
+            .arg("--graph")
+            .arg(&graph)
+            .arg("--modules")
+            .arg(&wrong)
+            .arg("--format")
+            .arg("json"),
+    )
+    .unwrap();
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rejection["mismatch"]["reason"], "module_scope");
@@ -573,24 +579,22 @@ fn explicit_roots_allow_relocated_graph_and_spec() {
     let graph = relocated
         .path()
         .join("out/reports/tree/main/dependency_graph.json.gz");
-    let output = fixture
-        .process(&[
-            "--spec-root",
-            relocated.path().to_str().unwrap(),
-            "--graph-source-root",
-            relocated.path().to_str().unwrap(),
-            "coverage",
-            "--graph",
-            graph.to_str().unwrap(),
-            "--modules",
-            relocated.path().join("modules/main").to_str().unwrap(),
-            "--source-root",
-            relocated.path().join("snapshot").to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .output()
-        .unwrap();
+    let output = debundle_e2e_support::process::debundle_output(&mut fixture.process(&[
+        "--spec-root",
+        relocated.path().to_str().unwrap(),
+        "--graph-source-root",
+        relocated.path().to_str().unwrap(),
+        "coverage",
+        "--graph",
+        graph.to_str().unwrap(),
+        "--modules",
+        relocated.path().join("modules/main").to_str().unwrap(),
+        "--source-root",
+        relocated.path().join("snapshot").to_str().unwrap(),
+        "--format",
+        "json",
+    ]))
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(output.status.success(), "{}", stderr(&output));
 }
 
@@ -611,8 +615,8 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     let graph = relocated
         .path()
         .join("out/reports/tree/main/dependency_graph.json.gz");
-    let output = std::process::Command::new(debundler_path())
-        .args([
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path()).args([
             "--spec-root",
             relocated.path().to_str().unwrap(),
             "--graph-source-root",
@@ -626,9 +630,9 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
             relocated.path().join("snapshot").to_str().unwrap(),
             "--format",
             "json",
-        ])
-        .output()
-        .unwrap();
+        ]),
+    )
+    .unwrap();
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rejection["mismatch"]["reason"], "file");
@@ -650,11 +654,12 @@ fn relocated_mismatch_recipe_rebuilds_after_original_inputs_are_removed() {
     );
     let cwd = rejection["mismatch"]["regenerate_cwd"].as_str().unwrap();
     assert_eq!(cwd, relocated.path().to_str().unwrap());
-    let replay = std::process::Command::new(&command[0])
-        .args(&command[1..])
-        .current_dir(cwd)
-        .output()
-        .unwrap();
+    let replay = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(&command[0])
+            .args(&command[1..])
+            .current_dir(cwd),
+    )
+    .unwrap();
     assert!(replay.status.success(), "{}", stderr(&replay));
 }
 
@@ -668,8 +673,8 @@ fn source_only_relocation_keeps_spec_paths_in_regeneration_recipe() {
         "const beta = 3; const alpha = beta + 1; console.log(alpha);\n",
     )
     .unwrap();
-    let output = std::process::Command::new(debundler_path())
-        .args([
+    let output = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path()).args([
             "--graph-source-root",
             relocated_source.path().to_str().unwrap(),
             "coverage",
@@ -681,9 +686,9 @@ fn source_only_relocation_keeps_spec_paths_in_regeneration_recipe() {
             relocated_source.path().join("snapshot").to_str().unwrap(),
             "--format",
             "json",
-        ])
-        .output()
-        .unwrap();
+        ]),
+    )
+    .unwrap();
     assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
     let rejection: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(rejection["mismatch"]["reason"], "file");
@@ -715,22 +720,23 @@ fn source_only_relocation_keeps_spec_paths_in_regeneration_recipe() {
 fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     let fixture = GraphFixture::acyclic_pair();
     let out = fixture.root().join("env_out");
-    let result = std::process::Command::new(debundler_path())
-        .current_dir(fixture.root())
-        .args([
-            "run",
-            "--graphs",
-            "--tree-config",
-            "spec_config.yaml",
-            "--tree-modules",
-            "modules",
-            "--tree-vendor-marks",
-            "vendor_marks.yaml",
-        ])
-        .env("DEBUNDLE_TREE_SOURCE_ROOT", fixture.root())
-        .env("DEBUNDLE_OUT", &out)
-        .output()
-        .unwrap();
+    let result = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(debundler_path())
+            .current_dir(fixture.root())
+            .args([
+                "run",
+                "--graphs",
+                "--tree-config",
+                "spec_config.yaml",
+                "--tree-modules",
+                "modules",
+                "--tree-vendor-marks",
+                "vendor_marks.yaml",
+            ])
+            .env("DEBUNDLE_TREE_SOURCE_ROOT", fixture.root())
+            .env("DEBUNDLE_OUT", &out),
+    )
+    .unwrap();
     assert!(result.status.success(), "{}", stderr(&result));
     let graph = out.join("reports/tree/main/dependency_graph.json.gz");
     let program_graph: serde_json::Value =
@@ -752,13 +758,14 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     assert!(argv.contains(&out.to_str().unwrap()));
     fs::remove_dir_all(&out).unwrap();
     let other_cwd = TempDir::new().unwrap();
-    let replay = std::process::Command::new(argv[0])
-        .args(&argv[1..])
-        .current_dir(other_cwd.path())
-        .env_remove("DEBUNDLE_TREE_SOURCE_ROOT")
-        .env_remove("DEBUNDLE_OUT")
-        .output()
-        .unwrap();
+    let replay = debundle_e2e_support::process::debundle_output(
+        std::process::Command::new(argv[0])
+            .args(&argv[1..])
+            .current_dir(other_cwd.path())
+            .env_remove("DEBUNDLE_TREE_SOURCE_ROOT")
+            .env_remove("DEBUNDLE_OUT"),
+    )
+    .unwrap();
     assert!(replay.status.success(), "{}", stderr(&replay));
     assert!(graph.exists());
 }

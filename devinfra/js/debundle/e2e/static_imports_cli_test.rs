@@ -34,40 +34,42 @@ fn query_with_target_source(args: &[&str], target_source: &str) -> Value {
         "fixture must reject authored selector"
     );
     let root = run.root();
-    let output = Command::new(debundler_path())
-        .arg("static-imports")
-        .args(tree_spec_args(root))
-        .arg("--out-root")
-        .arg(&run.out_root)
-        .args(args)
-        .args(["--format", "json"])
-        .output()
-        .expect("run query");
+    let output = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .arg("static-imports")
+            .args(tree_spec_args(root))
+            .arg("--out-root")
+            .arg(&run.out_root)
+            .args(args)
+            .args(["--format", "json"]),
+    )
+    .expect("run query");
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let report: Value = serde_json::from_slice(&output.stdout).expect("JSON report");
-    let relative = Command::new(debundler_path())
-        .current_dir(root)
-        .args([
-            "static-imports",
-            "--tree-config",
-            "spec_config.yaml",
-            "--tree-modules",
-            "modules",
-            "--tree-vendor-marks",
-            "vendor_marks.yaml",
-            "--tree-source-root",
-            ".",
-            "--out-root",
-            "out",
-        ])
-        .args(args)
-        .args(["--format", "json"])
-        .output()
-        .expect("run relative-path query");
+    let relative = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .current_dir(root)
+            .args([
+                "static-imports",
+                "--tree-config",
+                "spec_config.yaml",
+                "--tree-modules",
+                "modules",
+                "--tree-vendor-marks",
+                "vendor_marks.yaml",
+                "--tree-source-root",
+                ".",
+                "--out-root",
+                "out",
+            ])
+            .args(args)
+            .args(["--format", "json"]),
+    )
+    .expect("run relative-path query");
     assert!(
         relative.status.success(),
         "{}",
@@ -154,14 +156,15 @@ fn rejects_target_absent_from_the_input_chunk_table() {
         },
         &[],
     );
-    let output = Command::new(debundler_path())
-        .arg("static-imports")
-        .args(tree_spec_args(run.root()))
-        .arg("--out-root")
-        .arg(&run.out_root)
-        .args(["--from", "main", "--target", "absent", "--format", "json"])
-        .output()
-        .expect("run query");
+    let output = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .arg("static-imports")
+            .args(tree_spec_args(run.root()))
+            .arg("--out-root")
+            .arg(&run.out_root)
+            .args(["--from", "main", "--target", "absent", "--format", "json"]),
+    )
+    .expect("run query");
     assert_eq!(output.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&output.stderr).contains("unknown --target chunk"));
 }
@@ -193,7 +196,8 @@ fn conditional_literal_loader_graph_includes_deferred_return_edge() {
         if include {
             command.args(["--include-host-loader-candidates", "--interop-census"]);
         }
-        let output = command.output().expect("query");
+        let output = debundle_e2e_support::process::debundle_output(&mut command)
+            .unwrap_or_else(|err| panic!("{err}"));
         assert!(
             output.status.success(),
             "{}",
@@ -234,23 +238,24 @@ fn census_keeps_unknown_loader_forms_and_unresolved_literals_visible() {
         },
         &[],
     );
-    let output = Command::new(debundler_path())
-        .arg("static-imports")
-        .args(tree_spec_args(run.root()))
-        .arg("--out-root")
-        .arg(&run.out_root)
-        .args([
-            "--from",
-            "main",
-            "--target",
-            "target",
-            "--include-host-loader-candidates",
-            "--interop-census",
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("query");
+    let output = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .arg("static-imports")
+            .args(tree_spec_args(run.root()))
+            .arg("--out-root")
+            .arg(&run.out_root)
+            .args([
+                "--from",
+                "main",
+                "--target",
+                "target",
+                "--include-host-loader-candidates",
+                "--interop-census",
+                "--format",
+                "json",
+            ]),
+    )
+    .expect("query");
     assert!(
         output.status.success(),
         "{}",

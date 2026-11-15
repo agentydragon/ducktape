@@ -1,7 +1,7 @@
 //! Mutation JSON, diagnostic artifacts, and recovery over real JS/spec inputs.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{parse_stdout_json, read_json, run_debundle, write_text_file};
+use debundle_e2e_support::{parse_stdout_json, process, read_json, run_debundle, write_text_file};
 use serde_json::Value;
 
 fn assert_core(report: &Value, verb: &str, action: &str, gate: &str) {
@@ -417,7 +417,8 @@ fn closed_mutation_output_pipes_preserve_applied_state_and_stderr_failures_are_n
                 drop(reader);
                 command.stderr(Stdio::from(writer));
             }
-            let result = command.output().unwrap();
+            let result =
+                process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
             assert_eq!(
                 result.status.success(),
                 !close_stderr,
@@ -443,10 +444,11 @@ fn failed_queries_stay_nonzero_when_stdout_diagnostic_pipe_is_closed() {
     let fixture = GraphFixture::acyclic_pair();
     let (reader, writer) = std::io::pipe().unwrap();
     drop(reader);
-    let output = fixture
-        .process(&["describe", "nonexistent", "--format", "json"])
-        .stdout(Stdio::from(writer))
-        .output()
-        .unwrap();
+    let output = process::debundle_output(
+        fixture
+            .process(&["describe", "nonexistent", "--format", "json"])
+            .stdout(Stdio::from(writer)),
+    )
+    .unwrap_or_else(|err| panic!("{err}"));
     assert!(!output.status.success());
 }
