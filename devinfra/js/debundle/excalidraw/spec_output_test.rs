@@ -100,6 +100,10 @@ fn claimed_modules_export_their_entry_points() {
             ],
         ),
         (
+            "editor/packages/excalidraw/renderer/staticSvgScene.js",
+            &["renderSceneToSvg"],
+        ),
+        (
             "main/packages/excalidraw/renderer/interactiveScene.js",
             &["_renderInteractiveScene", "strokeEllipseWithRotation"],
         ),

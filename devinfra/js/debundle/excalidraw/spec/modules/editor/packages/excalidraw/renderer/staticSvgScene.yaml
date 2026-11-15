@@ -1,0 +1,45 @@
+# Original home: packages/excalidraw/renderer/staticSvgScene.ts
+source_matches:
+  - match: |
+      var selected = (rsvg, drawable, precision) => {
+        if (typeof precision > "u") return rsvg.draw(drawable);
+        let pshape = {
+          sets: drawable.sets,
+          shape: drawable.shape,
+          options: { ...drawable.options, fixedDecimalPlaceDigits: precision },
+        };
+        return rsvg.draw(pshape);
+      };
+    bindings:
+      - local: selected
+        name: roughSVGDrawWithPrecision
+
+  - match: |
+      var selected = (element, root, nodes, frameRendering, elementsMap) => {
+        if (!frameRendering.enabled || !frameRendering.clip) return null;
+        let frame = EXPR(element, elementsMap);
+        STMT_LIST;
+        return null;
+      };
+    bindings:
+      - local: selected
+        name: maybeWrapNodesInFrameClipPath
+
+  - match: |
+      var selected = (element, elementsMap, rsvg, svgRoot, files, offsetX, offsetY, renderConfig) => {
+        let offset = { x: offsetX, y: offsetY },
+          [x1, y1, x2, y2] = EXPR(element, elementsMap),
+          cx = EXPR, cy = EXPR;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: renderElementToSvg
+
+  - match: |
+      var selected = (elements, elementsMap, rsvg, svgRoot, files, renderConfig) => {
+        svgRoot && EXPR;
+      };
+    bindings:
+      - local: selected
+        name: renderSceneToSvg
