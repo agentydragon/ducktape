@@ -213,14 +213,14 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
-    assert "session_delegation_service" not in settings
+    assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = one(
         doc
         for doc in staging_manifests
         if doc["kind"] == "CiliumNetworkPolicy" and doc["metadata"]["name"] == actions.NAME
     )
     sampler_labels = central_sampler.service(staging.ENV.namespace).pods.cilium
-    assert not any(
+    assert any(
         endpoint.get("matchLabels") == sampler_labels
         for rule in action_policy["spec"]["ingress"]
         for endpoint in rule.get("fromEndpoints", [])
