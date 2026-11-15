@@ -252,6 +252,7 @@ fn snapshot_outputs(root: &Path, directory: &Path, record: &mut RecordedCommand)
         parents.push(output);
     }
     for output in parents {
+        let output = record.cwd.join(output);
         if directory.starts_with(&output) {
             record.snapshot_errors.push(format!(
                 "output {} contains the command journal",
@@ -371,6 +372,17 @@ fn snapshot_inputs(root: &Path, directory: &Path, record: &mut RecordedCommand) 
     inputs.sort();
     inputs.dedup();
     for input in inputs {
+        let input = record.cwd.join(input);
+        if input
+            .canonicalize()
+            .is_ok_and(|input| directory.starts_with(input))
+        {
+            record.snapshot_errors.push(format!(
+                "input {} contains the command journal",
+                input.display()
+            ));
+            continue;
+        }
         if !input.exists() {
             continue;
         }
