@@ -49,6 +49,7 @@ _OWNER_PASSWORD = "isolated-cdviz-database-owner"
 _COLLECTOR_PASSWORD = "isolated-cdviz-collector"
 _READER_PASSWORD = "isolated-cdviz-reader"
 _FROZEN = datetime.fromtimestamp(FROZEN_NOW_MS / 1000, UTC)
+_VISUAL_TITLE = "CDviz dashboards"
 
 
 def _stage(name: str) -> None:
@@ -723,9 +724,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                     ):
                         for view_name, filtered in (("all-runs", False), ("filtered", True)):
                             page = await context.new_page()
-                            with VisualPage(
-                                page, outputs=test_outputs, title=f"CDviz CI dashboard ({view_name})"
-                            ) as visual:
+                            with VisualPage(page, outputs=test_outputs, title=_VISUAL_TITLE) as visual:
                                 await _capture_dashboard(
                                     visual,
                                     base_url=grafana_url,
@@ -772,9 +771,7 @@ async def test_cdviz_webhook_ingestion_and_dashboards(tmp_path: Path, test_outpu
                             ("feedback-week", True, "1 week"),
                         ):
                             page = await context.new_page()
-                            with VisualPage(
-                                page, outputs=test_outputs, title=f"Commit to CI feedback ({view_name})"
-                            ) as visual:
+                            with VisualPage(page, outputs=test_outputs, title=_VISUAL_TITLE) as visual:
                                 await _capture_dashboard(
                                     visual,
                                     base_url=grafana_url,
