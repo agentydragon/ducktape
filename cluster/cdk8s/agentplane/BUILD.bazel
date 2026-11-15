@@ -1521,7 +1521,7 @@ py_library(
 
 py_test(
     name = "test_service_boundaries",
-    # Synthesizes both environments and checks History database wiring, Gateway-owned mutations, and notification scope.
+    # Synthesizes both environments and checks History database wiring, environment authority, and notification scope.
     size = "medium",
     srcs = ["test_service_boundaries.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -1532,6 +1532,7 @@ py_test(
         ":history_service",
         ":notifications",
         ":runner_gateway",
+        ":sandbox_controller",
         ":session_dispatcher",
         ":staging",
         "//:conftest",
