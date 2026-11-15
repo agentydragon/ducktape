@@ -199,6 +199,7 @@ impl Executor<'_, '_> {
                 // Keep its external heap observation on the ordinary timeline.
                 outcome.record_runtime_heap_contents(
                     self.inputs.index.source_scope(),
+                    self.inputs.index.source_scope(),
                     &crate::program_execution::RuntimeHeapContentCells {
                         opaque: true,
                         observes_external_heap: true,
@@ -379,6 +380,7 @@ impl Executor<'_, '_> {
                 self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
             {
                 outcome.record_runtime_heap_contents(
+                    self.inputs.index.source_scope(),
                     self.inputs.index.source_scope(),
                     &receipt.external_heap_contents(),
                     self.state.assumption.is_none(),

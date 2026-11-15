@@ -16196,6 +16196,30 @@ mod runtime_identity_tests {
         assert_eq!(outcome.observed_runtime_heap_accesses.reads.len(), 2);
         assert_eq!(outcome.effects.heap_contents.reads.len(), 1);
         assert!(outcome.effects.heap_contents.opaque);
+        let frontier = crate::program_execution::RuntimeHeapContentCells {
+            opaque: true,
+            observes_external_heap: true,
+            ..Default::default()
+        };
+        outcome.record_runtime_heap_contents(a.source_scope(), a.source_scope(), &frontier, true);
+        outcome.record_runtime_heap_contents(a.source_scope(), b.source_scope(), &frontier, true);
+        outcome.discard_source_heap_effects(a.source_scope());
+        assert_eq!(outcome.runtime_heap_contents.reads.len(), 1);
+        assert!(outcome.runtime_heap_contents.opaque);
+        assert!(outcome.effects.heap_contents.opaque);
+        assert!(
+            !outcome
+                .runtime_heap_frontiers
+                .contains_key(&a.source_scope())
+        );
+        assert!(
+            outcome
+                .runtime_heap_frontiers
+                .contains_key(&b.source_scope())
+        );
+        outcome.discard_source_heap_effects(b.source_scope());
+        assert!(!outcome.runtime_heap_contents.opaque);
+        assert!(!outcome.effects.heap_contents.opaque);
         let binding = a.hoisted_bindings.keys().next().unwrap().clone();
         let foreign_binding = b
             .source_scope()

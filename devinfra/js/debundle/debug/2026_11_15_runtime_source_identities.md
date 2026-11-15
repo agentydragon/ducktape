@@ -31,7 +31,8 @@ invocation outcomes, memo storage and alternative joins. Projection to one
 source's gate effects checks ownership. Foreign cells remain in the runtime
 ledger and contribute an opaque external frontier instead of silently becoming
 local integer cells. A source-owned record-factory heap proof only removes its
-own source cells. Missing runtime source definitions use conservative refusal.
+own source cells and opaque/external frontiers. Unaddressed frontier flags retain
+their source scope, separately from the source receiving the local projection. Missing runtime source definitions use conservative refusal.
 
 The parsed-source invariant tests prepare two sources with the same byte
 positions. They check disjoint heap entries and closure captures, rejected

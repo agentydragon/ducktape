@@ -32,6 +32,7 @@ impl Outcome {
             let Outcome {
                 mut effects,
                 runtime_heap_contents,
+                runtime_heap_frontiers,
                 observed_runtime_heap_accesses,
                 body_invoked,
                 // Joined above, over every leaf at once.
@@ -45,6 +46,7 @@ impl Outcome {
             } = leaf;
             // Binding and heap may-effects, with their assumed-path
             // provenance: an effect one leaf observed is observed.
+            joined.extend_runtime_heap_frontiers(&runtime_heap_frontiers);
             joined.runtime_heap_contents.extend(&runtime_heap_contents);
             joined
                 .observed_runtime_heap_accesses

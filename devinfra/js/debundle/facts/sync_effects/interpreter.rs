@@ -225,6 +225,7 @@ pub(super) fn unknown() -> Values {
 #[derive(Debug, Clone, Default)]
 pub(super) struct Outcome {
     pub(super) effects: SynchronousCalls,
+    pub(super) runtime_heap_frontiers: BTreeMap<RuntimeSourceScope, (bool, bool)>,
     pub(crate) runtime_heap_contents: crate::program_execution::RuntimeHeapContentCells,
     pub(crate) observed_runtime_heap_accesses: crate::program_execution::RuntimeHeapContentAccesses,
     /// The callable body was entered, rather than only conservatively
@@ -246,13 +247,28 @@ impl Outcome {
     pub(crate) fn record_runtime_heap_contents(
         &mut self,
         owner: RuntimeSourceScope,
+        source: RuntimeSourceScope,
         cells: &crate::program_execution::RuntimeHeapContentCells,
         non_assumed: bool,
     ) {
+        if cells.opaque || cells.observes_external_heap {
+            let frontier = self.runtime_heap_frontiers.entry(source).or_default();
+            frontier.0 |= cells.opaque;
+            frontier.1 |= cells.observes_external_heap;
+        }
         self.runtime_heap_contents.extend(cells);
         if non_assumed {
             self.observed_runtime_heap_accesses.extend_cells(cells);
         }
+        self.project_runtime_heap_contents(owner, cells, non_assumed);
+    }
+
+    fn project_runtime_heap_contents(
+        &mut self,
+        owner: RuntimeSourceScope,
+        cells: &crate::program_execution::RuntimeHeapContentCells,
+        non_assumed: bool,
+    ) {
         let mut foreign = false;
         let mut project = |cells: &BTreeSet<crate::program_execution::RuntimeEffectCell>| {
             cells
@@ -321,11 +337,53 @@ impl Outcome {
         }
     }
 
+    pub(super) fn extend_runtime_heap_frontiers(
+        &mut self,
+        frontiers: &BTreeMap<RuntimeSourceScope, (bool, bool)>,
+    ) {
+        for (&source, &(opaque, external)) in frontiers {
+            let current = self.runtime_heap_frontiers.entry(source).or_default();
+            current.0 |= opaque;
+            current.1 |= external;
+        }
+    }
+
+    /// An admitted proof about this source cannot remove another source's
+    /// cells or an unaddressed frontier produced by foreign code.
+    pub(super) fn discard_source_heap_effects(&mut self, source: RuntimeSourceScope) {
+        let keep = |cell: &crate::program_execution::RuntimeEffectCell| {
+            matches!(cell, crate::facts::EffectCell::GlobalProp(_))
+                || source.project_effect(cell).is_none()
+        };
+        self.runtime_heap_contents.allocations.retain(keep);
+        self.runtime_heap_contents.reads.retain(keep);
+        self.runtime_heap_contents.writes.retain(keep);
+        self.observed_runtime_heap_accesses.reads.retain(keep);
+        self.observed_runtime_heap_accesses.writes.retain(keep);
+        self.runtime_heap_frontiers.remove(&source);
+        self.runtime_heap_contents.opaque =
+            self.runtime_heap_frontiers.values().any(|flags| flags.0);
+        self.runtime_heap_contents.observes_external_heap =
+            self.runtime_heap_frontiers.values().any(|flags| flags.1);
+        self.effects.heap_contents = Default::default();
+        self.effects.non_assumed_heap_accesses = Default::default();
+        let retained = self.runtime_heap_contents.clone();
+        self.project_runtime_heap_contents(source, &retained, false);
+        let observed = self.observed_runtime_heap_accesses.clone();
+        for cell in observed.reads {
+            self.record_runtime_heap_read(source, cell, true);
+        }
+        for cell in observed.writes {
+            self.record_runtime_heap_write(source, cell, true);
+        }
+    }
+
     pub(super) fn absorb_call_outcome(
         &mut self,
         nested: &mut Outcome,
         assumption: Option<&AssumedEffectReason>,
     ) {
+        self.extend_runtime_heap_frontiers(&nested.runtime_heap_frontiers);
         self.runtime_heap_contents
             .extend(&nested.runtime_heap_contents);
         if assumption.is_none() {
@@ -2010,7 +2068,11 @@ impl Executor<'_, '_> {
 
     /// A runtime address from another source cannot fall through an empty
     /// local census as if the foreign body had no effects.
-    fn refuse_unavailable_runtime_source(&mut self, outcome: &mut Outcome) {
+    fn refuse_unavailable_runtime_source(
+        &mut self,
+        source: RuntimeSourceScope,
+        outcome: &mut Outcome,
+    ) {
         outcome.complete = false;
         outcome.unknown_call = true;
         let cells = crate::program_execution::RuntimeHeapContentCells {
@@ -2018,7 +2080,12 @@ impl Executor<'_, '_> {
             observes_external_heap: true,
             ..Default::default()
         };
-        outcome.record_runtime_heap_contents(self.inputs.index.source_scope(), &cells, false);
+        outcome.record_runtime_heap_contents(
+            self.inputs.index.source_scope(),
+            source,
+            &cells,
+            false,
+        );
         if self.state.current_top_owner.is_some() {
             self.promote_foreign_record(outcome);
         } else {
@@ -2394,6 +2461,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         {
             outcome.record_runtime_heap_contents(
                 self.inputs.index.source_scope(),
+                key.source,
                 &key.source.qualify_heap(cells),
                 outcome.body_invoked,
             );
@@ -9097,7 +9165,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if let Some(callable) = self.inputs.index.callables.get(&key) {
                 roots.insert(callable.owner);
             } else {
-                self.refuse_unavailable_runtime_source(outcome);
+                self.refuse_unavailable_runtime_source(key.source, outcome);
             }
         }
         if self.state.world.reachability.incomplete {
@@ -9177,6 +9245,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         // shared accumulator reentrantly. Preserve those contributions before
         // restoring the outer summary, including roots marked cached there.
         let mut reentrant = std::mem::take(&mut self.state.fallback_outcome);
+        outcome.extend_runtime_heap_frontiers(&reentrant.runtime_heap_frontiers);
         outcome
             .runtime_heap_contents
             .extend(&reentrant.runtime_heap_contents);
@@ -9229,7 +9298,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             .or_else(|| self.inputs.index.class_owners.get(&key).copied());
         let Some(owner) = owner else {
             self.state.active_class_member_promotions.remove(&key);
-            self.refuse_unavailable_runtime_source(outcome);
+            self.refuse_unavailable_runtime_source(key.source, outcome);
             return;
         };
         let effect_owner = self.state.current_top_owner.unwrap_or(owner);
@@ -11616,7 +11685,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 ..Default::default()
             };
             self.taint_objects(args.iter().flatten());
-            self.refuse_unavailable_runtime_source(&mut outcome);
+            self.refuse_unavailable_runtime_source(key.source, &mut outcome);
             return outcome;
         };
         let unsupported_inputs = uses_arguments
@@ -12502,6 +12571,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             }
             if let Some(receipt) = &resolution.iterable {
                 outcome.record_runtime_heap_contents(
+                    self.inputs.index.source_scope(),
                     self.inputs.index.source_scope(),
                     &receipt.external_heap_contents(),
                     self.state.assumption.is_none(),
