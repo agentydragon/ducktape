@@ -2,68 +2,121 @@ package rules
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/identity"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/policy"
 	"github.com/agentydragon/ducktape/agentplane/egress/resources"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	grpccredentials "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// serveGRPC serves the rules API over index on an in-process gRPC server, reviewing bearers with
-// reviews, and returns a client for it.
-func serveGRPC(t *testing.T, reviews auth.TokenReviews, index *policy.Index) egressrulespb.EgressRulesClient {
-	t.Helper()
-	resolver, err := auth.NewResolver(reviews, hopAudience, []string{namespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := NewService(index)
-	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer(auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(resolver)}.ServerOptions(0)...)
-	egressrulespb.RegisterEgressRulesServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient(
-		"passthrough:///egress-rules-test",
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return listener.Dial() }),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
-	return egressrulespb.NewEgressRulesClient(connection)
+// rulesFixture serves the production Rules authentication policy over verified TLS, with live
+// WorkloadCredential and Identity reads from envtest. Its second client has no certificate.
+type rulesFixture struct {
+	client, noCertificate egressrulespb.EgressRulesClient
+	reader                *rulesReader
 }
 
-// metadataOf is outgoing metadata from key, value pairs.
-func metadataOf(pairs ...string) context.Context {
-	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(pairs...))
+type rulesReader struct {
+	client.Reader
+	unavailable atomic.Bool
+}
+
+func (r *rulesReader) Get(ctx context.Context, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+	if r.unavailable.Load() {
+		return errors.New("test API server unavailable")
+	}
+	return r.Reader.Get(ctx, key, object, options...)
+}
+
+func rulesWorkload(t *testing.T, name string) workloadauthtesting.Workload {
+	t.Helper()
+	return workloadauthtesting.NewWorkload(t, kube, "rules-"+uuid.NewString()[:8], name)
+}
+
+func serveGRPC(t *testing.T, workload workloadauthtesting.Workload, index *policy.Index) rulesFixture {
+	t.Helper()
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.EgressProxyURI)
+	config := listener.Config{
+		ListenAddress: "127.0.0.1:0",
+		TLS:           &listener.TLS{CertFile: serverFiles.CertFile, KeyFile: serverFiles.KeyFile},
+		Auth:          []listener.Authentication{&listener.SPIFFEAuth{CAFile: serverFiles.CAFile}},
+	}
+	reader := &rulesReader{Reader: workload.Objects}
+	records, err := resolver.New(reader, []string{workload.Record.Namespace}, &resolver.Identities{PolicyNamespace: workload.Identity.Namespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authentication, err := identity.NewAuthenticator(config, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials, err := config.ServerCredentials(peertls.EgressProxyURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket, err := net.Listen("tcp", config.ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{egressrulespb.EgressRules_GetRules_FullMethodName: auth.AnySubject(authentication)}
+	server := grpc.NewServer(append(methods.ServerOptions(0), grpc.Creds(credentials))...)
+	egressrulespb.RegisterEgressRulesServer(server, NewService(index))
+	go func() { _ = server.Serve(socket) }()
+	t.Cleanup(server.Stop)
+	callerFiles := ca.Issue(t, workload.URI)
+	dial := func(certificate bool) egressrulespb.EgressRulesClient {
+		clientTLS, err := callerFiles.ClientTLSConfig(peertls.EgressProxyURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !certificate {
+			clientTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+				return &tls.Certificate{}, nil
+			}
+		}
+		connection, err := grpc.NewClient(socket.Addr().String(), grpc.WithTransportCredentials(grpccredentials.NewTLS(clientTLS)), grpc.WithNoProxy())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = connection.Close() })
+		return egressrulespb.NewEgressRulesClient(connection)
+	}
+	return rulesFixture{client: dial(true), noCertificate: dial(false), reader: reader}
 }
 
 func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
-	client := serveGRPC(t, kube.TokenReviews(), githubIndex())
+	workload := rulesWorkload(t, "sb")
+	fixture := serveGRPC(t, workload, githubIndex(workload.Identity))
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
+	got, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	want := &egressrulespb.GetRulesResponse{
-		Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "sb"}},
+		Caller: &egressrulespb.GetRulesResponse_Identity{Identity: &egressrulespb.IdentitySubject{Name: "sb"}},
 		Policies: []*egressrulespb.Policy{{Name: "github", Rules: []*egressrulespb.Rule{
 			{
 				Hosts:   []string{"api.github.com"},
@@ -83,7 +136,7 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}
-	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", sbToken} {
+	for _, forbidden := range []string{secretValue, "vault-entry", "credential-key", "secretRef", workload.URI} {
 		if strings.Contains(got.String(), forbidden) {
 			t.Errorf("%q reached a sandbox-readable response", forbidden)
 		}
@@ -91,9 +144,11 @@ func TestGetRulesTellsTheCallerHowToPresentEveryCredential(t *testing.T) {
 }
 
 func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
+	workload := rulesWorkload(t, "sb")
 	index := policy.NewIndex()
-	index.Rules.PutPolicySet(policySet("all-targets", githubRule))
-	index.Rules.PutBinding(binding("sb", "b", "all-targets"))
+	index.Rules.PutIdentity(workload.Identity)
+	index.Rules.PutPolicySet(policySet(workload.Identity.Namespace, "all-targets", githubRule))
+	index.Rules.PutBinding(binding(workload.Identity.Namespace, "sb", "b", "all-targets"))
 	index.PutCredential(resources.Credential{
 		Name: "github-pat", Description: description, Source: resources.SecretKey{Name: "github", Key: "token"},
 		Targets: []resources.Target{
@@ -105,9 +160,9 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 			resources.JSONField{Field: "password"},
 		},
 	})
-	client := serveGRPC(t, kube.TokenReviews(), index)
+	fixture := serveGRPC(t, workload, index)
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
+	got, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,14 +187,16 @@ func TestGetRulesNamesEachTargetByItsOwnFields(t *testing.T) {
 }
 
 func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
+	workload := rulesWorkload(t, "sb")
 	index := policy.NewIndex()
-	index.Rules.PutPolicySet(policySet("none", policyapi.Rule{
+	index.Rules.PutIdentity(workload.Identity)
+	index.Rules.PutPolicySet(policySet(workload.Identity.Namespace, "none", policyapi.Rule{
 		Type: resources.EgressRuleType, Hosts: []string{"a.example.com"}, Methods: []string{}, Paths: []string{},
 	}))
-	index.Rules.PutBinding(binding("sb", "b", "none"))
-	client := serveGRPC(t, kube.TokenReviews(), index)
+	index.Rules.PutBinding(binding(workload.Identity.Namespace, "sb", "b", "none"))
+	fixture := serveGRPC(t, workload, index)
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
+	got, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,55 +208,79 @@ func TestGetRulesKeepsAnEmptyListDistinctFromAnAbsentOne(t *testing.T) {
 }
 
 func TestGetRulesAnswersNoEgressWithNoPolicies(t *testing.T) {
-	client := serveGRPC(t, kube.TokenReviews(), githubIndex())
+	workload := rulesWorkload(t, "nobody")
+	fixture := serveGRPC(t, workload, githubIndex(workload.Identity))
 
-	got, err := client.GetRules(metadataOf("authorization", "Bearer "+nobodyToken), &egressrulespb.GetRulesRequest{})
+	got, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := &egressrulespb.GetRulesResponse{Caller: &egressrulespb.GetRulesResponse_Subject{Subject: &identitypb.ServiceAccount{Namespace: namespace, Name: "nobody"}}}
+	want := &egressrulespb.GetRulesResponse{Caller: &egressrulespb.GetRulesResponse_Identity{Identity: &egressrulespb.IdentitySubject{Name: "nobody"}}}
 	if !proto.Equal(got, want) {
 		t.Errorf("response = %v, want %v", got, want)
 	}
 }
 
-func TestGetRulesFailsClosedWithoutAProvenBearer(t *testing.T) {
-	for name, c := range map[string]struct {
+func TestGetRulesRefusesBearersAndAmbiguousWorkloadCredentials(t *testing.T) {
+	workload := rulesWorkload(t, "sb")
+	fixture := serveGRPC(t, workload, githubIndex(workload.Identity))
+	bearer, err := kube.WorkloadToken(t.Context(), workload.Principal.Account, "retired-egress-rules")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, test := range map[string]struct {
+		certificate bool
 		pairs       []string
-		wantReviews int32
 	}{
-		"no authorization":   {nil, 0},
-		"not a bearer":       {[]string{"authorization", "Basic abc"}, 0},
-		"two authorizations": {[]string{"authorization", "Bearer " + sbToken, "authorization", "Bearer " + sbToken}, 0},
-		"a forged bearer":    {[]string{"authorization", "Bearer forged"}, 1},
-		"only a hop bearer":  {[]string{"proxy-authorization", "Bearer " + sbToken}, 0},
+		"no credentials":                    {},
+		"valid bearer without certificate":  {pairs: []string{"authorization", "Bearer " + bearer}},
+		"forged bearer without certificate": {pairs: []string{"authorization", "Bearer forged"}},
+		"only a hop bearer":                 {pairs: []string{"proxy-authorization", "Bearer " + bearer}},
+		"certificate plus bearer":           {true, []string{"authorization", "Bearer " + bearer}},
+		"certificate plus Basic":            {true, []string{"authorization", "Basic abc"}},
+		"duplicate authorization":           {true, []string{"authorization", "Bearer " + bearer, "authorization", "Bearer " + bearer}},
+		"certificate plus delegation":       {true, []string{auth.DelegationMetadataKey, "forged"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			reviewed := &kubeapiserver.CountedReviews{TokenReviews: kube.TokenReviews()}
-			client := serveGRPC(t, reviewed, githubIndex())
-
-			got, err := client.GetRules(metadataOf(c.pairs...), &egressrulespb.GetRulesRequest{})
-
+			caller := fixture.noCertificate
+			if test.certificate {
+				caller = fixture.client
+			}
+			ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(test.pairs...))
+			got, err := caller.GetRules(ctx, &egressrulespb.GetRulesRequest{})
 			if status.Code(err) != codes.Unauthenticated || got != nil {
-				t.Errorf("got %v, %v; want Unauthenticated and no rules", got, err)
+				t.Fatalf("got %v, %v; want Unauthenticated and no rules", got, err)
 			}
-			if got := reviewed.Calls.Load(); got != c.wantReviews {
-				t.Errorf("%d token reviews, want %d: an unusable header must not reach the API server", got, c.wantReviews)
-			}
-			if strings.Contains(err.Error(), "forged") {
-				t.Errorf("the response echoes the rejected token: %v", err)
+			for _, secret := range []string{bearer, "forged"} {
+				if strings.Contains(err.Error(), secret) {
+					t.Errorf("the response echoes the rejected credential: %v", err)
+				}
 			}
 		})
 	}
 }
 
-func TestGetRulesIsUnavailableWhenTheBearerCannotBeReviewed(t *testing.T) {
-	client := serveGRPC(t, unreachable, githubIndex())
+func TestGetRulesRevalidatesTheLiveWorkloadCredential(t *testing.T) {
+	workload := rulesWorkload(t, "sb")
+	fixture := serveGRPC(t, workload, githubIndex(workload.Identity))
+	if _, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	workload.Revoke(t)
+	if _, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("revoked credential returned %v, want Unauthenticated", err)
+	}
+}
 
-	_, err := client.GetRules(metadataOf("authorization", "Bearer "+sbToken), &egressrulespb.GetRulesRequest{})
-
-	if status.Code(err) != codes.Unavailable {
-		t.Errorf("got %v, want Unavailable: an unanswered review says nothing about the caller", err)
+func TestGetRulesIsUnavailableWhenTheLiveCredentialCannotBeRead(t *testing.T) {
+	workload := rulesWorkload(t, "sb")
+	fixture := serveGRPC(t, workload, githubIndex(workload.Identity))
+	if _, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.reader.unavailable.Store(true)
+	if _, err := fixture.client.GetRules(t.Context(), &egressrulespb.GetRulesRequest{}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("got %v, want Unavailable: an unreadable credential says nothing about the caller", err)
 	}
 }
