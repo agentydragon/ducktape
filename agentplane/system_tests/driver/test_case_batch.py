@@ -258,20 +258,25 @@ async def test_early_exit_cancels_and_drains_active_cleanup() -> None:
         assert isinstance((await batch.result("queued")).error, asyncio.CancelledError)
 
 
-async def test_driver_failure_wakes_result_waiters(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("fails", [False, True], ids=["success", "failure"])
+async def test_case_reporting_without_recording_spans(monkeypatch: pytest.MonkeyPatch, fails: bool) -> None:
     monkeypatch.setattr(case_batch, "tracer", trace.NoOpTracer())
+    started = asyncio.Event()
+    release = asyncio.Event()
+    failure = ValueError("case failure") if fails else None
 
     async def run() -> None:
-        pass
+        started.set()
+        await release.wait()
+        if failure is not None:
+            raise failure
 
-    async def check() -> None:
-        async with CaseBatch.running({"case": Case("case", run)}, limit=1) as batch:
-            error = (await batch.result("case")).error
-            assert isinstance(error, ExceptionGroup)
-
-    async with asyncio.timeout(2):
-        with pytest.raises(ExceptionGroup):
-            await check()
+    async with asyncio.timeout(2), CaseBatch.running({"case": Case("case", run)}, limit=1) as batch:
+        await started.wait()
+        release.set()
+        result = await batch.result("case")
+        assert result.error is failure
+        assert result.seconds > 0
 
 
 if __name__ == "__main__":

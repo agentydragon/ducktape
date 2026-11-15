@@ -572,7 +572,6 @@ py_library(
     deps = [
         ":tracing",
         "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_sdk",
         "@pypi//pytest",
     ],
 )
