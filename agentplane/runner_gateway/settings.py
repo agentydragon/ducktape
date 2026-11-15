@@ -99,8 +99,10 @@ class Settings(BaseModel):
         min_length=1,
         description="Stable Runner Gateway Service target or template used for each Sandbox runner proxy.",
     )
-    dispatcher_audience: str = Field(min_length=1, description="Dispatcher caller TokenReview audience.")
-    gateway_audience: str = Field(min_length=1, description="Gateway caller TokenReview audience.")
+    # CLEANUP(2026-11-15, stage 5): remove ignored receiver audiences, account grants and
+    # bearer delegation after manifests omit them and the certificate-only rollout completes.
+    dispatcher_audience: str = Field(default="", description="Ignored legacy receiver audience.")
+    gateway_audience: str = Field(default="", description="Ignored legacy receiver audience.")
     runtime_proxy_readers: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,
@@ -129,22 +131,16 @@ class Settings(BaseModel):
         description="Exact service SVIDs granted Dispatcher component authority.",
     )
     dispatcher_callers: Set[ServiceAccountName] = Field(
-        min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
+        default_factory=frozenset, description="Ignored legacy Dispatcher account grants."
     )
     delegation: DelegationSettings | None = Field(
-        default=None,
-        description="Independent Actions delegation trust; does not grant direct or privileged caller access.",
+        default=None, description="Ignored legacy account delegation setting."
     )
     gateway_callers: Set[ServiceAccountName] = Field(
-        min_length=1,
-        description="ServiceAccounts admitted to Gateway read-only Runtime diagnostics, as namespace/name.",
+        default_factory=frozenset, description="Ignored legacy Runtime diagnostic account grants."
     )
     wake_callers: Set[ServiceAccountName] | None = Field(
-        default=None,
-        description=(
-            "Dispatcher callers whose sends may wake a suspended Sandbox, as namespace/name; an empty list, "
-            "like omission, grants no wake eligibility."
-        ),
+        default=None, description="Ignored legacy wake account grants."
     )
     wake_service_callers: Set[ServiceSPIFFEID] = Field(
         default_factory=frozenset,
@@ -152,7 +148,7 @@ class Settings(BaseModel):
         description="Exact Dispatcher service SVIDs allowed to request automatic Sandbox wake, subject to wakeOnSend.",
     )
     sandbox_controller_account: ServiceAccountName | None = Field(
-        default=None, description="ServiceAccount admitted to Quiesce through the Gateway, as namespace/name."
+        default=None, description="Ignored legacy Controller account grant."
     )
     max_queued_per_session: int = Field(default=1000, ge=1, description="Queued commands per Session.")
     dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
@@ -162,7 +158,7 @@ class Settings(BaseModel):
         default=None, description="Central sampler target; omission disables central session admission."
     )
     executor_callers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
+        default_factory=frozenset, description="Ignored legacy Executor account grants."
     )
 
     @model_validator(mode="after")
@@ -202,15 +198,10 @@ class Settings(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def rpc_audiences_are_method_scoped(self) -> Settings:
-        audiences = {
-            audience for method in self.rpc.auth if method.mode == "kubernetes_bearer" for audience in method.audiences
-        }
-        if self.dispatcher_audience == self.gateway_audience or audiences != {
-            self.dispatcher_audience,
-            self.gateway_audience,
-        }:
-            raise ValueError("rpc bearer audiences must be exactly dispatcher_audience and gateway_audience")
+    def validate_receiver_and_control_tls(self) -> Settings:
+        # Legacy bearer modes remain decodable during rollout; receivers only authenticate SVIDs.
+        if not any(method.mode == "spiffe" for method in self.rpc.auth):
+            raise ValueError("rpc.auth must include spiffe")
         if self.gateway_tls.server_uri != "spiffe://agentplane/session-dispatcher":
             raise ValueError("gateway_tls.server_uri must identify the Session Dispatcher service")
         self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)

@@ -46,26 +46,19 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 async def gateway_service(
     api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
 ) -> AsyncIterator[GatewayProcess]:
-    workload = ServiceAccountRef(namespace=sandbox.namespace, name=GATEWAY.name)
-    token_file = tmp_path / "runner-gateway-token"
-    await asyncio.to_thread(token_file.write_text, await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
-        dispatcher_callers=(APP,),
-        gateway_callers=(APP, workload),
-        workload=workload,
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_proxy_token_file=token_file,
     ) as service:
         yield service
 
 
 @pytest.fixture
 async def app_token_file(api_server: KubernetesApiServer, tmp_path: Path) -> Path:
-    """The app's projected token, for both the Dispatcher and the Runner proxy."""
+    """A valid legacy App bearer used only to prove receiver rejection."""
     token_file = tmp_path / "app-runner-gateway-token"
     await asyncio.to_thread(
         token_file.write_text, await api_server.workload_token(APP, [DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE])
@@ -74,22 +67,20 @@ async def app_token_file(api_server: KubernetesApiServer, tmp_path: Path) -> Pat
 
 
 @pytest.fixture
-def sandbox_control(gateway_service: GatewayProcess, app_token_file: Path) -> SandboxControlClient:
-    return gateway_service.gateway_client(app_token_file)
+def sandbox_control(gateway_service: GatewayProcess) -> SandboxControlClient:
+    return gateway_service.gateway_client()
 
 
 @asynccontextmanager
-async def session_dispatcher_client(
-    gateway: GatewayProcess, token_file: Path
-) -> AsyncIterator[SessionDispatcherClient]:
+async def session_dispatcher_client(gateway: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
     """A replica's own Dispatcher client: a channel of its own to the one Gateway."""
-    async with dial(gateway.target, channel_credentials=gateway.channel_credentials()) as channel:
-        yield SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=10)
+    async with dial(
+        gateway.target, channel_credentials=gateway.service_credentials("spiffe://agentplane/app")
+    ) as channel:
+        yield SessionDispatcherClient(channel, token_file=None, request_timeout_s=10)
 
 
 @pytest.fixture
-async def session_dispatcher(
-    gateway_service: GatewayProcess, app_token_file: Path
-) -> AsyncIterator[SessionDispatcherClient]:
-    async with session_dispatcher_client(gateway_service, app_token_file) as client:
+async def session_dispatcher(gateway_service: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
+    async with session_dispatcher_client(gateway_service) as client:
         yield client

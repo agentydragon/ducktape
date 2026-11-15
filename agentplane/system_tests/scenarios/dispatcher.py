@@ -25,11 +25,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking, cleanup_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import (
-    Caller,
-    bound_caller as _bound_caller,
-    forward as _forward,
-)
+from agentplane.system_tests.driver.dispatcher_transport import Caller, forward as _forward, service_caller
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
@@ -234,9 +230,9 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
     path = undeclared_outputs_dir() / "dispatcher-deployed.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
     async with AsyncExitStack() as stack:
-        # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
-        # existing app Pod as the token's binding object; this probe creates no caller Pods.
-        authentication, caller, _caller_uid = await _bound_caller(cluster, "app")
+        authentication, caller, _caller_uid = await service_caller(
+            cluster, "app", certificate_secret="app-workload-tls"
+        )
         identities = await stack.enter_async_context(AsyncExitStack())
         identity = await identities.enter_async_context(scenario_identity(cluster, sandbox, policies))
         created = json.loads(
@@ -282,7 +278,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "--for=jsonpath={.status.stopStage}=Stopped",
             "--timeout=300s",
         )
-        server_credentials = await service_credentials(cluster)
+        server_credentials = authentication.channel_credentials
         target = await stack.enter_async_context(_forward(cluster))
         channel = await stack.enter_async_context(
             dial(
@@ -297,9 +293,16 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
                 environments_pb.ListEnvironmentsRequest(), metadata=authentication.metadata, timeout=15
             )
         assert retired_environment_api.value.code() == grpc.StatusCode.UNIMPLEMENTED
-        with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
-            await stub.ListDispatches(pb.ListDispatchesRequest(filter=pb.DispatchFilter(sandbox=sandbox)), timeout=15)
-        assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED
+        async with dial(
+            target,
+            channel_credentials=await service_credentials(cluster),
+            server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+        ) as anonymous_channel:
+            with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
+                await session_dispatcher_pb2_grpc.SessionDispatcherStub(anonymous_channel).ListDispatches(
+                    pb.ListDispatchesRequest(filter=pb.DispatchFilter(sandbox=sandbox)), timeout=15
+                )
+            assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED
 
         with pytest.raises(grpc.aio.AioRpcError) as unregistered:
             await stub.ChangeReasoningEffort(
@@ -437,7 +440,7 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
             assert len(live) == 2
             streams = []
-            server_credentials = await service_credentials(cluster)
+            server_credentials = authentication.channel_credentials
             for replica in live:
                 target = await stack.enter_async_context(_forward(cluster, f"pod/{replica['metadata']['name']}"))
                 channel = await stack.enter_async_context(
@@ -589,15 +592,16 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         }
     gateway_config = json.loads(await cluster.kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
     gateway_settings = yaml.safe_load(gateway_config["data"]["settings.yaml"])
-    expected_wake_callers = [
-        {"namespace": cluster.namespace, "name": "app"},
-        {"namespace": cluster.namespace, "name": "notifications"},
-        # The k3s fixture offers the orchestration_v1 group, whose sends wake Sandboxes too.
-        {"namespace": cluster.namespace, "name": "actions"},
-    ]
-    accounts = {f"{account['namespace']}/{account['name']}" for account in expected_wake_callers}
-    assert set(gateway_settings["dispatcher_callers"]) == accounts
-    assert set(gateway_settings["wake_callers"]) == accounts
+    expected_wake_callers = {
+        "spiffe://agentplane/app",
+        "spiffe://agentplane/notifications",
+        "spiffe://agentplane/actions",
+    }
+    assert set(gateway_settings["dispatcher_service_callers"]) == expected_wake_callers
+    assert set(gateway_settings["wake_service_callers"]) == {
+        "spiffe://agentplane/app",
+        "spiffe://agentplane/notifications",
+    }
 
     policies = list(LAUNCH_DEFAULT_POLICY_SETS)
     suffix = uuid4().hex[:8]
@@ -608,7 +612,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         "sandbox": sandbox,
         "session": session,
         "command": command,
-        "wake_caller_accounts": expected_wake_callers,
+        "wake_caller_services": sorted(expected_wake_callers),
         "passed": False,
         "policy_sets": policies,
     }
@@ -677,16 +681,18 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         assert stopped["status"]["suspendedBy"] == "Idle"
         assert stopped["status"]["suspendedAtWakeGeneration"] == stopped["spec"]["wakeGeneration"] == 0
         evidence["initial_incarnation"] = initial_incarnation
-        app_authentication, app_pod, app_pod_uid = await _bound_caller(cluster, "app")
-        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller(
-            cluster, "notifications"
+        app_authentication, app_pod, app_pod_uid = await service_caller(
+            cluster, "app", certificate_secret="app-workload-tls"
+        )
+        notification_authentication, notification_pod, notification_pod_uid = await service_caller(
+            cluster, "notifications", certificate_secret="notifications-workload-tls"
         )
         evidence["caller_pods"] = {
             "app": {"name": app_pod, "uid": app_pod_uid},
             "notifications": {"name": notification_pod, "uid": notification_pod_uid},
         }
         path.write_text(json.dumps(evidence, indent=2) + "\n")
-        server_credentials = await service_credentials(cluster)
+        server_credentials = app_authentication.channel_credentials
         async with _forward(cluster) as target:
             channel = dial(
                 target,
@@ -695,6 +701,12 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
             )
             try:
                 stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
+                notification_channel = dial(
+                    target,
+                    channel_credentials=notification_authentication.channel_credentials,
+                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                )
+                notification_stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(notification_channel)
                 created = await stub.CreateSession(
                     pb.CreateSessionRequest(
                         session_id=session,
@@ -714,7 +726,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                     metadata=app_authentication.metadata,
                     timeout=15,
                 )
-                queued = await stub.SubmitInput(
+                queued = await notification_stub.SubmitInput(
                     pb.SubmitInputRequest(
                         expected_sandbox_uid=uid,
                         session_id=session,
@@ -749,7 +761,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 assert ready_incarnation
                 assert ready_incarnation != initial_incarnation
                 admitted = await _dispatch_until(
-                    stub,
+                    notification_stub,
                     notification_authentication,
                     session,
                     lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
@@ -876,6 +888,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
                 path.write_text(json.dumps(evidence, indent=2) + "\n")
             finally:
                 await channel.close()
+                await notification_channel.close()
     finally:
         failure = sys.exception()
         await cleanup_without_masking(failure, lambda: cleanup(failure))

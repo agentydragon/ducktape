@@ -192,7 +192,7 @@ async def test_another_replica_logout_ends_only_its_sessions_stream(
             db_url,
             history_client,
             sandboxes=SandboxesAccess(sandbox.server.kubeconfig, sandbox.namespace),
-            gateway=GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls),
+            gateway=GatewayAccess(gateway_service.target, None, gateway_service.client_tls),
             config=app_config,
         ) as replica,
         httpx.AsyncClient(base_url=replica.url, headers={"Origin": replica.url}) as other,

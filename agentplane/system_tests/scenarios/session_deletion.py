@@ -7,7 +7,7 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 from uuid import uuid4
 
 import grpc
@@ -27,7 +27,7 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cleanup_diagnostics import capture_without_masking
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_operations import session_until
-from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward
+from agentplane.system_tests.driver.dispatcher_transport import Caller, bound_caller, forward, service_caller
 from agentplane.system_tests.driver.identity import (
     LAUNCH_DEFAULT_POLICY_SETS,
     ScenarioIdentity,
@@ -48,11 +48,6 @@ def _retry_list_sessions_poll_error(error: BaseException) -> bool:
     return isinstance(error, AssertionError) or (
         isinstance(error, grpc.aio.AioRpcError) and error.code() == grpc.StatusCode.UNAVAILABLE
     )
-
-
-async def _gateway_audience(cluster: Cluster) -> str:
-    settings = json.loads(await cluster.kubectl("get", "configmap", "runner-gateway-settings", "-o", "json"))
-    return cast(str, yaml.safe_load(settings["data"]["settings.yaml"])["gateway_audience"])
 
 
 @asynccontextmanager
@@ -255,9 +250,10 @@ async def deployed_session_command_cannot_cross_deletion(
 ) -> None:
     artifact = undeclared_outputs_dir() / "session-deletion"
     artifact.mkdir()
-    app, _, _ = await bound_caller(cluster, "app")
-    audience = await _gateway_audience(cluster)
-    gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=audience)
+    app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
+    gateway, _, _ = await service_caller(
+        cluster, "runner-gateway", certificate_secret="runner-gateway-sessions-client-workload-tls"
+    )
     name = f"systest-deletion-{uuid4().hex[:8]}"
     session, positive, delayed, observed, probe_session = (str(uuid4()) for _ in range(5))
     evidence: dict[str, object] = {"sandbox": name, "session": session, "delayed_command": delayed, "passed": False}
@@ -284,7 +280,14 @@ async def deployed_session_command_cannot_cross_deletion(
         channel = await stack.enter_async_context(
             dial(
                 target,
-                channel_credentials=server_credentials,
+                channel_credentials=app.channel_credentials,
+                server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+            )
+        )
+        runtime_channel = await stack.enter_async_context(
+            dial(
+                target,
+                channel_credentials=gateway.channel_credentials,
                 server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
             )
         )
@@ -306,8 +309,9 @@ async def deployed_session_command_cannot_cross_deletion(
             session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         )
         runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
-            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
         )
+        runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
         metadata = _metadata(gateway, cluster, name, uid)
         await dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(session_id=session, spec=spec),
@@ -350,7 +354,7 @@ async def deployed_session_command_cannot_cross_deletion(
                 retry=retry_if_exception(_retry_list_sessions_poll_error),
             ):
                 with attempt:
-                    snapshot = await runner.ListSessions(
+                    snapshot = await runner_reader.ListSessions(
                         session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15
                     )
                     active = next(item for item in snapshot.sessions if item.session_id == session)
@@ -507,7 +511,7 @@ async def deployed_session_command_cannot_cross_deletion(
             stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception(_retry_list_sessions_poll_error)
         ):
             with attempt:
-                sessions = await runner.ListSessions(
+                sessions = await runner_reader.ListSessions(
                     session_pb2.ListSessionsRequest(), metadata=replacement_metadata, timeout=15
                 )
                 assert replacement_session in {item.session_id for item in sessions.sessions}
@@ -522,7 +526,7 @@ async def deployed_session_command_cannot_cross_deletion(
         # This RPC has no Session ID: NOT_FOUND proves UID routing refused the request, even if
         # an installation retains old Sessions across a name replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale_read:
-            await runner.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
+            await runner_reader.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
         assert stale_read.value.code() == grpc.StatusCode.NOT_FOUND
         # Preserve the delayed call's payload and old UID; it must not reach this healthy replacement.
         with pytest.raises(grpc.aio.AioRpcError) as stale:
@@ -607,6 +611,7 @@ async def _create_retained_turn(
     history_reader: Caller,
     dispatcher: session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub,
     runner: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub,
+    runner_reader: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub,
     sandbox: str,
     sandbox_uid: str,
     pod: str,
@@ -646,7 +651,9 @@ async def _create_retained_turn(
         stop=stop_after_delay(120), wait=wait_fixed(0.1), retry=retry_if_exception(_retry_list_sessions_poll_error)
     ):
         with attempt:
-            snapshot = await runner.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15)
+            snapshot = await runner_reader.ListSessions(
+                session_pb2.ListSessionsRequest(), metadata=metadata, timeout=15
+            )
             row = next(item for item in snapshot.sessions if item.session_id == session)
             assert not row.active_turn_id, row
     await _wait_retained_turn(history, history_reader, session)
@@ -666,9 +673,10 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
 
     persist()
     async with scripted.case_scope():
-        app, _, _ = await bound_caller(cluster, "app")
-        gateway_audience = await _gateway_audience(cluster)
-        gateway, _, _ = await bound_caller(cluster, "runner-gateway", audience=gateway_audience)
+        app, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
+        gateway, _, _ = await service_caller(
+            cluster, "runner-gateway", certificate_secret="runner-gateway-sessions-client-workload-tls"
+        )
         history_settings = json.loads(await cluster.kubectl("get", "configmap", "history-service-config", "-o", "json"))
         history_config = yaml.safe_load(history_settings["data"]["config.yaml"])
         history_reader, _, _ = await bound_caller(cluster, "app", audience=history_config["token_audience"])
@@ -681,7 +689,14 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
             dispatcher_channel = await identities.enter_async_context(
                 dial(
                     dispatcher_target,
-                    channel_credentials=server_credentials,
+                    channel_credentials=app.channel_credentials,
+                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                )
+            )
+            runtime_channel = await identities.enter_async_context(
+                dial(
+                    dispatcher_target,
+                    channel_credentials=gateway.channel_credentials,
                     server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
                 )
             )
@@ -693,7 +708,8 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                 )
             )
             dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel)
-            runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(dispatcher_channel)
+            runner = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
+            runner_reader = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(dispatcher_channel)
             history: history_service_pb2_grpc.HistoryServiceAsyncStub = history_service_pb2_grpc.HistoryServiceStub(
                 history_channel
             )
@@ -715,6 +731,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=history_reader,
                     dispatcher=dispatcher,
                     runner=runner,
+                    runner_reader=runner_reader,
                     sandbox=shared_name,
                     sandbox_uid=old_uid,
                     pod=old_pod,
@@ -744,6 +761,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=history_reader,
                     dispatcher=dispatcher,
                     runner=runner,
+                    runner_reader=runner_reader,
                     sandbox=other_name,
                     sandbox_uid=other_uid,
                     pod=other_pod,
@@ -771,6 +789,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                     history_reader=history_reader,
                     dispatcher=dispatcher,
                     runner=runner,
+                    runner_reader=runner_reader,
                     sandbox=shared_name,
                     sandbox_uid=current_uid,
                     pod=current_pod,

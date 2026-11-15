@@ -26,9 +26,8 @@ from agentplane.proto import session_pb2
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.native_gateway_fixtures import CLIENT, DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
+from agentplane.testing.native_gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS
 
 # gazelle:include_dep @pypi//protobuf
@@ -63,8 +62,8 @@ async def history_service(
 
 
 @pytest.fixture
-def sandbox_control(gateway_service: GatewayProcess, client_token: Path) -> SandboxControlClient:
-    return gateway_service.gateway_client(client_token)
+def sandbox_control(gateway_service: GatewayProcess) -> SandboxControlClient:
+    return gateway_service.gateway_client()
 
 
 @pytest.fixture
@@ -133,20 +132,13 @@ class TestGatewayContinuity:
     async def gateway_service(
         self, api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
     ) -> AsyncIterator[GatewayProcess]:
-        workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
-        token_file = tmp_path / "runner-gateway-token"
-        token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
         async with run_gateway(
             api_server.kubeconfig,
             database_url=dispatcher_database_url,
             namespace=sandbox.namespace,
-            dispatcher_callers=(CLIENT,),
-            gateway_callers=(CLIENT, workload),
-            workload=workload,
-            executor_callers=(CLIENT,),
+            executor_services=("spiffe://agentplane/central-sampler",),
             dispatcher_audience=DISPATCHER_AUDIENCE,
             gateway_audience=GATEWAY_AUDIENCE,
-            runner_proxy_token_file=token_file,
         ) as gateway:
             yield gateway
 
@@ -157,30 +149,22 @@ class TestGatewayContinuity:
         sandbox: SandboxCluster,
         dispatcher_database_url: str,
         gateway_service: GatewayProcess,
-        client_token: Path,
         runner: RunningRunner,
         tmp_path: Path,
     ) -> AsyncIterator[GatewayProcess]:
         """A second production Gateway binary sharing the Runtime trust root and Dispatcher database."""
         assert runner.process.exit_code is None
-        workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
-        token_file = tmp_path / "gateway-replica-token"
-        token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE], pod_name="gateway-replica"))
         async with run_gateway(
             api_server.kubeconfig,
             database_url=dispatcher_database_url,
             namespace=sandbox.namespace,
-            dispatcher_callers=(CLIENT,),
-            gateway_callers=(CLIENT, workload),
-            workload=workload,
             pod_name="gateway-replica",
-            executor_callers=(CLIENT,),
+            executor_services=("spiffe://agentplane/central-sampler",),
             dispatcher_audience=DISPATCHER_AUDIENCE,
             gateway_audience=GATEWAY_AUDIENCE,
-            runner_proxy_token_file=token_file,
             environment_runtime_ca=gateway_service.environment_runtime_ca,
         ) as replica:
-            await replica.wait_for_runner(replica.gateway_client(client_token), sandbox.destination)
+            await replica.wait_for_runner(replica.gateway_client(), sandbox.destination)
             yield replica
 
     async def test_two_gateway_processes_keep_one_runtime_binding_and_active_execution(
@@ -188,14 +172,13 @@ class TestGatewayContinuity:
         gateway_service: GatewayProcess,
         sibling_gateway: GatewayProcess,
         sandbox: SandboxCluster,
-        client_token: Path,
         runner: RunningRunner,
         tmp_path: Path,
     ) -> None:
         """Independent Gateway binaries can call one Runtime while either replica rolls."""
         assert runner.process.exit_code is None
-        gateway_a_client = gateway_service.gateway_client(client_token)
-        gateway_b_client = sibling_gateway.gateway_client(client_token)
+        gateway_a_client = gateway_service.gateway_client()
+        gateway_b_client = sibling_gateway.gateway_client()
         gateway_a_runner = gateway_a_client.runner(sandbox.destination)
         gateway_b_runner = gateway_b_client.runner(sandbox.destination)
         initial_a = await gateway_a_runner.status()
@@ -210,8 +193,7 @@ class TestGatewayContinuity:
             expected_incarnation_uid=sandbox.pod_uid,
             session_id=f"gateway-replica-{uuid4().hex}",
         )
-        bearer_token = (await asyncio.to_thread(client_token.read_text)).strip()
-        metadata = (("authorization", f"Bearer {bearer_token}"),)
+        metadata: tuple[tuple[str, str], ...] = ()
         workspace = tmp_path
         ready = workspace / "replica-process-ready"
         release = workspace / "replica-process-release"
@@ -249,8 +231,12 @@ class TestGatewayContinuity:
             )
 
         async with (
-            grpc.aio.secure_channel(gateway_service.target, gateway_service.channel_credentials()) as original_channel,
-            grpc.aio.secure_channel(sibling_gateway.target, sibling_gateway.channel_credentials()) as sibling_channel,
+            grpc.aio.secure_channel(
+                gateway_service.target, gateway_service.service_credentials("spiffe://agentplane/central-sampler")
+            ) as original_channel,
+            grpc.aio.secure_channel(
+                sibling_gateway.target, sibling_gateway.service_credentials("spiffe://agentplane/central-sampler")
+            ) as sibling_channel,
         ):
             await asyncio.wait_for(original_channel.channel_ready(), timeout=10)
             await asyncio.wait_for(sibling_channel.channel_ready(), timeout=10)
@@ -364,7 +350,7 @@ class TestGatewayContinuity:
 
             async def check_sibling_during_gateway_gap() -> None:
                 assert gateway_service.process.returncode is not None
-                gap_probe = gateway_service.gateway_client(client_token, request_timeout_s=0.25)
+                gap_probe = gateway_service.gateway_client(request_timeout_s=0.25)
                 with pytest.raises(TimeoutError):
                     await gap_probe.list_sessions(sandbox.destination)
                 during_gap = await gateway_b_runner.status()
@@ -391,7 +377,7 @@ class TestGatewayContinuity:
             await gateway_service.restart(while_stopped=check_sibling_during_gateway_gap)
             opened.cancel()
             assert old_gateway_process.returncode is not None
-            await gateway_service.wait_for_runner(gateway_service.gateway_client(client_token), sandbox.destination)
+            await gateway_service.wait_for_runner(gateway_service.gateway_client(), sandbox.destination)
             recovered_a = await gateway_a_runner.status()
             recovered_b = await gateway_b_runner.status()
             assert recovered_a.environment_runtime_boot_id == initial_a.environment_runtime_boot_id

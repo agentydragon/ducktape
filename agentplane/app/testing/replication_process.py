@@ -59,7 +59,7 @@ class SandboxesAccess:
 @dataclass(frozen=True)
 class GatewayAccess:
     target: str
-    token_file: Path
+    token_file: Path | None
     tls: ClientTLS | None = None
 
 
@@ -627,13 +627,14 @@ async def app_process(
                 settings["environment_service"] = EnvironmentServicePeer(
                     target=environments.target, request_timeout_s=20, tls=environments.tls
                 ).model_dump(mode="json")
+                # Empty Go strings clear legacy defaults; YAML null would leave those defaults intact.
                 settings.update(
                     {
                         "runner_gateway_target": gateway.target,
                         "runner_gateway_control_target": gateway.target,
                         "session_dispatcher_target": gateway.target,
-                        "runner_gateway_token_file": str(gateway.token_file),
-                        "session_dispatcher_token_file": str(gateway.token_file),
+                        "runner_gateway_token_file": str(gateway.token_file) if gateway.token_file else "",
+                        "session_dispatcher_token_file": str(gateway.token_file) if gateway.token_file else "",
                     }
                 )
                 if gateway.tls is not None:

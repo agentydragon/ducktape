@@ -43,6 +43,7 @@ py_library(
         ":tls",
         ":tracing",
         "//agentplane/runner_gateway/dispatcher:testing_client",
+        "@pypi//grpcio",
     ],
 )
 

@@ -23,37 +23,32 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.native_gateway_fixtures import (
     api_server,
-    client_token,
     control,
-    controller_token,
+    controller_enabled,
     database_clones,
     database_names,
     dispatcher,
     dispatcher_database_url,
     gateway_service,
-    gateway_token,
     kubeconfig,
     postgres_admin_url,
     postgres_container,
     postgres_image,
     runtime_client,
     sandbox,
-    sandbox_controller_account,
 )
 
 __all__ = [
     "api_server",
-    "client_token",
     "config",
     "control",
-    "controller_token",
+    "controller_enabled",
     "database_clones",
     "database_names",
     "dispatcher",
     "dispatcher_database_url",
     "endpoint",
     "gateway_service",
-    "gateway_token",
     "history_service",
     "ingress",
     "kubeconfig",
@@ -64,7 +59,6 @@ __all__ = [
     "runtime_binary",
     "runtime_client",
     "sandbox",
-    "sandbox_controller_account",
     "service_database_template",
     "service_history_db_url",
     "spec",
@@ -113,13 +107,12 @@ async def start_runtime(
     control: EnvironmentRuntimeControl,
     ingress: Endpoint,
     gateway_service: GatewayProcess,
-    client_token: Path,
     sandbox: SandboxCluster,
     runtime_binary: Path,
     tmp_path: Path,
 ) -> AsyncIterator[Callable[[], Awaitable[RunnerProcess]]]:
     environment = {**config.harness_environment, "ANTHROPIC_AUTH_TOKEN": launches.TOKEN, "OTEL_SDK_DISABLED": "true"}
-    remote = gateway_service.gateway_client(client_token, request_timeout_s=2)
+    remote = gateway_service.gateway_client(request_timeout_s=2)
     controller_credentials = gateway_service.controller_credentials(tmp_path / "controller-transport")
     async with model_config() as model_endpoint, AsyncExitStack() as processes:
         command = launches.command(

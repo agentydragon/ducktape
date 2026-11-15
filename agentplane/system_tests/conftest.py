@@ -7,7 +7,6 @@ once at the fixture boundary and default to staging.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Generator, Iterator
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -71,9 +70,9 @@ def pytest_runtest_makereport(
 
 
 @pytest.fixture
-async def dispatcher(cluster: Cluster, tmp_path: Path) -> AsyncIterator[SessionDispatcherClient]:
-    """Native Dispatcher client using an already authorized, Pod-bound test service identity."""
-    async with native_client(cluster, tmp_path / "dispatcher-token") as client:
+async def dispatcher(cluster: Cluster) -> AsyncIterator[SessionDispatcherClient]:
+    """Native Dispatcher client using an authorized App service SVID."""
+    async with native_client(cluster) as client:
         yield client
 
 

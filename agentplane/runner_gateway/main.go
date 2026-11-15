@@ -10,8 +10,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"slices"
-	"strings"
 	"syscall"
 	"time"
 
@@ -41,7 +39,6 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -64,65 +61,6 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	// acquisitions for seconds each; the deployment sets -1 to disable it.
 	kubeConfig.QPS = c.KubernetesClientQPS
 	return kubeConfig, nil
-}
-
-// dispatcherAccount identifies the ServiceAccount used by delivery workers. In bearer mode,
-// TokenReview binds the projected token to this Pod. In SVID mode, the service certificate only
-// authenticates the service role, so the account comes from the configured Pod's live API record.
-func dispatcherAccount(ctx context.Context, c config, resolver *auth.Resolver, objects client.Reader) (auth.Account, error) {
-	if c.GatewayTLS != nil && c.GatewayTLS.UsesSVID() {
-		if c.Namespace == "" || c.PodName == "" {
-			return auth.Account{}, errors.New("configured Gateway Pod namespace and name are required")
-		}
-		var pod corev1.Pod
-		if err := objects.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: c.PodName}, &pod); err != nil {
-			return auth.Account{}, fmt.Errorf("read configured Gateway Pod: %w", err)
-		}
-		if pod.Namespace != c.Namespace || pod.Name != c.PodName || pod.UID == "" || pod.Spec.ServiceAccountName == "" {
-			return auth.Account{}, errors.New("configured Gateway Pod has incomplete Kubernetes identity")
-		}
-		account := auth.Account{Namespace: pod.Namespace, Name: pod.Spec.ServiceAccountName}
-		if !slices.Contains(c.GatewayCallers, account) {
-			return auth.Account{}, errors.New("configured Gateway Pod ServiceAccount is not an admitted Gateway caller")
-		}
-		return account, nil
-	}
-	token, err := os.ReadFile(c.RunnerTokenFile)
-	if err != nil {
-		return auth.Account{}, errors.New("could not read Dispatcher workload credential")
-	}
-	ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+strings.TrimSpace(string(token))))
-	principal, err := resolver.RequireAccount(ctx, sets.New(c.GatewayCallers...))
-	if err != nil {
-		return auth.Account{}, fmt.Errorf("review Dispatcher workload credential: %w", err)
-	}
-	if principal.Account.Namespace != c.Namespace || principal.PodName != c.PodName {
-		return auth.Account{}, errors.New("Dispatcher workload credential belongs to another Pod")
-	}
-	var pod corev1.Pod
-	if err := objects.Get(ctx, client.ObjectKey{Namespace: principal.Account.Namespace, Name: c.PodName}, &pod); err != nil {
-		return auth.Account{}, fmt.Errorf("read Dispatcher workload Pod: %w", err)
-	}
-	if string(pod.UID) != principal.PodUID || pod.Spec.ServiceAccountName != principal.Account.Name {
-		return auth.Account{}, errors.New("Dispatcher workload credential disagrees with current Pod identity")
-	}
-	return principal.Account, nil
-}
-
-func accountNamespaces(accounts []auth.Account, extra *auth.Account, additional ...auth.Account) []string {
-	names := sets.New[string]()
-	for _, account := range accounts {
-		names.Insert(account.Namespace)
-	}
-	if extra != nil {
-		names.Insert(extra.Namespace)
-	}
-	for _, account := range additional {
-		if account.Namespace != "" {
-			names.Insert(account.Namespace)
-		}
-	}
-	return sets.List(names)
 }
 
 func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
@@ -242,7 +180,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	defer cancel()
 	wakeManager, err := wake.NewManager(wake.Options{
 		Namespace: c.Namespace, Objects: objects, WakeBudget: store,
-		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
+		WakeServiceCallers: c.WakeServiceCallers,
 	})
 	if err != nil {
 		return err
@@ -251,44 +189,17 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	var delegatedActors []auth.Account
-	if c.Delegation != nil {
-		delegatedActors = append(delegatedActors, c.Delegation.Actor)
-	}
-	workloadNamespaces := accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
-	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, workloadNamespaces)
-	if err != nil {
-		return err
-	}
 	dispatcherSVIDs, err := auth.NewKubernetesSVIDResolver(config, []string{c.Namespace},
 		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 	if err != nil {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
-	dispatcherAuth, err := dispatchAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.DispatcherAudience, true), dispatcherSVIDs)
-	if err != nil {
-		return fmt.Errorf("configure Gateway Dispatcher authentication: %w", err)
-	}
-	gatewayAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.GatewayAudience,
-		accountNamespaces(append(append([]auth.Account{}, c.GatewayCallers...), c.ExecutorCallers...), c.ControllerAccount))
-	if err != nil {
-		return err
-	}
-	gatewayRPCAuth, err := gatewayAuth.WithListenerAuthentication(c.rpcForMethodAudience(c.GatewayAudience, false), nil)
-	if err != nil {
-		return fmt.Errorf("configure Gateway proxy authentication: %w", err)
-	}
-	deliveryAccount, err := dispatcherAccount(ctx, c, gatewayAuth, objects)
-	if err != nil {
-		return err
-	}
 	g, err := gateway.New(gateway.Config{
 		RunnerSecurity: c.RunnerSecurity,
-		RuntimeReaders: c.RuntimeProxyReaders, SessionServices: c.RuntimeProxySessionCallers, ControllerServices: c.RuntimeProxyControllerCallers, ExecutorServices: c.ExecutorServiceCallers,
-		Namespace: c.Namespace, CallerAccounts: c.GatewayCallers, ExecutorCallers: c.ExecutorCallers,
-		DispatcherAccount:        deliveryAccount,
-		SandboxControllerAccount: c.ControllerAccount,
-	}, gatewayRPCAuth, inventory, inventoryHealth)
+		RuntimeReaders: c.RuntimeProxyReaders, SessionServices: c.RuntimeProxySessionCallers,
+		ControllerServices: c.RuntimeProxyControllerCallers, ExecutorServices: c.ExecutorServiceCallers,
+		Namespace: c.Namespace,
+	}, inventory, inventoryHealth)
 	if err != nil {
 		return err
 	}
@@ -351,31 +262,18 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return nil
 	}
 	service := &dispatcher.Service{
-		Store: store, DispatcherCallers: sets.New(c.DispatcherCallers...), DispatcherServices: sets.New(c.DispatcherServiceCallers...),
+		Store: store, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
 		Sandboxes:        catalog,
 		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
 		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
-	dispatcherRule, err := auth.ReviewedServiceAccountOrIdentity(dispatcherAuth).AllowServiceCallers(c.DispatcherServiceCallers)
+	dispatcherRule, err := auth.AnySubject(dispatcherSVIDs).AllowServiceCallers(c.DispatcherServiceCallers)
 	if err != nil {
 		return err
 	}
 	dispatcherMethods := dispatcher.Methods(dispatcherRule)
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
-	if c.Delegation != nil {
-		delegator := auth.Delegator{
-			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
-		}
-		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
-		if err != nil {
-			return err
-		}
-		methods, err = methods.WithDelegation(c.Delegation.Methods, []auth.Delegator{delegator}, identityReader)
-		if err != nil {
-			return fmt.Errorf("configure Runner Gateway delegation: %w", err)
-		}
-	}
 
 	if c.DispatcherServiceDelegation != nil {
 		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
@@ -409,9 +307,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	defer server.Stop()
 	g.RegisterProxy(server)
-	if len(c.ExecutorCallers) > 0 {
-		g.RegisterExecutor(server)
-	}
+	g.RegisterExecutor(server)
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(server, healthServer)
 	go func() { reportUnexpected(ctx, failed, "gRPC listener", server.Serve(rpcListener)) }()

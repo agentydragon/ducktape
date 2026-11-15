@@ -34,7 +34,7 @@ from sqlalchemy import func, select, update
 from agentplane.app.frontend.testing.history_interactions import frames, holding_still, read_at, tool_call_in, wheel
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.browser_certificate import BrowserCertificate
-from agentplane.app.testing.gateway_fixtures import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
+from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.http2_proxy import http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
@@ -72,7 +72,6 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs
@@ -157,21 +156,14 @@ async def empty_gateway_access(
     tmp_path: Path,
 ) -> AsyncIterator[GatewayAccess]:
     """A real inventory service for tests whose Sandbox has already been deleted."""
-    workload = ServiceAccountRef(namespace=namespace.name, name=GATEWAY.name)
-    token_file = tmp_path / "empty-gateway-token"
-    token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         namespace.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=namespace.name,
-        dispatcher_callers=(APP,),
-        gateway_callers=(APP, workload),
-        workload=workload,
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_proxy_token_file=token_file,
     ) as gateway:
-        yield GatewayAccess(gateway.target, app_token_file, gateway.client_tls)
+        yield GatewayAccess(gateway.target, None, gateway.client_tls)
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(

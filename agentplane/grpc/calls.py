@@ -85,7 +85,9 @@ def _raise(error: grpc.aio.AioRpcError) -> Never:
     raise_status(error)
 
 
-async def bearer(token_file: Path) -> tuple[tuple[str, str], ...]:
+async def bearer(token_file: Path | None) -> tuple[tuple[str, str], ...]:
+    if token_file is None:
+        return ()
     # Projected tokens rotate. Read for every RPC.
     token = (await asyncio.to_thread(token_file.read_text)).strip()
     return (("authorization", f"Bearer {token}"),)
@@ -95,7 +97,7 @@ async def call_unary[T](
     call: Callable[..., Awaitable[T]],
     request: Message,
     *,
-    token_file: Path,
+    token_file: Path | None,
     timeout_s: float,
     extra_metadata: tuple[tuple[str, str], ...] = (),
 ) -> T:

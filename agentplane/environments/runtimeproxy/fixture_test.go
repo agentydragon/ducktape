@@ -3,6 +3,7 @@ package runtimeproxy
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,7 +15,11 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +59,7 @@ func useAPIServer(server *kubeapiserver.Server) error {
 }
 
 // sandboxFixture is a Running Sandbox whose runner Pod is Ready, in a namespace of the test's own, with
-// tokens for that runner and for the Gateway's callers, and resolvers that review them.
+// valid legacy tokens used to verify that bearer callers are rejected.
 type sandboxFixture struct {
 	namespace                                             string
 	sandbox                                               *sandboxapi.Sandbox
@@ -62,7 +67,6 @@ type sandboxFixture struct {
 	objects                                               client.Client
 	runnerToken, appToken, executorToken, controllerToken string
 	dispatcherToken, unboundDispatcherToken               string
-	callerAuth                                            *auth.Resolver
 	ca                                                    *tlstest.CA
 	gatewayTLS, runnerTLS                                 peertls.Config
 }
@@ -146,10 +150,6 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if f.controllerToken, err = api.WorkloadToken(ctx, controllerAccount, testAudience); err != nil {
 		t.Fatal(err)
 	}
-	if f.callerAuth, err = auth.NewResolver(api.TokenReviews(), testAudience,
-		[]string{dispatcherAccount.Namespace, appAccount.Namespace, controllerAccount.Namespace, executorAccount.Namespace}); err != nil {
-		t.Fatal(err)
-	}
 	f.ca = tlstest.NewCA(t)
 	f.gatewayTLS = f.ca.Issue(t, peertls.GatewayURI)
 	uri, err := workloadid.ID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
@@ -161,35 +161,112 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 }
 
 // newGateway is a Gateway replica serving the fixture's namespace. It reads the API server directly.
-func (f *sandboxFixture) newGateway(t *testing.T, executorCallers ...auth.Account) *Gateway {
+func (f *sandboxFixture) newGateway(t *testing.T, executorCallers ...string) *Gateway {
 	t.Helper()
 	health := watchhealth.New()
 	health.MarkSynced()
 	return f.newGatewayReading(t, f.objects, health, executorCallers...)
 }
 
-func (f *sandboxFixture) newGatewayReading(t *testing.T, objects client.Reader, health *watchhealth.Health, executorCallers ...auth.Account) *Gateway {
+func (f *sandboxFixture) newGatewayReading(t *testing.T, objects client.Reader, health *watchhealth.Health, executorCallers ...string) *Gateway {
 	t.Helper()
 	gateway, err := New(Config{
 		Namespace:      f.namespace,
 		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &f.gatewayTLS},
-		CallerAccounts: []auth.Account{appAccount}, DispatcherAccount: dispatcherAccount,
-		ExecutorCallers: executorCallers, SandboxControllerAccount: &controllerAccount,
+		RuntimeReaders: []string{peertls.AppURI}, SessionServices: []string{peertls.SessionsURI},
+		ExecutorServices: executorCallers, ControllerServices: []string{peertls.SandboxControllerURI},
 		ControlTiming: ControlTiming{LivenessTimeout: 10 * time.Second},
-	}, f.callerAuth, objects, health)
+	}, objects, health)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return gateway
 }
 
-func (f *sandboxFixture) callerContext(token string) context.Context {
-	return metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
-		"authorization", "Bearer "+token,
+func (f *sandboxFixture) callerContext(service string) context.Context {
+	return metadata.NewOutgoingContext(context.WithValue(context.Background(), serviceConnectionKey{}, service), metadata.Pairs(
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
 		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, string(f.sandbox.UID),
 		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
+}
+
+// serviceConnectionKey selects a real TLS connection only inside this test process.
+// It is never serialized or derived from wire credentials.
+type serviceConnectionKey struct{}
+
+type serviceConnections struct {
+	connections map[string]*grpc.ClientConn
+	target      string
+	ca          *tlstest.CA
+}
+
+func (c *serviceConnections) connection(ctx context.Context) (*grpc.ClientConn, error) {
+	selector := ctx.Value(serviceConnectionKey{})
+	service, valid := selector.(string)
+	if selector != nil && !valid {
+		return nil, status.Error(codes.Unauthenticated, "invalid fixture service selector")
+	}
+	conn, ok := c.connections[service]
+	if !ok {
+		return nil, status.Error(codes.Unauthenticated, "unknown fixture service")
+	}
+	return conn, nil
+}
+
+func (c *serviceConnections) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
+	conn, err := c.connection(ctx)
+	if err != nil {
+		return err
+	}
+	return conn.Invoke(ctx, method, args, reply, opts...)
+}
+
+func (c *serviceConnections) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+	conn, err := c.connection(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return conn.NewStream(ctx, desc, method, opts...)
+}
+
+func serveGateway(t *testing.T, g *Gateway, register func(*grpc.Server)) *serviceConnections {
+	t.Helper()
+	ca := tlstest.NewCA(t)
+	tlsConfig, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(gatewayMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(tlsConfig)))...)
+	register(server)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: listener.Addr().String(), ca: ca}
+	for _, service := range []string{"", peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
+		certificateService := service
+		if certificateService == "" {
+			certificateService = peertls.AppURI
+		}
+		config, err := ca.Issue(t, certificateService).ClientTLSConfig(peertls.SessionDispatcherURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if service == "" {
+			config.Certificates = nil
+			config.GetClientCertificate = nil
+		}
+		conn, err := grpc.NewClient(result.target, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = conn.Close() })
+		result.connections[service] = conn
+	}
+	return result
 }

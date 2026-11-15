@@ -40,34 +40,24 @@ Runtime-owned admitted work.
 
 ## Environment Runtime proxy authorization
 
-The public Gateway authenticates Gateway-audience Kubernetes tokens with singular Pod-name and
-Pod-UID proof. All calls retain Sandbox UID/owner and current Runtime incarnation and boot fencing.
-Callers may additionally provide one non-empty `x-agentplane-incarnation-uid` metadata value to
-require a specific Runtime incarnation. The Gateway resolves and validates the current Sandbox and
-Pod first, then returns `Aborted` without forwarding if that incarnation differs. A duplicate or
-empty value is `InvalidArgument`; omitting the value preserves the ordinary proxy behavior.
+The public Gateway authenticates exact service SVIDs. Kubernetes bearer tokens and delegated
+envelopes grant no proxy or Executor admission. All calls retain Sandbox UID/owner and current
+Runtime incarnation and boot fencing. Callers may additionally provide one non-empty
+`x-agentplane-incarnation-uid` metadata value to require a specific Runtime incarnation. The Gateway
+resolves and validates the current Sandbox and Pod first, then returns `Aborted` without forwarding
+if that incarnation differs. A duplicate or empty value is `InvalidArgument`.
 
-- Only Pod-bound tokens of the combined Gateway/Dispatcher ServiceAccount may call Runtime `CreateSession`, `SubmitInput`,
-  `ChangeModel`, `ChangeReasoningEffort` and `InterruptTurn`. Startup derives its account from the
-  existing mounted delivery token, requires it in `gateway_callers`, and verifies the configured
-  current Pod namespace/name, Kubernetes Pod UID and Pod ServiceAccount. An unreadable token, unavailable
-  TokenReview or Pod read, missing Pod proof or identity mismatch prevents startup.
-- Dispatcher workers use that workload's projected token across replicas. They replace outgoing
-  metadata; caller credentials and caller-supplied identity headers cannot become this proof.
-  Every other caller uses SessionDispatcher for Session creation and commands, with its existing
-  direct or delegated authorization. The workload credential trusts the combined process, since
-  Gateway and Dispatcher share one Pod and executable; it is not a separate in-process identity. Any Pod able to obtain that ServiceAccount
-  is trusted equally, including other Gateway replicas. Existing platform principals allowed to
-  create arbitrary Pods remain trusted Kubernetes administrators; this policy does not constrain
-  that capability.
-- `gateway_callers` grants `ListSessions` and `GetStatus` diagnostics. Diagnostics grant neither
-  command nor wake authority. `WatchState` remains private to Gateway-to-Runtime observation.
-- Only `sandbox_controller_account` may `Quiesce`; omitting it admits nobody.
-- The separate Executor service retains its own `executor_callers` grant, including its streaming
-  `CreateSession`. It does not create a Runtime Session or enter Dispatcher admission.
-- Gateway proxy and Executor methods reject delegated envelopes. Delegation is configured only
-  on Dispatcher and EnvironmentService methods. Explicit resume and automatic wake retain their
-  own lifecycle authorization.
+- `runtime_proxy_session_callers` grants Runtime `CreateSession`, `SubmitInput`, `ChangeModel`,
+  `ChangeReasoningEffort` and `InterruptTurn` to exact Sessions service actors. Dispatcher workers
+  present their Sessions certificate across replicas; they replace outgoing metadata and never
+  forward a caller's credentials. There is no startup TokenReview or own-Pod authentication read.
+- `runtime_proxy_readers` grants `ListSessions` and `GetStatus` diagnostics, without command or wake
+  authority. `WatchState` remains private to Gateway-to-Runtime observation.
+- `runtime_proxy_controller_callers` grants `Quiesce`, `PrepareSuspend` and `ResumeAdmission`.
+- `executor_service_callers` independently enables the Executor methods, including `OpenSession`.
+  This does not create a Runtime Session or enter Dispatcher admission.
+- Every grant defaults empty. Service roles carry no fabricated account UID or Pod identity.
+  Dispatcher delegation and lifecycle wake authorization remain separate boundaries.
 
 Runtime Session creation and commands, including queued interrupts, are writes: the Gateway
 refuses forwarding once its synchronized inventory observes `Quiescing` or deletion. Diagnostics
@@ -83,12 +73,12 @@ its final Session cutoff refuses new command IDs, including interrupts. Existing
 journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
 protocol and supplies no such proof.
 
-## Service certificate callers during the cutover
+## Service certificate callers
 
 The Runtime proxy has independent exact-service allowlists for diagnostics readers, Sessions
 operations, and Controller lifecycle operations. Executor has its own service allowlist. No shared
 Gateway service identity grants all four roles. The existing combined serving identity remains the
 server pin; Sessions, runtime-proxy and Environments client identities follow those roles across
 the planned binary split. Verified service certificates carry neither Kubernetes account nor Pod
-proof, and method denial never falls back to bearer verification. All new lists default empty;
-manifest settings and caller switches follow receiver image pins.
+proof, and method denial never falls back to bearer verification. All lists default empty. Legacy receiver settings remain ignored and decodable until their
+manifest removal and rollout complete (stage 5 cleanup, 2026-11-15).

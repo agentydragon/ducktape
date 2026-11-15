@@ -80,12 +80,7 @@ async def _wait_for_vm_process_trace_contract(sandbox_uids: set[str], *, require
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def vm_cases(
-    request: pytest.FixtureRequest,
-    cluster: Cluster,
-    base_url: str,
-    token: str,
-    scripted_listener: Listener,
-    tmp_path_factory: pytest.TempPathFactory,
+    request: pytest.FixtureRequest, cluster: Cluster, base_url: str, token: str, scripted_listener: Listener
 ) -> AsyncIterator[CaseBatch]:
     scripted = ScriptedUpstream()
 
@@ -93,7 +88,7 @@ async def vm_cases(
         async with (
             scripted.case_scope(),
             scenario.open_resources(cluster, base_url, token, tracer) as (client, sandboxes),
-            native_client(cluster, tmp_path_factory.mktemp("vm-dispatcher") / "token") as dispatcher,
+            native_client(cluster) as dispatcher,
         ):
             models = await models_offered_for(client, [case.harness])
             await vm_sandbox.vm_sandbox_turn(

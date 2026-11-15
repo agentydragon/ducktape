@@ -26,18 +26,10 @@ CASE_LIMIT = int(os.environ.get("AGENTPLANE_POD_CASE_LIMIT", "4"))
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def pod_cases(
-    request: pytest.FixtureRequest,
-    cluster: Cluster,
-    base_url: str,
-    token: str,
-    scripted_listener: Listener,
-    tmp_path_factory: pytest.TempPathFactory,
+    request: pytest.FixtureRequest, cluster: Cluster, base_url: str, token: str, scripted_listener: Listener
 ) -> AsyncIterator[CaseBatch]:
     upstream = ScriptedUpstream()
-    async with (
-        native_client(cluster, tmp_path_factory.mktemp("pod-dispatcher") / "token") as dispatcher,
-        upstream.serving(listener=scripted_listener.socket),
-    ):
+    async with native_client(cluster) as dispatcher, upstream.serving(listener=scripted_listener.socket):
         cases = {
             item.nodeid: Case.for_item(item, cast(Scenario, item.callspec.params["case"]))
             for item in selected_items(request)

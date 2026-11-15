@@ -31,7 +31,7 @@ from agentplane.system_tests.driver.identity import (
     delete_scenario_identity,
 )
 from agentplane.system_tests.driver.sandbox_ownership import release_owned_sandboxes, remember_sandbox
-from agentplane.system_tests.driver.tls import service_credentials
+from agentplane.system_tests.driver.tls import service_credentials, service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
@@ -39,7 +39,6 @@ from model_catalog.catalog import GPT6_LUNA_RESPONSES
 SERVICE = "central-sampler"
 MODEL = GPT6_LUNA_RESPONSES.id
 HISTORY_READER_AUDIENCE = "agentplane-history-service"
-GATEWAY_AUDIENCE = "agentplane-runner-gateway"
 
 
 @dataclass(frozen=True)
@@ -238,7 +237,7 @@ async def capture_sampler_diagnostics(cluster: Cluster, core: k8s.CoreV1Api | No
 
 @asynccontextmanager
 async def central_stack(
-    cluster: Cluster, directory: Path, *, template: str, caller_account: str = "app"
+    cluster: Cluster, directory: Path, *, template: str, history_account: str = "app"
 ) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
@@ -247,10 +246,9 @@ async def central_stack(
             stack.push_async_callback(_diagnostics, cluster)
             connection = await stack.enter_async_context(cluster.api_client())
             core = k8s.CoreV1Api(connection)
-            caller = await _pod(cluster, core, caller_account)
-            caller_token = await _bound_token(cluster, core, caller_account, caller, "session-dispatcher")
+            caller = await _pod(cluster, core, history_account)
             reader_token = directory / "history-reader-token"
-            reader_token.write_text(await _bound_token(cluster, core, caller_account, caller, HISTORY_READER_AUDIENCE))
+            reader_token.write_text(await _bound_token(cluster, core, history_account, caller, HISTORY_READER_AUDIENCE))
             sandbox = "systest-central-" + uuid4().hex[:8]
             sandbox_target = await cleanup.enter_async_context(_owned_native_sandbox(cluster, sandbox, template))
             sandbox, uid = sandbox_target.name, sandbox_target.uid
@@ -280,13 +278,14 @@ async def central_stack(
             server_credentials = await service_credentials(cluster)
             # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
-            gateway_token = directory / "gateway-reader-token"
-            gateway_token.write_text(await _bound_token(cluster, core, caller_account, caller, GATEWAY_AUDIENCE))
+            # Dispatcher commands and Runtime diagnostics use the App role. The separate
+            # history_account selects only the still-legacy History reader token binding.
+            caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
-                token_file=gateway_token,
+                token_file=None,
                 request_timeout_s=2,
-                channel_credentials=server_credentials,
+                channel_credentials=caller_credentials,
                 server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(
@@ -303,7 +302,7 @@ async def central_stack(
             dispatcher_channel = await stack.enter_async_context(
                 dial(
                     await _address(cluster, core, "session-dispatcher", 8080),
-                    channel_credentials=server_credentials,
+                    channel_credentials=caller_credentials,
                     server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
                 )
             )
@@ -319,7 +318,7 @@ async def central_stack(
             )
             deployed = CentralStack(
                 dispatcher=session_dispatcher_pb2_grpc.SessionDispatcherStub(dispatcher_channel),
-                metadata=(("authorization", f"Bearer {caller_token}"),),
+                metadata=(),
                 sampler=sampler_pb2_grpc.SamplerStub(sampler_channel),
                 sampler_metadata=(),
                 history=history,

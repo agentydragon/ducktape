@@ -1,16 +1,16 @@
 """Test transport to the native Session Dispatcher with an existing bound service identity."""
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from pathlib import Path
+
+import grpc
 
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
-from agentplane.system_tests.driver.tls import service_credentials
+from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.system_tests.driver.tracing import tracer
 
 SERVICE = "session-dispatcher"
@@ -19,11 +19,12 @@ TOKEN_AUDIENCE = "session-dispatcher"
 
 @dataclass(frozen=True)
 class Caller:
-    token: str = field(repr=False)
+    token: str | None = field(default=None, repr=False)
+    channel_credentials: grpc.ChannelCredentials | None = field(default=None, repr=False)
 
     @property
     def metadata(self) -> tuple[tuple[str, str], ...]:
-        return (("authorization", f"Bearer {self.token}"),)
+        return (("authorization", f"Bearer {self.token}"),) if self.token is not None else ()
 
 
 async def bound_caller(
@@ -50,6 +51,14 @@ async def bound_caller(
         return Caller(token), name, uid
 
 
+async def service_caller(cluster: Cluster, component: str, *, certificate_secret: str) -> tuple[Caller, str, str]:
+    """Use a role certificate on a real TLS channel; Pod details are diagnostic only."""
+    pods = json.loads(await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={component}", "-o", "json"))
+    pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
+    credentials = await service_svid_credentials(cluster, certificate_secret)
+    return Caller(channel_credentials=credentials), pod["metadata"]["name"], pod["metadata"]["uid"]
+
+
 @asynccontextmanager
 async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
     """Port-forward the native gRPC endpoint; the caller owns the process lifetime."""
@@ -66,17 +75,16 @@ async def forward(cluster: Cluster, resource: str = f"service/{SERVICE}") -> Asy
 
 
 @asynccontextmanager
-async def native_client(cluster: Cluster, token_file: Path) -> AsyncIterator[SessionDispatcherClient]:
+async def native_client(cluster: Cluster) -> AsyncIterator[SessionDispatcherClient]:
     """Own a native channel using the existing backend-authorized test principal."""
-    caller, _, _ = await bound_caller(cluster, "app", audience=TOKEN_AUDIENCE)
-    await asyncio.to_thread(token_file.write_text, caller.token)
+    caller, _, _ = await service_caller(cluster, "app", certificate_secret="app-workload-tls")
     async with (
         forward(cluster) as target,
         SessionDispatcherClient.connect(
             target,
-            token_file=token_file,
+            token_file=None,
             request_timeout_s=30,
-            channel_credentials=await service_credentials(cluster),
+            channel_credentials=caller.channel_credentials,
             server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
         ) as client,
     ):

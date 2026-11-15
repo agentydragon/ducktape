@@ -4,10 +4,9 @@ The durable command queue is the Dispatcher role of the
 [Runner Gateway](../README.md). The Go integration app and the Notification Service use the
 Session Dispatcher gRPC contract; the stable Dispatcher Service maps port `8080` to the Gateway's
 shared TLS listener. The credential-holding Sandbox relay reaches that same listener through
-central-proxy CONNECT and presents its Runner SVID. Dispatcher and EnvironmentService methods
-retain their own caller rules, Dispatcher bearer audience and delegation policy. The worker delivers
-through the Runner proxy once
-the exact Sandbox is ready, with a per-Sandbox delivery Lease and PostgreSQL generation fencing.
+central-proxy CONNECT and presents its Runner SVID. Dispatcher methods retain their caller rules,
+exact service grants and typed delegation policy. EnvironmentService has its own listener. The worker
+delivers through the Runner proxy once the exact Sandbox is ready, with a per-Sandbox delivery Lease and PostgreSQL generation fencing.
 
 The manual queue, replica and wake probes are documented in the
 [system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
@@ -84,19 +83,13 @@ The manual queue, replica and wake probes are documented in the
   overlap window. The in-place migrations convert retained session and sampler request records and
   preserve Session/History data; they do not requeue commands or replay effects. See the
   [placement cutover details](SPEC.md#sessionspec-placement-cutover).
-- **Caller authority**: a normal workload token must prove the target Sandbox's exact controller-owned
-  execution ServiceAccount UID. New Sessions retain that UID as their immutable logical principal, and
-  retain the actual opening caller separately as creator/broker. Normal command writes, cancellation,
-  and interrupt also require the recorded principal to match the live managed account UID. A queued
-  delivery rechecks that UID immediately before calling the Runner. Normal receipt reads and watches
-  filter by the retained UID and do not require a live Sandbox or account. The configured backend
-  accounts keep their existing privileged behavior only when TokenReview also proves a Pod binding;
-  an account-only token for the same name uses normal per-Session authority.
-- **Create before Ready**: a configured Pod-bound backend can create a Session before the controller
-  has created the execution ServiceAccount. The Session record stores the expected target account with
-  its UID pending. Delivery binds that UID only after confirming the account has a controller OwnerReference
-  to the exact Sandbox UID. Legacy Session records with no recorded owner remain unowned by normal callers and
-  are never adopted based on a matching current account name.
+- **Caller authority**: live workload Identity SVIDs retain exact Identity ownership checks; configured
+  service SVIDs carry the separate component role. Typed service delegation preserves the effective
+  Identity independently of its service actor. Kubernetes bearers grant no admission. Historical
+  attribution remains readable, and retries never rewrite it.
+- **Create before Ready**: configured component callers preserve existing admission and deferred
+  execution-Identity binding behavior. Delivery still rechecks the live target and exact ownership;
+  receiver retirement does not adopt unowned rows or change attachment cardinality.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
@@ -154,7 +147,7 @@ the Sandboxes with pending work that it does not own.
   including its separate `no_op` outcome.
 - Sandbox Pods keep their proxy-only egress. The relay reaches the shared TLS gRPC listener through
   central CONNECT and authenticates with its Runner SVID; the configured CLI credential string remains
-  inert. Dispatcher TokenReview audience and caller allowlists remain unchanged. A concrete
+  inert. Dispatcher certificate admission and exact service grants remain unchanged. A concrete
   MCP/client caller and History provenance propagation remain outside this transport change.
 
 The detailed ownership, compatibility and transport contract is in [SPEC.md](SPEC.md).
@@ -162,7 +155,7 @@ The detailed ownership, compatibility and transport contract is in [SPEC.md](SPE
 ## Running
 
 The serving binary and image live under `//agentplane/runner_gateway` and
-`//agentplane/runner_gateway:image`. It reads the audience and caller settings described in
+`//agentplane/runner_gateway:image`. It reads the certificate and caller settings described in
 <../README.md>, a projected Gateway token for calls to other holder replicas, and
 `AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL`. The serving binary applies the embedded Goose queue migrations before opening the Gateway
 listener; the same binary accepts `--migrate-only` for explicit fixture or maintenance use. The

@@ -6,34 +6,27 @@ It scopes existing Sessions and existing environments; it does not create enviro
 
 ## Caller proof
 
-- One TLS gRPC listener serves Dispatcher, EnvironmentService, Gateway proxy, Executor and health
-  methods. Its bearer allowlist declares exactly the Dispatcher and Gateway audiences. Dispatcher
-  and EnvironmentService methods use the Dispatcher audience and their explicit caller and
-  backend-account allowlists; Gateway proxy and Executor methods use the Gateway audience and their
-  separate allowlists. Dispatcher and EnvironmentService methods also admit verified Sandbox SVIDs.
-  Delegation remains scoped to its exact configured methods and rechecks the effective caller's
-  current ServiceAccount UID. The resolver selects by presented credentials before method admission,
-  rejects disabled or ambiguous credentials, and never falls back from an invalid presented SVID.
-- Sandbox traffic reaches the shared TLS gRPC listener through central-proxy CONNECT, originating
-  TLS with its Runner SVID. It does not use an HTTP/JSON facade. No Dispatcher-audience token is
-  projected into Sandbox Pods.
-- A normal caller is the ServiceAccount identity returned by TokenReview, including the actual ServiceAccount
-  UID. Request fields never assert this identity.
-- The existing configured backend account list remains a privileged compatibility path only when the same
-  TokenReview also supplies a complete Pod name and Pod UID. An account-only token with a configured backend
-  name is still a normal account caller. The generic `auth.Principal` and `auth.Caller` APIs continue to mean
-  Pod-bound identity.
+- One TLS gRPC listener serves Dispatcher, Runtime proxy, Executor and health. Dispatcher admits
+  live workload Identity SVIDs, configured exact service SVIDs and configured typed service
+  delegation. Runtime proxy and Executor have separate service-only grants; EnvironmentService is
+  served by Environments on its own listener. Gateway constructs no TokenReview receiver.
+- Workload traffic reaches the shared TLS listener through central-proxy CONNECT and presents its
+  own SVID. Live credential and Identity UID resolution are unchanged, including standing
+  credentials with no Sandbox or Pod. No new Environment attachment requirement is introduced.
+- Request fields never assert caller identity. A service principal carries no fabricated account
+  UID or Pod, and certificate-plus-bearer authentication is refused. Retained ServiceAccount
+  attribution and historical Session records remain readable without admitting new bearer calls.
 - Creator/broker identity is retained for provenance, not Session ownership. The exact Identity
   creator may recover only its matching `CreateSession` receipt; that narrow retry authority does not
   grant `GetSession`, command, cancellation or watch access to the resulting Session.
 
-## Service certificate callers during the cutover
+## Service certificate callers
 
 `dispatcher_service_callers` grants exact service SPIFFE IDs the component Dispatcher role.
 These callers have their own typed principal and attribution; no account UID or Pod is fabricated.
 `dispatcher_service_delegation` independently grants exact certificate actors and exact Dispatcher
 RPCs typed Identity delegation. It requires Action provenance and a fresh effective Identity UID.
-Delegated actors never inherit the direct component role, cannot create Sessions, and spend only
+Delegated actors never inherit the direct component role and spend only
 the effective Identity's wake authority. Direct services require a separate service wake grant.
 Both allowlists default empty and are configured only after receiver image pins.
 
@@ -45,31 +38,19 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 
 ## Delegated callers
 
-- An independent `delegation` setting names the Actions ServiceAccount, the namespaces whose caller identity it may assert,
-  whether it may assert Identities (`identity_callers`, which requires `policy_namespace`), and the exact full RPC
-  method names that accept delegated calls. It does not inherit `dispatcher_callers` or `wake_callers`; the latter
-  remains a separate trusted automatic-wake broker grant.
-- Shared workload-auth middleware admits the Actions token only on the configured Dispatcher and EnvironmentService methods and rechecks the effective caller's current ServiceAccount UID
-  before the handler runs. Direct and delegated calls both use the typed `EffectiveCaller` admission. Missing or replaced
-  ServiceAccounts fail closed, and backend lookup failures return `UNAVAILABLE`.
-- Delegated calls always use ordinary Session ownership checks, even when the Actions actor is in `dispatcher_callers` or
-  arrives with Pod proof. The effective caller must match the opening's retained execution identity and the current
-  controller-owned account for writes. Reads use the same retained owner scope as direct calls.
-- Wake eligibility is evaluated against the effective caller. Actor membership in either backend allowlist does not grant
-  the effective caller service-wide access, opening-before-ready authority, or wake authority.
-- Durable opening and dispatch rows retain the verified actor, effective caller and any verified actor Pod proof separately.
-  Action request and execution UUIDs are correlation fields only. Existing Session IDs, command IDs and domain request
-  equality remain the reconciliation keys; a retry returns the original attribution and cannot duplicate an effect or
-  rewrite its admission evidence.
-- A delegated Identity caller is authorized exactly as that Identity's own workload: it reads, writes, cancels and
-  watches only Sessions recorded with its exact Identity incarnation, which middleware checked against the live
-  Identity. It may also create a native Session when its current `bind_session` grant matches the exact live
-  Sandbox selected by the placement. The Session executes as the Sandbox's current Identity, which may differ from
-  the creator only when that explicit grant allows it. Its Session attribution retains the effective creator
-  Identity separately from the delegating ServiceAccount, Pod and Action correlation. Its queued work requests a
-  wake as the Identity, under the rule below. EnvironmentService admission is unchanged.
-- No credentials or Action lease token are persisted. The Gateway performs no Actions or app lookup. Delegation does not
-  alter the Runner transport boundary below.
+- `dispatcher_service_delegation` names exact service actors and exact Dispatcher RPC methods.
+  Middleware verifies the actor's SVID, typed Action provenance and the effective Identity's live
+  UID before handlers run. The legacy account-based `delegation` setting is ignored.
+- Delegated calls use ordinary Identity Session ownership and `bind_session` checks. Actor grants
+  never confer component privileges or wake authority on the effective Identity. Native Session
+  creation still resolves the selected Sandbox's live execution Identity, which may differ from
+  the creator only under the existing explicit policy grant.
+- Durable openings and dispatch rows retain actor, effective caller and Action correlation
+  separately. Request and execution UUIDs are correlation only; Session/command IDs and domain
+  request equality retain their reconciliation meaning. Retries cannot rewrite admission evidence.
+- Wake eligibility uses the effective Identity. Direct service wake requires its independent exact
+  service grant. No credential or Action lease token is persisted, and Gateway does no Actions or
+  App lookup. Existing lifecycle, ownership and attachment rules are unchanged.
 
 ## Session binding
 
@@ -198,9 +179,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 
 Sandbox Pods retain proxy-only egress. Their credential-holding relay reaches the shared TLS gRPC
 listener through central CONNECT; the listener authenticates the Runner SVID before applying the
-unchanged Dispatcher and EnvironmentService method rules. The configured CLI credential string
+Dispatcher method rules. EnvironmentService has its own listener. The configured CLI credential string
 remains inert for compatibility. Backend callers use the same listener with the configured
-Dispatcher audience and allowlists. A concrete MCP/client and History provenance propagation remain
+Dispatcher certificate admission and exact grants. A concrete MCP/client and History provenance propagation remain
 outside this transport change.
 
 ## Typed delivery observations

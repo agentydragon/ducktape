@@ -1117,7 +1117,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
     """A killed Gateway leaves its Lease held; the active read still settles truthfully."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
@@ -1236,7 +1236,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
     """An outage beyond the resume budget settles the read without blocking History or input."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
@@ -2019,7 +2019,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
     """Lost JavaScript work is settled once before the successor continues the confirmed input."""
     session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(
-        cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
+        cluster, tmp_path, template=executor.template, history_account="system-test-native-client"
     ) as deployed:
         model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)

@@ -40,8 +40,9 @@ type config struct {
 	RunnerSecurity                peertls.Security `mapstructure:"runner_security"`
 	Namespace                     string           `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace             string                   `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL       string                   `mapstructure:"-"`
+	PolicyNamespace       string `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL string `mapstructure:"-"`
+	// CLEANUP(2026-11-15, stage 5): the legacy own-Pod input is ignored after receiver retirement.
 	PodName                     string                   `mapstructure:"-"`
 	RunnerTokenFile             string                   `mapstructure:"runner_token_file"`
 	Kubeconfig                  string                   `mapstructure:"kubeconfig"`
@@ -49,22 +50,25 @@ type config struct {
 	RPC                         listener.Config          `mapstructure:"rpc"`
 	GatewayTLS                  *peertls.ClientTLS       `mapstructure:"gateway_tls"`
 	RunnerControlTargetTemplate string                   `mapstructure:"runner_control_target_template"`
-	DispatcherAudience          string                   `mapstructure:"dispatcher_audience"`
-	GatewayAudience             string                   `mapstructure:"gateway_audience"`
 	WakeServiceCallers          []string                 `mapstructure:"wake_service_callers"`
 	DispatcherServiceCallers    []string                 `mapstructure:"dispatcher_service_callers"`
-	DispatcherCallers           []auth.Account           `mapstructure:"dispatcher_callers"`
 	DispatcherServiceDelegation *serviceDelegationConfig `mapstructure:"dispatcher_service_delegation"`
-	Delegation                  *delegationConfig        `mapstructure:"delegation"`
-	GatewayCallers              []auth.Account           `mapstructure:"gateway_callers"`
-	WakeCallers                 []auth.Account           `mapstructure:"wake_callers"`
-	ControllerAccount           *auth.Account            `mapstructure:"sandbox_controller_account"`
 	QueueCap                    int                      `mapstructure:"max_queued_per_session"`
 	WatchLeaseSeconds           int                      `mapstructure:"dispatcher_watch_lease_seconds"`
 	RunnerTimeoutSeconds        int                      `mapstructure:"runner_request_timeout_seconds"`
 
-	CentralSampler  *dispatcher.CentralTarget `mapstructure:"central_sampler"`
-	ExecutorCallers []auth.Account            `mapstructure:"executor_callers"`
+	CentralSampler *dispatcher.CentralTarget `mapstructure:"central_sampler"`
+
+	// CLEANUP(2026-11-15, stage 5): ignored receiver audiences, account grants and delegation
+	// remain decodable until manifests omit them and the certificate-only receiver rollout completes.
+	DispatcherAudience string            `mapstructure:"dispatcher_audience"`
+	GatewayAudience    string            `mapstructure:"gateway_audience"`
+	DispatcherCallers  []auth.Account    `mapstructure:"dispatcher_callers"`
+	GatewayCallers     []auth.Account    `mapstructure:"gateway_callers"`
+	WakeCallers        []auth.Account    `mapstructure:"wake_callers"`
+	ControllerAccount  *auth.Account     `mapstructure:"sandbox_controller_account"`
+	ExecutorCallers    []auth.Account    `mapstructure:"executor_callers"`
+	Delegation         *delegationConfig `mapstructure:"delegation"`
 }
 
 // serviceDelegationConfig is a separate certificate actor grant scoped to exact methods.
@@ -73,8 +77,7 @@ type serviceDelegationConfig struct {
 	Methods []string                `mapstructure:"methods"`
 }
 
-// delegationConfig is an independent trust grant. It does not inherit the direct caller or wake
-// allowlists, and its method list contains exact full gRPC method names served by this process.
+// delegationConfig retains the ignored legacy account-delegation shape during rollout.
 type delegationConfig struct {
 	Actor auth.Account `mapstructure:"actor"`
 	// IdentityCallers lets the actor assert Identities in policy_namespace.
@@ -184,8 +187,6 @@ func (c *config) validate() error {
 		{"sandbox_namespace", c.Namespace},
 		{"policy_namespace", c.PolicyNamespace},
 		{"dispatcher_database_url", c.DispatcherDatabaseURL},
-		{"dispatcher_audience", c.DispatcherAudience},
-		{"gateway_audience", c.GatewayAudience},
 		{"runner_control_target_template", c.RunnerControlTargetTemplate},
 	} {
 		if required.value == "" {
@@ -202,14 +203,10 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	if !c.RPC.Has(listener.SPIFFE) || !c.RPC.Has(listener.KubernetesBearer) {
-		return errors.New("rpc.auth must include spiffe and kubernetes_bearer")
-	}
-	if c.DispatcherAudience == c.GatewayAudience || !c.RPC.AllowsBearerAudience(c.DispatcherAudience) || !c.RPC.AllowsBearerAudience(c.GatewayAudience) {
-		return errors.New("rpc kubernetes_bearer audiences must include distinct dispatcher_audience and gateway_audience")
-	}
-	if len(c.rpcBearerAudiences()) != 2 {
-		return errors.New("rpc kubernetes_bearer must configure exactly dispatcher_audience and gateway_audience")
+	// CLEANUP(2026-11-15, stage 5): legacy kubernetes_bearer modes remain decodable
+	// until manifests omit them and rollout completes. No receiver uses them.
+	if !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("rpc.auth must include spiffe")
 	}
 	if c.GatewayTLS == nil {
 		return errors.New("gateway_tls is required for the Gateway's control-Service calls")
@@ -222,13 +219,6 @@ func (c *config) validate() error {
 	}
 	if err := c.GatewayTLS.ValidateCaller(c.RunnerTokenFile, peertls.SessionsURI); err != nil {
 		return fmt.Errorf("gateway_tls caller authentication: %w", err)
-	}
-	if len(c.DispatcherCallers) == 0 || len(c.GatewayCallers) == 0 {
-		return errors.New("dispatcher_callers and gateway_callers must each list at least one ServiceAccount")
-	}
-	if c.Delegation != nil && (c.Delegation.Actor.Namespace == "" || c.Delegation.Actor.Name == "" ||
-		!c.Delegation.IdentityCallers || len(c.Delegation.Methods) == 0) {
-		return errors.New("delegation requires an actor, identity_callers, and methods")
 	}
 	if math.IsNaN(float64(c.KubernetesClientQPS)) || math.IsInf(float64(c.KubernetesClientQPS), 0) {
 		return errors.New("kubernetes_client_qps must be finite")
@@ -246,11 +236,6 @@ func (c *config) validate() error {
 	} {
 		if positive.value < 1 {
 			return fmt.Errorf("%s must be positive", positive.name)
-		}
-	}
-	for _, account := range c.WakeCallers {
-		if !slices.Contains(c.DispatcherCallers, account) {
-			return fmt.Errorf("wake caller %s/%s is not a Dispatcher caller", account.Namespace, account.Name)
 		}
 	}
 	for _, service := range c.WakeServiceCallers {
@@ -280,32 +265,4 @@ func hasServiceCallers(callers map[string][]string) bool {
 		}
 	}
 	return false
-}
-
-func (c config) rpcBearerAudiences() []string {
-	for _, method := range c.RPC.Auth {
-		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
-			return bearer.Audiences
-		}
-	}
-	return nil
-}
-
-// rpcForMethodAudience binds a method family to its own audience and caller mode on the shared listener.
-func (c config) rpcForMethodAudience(audience string, allowSVID bool) listener.Config {
-	result := c.RPC
-	result.Auth = nil
-	for _, method := range c.RPC.Auth {
-		switch method := method.(type) {
-		case *listener.SPIFFEAuth:
-			if allowSVID {
-				result.Auth = append(result.Auth, &listener.SPIFFEAuth{CAFile: method.CAFile})
-			}
-		case *listener.KubernetesBearerAuth:
-			if c.RPC.AllowsBearerAudience(audience) {
-				result.Auth = append(result.Auth, &listener.KubernetesBearerAuth{Audiences: []string{audience}})
-			}
-		}
-	}
-	return result
 }

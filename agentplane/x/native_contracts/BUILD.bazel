@@ -114,7 +114,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "//agentplane:subjects",
         "//agentplane/env:config",
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:events",

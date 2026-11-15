@@ -17,7 +17,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.gateway_fixtures import APP, DISPATCHER_AUDIENCE, GATEWAY, GATEWAY_AUDIENCE
+from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
@@ -28,7 +28,6 @@ from agentplane.history_service.testing.history import History
 from agentplane.runner_gateway.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
@@ -96,26 +95,19 @@ async def app_config(
 async def gateway_service(
     namespace: SandboxNamespace, api_server: KubernetesApiServer, dispatcher_database_url: str, tmp_path: Path
 ) -> AsyncIterator[GatewayProcess]:
-    workload = ServiceAccountRef(namespace=namespace.name, name=GATEWAY.name)
-    gateway_token_file = tmp_path / "runner-gateway-token"
-    gateway_token_file.write_text(await api_server.workload_token(workload, [GATEWAY_AUDIENCE]))
     async with run_gateway(
         api_server.kubeconfig,
         database_url=dispatcher_database_url,
         namespace=namespace.name,
-        dispatcher_callers=(APP,),
-        gateway_callers=(APP, workload),
-        workload=workload,
         dispatcher_audience=DISPATCHER_AUDIENCE,
         gateway_audience=GATEWAY_AUDIENCE,
-        runner_proxy_token_file=gateway_token_file,
     ) as service:
         yield service
 
 
 @pytest.fixture
 def namespace_gateway(gateway_service: GatewayProcess, app_token_file: Path) -> GatewayAccess:
-    return GatewayAccess(gateway_service.target, app_token_file, gateway_service.client_tls)
+    return GatewayAccess(gateway_service.target, None, gateway_service.client_tls)
 
 
 async def _watch_results(response: httpx.Response) -> AsyncIterator[dict[str, object]]:

@@ -12,7 +12,6 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
@@ -64,28 +63,16 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		}
 	}
 
-	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	proxyServer := grpc.NewServer(gatewayMethods(t, gateway).ServerOptions(0)...)
-	gateway.RegisterProxy(proxyServer)
-	go func() { _ = proxyServer.Serve(proxyListener) }()
-	t.Cleanup(proxyServer.Stop)
-	proxy, err := grpc.NewClient(proxyListener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = proxy.Close() })
+	proxy := serveGateway(t, gateway, gateway.RegisterProxy)
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(proxy)
-	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := client.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("authorized app call did not reach Runner: %v", err)
 	}
 	if runner.calls.Load() != 1 {
 		t.Fatal("authorized app call did not reach the direct Runner server")
 	}
 	matchingIncarnationContext := metadata.AppendToOutgoingContext(
-		f.callerContext(f.appToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, string(f.pod.UID),
+		f.callerContext(peertls.AppURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, string(f.pod.UID),
 	)
 	if _, err := client.GetStatus(matchingIncarnationContext, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("proxy rejected the expected current incarnation: %v", err)
@@ -95,13 +82,13 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	}
 
 	wrongIncarnationContext := metadata.AppendToOutgoingContext(
-		f.callerContext(f.appToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+		f.callerContext(peertls.AppURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
 	)
 	if _, err := client.GetStatus(wrongIncarnationContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("proxy accepted a different expected incarnation: %v", err)
 	}
 	wrongSealContext := metadata.AppendToOutgoingContext(
-		f.callerContext(f.controllerToken), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+		f.callerContext(peertls.SandboxControllerURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
 	)
 	if _, err := client.Quiesce(wrongSealContext, &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("controller Quiesce accepted a different incarnation: %v", err)
@@ -121,7 +108,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 			for _, value := range test.values {
 				pairs = append(pairs, sandboxapi.RunnerProxyIncarnationUIDMetadataKey, value)
 			}
-			ctx := metadata.AppendToOutgoingContext(f.callerContext(f.appToken), pairs...)
+			ctx := metadata.AppendToOutgoingContext(f.callerContext(peertls.AppURI), pairs...)
 			if _, err := client.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.InvalidArgument {
 				t.Fatalf("proxy accepted malformed incarnation header: %v", err)
 			}
@@ -130,12 +117,11 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if runner.calls.Load() != 2 {
 		t.Fatalf("rejected incarnation headers reached Runner %d times, want 2", runner.calls.Load())
 	}
-	if _, err := client.GetStatus(f.callerContext(f.executorToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
+	if _, err := client.GetStatus(f.callerContext(peertls.CentralSamplerURI), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("caller outside the Runner proxy allowlist was accepted: %v", err)
 	}
 
-	staleContext := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
-		"authorization", "Bearer "+f.appToken,
+	staleContext := metadata.NewOutgoingContext(context.WithValue(t.Context(), serviceConnectionKey{}, peertls.AppURI), metadata.Pairs(
 		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
 		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
 		sandboxapi.RunnerProxySandboxUIDMetadataKey, "replaced-sandbox-uid",
@@ -173,7 +159,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	}
 	// The fixture's command methods return Unimplemented only after forwarding.
 	for _, command := range commands {
-		if err := command.call(f.callerContext(f.dispatcherToken)); status.Code(err) != codes.Unimplemented {
+		if err := command.call(f.callerContext(peertls.SessionsURI)); status.Code(err) != codes.Unimplemented {
 			t.Fatalf("%s before deletion = %v, want forwarded", command.name, err)
 		}
 	}
@@ -185,35 +171,35 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.SubmitInput(f.callerContext(f.dispatcherToken), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.SubmitInput(f.callerContext(peertls.SessionsURI), &environmentruntimepb.SubmitInputRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("SubmitInput in held suspend = %v, want Unavailable", err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); err != nil {
+	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("controller Quiesce in held suspend did not reach Runner: %v", err)
 	}
 	if got := runner.quiesceCalls.Load(); got != 1 {
 		t.Fatalf("Runner received %d Quiesce calls, want 1", got)
 	}
-	if _, err := client.PrepareSuspend(f.callerContext(f.controllerToken), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
+	if _, err := client.PrepareSuspend(f.callerContext(peertls.SandboxControllerURI), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
 		t.Fatalf("controller PrepareSuspend in held suspend = %v, want forwarded", err)
 	}
-	if _, err := client.ResumeAdmission(f.callerContext(f.controllerToken), &environmentruntimepb.ResumeAdmissionRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
+	if _, err := client.ResumeAdmission(f.callerContext(peertls.SandboxControllerURI), &environmentruntimepb.ResumeAdmissionRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
 		t.Fatalf("controller ResumeAdmission in held suspend = %v, want forwarded", err)
 	}
-	if _, err := client.PrepareSuspend(f.callerContext(f.appToken), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.PermissionDenied {
+	if _, err := client.PrepareSuspend(f.callerContext(peertls.AppURI), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("app PrepareSuspend = %v, want PermissionDenied", err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.appToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
+	if _, err := client.Quiesce(f.callerContext(peertls.AppURI), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("app Quiesce in held suspend = %v, want PermissionDenied", err)
 	}
 	f.sandbox.Status.Incarnation.UID = "replaced-runner-uid"
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Quiesce for a replaced Runner = %v, want Unavailable", err)
 	}
 	f.sandbox.Status.Incarnation.UID = string(f.pod.UID)
@@ -224,7 +210,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if err := f.objects.Status().Update(t.Context(), f.pod); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
+	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Quiesce with an unready Pod = %v, want Unavailable", err)
 	}
 	if got := runner.quiesceCalls.Load(); got != 1 {
@@ -252,14 +238,14 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	// Observe deletion before Runtime quiescence: no new command may be forwarded,
 	// while diagnostics and the controller's sealing handshake remain available.
 	for _, command := range commands {
-		if err := command.call(f.callerContext(f.dispatcherToken)); status.Code(err) != codes.FailedPrecondition {
+		if err := command.call(f.callerContext(peertls.SessionsURI)); status.Code(err) != codes.FailedPrecondition {
 			t.Fatalf("%s during deletion = %v, want FailedPrecondition", command.name, err)
 		}
 	}
-	if _, err := client.GetStatus(f.callerContext(f.appToken), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := client.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("deletion diagnostics: %v", err)
 	}
-	if _, err := client.Quiesce(f.callerContext(f.controllerToken), &sessionpb.QuiesceRequest{}); err != nil {
+	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("deletion Quiesce: %v", err)
 	}
 

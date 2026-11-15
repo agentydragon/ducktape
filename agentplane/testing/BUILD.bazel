@@ -150,7 +150,6 @@ py_library(
         ":kubernetes_apiserver",
         ":kubernetes_apiserver_fixtures",
         ":sandbox_fixtures",
-        "//agentplane:subjects",
         "//agentplane/env:config",
         "//agentplane/net/peertls:config",
         "//agentplane/runner_gateway:client",

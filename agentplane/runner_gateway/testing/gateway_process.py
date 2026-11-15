@@ -22,7 +22,6 @@ from agentplane.net.peertls import config as runtime_transport
 from agentplane.proto.identity_pb2 import SandboxDestination
 from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.runner_gateway.settings import Settings
-from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, write_ca
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -69,12 +68,26 @@ class GatewayProcess:
     environment_runtime_ca_file: Path
     dispatcher_audience: str
     gateway_audience: str
+    service_certificates: dict[str, tuple[Path, Path]]
     _restart: Callable[[Callable[[], Awaitable[None]] | None], Awaitable[GoProcess]]
     _close_listener: Callable[[], None]
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
-        return runtime_transport.ClientTLS(ca_file=self.environment_runtime_ca_file, server_uri=_SESSION_DISPATCHER_URI)
+        return self.service_tls(runtime_transport.APP_URI)
+
+    def service_tls(self, service: str) -> runtime_transport.ClientTLS:
+        cert_file, key_file = self.service_certificates[service]
+        return runtime_transport.ClientTLS(
+            ca_file=self.environment_runtime_ca_file,
+            server_uri=_SESSION_DISPATCHER_URI,
+            cert_file=cert_file,
+            key_file=key_file,
+            client_uri=service,
+        )
+
+    def service_credentials(self, service: str) -> grpc.ChannelCredentials:
+        return self.channel_credentials(client_certificate=self.service_certificates[service])
 
     def channel_credentials(self, *, client_certificate: tuple[Path, Path] | None = None) -> grpc.ChannelCredentials:
         """Verify the shared listener DNS SAN and optionally present a test workload SVID."""
@@ -104,12 +117,14 @@ class GatewayProcess:
         )
         return self.channel_credentials(client_certificate=certificate)
 
-    def gateway_client(self, token_file: Path, *, request_timeout_s: float = 20) -> SandboxControlClient:
+    def gateway_client(
+        self, service: str = runtime_transport.APP_URI, *, request_timeout_s: float = 20
+    ) -> SandboxControlClient:
         return SandboxControlClient(
             control_target=self.target,
-            token_file=token_file,
+            token_file=None,
             request_timeout_s=request_timeout_s,
-            channel_credentials=self.channel_credentials(),
+            channel_credentials=self.service_credentials(service),
         )
 
     async def _check_process(self) -> None:
@@ -162,22 +177,18 @@ async def run_gateway(
     *,
     database_url: str,
     namespace: str,
-    dispatcher_callers: Sequence[ServiceAccountRef],
-    gateway_callers: Sequence[ServiceAccountRef],
-    workload: ServiceAccountRef,
-    pod_name: str | None = None,
-    sandbox_controller_account: ServiceAccountRef | None = None,
-    executor_callers: Sequence[ServiceAccountRef] = (),
+    pod_name: str = "gateway",
+    controller_enabled: bool = False,
+    executor_services: Sequence[str] = (),
     dispatcher_audience: str,
     gateway_audience: str,
-    runner_proxy_token_file: Path,
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Migrate the supplied database, then run the full Gateway on deployment-shaped settings.
 
     The Kubernetes API and PostgreSQL database are owned by the caller. The Goose migration
     runner applies the schema before the server starts. Platform and Sandbox RPCs share one TLS
-    listener, with Dispatcher and Gateway bearer audiences scoped to their method families. Runner
+    listener, with exact service SVID grants and live workload Identity admission. Runner
     connections use each active Sandbox's direct mTLS gRPC server.
     """
     binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
@@ -186,7 +197,7 @@ async def run_gateway(
 
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
     # The database URL and Pod fields stay out of the file, as in deployment, where they come from
-    # runtime sources. The explicit empty wake list exercises the authoring schema and Go loader contract.
+    # runtime sources. Exact service roles exercise the authoring schema and Go loader contract.
     with ExitStack() as listeners:
         rpc_listener = listeners.enter_context(listen_tcp())
         with tempfile.TemporaryDirectory() as settings_dir:
@@ -209,40 +220,47 @@ async def run_gateway(
             rpc_settings = workload_listener.Listener(
                 listen_address=f"fd:{rpc_listener.socket.fileno()}",
                 tls=workload_listener.TLS(cert_file=rpc_cert, key_file=rpc_key),
-                auth=[
-                    workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file),
-                    workload_listener.KubernetesBearerAuth(
-                        audiences=frozenset({dispatcher_audience, gateway_audience})
-                    ),
-                ],
+                auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
             )
             runner_security = runtime_transport.MTLS(
                 tls=runtime_transport.TLS(
                     cert_file=str(gateway_cert), key_file=str(gateway_key), ca_file=str(environment_runtime_ca_file)
                 )
             )
+            service_certificates = {}
+            for service in (
+                runtime_transport.APP_URI,
+                runtime_transport.GATEWAY_SESSIONS_URI,
+                runtime_transport.SANDBOX_CONTROLLER_URI,
+                runtime_transport.CENTRAL_SAMPLER_URI,
+            ):
+                directory = settings_directory / service.rsplit("/", 1)[-1]
+                directory.mkdir()
+                service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
+            sessions_cert, sessions_key = service_certificates[runtime_transport.GATEWAY_SESSIONS_URI]
             effective_settings = Settings(
                 sandbox_namespace=namespace,
                 policy_namespace=namespace,
-                runner_token_file=runner_proxy_token_file,
                 kubeconfig=kubeconfig,
                 rpc=rpc_settings,
                 gateway_tls=runtime_transport.ClientTLS(
-                    ca_file=environment_runtime_ca_file, server_uri=_SESSION_DISPATCHER_URI
+                    ca_file=environment_runtime_ca_file,
+                    server_uri=_SESSION_DISPATCHER_URI,
+                    cert_file=sessions_cert,
+                    key_file=sessions_key,
+                    client_uri=runtime_transport.GATEWAY_SESSIONS_URI,
                 ),
                 runner_control_target_template=f"localhost:{rpc_listener.port}",
                 dispatcher_audience=dispatcher_audience,
                 gateway_audience=gateway_audience,
                 runner_security=runner_security,
-                dispatcher_callers={f"{account.namespace}/{account.name}" for account in dispatcher_callers},
-                gateway_callers={f"{account.namespace}/{account.name}" for account in gateway_callers},
-                sandbox_controller_account=(
-                    f"{sandbox_controller_account.namespace}/{sandbox_controller_account.name}"
-                    if sandbox_controller_account is not None
-                    else None
-                ),
-                executor_callers={f"{account.namespace}/{account.name}" for account in executor_callers},
-                wake_callers=set(),
+                dispatcher_service_callers={runtime_transport.APP_URI},
+                runtime_proxy_readers=[runtime_transport.APP_URI],
+                runtime_proxy_session_callers=[runtime_transport.GATEWAY_SESSIONS_URI],
+                runtime_proxy_controller_callers=[runtime_transport.SANDBOX_CONTROLLER_URI]
+                if controller_enabled
+                else [],
+                executor_service_callers=list(executor_services),
             )
             settings = effective_settings.model_dump(mode="json", exclude_none=True)
             settings_path = settings_directory / "settings.yaml"
@@ -251,7 +269,7 @@ async def run_gateway(
                 **os.environ,
                 Settings.config_file_env: str(settings_path),
                 Settings.dispatcher_database_url_env: _wire_database_url(database_url),
-                Settings.pod_name_env: pod_name or workload.name,
+                Settings.pod_name_env: pod_name,
             }
             credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 
@@ -287,6 +305,7 @@ async def run_gateway(
                     environment_runtime_ca_file=environment_runtime_ca_file,
                     dispatcher_audience=dispatcher_audience,
                     gateway_audience=gateway_audience,
+                    service_certificates=service_certificates,
                     _restart=restart_process,
                     _close_listener=rpc_listener.socket.close,
                 )

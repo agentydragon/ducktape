@@ -2,14 +2,11 @@ package runtimeproxy
 
 import (
 	"context"
-	"maps"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"google.golang.org/grpc/credentials"
@@ -25,24 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
-
-func TestBearerRolesRequireResolver(t *testing.T) {
-	account := auth.Account{Namespace: "test", Name: "caller"}
-	for name, role := range map[string]Config{
-		"readers":    {CallerAccounts: []auth.Account{account}},
-		"sessions":   {DispatcherAccount: account},
-		"controller": {SandboxControllerAccount: &account},
-		"executors":  {ExecutorCallers: []auth.Account{account}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			role.Namespace = "test"
-			role.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
-			if _, err := New(role, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "token resolver") {
-				t.Fatalf("configured bearer role without a resolver: %v", err)
-			}
-		})
-	}
-}
 
 // registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
 func registerStandIns(server *grpc.Server) {
@@ -60,91 +39,27 @@ func bearing(t *testing.T, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
-func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
+func TestEveryRPCRefusesLegacyBearerCallers(t *testing.T) {
 	f := newSandboxFixture(t)
-	withController := f.newGateway(t, executorAccount)
-	withoutController := f.newGateway(t, executorAccount)
-	withoutController.config.SandboxControllerAccount = nil
-	tokens := map[string]string{
-		"dispatcher": f.dispatcherToken, "unbound dispatcher": f.unboundDispatcherToken,
-		"app": f.appToken, "executor caller": f.executorToken, "controller": f.controllerToken,
-		// The runner's namespace is not one the callers' resolver serves.
-		"runner": f.runnerToken,
-	}
-	for _, test := range []struct {
-		name    string
-		gateway *Gateway
-		// admitted is who may call each method; a method absent from it is unlisted.
-		admitted map[string]string
-	}{
-		{"with a Sandbox controller", withController, map[string]string{
-			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:         "controller",
-			environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:  "controller",
-			environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName: "controller",
-		}},
-		{"without a Sandbox controller", withoutController, map[string]string{
-			environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:         "",
-			environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:  "",
-			environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName: "",
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			methods := gatewayMethods(t, test.gateway)
-			connection := grpcmethods.Serve(t, methods, registerStandIns)
-			for _, desc := range []struct {
-				service grpc.ServiceDesc
-				caller  string
-			}{{environmentruntimepb.EnvironmentRuntime_ServiceDesc, "app"}, {executorpb.Executor_ServiceDesc, "executor caller"}} {
-				for _, method := range grpcmethods.Of(desc.service) {
-					admitted, special := test.admitted[method.Name]
-					if !special {
-						admitted = desc.caller
-						switch method.Name {
-						case environmentruntimepb.EnvironmentRuntime_CreateSession_FullMethodName,
-							environmentruntimepb.EnvironmentRuntime_SubmitInput_FullMethodName,
-							environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName,
-							environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName,
-							environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:
-							admitted = "dispatcher"
-						}
-					}
-					t.Run(method.Name, func(t *testing.T) {
-						if method.Name == environmentruntimepb.EnvironmentRuntime_WatchState_FullMethodName {
-							// The proxy does not relay WatchState, so nobody may call it.
-							for name, token := range tokens {
-								if got := status.Code(method.Call(bearing(t, token), connection)); got != codes.PermissionDenied {
-									t.Errorf("%s: %v, want PermissionDenied", name, got)
-								}
-							}
-							return
-						}
-						if got := status.Code(method.Call(bearing(t, ""), connection)); got != codes.Unauthenticated {
-							t.Errorf("no bearer: %v", got)
-						}
-						for name, token := range tokens {
-							want := codes.PermissionDenied
-							switch {
-							case name == "runner" || name == "unbound dispatcher":
-								want = codes.Unauthenticated
-							case name == admitted:
-								want = codes.Unimplemented
-							}
-							if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
-								t.Errorf("%s: %v, want %v", name, got, want)
-							}
-						}
-						if admitted == "" {
-							return
-						}
-						unlisted := maps.Clone(methods)
-						delete(unlisted, method.Name)
-						if got := status.Code(method.Call(bearing(t, tokens[admitted]), grpcmethods.Serve(t, unlisted, registerStandIns))); got != codes.PermissionDenied {
-							t.Errorf("unlisted, %s got %v", admitted, got)
-						}
-					})
+	g := f.newGateway(t, peertls.CentralSamplerURI)
+	methods := gatewayMethods(t, g)
+	connection := serveGateway(t, g, registerStandIns)
+	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+		for _, method := range grpcmethods.Of(desc) {
+			want := codes.Unauthenticated
+			if _, listed := methods[method.Name]; !listed {
+				want = codes.PermissionDenied
+			}
+			for name, token := range map[string]string{
+				"none": "", "app": f.appToken, "dispatcher": f.dispatcherToken,
+				"unbound dispatcher": f.unboundDispatcherToken, "executor": f.executorToken,
+				"controller": f.controllerToken, "workload": f.runnerToken,
+			} {
+				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
+					t.Errorf("%s %s: %v, want %v", method.Name, name, got, want)
 				}
 			}
-		})
+		}
 	}
 }
 
@@ -156,7 +71,7 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 	if err := f.objects.Status().Update(t.Context(), sandbox); err != nil {
 		t.Fatal(err)
 	}
-	g := f.newGateway(t, executorAccount)
+	g := f.newGateway(t, peertls.CentralSamplerURI)
 	connection := grpcmethods.Serve(t, gatewayMethods(t, g), func(server *grpc.Server) {
 		executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
 	})
@@ -193,18 +108,7 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	f := newSandboxFixture(t)
-	// Match Gateway's stage-3 per-method resolver: bearer is enabled here, while
-	// exact service SVIDs are admitted by the method rules after TLS validation.
-	perMethodAuth, err := f.callerAuth.WithListenerAuthentication(listener.Config{
-		ListenAddress: ":8080",
-		TLS:           &listener.TLS{CertFile: f.gatewayTLS.CertFile, KeyFile: f.gatewayTLS.KeyFile},
-		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.callerAuth = perMethodAuth
-	g := f.newGateway(t, executorAccount)
+	g := f.newGateway(t, peertls.CentralSamplerURI)
 	g.config.RuntimeReaders = []string{peertls.AppURI}
 	g.config.SessionServices = []string{peertls.SessionsURI}
 	g.config.ControllerServices = []string{peertls.SandboxControllerURI}
@@ -261,5 +165,26 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestEmptyServiceGrantsAdmitNobody(t *testing.T) {
+	f := newSandboxFixture(t)
+	g := f.newGateway(t)
+	g.config.RuntimeReaders = nil
+	g.config.SessionServices = nil
+	g.config.ControllerServices = nil
+	connection := serveGateway(t, g, registerStandIns)
+	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
+		for _, method := range grpcmethods.Of(desc) {
+			for _, actor := range []string{peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
+				ctx, cancel := context.WithTimeout(context.WithValue(t.Context(), serviceConnectionKey{}, actor), 5*time.Second)
+				err := method.Call(ctx, connection)
+				cancel()
+				if status.Code(err) != codes.PermissionDenied {
+					t.Errorf("%s %s = %v, want PermissionDenied", method.Name, actor, err)
+				}
+			}
+		}
 	}
 }

@@ -68,11 +68,14 @@ def test_gateway_rejects_invalid_kubernetes_client_qps(qps: float) -> None:
         _settings({"mode": "insecure"}, kubernetes_client_qps=qps)
 
 
-def test_shared_listener_bearer_audiences_are_exactly_method_scoped() -> None:
+def test_legacy_receiver_settings_may_be_omitted() -> None:
     source = _settings({"mode": "insecure"}).model_dump(mode="json")
-    source["rpc"]["auth"][1]["audiences"] = ["test-dispatcher"]
-    with pytest.raises(ValidationError, match="exactly dispatcher_audience and gateway_audience"):
-        Settings.model_validate(source)
+    source["rpc"]["auth"] = [source["rpc"]["auth"][0]]
+    for key in ("dispatcher_audience", "gateway_audience", "dispatcher_callers", "gateway_callers"):
+        source.pop(key)
+    settings = Settings.model_validate(source)
+    assert not settings.dispatcher_callers
+    assert not settings.gateway_callers
 
 
 def test_shared_listener_svid_requires_tls() -> None:

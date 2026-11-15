@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"math"
 	"os"
 	"slices"
@@ -14,11 +12,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const databaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL=postgres://user:never-print-this@queue/dispatcher"
@@ -83,7 +76,7 @@ func TestCallerListsComeFromTheFileAndKeepAuthenticationAndWakeSeparate(t *testi
 	}
 }
 
-func TestSharedListenerDeclaresMethodBearerAudiences(t *testing.T) {
+func TestLegacyListenerBearerAudiencesRemainDecodable(t *testing.T) {
 	path := configtest.WriteSettings(t, requiredFile)
 	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
 	if err != nil {
@@ -96,11 +89,10 @@ func TestSharedListenerDeclaresMethodBearerAudiences(t *testing.T) {
 	}
 }
 
-func TestSharedListenerRequiresSVIDTLSAndBothBearerAudiences(t *testing.T) {
+func TestSharedListenerRequiresSVIDTLS(t *testing.T) {
 	for name, contents := range map[string]string{
-		"SVID without TLS":            strings.Replace(requiredFile, "  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}\n", "", 1),
-		"missing Dispatcher audience": strings.Replace(requiredFile, "audiences: [session-dispatcher, runner-gateway]", "audiences: [runner-gateway]", 1),
-		"missing Gateway audience":    strings.Replace(requiredFile, "audiences: [session-dispatcher, runner-gateway]", "audiences: [session-dispatcher]", 1),
+		"SVID without TLS":    strings.Replace(requiredFile, "  tls: {cert_file: /tmp/workload-cert, key_file: /tmp/workload-key}\n", "", 1),
+		"missing SPIFFE mode": strings.Replace(requiredFile, "    - {mode: spiffe, ca_file: /tmp/workload-ca}\n", "", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := configtest.WriteSettings(t, contents)
@@ -163,13 +155,6 @@ func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *t
 				t.Fatal("invalid Dispatcher service delegation was accepted")
 			}
 		})
-	}
-}
-
-func TestAWakeCallerThatIsNotADispatcherCallerIsRefused(t *testing.T) {
-	path := configtest.WriteSettings(t, requiredFile+"wake_callers: [agentplane/unknown]\n")
-	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-		t.Fatal("unauthorized wake caller accepted")
 	}
 }
 
@@ -274,7 +259,6 @@ func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 		requiredFile + "dispatcher_database_url: postgres://file.invalid/dispatcher\n",
 		requiredFile + "delegation: {actor: agentplane/actions, identity_callers: true, caller_namespaces: [agentplane], methods: [x]}\n",
 		"dispatcher_callers: [not-an-account]\ngateway_callers: [agentplane/a]\n",
-		requiredFile + "delegation: {actor: agentplane/actions}\n",
 	} {
 		path := configtest.WriteSettings(t, file)
 		_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
@@ -330,23 +314,13 @@ func TestSettingsWithoutADefaultAreRequired(t *testing.T) {
 		}
 	}
 	for name, key := range map[string]string{
-		"sandbox_namespace":   "sandbox_namespace: agentplane\n",
-		"runner_token_file":   "runner_token_file: /var/run/token\n",
-		"dispatcher_audience": "dispatcher_audience: session-dispatcher\n",
-		"gateway_audience":    "gateway_audience: runner-gateway\n",
+		"sandbox_namespace": "sandbox_namespace: agentplane\n",
+		"runner_token_file": "runner_token_file: /var/run/token\n",
 	} {
 		contents := strings.Replace(requiredFile, key, "", 1)
 		path := configtest.WriteSettings(t, contents)
 		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
 			t.Fatalf("ran without settings file field %s", name)
-		}
-	}
-	for name, contents := range map[string]string{
-		"no Dispatcher callers": strings.Replace(requiredFile, "dispatcher_callers: [agentplane/app, agentplane/notifications]\n", "", 1),
-		"no Gateway callers":    strings.Replace(requiredFile, "gateway_callers: [agentplane/runner-gateway]\n", "", 1),
-	} {
-		if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, contents))); err == nil {
-			t.Fatalf("ran with %s", name)
 		}
 	}
 }
@@ -461,110 +435,18 @@ func cloneCentralTarget(source *dispatcher.CentralTarget) *dispatcher.CentralTar
 	return &copy
 }
 
-// dispatcherReviews is the external TokenReview response used by the startup identity check.
-type dispatcherReviews struct {
-	t         *testing.T
-	principal auth.Principal
-	fail      bool
-}
-
-func (r dispatcherReviews) Create(_ context.Context, request *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if len(request.Spec.Audiences) != 1 || request.Spec.Audiences[0] != "gateway-audience" {
-		r.t.Fatalf("startup TokenReview used audiences %v", request.Spec.Audiences)
-	}
-	if r.fail {
-		return nil, errors.New("TokenReview unavailable")
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true, Audiences: request.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: "system:serviceaccount:" + r.principal.Account.Namespace + ":" + r.principal.Account.Name,
-			UID:      "gateway-account-uid",
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {r.principal.PodName},
-				"authentication.kubernetes.io/pod-uid":  {r.principal.PodUID},
-			},
-		},
-	}}, nil
-}
-
-func TestDispatcherCredentialProvesTheCurrentWorkloadAtStartup(t *testing.T) {
-	account := auth.Account{Namespace: "agentplane", Name: "gateway"}
-	for _, test := range []struct {
-		name        string
-		principal   auth.Principal
-		podAccount  string
-		reviewFails bool
-		valid       bool
-	}{
-		{name: "current Pod", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "gateway", valid: true},
-		{name: "another namespace", principal: auth.Principal{Account: auth.Account{Namespace: "foreign", Name: "gateway"}, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "gateway"},
-		{name: "another Pod", principal: auth.Principal{Account: account, PodName: "other-pod", PodUID: "current-pod-uid"}, podAccount: "gateway"},
-		{name: "replaced Pod", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "old-pod-uid"}, podAccount: "gateway"},
-		{name: "no Pod binding", principal: auth.Principal{Account: account}, podAccount: "gateway"},
-		{name: "Pod account mismatch", principal: auth.Principal{Account: account, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "app"},
-		{name: "unlisted account", principal: auth.Principal{Account: auth.Account{Namespace: "agentplane", Name: "app"}, PodName: "gateway-pod", PodUID: "current-pod-uid"}, podAccount: "app"},
-		{name: "review unavailable", reviewFails: true, podAccount: "gateway"},
+func TestLegacyReceiverSettingsMayBeOmitted(t *testing.T) {
+	contents := requiredFile
+	for _, line := range []string{
+		"dispatcher_audience: session-dispatcher\n", "gateway_audience: runner-gateway\n",
+		"dispatcher_callers: [agentplane/app, agentplane/notifications]\n",
+		"gateway_callers: [agentplane/runner-gateway]\n", "sandbox_controller_account: agentplane/sandbox-controller\n",
+		"    - {mode: kubernetes_bearer, audiences: [session-dispatcher, runner-gateway]}\n",
 	} {
-		t.Run(test.name, func(t *testing.T) {
-			c := config{Namespace: "agentplane", PodName: "gateway-pod", RunnerTokenFile: configtest.WriteSettings(t, "test-workload-token"), GatewayCallers: []auth.Account{account, {Namespace: "foreign", Name: "gateway"}}}
-			resolver, err := auth.NewResolver(dispatcherReviews{t: t, principal: test.principal, fail: test.reviewFails}, "gateway-audience", []string{"agentplane", "foreign"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			scheme := runtime.NewScheme()
-			if err := corev1.AddToScheme(scheme); err != nil {
-				t.Fatal(err)
-			}
-			pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "current-pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: test.podAccount}}
-			objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build()
-			got, err := dispatcherAccount(t.Context(), c, resolver, objects)
-			if test.valid {
-				if err != nil || got != account {
-					t.Fatalf("startup account=%v, error=%v", got, err)
-				}
-			} else if err == nil {
-				t.Fatalf("startup admitted account %v", got)
-			}
-		})
+		contents = strings.Replace(contents, line, "", 1)
 	}
-}
-
-func TestDispatcherAccountUsesConfiguredPodForServiceSVIDCalls(t *testing.T) {
-	account := auth.Account{Namespace: "agentplane", Name: "gateway"}
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
+	path := configtest.WriteSettings(t, contents)
+	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err != nil {
 		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name        string
-		pod         *corev1.Pod
-		callers     []auth.Account
-		wantAccount auth.Account
-		wantError   bool
-	}{
-		{name: "configured Pod", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantAccount: account},
-		{name: "different namespace", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "foreign", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantError: true},
-		{name: "missing UID", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod"}, Spec: corev1.PodSpec{ServiceAccountName: "gateway"}}, callers: []auth.Account{account}, wantError: true},
-		{name: "missing ServiceAccount", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}}, callers: []auth.Account{account}, wantError: true},
-		{name: "unlisted ServiceAccount", pod: &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "agentplane", Name: "gateway-pod", UID: "pod-uid"}, Spec: corev1.PodSpec{ServiceAccountName: "other"}}, callers: []auth.Account{account}, wantError: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			objects := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(test.pod).Build()
-			c := config{
-				Namespace: "agentplane", PodName: "gateway-pod", GatewayCallers: test.callers,
-				GatewayTLS: &peertls.ClientTLS{CAFile: "/ca", ServerURI: peertls.SessionDispatcherURI, CertFile: "/cert", KeyFile: "/key", ClientURI: peertls.SessionsURI},
-			}
-			got, err := dispatcherAccount(t.Context(), c, nil, objects)
-			if test.wantError {
-				if err == nil {
-					t.Fatalf("accepted configured Pod identity as %v", got)
-				}
-				return
-			}
-			if err != nil || got != test.wantAccount {
-				t.Fatalf("dispatcher account=%v, error=%v", got, err)
-			}
-		})
 	}
 }

@@ -19,25 +19,19 @@ The Gateway Role reads workloads and policy, patches existing Sandboxes for Disp
 wake, and maintains Dispatcher delivery Leases. It cannot create or delete Sandboxes or read
 SandboxTemplates; EnvironmentService owns launch and deletion through the Controller Role.
 
-One TLS gRPC listener serves Dispatcher, Gateway proxy, Executor and health
-methods, with independent per-method authorization. Only the Pod-bound Gateway/Dispatcher workload
-can proxy Runtime Session creation and commands; `gateway_callers` grants read-only diagnostics.
-Startup reviews `runner_token_file` with the Gateway audience and verifies its Pod name, current UID
-and ServiceAccount against Kubernetes before serving. The Kubernetes API must answer that
-TokenReview and Pod read; failure prevents startup. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
-The Sandbox Controller owns `Sandbox.status`. Environments can also register the shared Runtime
-proxy and Executor through its optional receiver settings; deployments and callers retain the
-Gateway endpoint until that receiver image and its grants have rolled.
+One TLS gRPC listener serves Dispatcher, Runtime proxy, Executor and health methods with independent
+per-method authorization. Runtime proxy and Executor methods admit only configured service SVIDs:
+App and Notifications diagnostics, Sessions commands, Controller lifecycle and sampler execution
+have separate exact grants. Dispatcher also admits live workload Identity SVIDs and explicitly
+configured typed service delegation. Kubernetes bearer credentials grant no admission. See the
+[proxy contract](../environments/runtimeproxy/SPEC.md) and [Dispatcher contract](dispatcher/SPEC.md).
 
-The required `rpc` settings block configures this shared TLS listener. It enables SPIFFE and
-Kubernetes bearer authentication, with exactly the Dispatcher and Gateway audiences. Dispatcher
-methods use the Dispatcher audience; Gateway proxy and Executor methods use the Gateway audience.
-Dispatcher methods also accept a verified Sandbox
-SVID. Each method retains its existing caller allowlist, delegation, and effective-caller checks.
-Calls select one enabled credential: an invalid presented SVID cannot fall back to bearer
-authentication, and certificate plus authorization or delegation credentials are rejected as
-ambiguous. The Gateway uses `gateway_tls` to verify the stable Runner Gateway and Dispatcher service
-peers and presents its projected Gateway bearer where required.
+The required `rpc` block configures TLS and SPIFFE trust. Legacy receiver audiences, account grants,
+bearer delegation and `kubernetes_bearer` listener entries remain decodable but ignored until generated
+manifests omit them and the receiver rollout completes (stage 5 cleanup, 2026-11-15). Dispatcher
+workers use the Sessions service SVID in `gateway_tls` to call the proxy across replicas. Neither
+caller credentials nor effective Identity metadata replace that service proof. The Sandbox
+Controller owns `Sandbox.status`; delivery leases and Runtime incarnation fencing are unchanged.
 
 Cluster and k3s Gateways and Runners use certificates from cert-manager and roots distributed by
 trust-manager. Required `runner_security.mode: mtls` uses a `tls` block naming the Gateway's client
@@ -85,9 +79,9 @@ conversation and from Runner admission.
 - `main.go`, `config.go`: process and listener wiring, and the settings (the required
   `AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` path, with all non-secret settings in that file;
   [`settings.py`](settings.py) is the authoring schema). The Dispatcher database URL Secret and
-  Pod name are runtime environment inputs. Generic
-  `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `delegation`
-  policy names an Actions actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
+  legacy ignored Pod name are runtime environment inputs. Generic
+  `AGENTPLANE_RUNNER_GATEWAY_*` variables do not override file values. The independent `dispatcher_service_delegation`
+  policy names an exact service actor and exact Dispatcher RPC methods; it grants no Runtime proxy or
   Executor authority. EnvironmentService roles and delegation belong to the Controller settings.
 - [`../environments/runtimeproxy/`](../environments/runtimeproxy/): shared direct Runtime connections, proxy and Sandbox/Pod validation during the receiver migration.
 - `internal/sandboxinventory/`: informer-backed Sandbox reads and the uncached Identity reader that supply the Dispatcher contract.
@@ -152,7 +146,7 @@ ProxyRunner. Central controls bypass executor readiness/wake checks after Sessio
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 
-The separate, default-empty `executor_callers` policy enables typed `Executor` RPCs for
+The separate, default-empty `executor_service_callers` policy enables typed `Executor` RPCs for
 trusted samplers. The Gateway checks destination and incarnation, then forwards process and file
 operations to the Runner's authenticated `Executor` service using the same
 [sandbox-owned contract](../env/runtime/execution/executor.proto). The Runner alone translates the
