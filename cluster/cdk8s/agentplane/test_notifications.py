@@ -130,15 +130,17 @@ def test_notifications_use_the_configured_dispatcher(staging_manifests: list[dic
     settings = yaml.safe_load(config["data"]["settings.yaml"])
     actions = action_service.service(staging.ENV.namespace)
     assert settings["actions"]["url"] == f"https://{actions.fqdn}:{actions.port.number}/"
-    assert settings["actions"]["token_file"] == "/var/run/secrets/notifications/actions"
+    assert "token_file" not in settings["actions"]
     dispatcher = session_dispatcher.service(staging.ENV.namespace)
     assert settings["session_dispatcher"]["target"] == f"{dispatcher.fqdn}:{dispatcher.port.number}"
-    assert settings["session_dispatcher"]["token_file"] == "/var/run/secrets/notifications/dispatcher"
-    assert settings["actions"]["tls"] == {"ca_file": workload_tls.TRUST_BUNDLE_FILE, "server_uri": ACTIONS_URI}
-    assert settings["session_dispatcher"]["tls"] == {
-        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
-        "server_uri": SESSION_DISPATCHER_URI,
-    }
+    assert "token_file" not in settings["session_dispatcher"]
+    for client, server_uri in (("actions", ACTIONS_URI), ("session_dispatcher", SESSION_DISPATCHER_URI)):
+        tls = settings[client]["tls"]
+        assert tls["server_uri"] == server_uri
+        assert tls["client_uri"] == NOTIFICATIONS_URI
+        assert tls["cert_file"]
+        assert tls["key_file"]
+        assert tls["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
 
     deployment = one(
         doc
