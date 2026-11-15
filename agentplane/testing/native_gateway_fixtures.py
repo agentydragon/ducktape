@@ -28,6 +28,7 @@ __all__ = [
     "api_server",
     "client_token",
     "control",
+    "controller_token",
     "database_clones",
     "database_names",
     "dispatcher",
@@ -40,9 +41,11 @@ __all__ = [
     "postgres_image",
     "runtime_client",
     "sandbox",
+    "sandbox_controller_account",
 ]
 
 CLIENT = ServiceAccountRef(namespace="test-contract-client", name="client")
+CONTROLLER = ServiceAccountRef(namespace="test-contract-controller", name="sandbox-controller")
 DISPATCHER_AUDIENCE = "test-contract-dispatcher"
 GATEWAY_AUDIENCE = "test-contract-gateway"
 
@@ -62,8 +65,26 @@ async def gateway_token(api_server: KubernetesApiServer, sandbox: SandboxCluster
 
 
 @pytest.fixture
+async def controller_token(api_server: KubernetesApiServer, tmp_path: Path) -> Path:
+    """A distinct Pod-bound token for the configured Sandbox Controller caller."""
+    path = tmp_path / "controller-token"
+    path.write_text(await api_server.workload_token(CONTROLLER, [GATEWAY_AUDIENCE]))
+    return path
+
+
+@pytest.fixture
+def sandbox_controller_account() -> ServiceAccountRef | None:
+    """No Runtime lifecycle caller is authorized unless a contract opts in."""
+    return None
+
+
+@pytest.fixture
 async def gateway_service(
-    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, gateway_token: Path
+    api_server: KubernetesApiServer,
+    sandbox: SandboxCluster,
+    dispatcher_database_url: str,
+    gateway_token: Path,
+    sandbox_controller_account: ServiceAccountRef | None,
 ) -> AsyncIterator[GatewayProcess]:
     workload = ServiceAccountRef(namespace=sandbox.namespace, name="gateway")
     async with run_gateway(
@@ -73,6 +94,7 @@ async def gateway_service(
         dispatcher_callers=(CLIENT,),
         gateway_callers=(CLIENT, workload),
         workload=workload,
+        sandbox_controller_account=sandbox_controller_account,
         environment_readers=(CLIENT,),
         environment_managers=(CLIENT,),
         operator_callers=(CLIENT,),
