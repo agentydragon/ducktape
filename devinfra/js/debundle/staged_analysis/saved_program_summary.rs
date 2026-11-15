@@ -34,6 +34,7 @@ pub(super) struct SavedProgramSummary<'a> {
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
+    foreign_observer_cell_reads: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
@@ -204,6 +205,7 @@ impl<'a> SavedProgramSummary<'a> {
             fluent: Cow::Borrowed(&summary.fluent),
             constructors: Cow::Borrowed(&summary.constructors),
             imported_callables,
+            foreign_observer_cell_reads: Cow::Borrowed(&summary.foreign_observer_cell_reads),
             native_integrity: summary
                 .native_integrity
                 .as_ref()
@@ -362,6 +364,7 @@ impl<'a> SavedProgramSummary<'a> {
             fluent: self.fluent.into_owned(),
             constructors: self.constructors.into_owned(),
             imported_callables,
+            foreign_observer_cell_reads: self.foreign_observer_cell_reads.into_owned(),
             native_integrity: self
                 .native_integrity
                 .map(SavedNativeIntegrity::restore)
@@ -709,6 +712,7 @@ mod tests {
             fluent: BTreeMap::new(),
             constructors: BTreeMap::new(),
             imported_callables: BTreeMap::new(),
+            foreign_observer_cell_reads: BTreeMap::new(),
             native_integrity: None,
             bundle_globals: Default::default(),
             value_inputs: BTreeMap::new(),

@@ -75,9 +75,10 @@ The sections below hold details, not competing priority queues.
 ### Cyclic export-cell observation soundness
 
 - Cover future export-cell observations by arbitrary unknown execution.
-  The partial source-derived may-read path handles direct imported function
-  declarations and local aliases; it does not cover transitive calls,
-  re-export chains, namespace calls or host/global callees. The broad fence
+  Source-derived foreign lazy reads constrain global and transitive observers
+  reached through static imports. Re-export and namespace identities, eager
+  foreign copies, and namespace aliases still need whole-program cell flow.
+  The broad fence
   tried in draft #16539 rejects the frozen Excalidraw spec (868-unit atomic
   group). <debug/2026_11_14_cyclic_export_cells.md> records the reproduction,
   exact checks, policy blockers and witness. Next lane: establish loader

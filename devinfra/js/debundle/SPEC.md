@@ -516,6 +516,13 @@ per-array ordering claim.
 
 ## Authoring reports
 
+Resolved named/default import references in foreign lazy bodies preserve the
+initialization order of the export cells they may read, even when those cells
+do not yet contain a callable value. Statically reachable source observers
+constrain opaque execution, including closures installed on globals. These are
+conservative ordering obligations, independent of imported call purity or
+effect coverage.
+
 Each per-chunk `modules.json` may include `imported_callables`, keyed by the
 importer's local binding name. A `callback_factory_evidence` entry names its
 defining module and export, with `origin: author_assertion` for an audited

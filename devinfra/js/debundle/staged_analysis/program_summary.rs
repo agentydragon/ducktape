@@ -78,6 +78,7 @@ pub struct ReparsedEntry {
     export_aliases: Vec<ExportAliasRecord>,
     stable_export_values: BTreeMap<String, StableExportValue>,
     function_import_reads: BTreeMap<String, BTreeSet<String>>,
+    lazy_import_reads: BTreeSet<String>,
     static_requests: Vec<StaticModuleRequest>,
 }
 
@@ -107,6 +108,7 @@ pub struct ProgramSummary {
     pub constructors: BTreeMap<String, BTreeSet<String>>,
     /// Per-chunk bare imported callable summaries with their defining evidence.
     pub imported_callables: BTreeMap<String, BTreeMap<String, CallableSummary>>,
+    pub foreign_observer_cell_reads: BTreeMap<String, BTreeSet<String>>,
     /// Source-derived native mutation census shared by every analyzed chunk.
     pub native_integrity: Option<NativeIntegrity>,
     /// The whole-program bundle-owned globals (SPEC.md § Bundle-owned globals).
@@ -367,6 +369,7 @@ pub fn reparse_unretained_entries(
                         export_aliases: analysis.export_aliases,
                         stable_export_values: analysis.runtime_facts.stable_export_values,
                         function_import_reads: analysis.runtime_facts.function_import_reads,
+                        lazy_import_reads: analysis.runtime_facts.lazy_import_reads,
                         static_requests: analysis.runtime_facts.static_requests,
                     },
                 );
@@ -402,6 +405,7 @@ pub fn collect_program_summary(
     // available (retained AST or re-parsed entry).
     let mut modules = BTreeMap::new();
     let mut function_import_reads = BTreeMap::new();
+    let mut lazy_import_reads = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
     let mut export_value_sources = BTreeMap::<(String, String), ExportValueSource>::new();
@@ -440,6 +444,13 @@ pub fn collect_program_summary(
             match reparsed.get(&chunk_artifact.chunk_id) {
                 Some(entry) => &entry.function_import_reads,
                 None => &chunk_artifact.analysis.runtime_facts.function_import_reads,
+            },
+        );
+        lazy_import_reads.insert(
+            chunk_name.to_string(),
+            match reparsed.get(&chunk_artifact.chunk_id) {
+                Some(entry) => &entry.lazy_import_reads,
+                None => &chunk_artifact.analysis.runtime_facts.lazy_import_reads,
             },
         );
         let module_static_requests = match reparsed.get(&chunk_artifact.chunk_id) {
@@ -807,6 +818,63 @@ pub fn collect_program_summary(
             }
         }
     }
+    let mut request_edges = BTreeMap::<String, BTreeSet<String>>::new();
+    for (name, (chunk, entry, requests)) in &static_requests {
+        for request in requests {
+            if let Some(target) = indexes.resolve_runtime_import_reference(
+                &request.specifier,
+                *chunk,
+                entry,
+                &artifact.chunk_table,
+            ) {
+                request_edges.entry(name.clone()).or_default().insert(
+                    artifact
+                        .chunk_table
+                        .name(target.target_chunk_id)
+                        .to_string(),
+                );
+            }
+        }
+    }
+    let mut foreign_observer_cell_reads = BTreeMap::<String, BTreeSet<String>>::new();
+    for (owner, module) in &modules {
+        let mut reached = BTreeSet::new();
+        let mut pending: Vec<_> = request_edges
+            .get(owner)
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect();
+        while let Some(reader) = pending.pop() {
+            if !reached.insert(reader.clone()) {
+                continue;
+            }
+            pending.extend(request_edges.get(&reader).into_iter().flatten().cloned());
+            if &reader == owner {
+                continue;
+            }
+            let Some(provider) = modules.get(&reader) else {
+                continue;
+            };
+            for read in lazy_import_reads
+                .get(&reader)
+                .into_iter()
+                .flat_map(|reads| reads.iter())
+            {
+                let Some(target) = provider.imports.get(read) else {
+                    continue;
+                };
+                if &target.module == owner
+                    && let Some(local) = module.exports.get(&target.export)
+                {
+                    foreign_observer_cell_reads
+                        .entry(owner.clone())
+                        .or_default()
+                        .insert(local.clone());
+                }
+            }
+        }
+    }
     let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
     let bindings = resolve_imported_purities(
         &modules,
@@ -909,6 +977,7 @@ pub fn collect_program_summary(
             diagnostics,
         ),
         imported_callables: callable_summaries.imported_callables,
+        foreign_observer_cell_reads,
         native_integrity: callable_summaries.native_integrity,
         bundle_globals: callable_summaries.bundle_globals,
         value_inputs: callable_summaries.value_inputs,

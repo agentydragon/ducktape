@@ -503,6 +503,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         binding_declarations,
         binding_writes,
         function_reads,
+        lazy_reads,
         mut unresolved_uses,
         dynamic_scope,
         ..
@@ -774,6 +775,11 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
             )
         })
         .collect();
+    runtime_facts.lazy_import_reads = lazy_reads
+        .into_iter()
+        .filter(|read| import_local_names.contains(read.0.as_ref()))
+        .map(|read| read.0.to_string())
+        .collect();
 
     if runtime_facts.module_kind == ChunkModuleKind::Esm
         && !runtime_facts.has_own_cjs_export_surface
@@ -970,6 +976,8 @@ struct ModuleScanVisitor {
     binding_writes: BTreeSet<Id>,
     top_function: Option<Id>,
     function_reads: BTreeMap<Id, BTreeSet<Id>>,
+    lazy_depth: usize,
+    lazy_reads: BTreeSet<Id>,
     unresolved_uses: BTreeMap<Id, Vec<Span>>,
     dynamic_scope: bool,
 }
@@ -981,6 +989,42 @@ impl TargetAccessRecorder for ModuleScanVisitor {
 }
 
 impl Visit for ModuleScanVisitor {
+    fn visit_function(&mut self, node: &Function) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_constructor(&mut self, node: &Constructor) {
+        self.lazy_depth += 1;
+        node.visit_children_with(self);
+        self.lazy_depth -= 1;
+    }
+
+    fn visit_class_prop(&mut self, node: &ClassProp) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
+    fn visit_private_prop(&mut self, node: &PrivateProp) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
+    fn visit_auto_accessor(&mut self, node: &AutoAccessor) {
+        self.lazy_depth += usize::from(!node.is_static);
+        node.visit_children_with(self);
+        self.lazy_depth -= usize::from(!node.is_static);
+    }
+
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         for id in binding_names(&node.name) {
             *self.binding_declarations.entry(id).or_default() += 1;
@@ -1043,6 +1087,9 @@ impl Visit for ModuleScanVisitor {
     fn visit_continue_stmt(&mut self, _node: &ContinueStmt) {}
 
     fn visit_ident(&mut self, node: &Ident) {
+        if self.lazy_depth > 0 {
+            self.lazy_reads.insert(node.to_id());
+        }
         if let Some(function) = &self.top_function {
             self.function_reads
                 .entry(function.clone())
