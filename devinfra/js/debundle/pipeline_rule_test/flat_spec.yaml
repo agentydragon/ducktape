@@ -1,0 +1,3 @@
+inputs:
+  input_root: fixture/source
+  js_list_path: fixture/js-files.txt

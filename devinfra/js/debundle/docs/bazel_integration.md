@@ -72,6 +72,10 @@ shared target by weakening those checks.
 
 `DebundleProjectApply` compiles the typed spec without parsing JavaScript. Its
 canonical output omits YAML comments, whitespace, and module-level `note` only.
+The projection action reads the flat spec or tree config, vendor marks, and
+declared module YAML files; source and package paths are serialized as paths,
+without opening their contents. Package-root arguments are used by analysis
+and apply, so they stay in those actions' input closures.
 `DebundleApply` reads that projection, saved analysis, source/package inputs, and
 the optional ownership subset. Metadata-only changes that preserve the projection
 therefore reuse its cached output. Emitted `comment`, report notes, and
@@ -91,13 +95,15 @@ options and module ownership. They consume the saved source facts and do not
 repeat interpreter analysis. Keep source-fact computation and graph export
 distinct when reading `aquery` or requesting outputs.
 
-Both rules declare their complete spec, input data and package roots. A tree spec
-uses `tree_config`, `tree_modules`, `tree_vendor_marks`, and `spec_tree_inputs`.
-Config and vendor-mark labels can name generated files; `tree_modules` is a
-package-relative directory. A flat YAML uses `spec` instead. `tree_source_root`
-is the target holding the bundle: its files' root determines whether embedded
-source paths resolve against the execroot or `bazel-bin`, including bundles
-extracted from pinned upstream artifacts.
+The analysis and apply rules declare their complete source and package inputs.
+A tree spec uses `tree_config`, `tree_modules`, `tree_vendor_marks`, and
+`spec_tree_inputs`; config and vendor-mark labels can name generated files, and
+`tree_modules` is a package-relative directory. A flat YAML uses `spec` instead.
+`tree_source_root` is the target holding the bundle: its files' root determines
+whether embedded source paths resolve against the execroot or `bazel-bin`,
+including bundles extracted from pinned upstream artifacts. The apply
+projection action depends on spec authoring files only; the real apply action
+retains the source and package inputs.
 
 `analysis_threads` belongs only to `debundle_analysis`: zero uses the inherited
 Rayon setting, a positive value sets the tracked `RAYON_NUM_THREADS` environment

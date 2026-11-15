@@ -72,14 +72,20 @@ def _pipeline_report_flags_test_impl(ctx):
     asserts.equals(env, ["debundle"], [file.basename for file in groups.debundler.to_list()])
     analyzed = [file for file in groups.analysis.to_list() if file.extension == "analysis"][0]
     native_inputs = groups.native_inputs.to_list()
-    pipeline_inputs = actions["DebundleApply"].inputs.to_list()
-    expected_native_inputs = [
+    projected = groups.apply_projection.to_list()[0]
+    projection_spec_inputs = [
         file
         for file in actions["DebundleProjectApply"].inputs.to_list()
         if file.basename not in ["debundle", "debundle.runfiles"]
     ]
+    apply_source_inputs = [
+        file
+        for file in actions["DebundleApply"].inputs.to_list()
+        if file not in [analyzed, projected] and file.basename not in ["debundle", "debundle.runfiles"]
+    ]
+    expected_native_inputs = depset(projection_spec_inputs + apply_source_inputs).to_list()
+    pipeline_inputs = actions["DebundleApply"].inputs.to_list()
     asserts.false(env, any([file.extension in ["yaml", "yml"] for file in pipeline_inputs]))
-    projected = groups.apply_projection.to_list()[0]
     asserts.true(env, projected in pipeline_inputs)
     asserts.equals(env, [projected], actions["DebundleProjectApply"].outputs.to_list())
     asserts.equals(
@@ -121,6 +127,46 @@ pipeline_report_flags_test = analysistest.make(
         "baseline": attr.label(aspects = [_baseline_actions], mandatory = True),
         "expected_flags": attr.string(),
         "readable": attr.bool(),
+    },
+)
+
+def _apply_projection_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
+    projection_action = actions["DebundleProjectApply"]
+    apply_action = actions["DebundleApply"]
+    projection_inputs = [file.path for file in projection_action.inputs.to_list()]
+    apply_inputs = [file.path for file in apply_action.inputs.to_list()]
+
+    for suffix in ctx.attr.spec_inputs:
+        asserts.true(
+            env,
+            any([path.endswith(suffix) for path in projection_inputs]),
+            "DebundleProjectApply must read spec input {}".format(suffix),
+        )
+    for suffix in ctx.attr.apply_only_inputs:
+        asserts.false(
+            env,
+            any([path.endswith(suffix) for path in projection_inputs]),
+            "DebundleProjectApply must not depend on source/package input {}".format(suffix),
+        )
+        asserts.true(
+            env,
+            any([path.endswith(suffix) for path in apply_inputs]),
+            "DebundleApply must retain source/package input {}".format(suffix),
+        )
+
+    asserts.false(env, "--package-root" in projection_action.argv[-1])
+    asserts.true(env, "--package-root" in apply_action.argv[-1])
+    projection = projection_action.outputs.to_list()[0]
+    asserts.true(env, projection in apply_action.inputs.to_list())
+    return analysistest.end(env)
+
+apply_projection_inputs_test = analysistest.make(
+    _apply_projection_inputs_test_impl,
+    attrs = {
+        "spec_inputs": attr.string_list(mandatory = True),
+        "apply_only_inputs": attr.string_list(mandatory = True),
     },
 )
 
