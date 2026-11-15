@@ -1,126 +1,95 @@
-# Workload authentication
+# Workload and service authentication
 
-[`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared authoring
-and Go decoding contract for workload listeners: a listen address and an explicit list of
-supported authentication methods. `kubernetes_bearer` lists its allowed audiences; `spiffe` requires
-TLS and an absolute trust-root path. Unsupported modes, empty lists, duplicates and unknown fields
-fail configuration loading. For protected calls, exactly one enabled credential must select a mode;
-both or neither are refused, and selection never falls back based on list order. Native RPC listeners
-may still admit unauthenticated public health methods. Listener authentication does not grant method
-authorization. The egress proxy and first-party service RPC listeners consume this contract.
+First-party service calls authenticate with a role's service SVID over mutual TLS. Workload callers
+present the SVID of their `WorkloadCredential`. Kubernetes bearers authenticate neither kind of
+caller to Agentplane receivers. Operator OIDC and external MCP OAuth retain their separate edge
+contracts; Kubernetes API credentials authenticate only to Kubernetes.
 
-[`auth`](auth.go) retains a legacy TokenReview resolver for receivers awaiting bearer retirement.
-Its accepted audience and namespace allowlist are explicit. First-party service callers use service
-SVIDs; these helpers do not describe their current caller authentication.
+[`listener`](listener/config.go) and [`listener.py`](listener.py) define the shared listener
+configuration. `spiffe` requires TLS and an absolute trust-root path. Unsupported modes, empty
+lists, duplicates and unknown fields fail configuration loading. Native RPC listeners may admit
+unauthenticated public health methods. Listener authentication does not grant method authorization.
+The legacy `kubernetes_bearer` decoder remains while obsolete manifest settings roll out; decoding
+an ignored setting grants no receiver access.
 
-`ResolveAuthorization` accepts exactly one RFC 6750 Bearer value. `ResolveToken` verifies the
-reviewed ServiceAccount identity and returns a Pod-bound `Principal` containing the account, the
-ServiceAccount UID, and the Pod name and UID. The API server's TokenReview checks the bound Pod;
-accepted review results are cached for up to 30 seconds by default, so revocation or Pod deletion
-may take that long to affect a cached token. Rejections and review failures are not cached.
+## Workload Identity proof
 
-`SVIDResolver` accepts a leaf already verified by the shared workload TLS listener, requires its
-validity and explicit clientAuth EKU, and resolves it through the live `WorkloadCredential` it names
+`SVIDResolver.ResolveSubject` reads the verified TLS peer. `ResolveVerifiedLeaf` accepts a leaf
+already verified by the shared workload TLS listener, rechecks its validity and explicit clientAuth
+EKU, and resolves it through the live `WorkloadCredential` it names
 ([how a verifier resolves a peer](../../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)).
-Every record names an Identity in the verifier's policy namespace; the returned `IdentityPrincipal`
-contains that Identity's live UID and, when the record's owner accepted one, the Pod name/UID. A
-legacy record without an Identity is retained but refused; it is never reinterpreted as a
-same-named ServiceAccount. ServiceAccount principals come only from TokenReview. Deleting the
-record or replacing its credential ID revokes the certificate. `Resolver.WithListenerAuthentication`
-selects this path only when the listener allows SPIFFE. Listener credential selection does not grant
-method authorization, and delegated calls still require their explicit per-method grant. A workload
-SVID cannot be combined with a bearer or used as a delegation actor; service actors have a separate
-certificate rule. Stream revalidation repeats the live lookup
-and leaf validity checks.
+Every record names an Identity in the verifier's policy namespace. The returned `IdentityPrincipal`
+contains that Identity's live UID, the credential record and controller owner, and any accepted Pod
+name/UID. A standing workload has no controller owner or Pod proof. Operations requiring either
+must check that proof explicitly; authentication alone does not supply it.
 
-History runner ingress, Notification, Dispatcher, Action Service, LLM ingress and the Rules API
-terminate their workload TLS themselves. The proxy tunnels their encrypted traffic without
-asserting a caller. The central sampler authenticates to services with its own service SVID;
-when it delegates Session work, the envelope names the Identity recorded for that Session.
+A legacy record without an Identity is retained but refused; it is never reinterpreted as a
+same-named ServiceAccount. Deleting the record or replacing its credential ID revokes the
+certificate. A workload SVID cannot be combined with bearer or delegation metadata or used as a
+service delegation actor. Stream revalidation repeats the live lookup and leaf validity checks.
 
-Each service uses one TLS RPC listener for Sandbox and backend callers. Backend clients verify the
-service's SPIFFE URI using `peertls.ClientTLS` and present their role's service SVID.
-Certificate and trust-bundle files reload on replacement; failed TLS never selects a bearer. The shared `grpc/healthprobe`
-binary checks the same listener through verified TLS without application credentials.
+History ingress, Notifications, Dispatcher, Actions, LLM ingress and the Rules API terminate their
+workload TLS themselves. The proxy tunnels their encrypted traffic without asserting a caller.
+Action command/build boxes and Haku's standing workloads present their own workload SVIDs.
+Sandbox Runtime templates project no Kubernetes ServiceAccount tokens and do not forward a
+caller-supplied Pod token for credential substitution. Kubernetes API credentials follow the
+separately granted egress flow.
 
-Action command/build boxes and Haku's and `haku-ci`'s standing workloads present their own
-`WorkloadCredential`'s SVID; the egress proxy's `forward` listener authenticates SVIDs alone. Sandbox
-Runtime templates project no Kubernetes ServiceAccount tokens and do not forward a caller-supplied Pod token
-for credential substitution. Kubernetes API credentials follow the separately granted egress flow.
+## Service proof and method grants
 
-`ResolveServiceAccountToken` returns a `ServiceAccountPrincipal` for destinations whose authority
-belongs to the account alone. It requires a ServiceAccount UID and accepts either no Pod binding
-claims or one complete Pod name and UID pair. Partial or repeated claims are rejected. This is a
-legacy account admission API, separate from service-SVID authentication.
+Backend clients verify the receiver's exact service URI, workload-CA chain and server-auth usage,
+and present their role's service SVID. Certificate and trust-bundle files reload on replacement;
+failed TLS never selects a bearer. The shared `grpc/healthprobe` binary checks the listener through
+verified TLS without application credentials.
 
-[`methods.go`](methods.go) admits a gRPC server's calls in one interceptor: `Methods` maps
-each full method name to the `Rule` admitting its callers and refuses any method it does not list
-([gRPC services](../../docs/grpc_services.md#authentication)).
+[`methods.go`](methods.go) admits calls in one interceptor. `Methods` maps each full RPC name to
+its `Rule` and refuses any unlisted method before resolving credentials
+([gRPC services](../../docs/grpc_services.md#authentication)). `Public` is reserved for the standard
+health service through `HealthMethods`.
 
-`Services` admits only verified client SVIDs in its exact service allowlist and returns a
-`ServiceAdmission`; an empty list grants no direct access. It refuses bearer credentials, workload SVIDs
-and ungranted delegation. PolicyService uses this rule for its separate reader and writer grants.
-A service admission supplies no Identity, ServiceAccount UID or Pod proof. Stream revalidation
-rechecks the certificate validity and exact grant.
+`AnySubject` with an `SVIDResolver` admits authenticated workload Identities as `IdentityAdmission`.
+`Services` admits only verified client SVIDs in an exact service allowlist and returns
+`ServiceAdmission`; an empty list grants no direct access. `AllowServiceCallers` adds exact service
+peers to an existing authenticated rule. A service principal supplies no Identity, ServiceAccount
+UID, Pod proof or `WorkloadCredential`. Stream revalidation rechecks certificate validity and the
+exact method grant.
 
-`Accounts` admits only the listed ServiceAccounts. `SVIDOrAccounts` admits current Sandbox SVIDs
-and applies the account allowlist only to bearer callers, preserving History's sampler writer policy;
-an SVID naming an Identity is admitted as `AnySubject` admits it.
-`ReviewedServiceAccount` retains the separate optional Pod proof. `AnySubject` accepts a `SubjectResolver`
-and admits any ServiceAccount or Identity that source authenticates; Identity callers are returned
-as an `IdentityAdmission`.
-`ReviewedServiceAccountOrIdentity` admits a ServiceAccount as `ReviewedServiceAccount` does, or an Identity
-as an `IdentityAdmission`.
+## Delegation
 
-Delegated calls are a separate, opt-in mode on an authenticated direct `Rule`. `AllowDelegationFrom`
-pins exact actor ServiceAccounts to the Rule; attaching that Rule to a full method name is the method
-trust grant. It preserves the Rule's ordinary direct path. Delegation requires a concrete TokenReview
-`Resolver`; the actor token must be Pod-bound and is reviewed for this service's audience. An asserted
-Identity needs the actor's separate `Delegator.IdentityCallers` grant, a Rule whose direct mode admits
-Identity callers (`ReviewedServiceAccountOrIdentity`, `AnySubject`, `SVIDOrAccounts`), and the live
-Identity's UID in the receiver's policy namespace (`KubernetesIdentityUIDs`, an uncached read);
-otherwise it is `PERMISSION_DENIED`. Legacy `caller_namespaces` config fields never grant authority;
-strict service settings reject them. Delegation never asserts a ServiceAccount as the effective caller. A method with no
-delegation policy rejects the delegated scheme and any delegation envelope; `Bearer` plus an envelope
-is rejected rather than treated as a direct call. The envelope's provenance is one typed profile,
-an Action's records, a central Session, or a consented MCP Connection/grant; the handler consumes only
-the profile its method serves. Connection provenance is a separate per-method grant, not actor
-privilege.
-`Rule.AdmitRequest` admits an HTTP request by the same Rule and middleware, reading the
-`Authorization` header, the verified TLS peer and the `agentplane-delegation-bin` header in
-standard base64 (`EncodeDelegationHeader`), the form gRPC itself transports `-bin` metadata in.
+`AllowServiceDelegationFrom` grants exact service actors permission to assert live Identities on
+service-only or Identity-admitting rules. `Methods.WithServiceDelegation` installs that grant on
+explicit served methods. Direct service authority and delegation authority are independent; a
+service-only rule with no direct callers can still admit its configured service delegators.
 
-Handlers read the typed result with `Admitted`. `DirectAdmission` keeps a direct ServiceAccount caller
-and optional Pod proof together; `DelegatedIdentityAdmission` keeps the actor's Pod-bound `Principal`,
-effective `Identity`, and provenance separate. `EffectiveCaller` returns only a direct ServiceAccount
-and refuses direct or delegated Identity admissions. A delegated actor is never installed in the
-legacy `Caller` context, which continues to mean the direct principal. For TokenReview callers that
-principal is Pod-bound; other `AnySubject` sources supply only the fields they prove. An Identity is
-never converted to a ServiceAccount for resource checks and cannot prove a Pod binding.
+The actor proves its service identity with its client certificate and sends one typed delegation
+envelope without Authorization metadata. `DelegatedServiceIdentityAdmission` retains the service
+actor, effective Identity and provenance separately. The effective Identity's UID must match the
+live Identity in the receiver's explicitly configured policy namespace. The actor's component
+grants never become the effective Identity's grants. Connection provenance requires a separate
+per-method grant. The envelope cannot assert a ServiceAccount as the effective caller.
 
+Handlers consume `Admitted` and apply their ordinary resource and policy checks. Legacy `Caller`,
+`EffectiveCaller` and `AdmittedReviewedCaller` accessors do not turn a workload Identity or service
+actor into a ServiceAccount proof. Retained ServiceAccount attribution is historical data, not a
+current credential or delegation grant.
+
+`Rule.AdmitRequest` applies the same admission to HTTP requests, including the verified TLS peer
+and the `agentplane-delegation-bin` header in standard base64 (`EncodeDelegationHeader`).
 [`grpc`](grpc/client.go) provides `DialDelegated` and `WithDelegation`. First-party callers configure
-their service certificate and an empty token path. The dialer sends only the binary typed envelope,
-rejects duplicate authorization/envelope metadata, and disables retries. A failed or absent
-certificate never selects legacy bearer proof. The separately retained token mode is not selected
-by first-party service deployments.
+their service certificate and an empty token path. The dialer sends only the typed binary envelope,
+rejects duplicate authorization/envelope metadata and disables retries. A failed or absent
+certificate never selects bearer proof.
 
-**Backend service admission.** `AllowServiceCallers` adds an exact service allowlist to an
-existing authenticated rule; `Services` constructs a service-only rule with no workload or bearer
-resolver. `AllowServiceDelegationFrom` separately grants service actors permission to assert live
-Identities on service-only or Identity-admitting rules, retaining the service actor, effective Identity
-and typed provenance. A service-only rule with no direct callers can admit only its configured
-service delegators; it cannot gain legacy bearer delegation. Service principals never become `Account`, `Principal`, `IdentityPrincipal` or workload
-`WorkloadCredential` values. Receiver-specific bearer paths remain until their own removal.
+## Remaining legacy implementation
 
-[`audience.py`](audience.py) retains the legacy `agentplane-egress` audience while its receiver
-settings retire. First-party callers no longer mint or present it, and the proxy's `forward`
-listener admits SVIDs alone. Kubernetes destination-audience tokens are a separate credential flow.
+[`auth.go`](auth.go) still contains the TokenReview resolver and account admission APIs for shared
+test consumers pending retirement. `Accounts`, `SVIDOrAccounts`, `ReviewedServiceAccount`,
+`ReviewedServiceAccountOrIdentity` and token-backed `AllowDelegationFrom` are not the production
+receiver pattern. The separately retained token client mode and audience constants likewise do not
+establish an active first-party bearer caller. Remove these implementations after their final
+consumers and configuration rollout gates; TokenReview RBAC removal comes last. Preserve
+Kubernetes API clients and retained account-attributed records.
 
-Operator and browser-session authentication use separate mechanisms and do not produce a workload
-principal. The approved [delegated authorization design](../../docs/delegated_authorization.md) records
-the shared protocol. Action Service's [Session delegation executor](../../action_service/session_delegation/README.md)
+The [delegated authorization contract](../../docs/delegated_authorization.md) records the shared
+protocol. Actions' [Session delegation executor](../../action_service/session_delegation/README.md)
 uses it for caller-scoped Environment, Dispatcher and History operations.
-
-Each listener mode accepts only its own fields, and each resolver verifies its own audience and
-namespace policy after selection. A failed credential never triggers a retry with another mode.
-Each service retains its own method authorization after authentication.

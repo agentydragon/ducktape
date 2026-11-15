@@ -1,11 +1,10 @@
 # Delegated authorization
 
-Status: **approved contract. Shared delegation middleware and the Identity effective-caller path are
-implemented across the Runner Gateway, History, LLM ingress, Action Service, and MCP edge consumers.
-The central sampler authenticates as its own ServiceAccount and delegates Session effects as the
-Identity recorded with that Session. Retained ServiceAccount-attributed Action records are historical
-only and do not receive effective-caller delegation. Direct component ServiceAccounts remain valid
-service actors through the existing TokenReview path.**
+Status: **approved and implemented contract. First-party service actors prove their role with a
+service SVID over mTLS. The typed envelope names the effective Identity and provenance; no
+Kubernetes bearer authenticates a service actor.** The central sampler delegates Session effects
+as the Identity recorded with that Session. Retained ServiceAccount-attributed Action records are
+historical only and do not receive effective-caller delegation.
 Use this contract when an Agentplane service invokes another service on behalf of an Identity. Direct
 callers continue using the [workload authentication](workload_authentication.md) contract.
 
@@ -15,7 +14,7 @@ Keep these facts separate:
 
 | Fact             | Source                                                                                                                 | Use                                                                                           |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Actor            | Destination-audience token verified by the receiving backend                                                           | Authenticate the service making this RPC and check its permission to delegate on this method. |
+| Actor            | Verified client service SVID admitted by the receiving backend                                                         | Authenticate the service making this RPC and check its permission to delegate on this method. |
 | Effective caller | Trusted delegation envelope: the exact Identity name and UID                                                           | Apply the backend's ordinary caller authorization.                                            |
 | Provenance       | The actor's durable record the call serves: an Action request and execution, a Session, or an MCP Connection and grant | Correlate admissions and effects across services.                                             |
 
@@ -27,32 +26,31 @@ The receiving backend explicitly trusts the actor to assert a live Identity on d
 This is a real trust grant: a trusted actor can assert any live Identity in the receiver's policy
 namespace on those methods. Configure it separately from ordinary caller admission and privileged
 backend access; neither implies permission to delegate. Legacy `caller_namespaces` settings never
-grant authority; strict service settings reject them. An actor's ordinary ServiceAccount grant never becomes an
-Identity grant without the explicit `identity_callers` setting.
+grant authority; strict service settings reject them. A direct service allowlist never grants
+permission to assert an effective Identity; service delegation needs its own explicit method grant.
 
-For a direct call, actor and caller are the authenticated subject. Agentplane service actors continue
-using their own ServiceAccount token for direct component calls. An explicitly privileged broker
+For a direct call, actor and caller are the authenticated subject. Agentplane services present
+their role's service SVID for direct component calls. An explicitly privileged broker
 operation retains its separately reviewed authority contract; the delegation envelope has no
 privilege switch. Action approval authorizes execution of an Action under its contract. It does
 not enlarge the effective caller's permissions on a delegated backend RPC.
 
 ## Wire contract
 
-Keep domain RPC request/response schemas unchanged. A delegated call carries:
+Keep domain RPC request/response schemas unchanged. A delegated call proves the actor with its
+service certificate over mutual TLS and carries exactly one envelope, with no Authorization header:
 
 ```text
-authorization: Agentplane-Delegated <actor's destination-audience SA token>
 agentplane-delegation-bin: <serialized Delegation protobuf>
 ```
 
-**Deviation:** `Agentplane-Delegated` is an Agentplane authorization scheme. It uses the existing
-TokenReview mechanism for the token, but explicitly selects delegated authorization. During the service-SVID migration, a client may instead prove the actor with its service
-certificate over mTLS and send no Authorization header. The typed envelope stays the same;
-the receiver authenticates the certificate against its explicit service actor allowlist.
-The envelope uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC library handles
-its transport encoding. An HTTP receiver (LLM ingress) takes the same two headers, the envelope in
-standard base64 as gRPC itself transports `-bin` metadata, and admits the request through the same
-middleware (`Rule.AdmitRequest`).
+The receiver verifies the certificate chain, client-auth usage and exact service SPIFFE ID against
+its explicit actor grant for the method. A service URI is never resolved to an agent Identity.
+The envelope uses standard [gRPC binary metadata](https://grpc.io/docs/guides/metadata/); the gRPC
+library handles its transport encoding. An HTTP receiver (LLM ingress) takes the envelope in
+standard base64, as gRPC transports `-bin` metadata, and admits the verified TLS peer and envelope
+through the same middleware (`Rule.AdmitRequest`). Neither a missing nor a failed certificate
+falls back to bearer proof.
 
 The envelope is `Delegation` in [`delegation.proto`](../proto/delegation.proto), a messages-only
 schema in package `agentplane.proto` that reuses `Identity` from
@@ -79,27 +77,29 @@ records. Tool arguments cannot supply or override it. Admission retains the call
 the request and the existing execution UUID with the dispatch payload. A historical ServiceAccount
 request remains attributed to its original caller and receipt, but execution fails closed before a
 backend call; it is never re-attributed or replayed. A historical Identity request without a stored
-UID remains unknown and cannot be delegated. The original workload token need not survive until
-execution; the service uses its own rotating token for the destination and retains the verified
-caller Identity instead. No caller-token minting or new signing service is needed for this path.
+UID remains unknown and cannot be delegated. The original workload connection need not survive
+until execution; the service presents its own rotating certificate and retains the verified caller
+Identity instead. No caller-token minting or new signing service is needed for this path.
 
-### Authentication modes and rollout
+### Credential selection
 
-| Authorization                                  | Delegation metadata                                | Result                                                             |
-| ---------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------ |
-| No header; verified service SVID               | Exactly one valid envelope                         | Delegated authentication for an explicitly admitted service actor. |
-| `Bearer <token>`                               | Absent                                             | Existing direct authentication and explicit service authority.     |
-| `Agentplane-Delegated <token>`                 | Exactly one valid envelope                         | Delegated authentication, only on a method admitting that actor.   |
-| `Bearer <token>`                               | Present                                            | Reject; do not ignore the claimed caller.                          |
-| Delegated scheme                               | Missing, repeated, malformed or oversized envelope | Reject before the handler runs.                                    |
-| Unknown scheme or repeated authorization value | Any                                                | Reject before the handler runs.                                    |
+On delegated backend methods, credential selection follows these rules. Operator OIDC and MCP
+OAuth edge methods retain their own authority checks.
 
-Sending ordinary `Bearer <Actions-token>` with optional caller metadata is unsafe during a roll:
-an older backend could ignore the metadata and use Actions' privileged authority. The distinct
-scheme prevents that downgrade. Today's [bearer parser](../identity/auth/auth.go) rejects
-it, so an old replica refuses the call before effects. A delegated client never retries using
-ordinary `Bearer` authentication. Backends can gain support before clients start using it;
-mixed versions may refuse calls but must not elevate them.
+| Peer proof                                | Delegation metadata                       | Result                                                                 |
+| ----------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------- |
+| Verified service SVID                     | Exactly one valid envelope                | Delegation only for an explicitly granted service actor and method.    |
+| Verified service SVID                     | Absent                                    | Direct admission only through the method's separate service grant.     |
+| Workload SVID                             | Absent                                    | Direct workload Identity admission through the method's workload rule. |
+| Missing, invalid or untrusted certificate | Any                                       | Reject before the handler runs.                                        |
+| Any SVID plus Authorization metadata      | Any                                       | Reject ambiguous credentials.                                          |
+| Verified service SVID                     | Repeated, malformed or oversized envelope | Reject before the handler runs.                                        |
+| Workload SVID                             | Present                                   | Reject; a workload certificate is not a service actor.                 |
+
+A client never retries a failed delegated call as a direct privileged call. Legacy
+`Agentplane-Delegated` tokens and ordinary Kubernetes `Bearer` tokens grant no receiver admission.
+An older receiver that does not support service-certificate delegation must refuse the call;
+mixed versions must not elevate it by ignoring the effective caller.
 
 Additive protobuf fields must not change authorization meaning when ignored. `identity` remains field
 4; the retired ServiceAccount caller tag 1 is reserved. An older receiver that does not recognize
@@ -113,22 +113,22 @@ restriction is invalid.
 Shared middleware in `identity/auth`, composed with the existing per-method rules:
 
 1. Parse one authentication mode and its metadata with bounded input sizes.
-2. Verify the actor's token for the receiving service's audience and admitted namespaces. The
-   initial Actions delegator must prove its actual Pod-bound workload identity.
+2. Verify the actor's service certificate against the workload trust bundle, client-auth usage
+   and exact service SPIFFE ID. The certificate supplies no Identity or Pod proof.
 3. Check the actor's explicit permission to delegate on this method.
 4. Decode and validate the envelope and the actor's Identity grant. A Connection provenance profile
    is additionally method-scoped and requires an Identity effective caller. Resolve the Identity in
    the receiver's policy namespace and require its recorded UID to match; a deleted or replaced
-   Identity is a different caller. A method whose direct mode admits no Identity caller refuses a
-   delegated one.
-5. Admit a typed direct or delegated context. Preserve the actor's proven Pod identity separately
-   from the effective Identity; never manufacture Pod proof for the original caller.
+   Identity is a different caller. The method must explicitly admit service delegation for that
+   actor; a direct component grant alone is insufficient.
+5. Admit a typed direct or delegated context. Keep the actor's service principal separate from the
+   effective Identity; neither supplies Pod proof for the original caller.
 6. Run the method's normal resource/policy checks for the effective Identity. For example,
    `SubmitInput` checks it against the Identity incarnation recorded with the Session, while
    `EnvironmentService` compares it with the Sandbox's current exact Identity binding.
 
 The handler consumes the admitted context, not raw identity headers, tool arguments or labels.
-No handler-specific copy of delegation parsing or privileged fallback is allowed. A delegated
+No handler-specific copy of delegation parsing or privileged fallback is allowed. A
 delegated Identity cannot satisfy a method that requires the caller itself to prove a Pod binding.
 
 Malformed credentials/context yield `UNAUTHENTICATED`; an untrusted delegator, disallowed scope,
@@ -136,10 +136,10 @@ UID mismatch or denied resource permission yields `PERMISSION_DENIED`. Failure t
 identity/policy state yields `UNAVAILABLE`, subject to the ordinary deadline/cancellation mapping.
 Use fixed public messages and retain detailed causes in server diagnostics, without credentials.
 
-Use the shared identity/policy freshness rules, including stream rechecks where required. The
-existing positive TokenReview cache can delay observed revocation by up to its configured TTL
-(30 seconds by default); this protocol does not promise instantaneous revocation. Reconnects and
-new authorization decisions reapply the corresponding checks; provenance never freezes access.
+Use the shared identity/policy freshness rules, including live effective-Identity UID lookup and
+stream rechecks where required. Revalidation rechecks the actor certificate and method grant as
+well as the effective Identity. Reconnects and new authorization decisions reapply those checks;
+provenance never freezes access. TokenReview caching is not part of this protocol.
 
 ## Actions, persistence and recovery
 
@@ -178,13 +178,13 @@ it must not invent Action IDs or require Actions to be deployed. The central sam
 authenticates as itself and holds no agent key, and each call's effective caller is the Identity
 the Dispatcher recorded the Session as executing as, read from the sampler's own Session record,
 with the Session as provenance; neither JavaScript nor tool arguments can name or override it. A
-Session whose Sandbox named no Identity has none to delegate, and the sampler then calls as itself
-exactly as before Identities existed ([sampler contract](../central_sampler/SPEC.md#identity-and-admission)).
-Receivers grant the sampler per method and by scope like any actor: History on `Push`
-(`ingress.sampler_identity_callers`) and LLM ingress on inference
-(`central_sampler_identity_callers`), both over the Identities of their policy namespace. Keep
-the identity and authorization rules above. Do not add speculative generic grants, a
-delegation-chain service or arbitrary provenance maps ahead of a consumer.
+Session's environment attachments do not establish its effective caller. Each consumer applies
+its own contract to the retained execution Identity; missing proof never becomes the actor's
+Identity or a same-named successor. History's sampler grant is `ingress.sampler_service_actor`;
+LLM ingress separately grants `central_sampler_services` and `central_sampler_identity_callers`.
+Neither grant is a requirement that all Sessions or retained History records have a Sandbox,
+a single environment attachment or an execution Identity. Do not add speculative generic grants,
+a delegation-chain service or arbitrary provenance maps ahead of a consumer.
 
 Trust is not transitive. A further hop needs its own explicitly trusted actor and target method.
 Construct outgoing context from an admitted identity or trusted durable record; never blindly
@@ -208,11 +208,12 @@ Before exposing the delegated path, demonstrate:
   malformed/duplicate metadata and direct/delegated mode confusion are refused before effects.
 - Missing required identity/policy state fails closed; watch rechecks and reconnects preserve the
   owning service's revocation behavior.
-- An old receiver rejects the new scheme; the client never downgrades to privileged authentication.
+- A receiver without the service-actor grant refuses the call; the client never downgrades to
+  direct privileged or bearer authentication.
 - Delayed Action execution preserves the original UID; lost replies retain actor/caller evidence
   and use existing operation reconciliation without blind replay.
 - The path runs with the integration app unavailable and the receiver makes no Actions lookup.
   Tests and diagnostics retain correlation identifiers without leaking credentials.
 
-Implementation and rollout work remains tracked in the task DAG; this design document records the
-reusable contract, not a claim that a delegated call is currently available.
+The task DAG tracks remaining implementation cleanup and rollout gates. This document records the
+shared authorization contract; each destination still owns its method grants and resource checks.

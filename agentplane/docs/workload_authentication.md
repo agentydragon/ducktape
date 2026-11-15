@@ -160,18 +160,19 @@ An API server error fails closed. Headers, metadata and request bodies never sel
 Services see every workload SVID as an `IdentityPrincipal` naming the Identity and its UID, with
 `spec.pod` as provenance when the record binds one. It also carries the record (`auth.Workload`:
 namespace, name and its controller owner, or `NoController` for an ownerless record), so a service
-can pin state to the Sandbox that owns the workload. ServiceAccount `Principal` values continue to
-come from TokenReview. Only a method whose rule is `AnySubject` or
-`ReviewedServiceAccountOrIdentity` admits an Identity caller, as an `IdentityAdmission`; every other
-rule, `auth.Caller` and `EffectiveCaller` stay ServiceAccount-only
-and refuse one. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A standing
-workload's Identity subject, like a bound one whose owner has not named its Pod yet, has no Pod:
-an operation that needs Pod proof refuses it. The egress proxy refuses a bound record with no Pod outright.
+can pin state to a proven owner where the operation requires one. `AnySubject` with an
+`SVIDResolver` admits an Identity as an `IdentityAdmission`; handlers read `auth.Admitted`.
+`auth.Caller`, `AdmittedReviewedCaller` and `EffectiveCaller` do not convert that admission into a
+ServiceAccount proof. The Action Service's Gate calls `SVIDResolver.ResolveSubject` itself. A
+standing workload's Identity subject, like a bound one whose owner has not named its Pod yet, has
+no Pod: an operation that needs Pod proof refuses it. The egress proxy refuses a bound record with
+no Pod outright. This does not impose an environment or Pod requirement on every Session or
+retained History record.
 
-TLS proves possession of the key, nothing more. Three things defend it: the Secret mounts only into
-Runtime and the sidecar (for a VM, the launcher relay), replacing an incarnation revokes its key
-through a fresh ID, and on routes that carry one, the forwarded Pod token must pass TokenReview. The
-cluster has no CRL or OCSP.
+TLS proves possession of the key. The Secret mounts only into Runtime and the sidecar (for a VM,
+the launcher relay); replacing an incarnation revokes its key through a fresh credential ID, and
+verifiers resolve the live record and Identity. No forwarded Kubernetes token supplements that
+proof. The cluster has no CRL or OCSP.
 
 ### Why one issuer
 
@@ -236,7 +237,7 @@ applier only one-segment service URIs such as `spiffe://agentplane/actions`.
 No requester gets a CA certificate, only cert-manager creates the `CertificateRequest`s, and every
 other Certificate against the issuer is refused. Certificates against other issuers are unaffected.
 
-## TokenReview and projected credentials
+## Service transport and Kubernetes credentials
 
 The central egress proxy's `forward` listener requires mTLS and authenticates SVIDs alone; a
 bearer does not authenticate the hop.
@@ -248,12 +249,11 @@ they do not authenticate calls to Agentplane receivers.
 
 The proxy's `forward` and services' `rpc` settings use the shared
 [authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
-first-party service configures its own TLS RPC admission. PolicyService accepts only exact service
-SVIDs with separate reader and writer grants; its bearer path is retired. Other receivers retain
-their configured workload, service and bearer modes until their own cutover. Protected calls reject both a certificate
-and an application credential presented together. Admission stays method-specific: enabling both
-authentication modes on the listener does not grant access to backend-only methods, operator RPCs,
-or delegated calls.
+first-party service configures its own TLS admission for workload and exact service SVIDs.
+Kubernetes bearers grant no receiver access. Some settings decoders retain ignored legacy keys
+until their manifest omission rolls out. Protected SVID calls reject Authorization metadata;
+operator OIDC and MCP OAuth remain their separate edge authority. Authentication supplies no
+backend-only, operator or delegation grant; those remain explicit per-method decisions.
 
 Backend clients verify the receiver's SPIFFE URI and server-auth usage against the workload CA
 and present their role's service SVID. Exact method grants admit component callers; the Sessions,
@@ -268,9 +268,9 @@ Notification's signed external webhook endpoint remains a separate HTTP protocol
 ## Service authorization and attribution
 
 Workload SVID authentication yields the record's Identity and, when proven, Pod provenance.
-Service SVID authentication yields a service principal with no Identity or Pod proof. Legacy
-TokenReview admission remains only on receivers awaiting retirement; first-party callers no longer
-select it. Each destination retains its own authorization checks, policy, and resource ownership.
+Service SVID authentication yields a service principal with no Identity or Pod proof. Kubernetes
+bearers grant no Agentplane receiver admission. Each destination retains its own authorization
+checks, policy and resource ownership.
 Neither a Sandbox certificate nor a successful authentication grants Action, Thread, operator, or
 cross-service permissions by itself. The egress proxy's allow decision and the destination's
 authorization answer separate questions.
