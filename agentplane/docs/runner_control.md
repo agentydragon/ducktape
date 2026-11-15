@@ -41,11 +41,12 @@ grace. Reconnects start a full idle timer, even when the Runtime reports the sam
 Quiesce attempts remain persisted, and an unobserved published incarnation must still seal before
 stop or deletion. Bootstrap failure remains terminal for its incarnation.
 
-Every Gateway replica independently opens a direct `WatchState` to the current Runtime. The
+Every Environments proxy replica independently opens a direct `WatchState` to the current Runtime.
+The retained Gateway receiver also watches until its separate retirement. The
 Controller's authenticated `observe_only` watch binds the Runtime to the
-Sandbox UID and accepted workload Pod UID before Gateway watches arrive; a Gateway can observe that
+Sandbox UID and accepted workload Pod UID before Gateway watches arrive; a proxy can observe that
 binding but cannot select or advance it. Each replica learns the Runtime boot ID from its own
-authenticated watch and can serve calls for the current incarnation. The stable `runner-gateway`
+authenticated watch and can serve calls for the current incarnation. The stable `sandbox-controller:8082`
 Service routes callers to any replica. Observation loss removes that replica's callable connection
 and starts a fresh attempt after one second; it does not revoke another replica's connection.
 Replacement observers wait for their predecessor to exit before publishing their local connection.
