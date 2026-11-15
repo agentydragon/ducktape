@@ -254,8 +254,6 @@ audit candidates, not a removal decision. Schema: <spec/spec.rs>.
 - **Host contracts:** `host_behavior.reentry_free_operations`.
 - **Vendor variants:** plain `partial_swap`.
 - **Decorator effects:** `typescript_decorate_helper`.
-- **Native call identity variant:** `native_call_identity_inputs`'s
-  `set_empty_private_field`.
 - **Native operation variants:** `native_operation_inputs`'s `symbol_for` and
   `promise_resolve`.
 

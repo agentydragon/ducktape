@@ -197,8 +197,7 @@ with `perf_wrapper.sh`: <docs/bazel_integration.md>.
   makes `X.prop = <pure-rhs>;` a local effect on `X` (A10);
   `deferred_global_publications` narrows callback reentry for audited inert
   browser-global data slots while retaining write ordering;
-  `native_operation_inputs` carries source-selected native initializer and
-  computed class-key read premises;
+  `native_operation_inputs` carries source-selected native initializer premises;
   `native_call_identity_inputs` certifies the callee at one selected direct
   `Object.freeze` call while retaining its argument and effect checks;
   `initializer_call_effect_inputs` selects an existing logical-module member

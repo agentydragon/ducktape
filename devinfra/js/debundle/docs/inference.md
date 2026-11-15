@@ -71,8 +71,7 @@ A native callee's identity is its spelling (the unshadowed, undeclared global
 binding of the row's family, or an unshadowed `globalThis` qualifying it) plus
 the flags of the row's `requires` slots at the call. Empty collection
 construction is that identity for a zero-argument keyed-collection constructor;
-local class construction requires it for every native field allocation, where
-a `set_empty_private_field` axiom can stand in at its site. Primitive Set
+local class construction requires it for every native field allocation. Primitive Set
 iteration requires the Set and Array iterator slots and a checked source shape.
 The original restrictions on class identity, construction sites, arguments,
 primitive elements, mutation and escape remain in their structural analyses.

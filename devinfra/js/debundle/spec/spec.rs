@@ -1142,7 +1142,6 @@ pub struct NoAccessorInstallCallableContract {
 #[serde(rename_all = "snake_case")]
 pub enum NativeCallIdentityKind {
     ObjectFreeze,
-    SetEmptyPrivateField,
 }
 
 /// Native operations admitted by `native_operation_inputs`.
