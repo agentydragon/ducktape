@@ -62,6 +62,12 @@ fn future_initializer_callback_does_not_add_a_style_read_to_fallback() {
             .with_unassigned_mode(unassigned_mode_inline()),
         );
         assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
+        assert_module_exports(
+            &fixture.out_root,
+            "static/app/modules/values/styles.js",
+            &["styles"],
+            &[],
+        );
     }
 }
 

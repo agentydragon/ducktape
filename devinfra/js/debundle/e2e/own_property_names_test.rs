@@ -6,16 +6,7 @@ use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
-fn own_name_modules() -> Vec<LogicalModuleEntry> {
-    vec![
-        logical_module("keys", &[Member::new("names"), Member::new("getterCalls")]),
-        logical_module("later", &[Member::new("later")]),
-    ]
-}
-
-#[test]
-fn ordinary_own_property_names_preserve_order_and_do_not_read_values() {
-    let source = r#"
+const OWN_NAME_SOURCE: &str = r#"
 let getterCalls = 0;
 const names = Object.getOwnPropertyNames({
   z: 0,
@@ -30,8 +21,47 @@ const names = Object.getOwnPropertyNames({
 const later = 42;
 console.log(names[0], names[1], names[2], names[3], names[4], names[5], names[6], names[7], getterCalls);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, own_name_modules()));
+
+fn own_name_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module("keys", &[Member::new("names"), Member::new("getterCalls")]),
+        logical_module("later", &[Member::new("later")]),
+    ]
+}
+
+fn own_name_fixture() -> Fixture {
+    run_fixture(FixtureOpts::new(OWN_NAME_SOURCE, own_name_modules()))
+}
+
+fn assert_own_name_extraction(fixture: &Fixture) {
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/keys.js",
+        &["names", "getterCalls"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/later.js",
+        &["later"],
+        &["names"],
+    );
+}
+
+#[test]
+fn ordinary_own_property_names_preserve_order_and_do_not_read_values() {
+    let fixture = own_name_fixture();
     assert_preserved_entry_output(&fixture, "2 10 4294967294 z 01 4294967295 a value 0\n");
+    assert_own_name_extraction(&fixture);
+}
+
+/// `docs/inference.md` documents this consumed-certificate receipt separately
+/// from the runtime property-name and getter behavior above.
+#[test]
+fn own_name_projection_reports_its_documented_inference_receipt() {
+    let fixture = own_name_fixture();
+    assert_preserved_entry_output(&fixture, "2 10 4294967294 z 01 4294967295 a value 0\n");
+    assert_own_name_extraction(&fixture);
 
     let graph = fixture.dependency_graph();
     let names = graph
@@ -112,6 +142,18 @@ console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
         ],
     ));
     assert_preserved_entry_output(&fixture, "field deferred 1 0 true\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/keys.js",
+        &["names", "argumentThrew"],
+        &["later"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/later.js",
+        &["later"],
+        &["names"],
+    );
 }
 
 fn expect_own_name_split_rejection(source: &str, extra_members: &[&'static str]) {
