@@ -244,6 +244,7 @@ py_test(
 py_library(
     name = "cleanup_diagnostics",
     srcs = ["cleanup_diagnostics.py"],
+    deps = [":cleanup"],
 )
 
 py_test(
@@ -730,6 +731,7 @@ py_test(
         ":cleanup",
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
