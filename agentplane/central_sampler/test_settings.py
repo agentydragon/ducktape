@@ -40,8 +40,6 @@ def settings_data() -> dict[str, Any]:
                 "reasoning_efforts": {"high"},
             }
         },
-        "audience": "fixture-sampler",
-        "allowed_accounts": {"fixture/client"},
         "code_mode_host": Path("/fixture/code-mode-host"),
         "executor_codex": "codex",
         "logs": Path("/fixture/logs"),
@@ -52,15 +50,6 @@ def settings_data() -> dict[str, Any]:
         "gateway_token_file": Path("/fixture/gateway-token"),
         "gateway_tls": {"ca_file": "/fixture/workload-ca.pem", "server_uri": "spiffe://agentplane/session-dispatcher"},
     }
-
-
-def test_legacy_token_review_settings_are_optional() -> None:
-    data = settings_data()
-    data.pop("audience")
-    data.pop("allowed_accounts")
-    configured = Settings.model_validate(data)
-    assert configured.audience is None
-    assert configured.allowed_accounts == set()
 
 
 def test_actions_are_optional_and_only_accept_service_mtls() -> None:

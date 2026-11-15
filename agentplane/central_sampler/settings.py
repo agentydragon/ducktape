@@ -245,15 +245,11 @@ class Settings(BaseModel):
     models: dict[str, ModelConfig] = Field(min_length=1)
 
     platform_instructions: str | None = Field(default=None, min_length=1)
-    # CLEANUP(added 2026-11-15): Remove after manifests omit audience and that rollout completes. Ignored.
-    audience: str | None = None
     service_callers: list[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=list,
         description="Exact service SPIFFE IDs admitted on the mTLS listener.",
     )
-    # CLEANUP(added 2026-11-15): Remove after manifests omit allowed_accounts and that rollout completes. Ignored.
-    allowed_accounts: set[str] = Field(default_factory=set, exclude_if=lambda value: not value)
     code_mode_host: Path
     executor_codex: str
     logs: Path
@@ -424,16 +420,3 @@ class Settings(BaseModel):
         }:
             raise ValueError("gateway_tls.server_uri must name the Gateway or Environments Runtime proxy listener")
         return self
-
-    @model_validator(mode="after")
-    def allowed_account_names(self) -> Self:
-        if any(
-            len(account.split("/")) != 2 or any(not part for part in account.split("/"))
-            for account in self.allowed_accounts
-        ):
-            raise ValueError("allowed_accounts must use namespace/name")
-        return self
-
-    @field_serializer("allowed_accounts")
-    def serialize_allowed_accounts(self, value: set[str]) -> list[str]:
-        return sorted(value)

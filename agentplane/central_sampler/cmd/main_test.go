@@ -86,8 +86,6 @@ func validStartupDiagnosticSettings(t *testing.T) samplersettings.Settings {
 		"connections": {"provider": {"base_url": "https://provider.invalid", "auth": {"type": "bearer", "credential": "fixture-secret"}}},
 		"database_url": "postgresql://user:secret@db.invalid/sampler",
 		"listen_tls": {"listen": "127.0.0.1:8083", "cert_file": "/fixture/tls.crt", "key_file": "/fixture/tls.key"},
-		"audience": "sampler",
-		"allowed_accounts": ["namespace/service-account"],
 		"code_mode_host": "/usr/local/bin/codex-code-mode-host",
 		"executor_codex": "/usr/local/bin/codex",
 		"logs": "/tmp/sampler-logs",
