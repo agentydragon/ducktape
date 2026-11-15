@@ -1318,6 +1318,105 @@ fn escaped_record_member_read_closure_is_inertable() {
     );
 }
 
+const GETTER_BATCH_SOURCE: &str = r#"let shared = 0;
+let changed = 0;
+function first() { changed = 1; return shared + future; }
+function second() { shared = 2; }
+function third() { return shared + future; }
+const box = { first, second, third };
+const escaped = JSON.stringify(box);
+const trigger = (box.first, JSON.stringify(1));
+const future = 7;
+console.log(shared, changed, future, trigger);
+export { shared, changed, first, second, third, box, escaped, trigger, future };
+"#;
+
+fn getter_batch_split(separate_future: bool) -> FixtureOpts<'static> {
+    let mut owner_bindings = vec![
+        Member::new("shared"),
+        Member::new("changed"),
+        Member::new("first"),
+        Member::new("second"),
+        Member::new("third"),
+        Member::new("box"),
+        Member::new("escaped"),
+        Member::new("trigger"),
+    ];
+    let modules = if separate_future {
+        vec![
+            logical_module("probes/owners", &owner_bindings),
+            logical_module("probes/future", &[Member::new("future")]),
+        ]
+    } else {
+        owner_bindings.push(Member::new("future"));
+        vec![logical_module("probes/owners", &owner_bindings)]
+    };
+    FixtureOpts::new(GETTER_BATCH_SOURCE, modules).with_unassigned_mode(unassigned_mode_inline())
+}
+
+fn possible_getter_owner(effect: &serde_json::Value, source_owner: usize) -> bool {
+    effect["kind"] == "fallback"
+        && effect["reason"]["path"] == "possible_getter"
+        && effect["reason"]["promotion"]
+            == serde_json::json!({"kind": "lazy_owner", "source_owner": source_owner})
+}
+
+#[test]
+fn possible_getter_owner_batch_keeps_separate_effect_coverage_and_future_binding_order() {
+    let fixture = run_fixture(getter_batch_split(false));
+    assert_preserved_entry_output(&fixture, "0 0 7 1\n");
+    let graph = fixture.dependency_graph();
+    let trigger = source_unit_for_binding(&graph, "trigger");
+    let owner_ordinal = |binding| {
+        graph
+            .nodes
+            .iter()
+            .find(|node| node.id == source_unit_for_binding(&graph, binding))
+            .unwrap_or_else(|| panic!("{binding} owner node"))
+            .statement_ordinal
+            .0 as usize
+    };
+    let first_owner = owner_ordinal("first");
+    let second_owner = owner_ordinal("second");
+
+    let future_declaration = source_unit_for_binding(&graph, "future");
+    let future_observation = graph.edges.iter().find_map(|edge| {
+        let cause = serde_json::to_value(edge.sequenced_cause.as_ref()?).ok()?;
+        (cause["rule"] == "uninitialized_observation"
+            && cause["binding"] == "future"
+            && edge.source == future_declaration
+            && edge.target == trigger)
+            .then_some(cause)
+    });
+    let future_observation = future_observation.expect("future TDZ ordering cause");
+    assert!(
+        possible_getter_owner(&future_observation["observation"], first_owner),
+        "the first owner must retain the possible-getter read provenance: {future_observation:#}"
+    );
+
+    for (binding, expected_owner) in [("shared", second_owner), ("changed", first_owner)] {
+        let rebind_cause = graph.edges.iter().find_map(|edge| {
+            let cause = serde_json::to_value(edge.sequenced_cause.as_ref()?).ok()?;
+            (cause["rule"] == "binding_timeline"
+                && cause["binding"] == binding
+                && cause["order"] == "reader_after_writer"
+                && edge.target == trigger)
+                .then_some(cause)
+        });
+        let rebind_cause = rebind_cause
+            .unwrap_or_else(|| panic!("no later read ordered after getter rebind of `{binding}`"));
+        assert!(
+            possible_getter_owner(&rebind_cause["target"], expected_owner),
+            "the rebind category must retain its first contributing owner: {rebind_cause:#}"
+        );
+    }
+
+    expect_cycle_rejection(
+        getter_batch_split(true),
+        &["probes/owners", "probes/future"],
+    );
+}
+
 #[test]
 fn escaped_record_member_read_beside_observed_effects_rejects_the_pair() {
     let source = probe_source(

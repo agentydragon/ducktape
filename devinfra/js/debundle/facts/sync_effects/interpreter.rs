@@ -879,9 +879,30 @@ impl RecordFactoryPrototypePremises {
     }
 }
 
+struct IndexedEffectBindings<'source> {
+    bindings: Vec<&'source Id>,
+    coverage_words: Vec<(usize, u64)>,
+}
+
+impl IndexedEffectBindings<'_> {
+    fn covered_by(&self, coverage: &[u64]) -> bool {
+        self.coverage_words.iter().all(|(word, mask)| {
+            coverage
+                .get(*word)
+                .is_some_and(|covered| *covered & *mask == *mask)
+        })
+    }
+
+    fn add_to(&self, coverage: &mut [u64]) {
+        for &(word, mask) in &self.coverage_words {
+            coverage[word] |= mask;
+        }
+    }
+}
+
 struct TopLevelEffectView<'source> {
-    reads: Vec<&'source Id>,
-    rebinds: Vec<&'source Id>,
+    reads: IndexedEffectBindings<'source>,
+    rebinds: IndexedEffectBindings<'source>,
 }
 
 struct OwnerLazyEffectViews<'source> {
@@ -893,16 +914,37 @@ fn top_level_effect_view<'source>(
     reads: &'source BTreeSet<Id>,
     rebinds: &'source BTreeSet<Id>,
     top_bindings: &FxHashSet<Id>,
+    prefix_bindings: &TopBindings,
 ) -> TopLevelEffectView<'source> {
+    let index_bindings = |ids: &'source BTreeSet<Id>| {
+        let mut indexed = IndexedEffectBindings {
+            bindings: Vec::new(),
+            coverage_words: Vec::new(),
+        };
+        for id in ids {
+            if !top_bindings.contains(id) {
+                continue;
+            }
+            let index = prefix_bindings
+                .ordinal(id)
+                .expect("top-level effects have prefix binding ordinals")
+                .index();
+            indexed.bindings.push(id);
+            let word = index / u64::BITS as usize;
+            let mask = 1_u64 << (index % u64::BITS as usize);
+            if let Some((last_word, last_mask)) = indexed.coverage_words.last_mut()
+                && *last_word == word
+            {
+                *last_mask |= mask;
+            } else {
+                indexed.coverage_words.push((word, mask));
+            }
+        }
+        indexed
+    };
     TopLevelEffectView {
-        reads: reads
-            .iter()
-            .filter(|id| top_bindings.contains(*id))
-            .collect(),
-        rebinds: rebinds
-            .iter()
-            .filter(|id| top_bindings.contains(*id))
-            .collect(),
+        reads: index_bindings(reads),
+        rebinds: index_bindings(rebinds),
     }
 }
 
@@ -987,7 +1029,7 @@ pub(super) struct OwnPropertyQuery {
     request: OwnPropertyRequest,
 }
 
-impl ExecutionInputs<'_> {
+impl<'source> ExecutionInputs<'source> {
     pub(super) fn capture_policy(&self) -> CapturePolicy<'_> {
         CapturePolicy::Application {
             module_bindings: &self.top_bindings,
@@ -1040,14 +1082,13 @@ impl ExecutionInputs<'_> {
         &self,
         owner: SourceUnitOrdinal,
         incomplete_reachability: bool,
-    ) -> (&[&Id], &[&Id]) {
+    ) -> &TopLevelEffectView<'source> {
         let views = &self.synchronous_owner_top_effects[owner.0];
-        let effects = if incomplete_reachability {
+        if incomplete_reachability {
             &views.incomplete
         } else {
             views.synchronous.as_ref().unwrap_or(&views.incomplete)
-        };
-        (&effects.reads, &effects.rebinds)
+        }
     }
 
     /// Expand actual roots immediately. A read of a future sole lexical
@@ -4753,10 +4794,15 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         effect_owner: SourceUnitOrdinal,
         outcome: &mut Outcome,
     ) {
-        let (reads, rebinds) = self
+        let effects = self
             .inputs
             .synchronous_top_effects(owner, self.state.world.reachability.incomplete);
-        self.promote_top_effects(reads, rebinds, effect_owner, outcome);
+        self.promote_top_effects(
+            &effects.reads.bindings,
+            &effects.rebinds.bindings,
+            effect_owner,
+            outcome,
+        );
     }
 
     /// Attributes `reads` and `rebinds` to `effect_owner`, assumed when a
@@ -6321,7 +6367,22 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             span_start: call.span.lo.0,
             span_end: call.span.hi.0,
         };
+        let incomplete_reachability = self.state.world.reachability.incomplete;
+        let coverage_words = self
+            .inputs
+            .prefix_binding_count
+            .div_ceil(u64::BITS as usize);
+        let mut covered_reads = vec![0_u64; if owners.is_empty() { 0 } else { coverage_words }];
+        let mut covered_rebinds = vec![0_u64; if owners.is_empty() { 0 } else { coverage_words }];
         for owner in owners {
+            let effects = self
+                .inputs
+                .synchronous_top_effects(owner, incomplete_reachability);
+            if effects.reads.covered_by(&covered_reads)
+                && effects.rebinds.covered_by(&covered_rebinds)
+            {
+                continue;
+            }
             let reason = AssumedEffectReason::PossibleGetter {
                 lookup: lookup.clone(),
                 promotion: PossibleGetterPromotion::LazyOwner {
@@ -6331,6 +6392,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             self.assuming(reason, |this| {
                 this.promote_lazy_owner(owner, effect_owner, outcome)
             });
+            let effects = self
+                .inputs
+                .synchronous_top_effects(owner, incomplete_reachability);
+            effects.reads.add_to(&mut covered_reads);
+            effects.rebinds.add_to(&mut covered_rebinds);
         }
         let reason = AssumedEffectReason::PossibleGetter {
             lookup,
@@ -13913,9 +13979,19 @@ pub(crate) fn annotate_synchronous_calls(
         .zip(&prefix_effects)
         .map(|(fact, synchronous)| OwnerLazyEffectViews {
             synchronous: synchronous.map(|effects| {
-                top_level_effect_view(&effects.reads, &effects.rebinds, &top_bindings)
+                top_level_effect_view(
+                    &effects.reads,
+                    &effects.rebinds,
+                    &top_bindings,
+                    &prefix_bindings,
+                )
             }),
-            incomplete: top_level_effect_view(&fact.reads.lazy, &fact.rebinds.lazy, &top_bindings),
+            incomplete: top_level_effect_view(
+                &fact.reads.lazy,
+                &fact.rebinds.lazy,
+                &top_bindings,
+                &prefix_bindings,
+            ),
         })
         .collect();
     let inputs = ExecutionInputs {
