@@ -8,7 +8,6 @@ import pytest
 from agentplane.app.testing.client import Client
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.harness_pair import run_harness_pair, run_harness_pair_in_own_sandboxes
-from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 from agentplane.system_tests.scenarios import (
     agent_messaging,
@@ -21,7 +20,6 @@ from agentplane.system_tests.scenarios import (
     storage,
     suspend_resume,
     thread_history,
-    workload_trust,
 )
 from agentplane.system_tests.suites.pod_worker import Worker
 
@@ -85,10 +83,6 @@ async def a_preset_launches_an_initialized_editable_codex_thread(worker: Worker)
         await launch_presets.a_preset_launches_an_initialized_editable_codex_thread(
             case.client, worker.dispatcher, case.sandboxes, worker.scripted
         )
-
-
-async def cert_manager_reissues_a_deleted_tls_secret(worker: Worker) -> None:
-    await runner_credentials.cert_manager_reissues_a_deleted_tls_secret(worker.cluster)
 
 
 async def pod_mtls_session_survives_replacement_and_keeps_history(worker: Worker) -> None:
@@ -192,53 +186,12 @@ async def turns_nobody_watches_are_archived_and_a_failed_turn_leaves_the_next_in
         )
 
 
-async def a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(worker: Worker) -> None:
-    async with worker.reused_sandbox() as case:
-        await workload_trust.a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(worker.cluster, case.sandbox)
-
-
-async def a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(worker: Worker) -> None:
-    async with worker.reused_sandbox() as case:
-        await workload_trust.a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner(
-            worker.cluster, case.sandbox, route=workload_trust.RunnerControlRoute.PORT_FORWARD
-        )
-
-
-async def a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(worker: Worker) -> None:
-    async with worker.reused_sandbox() as case:
-        await workload_trust.a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway(
-            worker.cluster, case.sandbox
-        )
-
-
-async def a_command_box_presents_its_own_svid(worker: Worker) -> None:
-    async with PolicyObjects(worker.cluster) as policy_objects, worker.fresh_sandboxes() as case:
-        caller = await case.sandboxes("systest-box-caller")
-        await egress.a_command_box_presents_its_own_svid(worker.cluster, caller, policy_objects)
-
-
-async def a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(worker: Worker) -> None:
-    async with worker.fresh_sandboxes() as case:
-        subject = await case.sandboxes("systest-standing-subject")
-        await egress.a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes(worker.cluster, subject)
-
-
-async def two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(worker: Worker) -> None:
-    async with worker.fresh_sandboxes() as case:
-        await egress.two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it(
-            worker.cluster, case.client, case.sandboxes
-        )
-
-
 SCENARIOS = (
     pytest.param(environments_forwards_runtime_reads_and_refuses_stale_incarnations),
     pytest.param(the_model_call_itself_goes_through_the_proxy, marks=pytest.mark.scripted_model),
     pytest.param(
         the_standing_instruction_reaches_the_model_and_only_in_its_own_session, marks=pytest.mark.scripted_model
     ),
-    pytest.param(a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused),
-    pytest.param(a_cluster_ca_leaf_naming_the_gateway_is_refused_by_the_runner),
-    pytest.param(a_cluster_ca_leaf_at_a_runner_address_is_refused_by_the_gateway),
     pytest.param(
         every_history_reader_observes_the_same_log_and_resume_uses_the_observed_cursor, marks=pytest.mark.scripted_model
     ),
@@ -254,14 +207,10 @@ SCENARIOS = (
     pytest.param(
         an_identity_creates_a_native_session_only_with_an_explicit_binding_grant, marks=pytest.mark.scripted_model
     ),
-    pytest.param(a_command_box_presents_its_own_svid),
-    pytest.param(a_standing_workload_authenticates_by_its_svid_and_its_prune_revokes),
-    pytest.param(two_sandboxes_act_as_one_kubernetes_account_and_one_loses_it),
     pytest.param(an_agent_messages_another_which_reads_and_acknowledges_it, marks=pytest.mark.scripted_model),
     pytest.param(a_policy_granted_after_the_sandbox_is_running_takes_effect, marks=pytest.mark.scripted_model),
     pytest.param(sandbox_cli_reaches_the_dispatcher_with_its_workload_svid, marks=pytest.mark.scripted_model),
     pytest.param(a_preset_launches_an_initialized_editable_codex_thread, marks=pytest.mark.scripted_model),
-    pytest.param(cert_manager_reissues_a_deleted_tls_secret),
     pytest.param(
         pod_mtls_session_survives_replacement_and_keeps_history,
         marks=[pytest.mark.scripted_model, pytest.mark.timeout(600)],

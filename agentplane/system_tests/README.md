@@ -30,11 +30,14 @@ scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
-| `//agentplane/system_tests/suites:test_pod`                            | Pod Sandbox scenarios                                 |
+| `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
+| `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
 | `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
-| `//agentplane/system_tests/suites/mcp:test_services`                   | MCP services and central sampler                      |
+| `//agentplane/system_tests/suites/mcp:test_services`                   | App-backed delegated Action admission                 |
+| `//agentplane/system_tests/suites/mcp:test_services_mcp`               | MCP discovery, consent and policy binding             |
+| `//agentplane/system_tests/suites/mcp:test_services_central`           | Native central-sampler service paths                  |
 | `//agentplane/system_tests/suites/mcp:test_sampler_roll`               | Sampler replacement with live executor work           |
 | `//agentplane/system_tests/suites/mcp:test_gateway_crash`              | Abrupt Gateway loss during a live executor read       |
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
