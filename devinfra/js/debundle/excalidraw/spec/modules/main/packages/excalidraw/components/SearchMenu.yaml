@@ -1,0 +1,50 @@
+# Original home: packages/excalidraw/components/SearchMenu.tsx
+source_matches:
+  - match: |
+      var selected = () => {
+        let app = EXPR, setAppState = EXPR, searchInputRef = EXPR,
+          [inputValue, setInputValue] = EXPR, searchQuery = inputValue.trim(),
+          [isSearching, setIsSearching] = EXPR,
+          [searchMatches, setSearchMatches] = EXPR({ nonce: null, items: [] }),
+          ANYTHING = ANYTHING;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: SearchMenu
+
+  - match: |
+      var selected = (text, index, searchQuery) => {
+        let substrBeforeQuery = text.slice(0, index),
+          wordsBeforeQuery = substrBeforeQuery.split(/\s+/),
+          ANYTHING = ANYTHING;
+        STMT_LIST;
+        return {
+          indexInSearchQuery: EXPR,
+          previewText: EXPR,
+          moreBefore: EXPR,
+          moreAfter: EXPR,
+        };
+      };
+    bindings:
+      - local: selected
+        name: getMatchPreview
+
+  - match: |
+      var selected = (wrappedText, originalText) => {
+        let wrappedLines = wrappedText.split(EXPR), normalizedLines = [], originalIndex = 0;
+        STMT_LIST;
+        return normalizedLines.join(EXPR);
+      };
+    bindings:
+      - local: selected
+        name: normalizeWrappedText
+
+  - match: |
+      var selected = (textElement, searchQuery, index) => {
+        let lines = ANYTHING(textElement.text, textElement.originalText).split(EXPR), ANYTHING = ANYTHING;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: getMatchedLines

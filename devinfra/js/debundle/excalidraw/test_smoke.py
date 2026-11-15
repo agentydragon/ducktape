@@ -1390,5 +1390,26 @@ async def test_interactive_scene_helpers(playwright_driver: Playwright, origin: 
         assert result == {"empty": True, "painted": True, "outsideUntouched": True}
 
 
+async def test_search_menu_preview(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        preview = await page.evaluate(
+            """async () => {
+                const search = await import('./main/packages/excalidraw/components/SearchMenu.js');
+                return search.getMatchPreview('hello wonderful world', 6, 'wonderful');
+            }"""
+        )
+        assert preview == {
+            "indexInSearchQuery": 7,
+            "previewText": "hello  wonderful  world",
+            "moreBefore": False,
+            "moreAfter": False,
+        }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
