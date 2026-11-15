@@ -152,7 +152,7 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
     settings = yaml.safe_load(one(_resource(staging_manifests, "ConfigMap", "notifications-settings")["data"].values()))
     for peer, server_uri in {
         "actions": ACTIONS_URI,
-        "runner_gateway": SESSION_DISPATCHER_URI,
+        "runner_gateway": SANDBOX_CONTROLLER_URI,
         "history_service": HISTORY_SERVICE_URI,
         "session_dispatcher": SESSION_DISPATCHER_URI,
     }.items():
@@ -180,7 +180,7 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
     settings = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     for name, server_uri in (
         ("egress_admin", EGRESS_PROXY_URI),
-        ("runner_gateway", SESSION_DISPATCHER_URI),
+        ("runner_gateway", SANDBOX_CONTROLLER_URI),
         ("session_dispatcher", SESSION_DISPATCHER_URI),
         ("history_service", HISTORY_SERVICE_URI),
         ("notifications", NOTIFICATIONS_URI),

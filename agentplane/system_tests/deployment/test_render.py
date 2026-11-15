@@ -28,6 +28,7 @@ from agentplane.net.peertls.config import (
     HISTORY_SERVICE_URI,
     LLM_INGRESS_URI,
     MCP_EDGE_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.sandboxes.runtimeconfig.model_catalog import ModelCatalog
@@ -316,7 +317,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     sessions_tls_path = PurePosixPath(sessions_tls_mount["mountPath"])
     assert gateway_config["gateway_tls"] == {
         "ca_file": workload_tls.TRUST_BUNDLE_FILE,
-        "server_uri": SESSION_DISPATCHER_URI,
+        "server_uri": SANDBOX_CONTROLLER_URI,
         "cert_file": str(sessions_tls_path / "tls.crt"),
         "key_file": str(sessions_tls_path / "tls.key"),
         "client_uri": GATEWAY_SESSIONS_URI,
@@ -356,7 +357,10 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     endpoint = f"{dispatcher['metadata']['name']}.{NAMESPACE}.svc.cluster.local:{dispatcher_port}"
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["session_dispatcher_target"] == endpoint
-    assert app_config["runner_gateway_control_target"] == "runner-gateway.{namespace}.svc:8080"
+    assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
+    assert app_config["runner_gateway_control_target"] == "sandbox-controller.{namespace}.svc:8082"
+    assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
+    assert gateway_config["runner_control_target_template"] == "sandbox-controller.{namespace}.svc:8082"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
     assert app_container.get("args", []) == []
     app_env = {entry["name"]: entry for entry in app_container["env"]}
