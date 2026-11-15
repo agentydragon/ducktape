@@ -197,6 +197,32 @@ async def test_layer_ui_memo_ignores_scroll_but_tracks_selection(playwright_driv
         assert result == [True, False, False]
 
 
+async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+
+        rectangle = page.get_by_test_id("toolbar-rectangle")
+        await page.locator("label", has=rectangle).click()
+        canvas = page.locator("canvas.excalidraw__canvas.interactive")
+        await canvas.hover(position={"x": 400, "y": 300})
+        await page.mouse.down()
+        await page.mouse.move(600, 450, steps=5)
+        await page.mouse.up()
+
+        await page.keyboard.press("Alt+/")
+        await expect(page.locator(".exc-stats")).to_be_visible()
+        width = page.get_by_test_id("W").locator("input.drag-input")
+        await expect(width).to_have_value("200")
+        await width.fill("220")
+        await width.press("Enter")
+        await expect(width).to_have_value("220")
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None

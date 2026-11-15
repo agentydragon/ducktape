@@ -1,0 +1,12 @@
+# Original home: packages/excalidraw/components/Stats/DragInput.tsx
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        StatsDragInput = ({ label, icon, dragInputCallback, value, elements,
+          editable = !0, shouldKeepAspectRatio, property, scene, appState,
+          sensitivity = 1 }) => {
+          STMT_LIST;
+        },
+        ANYTHING = ANYTHING;
+    bindings:
+      - StatsDragInput
