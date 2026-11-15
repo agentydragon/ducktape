@@ -40,7 +40,6 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -80,6 +79,8 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 type running struct {
 	health    healthpb.HealthClient
 	actions   action_servicepb.ActionServiceClient
+	reader    action_servicepb.ActionServiceClient
+	ca        *transporttesting.CA
 	operators operator_action_servicepb.OperatorActionServiceClient
 	linkages  linkage_servicepb.LinkageServiceClient
 	address   string
@@ -103,14 +104,14 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c := defaultConfig()
 	c.ActionGroups = groups
 	c.DatabaseURL = integrationDatabase.Clone(t)
-	c.RPC = listener.Config{
-		ListenAddress: "127.0.0.1:0",
-		Auth:          []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}},
-	}
+	ca := transporttesting.NewCA(t)
+	serving := ca.Issue(t, peertls.ActionsURI)
+	c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}}}
+	c.ServiceReaders = []string{peertls.NotificationsURI}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
 	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = policyNamespace
-	cluster := deps{Reviews: kube.TokenReviews(), Kube: kubeConfig}
+	cluster := deps{Kube: kubeConfig}
 	configure(&c, &cluster)
 	db := postgres.Open(t, c.DatabaseURL)
 	hub, err := wakeups.Listen(t.Context(), c.DatabaseURL, store.UpdatesChannel)
@@ -144,7 +145,10 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
-	clientCredentials := insecure.NewCredentials()
+	clientCredentials, err := (&peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.ActionsURI}).Credentials()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if c.RPC.TLS != nil {
 		if !c.RPC.Has(listener.SPIFFE) {
 			t.Fatal("test TLS listener must supply SPIFFE roots for its client")
@@ -166,8 +170,21 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { connection.Close() })
+	var reader action_servicepb.ActionServiceClient
+	if c.RPC.TLS.CertFile == serving.CertFile {
+		readerCredentials, err := ca.Issue(t, peertls.NotificationsURI).ClientCredentials(peertls.ActionsURI)
+		if err != nil {
+			t.Fatal(err)
+		}
+		readerConnection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(readerCredentials))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { readerConnection.Close() })
+		reader = action_servicepb.NewActionServiceClient(readerConnection)
+	}
 	return running{
-		health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
+		ca: ca, reader: reader, health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
 		operators: operator_action_servicepb.NewOperatorActionServiceClient(connection),
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
 		address:   rpcListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
@@ -532,7 +549,7 @@ func TestTheServiceAnswersAReadersReadsOverGRPC(t *testing.T) {
 	if _, err := service.actions.GetActionRequest(ctx, request); status.Code(err) != codes.Unauthenticated {
 		t.Errorf("a call without a bearer: %v", err)
 	}
-	got, err := service.actions.GetActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken), request)
+	got, err := service.reader.GetActionRequest(ctx, request)
 	if err != nil || got.GetActionRequest().GetId() != submitted.ID.String() {
 		t.Errorf("gRPC receipt: %v, %v", got, err)
 	}
@@ -544,7 +561,7 @@ func TestTheServiceGatesTheOperatorServicesOverGRPC(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	asReader := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
+	asReader := ctx
 	decision := &operator_action_servicepb.DecideActionRequestRequest{
 		RequestId: uuid.NewString(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW, ExpectedVersion: 1, IdempotencyKey: "test-decision",
 	}
@@ -584,47 +601,10 @@ func listOverGRPC(t *testing.T, service running, bearer string, code codes.Code)
 	return listed
 }
 
-func TestTheServiceAdmitsAWorkloadWhileItsServiceAccountCarriesTheCallerLabel(t *testing.T) {
+func TestTheServiceRejectsAValidKubernetesBearerDespiteLegacyReaderSettings(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
-	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-labeled-caller"}
-	setCallerLabel(t, caller, false)
-	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	submitted, err := service.store.Submit(t.Context(), store.CallerPrincipal{Account: store.ServiceAccount{Namespace: caller.Namespace, Name: caller.Name}, ServiceAccountUID: "test-caller-uid"},
-		store.ActionRequestInput{
-			IdempotencyKey: "test-own", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
-			Arguments: json.RawMessage(`{}`), Title: "test title",
-		}, store.Admission{RequestID: uuid.New()})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// The index, once listed, vouches that the account carries no label.
 	waitReady(t, service)
-	refused := func(when string) {
-		t.Helper()
-		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
-		defer cancel()
-		if _, err := service.actions.ListActionRequests(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
-			&action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
-			t.Errorf("%s, over gRPC: %v, want UNAUTHENTICATED", when, err)
-		}
-	}
-	refused("unlabeled")
-
-	setCallerLabel(t, caller, true)
-	ownOnly := func(over string, listed *action_servicepb.ListActionRequestsResponse) {
-		t.Helper()
-		if got := listed.GetActionRequests(); len(got) != 1 || got[0].GetId() != submitted.ID.String() {
-			t.Errorf("over %s the caller lists %v, want its own request %s", over, got, submitted.ID)
-		}
-	}
-	ownOnly("gRPC", listOverGRPC(t, service, token, codes.OK))
-
-	setCallerLabel(t, caller, false)
-	listOverGRPC(t, service, token, codes.Unauthenticated)
-	refused("unlabeled again")
+	listOverGRPC(t, service, readerToken, codes.Unauthenticated)
 }
 
 // A submission is admitted against the configured catalog and the groups' Executors, behind the Gate's policy index.
@@ -634,17 +614,11 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	// test-mcp's server is never down; test-offline's always is.
 	groups := newCatalog(t, `{"test-mcp": `+mcpGroup(echoUpstream(t, new(atomic.Bool)))+`,
 		"test-offline": `+mcpGroup(echoUpstream(t, &down))+`}`)
-	caller := auth.Account{Namespace: readerAccount.Namespace, Name: "test-submitter"}
-	setCallerLabel(t, caller, true)
-	token, err := kube.WorkloadToken(t.Context(), caller, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
 	submit := func(service running, group, key string) (*action_servicepb.SubmitActionRequestResponse, error) {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 		defer cancel()
-		return service.actions.SubmitActionRequest(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token),
+		return service.actions.SubmitActionRequest(ctx,
 			&action_servicepb.SubmitActionRequestRequest{
 				IdempotencyKey: key, Action: &action_servicepb.ActionIdentity{Group: group, Name: "test_echo"},
 				Arguments: &structpb.Struct{}, Title: "test title",
@@ -652,6 +626,7 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 	}
 
 	service := start(t, kube.Config, groups)
+	service.actions, _ = service.workloadCaller(t)
 	waitReady(t, service)
 	awaitMCPHealth(t, groups, "test-mcp", func(h *action_servicepb.McpHealth) bool {
 		return h.GetState() == action_servicepb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE
@@ -678,20 +653,18 @@ func TestTheServiceAdmitsASubmissionAgainstItsCatalogOnlyWhileThePolicyIndexAdmi
 
 	// The policy index never lists, so it admits no caller.
 	unindexed := start(t, refusingAPIServer(t), &catalog.Catalog{})
-	if _, err := submit(unindexed, "test-mcp", "test-unindexed"); status.Code(err) != codes.Unauthenticated {
-		t.Errorf("without the policy index, over gRPC: %v, want UNAUTHENTICATED", err)
+	unindexed.actions, _ = unindexed.workloadCaller(t)
+	if _, err := submit(unindexed, "test-mcp", "test-unindexed"); status.Code(err) != codes.Unavailable {
+		t.Errorf("without the live API server, over gRPC: %v, want UNAVAILABLE", err)
 	}
 }
 
 func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	caller := auth.Account{Namespace: policyNamespace, Name: "test-policy-caller"}
-	setCallerLabel(t, caller, true)
-	token, err := kube.WorkloadToken(ctx, caller, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
+	service := start(t, kube.Config, &catalog.Catalog{})
+	callerClient, caller := service.workloadCaller(t)
+	service.actions = callerClient
 	scheme := runtime.NewScheme()
 	if err := policyapi.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
@@ -710,7 +683,7 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 		&policyapi.PolicyBinding{
 			ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "test-policy-binding"},
 			Spec: policyapi.PolicyBindingSpec{
-				Subject:    policyapi.Subject{Namespace: caller.Namespace, Name: caller.Name},
+				Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: caller.Name}},
 				PolicySets: []string{"test-policy-set"},
 			},
 		},
@@ -719,15 +692,14 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	service := start(t, kube.Config, &catalog.Catalog{})
 	// Once the policy index has listed, it admits the labeled caller and resolves its binding.
 	waitReady(t, service)
 
-	authorized := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	authorized := ctx
 	var got *action_servicepb.GetActionPolicyResponse
 	err = wait.PollUntilContextTimeout(ctx, 20*time.Millisecond, callDeadline, true, func(context.Context) (bool, error) {
 		got, err = service.actions.GetActionPolicy(authorized, &action_servicepb.GetActionPolicyRequest{})
-		return got.GetActionPolicy().GetSynced() && len(got.GetActionPolicy().GetAutoApproveIf()) == 1, err
+		return got.GetActionPolicy().GetSynced() && len(got.GetActionPolicy().GetAutoApproveIf()) == 2, err
 	})
 	if err != nil {
 		t.Fatalf("the caller's policy: %v, %v", got, err)
@@ -743,13 +715,12 @@ func TestTheServiceAnswersItsCatalogOverGRPC(t *testing.T) {
 			"templates": {"test-template": "the test box"}}}}`))
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	defer cancel()
-	ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken)
-	listed, err := service.actions.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
+	listed, err := service.reader.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
 	if err != nil || len(listed.GetActionGroups()) != 1 || len(listed.GetActionGroups()[0].GetActions()) == 0 {
 		t.Fatalf("gRPC catalog: %v, %v", listed, err)
 	}
 	action := listed.GetActionGroups()[0].GetActions()[0]
-	got, err := service.actions.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: "test-sandbox", ActionKey: action.GetName()})
+	got, err := service.reader.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: "test-sandbox", ActionKey: action.GetName()})
 	if err != nil || !proto.Equal(got.GetAction(), action) {
 		t.Errorf("gRPC Action: %v, %v", got, err)
 	}

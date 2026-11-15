@@ -81,7 +81,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The same TLS listener accepts a normal projected-token caller without a client certificate.
+	// A valid projected-token caller is refused even while legacy listener mode settings remain.
 	bearerCredentials, err := (&peertls.ClientTLS{CAFile: serving.CAFile, ServerURI: peertls.ActionsURI}).Credentials()
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 	bearerCtx, bearerCancel := context.WithTimeout(t.Context(), callDeadline)
 	defer bearerCancel()
 	bearerCtx = metadata.AppendToOutgoingContext(bearerCtx, "authorization", "Bearer "+readerToken)
-	if _, err := action_servicepb.NewActionServiceClient(bearerConn).ListActionRequests(bearerCtx, &action_servicepb.ListActionRequestsRequest{}); err != nil {
+	if _, err := action_servicepb.NewActionServiceClient(bearerConn).ListActionRequests(bearerCtx, &action_servicepb.ListActionRequestsRequest{}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("bearer call on the shared listener: %v", err)
 	}
 	for i, workload := range []workloadauthtesting.Workload{owner, other} {
@@ -509,4 +509,29 @@ func TestServiceReaderAdmissionIsReadOnlyAndNotAnOperator(t *testing.T) {
 			}
 		})
 	}
+}
+
+// workloadCaller connects with a live Identity SVID and an empty PolicyBinding grant.
+func (r running) workloadCaller(t *testing.T) (action_servicepb.ActionServiceClient, auth.Identity) {
+	t.Helper()
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, policyNamespace, "caller-"+uuid.NewString(), policyNamespace)
+	set := "caller-set-" + uuid.NewString()
+	for _, object := range []client.Object{
+		&policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: set}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: policies.RuleType, Policy: &policyapi.ActionPolicy{Type: string(store.PolicyExactActions), Actions: map[string]policyapi.ActionNames{"fixture-unused": {"none"}}}}}}},
+		&policyapi.PolicyBinding{ObjectMeta: metav1.ObjectMeta{Namespace: policyNamespace, Name: "caller-binding-" + uuid.NewString()}, Spec: policyapi.PolicyBindingSpec{Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: workload.Identity.Name}}, PolicySets: []string{set}}},
+	} {
+		if err := workload.Objects.Create(t.Context(), object); err != nil {
+			t.Fatal(err)
+		}
+	}
+	security, err := r.ca.Issue(t, workload.URI).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(r.address, grpc.WithTransportCredentials(security))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { connection.Close() })
+	return action_servicepb.NewActionServiceClient(connection), workload.Subject.Identity
 }

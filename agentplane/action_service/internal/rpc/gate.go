@@ -3,7 +3,6 @@ package rpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -25,32 +24,25 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// Callers says whether a workload may call: for a ServiceAccount, whether it carries the Action Service caller
-// label in a view of the ServiceAccounts the service can vouch for; for an Identity incarnation, whether a live
-// PolicyBinding names it. An implementation logs its refusals.
+// Callers says whether a live PolicyBinding names a workload Identity incarnation.
+// An implementation logs its refusals.
 type Callers interface {
-	Admits(account auth.Account) bool
 	AdmitsIdentity(identity auth.Identity) bool
 }
 
 // errDraining is a call that reaches a service that no longer accepts work.
 var errDraining = errors.New("Action Service is draining")
 
-// unauthenticated is the one answer to a bearer the service does not accept: it does not say why, so a caller
-// does not learn from the difference whether an account exists or carries the label.
-var unauthenticated = status.Error(codes.Unauthenticated, "invalid bearer")
+// unauthenticated does not disclose whether the presented Identity exists or is admitted.
+var unauthenticated = status.Error(codes.Unauthenticated, "invalid credentials")
 
 // GateOptions are whom a Gate admits.
 type GateOptions struct {
 	ServiceReaders   []string
 	OperatorServices []string
-	// Workloads reviews a workload's bearer; it admits only the namespaces whose ServiceAccounts may call.
-	Workloads *auth.Resolver
 	// SVID resolves verified workload certificates on the shared TLS listener; operator tokens still use OIDC.
 	SVID    *auth.SVIDResolver
 	Callers Callers
-	// ReaderAccounts read every account's requests, labeled or not, and change none.
-	ReaderAccounts []auth.Account
 	// Operators verifies an operator's token; nil admits no operator.
 	Operators *operatoroidc.Verifier
 	// ConnectionDelegation carries method-scoped authority for the MCP edge. Only the Action
@@ -62,14 +54,12 @@ type GateOptions struct {
 }
 
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
-// bearer to the principal the call acts as, and answers a failed call with the status code that names its failure.
+// credentials to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
 	serviceReaders       sets.Set[string]
 	operatorServices     sets.Set[string]
-	workloads            *auth.Resolver
 	svid                 *auth.SVIDResolver
 	callers              Callers
-	readers              sets.Set[auth.Account]
 	operators            *operatoroidc.Verifier
 	connectionDelegation auth.Methods
 	sessionDelegation    auth.Methods
@@ -83,7 +73,7 @@ func NewGate(options GateOptions) *Gate {
 	draining, drain := context.WithCancel(context.Background())
 	g := &Gate{
 		serviceReaders: sets.New(options.ServiceReaders...), operatorServices: sets.New(options.OperatorServices...),
-		workloads: options.Workloads, svid: options.SVID, callers: options.Callers, readers: sets.New(options.ReaderAccounts...), operators: options.Operators,
+		svid: options.SVID, callers: options.Callers, operators: options.Operators,
 		connectionDelegation: options.ConnectionDelegation,
 		sessionDelegation:    options.SessionDelegation,
 		draining:             draining, drain: drain,
@@ -124,7 +114,7 @@ func NewGate(options GateOptions) *Gate {
 // Drain refuses every call from now on and ends the open watches.
 func (g *Gate) Drain() { g.drain() }
 
-// admission is the principal a bearer proved.
+// admission is the principal the verified credentials proved.
 type admission struct {
 	principal   store.ReadPrincipal
 	attribution *store.DelegationAttribution
@@ -157,9 +147,7 @@ func bearer(ctx context.Context) (string, error) {
 	return token, nil
 }
 
-// authenticate resolves the call's bearer. A token its unverified issuer claim names as the operators' is an
-// operator's, and only its issuer may accept it; any other token is a workload's, which the API server reviews.
-// Each path verifies the token in full, so the claim only picks the verifier.
+// authenticate verifies a workload or service SVID, or a separately configured operator ID token.
 func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if hasSVIDPeer(ctx) {
 		id, err := peertls.PeerIdentity(ctx)
@@ -187,14 +175,11 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 		if err != nil {
 			return admission{}, err
 		}
-		switch subject := subject.(type) {
-		case auth.Principal:
-			return g.workloadAccount(subject.Account, subject.ServiceAccountUID)
-		case auth.IdentityPrincipal:
-			return g.workloadIdentity(subject.Identity)
-		default:
-			panic(fmt.Sprintf("unknown workload subject %T", subject))
+		identity, ok := subject.(auth.IdentityPrincipal)
+		if !ok {
+			return admission{}, unauthenticated
 		}
+		return g.workloadIdentity(identity.Identity)
 	}
 	token, err := bearer(ctx)
 	if err != nil {
@@ -203,37 +188,11 @@ func (g *Gate) authenticate(ctx context.Context) (admission, error) {
 	if g.operators != nil && g.operators.MatchesUnverifiedIssuer(token) {
 		return g.operator(ctx, token)
 	}
-	workload, err := g.workloads.ResolveServiceAccountToken(ctx, token)
-	switch {
-	case errors.Is(err, auth.ErrInvalidBearer):
-		return admission{}, unauthenticated
-	case err != nil:
-		return admission{}, failure(ctx, err)
-	}
-	identityAccount := workload.GetAccount()
-	if identityAccount == nil || identityAccount.GetNamespace() == "" || identityAccount.GetName() == "" || workload.GetUid() == "" {
-		return admission{}, unauthenticated
-	}
-	return g.workloadAccount(auth.Account{Namespace: identityAccount.GetNamespace(), Name: identityAccount.GetName()}, workload.GetUid())
-}
-
-// workloadAccount retains the existing caller-label and reader authorization for
-// both authentication boundaries, including canonical ServiceAccount ownership.
-func (g *Gate) workloadAccount(accountRef auth.Account, uid string) (admission, error) {
-	account := store.ServiceAccount{Namespace: accountRef.Namespace, Name: accountRef.Name}
-	if g.readers.Has(accountRef) {
-		return admission{principal: store.ServiceReaderPrincipal{Account: account}}, nil
-	}
-	if !g.callers.Admits(accountRef) {
-		return admission{}, unauthenticated
-	}
-	return admission{principal: store.CallerPrincipal{
-		Account: account, ServiceAccountUID: uid,
-	}}, nil
+	return admission{}, unauthenticated
 }
 
 // workloadIdentity admits an Identity incarnation a live PolicyBinding names, as itself. No Identity is a service
-// reader: the reader allowlist names ServiceAccounts.
+// reader: the reader allowlist names exact service SPIFFE IDs.
 func (g *Gate) workloadIdentity(identity auth.Identity) (admission, error) {
 	if !g.callers.AdmitsIdentity(identity) {
 		return admission{}, unauthenticated
@@ -250,7 +209,7 @@ func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
 // DrainingContext is cancelled once the service drains.
 func (g *Gate) DrainingContext() context.Context { return g.draining }
 
-// Recheck verifies the call's bearer again, as a watch does before every frame: it fails once the bearer is no
+// Recheck verifies the call's credentials again before every watch frame: it fails once they are no
 // longer accepted as the principal the call was admitted as.
 func (g *Gate) Recheck(ctx context.Context) error {
 	profile := admitted(ctx).delegation
@@ -425,7 +384,7 @@ func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
 	return admission{principal: store.OperatorPrincipal{Issuer: verified.Issuer, Subject: verified.Subject}}, nil
 }
 
-// authenticator resolves the method's bearer policy and reports whether the method is admitted at all.
+// authenticator resolves the method's authentication policy and reports whether the method is admitted at all.
 func (g *Gate) authenticator(method string) (func(context.Context) (admission, error), bool) {
 	authenticate, ok := g.methods[method]
 	return authenticate, ok
@@ -501,11 +460,6 @@ func (s admittedStream) Context() context.Context { return s.ctx }
 func (g *Gate) connectionIdentity(proof auth.Admission) (auth.Identity, error) {
 	var effective auth.Identity
 	switch delegated := proof.(type) {
-	case auth.DelegatedIdentityAdmission:
-		if delegated.Provenance.GetConnection() == nil || !g.callers.Admits(delegated.Actor.Account) {
-			return effective, unauthenticated
-		}
-		effective = delegated.EffectiveCaller
 	case auth.DelegatedServiceIdentityAdmission:
 		if delegated.Provenance.GetConnection() == nil {
 			return effective, unauthenticated

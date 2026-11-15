@@ -80,22 +80,15 @@ supplied MCP schemas and policy-authored argument schemas retain their own JSON 
 
 ## Caller admission and Connection authority
 
-A caller is either a directly authenticated platform ServiceAccount carrying
-`agentplane.allegedly.works/use-action-service: "true"` in a configured caller namespace, or an
-`Identity` of the policy namespace. Configured service readers retain their separate role and need
-no caller label. Agent workload `WorkloadCredential`s and
-command/build boxes now name Identity subjects; the retained ServiceAccount authentication path is
-for component callers, not a newly issued workload credential.
-The shared TLS RPC listener on 8080 verifies an agentplane Runtime SVID with explicit
-clientAuth against the trust-manager roots. It resolves the accepted credential and exact live
-Sandbox UID to the Identity subject its `WorkloadCredential` names, read live and fenced on that UID.
-The issuer now requires an Identity subject; the resolver rejects retained ServiceAccount-subject
-records. Direct component ServiceAccount authentication is the separate TokenReview path below. The sidecar originates TLS
-through the central proxy's opaque CONNECT; the proxy supplies no identity. Native gRPC runs
-the same Gate. Bearer headers cannot replace the certificate
-peer; deleted Sandboxes, stale credentials and invalid leaves fail before a handler runs.
-ActionService admits SVIDs; operator RPCs on the same listener retain their OIDC verifier and
-refuse Sandbox certificates. Linkage callbacks retain their single-use state authorization.
+The shared TLS listener admits workload Identity SVIDs and exact service SPIFFE IDs. A workload
+certificate resolves to the live Identity incarnation named by its WorkloadCredential, and requires
+a live PolicyBinding. Owned workloads retain their existing incarnation checks; a standing workload
+requires no Sandbox or Pod. Service certificates supply no workload, ServiceAccount or Pod proof.
+Kubernetes bearer tokens are refused, including valid tokens for the former audience. No TokenReview
+client is constructed for receiver admission. The legacy reader, delegation-actor and listener bearer
+settings remain decodable but ignored until generated manifests omit them and rollout completes.
+Operator RPCs retain their separately verified OIDC contract and explicit service-plus-OIDC exception.
+Linkage callbacks retain their single-use state authorization.
 
 The Gate admits only explicitly listed full gRPC method names; any other method is denied before
 its handler runs. ActionService methods use workload admission, while OperatorActionService,
@@ -104,11 +97,7 @@ Health methods remain public. Linkage methods remain bearer-free because the cal
 single-use state itself and the client metadata document is public. A new RPC stays denied until it
 is assigned an explicit boundary.
 
-On the same listener, a Kubernetes token proves a ServiceAccount directly through TokenReview for
-the configured audience. The resolver requires an allowed namespace and the live ServiceAccount UID;
-the ServiceAccount must also carry `agentplane.allegedly.works/use-action-service: "true"`.
-Actions accepts tokens with or without a Pod binding. A supplied Pod binding must have exactly one
-name and UID. An external MCP
+An external MCP
 bearer is resolved by the edge to an active grant and Connection bound to an exact live Identity;
 the edge delegates as its own component caller and carries typed Connection/grant provenance. It
 does not mint or forward a workload ServiceAccount token. Nothing is admitted before the relevant
@@ -126,12 +115,12 @@ previous grants and creates a new revision. Unbind, revocation, or loss of the b
 admission refuses subsequent MCP authority resolution. Revoking an old grant cannot revoke its
 replacement, and no Connection or grant history is deleted.
 
-The core receives either a directly authenticated component ServiceAccount principal or, on the
-delegated MCP path, the edge's component ServiceAccount actor with an effective Identity caller.
+The core receives a direct workload Identity or an explicitly granted service principal. The
+delegated MCP path preserves the edge service actor independently of its effective Identity caller.
 The core retains the authenticated delegating actor and typed Connection/grant provenance on
 its admission receipt, alongside the effective caller incarnation. It does not resolve or own
 Connections, and correlation grants no authority. A service actor is its exact certificate SPIFFE ID;
-a legacy workload actor retains its ServiceAccount incarnation and independently proven Pod binding.
+historical receipts retain their recorded legacy ServiceAccount incarnation and Pod binding.
 The receipt also supports typed central Session UUID provenance; accepting a Session-delegated call
 requires a separate method grant. The effective caller alone governs policy, ownership and idempotency,
 and is carried into execution payloads. Attribution comes only from the admitted context, never Action
@@ -231,7 +220,7 @@ named subject.
 
 `WatchActionPolicy` uses the same subject and viewer rules as `GetActionPolicy`. It sends the current
 policy followed by changed snapshots, including changes in the index's availability; intermediate
-states may be coalesced. Reconnection starts with a fresh snapshot. The service rechecks the bearer
+states may be coalesced. Reconnection starts with a fresh snapshot. The service rechecks the credentials
 while the stream is idle and before each frame; it does not impose a fixed watch lifetime.
 
 ## External OAuth consent

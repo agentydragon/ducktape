@@ -4,13 +4,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -18,7 +16,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -47,20 +44,16 @@ func idsOf(requests ...store.ActionRequest) []string {
 
 func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.T) {
 	s := serve(t)
-	unbound, err := kube.UnboundToken(t.Context(), callerAccount, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	own := s.decide(t, s.submit(t, caller, "test-own"), store.VerdictAllow)
-	others := s.decide(t, s.submit(t, otherCaller, "test-others"), store.VerdictDeny)
+	own := s.decide(t, s.submit(t, s.caller, "test-own"), store.VerdictAllow)
+	others := s.decide(t, s.submit(t, s.otherCaller, "test-others"), store.VerdictDeny)
 	// The service reader carries no caller label: a reader account needs none.
 	for name, tc := range map[string]struct {
 		token string
 		want  []string
 	}{
-		"the owner":        {unbound, idsOf(own)},
-		"another caller":   {otherToken, idsOf(others)},
-		"a service reader": {readerToken, idsOf(own, others)},
+		"the owner":        {callerCertificate, idsOf(own)},
+		"another caller":   {otherCertificate, idsOf(others)},
+		"a service reader": {readerCertificate, idsOf(own, others)},
 		"an operator":      {s.operatorToken, idsOf(own, others)},
 	} {
 		listed, err := s.client.ListActionRequests(as(t, tc.token), &action_servicepb.ListActionRequestsRequest{})
@@ -74,7 +67,7 @@ func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.
 	}
 
 	var receipts []*action_servicepb.ActionRequest
-	for _, token := range []string{callerToken, readerToken, s.operatorToken} {
+	for _, token := range []string{callerCertificate, readerCertificate, s.operatorToken} {
 		got, err := s.client.GetActionRequest(as(t, token), &action_servicepb.GetActionRequestRequest{RequestId: own.ID.String()})
 		if err != nil {
 			t.Fatal(err)
@@ -89,9 +82,9 @@ func TestEachPrincipalReadsTheRequestsItMayAndEachSeesTheSameReceipt(t *testing.
 			t.Errorf("readers see different receipts:\n%v\n%v", receipts[0], receipt)
 		}
 	}
-	_, err = s.client.GetActionRequest(as(t, otherToken), &action_servicepb.GetActionRequestRequest{RequestId: own.ID.String()})
+	_, err := s.client.GetActionRequest(as(t, otherCertificate), &action_servicepb.GetActionRequestRequest{RequestId: own.ID.String()})
 	wantCode(t, "another caller's receipt", err, codes.NotFound)
-	_, err = s.client.ListActionRequestEvents(as(t, otherToken), &action_servicepb.ListActionRequestEventsRequest{RequestId: own.ID.String()})
+	_, err = s.client.ListActionRequestEvents(as(t, otherCertificate), &action_servicepb.ListActionRequestEventsRequest{RequestId: own.ID.String()})
 	wantCode(t, "another caller's events", err, codes.NotFound)
 }
 
@@ -114,10 +107,11 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	}
 	var refusals []string
 	for name, ctx := range map[string]context.Context{
+		"valid Kubernetes bearer":                  as(t, validKubernetesToken),
 		"no bearer":                                presenting(t),
 		"a token for another audience":             as(t, otherAudience),
-		"two bearers":                              presenting(t, "Bearer "+callerToken, "Bearer "+callerToken),
-		"another scheme":                           presenting(t, "Basic "+callerToken),
+		"two bearers":                              presenting(t, "Bearer "+validKubernetesToken, "Bearer "+validKubernetesToken),
+		"another scheme":                           presenting(t, "Basic "+validKubernetesToken),
 		"an unknown token":                         as(t, "test-token-unknown"),
 		"an unlabeled account":                     as(t, unlabeledToken),
 		"an account outside the caller namespaces": as(t, outsiderToken),
@@ -134,80 +128,48 @@ func TestABearerTheServiceDoesNotAcceptIsRefusedWithoutSayingWhy(t *testing.T) {
 	}
 }
 
-func TestAWorkloadIsRefusedOnceItsAccountLosesTheLabelOrItsPodIsGone(t *testing.T) {
+func TestWorkloadSVIDRequiresItsLiveCredentialAndIdentityBinding(t *testing.T) {
 	s := serve(t)
-	// Accounts of this test's own, so that changing them leaves the other tests' alone.
-	delabeled := auth.Account{Namespace: testNamespace, Name: "test-delabeled-caller"}
-	revoked := auth.Account{Namespace: testNamespace, Name: "test-revoked-caller"}
-	for _, account := range []auth.Account{delabeled, revoked} {
-		if err := setCallerLabel(t.Context(), account, true); err != nil {
-			t.Fatal(err)
-		}
-	}
-	delabeledToken, err := kube.WorkloadToken(t.Context(), delabeled, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pod, err := kube.Pod(t.Context(), revoked)
-	if err != nil {
-		t.Fatal(err)
-	}
-	revokedToken, err := kube.PodToken(t.Context(), pod, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	read := func(token string) error {
-		_, err := s.client.ListActionRequests(as(t, token), &action_servicepb.ListActionRequestsRequest{})
+	read := func(certificate string) error {
+		_, err := s.client.ListActionRequests(as(t, certificate), &action_servicepb.ListActionRequestsRequest{})
 		return err
 	}
-	for _, token := range []string{delabeledToken, revokedToken} {
-		if err := read(token); err != nil {
+	for _, certificate := range []string{callerCertificate, otherCertificate} {
+		if err := read(certificate); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := setCallerLabel(t.Context(), delabeled, false); err != nil {
-		t.Fatal(err)
-	}
-	wantCode(t, "an account that lost the label", read(delabeledToken), codes.Unauthenticated)
-	if err := kube.Revoke(t.Context(), pod, revokedToken, testAudience); err != nil {
-		t.Fatal(err)
-	}
-	wantCode(t, "the token of a deleted Pod", read(revokedToken), codes.Unauthenticated)
-}
-
-func TestAWorkloadIsUnavailableWhileTheAPIServerCannotBeReached(t *testing.T) {
-	s := serveWith(t, kubeapiserver.UnreachableReviews{Err: errors.New("test API server unreachable")}, &catalog.Catalog{})
-	_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{})
-	wantCode(t, "a workload", err, codes.Unavailable)
-	// An operator's token is verified against the issuer's keys alone.
+	s.removeCallerBinding(t)
+	wantCode(t, "Identity without a binding", read(callerCertificate), codes.Unauthenticated)
+	s.revokeCertificate(t, otherCertificate)
+	wantCode(t, "revoked workload credential", read(otherCertificate), codes.Unauthenticated)
 	if _, err := s.client.ListActionRequests(as(t, s.operatorToken), &action_servicepb.ListActionRequestsRequest{}); err != nil {
-		t.Errorf("an operator: %v", err)
+		t.Fatal(err)
 	}
 }
 
 func TestADrainingServiceRefusesEveryCall(t *testing.T) {
 	s := serve(t)
-	request := s.submit(t, caller, "test-pending")
+	request := s.submit(t, s.caller, "test-pending")
 	s.gate.Drain()
-	for _, token := range []string{callerToken, readerToken, s.operatorToken} {
+	for _, token := range []string{callerCertificate, readerCertificate, s.operatorToken} {
 		_, err := s.client.ListActionRequests(as(t, token), &action_servicepb.ListActionRequestsRequest{})
 		wantCode(t, "a read while draining", err, codes.Unavailable)
 	}
-	_, err := s.cancel(t, callerToken, request)
+	_, err := s.cancel(t, callerCertificate, request)
 	wantCode(t, "a cancellation while draining", err, codes.Unavailable)
 	_, err = s.decideAs(t, s.operatorToken, decision(request, allow))
 	wantCode(t, "a Decision while draining", err, codes.Unavailable)
 }
 
-func connectionContext(t *testing.T, ctx context.Context, actorToken string, envelope *delegationpb.Delegation) context.Context {
+func connectionContext(t *testing.T, ctx context.Context, certificate string, envelope *delegationpb.Delegation) context.Context {
 	t.Helper()
 	encoded, err := auth.MarshalDelegation(envelope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	md := metadata.Pairs("authorization", auth.DelegatedScheme+" "+actorToken)
-	md.Set(auth.DelegationMetadataKey, string(encoded))
-	return metadata.NewOutgoingContext(ctx, md)
+	ctx = context.WithValue(ctx, certificateConnectionKey{}, certificate)
+	return metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, string(encoded))
 }
 
 func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *testing.T) {
@@ -218,18 +180,6 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 		Spec:       policyapi.IdentitySpec{Description: "external MCP test subject"},
 	}
 	if err := policyObjects.Create(t.Context(), identity); err != nil {
-		t.Fatal(err)
-	}
-	actor := auth.Account{Namespace: testNamespace, Name: "test-mcp-edge"}
-	if err := setCallerLabel(t.Context(), actor, true); err != nil {
-		t.Fatal(err)
-	}
-	actorToken, err := kube.WorkloadToken(t.Context(), actor, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	workloads, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
-	if err != nil {
 		t.Fatal(err)
 	}
 	identityUIDs, err := auth.KubernetesIdentityUIDs(policyObjects, s.policy)
@@ -243,10 +193,13 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	rules := make(auth.Methods, len(methods))
 	for _, method := range methods {
-		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+		rules[method], err = auth.Services(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	s.gate.connectionDelegation, err = rules.WithDelegation(methods, []auth.Delegator{{
-		Account: actor, IdentityCallers: true, ConnectionProvenance: true,
+	s.gate.connectionDelegation, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{
+		SPIFFEID: peertls.MCPEdgeURI, ConnectionProvenance: true,
 	}}, identityUIDs)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +213,10 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	sessionRules := make(auth.Methods, len(sessionMethods))
 	for _, method := range sessionMethods {
-		sessionRules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+		sessionRules[method], err = auth.Services(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	s.gate.sessionDelegation, err = sessionRules.WithServiceDelegation(sessionMethods,
 		[]auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identityUIDs)
@@ -268,7 +224,6 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 		t.Fatal(err)
 	}
 	s.gate.callers = s.index
-	eventually(t, "MCP edge Action caller label", func() bool { return s.index.Admits(actor) })
 	connectionID, grantID := uuid.NewString(), uuid.NewString()
 	connectionEnvelope := func(subject *identitypb.Identity) *delegationpb.Delegation {
 		return &delegationpb.Delegation{
@@ -280,7 +235,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 	identityRef := &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}
 	delegated := func(subject *identitypb.Identity) context.Context {
-		return connectionContext(t, t.Context(), actorToken, connectionEnvelope(subject))
+		return connectionContext(t, t.Context(), edgeCertificate, connectionEnvelope(subject))
 	}
 	request := envelope(t, "connection-identity-submit", "test-group", "test-action", map[string]any{"target": "test-target"})
 	if _, err := s.client.SubmitActionRequest(delegated(identityRef), request); status.Code(err) != codes.Unauthenticated {
@@ -312,9 +267,8 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 		t.Fatalf("Action request was attributed to an SA instead of the effective Identity: %v", submitted.GetActionRequest())
 	}
 	receipt := submitted.GetActionRequest()
-	actorProof := receipt.GetDelegatingActor().GetServiceAccount()
-	if actorProof.GetIdentity().GetAccount().GetNamespace() != actor.Namespace || actorProof.GetIdentity().GetAccount().GetName() != actor.Name || actorProof.GetIdentity().GetUid() == "" {
-		t.Fatalf("receipt lost the authenticated account actor: %v", receipt)
+	if receipt.GetDelegatingActor().GetServiceSpiffeId() != peertls.MCPEdgeURI {
+		t.Fatalf("receipt lost its service actor: %v", receipt)
 	}
 	wantProvenance := connectionEnvelope(identityRef).GetConnection()
 	if !proto.Equal(receipt.GetConnectionProvenance(), wantProvenance) || receipt.GetSessionProvenance() != nil {
@@ -327,10 +281,10 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if !proto.Equal(listed.GetActionRequests()[0].GetDelegatingActor(), receipt.GetDelegatingActor()) || !proto.Equal(listed.GetActionRequests()[0].GetConnectionProvenance(), wantProvenance) {
 		t.Fatalf("listing did not retain the admitting actor and provenance: %v", listed)
 	}
-	actorList, err := s.client.ListActionRequests(as(t, actorToken), &action_servicepb.ListActionRequestsRequest{})
-	if err != nil || len(actorList.GetActionRequests()) != 0 {
-		t.Fatalf("delegation fell back to the actor's ServiceAccount: response=%v err=%v", actorList, err)
-	}
+	_, err = s.client.ListActionRequests(as(t, edgeCertificate), &action_servicepb.ListActionRequestsRequest{})
+	wantCode(t, "delegator has no direct grant", err, codes.Unauthenticated)
+	_, err = s.client.SubmitActionRequest(metadata.AppendToOutgoingContext(delegated(identityRef), "authorization", "Bearer "+validKubernetesToken), request)
+	wantCode(t, "delegation plus Kubernetes bearer", err, codes.Unauthenticated)
 
 	streamContext, cancel := context.WithTimeout(delegated(identityRef), 12*time.Second)
 	defer cancel()
@@ -425,7 +379,7 @@ func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
 	}{
 		{"app and operator", peertls.AppURI, s.operatorToken, true},
 		{"app alone", peertls.AppURI, "", false},
-		{"app and Kubernetes bearer", peertls.AppURI, readerToken, false},
+		{"app and Kubernetes bearer", peertls.AppURI, validKubernetesToken, false},
 		{"ungranted actor with operator", peertls.NotificationsURI, s.operatorToken, false},
 		{"expired operator", peertls.AppURI, s.issuer.token(t, map[string]any{"exp": time.Now().Add(-time.Hour).Unix()}), false},
 	} {

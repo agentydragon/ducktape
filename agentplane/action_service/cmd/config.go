@@ -36,14 +36,12 @@ type config struct {
 	SessionDelegationService    string          `mapstructure:"session_delegation_service"`
 	DatabaseURL                 string          `mapstructure:"-"`
 	RPC                         listener.Config `mapstructure:"rpc"`
-	// CallerServiceAccountNamespaces hold the ServiceAccounts whose workloads may call; a labeled account outside
-	// them is refused.
+	// CallerServiceAccountNamespaces scopes live WorkloadCredential reads and policy index watches.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
-	// ConnectionDelegationActor is the MCP edge's ServiceAccount, which may delegate a live Identity on the
-	// explicitly configured Action methods while preserving its own Action-audience token as the actor.
-	ConnectionDelegationActor *auth.Account `mapstructure:"connection_delegation_actor"`
-	// ReaderAccounts read every account's requests and change none, written `namespace/name` or as a mapping.
-	ReaderAccounts []auth.Account `mapstructure:"reader_accounts"`
+	// Legacy receiver settings are decoded but ignored. Remove after generated manifests omit
+	// them and the service-SVID-only receiver rollout completes (stage 5 cleanup).
+	ConnectionDelegationActor *auth.Account  `mapstructure:"connection_delegation_actor"`
+	ReaderAccounts            []auth.Account `mapstructure:"reader_accounts"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC operator.Settings `mapstructure:"operator_oidc"`
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on
@@ -144,11 +142,9 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	if !c.RPC.Has(listener.KubernetesBearer) {
-		return errors.New("rpc.auth must include kubernetes_bearer")
-	}
-	if len(c.rpcBearerAudiences()) != 1 {
-		return errors.New("rpc kubernetes_bearer must configure exactly one audience")
+	// Legacy kubernetes_bearer entries remain decodable during rollout, but grant no admission.
+	if !c.RPC.Has(listener.SPIFFE) {
+		return errors.New("rpc must configure TLS and spiffe client trust")
 	}
 	for _, required := range []struct{ name, value string }{
 		{"database_url", c.DatabaseURL},
@@ -158,9 +154,7 @@ func (c *config) validate() error {
 			return errors.New(required.name + " is required")
 		}
 	}
-	if (len(c.ServiceReaders)+len(c.OperatorServices) > 0 || c.ConnectionDelegationService != "" || c.SessionDelegationService != "") && !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("service callers require rpc spiffe client trust")
-	}
+
 	for _, services := range [][]string{c.ServiceReaders, c.OperatorServices} {
 		if err := auth.ValidateServiceCallers(services); err != nil {
 			return err
@@ -179,26 +173,10 @@ func (c *config) validate() error {
 			return err
 		}
 	}
-	for _, account := range c.ReaderAccounts {
-		if err := new(auth.Account).UnmarshalText([]byte(account.Namespace + "/" + account.Name)); err != nil {
-			return errors.New("reader_accounts requires namespace and name")
-		}
-	}
 	if len(c.CallerServiceAccountNamespaces) == 0 {
 		return errors.New("caller_service_account_namespaces must list at least one namespace")
 	}
-	if c.ConnectionDelegationActor != nil {
-		if err := new(auth.Account).UnmarshalText([]byte(c.ConnectionDelegationActor.Namespace + "/" + c.ConnectionDelegationActor.Name)); err != nil {
-			return errors.New("connection_delegation_actor requires namespace and name")
-		}
-		allowed := false
-		for _, namespace := range c.CallerServiceAccountNamespaces {
-			allowed = allowed || namespace == c.ConnectionDelegationActor.Namespace
-		}
-		if !allowed {
-			return errors.New("connection_delegation_actor namespace must be in caller_service_account_namespaces")
-		}
-	}
+
 	if c.WebPush.Configured() {
 		if err := c.WebPush.Validate(); err != nil {
 			return err
@@ -244,17 +222,6 @@ func (c *config) validateEnvironmentService() error {
 	}
 	return nil
 }
-
-func (c config) rpcBearerAudiences() []string {
-	for _, method := range c.RPC.Auth {
-		if bearer, ok := method.(*listener.KubernetesBearerAuth); ok && bearer != nil {
-			return bearer.Audiences
-		}
-	}
-	return nil
-}
-
-func (c config) tokenAudience() string { return c.rpcBearerAudiences()[0] }
 
 // validateSessionDelegation requires the delegated Discovery/Dispatcher and History peers exactly when a
 // session_delegation group calls them.

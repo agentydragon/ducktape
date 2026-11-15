@@ -14,7 +14,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -104,10 +103,10 @@ func TestASetWatchSendsTheFilteredSetInBoundedChunksThenEachChange(t *testing.T)
 	s := serve(t)
 	want := map[string]bool{}
 	for i := range snapshotChunk + 1 {
-		want[s.submit(t, caller, fmt.Sprintf("test-pending-%d", i)).ID.String()] = true
+		want[s.submit(t, s.caller, fmt.Sprintf("test-pending-%d", i)).ID.String()] = true
 	}
-	s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
-	stream := s.watchSet(t, callerToken, pending)
+	s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
+	stream := s.watchSet(t, callerCertificate, pending)
 	chunks := snapshot(t, stream)
 	got := map[string]bool{}
 	for _, chunk := range chunks {
@@ -122,19 +121,19 @@ func TestASetWatchSendsTheFilteredSetInBoundedChunksThenEachChange(t *testing.T)
 		t.Errorf("%d chunks of %d requests, want 2 of the %d pending", len(chunks), len(got), len(want))
 	}
 
-	entered := s.submit(t, caller, "test-entered")
+	entered := s.submit(t, s.caller, "test-entered")
 	wantUpsert(t, stream, entered, pending)
 	left := s.decide(t, entered, store.VerdictAllow)
 	// A request that leaves the set arrives in its new state, and no more of its changes follow.
 	wantUpsert(t, stream, left, action_servicepb.ActionState_ACTION_STATE_ALLOWED)
 	s.claim(t, left)
-	sentinel := s.submit(t, caller, "test-sentinel")
+	sentinel := s.submit(t, s.caller, "test-sentinel")
 	wantUpsert(t, stream, sentinel, pending)
 }
 
 func TestAnEmptySetCompletesItsSnapshotAlone(t *testing.T) {
 	s := serve(t)
-	s.submit(t, caller, "test-pending")
+	s.submit(t, s.caller, "test-pending")
 	stream := s.watchSet(t, s.operatorToken, action_servicepb.ActionState_ACTION_STATE_CANCELLED)
 	if frame := recvFrame(t, stream); frame.GetSnapshotComplete() == nil {
 		t.Errorf("first frame %v, want snapshot_complete", frame)
@@ -143,10 +142,10 @@ func TestAnEmptySetCompletesItsSnapshotAlone(t *testing.T) {
 
 func TestASetWatchShowsOnlyWhatItsPrincipalMayRead(t *testing.T) {
 	s := serve(t)
-	own := s.submit(t, caller, "test-own")
-	foreign := s.submit(t, otherCaller, "test-foreign")
-	callers := s.watchSet(t, callerToken)
-	readers := s.watchSet(t, readerToken)
+	own := s.submit(t, s.caller, "test-own")
+	foreign := s.submit(t, s.otherCaller, "test-foreign")
+	callers := s.watchSet(t, callerCertificate)
+	readers := s.watchSet(t, readerCertificate)
 	if chunks := snapshot(t, callers); len(chunks) != 1 || !slices.Equal(orderedIDs(chunks[0]), []string{own.ID.String()}) {
 		t.Errorf("the caller's snapshot: %v", chunks)
 	}
@@ -155,52 +154,25 @@ func TestASetWatchShowsOnlyWhatItsPrincipalMayRead(t *testing.T) {
 	}
 	foreignChange := s.decide(t, foreign, store.VerdictDeny)
 	wantUpsert(t, readers, foreignChange, action_servicepb.ActionState_ACTION_STATE_DENIED)
-	sentinel := s.submit(t, caller, "test-sentinel")
+	sentinel := s.submit(t, s.caller, "test-sentinel")
 	wantUpsert(t, callers, sentinel, pending)
 }
 
-func TestAWatchEndsUnauthenticatedOnceItsBearerIsRefusedAndSendsNothingMore(t *testing.T) {
+func TestAWatchEndsWhenItsCredentialOrIdentityBindingIsRevoked(t *testing.T) {
 	s := serve(t)
-	// Accounts of this test's own, so that changing them leaves the other tests' alone.
-	delabeled := auth.Account{Namespace: testNamespace, Name: "test-watch-delabeled-caller"}
-	revoked := auth.Account{Namespace: testNamespace, Name: "test-watch-revoked-caller"}
-	for _, account := range []auth.Account{delabeled, revoked} {
-		if err := setCallerLabel(t.Context(), account, true); err != nil {
-			t.Fatal(err)
-		}
-	}
-	delabeledToken, err := kube.WorkloadToken(t.Context(), delabeled, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pod, err := kube.Pod(t.Context(), revoked)
-	if err != nil {
-		t.Fatal(err)
-	}
-	revokedToken, err := kube.PodToken(t.Context(), pod, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	delabeledWatch := s.watchSet(t, delabeledToken)
-	revokedWatch := s.watchSet(t, revokedToken)
-	snapshot(t, delabeledWatch)
+	unboundWatch := s.watchSet(t, callerCertificate)
+	revokedWatch := s.watchSet(t, otherCertificate)
+	snapshot(t, unboundWatch)
 	snapshot(t, revokedWatch)
-
-	if err := setCallerLabel(t.Context(), delabeled, false); err != nil {
-		t.Fatal(err)
-	}
-	// A change to the set is not sent once the bearer is refused.
-	s.submit(t, principal(delabeled), "test-after-delabeling")
-	wantEnd(t, "an unlabeled account's watch", delabeledWatch, codes.Unauthenticated)
-	// With nothing to send, the bearer is checked again all the same.
-	if err := kube.Revoke(t.Context(), pod, revokedToken, testAudience); err != nil {
-		t.Fatal(err)
-	}
-	wantEnd(t, "a deleted Pod's watch", revokedWatch, codes.Unauthenticated)
+	s.removeCallerBinding(t)
+	s.submit(t, s.caller, "test-after-binding-removal")
+	wantEnd(t, "an unbound Identity's watch", unboundWatch, codes.Unauthenticated)
+	s.revokeCertificate(t, otherCertificate)
+	wantEnd(t, "a revoked credential's idle watch", revokedWatch, codes.Unauthenticated)
 
 	// An operator token past its expiry, but within the clock skew for a few seconds more.
 	lapsing := s.issuer.token(t, map[string]any{"exp": time.Now().Add(-operatorClockSkew + 5*time.Second).Unix()})
-	request := s.submit(t, caller, "test-watched")
+	request := s.submit(t, s.caller, "test-watched")
 	receipt, err := s.client.WatchActionRequest(as(t, lapsing), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
 	if err != nil {
 		t.Fatal(err)
@@ -213,10 +185,10 @@ func TestAWatchEndsUnauthenticatedOnceItsBearerIsRefusedAndSendsNothingMore(t *t
 
 func TestDrainingRenewsASetWatchAndEndsAReceiptWatch(t *testing.T) {
 	s := serve(t)
-	request := s.submit(t, caller, "test-watched")
+	request := s.submit(t, s.caller, "test-watched")
 	set := s.watchSet(t, s.operatorToken)
 	snapshot(t, set)
-	receipt, err := s.client.WatchActionRequest(as(t, callerToken), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
+	receipt, err := s.client.WatchActionRequest(as(t, callerCertificate), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,10 +205,10 @@ func TestDrainingRenewsASetWatchAndEndsAReceiptWatch(t *testing.T) {
 
 func TestAWatchOutlivesTheNotificationConnectionAndReadsWhatChangedUnannounced(t *testing.T) {
 	s := serve(t)
-	request := s.submit(t, caller, "test-watched")
+	request := s.submit(t, s.caller, "test-watched")
 	set := s.watchSet(t, s.operatorToken, pending)
 	snapshot(t, set)
-	receipt, err := s.client.WatchActionRequest(as(t, callerToken), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
+	receipt, err := s.client.WatchActionRequest(as(t, callerCertificate), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +236,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 	s := serve(t)
 	watch := func(request store.ActionRequest, until action_servicepb.WatchUntil) grpc.ServerStreamingClient[action_servicepb.WatchActionRequestResponse] {
 		t.Helper()
-		stream, err := s.client.WatchActionRequest(as(t, callerToken), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String(), Until: until})
+		stream, err := s.client.WatchActionRequest(as(t, callerCertificate), &action_servicepb.WatchActionRequestRequest{RequestId: request.ID.String(), Until: until})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -279,7 +251,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 		return frame.GetActionRequest()
 	}
 
-	decided := s.submit(t, caller, "test-decision")
+	decided := s.submit(t, s.caller, "test-decision")
 	decision := watch(decided, action_servicepb.WatchUntil_WATCH_UNTIL_DECISION)
 	if got := receive(decision); got.GetState() != pending {
 		t.Errorf("first frame in %v", got.GetState())
@@ -290,7 +262,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 	}
 	wantEnd(t, "a watch until the decision", decision, codes.OK)
 
-	executed := s.submit(t, caller, "test-terminal")
+	executed := s.submit(t, s.caller, "test-terminal")
 	terminal := watch(executed, action_servicepb.WatchUntil_WATCH_UNTIL_UNSPECIFIED)
 	last := receive(terminal)
 	allowed := s.decide(t, executed, store.VerdictAllow)
@@ -312,7 +284,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 	wantEnd(t, "a watch until a terminal state", terminal, codes.OK)
 
 	// A receipt that already holds the condition is the only frame.
-	denied := s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
+	denied := s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
 	done := watch(denied, action_servicepb.WatchUntil_WATCH_UNTIL_TERMINAL)
 	if got := receive(done); got.GetState() != action_servicepb.ActionState_ACTION_STATE_DENIED {
 		t.Errorf("frame in %v", got.GetState())
@@ -322,7 +294,7 @@ func TestAReceiptWatchSendsEachChangeUntilItsConditionHolds(t *testing.T) {
 
 func TestAWatchOfWhatTheCallerMayNotReadOrCannotNameFails(t *testing.T) {
 	s := serve(t)
-	foreign := s.submit(t, otherCaller, "test-foreign")
+	foreign := s.submit(t, s.otherCaller, "test-foreign")
 	for name, tc := range map[string]struct {
 		request *action_servicepb.WatchActionRequestRequest
 		code    codes.Code
@@ -331,25 +303,24 @@ func TestAWatchOfWhatTheCallerMayNotReadOrCannotNameFails(t *testing.T) {
 		"a request ID that is not a UUID": {&action_servicepb.WatchActionRequestRequest{RequestId: "test-not-a-uuid"}, codes.InvalidArgument},
 		"an undefined condition":          {&action_servicepb.WatchActionRequestRequest{RequestId: foreign.ID.String(), Until: 99}, codes.InvalidArgument},
 	} {
-		stream, err := s.client.WatchActionRequest(as(t, callerToken), tc.request)
+		stream, err := s.client.WatchActionRequest(as(t, callerCertificate), tc.request)
 		if err != nil {
 			t.Fatal(err)
 		}
 		wantEnd(t, name, stream, tc.code)
 	}
-	set := s.watchSet(t, callerToken, action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED)
+	set := s.watchSet(t, callerCertificate, action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED)
 	wantEnd(t, "a set watch of an unspecified state", set, codes.InvalidArgument)
 }
 
 func TestTheHTTPFacadeStreamsAWatchAsLinesOfJSON(t *testing.T) {
 	s := serve(t)
-	denied := s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
-	call, err := http.NewRequestWithContext(as(t, callerToken), http.MethodGet,
-		s.url+"/v1/action-requests/"+denied.ID.String()+":watch?until=WATCH_UNTIL_DECISION", nil)
+	denied := s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
+	call, err := http.NewRequestWithContext(as(t, callerCertificate), http.MethodGet,
+		s.facadeURL(callerCertificate)+"/v1/action-requests/"+denied.ID.String()+":watch?until=WATCH_UNTIL_DECISION", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	call.Header.Set("Authorization", "Bearer "+callerToken)
 	response, err := http.DefaultClient.Do(call)
 	if err != nil {
 		t.Fatal(err)

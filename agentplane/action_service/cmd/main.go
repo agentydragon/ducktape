@@ -77,11 +77,9 @@ const (
 	idleConnections = 4
 )
 
-// deps is who the service asks about a caller: the API server that reviews a workload's bearer, and the one whose
-// policy objects and caller labels the policy index reads, which Kube reaches and where the sandbox groups run; and
-// how it reaches the browsers' push services.
+// deps supplies the API server for live workload credentials, policy watches and sandbox groups,
+// and the transport for browser push services.
 type deps struct {
-	Reviews       auth.TokenReviews
 	Kube          *rest.Config
 	PushTransport http.RoundTripper
 }
@@ -91,17 +89,12 @@ func inClusterDeps() (deps, error) {
 	if err != nil {
 		return deps{}, err
 	}
-	// Every call is a TokenReview; client-go's default of 5 requests per second (burst 10) would queue them
-	// client-side. API Priority and Fairness bounds the load on the server.
+	// Live credential checks retain server-side API Priority and Fairness throttling.
 	kubeConfig.QPS = -1
-	kube, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return deps{}, err
-	}
-	return deps{Reviews: kube.AuthenticationV1().TokenReviews(), Kube: kubeConfig, PushTransport: observability.HTTPTransport(http.DefaultTransport)}, nil
+	return deps{Kube: kubeConfig, PushTransport: observability.HTTPTransport(http.DefaultTransport)}, nil
 }
 
-// run serves on the configured address until ctx ends, authenticating workloads with the cluster's TokenReview API
+// run serves on the configured address until ctx ends, authenticating workload and service SVIDs
 // and reading the cluster's policy objects.
 func run(ctx context.Context, c config) error {
 	if err := migrate.Run(ctx, c.DatabaseURL, migrations.Up); err != nil {
@@ -330,15 +323,11 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 	return identity, notifier, err
 }
 
-// gate admits the callers of the service's RPCs: a workload calls while callers admits its ServiceAccount, or, by
-// SVID, its Identity of the policy namespace.
+// gate admits workload Identities and exact service SVIDs, with separately verified operator OIDC.
 func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
-	workloads, err := auth.NewResolver(d.Reviews, c.tokenAudience(), c.CallerServiceAccountNamespaces)
-	if err != nil {
-		return nil, err
-	}
-	options := rpc.GateOptions{Workloads: workloads, Callers: callers, ReaderAccounts: c.ReaderAccounts, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
-	if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
+	var err error
+	options := rpc.GateOptions{Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
+	if c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
 		scheme := runtime.NewScheme()
 		if err := policyapi.AddToScheme(scheme); err != nil {
 			return nil, fmt.Errorf("register Policy API for delegated Identity checks: %w", err)
@@ -351,14 +340,14 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 		if err != nil {
 			return nil, fmt.Errorf("configure delegated Identity checks: %w", err)
 		}
-		if c.ConnectionDelegationActor != nil || c.ConnectionDelegationService != "" {
-			options.ConnectionDelegation, err = actionConnectionDelegation(workloads, c.ConnectionDelegationActor, c.ConnectionDelegationService, identities)
+		if c.ConnectionDelegationService != "" {
+			options.ConnectionDelegation, err = actionConnectionDelegation(c.ConnectionDelegationService, identities)
 			if err != nil {
 				return nil, fmt.Errorf("configure MCP Connection delegation: %w", err)
 			}
 		}
 		if c.SessionDelegationService != "" {
-			options.SessionDelegation, err = actionSessionDelegation(workloads, identities)
+			options.SessionDelegation, err = actionSessionDelegation(identities)
 			if err != nil {
 				return nil, fmt.Errorf("configure Central Sampler Session delegation: %w", err)
 			}
@@ -380,9 +369,9 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 }
 
 // actionConnectionDelegation grants the MCP edge only the Action calls needed to serve a Connection. The actor's
-// own Action-audience token is still reviewed; this does not make it a privileged backend caller.
+// service SVID authenticates the actor independently of the effective Identity.
 func actionConnectionDelegation(
-	workloads *auth.Resolver, actor *auth.Account, serviceActor string, identities auth.IdentityUIDReader,
+	serviceActor string, identities auth.IdentityUIDReader,
 ) (auth.Methods, error) {
 	methods := []string{
 		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
@@ -401,25 +390,19 @@ func actionConnectionDelegation(
 	}
 	rules := make(auth.Methods, len(methods))
 	for _, method := range methods {
-		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
-	}
-	var err error
-	if actor != nil {
-		rules, err = rules.WithDelegation(methods, []auth.Delegator{{Account: *actor, IdentityCallers: true, ConnectionProvenance: true}}, identities)
+		rule, err := auth.Services(nil)
 		if err != nil {
 			return nil, err
 		}
+		rules[method] = rule
 	}
-	if serviceActor != "" {
-		rules, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: serviceActor, ConnectionProvenance: true}}, identities)
-	}
-	return rules, err
+	return rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: serviceActor, ConnectionProvenance: true}}, identities)
 }
 
 // actionSessionDelegation grants the Central Sampler only the Action calls it needs to submit a
 // Session-attributed request and recover its receipt. Its service certificate, not a bearer,
 // authenticates the actor; the delegated Identity remains subject to the caller's PolicyBindings.
-func actionSessionDelegation(workloads *auth.Resolver, identities auth.IdentityUIDReader) (auth.Methods, error) {
+func actionSessionDelegation(identities auth.IdentityUIDReader) (auth.Methods, error) {
 	methods := []string{
 		action_servicepb.ActionService_ListActionGroups_FullMethodName,
 		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
@@ -429,7 +412,11 @@ func actionSessionDelegation(workloads *auth.Resolver, identities auth.IdentityU
 	}
 	rules := make(auth.Methods, len(methods))
 	for _, method := range methods {
-		rules[method] = auth.ReviewedServiceAccountOrIdentity(workloads)
+		rule, err := auth.Services(nil)
+		if err != nil {
+			return nil, err
+		}
+		rules[method] = rule
 	}
 	return rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identities)
 }

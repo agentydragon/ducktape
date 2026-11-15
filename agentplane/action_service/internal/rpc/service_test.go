@@ -50,7 +50,7 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 			Repository: &store.MatchedRepository{Owner: "test-owner", Repository: "test-repository", ConfirmedPublic: true},
 		},
 	}
-	submitted, err := s.store.Submit(t.Context(), caller, store.ActionRequestInput{
+	submitted, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
 		IdempotencyKey: "test-voted", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{"test": ["argument", 1]}`), Title: "test title", Description: &description,
 	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{
@@ -74,12 +74,12 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		t.Fatal(err)
 	}
 	// IDs and times are the ones the store assigned.
-	stored, err := s.store.Get(t.Context(), submitted.ID, caller)
+	stored, err := s.store.Get(t.Context(), submitted.ID, s.caller)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: submitted.ID.String()})
+	got, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: submitted.ID.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,9 +91,8 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 		Id: submitted.ID.String(), IdempotencyKey: "test-voted",
 		Action:    &action_servicepb.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: structOf(t, map[string]any{"test": []any{"argument", 1}}), Title: "test title", Description: &description,
-		Caller:    &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
-		CallerUid: proto.String("test-uid-test-caller"),
-		State:     action_servicepb.ActionState_ACTION_STATE_FAILED, Version: stored.Version,
+		CallerIdentity: &identitypb.Identity{Name: s.caller.Identity.Name, Uid: s.caller.Identity.UID},
+		State:          action_servicepb.ActionState_ACTION_STATE_FAILED, Version: stored.Version,
 		CreatedAt: timestamppb.New(stored.CreatedAt), UpdatedAt: timestamppb.New(stored.UpdatedAt),
 		Decision: &action_servicepb.Decision{
 			Id: stored.Decision.ID.String(), Verdict: action_servicepb.Verdict_VERDICT_ALLOW,
@@ -126,8 +125,8 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 
 func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 	s := serve(t)
-	decided := s.decide(t, s.submit(t, caller, "test-decided"), store.VerdictDeny)
-	got, err := s.client.GetActionRequest(as(t, readerToken), &action_servicepb.GetActionRequestRequest{RequestId: decided.ID.String()})
+	decided := s.decide(t, s.submit(t, s.caller, "test-decided"), store.VerdictDeny)
+	got, err := s.client.GetActionRequest(as(t, readerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: decided.ID.String()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,11 +137,11 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 		t.Errorf("operator's decision: %v", got.GetActionRequest())
 	}
 
-	cancelled := s.submit(t, caller, "test-cancelled")
-	if _, err := s.store.Cancel(t.Context(), cancelled.ID, caller); err != nil {
+	cancelled := s.submit(t, s.caller, "test-cancelled")
+	if _, err := s.store.Cancel(t.Context(), cancelled.ID, s.caller); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := s.store.Events(t.Context(), cancelled.ID, caller, store.EventsFilter{})
+	stored, err := s.store.Events(t.Context(), cancelled.ID, s.caller, store.EventsFilter{})
 	if err != nil || len(stored) != 2 {
 		t.Fatalf("stored events %v, %v", stored, err)
 	}
@@ -150,9 +149,7 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 		{Sequence: 1, State: action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING, At: timestamppb.New(stored[0].At)},
 		{
 			Sequence: 2, State: action_servicepb.ActionState_ACTION_STATE_CANCELLED, At: timestamppb.New(stored[1].At),
-			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_Caller{
-				Caller: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-caller"},
-			}, CallerUid: proto.String("test-uid-test-caller")},
+			Actor: &action_servicepb.Principal{Principal: &action_servicepb.Principal_CallerIdentity{CallerIdentity: &identitypb.Identity{Name: s.caller.Identity.Name, Uid: s.caller.Identity.UID}}},
 		},
 	}
 	for name, tc := range map[string]struct {
@@ -174,9 +171,9 @@ func TestAnOperatorsDecisionAndACallersCancellationNameWhoActed(t *testing.T) {
 
 func TestListingSelectsByStateOrKeyAndPagesNewestFirst(t *testing.T) {
 	s := serve(t)
-	first := s.submit(t, caller, "test-first")
-	second := s.submit(t, caller, "test-second")
-	third := s.decide(t, s.submit(t, caller, "test-third"), store.VerdictDeny)
+	first := s.submit(t, s.caller, "test-first")
+	second := s.submit(t, s.caller, "test-second")
+	third := s.decide(t, s.submit(t, s.caller, "test-third"), store.VerdictDeny)
 	pending := action_servicepb.ActionState_ACTION_STATE_DECISION_PENDING
 	denied := action_servicepb.ActionState_ACTION_STATE_DENIED
 	for name, tc := range map[string]struct {
@@ -190,7 +187,7 @@ func TestListingSelectsByStateOrKeyAndPagesNewestFirst(t *testing.T) {
 		"the first page":           {&action_servicepb.ListActionRequestsRequest{Limit: proto.Int32(2)}, []store.ActionRequest{third, second}},
 		"the page after the first": {&action_servicepb.ListActionRequestsRequest{Limit: proto.Int32(2), AfterId: proto.String(second.ID.String())}, []store.ActionRequest{first}},
 	} {
-		got, err := s.client.ListActionRequests(as(t, callerToken), tc.request)
+		got, err := s.client.ListActionRequests(as(t, callerCertificate), tc.request)
 		want := make([]string, len(tc.want))
 		for i, request := range tc.want {
 			want[i] = request.ID.String()
@@ -200,16 +197,16 @@ func TestListingSelectsByStateOrKeyAndPagesNewestFirst(t *testing.T) {
 		}
 	}
 
-	others := s.submit(t, otherCaller, "test-others")
+	others := s.submit(t, s.otherCaller, "test-others")
 	for name, after := range map[string]string{"an unknown request": uuid.NewString(), "another caller's request": others.ID.String()} {
-		_, err := s.client.ListActionRequests(as(t, callerToken), &action_servicepb.ListActionRequestsRequest{AfterId: proto.String(after)})
+		_, err := s.client.ListActionRequests(as(t, callerCertificate), &action_servicepb.ListActionRequestsRequest{AfterId: proto.String(after)})
 		wantCode(t, "after "+name, err, codes.NotFound)
 	}
 }
 
 func TestHistoryPagesTheDecidedRequestsAndCanLeaveOutThoseAPolicyAllowed(t *testing.T) {
 	s := serve(t)
-	auto, err := s.store.Submit(t.Context(), caller, store.ActionRequestInput{
+	auto, err := s.store.Submit(t.Context(), s.caller, store.ActionRequestInput{
 		IdempotencyKey: "test-auto-allowed", Action: store.ActionIdentity{Group: "test-group", Name: "test-action"},
 		Arguments: json.RawMessage(`{}`), Title: "test title",
 	}, store.Admission{RequestID: uuid.New(), Vote: &store.ProviderVote{
@@ -218,12 +215,12 @@ func TestHistoryPagesTheDecidedRequestsAndCanLeaveOutThoseAPolicyAllowed(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	denied := s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
-	allowed := s.decide(t, s.submit(t, caller, "test-allowed"), store.VerdictAllow)
-	s.submit(t, caller, "test-pending")
+	denied := s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
+	allowed := s.decide(t, s.submit(t, s.caller, "test-allowed"), store.VerdictAllow)
+	s.submit(t, s.caller, "test-pending")
 	history := func(request *action_servicepb.ListActionRequestHistoryRequest) *action_servicepb.ListActionRequestHistoryResponse {
 		t.Helper()
-		page, err := s.client.ListActionRequestHistory(as(t, callerToken), request)
+		page, err := s.client.ListActionRequestHistory(as(t, callerCertificate), request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -246,8 +243,8 @@ func TestHistoryPagesTheDecidedRequestsAndCanLeaveOutThoseAPolicyAllowed(t *test
 
 func TestAMalformedRequestIsAnInvalidArgument(t *testing.T) {
 	s := serve(t)
-	ctx := as(t, callerToken)
-	request := s.submit(t, caller, "test-request").ID.String()
+	ctx := as(t, callerCertificate)
+	request := s.submit(t, s.caller, "test-request").ID.String()
 	list := func(request *action_servicepb.ListActionRequestsRequest) error {
 		_, err := s.client.ListActionRequests(ctx, request)
 		return err
@@ -301,27 +298,27 @@ func TestAnUnknownRequestIsNotFound(t *testing.T) {
 
 func TestAStoredRequestTheAPICannotShowIsAnInternalError(t *testing.T) {
 	s := serve(t)
-	unshowable := s.submit(t, caller, "test-unshowable")
-	shown := s.submit(t, caller, "test-shown")
+	unshowable := s.submit(t, s.caller, "test-unshowable")
+	shown := s.submit(t, s.caller, "test-shown")
 	if _, err := s.db.ExecContext(t.Context(), `UPDATE action_request SET arguments = '[]'::jsonb WHERE id = $1`, unshowable.ID); err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: unshowable.ID.String()})
+	_, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: unshowable.ID.String()})
 	wantCode(t, "the unshowable request", err, codes.Internal)
-	if _, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: shown.ID.String()}); err != nil {
+	if _, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: shown.ID.String()}); err != nil {
 		t.Errorf("another request: %v", err)
 	}
 }
 
 func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 	s := serve(t)
-	request := s.submit(t, caller, "test-http").ID.String()
-	code, body := s.get(t, "/v1/action-requests/"+request, callerToken)
+	request := s.submit(t, s.caller, "test-http").ID.String()
+	code, body := s.get(t, "/v1/action-requests/"+request, callerCertificate)
 	answered := &action_servicepb.GetActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(body, answered) != nil {
 		t.Fatalf("receipt: %d %s", code, body)
 	}
-	rpc, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: request})
+	rpc, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: request})
 	if err != nil || !proto.Equal(answered, rpc) {
 		t.Errorf("the HTTP receipt %v differs from the RPC's %v, %v", answered, rpc, err)
 	}
@@ -334,11 +331,11 @@ func TestTheHTTPFacadeAnswersAsTheRPCs(t *testing.T) {
 		path, token string
 		code        int
 	}{
-		"history":                         {"/v1/action-requests:history", readerToken, http.StatusOK},
-		"events":                          {"/v1/action-requests/" + request + "/events?after_sequence=0", callerToken, http.StatusOK},
+		"history":                         {"/v1/action-requests:history", readerCertificate, http.StatusOK},
+		"events":                          {"/v1/action-requests/" + request + "/events?after_sequence=0", callerCertificate, http.StatusOK},
 		"no bearer":                       {"/v1/action-requests/" + request, "", http.StatusUnauthorized},
-		"another caller's receipt":        {"/v1/action-requests/" + request, otherToken, http.StatusNotFound},
-		"a request ID that is not a UUID": {"/v1/action-requests/test-not-a-uuid", callerToken, http.StatusBadRequest},
+		"another caller's receipt":        {"/v1/action-requests/" + request, otherCertificate, http.StatusNotFound},
+		"a request ID that is not a UUID": {"/v1/action-requests/test-not-a-uuid", callerCertificate, http.StatusBadRequest},
 	} {
 		if code, body := s.get(t, tc.path, tc.token); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, body, tc.code)
@@ -364,10 +361,10 @@ func (s *served) claimable(t *testing.T, request store.ActionRequest) bool {
 
 func TestTheOwnerCancelsARequestUntilItsDispatchIsClaimed(t *testing.T) {
 	s := serve(t)
-	pending := s.submit(t, caller, "test-pending")
-	allowed := s.decide(t, s.submit(t, caller, "test-allowed"), store.VerdictAllow)
-	denied := s.decide(t, s.submit(t, caller, "test-denied"), store.VerdictDeny)
-	claimed := s.decide(t, s.submit(t, caller, "test-claimed"), store.VerdictAllow)
+	pending := s.submit(t, s.caller, "test-pending")
+	allowed := s.decide(t, s.submit(t, s.caller, "test-allowed"), store.VerdictAllow)
+	denied := s.decide(t, s.submit(t, s.caller, "test-denied"), store.VerdictDeny)
+	claimed := s.decide(t, s.submit(t, s.caller, "test-claimed"), store.VerdictAllow)
 	s.claim(t, claimed)
 	for name, tc := range map[string]struct {
 		request store.ActionRequest
@@ -379,12 +376,12 @@ func TestTheOwnerCancelsARequestUntilItsDispatchIsClaimed(t *testing.T) {
 		"a denied request":   {denied, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED, action_servicepb.ActionState_ACTION_STATE_DENIED},
 		"a claimed request":  {claimed, action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE, action_servicepb.ActionState_ACTION_STATE_DISPATCHING},
 	} {
-		got, err := s.cancel(t, callerToken, tc.request)
+		got, err := s.cancel(t, callerCertificate, tc.request)
 		if err != nil || got.GetOutcome() != tc.outcome || got.GetActionRequest().GetState() != tc.state {
 			t.Errorf("%s: %v in %v, %v; want %v in %v", name, got.GetOutcome(), got.GetActionRequest().GetState(), err, tc.outcome, tc.state)
 		}
 	}
-	again, err := s.cancel(t, callerToken, pending)
+	again, err := s.cancel(t, callerCertificate, pending)
 	if err != nil || again.GetOutcome() != action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_CANCELLED {
 		t.Errorf("cancelling again: %v, %v", again, err)
 	}
@@ -397,19 +394,19 @@ func TestTheOwnerCancelsARequestUntilItsDispatchIsClaimed(t *testing.T) {
 
 func TestOnlyTheOwnerMayCancel(t *testing.T) {
 	s := serve(t)
-	request := s.submit(t, caller, "test-pending")
+	request := s.submit(t, s.caller, "test-pending")
 	for name, tc := range map[string]struct {
 		token string
 		code  codes.Code
 	}{
-		"another caller":   {otherToken, codes.NotFound},
-		"a service reader": {readerToken, codes.NotFound},
+		"another caller":   {otherCertificate, codes.NotFound},
+		"a service reader": {readerCertificate, codes.PermissionDenied},
 		"an operator":      {s.operatorToken, codes.PermissionDenied},
 	} {
 		_, err := s.cancel(t, tc.token, request)
 		wantCode(t, name, err, tc.code)
 	}
-	if got, err := s.client.GetActionRequest(as(t, callerToken), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()}); err != nil ||
+	if got, err := s.client.GetActionRequest(as(t, callerCertificate), &action_servicepb.GetActionRequestRequest{RequestId: request.ID.String()}); err != nil ||
 		got.GetActionRequest().GetVersion() != request.Version {
 		t.Errorf("the refused cancellations changed the request: %v, %v", got, err)
 	}
@@ -417,8 +414,8 @@ func TestOnlyTheOwnerMayCancel(t *testing.T) {
 
 func TestACancellationThatCannotBeAnsweredFails(t *testing.T) {
 	s := serve(t)
-	_, err := s.client.CancelActionRequest(as(t, callerToken), &action_servicepb.CancelActionRequestRequest{RequestId: "test-not-a-uuid"})
+	_, err := s.client.CancelActionRequest(as(t, callerCertificate), &action_servicepb.CancelActionRequestRequest{RequestId: "test-not-a-uuid"})
 	wantCode(t, "a request ID that is not a UUID", err, codes.InvalidArgument)
-	_, err = s.cancel(t, callerToken, store.ActionRequest{ID: uuid.New()})
+	_, err = s.cancel(t, callerCertificate, store.ActionRequest{ID: uuid.New()})
 	wantCode(t, "an unknown request", err, codes.NotFound)
 }

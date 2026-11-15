@@ -13,12 +13,10 @@ The `/v1/` HTTP examples below describe that facade (mounted under `/upstream/ac
 not routes on the Action Service listener.
 
 All Action, operator, linkage, Web Push and health RPCs use one listener on 8080.
-It accepts the existing Kubernetes bearer credentials and, for ActionService methods,
-the Sandbox's service-owned SVID. The service resolves a verified leaf to the subject its
-WorkloadCredential names. A ServiceAccount's caller-label, request ownership, approval policy and
-watch rechecks are unchanged; an Identity is admitted and decided by the PolicyBindings naming it and
-owns its requests by incarnation ([SPEC](SPEC.md#caller-admission-and-connection-authority)). Operator APIs still require their configured OIDC
-issuer, and linkage callbacks retain their existing single-use state authorization.
+The TLS listener accepts verified workload and exact service SVIDs. A workload certificate resolves
+to the live Identity incarnation its WorkloadCredential names; that Identity's PolicyBindings govern
+admission and Action approval. Kubernetes bearer tokens grant no admission. Operator APIs require
+their configured OIDC issuer, and linkage callbacks retain their single-use state authorization.
 
 **For an agent, this is where a call to the outside world goes**, mediated rather than direct: an
 `ActionGroup` mounts one MCP server, mirrors its `tools/list` into the catalog, and this service
@@ -32,15 +30,11 @@ Console's being the one to retire, not two systems that happen to resemble each 
 
 External MCP Connections are owned by [`mcp_edge/internal/connections`](../mcp_edge/internal/connections/); the
 generated [`ConnectionService`](../mcp_edge/api/connection/connection_service.proto) defines its operator API.
-Consent can select only a ServiceAccount in the current labeled Action callers view. The MCP edge
-resolves a Connection grant to its currently bound ServiceAccount before admitting a bearer.
-ActionRequests use that ServiceAccount as the caller and do not record Connection or grant
-provenance. Admission also records the verified ServiceAccount UID beside its namespace and name,
-so a receipt and execution retain the exact account incarnation. Requests admitted by writers that
-do not store a UID, including older replicas during rollout, remain unknown and cannot be used for
-caller delegation. Rebinding changes which ServiceAccount
-future uses of existing tokens act as; unbinding revokes the Connection's grants. Requests already
-submitted continue through the Action lifecycle.
+Consent selects an eligible live Identity. The MCP edge resolves each Connection grant to its
+current bound Identity and delegates using its exact service SVID. ActionRequests record the
+effective Identity incarnation, authenticated service actor, and typed Connection/grant provenance.
+Rebinding changes the Identity for future calls; unbinding revokes the Connection's grants.
+Requests already submitted continue through the Action lifecycle.
 The operator can list or watch Connections, rename, rebind, and unbind them; the
 integration app presents the operator UI ([consent UI](../app/README.md)). See the
 [ConnectionService implementation](../mcp_edge/internal/connections/service.go) and
@@ -84,7 +78,7 @@ browser to the integration app with an opaque handle; PostgreSQL stores its hash
 client presentation, redirect URI, expiry, and decision version, not the upstream URL or PKCE
 challenge.
 
-A decision is one-shot and version-checked. Allow selects a currently labeled ServiceAccount and a
+A decision is one-shot and version-checked. Allow selects an eligible live Identity and a
 new Connection name or an explicitly confirmed reconnect target at its reviewed version; deny
 grants no authority. Consent alone does not create a grant. At successful OAuth code exchange, the
 authorization server rechecks the enrollment, selected caller, and reconnect version, then creates
@@ -97,11 +91,10 @@ issuance share the code-exchange transaction. See the
 
 ## Caller UID provenance
 
-The current admission path retains the ServiceAccount UID returned by verified workload
-authentication. The `caller_uid` receipt field and caller event actor field preserve that UID. An
-absent API field or null selected MCP field means its writer did not record the UID; an unselected
-MCP field is omitted. Never fill the UID from a current ServiceAccount lookup.
-Caller-delegating executors must refuse requests whose stored UID is absent.
+Current workload and delegated admission retain the effective Identity's exact UID. Historical
+ServiceAccount requests keep their recorded `caller_uid`; never reconstruct it from a current
+ServiceAccount lookup. Caller-delegating executors refuse requests whose required stored incarnation
+proof is absent.
 
 The `session_delegation` executor is the first caller-delegating Action surface. Its approved
 schemas, direct MCP name mapping, typed result shapes and unknown-outcome behavior are documented
@@ -178,18 +171,16 @@ case holds five dispatch rows until two workers are waiting, then verifies each 
 
 ### Trusted read-only services
 
-`reader_accounts` (empty by default) allows named workload ServiceAccounts to read all Actions
-through the existing request list/detail/events REST endpoints. Ordinary callers remain owner-scoped.
-Service readers receive the same request view as its owner, and check its `caller` for ownership. This
-identity is accepted only by those read handlers, not submission, cancellation, operator APIs, or MCP
-authentication. Notifications uses this permission and verifies source ownership before exposing
-Action events to a subscriber. No delegated-owner field or alternate service endpoint exists.
+`service_readers` grants exact service SPIFFE IDs read-only access to the request and catalog
+methods. Ordinary callers remain owner-scoped. Service readers receive the same request view as
+its owner and no submission, cancellation, operator, or delegation grant. Notifications verifies
+source ownership before exposing Action events to a subscriber.
 
 ## External MCP frontend
 
 The standalone [MCP edge](../mcp_edge/README.md) serves `/mcp` and OAuth protocol routes. It
-authenticates external bearers, resolves each Connection to its currently bound, labeled
-ServiceAccount, and calls this service with that workload identity. The Action Service does not
+authenticates external bearers, resolves each Connection to its current live Identity, and delegates with the MCP edge service
+SVID and typed Connection provenance. The Action Service does not
 serve `/mcp`, ConnectionService, or the external OAuth protocol. See the edge's
 [MCP handler](../mcp_edge/internal/mcpserver/server.go) and [bearer verifier](../mcp_edge/internal/authserver/tokens.go).
 The `basic` `PolicySet` controls Sandbox egress; it does not grant MCP edge authority.
@@ -477,24 +468,15 @@ edge composition are covered by `//agentplane/action_service/cmd:integration_tes
 
 ## Authentication boundaries
 
-`caller_service_account_namespaces` lists the Kubernetes namespaces whose labeled ServiceAccounts
-may authenticate callers. `policy_namespace` names where PolicySets and PolicyBindings are read and
-`ActionsReady` is written. These settings are independent: a binding in a policy
-namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
-selects an MCP destination.
+`caller_service_account_namespaces` scopes live WorkloadCredential reads and the existing policy
+index watches. `policy_namespace` names where Identities, PolicySets and PolicyBindings are read
+and `ActionsReady` is written. Neither setting approves Actions or selects an MCP destination.
 
-Sandbox calls use the Runtime SVID route. The sidecar establishes the exact-origin TLS connection
-through an authorized CONNECT, removes caller Authorization, and presents the current Sandbox
-certificate to the service. The service resolves that SVID against live Sandbox state before
-authorization. External callers are not admitted by this Sandbox-only route.
-
-At the destination, the [workload resolver](../identity/auth/) performs the TokenReview. Actions
-uses its explicit ServiceAccount-only resolution: the configured audience, allowed namespace and
-ServiceAccount UID are required; a Pod binding is optional, and partial or duplicate Pod claims are
-rejected. This admits account tokens for the planned MCP edge while ordinary Sandbox tokens retain
-their API-server-validated Pod binding. The caller is the account the bearer proved. Identity headers
-are never authorization. Thread and Agent fields remain untrusted until an authoritative binding exists;
-authentication performs no Thread or Agent lookup.
+The [workload resolver](../identity/auth/) resolves a verified client certificate to the live Identity
+its WorkloadCredential names. It rechecks credential validity and the Identity incarnation on calls
+and watches. Owned workloads retain their existing incarnation checks; standing workloads require
+no Sandbox or Pod. A service certificate proves only its exact SPIFFE ID and supplies no workload,
+ServiceAccount or Pod proof. Headers never choose the caller.
 
 Operator/BFF calls use the separate `/v1/operator/...` surface, gated by the configured OIDC
 verifier. Without `operator_oidc`, operator requests are refused.
@@ -505,7 +487,7 @@ the service its own `actions` database and login role on the namespace's shared
 CNPG cluster `postgres` (`cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`),
 separate from the integration app's database.
 
-### Service certificate admission during the cutover
+### Service certificate admission
 
 Optional `service_readers` grants exact service SPIFFE IDs the existing read/catalog methods.
 These principals remain read-only and carry no Kubernetes account or Pod proof. `operator_services`
@@ -523,8 +505,10 @@ PolicyBinding. This receiver setting defaults to disabled. Release and pin the r
 enabling it or deploying a sampler client that calls these methods.
 
 These settings require the listener's SPIFFE client trust and default to no service grants;
-production settings follow receiver image pins. Existing bearer admission remains during the staged
-cutover. Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
+production settings follow receiver image pins. Legacy `reader_accounts`,
+`connection_delegation_actor`, and listener `kubernetes_bearer` entries remain decodable but grant no
+admission. Remove them only after generated manifests omit them and the receiver rollout completes.
+Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
 
 ### Schema initialization

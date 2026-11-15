@@ -229,7 +229,7 @@ func TestWebPushRefusesWhatItCannotServe(t *testing.T) {
 	s := serve(t)
 	configured, unconfigured := servePush(t, s, true), servePush(t, s, false)
 
-	_, err := configured.push.ListPushSubscriptions(as(t, callerToken), &web_push_servicepb.ListPushSubscriptionsRequest{})
+	_, err := configured.push.ListPushSubscriptions(as(t, callerCertificate), &web_push_servicepb.ListPushSubscriptionsRequest{})
 	wantCode(t, "a workload's call", err, codes.Unauthenticated)
 	for name, request := range map[string]*web_push_servicepb.CreatePushSubscriptionRequest{
 		"no endpoint":           {P256Dh: "test-p256dh", Auth: "test-auth"},

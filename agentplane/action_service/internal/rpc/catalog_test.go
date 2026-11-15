@@ -11,7 +11,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -115,14 +114,14 @@ func TestTheCatalogReadsTheSameForEveryPrincipalButForHealthDetail(t *testing.T)
 	groups := newCatalog(t, testCatalog)
 	health := offlineHealth("test detail naming https://mcp.test.example")
 	groups.Update("test-offline", func(group *catalog.Group) { group.Health = health })
-	s := serveWith(t, kube.TokenReviews(), groups)
+	s := serveWith(t, groups)
 	operatorView := testCatalogViews(t, health)
 	for name, read := range map[string]struct {
 		token string
 		want  []*action_servicepb.ActionGroup
 	}{
-		"a caller":         {callerToken, withoutDetail(operatorView)},
-		"a service reader": {readerToken, withoutDetail(operatorView)},
+		"a caller":         {callerCertificate, withoutDetail(operatorView)},
+		"a service reader": {readerCertificate, withoutDetail(operatorView)},
 		"an operator":      {s.operatorToken, operatorView},
 	} {
 		got, err := s.client.ListActionGroups(as(t, read.token), &action_servicepb.ListActionGroupsRequest{})
@@ -135,8 +134,8 @@ func TestTheCatalogReadsTheSameForEveryPrincipalButForHealthDetail(t *testing.T)
 }
 
 func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
-	for name, token := range map[string]string{"a caller": callerToken, "a service reader": readerToken, "an operator": s.operatorToken} {
+	s := serveWith(t, newCatalog(t, testCatalog))
+	for name, token := range map[string]string{"a caller": callerCertificate, "a service reader": readerCertificate, "an operator": s.operatorToken} {
 		got, err := s.client.GetAction(as(t, token), &action_servicepb.GetActionRequest{GroupKey: "test-mcp", ActionKey: "test-read"})
 		if err != nil || !proto.Equal(got.GetAction(), testReadAction(t)) {
 			t.Errorf("%s reads %v, %v", name, got, err)
@@ -151,7 +150,7 @@ func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *t
 		"an unavailable group's Action":                 {"test-offline", "test-read", codes.Unavailable},
 		"an Action an unavailable group does not offer": {"test-offline", "test-unknown", codes.Unavailable},
 	} {
-		_, err := s.client.GetAction(as(t, callerToken), &action_servicepb.GetActionRequest{GroupKey: refused.group, ActionKey: refused.action})
+		_, err := s.client.GetAction(as(t, callerCertificate), &action_servicepb.GetActionRequest{GroupKey: refused.group, ActionKey: refused.action})
 		wantCode(t, name, err, refused.code)
 	}
 	_, err := s.client.GetAction(as(t, unlabeledToken), &action_servicepb.GetActionRequest{GroupKey: "test-mcp", ActionKey: "test-read"})
@@ -159,13 +158,13 @@ func TestGetActionAnswersEveryPrincipalAndRefusesWhatTheCatalogDoesNotOffer(t *t
 }
 
 func TestTheHTTPFacadeServesTheCatalogReads(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
-	code, body := s.get(t, "/v1/action-groups", callerToken)
+	s := serveWith(t, newCatalog(t, testCatalog))
+	code, body := s.get(t, "/v1/action-groups", callerCertificate)
 	listed := &action_servicepb.ListActionGroupsResponse{}
 	if err := protojson.Unmarshal(body, listed); code != http.StatusOK || err != nil || !equalGroups(listed.GetActionGroups(), testCatalogViews(t, nil)) {
 		t.Errorf("the catalog: %d %s, %v", code, body, err)
 	}
-	code, body = s.get(t, "/v1/action-groups/test-mcp/actions/test-read", callerToken)
+	code, body = s.get(t, "/v1/action-groups/test-mcp/actions/test-read", callerCertificate)
 	action := &action_servicepb.GetActionResponse{}
 	if err := protojson.Unmarshal(body, action); code != http.StatusOK || err != nil || !proto.Equal(action.GetAction(), testReadAction(t)) {
 		t.Errorf("an Action: %d %s, %v", code, body, err)
@@ -174,7 +173,7 @@ func TestTheHTTPFacadeServesTheCatalogReads(t *testing.T) {
 		"/v1/action-groups/test-mcp/actions/test-unknown":  http.StatusNotFound,
 		"/v1/action-groups/test-offline/actions/test-read": http.StatusServiceUnavailable,
 	} {
-		if code, body := s.get(t, path, callerToken); code != want {
+		if code, body := s.get(t, path, callerCertificate); code != want {
 			t.Errorf("%s: %d %s, want %d", path, code, body, want)
 		}
 	}
@@ -225,8 +224,8 @@ func wantGroupUpsert(t *testing.T, what string, stream groupStream, want *action
 
 func TestAGroupWatchSendsTheMCPGroupsThenEachChangeItsPrincipalSees(t *testing.T) {
 	groups := newCatalog(t, testCatalog)
-	s := serveWith(t, kube.TokenReviews(), groups)
-	workload := s.watchGroups(t, as(t, callerToken))
+	s := serveWith(t, groups)
+	workload := s.watchGroups(t, as(t, callerCertificate))
 	operator := s.watchGroups(t, as(t, s.operatorToken))
 	// The MCP groups as ListActionGroups shows them; the sandbox group is not streamed.
 	mcpGroups := testCatalogViews(t, nil)[:2]
@@ -257,8 +256,8 @@ func TestAGroupWatchSendsTheMCPGroupsThenEachChangeItsPrincipalSees(t *testing.T
 const holdDeadline = 3 * time.Second
 
 func TestAGroupWatchOfACatalogThatDoesNotChangeHoldsUntilTheClientsDeadline(t *testing.T) {
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, testCatalog))
-	ctx, cancel := context.WithTimeout(as(t, callerToken), holdDeadline)
+	s := serveWith(t, newCatalog(t, testCatalog))
+	ctx, cancel := context.WithTimeout(as(t, callerCertificate), holdDeadline)
 	defer cancel()
 	stream := s.watchGroups(t, ctx)
 	groupSnapshot(t, stream)
@@ -285,7 +284,7 @@ func TestAGroupWatchSendsItsSnapshotInKeyOrderAndBoundedChunks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := serveWith(t, kube.TokenReviews(), newCatalog(t, string(full)))
+	s := serveWith(t, newCatalog(t, string(full)))
 	chunks := groupSnapshot(t, s.watchGroups(t, as(t, s.operatorToken)))
 	var got []string
 	for _, chunk := range chunks {
@@ -298,34 +297,23 @@ func TestAGroupWatchSendsItsSnapshotInKeyOrderAndBoundedChunks(t *testing.T) {
 	}
 
 	// A catalog without MCP groups completes its snapshot alone.
-	s = serveWith(t, kube.TokenReviews(), newCatalog(t, string(empty)))
+	s = serveWith(t, newCatalog(t, string(empty)))
 	if chunks := groupSnapshot(t, s.watchGroups(t, as(t, s.operatorToken))); len(chunks) != 0 {
 		t.Errorf("the snapshot of no MCP group: %v", chunks)
 	}
 }
 
-func TestAGroupWatchRenewsOnDrainAndEndsOnceItsBearerIsRefused(t *testing.T) {
+func TestAGroupWatchRenewsOnDrainAndEndsOnceItsCredentialIsRevoked(t *testing.T) {
 	groups := newCatalog(t, testCatalog)
-	s := serveWith(t, kube.TokenReviews(), groups)
-	// An account of this test's own, so that changing it leaves the other tests' alone.
-	delabeled := auth.Account{Namespace: testNamespace, Name: "test-group-watch-delabeled-caller"}
-	if err := setCallerLabel(t.Context(), delabeled, true); err != nil {
-		t.Fatal(err)
-	}
-	delabeledToken, err := kube.WorkloadToken(t.Context(), delabeled, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	refused := s.watchGroups(t, as(t, delabeledToken))
+	s := serveWith(t, groups)
+	refused := s.watchGroups(t, as(t, otherCertificate))
 	groupSnapshot(t, refused)
-	if err := setCallerLabel(t.Context(), delabeled, false); err != nil {
-		t.Fatal(err)
-	}
+	s.revokeCertificate(t, otherCertificate)
 	// A change is not sent once the bearer is refused.
 	groups.Update("test-mcp", func(group *catalog.Group) { group.Available = false })
-	wantEnd(t, "an unlabeled account's watch", refused, codes.Unauthenticated)
+	wantEnd(t, "a revoked credential's watch", refused, codes.Unauthenticated)
 
-	renewed := s.watchGroups(t, as(t, callerToken))
+	renewed := s.watchGroups(t, as(t, callerCertificate))
 	groupSnapshot(t, renewed)
 	s.gate.Drain()
 	if frame, err := renewed.Recv(); err != nil || frame.GetReconnectRequired() == nil {

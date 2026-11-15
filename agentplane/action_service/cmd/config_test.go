@@ -23,12 +23,19 @@ import (
 const databaseURLEnv = settingPrefix + "DATABASE_URL=postgres://test-user:never-print-this@test-database/actions"
 
 // requiredFile is a deployment's settings file with every setting that has no default.
-const requiredFile = `rpc:
+const requiredRPC = `rpc:
   listen_address: "0.0.0.0:8080"
+  tls:
+    cert_file: /test/actions.crt
+    key_file: /test/actions.key
   auth:
+    - mode: spiffe
+      ca_file: /test/workload-ca.crt
     - mode: kubernetes_bearer
       audiences: [test-actions]
-policy_namespace: test-agentplane
+`
+
+const requiredFile = requiredRPC + `policy_namespace: test-agentplane
 caller_service_account_namespaces: [test-agentplane]
 `
 
@@ -47,6 +54,13 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	}
 	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
+	}
+}
+
+func TestListenerNeedsNoLegacyBearerMode(t *testing.T) {
+	source := strings.Replace(requiredFile, "    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1)
+	if _, err := loadTestConfig(t, source); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -77,8 +91,7 @@ func TestSessionDelegationServiceIsOptionalAndNamesOnlyTheCentralSampler(t *test
 		t.Fatalf("unset session_delegation_service = %q", c.SessionDelegationService)
 	}
 
-	withSPIFFE := strings.Replace(requiredFile, "  auth:\n", "  tls:\n    cert_file: /test/actions.crt\n    key_file: /test/actions.key\n  auth:\n", 1)
-	withSPIFFE = strings.Replace(withSPIFFE, "      audiences: [test-actions]\n", "      audiences: [test-actions]\n    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", 1)
+	withSPIFFE := requiredFile
 	c, err = loadTestConfig(t, withSPIFFE+"session_delegation_service: "+peertls.CentralSamplerURI+"\n")
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +101,7 @@ func TestSessionDelegationServiceIsOptionalAndNamesOnlyTheCentralSampler(t *test
 	}
 
 	for name, file := range map[string]string{
-		"requires SPIFFE listener": requiredFile + "session_delegation_service: " + peertls.CentralSamplerURI + "\n",
+		"requires SPIFFE listener": strings.Replace(requiredFile, "    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n", "", 1) + "session_delegation_service: " + peertls.CentralSamplerURI + "\n",
 		"another valid service":    withSPIFFE + "session_delegation_service: " + peertls.MCPEdgeURI + "\n",
 		"malformed service":        withSPIFFE + "session_delegation_service: not-a-service\n",
 	} {
@@ -183,10 +196,7 @@ operator_oidc:
 }
 
 func TestThePolicySettingsAreRead(t *testing.T) {
-	c, err := loadTestConfig(t, `rpc:
-  listen_address: "0.0.0.0:8080"
-  auth: [{mode: kubernetes_bearer, audiences: [test-actions]}]
-policy_namespace: test-policies
+	c, err := loadTestConfig(t, requiredRPC+`policy_namespace: test-policies
 caller_service_account_namespaces: [test-callers, test-more-callers]
 `)
 	if err != nil {
@@ -276,7 +286,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 	for name, file := range map[string]string{
 		"unknown key":                    requiredFile + "test_unknown_setting: never-print-this\n",
 		"unknown listener key":           strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
-		"missing listener":               strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1),
+		"missing listener":               strings.Replace(requiredFile, requiredRPC, "", 1),
 		"no audience":                    strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
 		"no caller namespaces":           strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":            strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
@@ -492,7 +502,7 @@ func TestListenerRequiresExplicitAddressAndAuthentication(t *testing.T) {
 		"rpc: {listen_address: ':8080'}\n",
 		"rpc: {listen_address: ':8080', auth: [{mode: spiffe, ca_file: /trust/ca.crt}]}\n",
 	} {
-		if _, err := loadTestConfig(t, strings.Replace(requiredFile, "rpc:\n  listen_address: \"0.0.0.0:8080\"\n  auth:\n    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", fragment, 1)); err == nil {
+		if _, err := loadTestConfig(t, strings.Replace(requiredFile, requiredRPC, fragment, 1)); err == nil {
 			t.Fatalf("accepted invalid RPC listener: %s", fragment)
 		}
 	}

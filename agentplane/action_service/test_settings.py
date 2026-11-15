@@ -12,7 +12,8 @@ def _settings_source() -> dict[str, object]:
     return {
         "rpc": {
             "listen_address": "0.0.0.0:8080",
-            "auth": [{"mode": "kubernetes_bearer", "audiences": ["test-actions"]}],
+            "tls": {"cert_file": "/etc/actions/cert", "key_file": "/etc/actions/key"},
+            "auth": [{"mode": "spiffe", "ca_file": "/etc/actions/ca"}],
         },
         "policy_namespace": "test-agentplane",
         "caller_service_account_namespaces": ["test-agentplane"],
@@ -41,8 +42,16 @@ def test_session_delegation_service_is_optional_and_only_trusts_the_central_samp
     assert settings.session_delegation_service == ""
     assert "session_delegation_service" not in settings.model_dump(mode="json")
 
-    with pytest.raises(ValidationError, match="service callers require rpc spiffe client trust"):
-        Settings.model_validate(source | {"session_delegation_service": CENTRAL_SAMPLER_URI})
+    with pytest.raises(ValidationError, match="rpc must configure TLS and spiffe client trust"):
+        Settings.model_validate(
+            source
+            | {
+                "rpc": {
+                    "listen_address": ":8080",
+                    "auth": [{"mode": "kubernetes_bearer", "audiences": ["test-actions"]}],
+                }
+            }
+        )
 
     source["rpc"] = {
         "listen_address": "0.0.0.0:8080",

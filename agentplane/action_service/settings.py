@@ -88,9 +88,13 @@ class Settings(BaseModel):
         default="",
         description="Exact Central Sampler service SPIFFE ID allowed to delegate Session operations.",
     )
-    reader_accounts: frozenset[ServiceAccountRef] = frozenset()
+    # CLEANUP(stage 5): remove these ignored legacy receiver keys after generated manifests
+    # omit them and the service-SVID-only receiver rollout completes.
+    reader_accounts: frozenset[ServiceAccountRef] = Field(
+        default=frozenset(), description="Ignored legacy reader setting."
+    )
     connection_delegation_actor: ServiceAccountRef | None = Field(
-        default=None, description="Action Service workload allowed to receive MCP Connection delegations."
+        default=None, description="Ignored legacy bearer delegation setting."
     )
 
     policy_namespace: str = Field(
@@ -98,8 +102,8 @@ class Settings(BaseModel):
         "it writes `ActionsReady` conditions only on those bindings."
     )
     caller_service_account_namespaces: Set[str] = Field(
-        description="Kubernetes namespaces whose labeled ServiceAccounts may authenticate Action Service callers "
-        "and whose ServiceAccounts this service watches; it does not grant Action approval."
+        description="Kubernetes namespaces whose live WorkloadCredentials the SVID resolver reads "
+        "and whose ServiceAccounts the policy index watches; it does not grant Action approval."
     )
     direct_wait_seconds: float = Field(
         default=DEFAULT_DIRECT_WAIT_SECONDS,
@@ -144,13 +148,8 @@ class Settings(BaseModel):
     def validate_service_trust(self) -> Settings:
         if self.session_delegation_service and self.session_delegation_service != CENTRAL_SAMPLER_URI:
             raise ValueError(f"session_delegation_service must be {CENTRAL_SAMPLER_URI}")
-        if (
-            self.service_readers
-            or self.operator_services
-            or self.connection_delegation_service
-            or self.session_delegation_service
-        ) and not any(auth.mode == "spiffe" for auth in self.rpc.auth):
-            raise ValueError("service callers require rpc spiffe client trust")
+        if not any(auth.mode == "spiffe" for auth in self.rpc.auth):
+            raise ValueError("rpc must configure TLS and spiffe client trust")
         return self
 
     @model_validator(mode="after")
