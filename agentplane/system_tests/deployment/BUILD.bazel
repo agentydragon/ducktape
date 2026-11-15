@@ -650,3 +650,18 @@ py_library(
         "//agentplane/testing:tls",
     ],
 )
+
+py_library(
+    name = "suite_deployment",
+    testonly = True,
+    srcs = ["suite_deployment.py"],
+    deps = [
+        ":fixture_chart",
+        ":fixture_database",
+        ":fixture_finalization",
+        ":rendered_fixture",
+        "//cluster/cdk8s/agentplane:environment",
+        "//cluster/cdk8s/agentplane:environment_sandbox",
+        "@pypi//cdk8s",
+    ],
+)

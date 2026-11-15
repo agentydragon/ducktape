@@ -844,10 +844,9 @@ py_library(
     srcs = ["firecracker_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
 
@@ -856,10 +855,9 @@ py_library(
     srcs = ["vm_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
 
@@ -868,10 +866,9 @@ py_library(
     srcs = ["pod_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
 
@@ -880,10 +877,9 @@ py_library(
     srcs = ["probe_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
 
@@ -892,10 +888,9 @@ py_library(
     srcs = ["real_model_deployment.py"],
     deps = [
         "//agentplane/system_tests/deployment:fixture_chart",
-        "//agentplane/system_tests/deployment:fixture_database",
-        "//agentplane/system_tests/deployment:fixture_finalization",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
+        "//agentplane/system_tests/deployment:suite_deployment",
     ],
 )
 
