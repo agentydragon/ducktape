@@ -1231,5 +1231,39 @@ async def test_shape_deconstruction_preserves_edges_and_curves(playwright_driver
         )
 
 
+async def test_text_measurements(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        measurements = await page.evaluate(
+            """async () => {
+                const text = await import('./editor/packages/excalidraw/element/textMeasurements.js');
+                const font = '20px Arial';
+                const lineHeight = 1.25;
+                const multiline = text.measureText('AB\\n', font, lineHeight);
+                return {
+                    height: multiline.height,
+                    width: multiline.width,
+                    singleLineWidth: text.measureText('AB', font, lineHeight).width,
+                    minimumWidth: text.getMinTextElementWidth(font, lineHeight),
+                    approximateWidth: text.getApproxMinLineWidth(font, lineHeight),
+                    approximateHeight: text.getApproxMinLineHeight(20, lineHeight),
+                    detectedLineHeight: text.detectLineHeight({text: 'a\\nb', height: 60, fontSize: 20}),
+                    supported: text.isMeasureTextSupported(),
+                };
+            }"""
+        )
+        assert measurements["height"] == 50
+        assert measurements["width"] == measurements["singleLineWidth"] > 0
+        assert measurements["minimumWidth"] > 0
+        assert measurements["approximateWidth"] >= measurements["minimumWidth"]
+        assert measurements["approximateHeight"] > 25
+        assert measurements["detectedLineHeight"] == 1.5
+        assert measurements["supported"] is True
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
