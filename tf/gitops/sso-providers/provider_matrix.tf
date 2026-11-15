@@ -1,35 +1,9 @@
 # Matrix — OIDC login for Element Web / Synapse
 
-resource "authentik_provider_oauth2" "matrix" {
-  name               = "matrix-oauth2"
-  client_id          = "matrix"
-  client_type        = "confidential"
-  authorization_flow = data.authentik_flow.implicit_consent.id
-  invalidation_flow  = data.authentik_flow.invalidation.id
-  signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-  issuer_mode                = "per_provider"
-  include_claims_in_id_token = true
-
-  property_mappings = [
-    data.authentik_property_mapping_provider_scope.openid.id,
-    data.authentik_property_mapping_provider_scope.email.id,
-    data.authentik_property_mapping_provider_scope.profile.id,
-  ]
-
-  allowed_redirect_uris = [
-    {
-      matching_mode     = "strict"
-      url               = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
-      redirect_uri_type = "authorization"
-    },
-  ]
-}
-
 resource "authentik_application" "matrix" {
   name              = "Element"
   slug              = "matrix"
-  protocol_provider = authentik_provider_oauth2.matrix.id
+  protocol_provider = authentik_provider_oauth2.confidential["matrix"].id
   meta_description  = "Matrix Chat (Element Web)"
   meta_launch_url   = "https://chat.allegedly.works"
   meta_icon         = "https://cdn.simpleicons.org/element"
@@ -64,8 +38,8 @@ resource "kubernetes_secret" "matrix_oidc" {
           - idp_id: authentik
             idp_name: "Authentik SSO"
             issuer: "https://auth.allegedly.works/application/o/matrix/"
-            client_id: "${authentik_provider_oauth2.matrix.client_id}"
-            client_secret: "${authentik_provider_oauth2.matrix.client_secret}"
+            client_id: "${authentik_provider_oauth2.confidential["matrix"].client_id}"
+            client_secret: "${authentik_provider_oauth2.confidential["matrix"].client_secret}"
             discover: true
             scopes:
               - openid
