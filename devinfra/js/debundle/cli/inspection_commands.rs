@@ -79,7 +79,7 @@ pub(super) struct ValidatedDescribeQuery {
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
-    /// Resolve a binding, source unit, atom, or module ID.
+    /// Resolve a binding, source unit, atomic group, or module ID.
     #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding", "declarator_binding"])]
     pub id: Option<String>,
 
@@ -1030,10 +1030,9 @@ pub(super) fn run_coverage(
 
 pub(super) fn run_graph_summary(
     args: GraphSummaryArgs,
-    source_context: Option<&VerifiedGraphSourceContext>,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
-    let report = run_graph_summary_report(&args, source_context)?;
+    let report = run_graph_summary_report(&args)?;
     emit_report(
         output,
         args.format,

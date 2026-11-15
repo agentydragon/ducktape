@@ -409,13 +409,90 @@ fn assert_batch_agrees_across_paths(
     let from_scratch = check_realizability(dependency_graph, &post_assignment);
     assert_eq!(hypothetical, from_scratch, "hypothetical batch verdict");
 
+    let nodes: BTreeSet<_> = index
+        .assignment()
+        .iter()
+        .map(|(_, module)| module)
+        .chain(batch.destinations().values().copied())
+        .collect();
+    let assert_components = |candidate: &RealizabilityIndex| {
+        let view = candidate.constraints();
+        let graph = DiGraphMap::<ModuleId, ()>::from_edges(view.constraining_pairs.iter().copied());
+        let expected: BTreeSet<BTreeSet<_>> = tarjan_scc(&graph)
+            .into_iter()
+            .filter(|group| group.len() > 1)
+            .map(|group| group.into_iter().collect())
+            .collect();
+        let actual = candidate
+            .constraining_components_with_poll(&nodes, || Ok::<(), std::convert::Infallible>(()))
+            .unwrap();
+        assert_eq!(
+            actual.components.into_iter().collect::<BTreeSet<_>>(),
+            expected
+        );
+    };
+    assert_components(index);
     let mut committed = index.clone();
-    committed.apply_batch(dependency_graph, batch);
+    let topology = committed.apply_batch(dependency_graph, batch);
+    assert_components(&committed);
+    let before = index.constraints();
+    let after = committed.constraints();
+    let changes = |old: BTreeSet<_>, new: BTreeSet<_>| -> BTreeMap<_, _> {
+        old.difference(&new)
+            .map(|&pair| (pair, false))
+            .chain(new.difference(&old).map(|&pair| (pair, true)))
+            .collect()
+    };
+    let imports = |view: QuotientConstraints<'_>| {
+        view.imports
+            .iter()
+            .flat_map(|(&from, targets)| targets.iter().map(move |&to| (from, to)))
+            .collect()
+    };
+    assert_eq!(
+        topology.imports,
+        changes(
+            imports(index.constraints()),
+            imports(committed.constraints())
+        )
+    );
+    assert_eq!(
+        topology.constraining,
+        changes(
+            before.constraining_pairs.clone(),
+            after.constraining_pairs.clone()
+        )
+    );
     assert_eq!(
         committed.assignment().iter().collect::<Vec<_>>(),
         post_assignment.iter().collect::<Vec<_>>()
     );
     assert_eq!(committed.verdict(), from_scratch, "committed batch verdict");
+    assert_eq!(
+        committed.canonical_projection(),
+        chunk_constraining_module_edges(dependency_graph, &post_assignment),
+        "committed canonical projection including evidence and promoted endpoints"
+    );
+    let rollback = ModuleAssignmentBatch::from_destinations(index.assignment().iter().collect());
+    committed.apply_batch(dependency_graph, &rollback);
+    assert_components(&committed);
+    // Two unqueried opposite batches cancel their queued topology exactly.
+    committed.apply_batch(dependency_graph, batch);
+    committed.apply_batch(dependency_graph, &rollback);
+    let unchanged = committed
+        .constraining_components_with_poll(&nodes, || Ok::<(), std::convert::Infallible>(()))
+        .unwrap();
+    assert_eq!((unchanged.rows_visited, unchanged.edges_visited), (0, 0));
+    assert_eq!(
+        committed.canonical_projection(),
+        index.canonical_projection(),
+        "reverse batch restores the exact projection for sibling placement traversal"
+    );
+    assert_eq!(
+        committed.cross_rebinds(),
+        index.cross_rebinds(),
+        "reverse batch restores cross-owner rebindings"
+    );
 }
 
 #[test]

@@ -1,12 +1,10 @@
-//! `modules refine`: move complete existing source unit claims between
-//! modules as one checked edit. Shares the module-document helpers and the
-//! edit gate with the `bindings` verbs in [`crate::binding`].
+//! Apply exact source-unit assignments through the shared module edit gate.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
-use anonymous_resolution::resolve_source_claims;
+use anonymous_resolution::{resolve_source_claims, resolve_source_file};
 use anyhow::{Context, Result, anyhow, bail};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use pipeline::assess_candidate_effect_relocation;
@@ -16,9 +14,9 @@ use spec_tree::ModuleTreeScope;
 
 use crate::binding::{
     BindingIdentity, BindingLabel, CandidateEffectAssessmentContext, ModuleDocs, apply_doc_changes,
-    binding_effective_name, binding_matches_in_doc, canonical_module_path, drained_source_modules,
-    insert_annotation, load_module_docs, member_effective_name, source_match_readable,
-    take_members, take_source_match_bindings,
+    binding_effective_name, binding_matches_in_doc, canonical_module_path, insert_annotation,
+    load_module_docs, member_effective_name, source_match_readable, take_members,
+    take_source_match_bindings,
 };
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
@@ -28,7 +26,7 @@ use crate::edit_gate::{
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct SourceUnitRefineOutcome {
+pub struct SourceUnitApplyOutcome {
     #[serde(flatten)]
     pub outcome: MutationOutcome,
     pub source_units_reassigned: usize,
@@ -38,16 +36,24 @@ pub struct SourceUnitRefineOutcome {
     pub effect_relocation_assessment: Option<gate::CandidateRelocationAssessmentReport>,
 }
 
-pub struct SourceUnitRefineOptions<'a> {
+pub struct SourceUnitApplyOptions<'a> {
     pub tree_config: Option<&'a Path>,
     pub assignments: Vec<SourceUnitAssignment>,
-    pub verb: MutationVerb,
+    pub import_order: Option<Vec<ModulePath>>,
     pub readable_names: BTreeMap<String, String>,
+    pub selector_overrides: BTreeMap<String, BTreeMap<String, SelectorOverride>>,
     pub dry_run: bool,
     pub effect_assessment_context: Option<CandidateEffectAssessmentContext<'a>>,
 }
 
-fn validate_refine_module_id(module: &str) -> Result<()> {
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "kind", content = "selector", rename_all = "snake_case")]
+pub enum SelectorOverride {
+    SourceMatch(spec::SourceMatchClaim),
+    Relational(Box<spec::RawMemberSelector>),
+}
+
+fn validate_assignment_module_id(module: &str) -> Result<()> {
     let normalized = module.to_ascii_lowercase();
     for extension in [".yaml", ".yml"] {
         if normalized.ends_with(extension) {
@@ -85,35 +91,37 @@ struct PlannedSourceUnitMove {
     slot: SourceUnitClaimSlot,
 }
 
-/// Move complete existing source unit claims as one checked edit. Selector locations
-/// come from the canonical joint resolver; names, selector text, annotations,
-/// and anonymous-statement metadata are preserved from the original YAML.
-pub fn run_source_unit_refine(
+/// Apply an exact whole-graph source-unit mapping. Existing selector locations
+/// come from the canonical joint resolver; moves preserve authored metadata.
+pub fn run_source_unit_apply(
     stderr: &mut (dyn std::io::Write + Send),
     modules_root: &Path,
     dependency_graph_path: &Path,
     source_root: &Path,
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
-    options: SourceUnitRefineOptions<'_>,
-) -> Result<SourceUnitRefineOutcome> {
-    let SourceUnitRefineOptions {
+    options: SourceUnitApplyOptions<'_>,
+) -> Result<SourceUnitApplyOutcome> {
+    let SourceUnitApplyOptions {
         tree_config,
         assignments,
-        verb,
+        import_order,
         readable_names,
+        mut selector_overrides,
         dry_run,
         effect_assessment_context,
     } = options;
-    let claim_residual = verb == MutationVerb::Apply;
-    anyhow::ensure!(
-        effect_assessment_context.is_none() || dry_run || claim_residual,
-        "candidate effect assessment requires --dry-run"
-    );
+    // --modules may name the verified exact chunk subtree. Configured roots
+    // are relative to the full tree, so document lookup and writes must use
+    // that same verified root before applying the chunk scope.
+    let modules_root = tree_config
+        .and(source_context)
+        .and_then(graph_provenance::VerifiedGraphSourceContext::modules_root)
+        .unwrap_or(modules_root);
     if assignments.is_empty() {
         bail!("source unit assignment batch is empty");
     }
     for assignment in &assignments {
-        validate_refine_module_id(&assignment.module)?;
+        validate_assignment_module_id(&assignment.module)?;
     }
 
     let graph_input =
@@ -210,15 +218,7 @@ pub fn run_source_unit_refine(
                 node.statement_kind,
                 StatementKind::Import | StatementKind::Export
             ),
-            "source unit {:?} is import/export scaffolding and cannot be moved by modules refine",
-            assignment.unit_id
-        );
-        let current_module = current_source_unit_modules
-            .get(&assignment.unit_id)
-            .and_then(Option::as_ref);
-        anyhow::ensure!(
-            claim_residual || current_module.is_some(),
-            "source unit {:?} is currently unclaimed/residual; modules refine moves existing claims only",
+            "source unit {:?} is import/export scaffolding and cannot be moved by modules apply",
             assignment.unit_id
         );
         let destination = if let Some(scope) = &scope {
@@ -234,35 +234,49 @@ pub fn run_source_unit_refine(
         requested_destinations.insert(assignment.unit_id, destination);
     }
 
-    if claim_residual {
-        let changes = requested_destinations
-            .iter()
-            .map(|(unit_id, destination)| {
-                Ok(SourceUnitAssignment {
-                    unit_id: unit_id.clone(),
-                    module: scope
-                        .as_ref()
-                        .map_or(Ok(destination.as_str()), |scope| {
-                            scope.logical_destination(destination)
-                        })?
-                        .to_string(),
-                })
+    let changes = requested_destinations
+        .iter()
+        .map(|(unit_id, destination)| {
+            Ok(SourceUnitAssignment {
+                unit_id: unit_id.clone(),
+                module: scope
+                    .as_ref()
+                    .map_or(Ok(destination.as_str()), |scope| {
+                        scope.logical_destination(destination)
+                    })?
+                    .to_string(),
             })
-            .collect::<Result<Vec<_>>>()?;
-        let problem = AssignmentProblem::new(&graph_input)?;
-        let candidate = problem.candidate(&changes)?;
-        let validation = problem.validate(&candidate)?;
-        anyhow::ensure!(
-            accepted(&validation),
-            "complete assignment gate rejected the batch: {:?}",
-            validation.report
-        );
-    }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let problem = AssignmentProblem::prepare(&graph_input)?;
+    let candidate = problem.candidate(&changes)?;
+    let import_order = import_order.unwrap_or_else(|| dependency_graph.import_order.clone());
+    let validation = problem.validate_with_priority(&candidate, &import_order)?;
+    anyhow::ensure!(
+        accepted(&validation),
+        "complete assignment gate rejected the batch: {:?}",
+        validation.report
+    );
+
+    let staged_tree_config = if import_order != dependency_graph.import_order {
+        let config_path = tree_config.context(
+            "changing the global import priority requires --tree-config so the checked order can be persisted",
+        )?;
+        let config_bytes = std::fs::read(config_path)
+            .with_context(|| format!("reading tree config {}", config_path.display()))?;
+        let updated = spec_tree::update_chunk_import_order(
+            &config_bytes,
+            &dependency_graph.chunk_id,
+            import_order.clone(),
+        )?;
+        Some((config_path, updated))
+    } else {
+        None
+    };
 
     let mut expected_source_unit_modules = current_source_unit_modules.clone();
     let mut planned_moves = Vec::<PlannedSourceUnitMove>::new();
     let mut planned_move_by_slot = BTreeMap::<(String, SourceUnitClaimSlot), usize>::new();
-    let mut source_modules = BTreeSet::new();
     let mut source_units_reassigned = 0;
     let mut residual_source_units_claimed = 0;
     let mut fresh_bindings =
@@ -272,6 +286,8 @@ pub fn run_source_unit_refine(
         BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
     >::new();
     let mut used_names = BTreeSet::new();
+    let mut selected_binding_names = BTreeSet::new();
+    let mut provided_selectors = Vec::new();
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
     for (source_unit_id, destination) in &requested_destinations {
         let Some(source_logical_module) = current_source_unit_modules[source_unit_id].as_ref()
@@ -284,7 +300,13 @@ pub fn run_source_unit_refine(
                 .source_location
                 .as_ref()
                 .context("residual source unit has no source location")?;
-            let source = source_root.join(&location.source_path);
+            let source = resolve_source_file(
+                &location.source_path,
+                Some(source_root),
+                dependency_graph_path,
+                modules_root,
+                source_context,
+            )?;
             if node.declared_bindings.is_empty() {
                 fresh_anonymous
                     .entry(source)
@@ -295,10 +317,14 @@ pub fn run_source_unit_refine(
             } else {
                 for binding in &node.declared_bindings {
                     let runtime = binding.binding.to_string();
+                    anyhow::ensure!(
+                        selected_binding_names.insert(runtime.clone()),
+                        "binding {runtime:?} is declared by several selected source units"
+                    );
                     let readable = readable_names
                         .get(&runtime)
                         .cloned()
-                        .unwrap_or_else(|| runtime.clone());
+                        .unwrap_or_else(|| binding.export_name.to_string());
                     anyhow::ensure!(
                         !readable.is_empty(),
                         "readable name for {runtime:?} is empty"
@@ -306,16 +332,29 @@ pub fn run_source_unit_refine(
                     if readable_names.contains_key(&runtime) {
                         used_names.insert(runtime.clone());
                     }
-                    anyhow::ensure!(
-                        fresh_bindings
-                            .entry(source.clone())
-                            .or_default()
-                            .entry(destination.clone())
-                            .or_default()
-                            .insert(runtime.clone(), readable)
-                            .is_none(),
-                        "binding {runtime:?} has several declaration units; selector realization requires an explicit spec claim"
-                    );
+                    if let Some(selector) = selector_overrides
+                        .get_mut(source_unit_id)
+                        .and_then(|selectors| selectors.remove(&runtime))
+                    {
+                        provided_selectors.push((
+                            source.clone(),
+                            destination.clone(),
+                            runtime,
+                            readable,
+                            selector,
+                        ));
+                    } else {
+                        anyhow::ensure!(
+                            fresh_bindings
+                                .entry(source.clone())
+                                .or_default()
+                                .entry(destination.clone())
+                                .or_default()
+                                .insert(runtime.clone(), readable)
+                                .is_none(),
+                            "binding {runtime:?} has several declaration units; selector realization requires an explicit spec claim"
+                        );
+                    }
                 }
             }
             expected_source_unit_modules.insert(source_unit_id.clone(), Some(destination.clone()));
@@ -356,7 +395,6 @@ pub fn run_source_unit_refine(
             None => destination.clone(),
         };
         for location in source_unit_locations {
-            source_modules.insert(source_module.clone());
             let key = (source_module.clone(), location.slot.clone());
             if let Some(&move_index) = planned_move_by_slot.get(&key) {
                 let movement = &mut planned_moves[move_index];
@@ -383,6 +421,11 @@ pub fn run_source_unit_refine(
     anyhow::ensure!(
         used_names.len() == readable_names.len(),
         "readable_names must name only newly claimed bindings"
+    );
+    selector_overrides.retain(|_, selectors| !selectors.is_empty());
+    anyhow::ensure!(
+        selector_overrides.is_empty(),
+        "selector_overrides must name newly claimed bindings by selected source-unit ID"
     );
     let mut synthesized_claims = BTreeMap::<String, LogicalModule>::new();
     for (source, modules) in fresh_bindings {
@@ -411,6 +454,37 @@ pub fn run_source_unit_refine(
             ensure_source_unit_destination(&mut docs, modules_root, &destination)
                 .anonymous_statements
                 .extend(statements);
+        }
+    }
+    for (source, destination, runtime, readable, selector) in provided_selectors {
+        let doc = ensure_source_unit_destination(&mut docs, modules_root, &destination);
+        match selector {
+            SelectorOverride::SourceMatch(claim) => {
+                let [binding] = claim.bindings.as_slice() else {
+                    bail!("source_match override for {runtime:?} must claim exactly one binding");
+                };
+                anyhow::ensure!(
+                    binding.name() == readable,
+                    "source_match override for {runtime:?} exports {:?}, expected {readable:?}",
+                    binding.name()
+                );
+                anyhow::ensure!(
+                    binding.local() != runtime || readable == runtime,
+                    "source_match override for {runtime:?} retains its capture local; use a neutral selector-local name"
+                );
+                let _ = source;
+                doc.source_matches.push(claim);
+            }
+            SelectorOverride::Relational(selector) => {
+                if matches!(selector.validate()?, spec::MemberSelectorSpec::Binding(_)) {
+                    bail!("relational override for {runtime:?} cannot use a binding name pin");
+                }
+                doc.members.push(spec::Member {
+                    name: Some(readable),
+                    selector: *selector,
+                });
+                let _ = source;
+            }
         }
     }
 
@@ -564,13 +638,9 @@ pub fn run_source_unit_refine(
         }
     }
 
-    // Explicit destination checking retains authored owners, including empty
-    // shells. Preserve them here too so module ordering matches the preview.
-    let to_delete = if claim_residual {
-        BTreeSet::new()
-    } else {
-        drained_source_modules(&docs, &source_modules)
-    };
+    // Applying assignments keeps empty authored shells; use `modules delete`
+    // when their removal is intended.
+    let to_delete = BTreeSet::new();
     let post_spec = post_edit_spec_from_docs(&docs, &to_delete)?;
     // Resolve the entire scoped spec, prove the expected source-unit map, then
     // apply the same complete graph check used for the reviewed assignment.
@@ -579,6 +649,7 @@ pub fn run_source_unit_refine(
         input: std::sync::Arc::clone(&graph_input),
         source_root: Some(source_root),
         source_context,
+        import_order: Some(import_order.clone()),
     }
     .check_source_units(
         stderr,
@@ -586,6 +657,7 @@ pub fn run_source_unit_refine(
         &post_spec,
         &expected_source_unit_modules,
         scope.as_ref(),
+        &import_order,
     )?;
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
         let candidate_modules = docs
@@ -600,18 +672,25 @@ pub fn run_source_unit_refine(
                 context.graph_source,
                 modules_root,
                 &candidate_modules,
+                &import_order,
                 diagnostics,
             )
         })?)
     } else {
         None
     };
-    if claim_residual && let Some(assessment) = &effect_relocation_assessment {
+    if let Some(assessment) = &effect_relocation_assessment {
         pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
     }
 
-    let (files_written, files_deleted) =
+    let (mut files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    if let Some((config_path, config_bytes)) = staged_tree_config {
+        if !dry_run {
+            yaml_edit::write_bytes_atomic(config_path, &config_bytes)?;
+        }
+        files_written.push(config_path.display().to_string());
+    }
     let action = if files_written.is_empty() && files_deleted.is_empty() {
         MutationAction::Unchanged
     } else if dry_run {
@@ -619,9 +698,9 @@ pub fn run_source_unit_refine(
     } else {
         MutationAction::Applied
     };
-    Ok(SourceUnitRefineOutcome {
+    Ok(SourceUnitApplyOutcome {
         outcome: MutationOutcome::ownership_edit(
-            verb,
+            MutationVerb::Apply,
             action,
             GateOutcome::ClaimsChecked,
             effect_relocation_assessment.as_ref(),

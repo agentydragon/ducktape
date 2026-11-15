@@ -1,28 +1,26 @@
 ---
 name: debundle_intake
-description: Turn a reviewed exact residual placement into a named worker handoff. Use for source-grounding and semantic module naming while preserving the checked assignment plan; do not edit the spec or run gates.
+description: Ground a checked debundle placement plan in source meaning and prepare one named worker packet. Use for reviewing discovered groups, semantic destinations and binding names without editing the spec or running gates.
 ---
 
 # Debundle Intake
 
-Prepare one residual-placement handoff from the exact search report, matching
-graph/modules/source, and project conventions. Intake does not edit YAML, run
-gate/regeneration commands, or integrate branches.
+Turn a checked residual-placement plan into a source-backed worker packet.
+Inputs are the complete plan, matching graph/modules/source, project conventions
+and a scratch directory. Do not edit YAML, run gate/regeneration commands or
+integrate branches.
 
-Read [prepare a residual-placement handoff](references/docs/planning.md#prepare-a-residual-placement-handoff)
-for source grounding and plan-preservation rules. Use the
-[task chooser](references/README.md#choose-a-task) for source inspection. The
-snapshot-bound plan is one jointly checked assignment: keep every change and
-destination together. A graph-ready plan still needs the worker's selector
-proof, edit gate, materialization and runtime checks.
+Read [prepare seeds](references/docs/planning.md#prepare-seeds) for source
+review and the `seeds.json` format. Use the
+[task chooser](references/README.md#choose-a-task) for inspection commands.
+Keep the snapshot-bound plan together: jointly required atoms and destinations
+are not independently accepted tasks. Attach semantic review and naming
+recommendations separately. Return destination changes or combined plans to
+planning for a complete check.
 
-Review source behavior and callers to describe the intended boundaries and
-name candidate modules. Preserve the captured destinations and attach semantic
-and source evidence separately. Route destination edits or combined batches
-back to planning for a complete check. `incomplete` does not prove any residual
-code blocked.
-
-Return the intact plan, named module descriptions, source evidence and
-architecture questions. Keep source reading focused; route destination
-decisions needing broad architectural discovery to the architect. If Debundle
-blocks the task, follow the [bug reproduction workflow](references/docs/bug_reproductions.md).
+Use focused implementation and caller evidence. Route destination decisions
+needing broad architectural discovery to the architect. Report ambiguous meaning
+or selector gaps explicitly. Graph acceptance still needs selector realization,
+normal materialization and behavioral evidence; `incomplete` proves no negative.
+If tooling blocks the task, follow
+[bug reproductions](references/docs/bug_reproductions.md).

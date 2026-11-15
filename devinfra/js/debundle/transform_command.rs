@@ -128,7 +128,7 @@ impl TransformContextAuxArgs {
     }
 
     /// Whether any transform input is present, including environment values.
-    /// `modules apply` and `modules refine` use this after their command
+    /// `modules apply` uses this after its command
     /// registrations disable the source/output environment defaults.
     pub fn has_any_inputs(&self) -> bool {
         self.tree_vendor_marks.is_some()

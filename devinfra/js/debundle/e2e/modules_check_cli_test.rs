@@ -1,7 +1,7 @@
 //! Explicit batches are checked against the whole accepted assignment.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{parse_stdout_json, read_tree};
+use debundle_e2e_support::{TreeFixture, parse_stdout_json, read_tree, write_tree_fixture};
 use serde_json::{Value, json};
 use std::fs;
 
@@ -9,11 +9,14 @@ fn check(fixture: &GraphFixture, batch: Value, accepted: bool) -> Value {
     let before = read_tree(&fixture.modules);
     let path = fixture.root().join("check.json");
     fs::write(&path, serde_json::to_vec(&batch).unwrap()).unwrap();
+    let import_order = fixture.write_assignment_import_order("check-import-order.json", &batch);
     let output = fixture.command(&[
         "modules",
         "check",
         "--batch",
         path.to_str().unwrap(),
+        "--import-order",
+        import_order.to_str().unwrap(),
         "--format",
         "json",
     ]);
@@ -127,15 +130,10 @@ fn supports_anonymous_units_in_a_whole_atom() {
 
 #[test]
 fn preserves_distinct_generated_residual_destinations() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::per_atomic_group(
         "const dep = 2;\nconst consumer = dep + 1;\nexport { consumer };\n",
         &[],
     );
-    let path = fixture.root().join("spec_config.yaml");
-    let mut config: serde_yaml::Value = serde_yaml::from_slice(&fs::read(&path).unwrap()).unwrap();
-    config["unassigned_mode"]["main"] = serde_yaml::from_str("{kind: per_atomic_group}").unwrap();
-    fs::write(&path, serde_yaml::to_string(&config).unwrap()).unwrap();
-    fixture.refresh_graph();
     check(&fixture, json!([]), true);
     let consumer = fixture.source_unit_for_binding("consumer");
     let result = check(
@@ -153,6 +151,14 @@ fn malformed_changes_and_scaffolding_are_refused_without_spec_edits() {
     let value = fixture.source_unit_for_binding("value");
     let export = fixture.source_unit_for_line(2);
     let before = read_tree(&fixture.modules);
+    let baseline_modules = fixture
+        .dependency_graph()
+        .import_order
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let import_order =
+        fixture.write_import_order("invalid-import-order.json", &baseline_modules, &[]);
     for batch in [
         json!([{"unit_id": "unit:999999", "module": "new"}]),
         json!([{"unit_id": value, "module": "first"}, {"unit_id": value, "module": "second"}]),
@@ -167,6 +173,8 @@ fn malformed_changes_and_scaffolding_are_refused_without_spec_edits() {
             "check",
             "--batch",
             path.to_str().unwrap(),
+            "--import-order",
+            import_order.to_str().unwrap(),
             "--format",
             "json",
         ]);
@@ -182,23 +190,39 @@ fn malformed_changes_and_scaffolding_are_refused_without_spec_edits() {
 
 #[test]
 fn preserves_a_runnable_asymmetric_cycle_when_a_consumer_moves() {
-    let fixture = GraphFixture::new(
-        "const base = 1;\nfunction readLater() { return later; }\nconst later = base + 1;\nconst unrelated = 0;\nconst consumer = base + 1;\nconsole.log(later, consumer, unrelated);\n",
-        &[
-            (
-                "a_dependency.yaml",
-                "members: [{selector: {binding: {name: base}}}, {selector: {binding: {name: readLater}}}]\n",
-            ),
-            (
-                "b_dependent.yaml",
-                "members: [{selector: {binding: {name: later}}}]\n",
-            ),
-            (
-                "z_mediator.yaml",
-                "members: [{selector: {binding: {name: unrelated}}}]\n",
-            ),
-        ],
-    );
+    // Starting DFS from the dependent retains the accepted asymmetric cycle;
+    // the tree fixture's authored file order is otherwise a different witness.
+    let modules = [
+        (
+            "main/a_dependency.yaml",
+            "members: [{selector: {binding: {name: base}}}, {selector: {binding: {name: readLater}}}]\n",
+        ),
+        (
+            "main/b_dependent.yaml",
+            "members: [{selector: {binding: {name: later}}}]\n",
+        ),
+        (
+            "main/z_mediator.yaml",
+            "members: [{selector: {binding: {name: unrelated}}}]\n",
+        ),
+    ];
+    let workspace = write_tree_fixture(&TreeFixture {
+        chunks: &[(
+            "main",
+            "const base = 1;\nfunction readLater() { return later; }\nconst later = base + 1;\nconst unrelated = 0;\nconst consumer = base + 1;\nconsole.log(later, consumer, unrelated);\n",
+        )],
+        module_roots: &[("main", "main")],
+        modules: &modules,
+    });
+    let config_path = workspace.root().join("spec_config.yaml");
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["import_order"]["main"] =
+        serde_yaml::to_value(["b_dependent", "a_dependency", "z_mediator"]).unwrap();
+    fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    let run = workspace.run(&["--graphs"]);
+    assert!(run.result.status.success(), "{}", run.result.stderr);
+    let fixture = GraphFixture::from_tree_run(run, "modules/main");
     check(
         &fixture,
         json!([{"unit_id": fixture.source_unit_for_binding("consumer"), "module": "z_mediator"}]),
@@ -227,5 +251,10 @@ fn detects_pass_two_evaluation_failure_with_no_constraining_cycle() {
         "members: [{selector: {binding: {name: crossValue}}}]\n",
     )
     .unwrap();
+    let config_path = fixture.root().join("spec_config.yaml");
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["import_order"]["main"] = serde_yaml::to_value(["dependent"]).unwrap();
+    fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
     fixture.assert_current_pipeline_rejects(&["unrealizable"]);
 }

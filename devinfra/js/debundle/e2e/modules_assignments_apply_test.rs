@@ -14,6 +14,94 @@ fn batch(fixture: &GraphFixture, changes: Value) -> String {
     path.to_str().unwrap().to_string()
 }
 
+fn order_file(fixture: &GraphFixture, assignments: &str) -> String {
+    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
+    fixture
+        .write_assignment_import_order("import-order.json", &changes)
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn check(fixture: &GraphFixture, assignments: &str) -> std::process::Output {
+    let order = order_file(fixture, assignments);
+    fixture.command(&[
+        "modules",
+        "check",
+        "--batch",
+        assignments,
+        "--import-order",
+        &order,
+        "--format",
+        "json",
+    ])
+}
+
+fn apply(
+    fixture: &GraphFixture,
+    assignments: &str,
+    dry_run: bool,
+    extra: &[&str],
+) -> std::process::Output {
+    let order = order_file(fixture, assignments);
+    apply_with_order(fixture, assignments, &order, dry_run, extra)
+}
+
+fn apply_with_order(
+    fixture: &GraphFixture,
+    assignments: &str,
+    order: &str,
+    dry_run: bool,
+    extra: &[&str],
+) -> std::process::Output {
+    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
+    let physical = fixture.write_physical_assignment_batch("physical-assignments.json", &changes);
+    let config = fixture.root().join("spec_config.yaml");
+    let mut args = vec![
+        "modules".to_owned(),
+        "apply".to_owned(),
+        "--assignments".to_owned(),
+        physical.to_string_lossy().into_owned(),
+        "--modules".to_owned(),
+        fixture
+            .root()
+            .join("modules")
+            .to_string_lossy()
+            .into_owned(),
+        "--import-order".to_owned(),
+        order.to_owned(),
+        "--tree-config".to_owned(),
+        config.to_string_lossy().into_owned(),
+    ];
+    if dry_run {
+        args.push("--dry-run".to_owned());
+    }
+    args.extend(extra.iter().map(|arg| (*arg).to_owned()));
+    fixture.command(&args.iter().map(String::as_str).collect::<Vec<_>>())
+}
+
+fn assert_rejected(fixture: &GraphFixture, assignments: &str, diagnostics: &[&str]) {
+    let order = order_file(fixture, assignments);
+    let changes: Value = serde_json::from_slice(&fs::read(assignments).unwrap()).unwrap();
+    let physical = fixture.write_physical_assignment_batch("physical-assignments.json", &changes);
+    let config = fixture.root().join("spec_config.yaml");
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "apply",
+            "--assignments",
+            physical.to_str().unwrap(),
+            "--modules",
+            fixture.root().join("modules").to_str().unwrap(),
+            "--import-order",
+            &order,
+            "--tree-config",
+            config.to_str().unwrap(),
+        ],
+        diagnostics,
+    );
+}
+
 #[test]
 fn graph_accepted_duplicate_literal_binding_has_no_unique_selector_and_writes_nothing() {
     // Shrunk from the complete-search property run: graph acceptance does not
@@ -31,9 +119,10 @@ fn graph_accepted_duplicate_literal_binding_has_no_unique_selector_and_writes_no
             {"unit_id": fixture.source_unit_for_binding("first"), "module": "a_before"},
         ]),
     );
-    fixture.assert_success(&["modules", "check", "--batch", &path]);
-    fixture.assert_rejected_unchanged(
-        &["modules", "apply", "--assignments", &path],
+    assert!(check(&fixture, &path).status.success());
+    assert_rejected(
+        &fixture,
+        &path,
         &["no uniquely proven structural selector", "ambiguous"],
     );
     // The concrete graph assignment is valid through the normal pipeline when
@@ -43,6 +132,11 @@ fn graph_accepted_duplicate_literal_binding_has_no_unique_selector_and_writes_no
         "members: [{selector: {binding: {name: first}}}]\n",
     )
     .unwrap();
+    let config_path = fixture.root().join("spec_config.yaml");
+    let mut config: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["import_order"]["main"] = serde_yaml::to_value(["middle", "a_before"]).unwrap();
+    fs::write(config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
     fixture.assert_runs("0 1 1\n");
 }
 
@@ -65,10 +159,7 @@ fn joint_multi_destination_batch_claims_anonymous_units_and_preserves_omitted_un
         json!([{"unit_id": count, "module": "counter"}]),
     ] {
         let path = batch(&fixture, changes);
-        fixture.assert_rejected_unchanged(
-            &["modules", "apply", "--assignments", &path],
-            &["complete assignment gate rejected"],
-        );
+        assert_rejected(&fixture, &path, &["complete assignment gate rejected"]);
     }
     let changes = json!([
         {"unit_id": dep, "module": "chain"},
@@ -77,12 +168,12 @@ fn joint_multi_destination_batch_claims_anonymous_units_and_preserves_omitted_un
         {"unit_id": write, "module": "counter"},
     ]);
     let path = batch(&fixture, changes.clone());
-    fixture.assert_success(&["modules", "check", "--batch", &path]);
-    let preview = fixture.json(&["modules", "apply", "--assignments", &path, "--dry-run"]);
+    assert!(check(&fixture, &path).status.success());
+    let preview = parse_stdout_json(&apply(&fixture, &path, true, &[]));
     assert_eq!(preview["residual_source_units_claimed"], 4);
     assert_eq!(preview["source_units_reassigned"], 0);
     assert_eq!(read_tree(&fixture.modules), before);
-    let applied = fixture.json(&["modules", "apply", "--assignments", &path]);
+    let applied = parse_stdout_json(&apply(&fixture, &path, false, &[]));
     assert_eq!(preview["synthesized_claims"], applied["synthesized_claims"]);
     assert_eq!(preview["files_written"], applied["files_written"]);
     fixture.assert_runs("1 3 1\n");
@@ -126,14 +217,12 @@ fn moves_existing_metadata_while_claiming_residual_and_keeps_empty_owner_shell()
     );
     let names = fixture.root().join("names.json");
     fs::write(&names, "{\"remaining\":\"readableRemaining\"}").unwrap();
-    let result = fixture.json(&[
-        "modules",
-        "apply",
-        "--assignments",
+    let result = parse_stdout_json(&apply(
+        &fixture,
         &path,
-        "--readable-names",
-        names.to_str().unwrap(),
-    ]);
+        false,
+        &["--readable-names", names.to_str().unwrap()],
+    ));
     assert_eq!(result["source_units_reassigned"], 1);
     assert_eq!(result["residual_source_units_claimed"], 1);
     let home: serde_yaml::Value =
@@ -154,10 +243,7 @@ fn moves_existing_metadata_while_claiming_residual_and_keeps_empty_owner_shell()
     fixture.assert_runs("1 2\n");
     // An applied edit invalidates the saved baseline. Neither preview nor write
     // may silently replay against this stale graph.
-    fixture.assert_rejected_unchanged(
-        &["modules", "apply", "--assignments", &path],
-        &["graph compatibility mismatch"],
-    );
+    assert_rejected(&fixture, &path, &["graph compatibility mismatch"]);
 }
 
 #[test]
@@ -175,14 +261,13 @@ fn readable_name_may_match_selector_keyword_without_changing_runtime_binding() {
     );
     let names = fixture.root().join("names.json");
     fs::write(&names, "{\"value\":\"ANYTHING\",\"read\":\"read\"}").unwrap();
-    fixture.json(&[
-        "modules",
-        "apply",
-        "--assignments",
+    let result = parse_stdout_json(&apply(
+        &fixture,
         &path,
-        "--readable-names",
-        names.to_str().unwrap(),
-    ]);
+        false,
+        &["--readable-names", names.to_str().unwrap()],
+    ));
+    assert_eq!(result["action"], "applied");
 
     let emitted = fixture.rerun();
     assert_module_variable_declarators(
@@ -214,38 +299,101 @@ fn selector_realization_failure_leaves_the_spec_unchanged() {
             {"unit_id": fixture.source_unit_for_line(2), "module": "effects"},
         ]),
     );
-    fixture.assert_success(&["modules", "check", "--batch", &path]);
-    fixture.assert_rejected_unchanged(
-        &["modules", "apply", "--assignments", &path],
-        &["no unique structural selector"],
-    );
+    assert!(check(&fixture, &path).status.success());
+    assert_rejected(&fixture, &path, &["no unique structural selector"]);
 }
 
 #[test]
 fn generated_residual_dependency_can_remain_in_its_actual_module() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::per_atomic_group(
         "const dep = 2;\nconst consumer = dep + 1;\nconsole.log(consumer);\n",
         &[],
     );
-    let config_path = fixture.root().join("spec_config.yaml");
-    let mut config: serde_yaml::Value =
-        serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
-    config["unassigned_mode"]["main"] = serde_yaml::from_str("{kind: per_atomic_group}").unwrap();
-    fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
-    fixture.refresh_graph();
-    let path = batch(
-        &fixture,
-        json!([{"unit_id": fixture.source_unit_for_binding("consumer"), "module": "consumer"}]),
+    let changes = json!([{
+        "unit_id": fixture.source_unit_for_binding("consumer"),
+        "module": "consumer"
+    }]);
+    let path = batch(&fixture, changes.clone());
+    let checked = check(&fixture, &path);
+    assert!(
+        checked.status.success(),
+        "{}",
+        String::from_utf8_lossy(&checked.stderr)
     );
-    fixture.assert_success(&["modules", "check", "--batch", &path]);
-    let result = fixture.command(&[
+
+    // The old priority still names the later generated group by its baseline
+    // index. Materialization compacts that group after the middle group moves,
+    // so explicit check/apply must reject the stale witness without writing.
+    let report = fixture.dependency_graph();
+    let moved_unit = fixture.source_unit_for_binding("consumer");
+    let moved_node = report
+        .nodes
+        .iter()
+        .find(|node| node.id == moved_unit)
+        .unwrap();
+    let moved_owner = report.module(&moved_node.destination).unwrap().path.clone();
+    let stale_priority: Vec<_> = report
+        .import_order
+        .iter()
+        .filter(|module| *module != &moved_owner)
+        .map(ToString::to_string)
+        .chain(std::iter::once("consumer".to_owned()))
+        .collect();
+    let stale_order = fixture.root().join("stale-import-order.json");
+    fs::write(&stale_order, serde_json::to_vec(&stale_priority).unwrap()).unwrap();
+    let stale_order = stale_order.to_str().unwrap();
+    let before = read_tree(&fixture.modules);
+    let stale_check = fixture.command(&[
         "modules",
-        "apply",
-        "--assignments",
+        "check",
+        "--batch",
         &path,
+        "--import-order",
+        stale_order,
         "--format",
         "json",
     ]);
+    assert!(!stale_check.status.success());
+    assert!(
+        String::from_utf8_lossy(&stale_check.stderr)
+            .contains("import priority must contain every emitted nonentry module exactly once"),
+        "{}",
+        String::from_utf8_lossy(&stale_check.stderr)
+    );
+    assert_eq!(read_tree(&fixture.modules), before);
+    let config_path = fixture.root().join("spec_config.yaml");
+    let config_before = fs::read(&config_path).unwrap();
+    fixture.assert_rejected_unchanged(
+        &[
+            "modules",
+            "apply",
+            "--assignments",
+            &fixture
+                .write_physical_assignment_batch(
+                    "stale-assignments.json",
+                    &serde_json::from_slice(&fs::read(&path).unwrap()).unwrap(),
+                )
+                .to_string_lossy(),
+            "--modules",
+            fixture.root().join("modules").to_str().unwrap(),
+            "--import-order",
+            stale_order,
+            "--tree-config",
+            config_path.to_str().unwrap(),
+        ],
+        &["import priority must contain every emitted nonentry module exactly once"],
+    );
+    assert_eq!(fs::read(config_path).unwrap(), config_before);
+
+    let before = read_tree(&fixture.modules);
+    let preview = apply(&fixture, &path, true, &[]);
+    assert!(
+        preview.status.success(),
+        "{}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert_eq!(read_tree(&fixture.modules), before);
+    let result = apply(&fixture, &path, false, &[]);
     assert!(
         result.status.success(),
         "{}",

@@ -28,7 +28,6 @@ pub enum MutationVerb {
     Unassign,
     Rename,
     Apply,
-    Refine,
     Merge,
     Delete,
 }
@@ -113,7 +112,7 @@ pub struct MutationOutcome {
 
 impl MutationOutcome {
     /// The shared core for an ownership edit (`assign`, `unassign`, `apply`,
-    /// `refine`, `merge`, `delete`). `checks` is the label the graph-backed
+    /// `merge`, `delete`). `checks` is the label the graph-backed
     /// checks produced; `assessment` is the full candidate assessment, when
     /// `--analysis` supplied one.
     pub fn ownership_edit(

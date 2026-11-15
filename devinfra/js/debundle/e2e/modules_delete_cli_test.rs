@@ -17,6 +17,7 @@ fn delete_empty_module_succeeds() {
         "--modules",
         root.to_str().unwrap(),
         "ui/empty.yaml",
+        "--no-verify",
         // Stdout is a pipe here, which would default to JSON;
         // pin the human text rendering explicitly.
         "--format",
@@ -104,6 +105,7 @@ fn delete_multiple_atomic_all_succeed() {
         "a.yaml",
         "b.yaml",
         "c.yaml",
+        "--no-verify",
         "--format",
         "text",
     ]);
@@ -135,6 +137,7 @@ fn dry_run_prints_verdict_without_deleting() {
         "--modules",
         root.to_str().unwrap(),
         "ui/empty",
+        "--no-verify",
         "--dry-run",
         "--format",
         "text",

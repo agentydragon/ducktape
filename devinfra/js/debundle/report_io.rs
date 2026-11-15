@@ -25,6 +25,19 @@ pub fn read_json_gzip<T: DeserializeOwned>(path: &Path) -> Result<T> {
         .with_context(|| format!("parsing gzip JSON report {}", path.display()))
 }
 
+/// Parse a plain `.json` report or gzip-encoded `.json.gz` report based on
+/// its filename. Other extensions are rejected instead of guessed.
+pub fn read_json_report<T: DeserializeOwned>(path: &Path) -> Result<T> {
+    match path.extension().and_then(|extension| extension.to_str()) {
+        Some("json") => read_json(path),
+        Some("gz") => read_json_gzip(path),
+        extension => anyhow::bail!(
+            "unsupported JSON report format for {} (extension {extension:?})",
+            path.display()
+        ),
+    }
+}
+
 /// Write compact JSON directly through a bounded gzip stream. Completion
 /// includes the compression footer and the underlying file's buffered flush.
 pub fn write_json_gzip<T: Serialize>(path: &Path, value: &T) -> Result<()> {

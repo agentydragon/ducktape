@@ -387,15 +387,13 @@ fn inspect_source_rejects_stale_graph_source_and_old_command() {
 }
 
 #[test]
-fn atoms_and_summary_describe_the_real_graph() {
+fn atoms_summary_describes_the_real_graph() {
     let fixture = fixture();
     let atoms = fixture.json(&["atoms"]);
     assert_eq!(atoms["atomic_groups"].as_array().unwrap().len(), 2);
     let summary = fixture.json(&["graph-summary"]);
     assert_eq!(summary["source_unit_count"], 2);
     assert_eq!(summary["atomic_group_count"], 2);
-    assert!(summary.get("proposal_count").is_none());
-    assert!(summary.get("diagnostic_count").is_none());
 }
 
 #[test]
@@ -481,7 +479,7 @@ fn source_match_claims_combine_with_members() {
 }
 
 #[test]
-fn anonymous_only_module_path_is_resolved_as_a_module() {
+fn anonymous_only_module_path_dispatches_as_a_module_id() {
     let fixture = GraphFixture::new(
         "console.log(\"task\");\n",
         &[(
@@ -489,13 +487,15 @@ fn anonymous_only_module_path_is_resolved_as_a_module() {
             "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
         )],
     );
-    let report = fixture.json(&["describe", "auto_partition/auto_partition_0187"]);
-    assert_eq!(report["query"]["kind"], "module");
-    assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
-    assert_eq!(
-        report["atomic_groups"][0]["anonymous_statement_source_unit_ids"],
-        json!(["unit:0"])
-    );
+    for id in ["auto_partition/auto_partition_0187", "auto_partition_0187"] {
+        let report = fixture.json(&["describe", id]);
+        assert_eq!(report["query"]["kind"], "module");
+        assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
+        assert_eq!(
+            report["atomic_groups"][0]["anonymous_statement_source_unit_ids"],
+            json!(["unit:0"])
+        );
+    }
     let report = fixture.json(&[
         "inspect-source",
         "--id",
@@ -550,16 +550,6 @@ fn module_home_fixture() -> GraphFixture {
     )
 }
 
-/// The string at `field` of every element of `report[key]`.
-fn field_of_each<'a>(report: &'a Value, key: &str, field: &str) -> Vec<&'a str> {
-    report[key]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item[field].as_str().unwrap())
-        .collect()
-}
-
 fn atomic_group_bindings(report: &Value) -> Vec<&str> {
     report["atomic_groups"]
         .as_array()
@@ -609,47 +599,6 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
             .any(|ids| **ids == json!(["atomic:0", "atomic:1", "atomic:3"])),
         "{groups:?}"
     );
-}
-
-#[test]
-fn coverage_reports_module_claims_without_proposal_enrichment() {
-    let fixture = module_home_fixture();
-    let row = |report: &Value, path: &str| {
-        report["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["path"] == path)
-            .unwrap_or_else(|| panic!("no {path} row in {report}"))
-            .clone()
-    };
-
-    let plain = fixture.json(&["coverage"]);
-    assert_eq!(field_of_each(&plain, "rows", "path"), ["home/middle"]);
-    assert!(
-        row(&plain, "home/middle")
-            .get("matching_proposal_ids")
-            .is_none()
-    );
-}
-
-#[test]
-fn describe_joins_graph_and_spec_context_without_proposal_enrichment() {
-    let fixture = module_home_fixture();
-    let report = fixture.json(&["describe", "primary"]);
-    assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
-    assert_eq!(
-        field_of_each(&report, "incoming_edges", "source"),
-        ["unit:1", "unit:3"]
-    );
-    assert_eq!(
-        field_of_each(&report, "neighbor_source_units", "id"),
-        ["unit:1", "unit:3"]
-    );
-    assert_eq!(report["binding_homes"], json!([]));
-    assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
-    assert!(report.get("module_proposals").is_none());
-    assert!(report.get("module_proposal_diagnostics").is_none());
 }
 
 #[test]
@@ -929,7 +878,7 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 }
 
 #[test]
-fn modules_propose_uses_exact_assignment_search_by_default() {
+fn modules_propose_searches_unseeded_residuals_and_accepts_reviewed_scope() {
     let fixture = GraphFixture::new(
         "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n",
         &[(
@@ -938,10 +887,16 @@ fn modules_propose_uses_exact_assignment_search_by_default() {
         )],
     );
 
-    let exact = fixture.json(&["modules", "propose"]);
-    assert_eq!(exact["status"], "found", "{exact}");
-    assert!(exact["plan"].is_object(), "{exact}");
-    assert!(exact.get("proposals").is_none(), "{exact}");
+    let tree_config = fixture.root().join("spec_config.yaml");
+    let result = fixture.json(&[
+        "modules",
+        "propose",
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+    ]);
+    assert_eq!(result["status"], "found", "{result}");
+    assert!(result["plan"].is_object(), "{result}");
+    assert!(result["residual_units_extracted"].as_u64().unwrap() > 0);
 
     let consumer = fixture.source_unit_for_binding("consumer");
     let dep = fixture.source_unit_for_binding("dep");
@@ -955,8 +910,10 @@ fn modules_propose_uses_exact_assignment_search_by_default() {
     let scoped = fixture.json(&[
         "modules",
         "propose",
-        "--destinations",
-        "both",
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+        "--into",
+        "scoped",
         "--only-units",
         only_units,
         "--require",
@@ -964,15 +921,4 @@ fn modules_propose_uses_exact_assignment_search_by_default() {
     ]);
     assert_eq!(scoped["status"], "found", "{scoped}");
     assert_eq!(scoped["residual_units_extracted"], 2);
-
-    let rejected = fixture.command(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--only-units",
-        only_units,
-    ]);
-    assert!(!rejected.status.success());
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("unexpected argument"));
 }

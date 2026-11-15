@@ -279,8 +279,16 @@ fn graph_backed_refinement_cannot_split_the_proved_set_interval() {
         serde_json::to_vec(&serde_json::json!([{ "unit_id": copied, "module": "copy" }])).unwrap(),
     )
     .unwrap();
+    let order = fixture.write_final_import_order(&["copy", "sets"]);
     fixture.assert_rejected_unchanged(
-        &["modules", "refine", "--batch", batch.to_str().unwrap()],
+        &[
+            "modules",
+            "apply",
+            "--assignments",
+            batch.to_str().unwrap(),
+            "--import-order",
+            order.to_str().unwrap(),
+        ],
         &["atomic"],
     );
 }

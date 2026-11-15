@@ -238,6 +238,7 @@ fn graph_only_commuting_note_remains_in_report_provenance() {
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["probes/inner", "probes/outer"])
         .with_commuting_statements("static/app", vec![pair]),
     );
 
@@ -522,6 +523,14 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
         .expect("chunk modules");
     let module = modules.remove("mod_a").expect("mod_a");
     modules.insert("mod_renamed".into(), module);
+    for owner in spec["import_order"]["static/app"]
+        .as_sequence_mut()
+        .expect("authored module priority")
+    {
+        if owner.as_str() == Some("mod_a") {
+            *owner = serde_yaml::Value::String("mod_renamed".to_owned());
+        }
+    }
     write_yaml_file(&staged.spec, &spec);
 
     let edited = staged.root().join("edited.projection");

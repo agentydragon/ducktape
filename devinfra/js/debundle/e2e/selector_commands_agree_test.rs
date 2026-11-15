@@ -237,7 +237,22 @@ fn assert_all_commands_resolve(case: &Case, expected_output: &str) -> Fixture {
 }
 
 fn assert_selector_runs(case: &Case, expected_output: &str) -> Fixture {
-    let fixture = run_fixture(fixture(case));
+    assert_selector_fixture(run_fixture(fixture(case)), case.subject, expected_output)
+}
+
+fn assert_selector_runs_with_priority(
+    case: &Case,
+    expected_output: &str,
+    priority: &[&str],
+) -> Fixture {
+    assert_selector_fixture(
+        run_fixture(fixture(case).with_import_order(priority)),
+        case.subject,
+        expected_output,
+    )
+}
+
+fn assert_selector_fixture(fixture: Fixture, subject: &str, expected_output: &str) -> Fixture {
     assert_entry_output(&fixture, expected_output);
     // Runtime identity pins which binding was selected, not merely that the
     // whole entry still runs with an arbitrary export renamed to `target`.
@@ -247,7 +262,7 @@ fn assert_selector_runs(case: &Case, expected_output: &str) -> Fixture {
             "const entry = await import('./static/app/entry.js');\n\
              const selected = await import('./static/app/modules/{MODULE}.js');\n\
              console.log(typeof selected.{EXPORT} === 'function' && selected.{EXPORT} === entry[{}]);",
-            serde_json::to_string(case.subject).unwrap(),
+            serde_json::to_string(subject).unwrap(),
         ),
         "true\n",
     );
@@ -330,7 +345,11 @@ fn switch_body_is_its_own_scope() {
 
 #[test]
 fn named_function_expression_name_is_local() {
-    let fixture = assert_selector_runs(&NAMED_FUNCTION_EXPRESSION, "outer inner\n");
+    let fixture = assert_selector_runs_with_priority(
+        &NAMED_FUNCTION_EXPRESSION,
+        "outer inner\n",
+        &["format", "residual"],
+    );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/format.js",
@@ -459,7 +478,11 @@ fn var_hoists_out_of_switch() {
 
 #[test]
 fn named_class_expression_name_is_local() {
-    assert_selector_runs(&NAMED_CLASS_EXPRESSION, "outer true\n");
+    assert_selector_runs_with_priority(
+        &NAMED_CLASS_EXPRESSION,
+        "outer true\n",
+        &["format", "residual"],
+    );
 }
 
 #[test]
@@ -592,12 +615,20 @@ export { a, c };
 
 #[test]
 fn anything_declarator_keeps_its_initializer() {
-    assert_selector_runs(&ANYTHING_DECLARATOR_KEEPS_INITIALIZER, "x 2\n");
+    assert_selector_runs_with_priority(
+        &ANYTHING_DECLARATOR_KEEPS_INITIALIZER,
+        "x 2\n",
+        &["format", "residual"],
+    );
 }
 
 #[test]
 fn anything_declarator_floats_among_others() {
-    assert_selector_runs(&ANYTHING_DECLARATOR_AMONG_OTHERS, "x1 y2\n");
+    assert_selector_runs_with_priority(
+        &ANYTHING_DECLARATOR_AMONG_OTHERS,
+        "x1 y2\n",
+        &["format", "residual"],
+    );
 }
 
 /// `Either` matches `first` and `second`; `Other` matches only `second`, so

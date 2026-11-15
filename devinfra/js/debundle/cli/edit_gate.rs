@@ -45,15 +45,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ::gate::{
-    BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary,
-    validate_assignment,
-};
-use analysis::assignment_assembly::detect_atomic_group_conflict;
-use analysis::{
-    AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleAssignment,
-    ModuleId, compute_atomic_groups,
-};
+use ::gate::{BlockingSccEntry, render_atomic_group_conflict_summary, render_cycle_summary};
+use analysis::{AtomicGroupConflictReport, DependencyGraphInput, DependencyGraphReport, ModuleId};
 use anonymous_resolution::{
     DirectBindingSourceCheck, DirectBindingSourceResolution, ResolvedSourceClaims, SourceClaimSet,
     resolve_source_claims,
@@ -81,13 +74,17 @@ pub struct GraphEditArgs {
     /// Skip validation. Can permit name collisions or unrealizable specs.
     #[arg(long)]
     pub no_verify: bool,
-    /// dependency graph for validation; required unless --no-verify or the edit
-    /// cannot change ownership (such as deleting a structurally empty module).
+    /// Dependency graph for validation; required unless --no-verify.
+    /// Empty owners also affect the emitted universe and import priority.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub dependency_graph_path: Option<PathBuf>,
     /// Root for relative source paths used to resolve source-backed claims.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
+    /// JSON array with the complete final nonentry priority. Required when
+    /// creating owners; omitted priority retains surviving owners' order.
+    #[arg(long = "import-order")]
+    pub import_order: Option<PathBuf>,
     /// Output format. Default text on tty, JSON on pipe.
     #[arg(long, value_enum)]
     pub format: Option<peel::OutputFormat>,
@@ -102,6 +99,12 @@ impl GraphEditArgs {
             self.dependency_graph_path.as_deref(),
             self.source_root.as_deref(),
             source_context,
+            self.import_order
+                .as_deref()
+                .map(fs::read)
+                .transpose()?
+                .map(|bytes| serde_json::from_slice(&bytes))
+                .transpose()?,
         )
     }
 }
@@ -122,9 +125,29 @@ pub enum Gate<'a> {
         source_root: Option<&'a Path>,
         /// The graph-preflighted physical source and retained input bytes.
         source_context: Option<&'a VerifiedGraphSourceContext>,
+        import_order: Option<Vec<ModulePath>>,
     },
     /// `--no-verify`: skip all validation.
     Skip,
+}
+
+/// A config update staged only after complete candidate verification.
+#[derive(Debug)]
+pub enum CheckedImportOrder {
+    Unchanged,
+    Update { path: PathBuf, bytes: Vec<u8> },
+}
+
+impl CheckedImportOrder {
+    pub fn write(&self, dry_run: bool, files_written: &mut Vec<String>) -> Result<()> {
+        if let Self::Update { path, bytes } = self {
+            if !dry_run {
+                yaml_edit::write_bytes_atomic(path, bytes)?;
+            }
+            files_written.push(path.display().to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -141,6 +164,7 @@ impl<'a> Gate<'a> {
         graph: Option<&'a Path>,
         source_root: Option<&'a Path>,
         source_context: Option<&'a VerifiedGraphSourceContext>,
+        import_order: Option<Vec<ModulePath>>,
     ) -> Result<Self> {
         if no_verify {
             return Ok(Self::Skip);
@@ -151,6 +175,7 @@ impl<'a> Gate<'a> {
                 input: Arc::new(DependencyGraphInput::read(graph)?),
                 source_root,
                 source_context,
+                import_order,
             }),
             None => bail!(
                 "realizability gate requires --graph (path to dependency_graph.json.gz) or --no-verify"
@@ -172,6 +197,26 @@ impl<'a> Gate<'a> {
         }
     }
 
+    /// The same concrete priority used by graph checking and optional full
+    /// candidate assessment. Removing owners only filters their old slots;
+    /// inserting/reordering owners requires the explicit CLI input.
+    pub fn import_priority_for_spec(
+        &self,
+        modules_root: &Path,
+        post_spec: &PostEditSpec,
+    ) -> Result<Vec<ModulePath>> {
+        let Self::Run {
+            input,
+            import_order,
+            ..
+        } = self
+        else {
+            bail!("candidate assessment requires graph verification");
+        };
+        let modules = emitted_module_paths(input.report(), modules_root, post_spec, None, None)?;
+        priority_for_modules(input.report(), &modules, import_order.as_deref())
+    }
+
     /// Run the realizability + atom-split gate against the post-edit
     /// spec when this is [`Gate::Run`]. `post_spec` is lazy so
     /// skipped gates don't pay for spec assembly.
@@ -180,7 +225,7 @@ impl<'a> Gate<'a> {
         stderr: &mut (dyn std::io::Write + Send),
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
-    ) -> Result<()> {
+    ) -> Result<CheckedImportOrder> {
         self.check_expected(stderr, modules_root, post_spec, &[])
     }
 
@@ -192,13 +237,14 @@ impl<'a> Gate<'a> {
         modules_root: &Path,
         post_spec: impl FnOnce() -> Result<PostEditSpec>,
         expected: &[ExpectedResolvedMember],
-    ) -> Result<()> {
+    ) -> Result<CheckedImportOrder> {
         match self {
             Self::Run {
                 graph_path,
                 input,
                 source_root,
                 source_context,
+                import_order,
             } => gate_post_edit_assignment_with_expected(
                 stderr,
                 graph_path,
@@ -209,9 +255,12 @@ impl<'a> Gate<'a> {
                     verified: *source_context,
                 },
                 &post_spec()?,
-                ExpectedPostEditClaims::Members(expected),
+                ExpectedPostEditClaims::Members {
+                    members: expected,
+                    import_order: import_order.as_deref(),
+                },
             ),
-            Self::Skip => Ok(()),
+            Self::Skip => Ok(CheckedImportOrder::Unchanged),
         }
     }
 
@@ -224,6 +273,7 @@ impl<'a> Gate<'a> {
         post_spec: &PostEditSpec,
         assignments: &SourceUnitModuleAssignments,
         scope: Option<&ModuleTreeScope>,
+        import_order: &[ModulePath],
     ) -> Result<()> {
         match self {
             Self::Run {
@@ -231,6 +281,7 @@ impl<'a> Gate<'a> {
                 input,
                 source_root,
                 source_context,
+                ..
             } => gate_post_edit_assignment_with_expected(
                 stderr,
                 graph_path,
@@ -241,19 +292,84 @@ impl<'a> Gate<'a> {
                     verified: *source_context,
                 },
                 post_spec,
-                ExpectedPostEditClaims::SourceUnits { assignments, scope },
-            ),
+                ExpectedPostEditClaims::SourceUnits {
+                    assignments,
+                    scope,
+                    import_order,
+                },
+            )
+            .map(|_| ()),
             Self::Skip => Ok(()),
         }
     }
 }
 
 enum ExpectedPostEditClaims<'a> {
-    Members(&'a [ExpectedResolvedMember]),
+    Members {
+        members: &'a [ExpectedResolvedMember],
+        import_order: Option<&'a [ModulePath]>,
+    },
     SourceUnits {
         assignments: &'a SourceUnitModuleAssignments,
         scope: Option<&'a ModuleTreeScope>,
+        import_order: &'a [ModulePath],
     },
+}
+
+fn emitted_module_paths(
+    report: &DependencyGraphReport,
+    modules_root: &Path,
+    post_spec: &PostEditSpec,
+    scope: Option<&ModuleTreeScope>,
+    final_owners: Option<&BTreeMap<String, Option<ModulePath>>>,
+) -> Result<BTreeSet<ModulePath>> {
+    let mut emitted: BTreeSet<ModulePath> = post_spec
+        .modules
+        .iter()
+        .map(|module| {
+            let path = module_path_from_file(&module.path, modules_root);
+            let path = scope.map_or(Ok(path.as_str()), |scope| scope.logical_destination(&path))?;
+            Ok(ModulePath::parse(path, "")?)
+        })
+        .collect::<Result<_>>()?;
+    if let Some(owners) = final_owners {
+        emitted.extend(owners.values().flatten().cloned());
+    } else {
+        emitted.extend(
+            report
+                .quotient
+                .nodes
+                .iter()
+                .filter(|module| module.kind == analysis::ModuleDestinationKind::Unassigned)
+                .map(|module| module.path.clone()),
+        );
+    }
+    Ok(emitted)
+}
+
+fn priority_for_modules(
+    report: &DependencyGraphReport,
+    modules: &BTreeSet<ModulePath>,
+    explicit: Option<&[ModulePath]>,
+) -> Result<Vec<ModulePath>> {
+    let priority = explicit.map(<[_]>::to_vec).unwrap_or_else(|| {
+        report
+            .import_order
+            .iter()
+            .filter(|path| modules.contains(*path))
+            .cloned()
+            .collect()
+    });
+    if priority.len() != modules.len()
+        || priority.iter().collect::<BTreeSet<_>>() != modules.iter().collect()
+    {
+        return Err(anyhow::Error::new(::gate::ImportScheduleError::PriorityPaths {
+            expected: modules.iter().cloned().collect(),
+            actual: priority,
+        }))
+        .context("supply --import-order with the complete final priority when creating or reordering owners");
+    }
+    Ok(priority)
 }
 
 #[derive(Debug, Clone)]
@@ -409,7 +525,7 @@ pub struct UnresolvedDirectBindingSourceClaim {
 }
 
 /// Typed claim projection shared by the normal realizability gate and the
-/// complete source unit-assignment check used by `modules refine`.
+/// complete source unit-assignment check used by `modules apply`.
 #[derive(Debug, Clone, Default)]
 pub struct ModuleClaimProjection {
     /// In the same order as `PostEditModule::claims.member_selectors`.
@@ -820,9 +936,6 @@ pub fn post_edit_spec_from_docs(
             continue;
         }
         let claims = module_claims(doc.clone())?;
-        if claims.is_empty() {
-            continue;
-        }
         modules.push(PostEditModule {
             path: file.clone(),
             claims,
@@ -848,7 +961,7 @@ fn gate_post_edit_assignment_with_expected(
     source_lookup: EditSourceLookup<'_>,
     post_spec: &PostEditSpec,
     expected: ExpectedPostEditClaims<'_>,
-) -> Result<()> {
+) -> Result<CheckedImportOrder> {
     ensure_unaliased_module_tree(modules_root)?;
     let dependency_graph_report = input.report();
     let dependency_graph = input.graph();
@@ -873,19 +986,26 @@ fn gate_post_edit_assignment_with_expected(
     })?;
     let claim_projection = project_source_unit_claims(input, post_spec, &resolved_claims)?;
     reject_unresolved_projected_claims(&claim_projection)?;
-    let mut complete_check = None;
+    let scope = match &expected {
+        ExpectedPostEditClaims::SourceUnits { scope, .. } => *scope,
+        ExpectedPostEditClaims::Members { .. } => None,
+    };
+    let explicit_priority = match &expected {
+        ExpectedPostEditClaims::SourceUnits { import_order, .. } => Some(*import_order),
+        ExpectedPostEditClaims::Members { import_order, .. } => *import_order,
+    };
+    let actual_source_unit_modules = source_unit_module_assignments_from_projection(
+        dependency_graph_report,
+        modules_root,
+        post_spec,
+        &claim_projection,
+        scope,
+    )?;
     match expected {
         ExpectedPostEditClaims::SourceUnits {
             assignments: expected_source_unit_modules,
-            scope,
+            ..
         } => {
-            let actual_source_unit_modules = source_unit_module_assignments_from_projection(
-                dependency_graph_report,
-                modules_root,
-                post_spec,
-                &claim_projection,
-                scope,
-            )?;
             if &actual_source_unit_modules != expected_source_unit_modules {
                 let source_unit_ids = actual_source_unit_modules
                     .keys()
@@ -906,25 +1026,9 @@ fn gate_post_edit_assignment_with_expected(
                     "post-edit source unit assignment does not match the reviewed complete candidate"
                 );
             }
-            let changes = actual_source_unit_modules
-                .iter()
-                .filter_map(|(unit_id, module)| {
-                    module.as_ref().map(|module| {
-                        Ok(peel::assignment::SourceUnitAssignment {
-                            unit_id: unit_id.clone(),
-                            module: scope
-                                .map_or(Ok(module.as_str()), |scope| {
-                                    scope.logical_destination(module)
-                                })?
-                                .to_string(),
-                        })
-                    })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            complete_check = Some(peel::assignment::check_resolved_edit(input, &changes)?);
         }
-        ExpectedPostEditClaims::Members(expected) => {
-            for target in expected {
+        ExpectedPostEditClaims::Members { members, .. } => {
+            for target in members {
                 let module_idx = post_spec
                     .modules
                     .iter()
@@ -948,74 +1052,120 @@ fn gate_post_edit_assignment_with_expected(
         }
     }
 
-    // ModuleId assignment: residual at logical:0, every surviving
-    // spec module gets a fresh logical:N starting at 1. The path map
-    // renders diagnostics with the same canonical [`ModulePath`]
-    // every wire artifact uses (the module YAML's path relative to
-    // the modules root, `.yaml` stripped).
-    let residual = ModuleId(0);
-    let mut of: Vec<ModuleId> = vec![residual; dependency_graph.num_nodes()];
-    let mut module_path_by_id: HashMap<ModuleId, ModulePath> = [(
-        residual,
-        ModulePath::parse("residual", "").expect("residual is a canonical path"),
-    )]
-    .into_iter()
-    .collect();
-    for (next_idx, (module_idx, module)) in (1usize..).zip(post_spec.modules.iter().enumerate()) {
-        let mid = ModuleId(next_idx);
-        let raw = module_path_from_file(&module.path, modules_root);
-        module_path_by_id.insert(
-            mid,
-            ModulePath::parse(&raw, "")
-                .with_context(|| format!("module YAML {} path", module.path.display()))?,
-        );
-        for source_unit in &claim_projection.modules[module_idx].source_units {
-            of[source_unit.0] = mid;
-        }
+    // Compare explicit claims rather than inferring them from effective owners:
+    // coarse routing can assign an unclaimed unit to an authored destination.
+    let mut before_spec = post_delete_spec(modules_root, &[])?;
+    if let Some(scope) = scope {
+        before_spec.modules.retain(|module| {
+            module
+                .path
+                .strip_prefix(modules_root)
+                .is_ok_and(|path| scope.contains(path))
+        });
     }
-    let assignment = ModuleAssignment::from_assignments(
-        of,
-        analysis::EntryDestination::from_module_id(residual),
-    );
-
-    // Atom splits remain the primary diagnosis; the shared validation below
-    // supplies any co-occurring cycle report as secondary evidence.
-    let atomic_groups = compute_atomic_groups(dependency_graph);
-    let mut atomic_conflicts = atomic_groups
+    let before_claim_sets = source_claim_sets_from_post_spec(&before_spec);
+    let before_resolved = command_diagnostics::run(stderr, |diagnostics| {
+        resolve_source_claims(
+            anonymous_resolution::SourceClaimsContext {
+                graph: dependency_graph_report,
+                dependency_graph_path,
+                modules_root,
+                source_root: source_lookup.root,
+                source_context: source_lookup.verified,
+                diagnostics,
+            },
+            &before_claim_sets,
+        )
+    })?;
+    let before_projection = project_source_unit_claims(input, &before_spec, &before_resolved)?;
+    // A repair may remove unresolved or duplicate baseline claims. Only their
+    // resolved unit coverage is relevant here; the post-edit claims above must
+    // still resolve uniquely and completely.
+    let before_claimed = before_projection
+        .modules
         .iter()
-        .filter_map(|atomic_group| {
-            detect_atomic_group_conflict(
-                atomic_group,
-                |source_unit| assignment.of(source_unit),
-                |source_unit| {
-                    dependency_graph_report
-                        .nodes
-                        .get(source_unit.0)
-                        .map(|node| {
-                            node.declared_bindings
-                                .iter()
-                                .map(|binding| binding.binding.clone())
-                                .collect()
-                        })
-                        .unwrap_or_default()
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let report = if let Some((paths, validation)) = complete_check {
-        module_path_by_id = paths
-            .iter()
-            .enumerate()
-            .map(|(index, path)| (ModuleId(index), path.clone()))
-            .collect();
-        module_path_by_id.insert(ModuleId(paths.len()), ModulePath::parse("residual", "")?);
-        atomic_conflicts = validation.report.atomic_group_conflicts.clone();
-        validation.report
-    } else {
-        validate_assignment(dependency_graph, &assignment, &|id| {
-            module_path_by_id[&id].clone()
-        })
+        .flat_map(|module| module.source_units.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let logical_path = |path: &str| -> Result<ModulePath> {
+        Ok(ModulePath::parse(
+            scope.map_or(Ok(path), |scope| scope.logical_destination(path))?,
+            "",
+        )?)
     };
+    let surviving_modules = actual_source_unit_modules
+        .values()
+        .flatten()
+        .map(|path| logical_path(path))
+        .collect::<Result<BTreeSet<_>>>()?;
+    let unassigned_mode = source_lookup
+        .verified
+        .and_then(|context| {
+            context
+                .tree_config()
+                .map(|config| (config, context.chunk_id()))
+        })
+        .map(|(config, chunk)| spec_tree::unassigned_mode_from_config(config, chunk))
+        .transpose()?;
+    let mut owners = BTreeMap::new();
+    for node in &dependency_graph_report.nodes {
+        let baseline = dependency_graph_report
+            .module(&node.destination)
+            .with_context(|| format!("source unit {} has no destination", node.id))?;
+        let owner = match &actual_source_unit_modules[&node.id] {
+            Some(path) => Some(logical_path(path)?),
+            None => {
+                let newly_unclaimed = before_claimed.contains(
+                    &input
+                        .source_unit_id(&node.id)
+                        .expect("report unit ID is indexed"),
+                ) || (baseline.kind
+                    == analysis::ModuleDestinationKind::Specified
+                    && !surviving_modules.contains(&baseline.path));
+                if newly_unclaimed {
+                    anyhow::ensure!(
+                        matches!(
+                            unassigned_mode.as_ref().context("unclaiming source units requires fingerprint-verified tree configuration")?,
+                            spec::UnassignedMode::InlineInEntry
+                        ),
+                        "graph-only edit cannot resolve newly unclaimed source unit {:?} under non-inline unassigned_mode; validate the candidate through canonical materialization instead",
+                        node.id,
+                    );
+                    None
+                } else {
+                    (baseline.kind != analysis::ModuleDestinationKind::Entry)
+                        .then(|| baseline.path.clone())
+                }
+            }
+        };
+        owners.insert(node.id.clone(), owner);
+    }
+    let mut owner_values: Vec<_> = owners.values().cloned().collect();
+    peel::assignment::reindex_generated_atomic_group_owners(&mut owner_values)?;
+    for (owner, reindexed) in owners.values_mut().zip(owner_values) {
+        *owner = reindexed;
+    }
+    let emitted_modules = emitted_module_paths(
+        dependency_graph_report,
+        modules_root,
+        post_spec,
+        scope,
+        Some(&owners),
+    )?;
+    let import_order =
+        priority_for_modules(dependency_graph_report, &emitted_modules, explicit_priority)?;
+    let (paths, validation) =
+        peel::assignment::check_resolved_owners(input, &owners, &emitted_modules, &import_order)?;
+    let mut module_path_by_id: HashMap<ModuleId, ModulePath> = paths
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| (ModuleId(index), path))
+        .collect();
+    module_path_by_id.insert(
+        ModuleId(module_path_by_id.len()),
+        ModulePath::parse("residual", "")?,
+    );
+    let atomic_conflicts = validation.report.atomic_group_conflicts.clone();
+    let report = validation.report;
     let module_path = |id: ModuleId| module_path_by_id[&id].clone();
 
     // Replace artifacts only after this candidate's assignment and shared
@@ -1088,7 +1238,23 @@ fn gate_post_edit_assignment_with_expected(
         "realizability gate rejected cross-module rebindings: {:?}",
         report.cross_rebinds
     );
-    Ok(())
+    if import_order == dependency_graph_report.import_order {
+        return Ok(CheckedImportOrder::Unchanged);
+    }
+    let verified = source_lookup
+        .verified
+        .context("changing import_order requires verified tree configuration")?;
+    let path = verified
+        .tree_config_path()
+        .context("changing import_order requires a tree configuration path")?;
+    let config = verified
+        .tree_config()
+        .context("changing import_order requires retained tree configuration")?;
+    let bytes = spec_tree::update_chunk_import_order(config, verified.chunk_id(), import_order)?;
+    Ok(CheckedImportOrder::Update {
+        path: path.to_owned(),
+        bytes,
+    })
 }
 
 fn reject_unresolved_projected_claims(projection: &SourceUnitClaimProjection) -> Result<()> {

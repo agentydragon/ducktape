@@ -42,6 +42,7 @@ fn all_small_raw_assignments_agree_with_materialization_and_node() {
             )],
         );
         let baseline = read_tree(&fixture.modules);
+        let baseline_config = fs::read(fixture.root().join("spec_config.yaml")).unwrap();
         let units = [
             fixture.source_unit_for_line(2),
             fixture.source_unit_for_line(3),
@@ -61,11 +62,26 @@ fn all_small_raw_assignments_agree_with_materialization_and_node() {
                     .collect::<Vec<_>>();
                 let batch_path = fixture.root().join("batch.json");
                 fs::write(&batch_path, serde_json::to_vec(&batch).unwrap()).unwrap();
+                let mut import_order: Vec<String> = fixture
+                    .dependency_graph()
+                    .import_order
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect();
+                for module in assignment.iter().flatten() {
+                    if !import_order.contains(&(*module).to_owned()) {
+                        import_order.push((*module).to_owned());
+                    }
+                }
+                let order_path = fixture.root().join("import-order.json");
+                fs::write(&order_path, serde_json::to_vec(&import_order).unwrap()).unwrap();
                 let checked = fixture.command(&[
                     "modules",
                     "check",
                     "--batch",
                     batch_path.to_str().unwrap(),
+                    "--import-order",
+                    order_path.to_str().unwrap(),
                     "--format",
                     "json",
                 ]);
@@ -106,6 +122,11 @@ fn all_small_raw_assignments_agree_with_materialization_and_node() {
                     }
                     fs::write(fixture.modules.join(format!("{module}.yaml")), text).unwrap();
                 }
+                let config_path = fixture.root().join("spec_config.yaml");
+                let mut config: serde_yaml::Value =
+                    serde_yaml::from_slice(&baseline_config).unwrap();
+                config["import_order"]["main"] = serde_yaml::to_value(&import_order).unwrap();
+                fs::write(&config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
                 let reference = fixture.current_spec_runs(expected);
                 assert_eq!(accepted, reference, "source={source}, batch={batch:?}");
                 for path in read_tree(&fixture.modules).keys() {
@@ -114,6 +135,7 @@ fn all_small_raw_assignments_agree_with_materialization_and_node() {
                 for (path, bytes) in &baseline {
                     fs::write(fixture.modules.join(path), bytes).unwrap();
                 }
+                fs::write(&config_path, &baseline_config).unwrap();
             }
         }
     }

@@ -7,6 +7,43 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
+fn assign_with_import_order(
+    staged: &TreeStaged,
+    triple: Option<&str>,
+    analysis: Option<&std::path::Path>,
+    dry_run: bool,
+    priority: &[&str],
+) -> StagedInvocation {
+    let import_order = staged.root().join("import-order.json");
+    fs::write(&import_order, serde_json::to_vec(priority).unwrap()).unwrap();
+    let outputs = staged.run.workspace().child();
+    let output_root = outputs.path().join("out");
+    let mut args = vec![
+        "bindings".to_string(),
+        "assign".to_string(),
+        "--modules".to_string(),
+        path(&staged.modules).to_string(),
+        "--graph".to_string(),
+        path(&staged.graph).to_string(),
+        "--source-root".to_string(),
+        path(&staged.root().join("snapshot")).to_string(),
+        "--format".to_string(),
+        "json".to_string(),
+        "--import-order".to_string(),
+        path(&import_order).to_string(),
+    ];
+    if let Some(triple) = triple {
+        args.push(triple.to_string());
+    }
+    if dry_run {
+        args.push("--dry-run".to_string());
+    }
+    if let Some(analysis) = analysis {
+        args.extend(staged.analysis_args(analysis, &output_root));
+    }
+    StagedInvocation::tree_command(&args, outputs)
+}
+
 #[test]
 fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let staged = staged_tree(
@@ -26,7 +63,13 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
-    let result = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), true);
+    let result = assign_with_import_order(
+        &staged,
+        Some("second:a_earlier"),
+        Some(&staged.artifact),
+        true,
+        &["a_earlier", "z_later"],
+    );
     assert_ok(&result.result, "bindings assign --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
@@ -61,7 +104,13 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
 
     // Apply the identical move through the ordinary graph-backed edit path,
     // then compare the assessment with run --analysis over that candidate YAML.
-    let applied = staged.assign(Some("second:a_earlier"), Some(&staged.artifact), false);
+    let applied = assign_with_import_order(
+        &staged,
+        Some("second:a_earlier"),
+        Some(&staged.artifact),
+        false,
+        &["a_earlier", "z_later"],
+    );
     assert_ok(&applied.result, "bindings assign --analysis");
     assert!(
         !applied.result.stderr.contains("needs_full_assessment"),
@@ -292,7 +341,13 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     wrong_engine.extend_from_slice(&encoded_header);
     wrong_engine.extend_from_slice(body);
     fs::write(&staged.artifact, wrong_engine).unwrap();
-    let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
+    let refused = assign_with_import_order(
+        &staged,
+        Some("value:target"),
+        Some(&staged.artifact),
+        true,
+        &["target"],
+    );
     assert!(
         !refused.result.status.success(),
         "wrong engine was accepted"
@@ -309,7 +364,13 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     // prospective YAML edit can be committed.
     let original_source = fs::read(&staged.source).unwrap();
     fs::write(&staged.source, "const value = 2;\nconsole.log(value);\n").unwrap();
-    let refused = staged.assign(Some("value:target"), Some(&staged.artifact), true);
+    let refused = assign_with_import_order(
+        &staged,
+        Some("value:target"),
+        Some(&staged.artifact),
+        true,
+        &["target"],
+    );
     assert!(
         !refused.result.status.success(),
         "changed source was accepted"
@@ -368,7 +429,13 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
         &command_with(&analyzer_path(), &analyze_args),
         "alternate analyze",
     );
-    let refused = staged.assign(Some("value:target"), Some(&alternate_artifact), true);
+    let refused = assign_with_import_order(
+        &staged,
+        Some("value:target"),
+        Some(&alternate_artifact),
+        true,
+        &["target"],
+    );
     assert!(
         !refused.result.status.success(),
         "different projection was accepted"
@@ -435,7 +502,7 @@ fn assert_normal_run_refuses_with_projection_violation(
 }
 
 #[test]
-fn staged_assessment_types_conflicting_destructuring_claims() {
+fn bindings_assign_refuses_duplicate_destructuring_claims_before_assessment() {
     const SOURCE: &str = "const source = { a: 1, b: 2 };\n\
 const { a, b } = source;\n\
 export { a, b };\n";
@@ -464,17 +531,44 @@ export { a, b };\n";
             "members: [{selector: {binding: {name: source}}}, {selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
         )],
     );
-    let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
-    assert_candidate_has_placement_violation(
-        &result.result,
-        "destructuring_destination_split",
-        "bindings assign --dry-run --analysis for split destructuring",
-    );
     let before = module_snapshot(&staged.modules);
-    let write = staged.assign(Some("b:zz_right"), Some(&staged.artifact), false);
+    let result = assign_with_import_order(
+        &staged,
+        Some("b:zz_right"),
+        Some(&staged.artifact),
+        true,
+        &["z_same", "zz_right"],
+    );
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
+    assert!(
+        result.result.stderr.contains("claimed by multiple modules"),
+        "{}",
+        result.result.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
+    let write = assign_with_import_order(
+        &staged,
+        Some("b:zz_right"),
+        Some(&staged.artifact),
+        false,
+        &["z_same", "zz_right"],
+    );
     assert_eq!(
         write.result.status.code(),
         Some(1),
+        "{}",
+        write.result.stderr
+    );
+    assert!(
+        write
+            .result
+            .stderr
+            .contains("DestructuringDestinationSplit"),
         "{}",
         write.result.stderr
     );
@@ -524,7 +618,7 @@ export { a, b };\n";
 }
 
 #[test]
-fn staged_assessment_types_split_nested_var_bindings() {
+fn bindings_assign_refuses_duplicate_nested_var_claims_before_assessment() {
     const SOURCE: &str = "if (true) { var a = 1; var b = 2; }\n\
 console.log(a, b);\n\
 export { a, b };\n";
@@ -553,12 +647,26 @@ export { a, b };\n";
             "members: [{selector: {binding: {name: a}}}, {selector: {binding: {name: b}}}]\n",
         )],
     );
-    let result = staged.assign(Some("b:zz_right"), Some(&staged.artifact), true);
-    assert_candidate_has_placement_violation(
-        &result.result,
-        "nested_var_destination_split",
-        "bindings assign --dry-run --analysis for split nested-var bindings",
+    let before = module_snapshot(&staged.modules);
+    let result = assign_with_import_order(
+        &staged,
+        Some("b:zz_right"),
+        Some(&staged.artifact),
+        true,
+        &["z_same", "zz_right"],
     );
+    assert_eq!(
+        result.result.status.code(),
+        Some(1),
+        "{}",
+        result.result.stderr
+    );
+    assert!(
+        result.result.stderr.contains("claimed by multiple modules"),
+        "{}",
+        result.result.stderr
+    );
+    assert_eq!(module_snapshot(&staged.modules), before);
     assert_normal_run_refuses_with_projection_violation(
         &invalid,
         "NestedVarDestinationSplit",

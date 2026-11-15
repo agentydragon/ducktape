@@ -1,6 +1,6 @@
 ---
 name: debundle_orchestrator
-description: Drive debundle specs toward readable, runnable output and improve the engine. Choose among exact residual placement, passing-baseline extraction, targeted spec/tool repair, general inference, sound recognizers or audited annotations. Use for prioritizing blockers, coordinating authorized workers, and verifying downstream progress.
+description: Drive debundle specs toward readable, runnable output and improve the engine. Choose among checked residual placement, passing-baseline extraction, targeted spec/tool repair, general inference, sound recognizers or audited annotations. Use for prioritizing blockers, coordinating authorized workers, and verifying downstream progress.
 ---
 
 # Debundle Orchestrator
@@ -26,20 +26,22 @@ obvious inexpensive repair, use the shared workflow's
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
 
-For an accepted partial spec, inspect the graph and source, then use
-[exact residual placement](references/docs/module_search.md) with
-`modules propose` (exact by default). Review the full mapping, check and
-preview/apply its snapshot-bound plan, then regenerate and run relevant behavior
-checks. `exhausted_no_peel` is scoped to the reported owner policy and move
-domain; budgets, interruptions and errors do not establish impossibility. A graph
-witness still needs selector realization, normal materialization and runtime
-evidence.
+For an accepted partial spec, begin with unseeded
+[exact residual placement](references/docs/module_proposals.md) using `modules propose`.
+Use `--graphs` with the configured module tree for a corpus, or `--graph` for one
+chunk. Review discovered source meaning and the full destination mapping, check
+and preview/apply its snapshot-bound plan, then regenerate and run relevant
+behavior checks. Keep required companion moves in one worker packet.
+A completed negative is scoped to the append-one-owner, baseline-preserving
+entry-residual family. Unsupported routing, interruption and errors are
+inconclusive. Corpus rows retain their individual outcomes. Executable plans
+include the final import priority and selector preflight; graph-only inventories
+are separate. Normal materialization and runtime evidence remain required.
 
-For structural inventory, inspect the atomic groups in the graph report and use
-`modules check` to validate an authored assignment, or ask a worker for an isolated
-[`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).
-Use the resulting constraints to choose work; generated fragments are not a
-semantic architecture proposal or proof that rejected splits are impossible.
+Use `atoms` and `coverage` for structural inventory. A worker may also run an
+isolated [`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).
+Generated fragments are not a semantic architecture proposal or proof that
+rejected splits are impossible.
 
 For a rejection, use the [diagnosis procedure](references/skills/shared/workflow.md#diagnose-a-rejected-assignment)
 to distinguish an unsafe boundary, conservative analysis, a tool defect and an

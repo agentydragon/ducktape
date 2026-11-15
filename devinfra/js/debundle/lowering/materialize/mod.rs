@@ -106,6 +106,7 @@ pub(super) struct ChunkContext<'a> {
 pub(super) struct ChunkSpec<'a> {
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
+    pub(super) import_order: &'a BTreeMap<String, Vec<spec::ModulePath>>,
 }
 
 pub(super) struct MaterializeLogicalChunkInputs<'a> {
@@ -412,7 +413,16 @@ pub(super) fn finish_logical_chunk(
         export_reentry_reports,
         ..
     } = context;
-    let ChunkSpec { chunk_renames, .. } = spec;
+    let ChunkSpec {
+        chunk_renames,
+        import_order,
+        ..
+    } = spec;
+    let import_priority = import_order.get(chunk_id).with_context(|| {
+        format!(
+            "materialized chunk {chunk_id} requires import_order (use [] for an all-entry chunk)"
+        )
+    })?;
     let ChunkAstAnalysis {
         runtime_import_facts,
         declarations,
@@ -660,8 +670,9 @@ pub(super) fn finish_logical_chunk(
                 )
             })
             .collect();
-        // Settle generated layout using only the canonical constraining SCCs.
-        // Full scheduling and gate checks run once for the final assignment.
+        // Generated layout settles before checking the author's final owner
+        // universe. Pass-1 SCCs depend only on the ownership quotient, never
+        // on an import priority or a schedule-existence query.
         let residual_sccs = if refine_coarse_residuals {
             let precomputed = graph_for_assignment
                 .as_ref()
@@ -701,7 +712,7 @@ pub(super) fn finish_logical_chunk(
                     .expect("final catalogue is consumed once"),
                 planned_modules,
                 assignment_chunk_renames,
-                entry_destination,
+                import_priority,
             )?;
             break (sealed_renames, chunk_renames_map, assignment_analysis);
         }

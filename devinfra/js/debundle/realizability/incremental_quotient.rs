@@ -518,28 +518,27 @@ pub(super) struct IncrementalQuotient {
     pub(super) entry_module_id: ModuleId,
     /// Lazily-computed base `EsmEvaluationSimulator` for the current
     /// committed I-graph / constraining-buckets state. Invalidated on
-    /// every `add_current_edge` / `remove_current_edge` that mutates
+    /// every contribution update that mutates
     /// the underlying graphs. Used by `verdict()` and
     /// `verdict_touching()` directly, and by `build_simulator(Some(_))`
     /// when the overlay introduces no I-graph or constraining-edge
     /// changes (the no-op overlay short-circuit).
     pub(super) cached_base_simulator: RefCell<Option<EsmEvaluationSimulator>>,
-    /// Lazily-computed materialization of the base I-graph as an
-    /// adjacency map keyed by source module. See `ISuccessorsMap`.
-    /// Invalidated alongside the simulator cache.
-    pub(super) cached_base_i_successors: RefCell<Option<ISuccessorsMap>>,
-    /// Lazily-computed snapshot of the constraining pairs set
-    /// (`constraining_buckets.keys()`). See `ConstrainingPairs`.
-    pub(super) cached_base_constraining_pairs: RefCell<Option<ConstrainingPairs>>,
+    /// Canonical C pairs maintained on adjacency zero crossings. Evidence is
+    /// retained separately; topology queries never copy dependency-edge buckets.
+    pub(super) constraining_pairs: ConstrainingPairs,
     /// Tier-1 structure of the gate ladder: SCC condensation order
     /// maintained over `constraining_graph`.
-    /// Updated in the same `add_current_edge` / `remove_current_edge`
-    /// funnel that maintains the graph. `RefCell` because queries need
+    /// Final topology changes are composed until a query, avoiding transient
+    /// evidence removal/readdition. `RefCell` because queries need
     /// `&mut` (path halving, lazy rebuild) while the verdict/ladder
     /// API is `&self`, matching the simulator caches.
     pub(super) constraining_order: RefCell<CondensationOrder<ModuleId>>,
     /// Tier-2 structure: the same condensation order over `i_graph`.
     pub(super) i_order: RefCell<CondensationOrder<ModuleId>>,
+    pending_c_topology: RefCell<BTreeMap<(ModuleId, ModuleId), bool>>,
+    pending_i_topology: RefCell<BTreeMap<(ModuleId, ModuleId), bool>>,
+    registered_arena: std::cell::Cell<bool>,
     /// Tier-0 memo: `verdict_touching(module).is_realizable()` for the
     /// current committed quotient state. Cleared on every quotient
     /// mutation — including cross-rebind edits, which bypass
@@ -556,12 +555,14 @@ impl IncrementalQuotient {
             cross_rebinds: BTreeMap::new(),
             entry_module_id: assignment.entry_destination().module_id(),
             cached_base_simulator: RefCell::new(None),
-            cached_base_i_successors: RefCell::new(None),
-            cached_base_constraining_pairs: RefCell::new(None),
+            constraining_pairs: BTreeSet::new(),
             // Both orders start stale and lazily rebuild from their
             // base graph on the first ladder query.
             constraining_order: RefCell::new(CondensationOrder::new()),
             i_order: RefCell::new(CondensationOrder::new()),
+            pending_c_topology: RefCell::new(BTreeMap::new()),
+            pending_i_topology: RefCell::new(BTreeMap::new()),
+            registered_arena: std::cell::Cell::new(false),
             cached_touching_clean: RefCell::new(BTreeMap::new()),
         };
         for edge in dependency_graph.iter_edges() {
@@ -572,12 +573,10 @@ impl IncrementalQuotient {
 
     /// Invalidate the cached base simulator and its precomputed input
     /// snapshots. Called from every mutating path that changes the
-    /// I-graph adjacency or the constraining-edge buckets. Each is
-    /// rebuilt lazily on the next read.
+    /// I-graph adjacency or the constraining-edge buckets. The simulator is
+    /// rebuilt lazily; C/I adjacency remains available directly.
     pub(super) fn invalidate_cached_simulator(&mut self) {
         *self.cached_base_simulator.borrow_mut() = None;
-        *self.cached_base_i_successors.borrow_mut() = None;
-        *self.cached_base_constraining_pairs.borrow_mut() = None;
         // Every path that invalidates the simulator also changed the
         // graphs/buckets the tier-0 touching verdict reads.
         self.cached_touching_clean.get_mut().clear();
@@ -606,46 +605,13 @@ impl IncrementalQuotient {
         })
     }
 
-    /// Borrow the base I-successor adjacency, recomputing it from the
-    /// I-graph on first access after invalidation. Walks every base
-    /// edge once per refresh — overlay queries clone-and-patch this
-    /// instead of rewalking every edge per call.
-    pub(super) fn base_i_successors(
-        &self,
-    ) -> std::cell::Ref<'_, BTreeMap<ModuleId, BTreeSet<ModuleId>>> {
-        {
-            let mut slot = self.cached_base_i_successors.borrow_mut();
-            if slot.is_none() {
-                let mut succs: BTreeMap<ModuleId, BTreeSet<ModuleId>> = BTreeMap::new();
-                for (from, to) in self.i_graph.edge_pairs() {
-                    succs.entry(from).or_default().insert(to);
-                }
-                *slot = Some(succs);
-            }
-        }
-        std::cell::Ref::map(self.cached_base_i_successors.borrow(), |opt| {
-            opt.as_ref()
-                .expect("cached_base_i_successors was just populated")
-        })
+    /// Borrow maintained adjacency; no refresh, scan, or allocation.
+    pub(super) fn base_i_successors(&self) -> &ISuccessorsMap {
+        self.i_graph.adjacency()
     }
 
-    /// Borrow the base constraining-pair set, recomputing it on first
-    /// access after invalidation. Equivalent to
-    /// `constraining_buckets.keys().copied().collect()` but cached
-    /// across overlay queries.
-    pub(super) fn base_constraining_pairs(
-        &self,
-    ) -> std::cell::Ref<'_, BTreeSet<(ModuleId, ModuleId)>> {
-        {
-            let mut slot = self.cached_base_constraining_pairs.borrow_mut();
-            if slot.is_none() {
-                *slot = Some(self.constraining_buckets.keys().copied().collect());
-            }
-        }
-        std::cell::Ref::map(self.cached_base_constraining_pairs.borrow(), |opt| {
-            opt.as_ref()
-                .expect("cached_base_constraining_pairs was just populated")
-        })
+    pub(super) fn base_constraining_pairs(&self) -> &ConstrainingPairs {
+        &self.constraining_pairs
     }
 
     pub(super) fn add_current_edge(
@@ -665,13 +631,17 @@ impl IncrementalQuotient {
         }) else {
             return;
         };
+        self.add_contribution(contribution);
+    }
+
+    fn add_contribution(&mut self, contribution: EdgeContribution) {
         if contribution.kind == EdgeContributionKind::Rebind {
             self.cross_rebinds.insert(
-                edge.id,
+                contribution.dependency_edge,
                 CrossRebindEdge {
                     from: contribution.from,
                     to: contribution.to,
-                    dependency_edge: edge.id,
+                    dependency_edge: contribution.dependency_edge,
                 },
             );
             // Rebinds bypass the simulator/graph invalidation but DO
@@ -685,9 +655,6 @@ impl IncrementalQuotient {
         self.invalidate_cached_simulator();
         self.i_graph
             .increment_edge(contribution.from, contribution.to);
-        self.i_order
-            .get_mut()
-            .insert_edge(&self.i_graph, contribution.from, contribution.to);
         let EdgeContributionKind::Import {
             constraining,
             sequenced,
@@ -700,35 +667,18 @@ impl IncrementalQuotient {
         }
         self.constraining_graph
             .increment_edge(contribution.from, contribution.to);
-        self.constraining_order.get_mut().insert_edge(
-            &self.constraining_graph,
-            contribution.from,
-            contribution.to,
-        );
+        self.constraining_pairs
+            .insert((contribution.from, contribution.to));
         let bucket = self
             .constraining_buckets
             .entry((contribution.from, contribution.to))
             .or_default();
-        bucket.insert_edge(edge.id, sequenced);
+        bucket.insert_edge(contribution.dependency_edge, sequenced);
     }
 
-    pub(super) fn remove_current_edge(
-        &mut self,
-        edge: &analysis::graph::DependencyEdge,
-        assignment: &ModuleAssignment,
-    ) {
-        debug_assert_eq!(
-            assignment.entry_destination().module_id(),
-            self.entry_module_id,
-            "an incremental index keeps one fixed entry destination"
-        );
-        let Some(contribution) = edge_contribution(edge, self.entry_module_id, |source_unit| {
-            assignment.of(source_unit)
-        }) else {
-            return;
-        };
+    fn remove_contribution(&mut self, contribution: EdgeContribution) {
         if contribution.kind == EdgeContributionKind::Rebind {
-            self.cross_rebinds.remove(&edge.id);
+            self.cross_rebinds.remove(&contribution.dependency_edge);
             // Mirror `add_current_edge`: rebind edits change the
             // touching verdict the tier-0 memo caches.
             self.cached_touching_clean.get_mut().clear();
@@ -740,9 +690,6 @@ impl IncrementalQuotient {
         self.invalidate_cached_simulator();
         self.i_graph
             .decrement_edge(contribution.from, contribution.to);
-        self.i_order
-            .get_mut()
-            .remove_edge(&self.i_graph, contribution.from, contribution.to);
         let EdgeContributionKind::Import {
             constraining,
             sequenced,
@@ -755,18 +702,14 @@ impl IncrementalQuotient {
         }
         self.constraining_graph
             .decrement_edge(contribution.from, contribution.to);
-        self.constraining_order.get_mut().remove_edge(
-            &self.constraining_graph,
-            contribution.from,
-            contribution.to,
-        );
         let pair = (contribution.from, contribution.to);
         let mut remove_bucket = false;
         if let Some(bucket) = self.constraining_buckets.get_mut(&pair) {
-            bucket.remove_edge(edge.id, sequenced);
+            bucket.remove_edge(contribution.dependency_edge, sequenced);
             remove_bucket = bucket.is_empty();
         }
         if remove_bucket {
+            self.constraining_pairs.remove(&pair);
             self.constraining_buckets.remove(&pair);
         }
     }
@@ -778,7 +721,7 @@ impl IncrementalQuotient {
         dependency_graph: &DependencyGraph,
         assignment: &mut ModuleAssignment,
         batch: &ModuleAssignmentBatch,
-    ) {
+    ) -> super::QuotientTopologyDelta {
         debug_assert_eq!(
             assignment.entry_destination().module_id(),
             self.entry_module_id,
@@ -786,23 +729,129 @@ impl IncrementalQuotient {
         );
         let destinations = batch.changed_destinations(assignment);
         if destinations.is_empty() {
-            return;
+            return super::QuotientTopologyDelta::default();
         }
-
         let source_units: Vec<_> = destinations.keys().copied().collect();
-        // `impacted_dependency_edges` deduplicates the union of incoming and
-        // outgoing edges. In particular, an edge whose endpoints both move is
-        // removed under the old mapping and added once under the final map.
         let impacted_edges = impacted_dependency_edges(dependency_graph, &source_units);
-        for edge_id in &impacted_edges {
-            self.remove_current_edge(dependency_graph.edge(*edge_id), assignment);
+        let mut changes = Vec::new();
+        let mut before = BTreeMap::new();
+        for edge_id in impacted_edges {
+            let edge = dependency_graph.edge(edge_id);
+            let old = edge_contribution(edge, self.entry_module_id, |unit| assignment.of(unit));
+            let new = edge_contribution(edge, self.entry_module_id, |unit| {
+                destinations
+                    .get(&unit)
+                    .copied()
+                    .unwrap_or_else(|| assignment.of(unit))
+            });
+            if old == new {
+                continue;
+            }
+            for contribution in [old, new].into_iter().flatten() {
+                if matches!(contribution.kind, EdgeContributionKind::Import { .. }) {
+                    let pair = (contribution.from, contribution.to);
+                    before.entry(pair).or_insert_with(|| {
+                        (
+                            self.i_graph.edge_count(pair.0, pair.1) > 0,
+                            self.constraining_graph.edge_count(pair.0, pair.1) > 0,
+                        )
+                    });
+                }
+            }
+            changes.push((old, new));
         }
-        for (&source_unit, &to) in &destinations {
-            assignment.set(source_unit, to);
+        for (old, _) in &changes {
+            if let Some(old) = old {
+                self.remove_contribution(*old);
+            }
         }
-        for edge_id in &impacted_edges {
-            self.add_current_edge(dependency_graph.edge(*edge_id), assignment);
+        for (&unit, &to) in &destinations {
+            assignment.set(unit, to);
         }
+        for (_, new) in &changes {
+            if let Some(new) = new {
+                self.add_contribution(*new);
+            }
+        }
+        let mut delta = super::QuotientTopologyDelta::default();
+        for (pair, (old_i, old_c)) in before {
+            let new_i = self.i_graph.edge_count(pair.0, pair.1) > 0;
+            let new_c = self.constraining_graph.edge_count(pair.0, pair.1) > 0;
+            if old_i != new_i {
+                delta.imports.insert(pair, new_i);
+            }
+            if old_c != new_c {
+                delta.constraining.insert(pair, new_c);
+            }
+        }
+        super::compose_topology(self.pending_c_topology.get_mut(), &delta.constraining);
+        super::compose_topology(self.pending_i_topology.get_mut(), &delta.imports);
+        delta
+    }
+
+    fn refresh_order<E>(
+        &self,
+        constraining: bool,
+        poll: impl FnMut() -> Result<(), E>,
+    ) -> Result<super::condensation_order::ComponentChanges<ModuleId>, E> {
+        let (order, pending, graph) = if constraining {
+            (
+                &self.constraining_order,
+                &self.pending_c_topology,
+                &self.constraining_graph,
+            )
+        } else {
+            (&self.i_order, &self.pending_i_topology, &self.i_graph)
+        };
+        let changes = order.borrow_mut().apply_topology_batch(
+            graph.adjacency(),
+            &pending.borrow(),
+            None,
+            poll,
+        )?;
+        pending.borrow_mut().clear();
+        Ok(changes)
+    }
+
+    fn refresh_order_infallible(&self, constraining: bool) {
+        match self.refresh_order(constraining, || Ok::<(), std::convert::Infallible>(())) {
+            Ok(_) => {}
+            Err(never) => match never {},
+        }
+    }
+
+    pub(super) fn constraining_components_with_poll<E>(
+        &self,
+        nodes: &BTreeSet<ModuleId>,
+        mut poll: impl FnMut() -> Result<(), E>,
+    ) -> Result<super::ConstrainingComponents, E> {
+        if !self.registered_arena.get() {
+            let mut c = self.constraining_order.borrow_mut();
+            let mut i = self.i_order.borrow_mut();
+            for &node in nodes {
+                poll()?;
+                c.register_nodes([node]);
+                i.register_nodes([node]);
+            }
+            self.registered_arena.set(true);
+        }
+        let changes = self.refresh_order(true, &mut poll)?;
+        let order = self.constraining_order.borrow();
+        let mut components = Vec::new();
+        for rep in order.multi_components() {
+            poll()?;
+            let mut members = BTreeSet::new();
+            for member in order.component_members(rep) {
+                poll()?;
+                members.insert(member);
+            }
+            components.push(members);
+        }
+        Ok(super::ConstrainingComponents {
+            components,
+            rows_visited: changes.rows_visited,
+            edges_visited: changes.edges_visited,
+        })
     }
 
     pub(super) fn verdict(&self) -> RealizabilityVerdict {
@@ -1083,6 +1132,7 @@ impl IncrementalQuotient {
     /// committed states (clause 3, Pass 1 clean) no multi-module
     /// constraining SCC exists, so this is `false` for every pair.
     pub(super) fn modules_share_constraining_multi_scc(&self, a: ModuleId, b: ModuleId) -> bool {
+        self.refresh_order_infallible(true);
         self.constraining_order
             .borrow_mut()
             .same_multi_scc(&self.constraining_graph, a, b)
@@ -1142,6 +1192,7 @@ impl IncrementalQuotient {
         // Tier 1: clause 2 (cross-rebinds touching `module`) and
         // Pass 1 — is `module`'s post-move constraining SCC
         // multi-module? — on the maintained constraining condensation.
+        self.refresh_order_infallible(true);
         if self.constraining_order.borrow_mut().would_join_multi_scc(
             &self.constraining_graph,
             &overlay.constraining_delta,
@@ -1184,6 +1235,7 @@ impl IncrementalQuotient {
         // Tier 2: Pass-2 vacuity on the I-condensation. Overlay
         // removals inside a multi-module I-SCC route through the
         // exact bidirectional fallback inside `would_join_multi_scc`.
+        self.refresh_order_infallible(false);
         if !self
             .i_order
             .borrow_mut()
@@ -1279,10 +1331,10 @@ impl IncrementalQuotient {
     /// simulator's own toposort + DFS.
     ///
     /// The base case (`overlay = None`) returns clones of
-    /// `base_i_successors()` / `base_constraining_pairs()` — the
-    /// shared caches refreshed on the next mutation. The overlay
+    /// `base_i_successors()` / `base_constraining_pairs()` — maintained
+    /// adjacency views. The overlay
     /// case applies the overlay's small `i_delta` / constraining
-    /// edits to a cloned base, which is `O(|overlay|)` per call.
+    /// edits to a cloned base. Cloning is global; patching is `O(|overlay|)`.
     pub(super) fn effective_simulator_inputs(
         &self,
         overlay: Option<&QuotientOverlay>,

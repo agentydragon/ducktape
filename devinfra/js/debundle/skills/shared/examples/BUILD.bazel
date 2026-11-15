@@ -29,6 +29,7 @@ py_test(
         ":isolated_edit",
         "//:conftest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )
@@ -67,6 +68,7 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
 )

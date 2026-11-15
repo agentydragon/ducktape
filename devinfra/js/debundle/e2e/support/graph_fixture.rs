@@ -2,6 +2,7 @@
 
 use super::*;
 use debundle_e2e_support::*;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::process::Command;
 
@@ -12,8 +13,210 @@ pub struct GraphFixture {
 }
 
 impl GraphFixture {
+    /// Write the author's complete final priority without deriving or repairing it.
+    pub fn write_final_import_order(&self, owners: &[&str]) -> PathBuf {
+        let path = self.root().join("final_import_order.json");
+        fs::write(&path, serde_json::to_vec(owners).unwrap()).unwrap();
+        path
+    }
+
+    /// Explicitly edit the current configured priority before refreshing a graph.
+    pub fn set_import_order(&self, owners: &[&str]) {
+        let path = self.root().join("spec_config.yaml");
+        let mut config: serde_yaml::Value =
+            serde_yaml::from_slice(&fs::read(&path).unwrap()).unwrap();
+        config["import_order"]["main"] = serde_yaml::to_value(owners).unwrap();
+        fs::write(path, serde_yaml::to_string(&config).unwrap()).unwrap();
+    }
+
     pub fn root(&self) -> &Path {
         self.run.root()
+    }
+
+    /// Physical module-tree root configured for this fixture's graph chunk.
+    pub fn module_tree_root(&self) -> String {
+        let config: serde_yaml::Value =
+            serde_yaml::from_slice(&fs::read(self.root().join("spec_config.yaml")).unwrap())
+                .unwrap();
+        let report = self.dependency_graph();
+        let Some(roots) = config
+            .get("module_roots")
+            .and_then(serde_yaml::Value::as_mapping)
+        else {
+            return String::new();
+        };
+        roots
+            .iter()
+            .find_map(|(root, chunk)| {
+                (chunk.as_str() == Some(&report.chunk_id))
+                    .then(|| root.as_str().unwrap().to_owned())
+            })
+            .expect("fixture chunk has a configured module tree root")
+    }
+
+    /// Convert a logical destination to the configured physical tree path.
+    pub fn physical_module_path(&self, module: &str) -> String {
+        let root = self.module_tree_root();
+        if root.is_empty() || std::path::Path::new(module).starts_with(&root) {
+            module.to_owned()
+        } else {
+            std::path::Path::new(&root)
+                .join(module)
+                .display()
+                .to_string()
+        }
+    }
+
+    /// Strip this chunk's configured physical tree prefix from a destination.
+    pub fn logical_module_path(&self, module: &str) -> String {
+        let root = self.module_tree_root();
+        let logical = if root.is_empty() {
+            module
+        } else {
+            std::path::Path::new(module)
+                .strip_prefix(&root)
+                .ok()
+                .and_then(std::path::Path::to_str)
+                .unwrap_or(module)
+        };
+        spec::ModulePath::parse(logical, "")
+            .expect("fixture module path is valid")
+            .as_str()
+            .to_owned()
+    }
+
+    /// Persist a batch with each logical destination converted to its physical
+    /// tree path for `modules apply --tree-config`.
+    pub fn write_physical_assignment_batch(
+        &self,
+        name: &str,
+        assignments: &serde_json::Value,
+    ) -> PathBuf {
+        let mut assignments = assignments.clone();
+        for change in assignments.as_array_mut().unwrap() {
+            change["module"] = self
+                .physical_module_path(change["module"].as_str().unwrap())
+                .into();
+        }
+        let path = self.root().join(name);
+        fs::write(&path, serde_json::to_vec(&assignments).unwrap()).unwrap();
+        path
+    }
+
+    /// Write the exact final nonentry owner priority for this fixture.
+    /// Existing owners retain baseline relative order; new owners follow the
+    /// caller-supplied sequence. This makes owner removal and append order
+    /// explicit in each test instead of guessing from the mutation batch.
+    pub fn write_import_order(
+        &self,
+        name: &str,
+        final_modules: &BTreeSet<String>,
+        appended_modules: &[String],
+    ) -> PathBuf {
+        let report = self.dependency_graph();
+        let mut order: Vec<String> = report
+            .import_order
+            .iter()
+            .filter(|path| final_modules.contains(path.as_str()))
+            .map(ToString::to_string)
+            .collect();
+        order.extend(appended_modules.iter().cloned());
+        assert_eq!(
+            order.iter().collect::<BTreeSet<_>>(),
+            final_modules.iter().collect::<BTreeSet<_>>(),
+            "baseline plus explicit appended order must cover the final module set exactly"
+        );
+        assert_eq!(
+            order.len(),
+            final_modules.len(),
+            "import order has duplicates"
+        );
+        let path = self.root().join(name);
+        fs::write(&path, serde_json::to_vec(&order).unwrap()).unwrap();
+        path
+    }
+
+    /// Write the exact final order for a source-unit assignment batch while
+    /// preserving baseline order for surviving owners and appending new ones.
+    pub fn write_assignment_import_order(
+        &self,
+        name: &str,
+        assignments: &serde_json::Value,
+    ) -> PathBuf {
+        let report = self.dependency_graph();
+        let changes: BTreeMap<_, _> = assignments
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|change| {
+                (
+                    change["unit_id"].as_str().unwrap().to_owned(),
+                    self.logical_module_path(change["module"].as_str().unwrap()),
+                )
+            })
+            .collect();
+        let baseline: BTreeSet<_> = report
+            .import_order
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        // Authored modules remain emitted shells until explicit deletion.
+        // Generated atomic-group modules are emitted only while they still own
+        // at least one source unit after the batch, and the emitter renumbers
+        // those surviving groups densely.
+        let mut final_owners = Vec::with_capacity(report.nodes.len());
+        for unit in &report.nodes {
+            let current = report.module(&unit.destination).unwrap().path.as_str();
+            let final_owner = changes
+                .get(&unit.id)
+                .cloned()
+                .or_else(|| baseline.contains(current).then(|| current.to_owned()));
+            final_owners
+                .push(final_owner.map(|owner| spec::ModulePath::parse(&owner, "").unwrap()));
+        }
+        let generated_remap =
+            peel::assignment::reindex_generated_atomic_group_owners(&mut final_owners).unwrap();
+        let remap = |path: &spec::ModulePath| -> Option<String> {
+            if path.as_str().starts_with("__auto/atomic_groups/") {
+                generated_remap.get(path).map(ToString::to_string)
+            } else {
+                Some(path.to_string())
+            }
+        };
+
+        let mut final_modules: BTreeSet<_> = baseline
+            .iter()
+            .filter(|module| !module.starts_with("__auto/atomic_groups/"))
+            .cloned()
+            .collect();
+        final_modules.extend(final_owners.iter().flatten().map(ToString::to_string));
+
+        let mut order: Vec<_> = report
+            .import_order
+            .iter()
+            .filter_map(remap)
+            .filter(|path| final_modules.contains(path))
+            .collect();
+        let appended: BTreeSet<_> = final_owners
+            .iter()
+            .flatten()
+            .map(ToString::to_string)
+            .filter(|owner| !order.contains(owner))
+            .collect();
+        order.extend(appended);
+        assert_eq!(
+            order.iter().collect::<BTreeSet<_>>(),
+            final_modules.iter().collect::<BTreeSet<_>>(),
+            "source-unit assignment order must cover the materialized module set exactly"
+        );
+        assert_eq!(
+            order.len(),
+            final_modules.len(),
+            "import order has duplicates"
+        );
+        let path = self.root().join(name);
+        fs::write(&path, serde_json::to_vec(&order).unwrap()).unwrap();
+        path
     }
     /// Module paths are relative to this fixture's single `main` chunk tree.
     pub fn new(source: &str, modules: &[(&str, &str)]) -> Self {
@@ -30,14 +233,24 @@ impl GraphFixture {
             &[("main", source), ("dependency", dependency)],
             modules,
             true,
+            false,
         )
     }
 
     fn run(source: &str, modules: &[(&str, &str)], succeeds: bool) -> Self {
-        Self::run_chunks(&[("main", source)], modules, succeeds)
+        Self::run_chunks(&[("main", source)], modules, succeeds, false)
     }
 
-    fn run_chunks(chunks: &[(&str, &str)], modules: &[(&str, &str)], succeeds: bool) -> Self {
+    pub fn per_atomic_group(source: &str, modules: &[(&str, &str)]) -> Self {
+        Self::run_chunks(&[("main", source)], modules, true, true)
+    }
+
+    fn run_chunks(
+        chunks: &[(&str, &str)],
+        modules: &[(&str, &str)],
+        succeeds: bool,
+        per_atomic_group: bool,
+    ) -> Self {
         let files: Vec<_> = modules
             .iter()
             .map(|(path, yaml)| (format!("main/{path}"), *yaml))
@@ -46,21 +259,55 @@ impl GraphFixture {
             .iter()
             .map(|(path, yaml)| (path.as_str(), *yaml))
             .collect();
-        let run = run_tree_graph_fixture(
-            &TreeFixture {
-                chunks,
-                module_roots: &[("main", "main")],
-                modules: &files,
-            },
-            &[],
-        );
-        assert_eq!(
-            run.result.status.success(),
-            succeeds,
-            "{}",
-            run.result.stderr
-        );
-        Self::from_tree_run(run, "modules/main")
+        let workspace = write_tree_fixture(&TreeFixture {
+            chunks,
+            module_roots: &[("main", "main")],
+            modules: &files,
+        });
+        let run = workspace.run(&["--graphs"]);
+        if !per_atomic_group {
+            assert_eq!(
+                run.result.status.success(),
+                succeeds,
+                "{}",
+                run.result.stderr
+            );
+        }
+        let fixture = Self::from_tree_run(run, "modules/main");
+        if per_atomic_group {
+            // This intermediate inline assignment may fail the gate. Its
+            // diagnostic graph still identifies the generated groups; the
+            // configured per-atom assignment below must then pass normally.
+            let baseline = fixture.dependency_graph();
+            let generated_groups = baseline
+                .atomic_graph
+                .nodes
+                .iter()
+                .filter(|group| {
+                    group
+                        .destinations
+                        .iter()
+                        .any(|destination| baseline.is_unassigned_or_entry(destination))
+                })
+                .count();
+            let config_path = fixture.root().join("spec_config.yaml");
+            let mut config: serde_yaml::Value =
+                serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+            config["unassigned_mode"]["main"] =
+                serde_yaml::from_str("{kind: per_atomic_group}").unwrap();
+            let mut priority: Vec<_> = baseline
+                .import_order
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            priority.extend(
+                (0..generated_groups).map(|index| format!("__auto/atomic_groups/{index:04}")),
+            );
+            config["import_order"]["main"] = serde_yaml::to_value(priority).unwrap();
+            fs::write(config_path, serde_yaml::to_string(&config).unwrap()).unwrap();
+            fixture.refresh_graph();
+        }
+        fixture
     }
 
     /// Wrap a tree run using a custom module root relative to its case directory.

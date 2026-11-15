@@ -105,6 +105,14 @@ fn assignment_analysis_from_facts(
     planned_modules: Vec<PlannedModule>,
     entry_destination: EntryDestination,
 ) -> AssignmentAnalysis {
+    assert_eq!(
+        entry_destination,
+        EntryDestination::after_planned_modules(planned_modules.len())
+    );
+    let priority: Vec<_> = planned_modules
+        .iter()
+        .map(|module| spec::ModulePath::parse(&module.id, "test_chunk").unwrap())
+        .collect();
     AssignmentAnalysis::build_with(
         "test_chunk".to_string(),
         ChunkId(0),
@@ -113,7 +121,7 @@ fn assignment_analysis_from_facts(
         BindingCatalogue::new(ChunkId(0), bindings),
         planned_modules,
         HashMap::new(),
-        entry_destination,
+        &priority,
     )
     .expect("test bindings belong to test_chunk")
 }
@@ -128,7 +136,7 @@ fn assignment_analysis_rejects_a_catalogue_from_another_chunk() {
         BindingCatalogue::new(ChunkId(0), HashMap::new()),
         Vec::new(),
         HashMap::new(),
-        EntryDestination::after_planned_modules(0),
+        &[],
     );
 
     assert!(result.is_err(), "wrong-chunk catalogues must be rejected");
@@ -502,7 +510,7 @@ fn validate_surfaces_linker_order_for_acyclic_spec() {
 }
 
 #[test]
-fn validate_returns_empty_linker_order_for_cyclic_spec() {
+fn validate_retains_the_supplied_traversal_for_cyclic_constraints() {
     // Genuine cross-module constraining cycle: `A = B + 1` and
     // `B = A + 1` both read at-init. After the relaxed-predicate
     // routing of the validator (docs/design.md "Realizability
@@ -514,10 +522,14 @@ fn validate_returns_empty_linker_order_for_cyclic_spec() {
     );
     let report = assignment_analysis.validate();
     assert!(!report.cycles.is_empty(), "expected a cycle in {report:?}",);
-    assert!(
-        report.linker_order.is_empty(),
-        "linker_order must be empty when the dep graph is cyclic; got {:?}",
-        report.linker_order,
+    assert_eq!(
+        report
+            .linker_order
+            .iter()
+            .map(|path| path.as_str())
+            .collect::<Vec<_>>(),
+        ["mod_1", "mod_0", "anon_residual_sentinel"],
+        "a rejected witness still has a concrete traversal; it is not a successful schedule-existence query",
     );
 }
 

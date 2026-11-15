@@ -75,8 +75,13 @@ def main() -> None:
     config["inputs"] = {"root": args.inputs_root, "js_list_path": args.js_list_path}
     config["browser_harness"] = {"asset_summary_path": f"{args.inputs_root}/asset-summary.json"}
     policies = config.setdefault("unassigned_mode", {})
+    import_orders = config.setdefault("import_order", {})
     for chunk_id in chunk_ids:
         policies.setdefault(chunk_id, {"kind": "inline_in_entry"})
+        # Every generated non-authored chunk is explicitly inline, so its
+        # emitted non-entry owner universe is empty. Preserve any priorities
+        # authored in the template for chunks with logical modules.
+        import_orders.setdefault(chunk_id, [])
     args.config.write_text(yaml.safe_dump(config, sort_keys=False))
 
 

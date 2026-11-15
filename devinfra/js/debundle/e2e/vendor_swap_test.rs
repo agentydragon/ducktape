@@ -1186,6 +1186,7 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
                 },
             },
         },
+        "import_order": { "static/app": ["pkg/util"] },
         "unassigned_mode": {
             "static/app": { "kind": "inline_in_entry" },
         },
@@ -1272,6 +1273,7 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
                 },
             },
         },
+        "import_order": { "static/app": ["flags"] },
         "unassigned_mode": {
             "static/app": { "kind": "inline_in_entry" },
         },
@@ -1794,6 +1796,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
                     },
                 },
             },
+            "import_order": { "static/app": ["helpers/observer"] },
             "unassigned_mode": {
                 "static/app": { "kind": "inline_in_entry" },
             },
@@ -1890,6 +1893,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
                     },
                 },
             },
+            "import_order": { "static/app": ["helpers/toolkit"] },
             "unassigned_mode": {
                 "static/app": { "kind": "inline_in_entry" },
             },
@@ -2115,6 +2119,7 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
                     },
                 },
             },
+            "import_order": { "static/app": ["callbacks/wrapped", "values/later"] },
             "unassigned_mode": { "static/app": { "kind": "inline_in_entry" } },
             "materialize_logical_modules": {
                 "prune_other_chunks": false,
@@ -2222,6 +2227,9 @@ fn partial_swap_rewrites_import_peeled_into_coarse_residual() {
                         "members": [{ "name": "App", "selector": { "binding": { "name": "App" } } }],
                     },
                 },
+            },
+            "import_order": {
+                "static/app": ["__auto/residual_groups/0000", "App"],
             },
             "unassigned_mode": { "static/app": { "kind": "coarse_atomic_groups" } },
             "materialize_logical_modules": {
@@ -3149,6 +3157,7 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
                     "mod_b": {"members": [member("B")]},
                 },
             },
+            "import_order": { "static/app": ["mod_a", "mod_b"] },
             "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
             "materialize_logical_modules": {
                 "prune_other_chunks": false,
@@ -3210,6 +3219,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorS
                 "startup": {"members": [member("prefix")]},
                 "values": {"members": [member("value"), member("read")]},
             }},
+            "import_order": { "static/app": ["startup", "values"] },
             "unassigned_mode": {"static/app": {"kind": "inline_in_entry"}},
             "materialize_logical_modules": {
                 "prune_other_chunks": false,
@@ -3324,6 +3334,7 @@ fn named_swap_cannot_capture_a_source_global() {
                     {"name": "read", "selector": {"binding": {"name": "read"}}}
                 ]}}
             });
+            spec["import_order"] = json!({ "static/app": ["read"] });
             spec["unassigned_mode"] = json!({"static/app": {"kind": "inline_in_entry"}});
             spec["materialize_logical_modules"] = json!({"prune_other_chunks": false});
         }

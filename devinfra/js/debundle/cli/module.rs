@@ -39,9 +39,7 @@ use yaml_edit::write_yaml_atomic;
 use crate::binding::load_module_docs;
 use crate::candidate_assessment::CandidateEffectAssessmentArgs;
 use crate::edit_gate::{GraphEditArgs, PostEditSpec, post_delete_spec, post_edit_spec_from_docs};
-use crate::outcome::{
-    GateOutcome, MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json,
-};
+use crate::outcome::{MutationAction, MutationOutcome, MutationVerb, emit_gate_rejection_json};
 
 #[derive(Debug, ClapArgs)]
 pub struct MergeArgs {
@@ -267,10 +265,15 @@ pub fn run_merge(
                 .iter()
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
+            let priority = gate.import_priority_for_spec(
+                &modules_root,
+                &post_edit_spec_from_docs(&docs, &BTreeSet::new())?,
+            )?;
             let assessment = context.assess(
                 stderr,
                 &merge.edit.modules_root,
                 &candidate_modules,
+                &priority,
                 analysis_engine_sha256,
             )?;
             (Some(docs), Some(assessment))
@@ -286,14 +289,17 @@ pub fn run_merge(
             post_merge_spec(&modules_root, &plans)
         })
     };
-    if let Err(err) = validation {
-        return Err(emit_gate_rejection_json(
-            output,
-            MutationVerb::Merge,
-            merge.edit.format,
-            err,
-        ));
-    }
+    let checked_order = match validation {
+        Ok(order) => order,
+        Err(err) => {
+            return Err(emit_gate_rejection_json(
+                output,
+                MutationVerb::Merge,
+                merge.edit.format,
+                err,
+            ));
+        }
+    };
     if !merge.edit.dry_run {
         // Every target is written before any source is deleted. Per-file writes
         // are atomic; this is not a crash-atomic multi-file transaction.
@@ -312,15 +318,17 @@ pub fn run_merge(
     } else {
         MutationAction::Applied
     };
+    let mut files_written = plans
+        .iter()
+        .map(|plan| plan.summary.target.display().to_string())
+        .collect();
+    checked_order.write(merge.edit.dry_run, &mut files_written)?;
     let outcome = MutationOutcome::ownership_edit(
         MutationVerb::Merge,
         action,
         gate.outcome(),
         effect_relocation_assessment.as_ref(),
-        plans
-            .iter()
-            .map(|p| p.summary.target.display().to_string())
-            .collect(),
+        files_written,
         plans
             .iter()
             .flat_map(|p| &p.summary.merged_sources)
@@ -695,14 +703,10 @@ fn plan_merge(modules_root: &Path, target: &Path, sources: &[&Path]) -> Result<M
 ///
 /// Validation contract (per docs/cli.md § "Validate-by-default"):
 ///
-/// * Default: refuse the deletion of a module that still has members
-///   or anonymous statements. For empty deletions, no gate run is
-///   needed — the assignment doesn't change.
-/// * `--force`: override the non-empty check. For non-empty
-///   deletions the realizability gate runs against the post-delete
-///   assignment (every binding previously owned by a deleted module
-///   falls back to residual); an `Unrealizable` verdict rejects the
-///   deletion.
+/// * Default: refuse deletion of a module with claims or annotations.
+///   Check the final owner universe and priority even for empty owners.
+/// * `--force`: allow claims to fall back to residual. The final assignment
+///   must still pass the gate.
 /// * `--dry-run`: run the gate but do not delete any file.
 /// * `--no-verify`: skip the gate; delete unconditionally.
 ///
@@ -742,9 +746,7 @@ pub fn run_delete(
         }
     }
 
-    // Classify each module: empty (no claims, annotations, or anonymous
-    // statements) vs non-empty. Required for the `--force` check and the
-    // empty-fast-path gate.
+    // Empty modules need no --force, but still change the checked owner universe.
     let mut non_empty: Vec<(PathBuf, usize, bool)> = Vec::new();
     for p in &paths_abs {
         let module = read_module(p)?;
@@ -784,10 +786,16 @@ pub fn run_delete(
                 .filter(|(module_path, _)| !delete_plan.module_paths.contains(*module_path))
                 .map(|(module_path, (_, doc))| (module_path.clone(), doc.clone()))
                 .collect();
+            let gate = args.edit.gate(source_context)?;
+            let priority = gate.import_priority_for_spec(
+                &args.edit.modules_root,
+                &post_edit_spec_from_docs(&docs, &delete_plan.module_paths)?,
+            )?;
             let assessment = context.assess(
                 stderr,
                 &args.edit.modules_root,
                 &candidate_modules,
+                &priority,
                 analysis_engine_sha256,
             )?;
             (
@@ -801,14 +809,9 @@ pub fn run_delete(
         };
     let delete_paths = effect_paths_abs.as_deref().unwrap_or(&paths_abs);
 
-    // Realizability gate. The all-empty fast path is a structural
-    // no-op (an empty module owns no bindings and contributes no
-    // anonymous statements, so removing it leaves the assignment
-    // unchanged). For non-empty `--force` deletions we run the full
-    // gate against the post-delete assignment.
-    let gate_outcome = if non_empty.is_empty() {
-        GateOutcome::NotRequired
-    } else {
+    // Even empty owners appear in entry fanout and the declared priority.
+    // Validate their removal and stage the priority update before deleting.
+    let (gate_outcome, checked_order) = {
         let gate = args.edit.gate(source_context)?;
         let validation = if let (Some(docs), Some(deleted_module_paths)) =
             (candidate_docs.as_ref(), deleted_module_paths.as_ref())
@@ -821,18 +824,23 @@ pub fn run_delete(
                 post_delete_spec(&args.edit.modules_root, delete_paths)
             })
         };
-        if let Err(err) = validation {
-            return Err(emit_gate_rejection_json(
-                output,
-                MutationVerb::Delete,
-                args.edit.format,
-                err,
-            ));
-        }
-        gate.outcome()
+        let checked_order = match validation {
+            Ok(order) => order,
+            Err(err) => {
+                return Err(emit_gate_rejection_json(
+                    output,
+                    MutationVerb::Delete,
+                    args.edit.format,
+                    err,
+                ));
+            }
+        };
+        (gate.outcome(), checked_order)
     };
 
     let summary = delete_modules(delete_paths, args.edit.dry_run)?;
+    let mut files_written = Vec::new();
+    checked_order.write(args.edit.dry_run, &mut files_written)?;
     let delete_outcome = DeleteOutcome {
         outcome: MutationOutcome::ownership_edit(
             MutationVerb::Delete,
@@ -843,7 +851,7 @@ pub fn run_delete(
             },
             gate_outcome,
             effect_relocation_assessment.as_ref(),
-            Vec::new(),
+            files_written,
             summary
                 .deleted
                 .iter()

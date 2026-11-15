@@ -20,8 +20,11 @@ fn modules_merge_accepts_existing_and_missing_targets() {
         ("merged/new_target", vec!["a.yaml", "b.yaml"]),
     ] {
         let fixture = GraphFixture::acyclic_pair();
+        let order_path = fixture.root().join("merge-order.json");
+        fs::write(&order_path, format!("[{target:?}]\n")).unwrap();
         let mut args = vec!["modules", "merge", "--target", target];
         args.extend(sources.iter().copied());
+        args.extend(["--import-order", order_path.to_str().unwrap()]);
         let before: Vec<_> = ["a.yaml", "b.yaml"]
             .into_iter()
             .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap()))
@@ -65,6 +68,28 @@ fn modules_delete_force_accepts_clean_deletion() {
     assert!(!fixture.modules.join("a.yaml").exists());
     assert!(fixture.modules.join("b.yaml").exists());
     fixture.assert_runs("2\n");
+}
+
+#[test]
+fn deleting_an_empty_owner_checks_and_persists_the_final_priority() {
+    let fixture = GraphFixture::new(
+        "const value = 3;\nconsole.log(value);\n",
+        &[("empty.yaml", "members: []\n")],
+    );
+    let config_path = fixture.root().join("spec_config.yaml");
+    let before = fs::read(&config_path).unwrap();
+    fixture.assert_success(&["modules", "delete", "empty", "--dry-run"]);
+    assert_eq!(fs::read(&config_path).unwrap(), before);
+    assert!(fixture.modules.join("empty.yaml").exists());
+
+    fixture.assert_rejected_unchanged_without_graph(&["modules", "delete", "empty"], &["--graph"]);
+    assert_eq!(fs::read(&config_path).unwrap(), before);
+
+    fixture.assert_success(&["modules", "delete", "empty"]);
+    assert!(!fixture.modules.join("empty.yaml").exists());
+    assert_ne!(fs::read(&config_path).unwrap(), before);
+    // Ordinary strict materialization would reject a stale [empty] priority.
+    fixture.assert_runs("3\n");
 }
 
 #[test]

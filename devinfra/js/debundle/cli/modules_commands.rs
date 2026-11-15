@@ -1,28 +1,22 @@
 //! `modules` command arguments, dispatch, and report presentation. Merge and
 //! delete planning/persistence live in `module`, separate from CLI rendering.
-use crate::binding::CandidateEffectAssessmentContext;
-use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
 use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
-use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
-use crate::outcome::{MutationVerb, emit_gate_rejection_json};
-use crate::source_unit_refine::{SourceUnitRefineOptions, run_source_unit_refine};
+use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
 use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
-use peel::{CommonArgs, OutputFormat, PlanWorkArgs};
+use peel::{CommonArgs, OutputFormat, ProposeArgs};
 use std::path::PathBuf;
 use std::{fs, io::Read};
 
 /// Args for `debundle modules ...`. Aggregates the existing
-/// comment-edit verb (in `cli::comment`) with the new
-/// `merge` / `delete` / `propose` verbs lifted from `module merge`
-/// and the exact placement search.
+/// comment-edit, merge, delete, propose, check, apply and list verbs.
 #[derive(Debug, ClapArgs)]
 pub(super) struct ModulesNs {
     #[command(subcommand)]
@@ -39,7 +33,6 @@ impl ModulesNs {
                 args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
             }
             ModulesNsCommand::Apply(args) => !args.dry_run,
-            ModulesNsCommand::Refine(args) => !args.dry_run,
             _ => false,
         }
     }
@@ -50,25 +43,19 @@ impl ModulesNs {
             ModulesNsCommand::Propose(args) => args.format,
             ModulesNsCommand::Check(args) => args.format,
             ModulesNsCommand::Apply(args) => args.format,
-            ModulesNsCommand::Refine(args) => args.format,
             _ => None,
         }
     }
     pub(super) fn verify_graph(
         &self,
         roots: &CurrentRoots,
-    ) -> Result<Option<VerifiedGraphSourceContext>> {
-        match &self.command {
+    ) -> Result<crate::VerifiedGraphContexts> {
+        if let ModulesNsCommand::Propose(args) = &self.command {
+            return verify_proposal_graphs(args, roots);
+        }
+        let context = match &self.command {
             ModulesNsCommand::Merge(args) => verify_edit(&args.edit, roots),
             ModulesNsCommand::Delete(args) => verify_edit(&args.edit, roots),
-            ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
-                &args.common.dependency_graph_path,
-                &args.common.modules_root,
-                args.source_root.as_deref(),
-                roots,
-                args.tree_config.as_deref(),
-            )
-            .map(Some),
             ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
@@ -85,17 +72,67 @@ impl ModulesNs {
                 args.tree_config.as_deref(),
             )
             .map(Some),
-            ModulesNsCommand::Refine(args) => crate::verify_graph_compatibility(
-                &args.graph,
-                &args.modules_root,
-                Some(&args.source_root),
-                roots,
-                args.tree_config.as_deref(),
-            )
-            .map(Some),
             _ => Ok(None),
-        }
+        }?;
+        Ok(crate::single_graph_context(context))
     }
+}
+
+fn verify_proposal_graphs(
+    args: &ProposeArgs,
+    roots: &CurrentRoots,
+) -> Result<crate::VerifiedGraphContexts> {
+    if let Some(graph) = &args.dependency_graph_path {
+        return crate::verify_graph_compatibility(
+            graph,
+            &args.modules_root,
+            args.source_root.as_deref(),
+            roots,
+            args.tree_config.as_deref(),
+        )
+        .map(|context| crate::single_graph_context(Some(context)));
+    }
+
+    let reports_root = args
+        .graphs_root
+        .as_deref()
+        .context("one of --graph or --graphs is required")?;
+    let graphs = discover_graphs(reports_root)?;
+
+    // Check current input provenance for the entire corpus before producing
+    // any report. Out-of-scope chunks still need current graph/source evidence.
+    for graph in graphs.values() {
+        crate::verify_graph_compatibility_with_scope(
+            graph,
+            Some(&args.modules_root),
+            args.source_root.as_deref(),
+            roots,
+            crate::GraphCompatibilityScope::ExactSourceUnit,
+        )?;
+    }
+
+    let config = args
+        .tree_config
+        .as_deref()
+        .context("--graphs requires --tree-config")?;
+    let scope = scope_graphs_to_tree(&graphs, config)?;
+    let mut contexts = crate::VerifiedGraphContexts::new();
+    for (chunk_id, graph) in scope.configured {
+        let context = crate::verify_graph_compatibility(
+            &graph,
+            &args.modules_root,
+            args.source_root.as_deref(),
+            roots,
+            Some(config),
+        )?;
+        ensure!(
+            context.chunk_id() == chunk_id,
+            "configured graph chunk identity changed while verifying {}",
+            graph.display()
+        );
+        contexts.insert(chunk_id, context);
+    }
+    Ok(contexts)
 }
 
 fn verify_edit(
@@ -141,19 +178,18 @@ enum ModulesNsCommand {
     /// "Non-empty" means any `members:`, `source_matches:`,
     /// `annotations:`, or `anonymous_statements:`. Multiple paths delete
     /// atomically: every path is validated up front; if any check fails,
-    /// nothing is deleted. All-empty deletions cannot change the
-    /// assignment, so the gate is a no-op; `--force` deletions of
-    /// non-empty modules run the realizability gate against the
-    /// post-delete spec (requires `--graph` unless `--no-verify`).
+    /// nothing is deleted. Every deletion checks the final owner universe
+    /// and import priority, including empty owners (requires `--graph`
+    /// unless `--no-verify`). `--force` allows claims to return to residual.
     /// `--dry-run --analysis` additionally reports statement-order
     /// commutation for the exact post-delete candidate. It requires the full
     /// tree transform context and does not change the legacy gate.
     Delete(Box<DeleteArgs>),
-    /// Find a realizable residual placement using exact constructive search.
-    ///
-    /// Read-only. The default exact strategy returns a snapshot-bound plan or
-    /// a scoped search outcome; check and preview the plan before applying it.
-    Propose(PlanWorkArgs),
+    /// Construct an entry-residual peel into one fresh owner appended to the
+    /// supplied priority, preserving existing assignments and their DFS trace.
+    /// Returns a snapshot-bound plan or a scoped outcome; check and preview
+    /// the plan before applying it.
+    Propose(ProposeArgs),
     /// Check an explicit source-unit destination batch against the complete
     /// accepted assignment. Omitted units retain their owners; writes no spec.
     Check(ModulesCheckArgs),
@@ -164,19 +200,6 @@ enum ModulesNsCommand {
     /// the exact candidate using the full tree transform context; it does not
     /// change the realizability gate.
     Apply(ModulesApplyArgs),
-    /// Move reviewed existing source-unit claims as one validated batch.
-    ///
-    /// The JSON batch contains `{ "unit_id": "...", "module": "..." }`
-    /// rows. Omitted source units keep their current module. This command moves
-    /// existing selectors and metadata without synthesizing selectors, then
-    /// resolves the entire scoped spec again and requires the complete source-unit
-    /// assignment to match the requested assignment before running the normal
-    /// realizability and atomic-group gates. Import/export scaffolding and
-    /// residual source units cannot be moved. Module comments and notes stay with
-    /// their original YAML module. `--dry-run --analysis` additionally reports
-    /// statement-order commutation for the exact candidate; it requires the full
-    /// tree transform context and does not change the gate verdict.
-    Refine(ModulesRefineArgs),
     /// List all modules in the spec with summary stats.
     ///
     /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
@@ -194,6 +217,10 @@ struct ModulesCheckArgs {
     /// Saved exact plan, including graph/program identity and logical destinations.
     #[arg(long, conflicts_with = "batch")]
     plan: Option<PathBuf>,
+    /// Complete JSON array of nonentry module paths for an explicit batch that
+    /// changes the owner universe or global import priority.
+    #[arg(long = "import-order", conflicts_with = "plan")]
+    import_order: Option<PathBuf>,
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
@@ -215,13 +242,20 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             .expect("clap requires a batch or plan");
         fs::read(path).with_context(|| format!("reading {}", path.display()))?
     };
-    let mut changes: Vec<SourceUnitAssignment> = if args.plan.is_some() {
-        let plan: AssignmentPlan = serde_json::from_slice(&bytes)?;
-        plan.verify(&args.common.dependency_graph_path)?;
-        plan.changes
-    } else {
-        serde_json::from_slice(&bytes)?
-    };
+    let (mut changes, import_order): (Vec<SourceUnitAssignment>, Vec<spec::ModulePath>) =
+        if args.plan.is_some() {
+            let plan: AssignmentPlan = serde_json::from_slice(&bytes)?;
+            plan.verify(&args.common.dependency_graph_path)?;
+            (plan.changes, plan.import_order)
+        } else {
+            let import_order = if let Some(path) = &args.import_order {
+                serde_json::from_slice(&fs::read(path)?)
+                    .with_context(|| format!("parsing import order {}", path.display()))?
+            } else {
+                Vec::new()
+            };
+            (serde_json::from_slice(&bytes)?, import_order)
+        };
     let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     if args.plan.is_none()
         && let Some(config) = &args.tree_config
@@ -232,9 +266,14 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             change.module = scope.logical_destination(&physical)?.to_owned();
         }
     }
-    let problem = AssignmentProblem::new(&input)?;
+    let problem = AssignmentProblem::prepare(&input)?;
+    let import_order = if args.plan.is_some() || args.import_order.is_some() {
+        import_order
+    } else {
+        input.report().import_order.clone()
+    };
     let candidate = problem.candidate(&changes)?;
-    let validation = problem.validate(&candidate)?;
+    let validation = problem.validate_with_priority(&candidate, &import_order)?;
     for change in &mut changes {
         let unit = input
             .source_unit_id(&change.unit_id)
@@ -250,6 +289,7 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
     struct CheckReport {
         accepted: bool,
         changes: Vec<SourceUnitAssignment>,
+        import_order: Vec<spec::ModulePath>,
         residual_units_extracted: usize,
         existing_units_moved: usize,
         validation: gate::AssignmentReport,
@@ -261,11 +301,13 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             Some(AssignmentPlan {
                 snapshot: AssignmentSnapshot::read(&args.common.dependency_graph_path)?,
                 changes: changes.clone(),
+                import_order: import_order.clone(),
             })
         } else {
             None
         },
         changes,
+        import_order,
         residual_units_extracted: problem.residual_gain(&candidate),
         existing_units_moved: problem.existing_units_moved(&candidate),
         validation: validation.report,
@@ -287,40 +329,22 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
     Ok(())
 }
 
-fn run_modules_propose(args: &PlanWorkArgs, output: &mut dyn std::io::Write) -> Result<()> {
-    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
-    let problem = AssignmentProblem::new(&input)?;
-    let mut into = args.into.clone();
-    if let Some(config) = &args.tree_config {
-        let scope = spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
-        for destination in &mut into {
-            let physical = scope.canonical_destination(destination)?;
-            *destination = scope.logical_destination(&physical)?.to_string();
-        }
+fn run_assignment_search(
+    args: &ProposeArgs,
+    stderr: &mut (dyn std::io::Write + Send),
+    source_contexts: &crate::VerifiedGraphContexts,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
+    if let Some(reports_root) = &args.graphs_root {
+        return run_graph_corpus_search(args, reports_root, stderr, source_contexts, output);
     }
-    let options = peel::search::SearchOptions {
-        destinations: args.destinations.unwrap_or_default(),
-        into,
-        required: args.required.clone(),
-        only_units: args
-            .only_units
-            .as_ref()
-            .map(|path| -> Result<Vec<String>> { Ok(serde_json::from_slice(&fs::read(path)?)?) })
-            .transpose()?,
-        max_new_modules: args.max_new_modules,
-        max_checks: args.max_checks,
-        time_budget: args.time_budget_ms.map(std::time::Duration::from_millis),
-    };
-    let mut report = peel::search::search(&problem, &options)?;
-    let incomplete = report.status == peel::search::SearchStatus::Incomplete;
-    let plan = if report.status == peel::search::SearchStatus::Found {
-        Some(AssignmentPlan {
-            snapshot: AssignmentSnapshot::read(&args.common.dependency_graph_path)?,
-            changes: std::mem::take(&mut report.changes),
-        })
-    } else {
-        None
-    };
+
+    let graph_path = args
+        .dependency_graph_path
+        .as_deref()
+        .context("one of --graph or --graphs is required")?;
+    let (_, report, plan) =
+        search_one_graph(args, graph_path, stderr, source_contexts.values().next())?;
     #[derive(serde::Serialize)]
     struct CompleteReport<'a> {
         #[serde(flatten)]
@@ -339,49 +363,238 @@ fn run_modules_propose(args: &PlanWorkArgs, output: &mut dyn std::io::Write) -> 
             text.push('\n');
             Ok(())
         },
-        "writing placement search",
+        "writing complete search",
     )?;
-    ensure!(
-        !incomplete,
-        "assignment search incomplete: explicit budget exhausted"
-    );
     Ok(())
 }
 
-#[derive(Debug, ClapArgs)]
-struct ModulesRefineArgs {
-    /// JSON array of reviewed source-unit IDs and extensionless destination module IDs; `-` reads stdin.
-    #[arg(long)]
-    batch: String,
+fn search_one_graph(
+    args: &ProposeArgs,
+    graph_path: &std::path::Path,
+    stderr: &mut (dyn std::io::Write + Send),
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<(String, peel::search::SearchReport, Option<AssignmentPlan>)> {
+    let input = analysis::DependencyGraphInput::read(graph_path)?;
+    let chunk_id = input.report().chunk_id.clone();
+    let problem = AssignmentProblem::new(&input)?;
+    let scope = args
+        .tree_config
+        .as_ref()
+        .map(|config| spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id))
+        .transpose()?;
+    let mut into = args.into.clone();
+    if scope.is_some() {
+        for destination in &mut into {
+            *destination = spec::ModulePath::parse(destination, "")?.to_string();
+        }
+    }
+    let options = peel::search::SearchOptions {
+        into,
+        required: args.required.clone(),
+        only_units: args
+            .only_units
+            .as_ref()
+            .map(|path| -> Result<Vec<String>> { Ok(serde_json::from_slice(&fs::read(path)?)?) })
+            .transpose()?,
+    };
+    let mut report = peel::search::search(&problem, &options)?;
+    if report.status == peel::search::SearchStatus::Found {
+        if let Some(source_root) = args.source_root.as_deref() {
+            let context = source_context.filter(|context| context.chunk_id() == chunk_id);
+            // Compatibility verification accepts the exact configured chunk
+            // subtree as --modules, but the source-unit resolver needs the
+            // full physical tree root to interpret ModuleTreeScope roots.
+            let modules_root = args
+                .tree_config
+                .as_ref()
+                .and(context)
+                .and_then(VerifiedGraphSourceContext::modules_root)
+                .unwrap_or(&args.modules_root);
+            let mut preflight_assignments = report.changes.clone();
+            if let Some(scope) = &scope {
+                for assignment in &mut preflight_assignments {
+                    let logical = spec::ModulePath::parse(&assignment.module, "")?;
+                    assignment.module = scope_destination(scope, &logical)?.to_string();
+                }
+            }
+            if let Err(error) = crate::source_unit_apply::run_source_unit_apply(
+                stderr,
+                modules_root,
+                graph_path,
+                source_root,
+                context,
+                crate::source_unit_apply::SourceUnitApplyOptions {
+                    tree_config: args.tree_config.as_deref(),
+                    assignments: preflight_assignments,
+                    import_order: Some(report.import_order.clone()),
+                    readable_names: Default::default(),
+                    selector_overrides: Default::default(),
+                    dry_run: true,
+                    effect_assessment_context: None,
+                },
+            ) {
+                report.status = peel::search::SearchStatus::InventoryOnly;
+                report.blockers.push(format!(
+                    "selected closure cannot be realized by the source-unit writer: {error:#}"
+                ));
+            }
+        } else {
+            report.status = peel::search::SearchStatus::InventoryOnly;
+            report.blockers.push(
+                "provide --source-root to preflight selector synthesis before receiving an executable plan".into(),
+            );
+        }
+    }
+    let plan = if report.status == peel::search::SearchStatus::Found {
+        Some(AssignmentPlan {
+            snapshot: AssignmentSnapshot::read(graph_path)?,
+            changes: std::mem::take(&mut report.changes),
+            import_order: std::mem::take(&mut report.import_order),
+        })
+    } else {
+        None
+    };
+    Ok((chunk_id, report, plan))
+}
 
-    /// Modules tree root.
-    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
-    modules_root: PathBuf,
+/// Map a chunk-logical plan destination to the physical path under its
+/// configured module-tree root for source-writer preflight.
+fn scope_destination(
+    scope: &spec_tree::ModuleTreeScope,
+    destination: &spec::ModulePath,
+) -> Result<spec::ModulePath> {
+    if scope
+        .roots()
+        .iter()
+        .any(|root| std::path::Path::new(destination.as_str()).starts_with(root))
+    {
+        return Ok(destination.clone());
+    }
+    let root = scope
+        .roots()
+        .first()
+        .context("tree config has no module root for proposal destination")?;
+    let physical = root
+        .join(destination.as_str())
+        .to_str()
+        .context("module destination is not UTF-8")?
+        .to_string();
+    Ok(spec::ModulePath::parse(&physical, "")?)
+}
 
-    /// Current dependency graph used to resolve selectors and check the complete result.
-    #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
-    graph: PathBuf,
+fn run_graph_corpus_search(
+    args: &ProposeArgs,
+    reports_root: &std::path::Path,
+    stderr: &mut (dyn std::io::Write + Send),
+    source_contexts: &crate::VerifiedGraphContexts,
+    output: &mut dyn std::io::Write,
+) -> Result<()> {
+    use serde::Serialize;
 
-    /// Root for the chunk source used by existing selectors.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    source_root: PathBuf,
+    #[derive(Clone, Copy, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum CorpusStatus {
+        Found,
+        InventoryOnly,
+        UnsupportedResidualRouting,
+        ExhaustedNoPeel,
+    }
 
-    /// Tree config that scopes this graph-backed edit to its chunk's module roots.
-    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
-    tree_config: Option<PathBuf>,
+    #[derive(Serialize)]
+    struct ChunkResult {
+        chunk_id: String,
+        graph: PathBuf,
+        search: peel::search::SearchReport,
+        plan: Option<AssignmentPlan>,
+    }
 
-    /// Opt-in report-only relocation assessment using the complete transform
-    /// context and a verified staged analysis artifact. Requires --dry-run.
-    #[command(flatten)]
-    effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
+    #[derive(Serialize)]
+    struct CorpusScope {
+        evaluated: &'static str,
+        configured_chunks: Vec<String>,
+        skipped_unconfigured_graphs: Vec<crate::module_proposals::UnconfiguredGraph>,
+    }
 
-    /// Validate the complete edit without writing module YAML.
-    #[arg(long)]
-    dry_run: bool,
+    #[derive(Serialize)]
+    struct CorpusReport {
+        status: CorpusStatus,
+        scope: CorpusScope,
+        chunks: Vec<ChunkResult>,
+    }
 
-    /// Output format. Default text on tty, JSON on pipe.
-    #[arg(long, value_enum)]
-    format: Option<OutputFormat>,
+    let graphs = discover_graphs(reports_root)?;
+    let config = args
+        .tree_config
+        .as_deref()
+        .context("--graphs requires --tree-config")?;
+    let GraphCorpusScope {
+        configured,
+        skipped_unconfigured,
+    } = scope_graphs_to_tree(&graphs, config)?;
+
+    let mut chunks = Vec::with_capacity(configured.len());
+    for (chunk_id, graph) in configured {
+        let context = source_contexts.get(&chunk_id).with_context(|| {
+            format!("missing verified source context for configured chunk {chunk_id}")
+        })?;
+        let (graph_chunk_id, search, plan) = search_one_graph(args, &graph, stderr, Some(context))?;
+        ensure!(
+            search.scope.required_units.is_empty(),
+            "multi-graph proposal cannot carry required source-unit IDs"
+        );
+        ensure!(
+            graph_chunk_id == chunk_id,
+            "graph header chunk ID changed while reading {}",
+            graph.display()
+        );
+        chunks.push(ChunkResult {
+            chunk_id,
+            graph,
+            search,
+            plan,
+        });
+    }
+
+    let status = if chunks
+        .iter()
+        .any(|chunk| chunk.search.status == peel::search::SearchStatus::Found)
+    {
+        CorpusStatus::Found
+    } else if chunks
+        .iter()
+        .any(|chunk| chunk.search.status == peel::search::SearchStatus::InventoryOnly)
+    {
+        CorpusStatus::InventoryOnly
+    } else if chunks
+        .iter()
+        .any(|chunk| chunk.search.status == peel::search::SearchStatus::UnsupportedResidualRouting)
+    {
+        CorpusStatus::UnsupportedResidualRouting
+    } else {
+        CorpusStatus::ExhaustedNoPeel
+    };
+    let configured_chunks = chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect();
+    let report = CorpusReport {
+        status,
+        scope: CorpusScope {
+            evaluated: "configured_chunks_only",
+            configured_chunks,
+            skipped_unconfigured_graphs: skipped_unconfigured,
+        },
+        chunks,
+    };
+    emit_report(
+        output,
+        args.format,
+        &report,
+        |report, text| {
+            text.push_str(&serde_json::to_string_pretty(report)?);
+            text.push('\n');
+            Ok(())
+        },
+        "writing graph corpus search",
+    )?;
+    Ok(())
 }
 
 /// Args for `debundle modules list`.
@@ -515,86 +728,6 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
     }
 }
 
-fn run_modules_refine(
-    output: &mut dyn std::io::Write,
-    stderr: &mut (dyn std::io::Write + Send),
-    args: ModulesRefineArgs,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    analysis_engine_sha256: &'static str,
-) -> Result<()> {
-    let text = if args.batch == "-" {
-        let mut text = String::new();
-        std::io::stdin().read_to_string(&mut text)?;
-        text
-    } else {
-        fs::read_to_string(&args.batch).with_context(|| format!("reading {}", args.batch))?
-    };
-    let assignments: Vec<SourceUnitAssignment> =
-        serde_json::from_str(&text).context("parsing modules refine batch")?;
-    let edit = GraphEditArgs {
-        modules_root: args.modules_root.clone(),
-        dry_run: args.dry_run,
-        no_verify: false,
-        dependency_graph_path: Some(args.graph.clone()),
-        source_root: Some(args.source_root.clone()),
-        format: args.format,
-    };
-    let candidate_context =
-        args.effect_assessment
-            .resolve(&edit, source_context, args.tree_config.as_deref())?;
-    let effect_assessment_context =
-        candidate_context
-            .as_ref()
-            .map(|context| CandidateEffectAssessmentContext {
-                transform: &context.transform,
-                analysis: pipeline::AnalysisArtifactInput {
-                    path: &context.analysis_path,
-                    analysis_engine_sha256,
-                },
-                graph_source: context.graph_source,
-            });
-    let outcome = match run_source_unit_refine(
-        stderr,
-        &args.modules_root,
-        &args.graph,
-        &args.source_root,
-        source_context,
-        SourceUnitRefineOptions {
-            tree_config: args.tree_config.as_deref(),
-            assignments,
-            verb: MutationVerb::Refine,
-            readable_names: Default::default(),
-            dry_run: args.dry_run,
-            effect_assessment_context,
-        },
-    ) {
-        Ok(outcome) => outcome,
-        Err(err) => {
-            return Err(emit_gate_rejection_json(
-                output,
-                MutationVerb::Refine,
-                args.format,
-                err,
-            ));
-        }
-    };
-    outcome.outcome.warn_if_unassessed_write(stderr)?;
-    match OutputFormat::resolve(args.format) {
-        OutputFormat::Text => command_output::write_line(
-            output,
-            format_args!(
-                "{}: {} source_unit(s), {} file(s) written, {} file(s) deleted",
-                outcome.outcome.action,
-                outcome.source_units_reassigned,
-                outcome.outcome.files_written.len(),
-                outcome.outcome.files_deleted.len(),
-            ),
-        )?,
-        format => command_output::write_report(&outcome, format, output, |_, _| Ok(()))?,
-    }
-    Ok(())
-}
-
 // --- Text renderers -------------------------------------------------
 //
 // Each query command needs a text rendering for tty output. v1 keeps
@@ -603,10 +736,11 @@ fn run_modules_refine(
 pub(super) fn run(
     stderr: &mut (dyn std::io::Write + Send),
     args: ModulesNs,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    source_contexts: &crate::VerifiedGraphContexts,
     analysis_engine_sha256: &'static str,
     output: &mut dyn std::io::Write,
 ) -> Result<()> {
+    let source_context = source_contexts.values().next();
     match args.command {
         ModulesNsCommand::Comment(c) => run_module_comment_cmd(output, c),
         ModulesNsCommand::Merge(m) => {
@@ -615,13 +749,10 @@ pub(super) fn run(
         ModulesNsCommand::Delete(d) => {
             run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
         }
-        ModulesNsCommand::Propose(p) => run_modules_propose(&p, output),
+        ModulesNsCommand::Propose(p) => run_assignment_search(&p, stderr, source_contexts, output),
         ModulesNsCommand::Check(args) => run_modules_check(args, output),
         ModulesNsCommand::Apply(args) => {
             run_modules_apply(output, stderr, args, source_context, analysis_engine_sha256)
-        }
-        ModulesNsCommand::Refine(args) => {
-            run_modules_refine(output, stderr, args, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::List(args) => run_modules_list(args, output),
     }

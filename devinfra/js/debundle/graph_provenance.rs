@@ -112,14 +112,15 @@ pub fn program_graph_path(graph_path: &Path, program_graph: &Path) -> PathBuf {
         .join(program_graph)
 }
 
-fn read_gzip_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
-    report_io::read_json_gzip(path).with_context(|| format!("parsing header of {}", path.display()))
+fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
+    report_io::read_json_report(path)
+        .with_context(|| format!("parsing header of {}", path.display()))
 }
 
 pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let graph: ChunkGraphHeader = read_gzip_json_header(path)?;
+    let graph: ChunkGraphHeader = read_json_header(path)?;
     let program: ProgramGraphHeader =
-        read_gzip_json_header(&program_graph_path(path, &graph.program_graph))?;
+        read_json_header(&program_graph_path(path, &graph.program_graph))?;
     Ok(GraphHeader {
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,
@@ -145,6 +146,8 @@ pub struct VerifiedGraphSourceContext {
     modules_root: Option<PathBuf>,
     sha256: String,
     source: Arc<str>,
+    tree_config: Option<Arc<[u8]>>,
+    tree_config_path: Option<PathBuf>,
 }
 
 impl VerifiedGraphSourceContext {
@@ -166,6 +169,16 @@ impl VerifiedGraphSourceContext {
     /// can use this root to interpret the configured chunk scope consistently.
     pub fn modules_root(&self) -> Option<&Path> {
         self.modules_root.as_deref()
+    }
+
+    /// Authoring configuration retained from the same fingerprint-verified read.
+    pub fn tree_config(&self) -> Option<&[u8]> {
+        self.tree_config.as_deref()
+    }
+
+    /// Physical path corresponding to the retained, fingerprint-verified bytes.
+    pub fn tree_config_path(&self) -> Option<&Path> {
+        self.tree_config_path.as_deref()
     }
 
     pub fn sha256(&self) -> &str {
@@ -923,6 +936,7 @@ impl GraphProvenance {
             None
         };
         let mut verified_source_bytes = None;
+        let mut verified_tree_config = None;
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
             if !dir.is_dir() {
@@ -975,6 +989,9 @@ impl GraphProvenance {
                 }
                 Err(err) => return Err(err).with_context(|| format!("reading {}", path.display())),
             };
+            if file.root == InputRoot::Spec && self.config_path.as_ref() == Some(&file.path) {
+                verified_tree_config = contents.as_deref().map(Arc::from);
+            }
             if source.is_some_and(|(source, _)| {
                 source.input_file.root == file.root && source.input_file.path == file.path
             }) {
@@ -1035,6 +1052,14 @@ impl GraphProvenance {
             source_path: source.source_path.clone(),
             input_file: absolute(&input_file)?,
             modules_root,
+            tree_config: verified_tree_config,
+            tree_config_path: self
+                .config_path
+                .as_deref()
+                .map(|path| self.resolve(&InputRoot::Spec, path, current))
+                .transpose()?
+                .map(|path| absolute(&path))
+                .transpose()?,
             sha256: source.sha256.clone(),
             source: Arc::from(
                 String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,

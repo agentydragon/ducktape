@@ -6,9 +6,9 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, TreeFixture, assert_entry_output, debundler_path, logical_module,
-    node_module_evaluation_order, run_fixture_with_graphs, run_tree_graph_fixture, tree_spec_args,
-    unassigned_mode_inline,
+    FixtureOpts, Member, TreeFixture, assert_entry_output, assert_node_output, debundler_path,
+    logical_module, node_module_evaluation_order, read_tree, run_fixture_with_graphs,
+    run_tree_graph_fixture, tree_spec_args, unassigned_mode_inline,
 };
 use tempfile::TempDir;
 
@@ -58,7 +58,7 @@ impl AliasGraphFixture {
         let config = root.path().join("spec_config.yaml");
         fs::write(
             &config,
-            "main_chunk_id: provider\nmodule_roots:\n  provider: provider\ninputs:\n  root: snapshot\n  js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n  provider: { kind: inline_in_entry }\n",
+            "main_chunk_id: provider\nmodule_roots:\n  provider: provider\ninputs:\n  root: snapshot\n  js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n  provider: { kind: inline_in_entry }\nimport_order:\n  provider: [provider]\n",
         )
         .unwrap();
         let vendor_marks = root.path().join("vendor_marks.yaml");
@@ -108,6 +108,11 @@ impl AliasGraphFixture {
         if let Some(graph_source_root) = graph_source_root {
             command.arg("--graph-source-root").arg(graph_source_root);
         }
+        if args.starts_with(&["modules", "propose"]) {
+            command
+                .arg("--tree-config")
+                .arg(self._root.path().join("spec_config.yaml"));
+        }
         debundle_e2e_support::process::debundle_output(&mut command)
             .unwrap_or_else(|err| panic!("{err}"))
     }
@@ -139,23 +144,21 @@ fn assert_graph_mismatch(output: &std::process::Output, expected: &str) {
 fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     let fixture = AliasGraphFixture::new();
 
-    // The authored source_match is resolved by coverage and exact placement queries.
+    // The authored source_match is resolved by coverage and proposal queries.
     for output in [
         fixture.command(&["coverage"], None, None),
         fixture.command(&["coverage"], Some(&fixture.source_root), None),
     ] {
         let report = query_json(&output);
-        assert!(report["rows"].as_array().is_some());
+        assert_eq!(
+            report["rows"][0]["requested_binding_ids"],
+            serde_json::json!(["value"])
+        );
     }
     let proposal =
         query_json(&fixture.command(&["modules", "propose"], Some(&fixture.source_root), None));
     assert_eq!(proposal["status"], "found", "{proposal}");
     assert!(proposal["plan"].is_object(), "{proposal}");
-    let coverage = query_json(&fixture.command(&["coverage"], None, None));
-    assert_eq!(
-        coverage["rows"][0]["requested_binding_ids"],
-        serde_json::json!(["value"])
-    );
 
     let describe =
         query_json(&fixture.command(&["describe", "value"], Some(&fixture.source_root), None));
@@ -168,12 +171,68 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
             .iter()
             .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
     );
+
+    let plan = fixture._root.path().join("peel.json");
+    fs::write(&plan, serde_json::to_vec(&proposal["plan"]).unwrap()).unwrap();
+    let config = fixture._root.path().join("spec_config.yaml");
+    let before = read_tree(&fixture.modules);
+    let config_before = fs::read(&config).unwrap();
+    for mut args in [
+        vec!["modules", "check"],
+        vec!["modules", "apply", "--dry-run"],
+    ] {
+        args.extend([
+            "--plan",
+            plan.to_str().unwrap(),
+            "--tree-config",
+            config.to_str().unwrap(),
+        ]);
+        assert_success(&fixture.command(&args, Some(&fixture.source_root), None));
+        assert_eq!(read_tree(&fixture.modules), before);
+        assert_eq!(fs::read(&config).unwrap(), config_before);
+    }
+    assert_success(&fixture.command(
+        &[
+            "modules",
+            "apply",
+            "--plan",
+            plan.to_str().unwrap(),
+            "--tree-config",
+            config.to_str().unwrap(),
+        ],
+        Some(&fixture.source_root),
+        None,
+    ));
+    let out_root = fixture._root.path().join("after-peel");
+    let materialized = debundle_e2e_support::process::debundle_output(
+        Command::new(debundler_path())
+            .arg("run")
+            .args(tree_spec_args(fixture._root.path()))
+            .arg("--out-root")
+            .arg(&out_root),
+    )
+    .unwrap();
+    assert_success(&materialized);
+    assert_node_output(&out_root.join("app/provider/entry.js"), "42\n", "");
 }
 
 #[test]
 fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
     let fixture = AliasGraphFixture::new();
-    let output = fixture.command(&["bindings", "assign", "value:next"], None, None);
+    let import_order = fixture._root.path().join("import-order.json");
+    fs::write(&import_order, serde_json::to_vec(&["next"]).unwrap()).unwrap();
+    let import_order = import_order.to_str().unwrap();
+    let output = fixture.command(
+        &[
+            "bindings",
+            "assign",
+            "value:next",
+            "--import-order",
+            import_order,
+        ],
+        None,
+        None,
+    );
     assert_success(&output);
     assert!(fixture.modules.join("next.yaml").is_file());
 
@@ -278,10 +337,10 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
 
 #[test]
 fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        "const answer = 42; console.log(answer);\n",
-        vec![],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new("const answer = 42; console.log(answer);\n", vec![])
+            .with_import_order(&["residual"]),
+    );
     let root = fixture.out_root.parent().unwrap().parent().unwrap();
     let source_root = root.join("snapshot");
     let source = source_root.join(format!("{}.js", fixture.chunk_id));
@@ -790,6 +849,7 @@ console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
                 logical_module("b", &[Member::new("b")]),
             ],
         )
+        .with_import_order(&["a", "b", "hub"])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_entry_output(&fixture, "true true true\n");
@@ -802,13 +862,33 @@ console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
     let mut owners = priority.clone();
     owners.sort();
     assert_eq!(owners, ["a", "b", "hub"]);
-    // Every DFS of this cycle discovers all three owners on one branch.
-    // Their actual Node completion order must reverse the captured discovery.
-    let expected: Vec<_> = priority
-        .into_iter()
-        .rev()
-        .chain(std::iter::once("entry".to_string()))
-        .collect();
+    // Independent DFS over this fixture's source-known import edges. This
+    // also covers a supplied priority that differs from discovery order.
+    fn visit(
+        module: &str,
+        priority: &[String],
+        seen: &mut std::collections::BTreeSet<String>,
+        completed: &mut Vec<String>,
+    ) {
+        if !seen.insert(module.to_owned()) {
+            return;
+        }
+        let targets: &[&str] = match module {
+            "entry" => &["a", "b", "hub"],
+            "hub" => &["a", "b"],
+            "a" => &["b", "hub"],
+            "b" => &["hub"],
+            _ => panic!("unexpected fixture module {module}"),
+        };
+        let mut targets = targets.to_vec();
+        targets.sort_by_key(|target| priority.iter().position(|owner| owner == target).unwrap());
+        for target in targets {
+            visit(target, priority, seen, completed);
+        }
+        completed.push(module.to_owned());
+    }
+    let mut expected = Vec::new();
+    visit("entry", &priority, &mut Default::default(), &mut expected);
     assert_eq!(
         node_module_evaluation_order(&fixture, &["a", "b", "hub", "entry"]),
         expected,

@@ -10,7 +10,11 @@ use thiserror::Error;
 
 use crate::esm_import_order::EsmImportOrder;
 
+// General schedule existence is used only by bounded test oracles. Production
+// callers supply a priority and verify it with `from_priority`.
+#[cfg(test)]
 mod construct;
+#[cfg(test)]
 pub use construct::ScheduleObstruction;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -545,7 +549,7 @@ mod tests {
         }
     }
 
-    fn raw_schedule_exists(
+    pub(super) fn raw_schedule_exists(
         entry: ModuleId,
         successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
         nodes: &BTreeSet<ModuleId>,

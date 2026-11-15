@@ -20,7 +20,7 @@ Saved plans bind their starting graph/program context. Do not replay a worker's
 old plan after another edit or graph refresh, or concatenate individually
 accepted plans without checking the combined assignment. Resolve the receiving
 spec and run the complete check plus normal regeneration and relevant behavior
-for the actual integrated result; see [exact plans](references/docs/module_search.md).
+for the actual integrated result; see [exact plans](references/docs/module_proposals.md).
 
 Return final SHA, per-branch landed/failed/skipped status, conflicts resolved,
 actual gate/runtime results, and follow-up assignments. Preserve worker intent;

@@ -352,5 +352,5 @@ not only a microbenchmark win.
 
 Always record the compilation mode with a selector timing. A `fastbuild` binary
 measured 5.1× slower than `-c opt` on the same `match-selector` probe, and 35×
-slower on a historical proposer fixture — `fastbuild` numbers are not
+slower on a historical large-graph fixture — `fastbuild` numbers are not
 comparable to anything.

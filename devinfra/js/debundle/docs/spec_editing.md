@@ -1,7 +1,7 @@
 # Editing the spec: modules and bindings
 
-Planning, moving, merging, and renaming modules and bindings; `comment:` fields.
-Operational base: `cli.md`.
+Inspecting, proposing, moving, merging, and renaming modules and bindings;
+`comment:` fields. Operational base: `cli.md`.
 
 ## References to logical members
 
@@ -9,7 +9,7 @@ Operational base: `cli.md`.
 names an existing logical member by `{module, name}`. Its key follows the
 logical module path and readable member name, so an owner rename changes the
 reference. `bindings rename`, `bindings assign`, `bindings unassign`,
-`modules merge`, `modules refine`, and `modules delete --force` edit the
+`modules merge`, `modules apply`, and `modules delete --force` edit the
 logical-module tree but do not read or rewrite `chunk_analysis_options`. When
 one of these edits changes or removes a referenced module path or member name,
 update or remove every referring input in the same authoring change. The normal
@@ -33,9 +33,9 @@ operation-specific recipe.
    work whose destination or required scope remains unresolved.
 3. Follow the task chooser's recipe for the selected operation. It owns the
    command's chunk/YAML scope, batch format, dry-run review, and gate semantics.
-   For fresh proposals, inspect `selector_reviews` against source and keep only
-   justified anchors; the [selector guide](selectors.md) owns portability
-   criteria. A current-source proof does not establish future stability.
+   For a fresh source-unit assignment, inspect the source and callers before
+   choosing destinations. The [selector guide](selectors.md) owns portability
+   criteria; a current-source proof does not establish future stability.
 4. Apply the reviewed edit and retain its proposed-assignment gate result. Remove
    now-owned entries from the project's non-emitting rename/annotation patch
    stream when applicable. Review attached comments/notes against current source
@@ -50,13 +50,26 @@ operation-specific recipe.
    snapshot into one reviewable branch. The commit transports the patch; the
    snapshot run and its execution records prove what was validated.
 
+Graph-backed binding moves, merges, deletes and source-unit batches use the same
+complete placement validator, including when repairing a rejected baseline.
+Unchanged claims retain their effective owners, including generated residual
+modules. Unclaiming under `inline_in_entry` routes the removed claim to entry.
+For other `unassigned_mode` policies, graph-only unassign/delete cannot determine
+the materializer's new residual partition and refuses before writing. Validate
+those candidate YAML changes through canonical materialization (`debundle run`);
+`--no-verify` only skips the edit gate and does not establish validity. The policy
+comes from fingerprint-verified authoring configuration, not from whether the
+baseline happens to contain residual modules.
+
 A successful edit makes the saved graph describe the pre-edit YAML. Regenerate
 before any subsequent graph-backed query or edit. Starting `snapshot verify`
 is expected to fail after edits; it is not a post-edit gate.
 
-If source discovery becomes broad, return it to intake. If the destination is
-architecturally unclear, return it to the architect. Use [failure routing](../skills/shared/workflow.md#failure-routing)
-for graph and gate failures.
+For broad residual discovery, run `modules propose` without seed units or a
+preselected owner and inspect its complete accepted assignment. If the
+destination is architecturally unclear, return it to the architect. Use
+[failure routing](../skills/shared/workflow.md#failure-routing) for graph and
+gate failures.
 
 ## Inspect ownership before editing
 
@@ -68,63 +81,40 @@ proof. Check the reported omitted counts and read the source behind candidate
 consumers; use `--all` for an intentional exhaustive artifact rather than as the
 first query over a high-fanout family.
 
-## Workflow: reorganizing existing modules
+## Workflow: reviewing existing module boundaries
 
-Inspect the source units and choose semantic destinations for the complete
-assignment. Use `modules check --batch` to validate a reviewed `{unit_id, module}`
-map of already-claimed non-residual source units, then apply it with
-`modules refine --dry-run` and `modules refine`. Both commands resolve the full
-scoped spec and validate the requested assignment before any write.
-The [source-unit assignment guide](cli.md#applying-reviewed-source-unit-assignments-modules-refine)
-defines batch fields, multi-chunk paths, and excluded source-unit kinds. Residual
-extraction uses the proposal workflow below; focused binding moves use
-`bindings assign`.
+Use `describe`, `coverage`, `atoms` and source inspection to understand current
+claims and structural constraints. Choose semantic destinations from source
+behavior and callers. Check a complete `{unit_id, module}` map with
+`modules check --batch`, then preview and apply it with
+`modules apply --assignments`. Exact apply preserves existing selector entries
+and their metadata, including grouped source matches and anonymous statements.
+The [CLI guide](cli.md#applying-explicit-assignments-modules-apply-assignments)
+defines the batch and validation contract.
 
-## Workflow: proposing new modules
+## Workflow: proposing residual modules
 
-Use [exact residual placement](module_search.md) to decide whether a positive-
-gain placement exists under the request's fixed authored ownership and
-destination scope. Follow this sequence:
+Use [residual proposals](module_proposals.md) to derive groups under the
+append-one-owner, baseline-preserving entry-residual policy:
 
-1. **Inspect.** Review `graph-summary`, residual `atoms`, and relevant source
-   and edge evidence with `describe` and `inspect-source --id`.
-2. **Propose a complete placement.** Run `debundle modules propose --format json`
-   and save the `.plan` only when the status is `found`.
-3. **Review.** Check the full source-unit-to-destination map, semantic module
-   boundaries, fresh paths, and required companions. Do not split or combine
-   the plan without rechecking the resulting complete mapping.
+1. **Inspect.** Review `graph-summary`, residual `atoms`, relevant source and
+   edge evidence with `describe` and `inspect-source --id`.
+2. **Propose.** Run `debundle modules propose --format json` without a seed. The
+   constructor derives feasibility for all entry-residual atoms; inspect the
+   outcome before saving its executable `.plan`.
+3. **Review.** Read every source-unit destination in the plan and check the
+   semantic boundaries, fresh paths, required companions and final import
+   priority. Changed or combined decisions need a complete check.
 4. **Check and preview.** Run `modules check --plan plan.json`, then
-   `modules apply --plan plan.json --dry-run --format json`. Review selector
-   synthesis and the resolved final assignment.
-5. **Apply and run.** Apply the same plan, regenerate through the project's
-   normal materialization command, run relevant behavioral checks, and refresh
-   the graph before the next graph-backed edit.
+   `modules apply --plan plan.json --dry-run --format json`. Review the
+   synthesized selectors and the resolved final assignment.
+5. **Apply and run.** Apply the same plan, materialize the result, run relevant
+   behavior checks and refresh the graph before another graph-backed edit.
 
 `found` is graph acceptance. Selector resolution, materialization and runtime
 behavior remain separate evidence. `exhausted_no_peel` applies only to the
-reported permitted scope; `incomplete` and errors do not establish that no
-placement exists. The linked guide describes the exact graph contract, context
-identity and complexity limits.
-
-For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml` to both
-`modules propose` and `modules apply` so they use the module roots mapped to the
-graph's chunk.
-
-For aggregate counts before drilling in:
-
-```bash
-debundle graph-summary --format text
-```
-
-For a bounded owner pass, choose `graph-summary --limit N` when looking for
-large residual atomic groups. Put the owners to inspect in `owners.json`, then
-query their raw incoming edges with `debundle describe --batch owners.json
---direction incoming --limit N`; add repeated `--reason KIND` filters when they
-narrow the question. The report's `edge_census` keeps complete filtered counts
-by dependency kind and normalized role while detail rows are limited. Incoming
-and outgoing counts are separate incidences, and an internal edge can occur in
-both. Treat the census as navigation evidence; only the assignment gate
-evaluates whether an edit is valid.
+reported scope; `incomplete` and errors do not establish that no placement
+exists.
 
 ## Workflow: moving a binding from one module to another
 
@@ -185,7 +175,8 @@ JSON shape:
 ]
 ```
 
-`sym` and `module` are required; `readable` is optional. Duplicate and contradictory entries: <cli.md> § Batch atomicity.
+`sym` and `module` are required; `readable` is optional. `--batch` accepts only move objects in the JSON shape shown here.
+Duplicate and contradictory entries: <cli.md> § Batch atomicity.
 
 ### Default validation, `--dry-run`, `--no-verify`
 
@@ -289,54 +280,29 @@ the two source units are order-independent during initialization.
 
 ## Workflow: applying a reviewed source-unit assignment
 
-After reviewing source units and deciding semantic destinations, apply the
-complete assignment through `modules refine`. For each source unit that changes
-destination, include one row in a JSON batch:
+For exact source-unit movement, use `modules apply --assignments`. The batch is
+an array of `{ "unit_id": "...", "module": "..." }` changes. Use current
+source-unit IDs and extensionless logical module IDs. Omitted units retain
+their current destinations. Exact apply can move existing claims, claim
+residual units, and move anonymous statements in the same complete candidate.
+It preserves selectors and metadata on existing claims, including grouped
+`source_matches` and annotations. Reviewed `--selector-overrides` can provide a
+source-backed selector for a newly claimed binding when synthesis is not the
+right anchor. Preview with `--dry-run`; preview and write share the same
+selector-resolution and complete assignment validation. See the [CLI guide](cli.md#applying-explicit-assignments-modules-apply-assignments).
 
-```json
-[
-  { "unit_id": "unit:12", "module": "runtime/state" },
-  { "unit_id": "unit:19", "module": "runtime/effects" }
-]
-```
-
-Then preview and apply the same reviewed file:
-
-```bash
-debundle modules refine --batch reviewed-source-units.json --dry-run \
-  --graph dependency_graph.json.gz --modules spec/modules --source-root source
-debundle modules refine --batch reviewed-source-units.json \
-  --graph dependency_graph.json.gz --modules spec/modules --source-root source
-```
-
-This command moves existing selector entries for each source unit as a unit. It
-preserves their authored selectors and metadata, including all names in a
-multi-binding source match. Source units not listed retain their current module.
-For a multi-chunk tree, pass `--tree-config` and use destination paths prefixed
-by that chunk's module root. The command resolves the full post-edit selector
-set again, checks that every source unit still resolves to the reviewed destination,
-then runs the shared atomic-group and realizability gates. It refuses residual,
-unclaimed, import, and export source units and does not synthesize selectors. Module
-comments and notes remain with their original files. See <cli.md> § Applying
-reviewed source-unit assignments (`modules refine`).
-
-Both `modules refine` and `modules merge` consolidate source-match records in
-their destinations when the template bytes, identifier policy and selector note
-are identical and the local capture names do not overlap. Captures retain their
+Both `modules apply` and `modules merge` consolidate compatible source-match
+records in their destinations when the template bytes, identifier policy and
+selector note match and local capture names do not overlap. Captures retain
 order and export aliases; binding annotations and module metadata are preserved.
 Different notes or incompatible capture aliases remain separate records.
-Consolidation happens before the normal source-resolution and assignment gates.
-An unchanged-owner `modules refine` batch can explicitly normalize an existing
-destination: preview and apply still run the complete identity check and gate,
-and report `dry-run` / `applied` when only selector grouping changes.
+Consolidation happens before normal source resolution and assignment checks.
 
 ## Peel heuristics: patterns that should move together
 
-These patterns surface repeatedly when peeling minified bundles. Each
-one often appears as a singleton or two-statement generated residual
-shell whose source happens to live one line below a named binding. Use source
-order and graph neighbors as evidence when deciding whether the units belong
-together; the generated grouping alone does not determine semantic ownership.
+These patterns surface repeatedly when extracting minified bundles. Atomic
+groups and exact graph placement do not determine semantic ownership; inspect
+the source and callers before choosing a destination.
 
 ### TypeScript decorator wirings live with the class they decorate
 
@@ -356,16 +322,15 @@ bundled output. Reliable signals:
    binding the spec already owns.
 
 When both hold, the statement belongs in `<Class>`'s module via
-`anonymous_statements:` — the chunker just happened to split it into a
-sibling shell. Absorbing them costs zero realizability headroom (the
-edges they carry already point at the class).
+`anonymous_statements:` — the chunker just happened to place it separately.
+The source and graph support this reviewed ownership decision.
 
 ### Adjacent-ordinal singletons referencing each other
 
 If source units at consecutive statement ordinals `N` and `N+1` are each
-the other's only edge target/source, they were lines next to each
-other in the source and the decomposer assigned them to
-sibling shells. Assign the two adjacent source units to one semantic module.
+the other's only edge target/source, they were lines next to each other in the
+source and the residual policy placed them separately. Review them as one
+candidate assignment.
 Detectable via `cluster(A).out == [B] && cluster(B).in == [A]` plus
 `|N+1 - N| == 1`.
 
@@ -426,6 +391,12 @@ debundle modules merge --target runtime/plugins runtime/widgets
 
 Source-module comments and notes are composed as described in
 § Comments and notes below.
+
+A graph-checked merge that creates a target owner must receive the complete
+final nonentry `import_order` as a JSON array via `--import-order`. The gate
+checks that exact order and stores it in the verified tree config with the
+module edit; it does not infer a schedule. Keep the owner list and order
+together when reviewing or integrating the merge.
 
 The edit gate checks direct claims against the dependency graph and, for typed
 `kind` pins, the original source before checking the post-merge assignment.

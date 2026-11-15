@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -115,6 +115,17 @@ fn parse_authoring_config(bytes: &[u8]) -> Result<(AuthoringConfig, serde_yaml::
     Ok((config, value))
 }
 
+/// Read routing policy from provenance-verified authoring configuration bytes.
+/// Uses the same schema as compilation, without reopening an unchecked file.
+pub fn unassigned_mode_from_config(bytes: &[u8], chunk_id: &str) -> Result<UnassignedMode> {
+    let (config, _) = parse_authoring_config(bytes)?;
+    config
+        .unassigned_mode
+        .get(chunk_id)
+        .cloned()
+        .with_context(|| format!("tree config has no unassigned_mode for graph chunk {chunk_id:?}"))
+}
+
 /// The authored YAML subtrees that belong to one graph chunk. A graph-backed
 /// edit must not resolve selectors from other chunks against this graph.
 #[derive(Debug, Clone)]
@@ -123,6 +134,22 @@ pub struct ModuleTreeScope {
 }
 
 impl ModuleTreeScope {
+    /// Return the graph chunks configured by this authoring tree.
+    ///
+    /// When `module_roots` is omitted, the whole tree belongs to
+    /// `main_chunk_id`. When it is present, only chunk ids named by those
+    /// roots are configured; `main_chunk_id` does not implicitly add a
+    /// separate scope.
+    pub fn configured_chunk_ids(config_path: &Path) -> Result<BTreeSet<String>> {
+        let config: AuthoringConfig = read_yaml(config_path)?;
+        validate_module_roots(&config.module_roots)?;
+        Ok(if config.module_roots.is_empty() {
+            [config.main_chunk_id].into_iter().collect()
+        } else {
+            config.module_roots.into_values().collect()
+        })
+    }
+
     pub fn from_config(config_path: &Path, chunk_id: &str) -> Result<Self> {
         let config: AuthoringConfig = read_yaml(config_path)?;
         validate_module_roots(&config.module_roots)?;
@@ -778,31 +805,26 @@ chunk_renames:
     }
 
     #[test]
-    fn single_chunk_tree_compiles_canonical_chunk_renames() {
+    fn configured_chunk_ids_use_main_or_module_root_values() {
         let temp = tempfile::tempdir().unwrap();
-        let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
+        let config = temp.path().join("spec_config.yaml");
+        write_file(
+            &config,
+            "main_chunk_id: cli\ninputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: { kind: inline_in_entry }\n",
+        );
+        assert_eq!(
+            ModuleTreeScope::configured_chunk_ids(&config).unwrap(),
+            BTreeSet::from(["cli".to_string()])
+        );
 
-        assert!(spec.logical_modules["static/main"].contains_key("ui/active"));
-        assert!(spec.import_order["static/main"].is_empty());
-        assert_eq!(
-            spec.logical_modules["static/main"]["ui/active"].members[0]
-                .name
-                .as_deref(),
-            Some("No")
+        write_file(
+            &config,
+            "main_chunk_id: ignored\nmodule_roots:\n  cli: cli\n  print: print\n  shared: print\ninputs:\n  root: snapshot\n  js_list_path: extracted/js-files.txt\nunassigned_mode:\n  cli: { kind: inline_in_entry }\n  print: { kind: catchall_file, target: residual/print }\n",
         );
         assert_eq!(
-            spec.chunk_renames["static/main"].members[0].name.as_deref(),
-            Some("PatchedThing")
+            ModuleTreeScope::configured_chunk_ids(&config).unwrap(),
+            BTreeSet::from(["cli".to_string(), "print".to_string()])
         );
-        assert_eq!(
-            spec.swap_vendor_chunks
-                .output_manifest_path
-                .as_deref()
-                .unwrap(),
-            Path::new("out/override/reports/vendor_swaps.json")
-        );
-        assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
-        assert!(spec.emit_browser_harness.is_some());
     }
 
     #[test]
@@ -814,11 +836,18 @@ module_roots:
 inputs:
   root: snapshots/test
   js_list_path: extracted/js-files.txt
+host_behavior:
+  note: host audit
+program_premises:
+  note: program audit
 unassigned_mode:
   static/main:
     kind: inline_in_entry
+chunk_analysis_options:
+  static/main:
+    local_property_effects: true
 import_order:
-  static/main: [core/runtime, utils/date]
+  static/main: [Core/Runtime, utils/date]
   empty: []
 "#;
         let mut original_value: serde_yaml::Value = serde_yaml::from_slice(bytes).unwrap();
@@ -857,6 +886,48 @@ import_order:
             .unwrap()
             .remove(&import_order_key);
         assert_eq!(updated_value, original_value);
+    }
+
+    #[test]
+    fn chunk_import_order_config_keeps_strict_authoring_fields() {
+        let bytes = br#"
+main_chunk_id: main
+inputs:
+  root: snapshot
+  js_list_path: js.txt
+unassigned_mode:
+  main: {kind: inline_in_entry}
+unknown: true
+"#;
+        assert!(read_chunk_import_order(bytes, "main").is_err());
+    }
+
+    #[test]
+    fn single_chunk_tree_compiles_canonical_chunk_renames() {
+        let temp = tempfile::tempdir().unwrap();
+        let spec = compile_spec_tree(&fixture(temp.path())).unwrap();
+
+        assert!(spec.logical_modules["static/main"].contains_key("ui/active"));
+        assert!(spec.import_order["static/main"].is_empty());
+        assert_eq!(
+            spec.logical_modules["static/main"]["ui/active"].members[0]
+                .name
+                .as_deref(),
+            Some("No")
+        );
+        assert_eq!(
+            spec.chunk_renames["static/main"].members[0].name.as_deref(),
+            Some("PatchedThing")
+        );
+        assert_eq!(
+            spec.swap_vendor_chunks
+                .output_manifest_path
+                .as_deref()
+                .unwrap(),
+            Path::new("out/override/reports/vendor_swaps.json")
+        );
+        assert_eq!(spec.vendor["static/vendor.js"].identity, "example");
+        assert!(spec.emit_browser_harness.is_some());
     }
 
     #[test]

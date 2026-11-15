@@ -72,7 +72,7 @@ fn merge_and_refine_coalesce_exact_templates_without_losing_aliases_or_metadata(
         let args = if verb == "merge" {
             vec!["modules", "merge", "--target", "owner", "beta", "gamma"]
         } else {
-            vec!["modules", "refine", "--batch", batch.to_str().unwrap()]
+            vec!["modules", "apply", "--assignments", batch.to_str().unwrap()]
         };
         let before = fs::read(fixture.modules.join("owner.yaml")).unwrap();
         let mut preview = args.clone();
@@ -125,7 +125,7 @@ fn unchanged_owner_refine_normalizes_only_requested_modules_and_preserves_emitte
         serde_json::to_vec(&json!([{"unit_id": unit, "module": "owner"}])).unwrap(),
     )
     .unwrap();
-    let args = ["modules", "refine", "--batch", batch.to_str().unwrap()];
+    let args = ["modules", "apply", "--assignments", batch.to_str().unwrap()];
     let mut preview = args.to_vec();
     preview.push("--dry-run");
     assert_eq!(fixture.json(&preview)["action"], "dry-run");

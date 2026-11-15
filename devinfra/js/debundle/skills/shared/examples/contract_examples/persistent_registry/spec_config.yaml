@@ -8,6 +8,9 @@ write_js_tree: true
 unassigned_mode:
   main: { kind: inline_in_entry }
   static/peer: { kind: inline_in_entry }
+import_order:
+  main: [callbacks/registration, values/later]
+  static/peer: []
 chunk_export_purity:
   static/peer:
     no_reentry_callback_exports:

@@ -10,11 +10,11 @@ behavior.
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | Run a spec against captured source   | [Getting started](#getting-started) and [pipeline validation](docs/cli.md#running-the-pipeline)                                              | Emitted modules, selector outcomes, and gate result                                                         |
 | Understand a binding                 | [Inspect a binding end to end](docs/cli.md#workflow-investigating-a-binding-end-to-end)                                                      | Source, dependencies, and current assignment                                                                |
-| Extract unassigned code              | [Exact residual placement](docs/module_search.md)                                                                                            | Inspect, construct and review one scoped graph placement, check/preview/apply it, then run behavior checks  |
+| Extract unassigned code              | [Exact residual placement](docs/module_proposals.md)                                                                                         | Inspect, construct and review one scoped graph placement, check/preview/apply it, then run behavior checks  |
 | Inventory residual atomic groups     | [Residual atomic group report](docs/cli.md#residual-atomic-group-report)                                                                     | Source units, destinations, and bounded dependency evidence, including for ownership subsets                |
 | Move existing bindings               | [Focused binding moves](docs/spec_editing.md#workflow-moving-a-binding-from-one-module-to-another)                                           | Reviewed move batch and gate verdict                                                                        |
 | Review architecture and module shape | [Architecture review](docs/architecture_review.md)                                                                                           | Current architecture notes, measured conventions, and worker-ready reorganization tasks                     |
-| Reorganize existing assignments      | [Review, then refine](docs/spec_editing.md#workflow-reorganizing-existing-modules)                                                           | Reviewed source-unit assignment and gate verdict                                                            |
+| Reorganize existing assignments      | [Check and apply a placement](docs/spec_editing.md#workflow-reorganizing-existing-modules)                                                   | Complete source-unit assignment and gate verdict                                                            |
 | Recover readable binding names       | [Naming workflow](docs/naming.md)                                                                                                            | Source-grounded names, reviewed YAML changes, and naming verification                                       |
 | Rename a binding                     | [Rename without moving](docs/spec_editing.md#workflow-renaming-a-binding-without-moving)                                                     | Name change and collision check                                                                             |
 | Rename or merge module files         | [Rename a module](docs/spec_editing.md#renaming-or-disabling-a-module) or [merge modules](docs/spec_editing.md#workflow-merging-two-modules) | Gated YAML edit preserving claims and metadata                                                              |
@@ -84,6 +84,11 @@ unassigned_mode:
   print: { kind: inline_in_entry }
   structuredIO: { kind: inline_in_entry }
 
+import_order:
+  cli: []
+  print: []
+  structuredIO: []
+
 chunk_renames:
   print:
     members:
@@ -102,6 +107,11 @@ chunk_renames:
   share it: no duplicate module paths, and their selectors resolve jointly.
 - Compiled flat-spec module paths are relative to their tree root;
   `logical_modules` is keyed by chunk ID.
+- `import_order` is required for each materialized chunk. The empty lists above
+  describe chunks with no module files yet. As modules are authored, list every
+  emitted logical owner exactly once, including empty authored and generated
+  residual owners. The same priority orders each module's imports; the verifier
+  checks the resulting ESM traversal and never substitutes another order.
 - `chunk_renames` uses the canonical flat-spec shape, keyed by input chunk ID.
   It applies in-place readable names to bindings left in that chunk's entry
   (residual) body; it creates no module and does not change ownership. This is
@@ -140,7 +150,7 @@ the shared resolver and gate rather than their own acceptance rules.
 | Plan/apply vendor substitution and finalize emitted files                       | `vendor/`, `artifacts/emission_files.rs`                            |
 | Render finalized scripts through accepted plans and write output reports        | `artifacts/write_tree.rs`, `artifacts/script_output.rs`             |
 | Accept concrete syntax, replacements, and browser loading before writing        | `reconstruction.rs`, `artifacts/browser_harness_plan.rs`            |
-| Propose moves or safe module refinements; inspect or edit spec                  | `peel/`, `cli/`                                                     |
+| Construct residual peels; check/apply assignments; inspect or edit spec         | `peel/`, `cli/`                                                     |
 
 `pipeline.rs` composes these stages. Preparation returns a `SourceProgram` with
 its matching syntax and path indexes; finalized `EmissionFiles` own output files

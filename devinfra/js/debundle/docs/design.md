@@ -14,9 +14,8 @@
 > cycle among the constraining edges (at-init reads and `S`);
 > Pass 2 accepts a cycle that also runs through lazy reads only when
 > the concrete import schedule gives every constraining edge a
-> dependency-before-consumer ESM evaluation order. The scheduler first
-> preserves the preferred import policy when valid, then constructs an
-> exact alternative when needed. The emit is source-order: each logical
+> dependency-before-consumer ESM evaluation order under the supplied per-chunk
+> import priority. The verifier never silently repairs a failed witness. The emit is source-order: each logical
 > module's body is its assigned statements in original chunk order, with
 > explicit `import` / `export` declarations. There is no init-wrapper
 > machinery, no closure pass, no implicit binding pulls — every
@@ -43,13 +42,14 @@ scaffolding.
 
 A bundler erases module boundaries; the debundler reconstructs them.
 This design treats reconstruction as a **graph quotient and
-scheduling problem**. The flat chunk gives us a total order over
+scheduling verification problem**. The flat chunk gives us a total order over
 top-level statements and a granular dependency graph between source
 units derived from them. Binding claims and anonymous-statement
 selectors determine each source unit's output destination. Collapsing
 source units with the same destination yields a module dep graph; the
-validator checks that this quotient graph admits an ESM evaluation
-order observationally equivalent to the input.
+validator checks that the author-supplied chunk priority induces an ESM
+evaluation order observationally equivalent to the input. It does not seek
+an alternative priority after rejection.
 
 Each invocation uses one exact spec and one configured input program (possibly
 with several chunks). Selector resolution stays within the spec's declared
@@ -988,72 +988,52 @@ I  ∪  S            the full constraint graph
 
 ## Realizability primitive
 
-Clauses 2 and 3 of the validity predicate ("Valid peels and atomic
-modules") — no cross-destination rebinding write, and the two-pass gate of
-"Lemma 2: entry-side import ordering" — have exactly **one** implementation,
-in the `gate` crate (`realizability/`). Every code path that asks "is this
-destination assignment realizable?" reaches it through the same primitive:
+The graph gate checks a complete ownership map and one concrete supplied order.
+`check_realizability_with_priority` projects canonical I/C, validates the exact
+emitted owner universe and builds import lists sorted by the chunk's shared
+`import_order`. `check_realizability_with_schedule` independently verifies
+concrete target lists. Both reach the same finish-constraint and rebinding
+verifier; ordinary paths never try alternative schedules.
 
-> `check_realizability(dependency_graph, assignment) → RealizabilityVerdict`
+`AssignmentAnalysis` retains the author's priority exactly and the resulting
+`EsmImportSchedule`, including entry fanout, phantom imports and empty owners.
+Gate checks, translation/effect sweeps and accepted lowering consume that same
+immutable schedule. Lowering checks exact canonical target equality. Rejected
+reading-only output retains the supplied priority and carries its rejection;
+a failed witness is not proof that every other order fails.
 
-The verdict lists the unrealizable SCCs (each an `SccDiagnosis`, rejected as
-`MutualConstrainingCycle` or `EsmEvaluationTdz`) and the cross-destination
-rebinds, with dependency-edge provenance. An empty verdict means the assignment is
-realizable. Clause 1 (importability) is emit policy and not part of the
-verdict ("Emit-side responsibilities").
+Pass 1 diagnoses cycles in C, an order-independent obstruction. Pass 2 diagnoses
+initialization constraints violated by the supplied DFS traversal. The verdict
+carries source-edge provenance; importability and structural atoms remain
+separate required checks. A concrete check costs polynomial graph work: one
+canonical projection, target construction, iterative DFS and finish comparisons,
+with ordered-map overhead in the current containers. It does not ask whether
+some different order exists.
 
-The ordinary assignment path retains a concrete `EsmImportSchedule` on
-`AssignmentAnalysis`. It contains the ordered intra-chunk import targets for
-entry and every emitted module, including phantom imports and empty authored
-owners. `EsmImportOrder` supplies a deterministic preferred policy. The exact
-constructor keeps it when its concrete lists pass the schedule verifier, and
-otherwise derives an alternative schedule; if none exists, the preferred
-schedule remains available as a rejection witness. The schedule-aware gate
-checks the exact required target sets before evaluating the retained schedule.
-Translation/effect sweeps and accepted lowering consume this same immutable
-object. Missing canonical targets are emitted as phantom side-effect imports,
-including deferred closure dependencies. Accepted output verifies exact target
-equality. Rejected reading-only output under `--emit-on-rejection` has no valid
-schedule and preserves preferred diagnostic ordering without certification. See
-the [certificate verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
-and [schedule-existence complexity boundary](polynomial_esm_scheduling.md).
+### Constructive residual proposals
 
-The predicate has two forms:
+`modules propose` requires an accepted baseline and derives all-seed feasibility
+for the append-one-owner, baseline-preserving entry-residual family. It uses
+canonical Gate projection, structural atoms, rebinding closure and discovery/
+finish bounds, followed by one selected-closure certificate. The proof and
+complexity are in <placement_algorithm.md>; the CLI contract is
+<module_proposals.md>. There is no general partition or scheduling fallback.
 
-1. **The pure function `check_realizability`** projects the assignment, computes
-   SCCs and constructs an exact import schedule. The preferred-valid path uses
-   graph traversal and deterministic ordering; alternative scheduling may revisit
-   failed trials, so there is no general linear-time claim. The validator
-   (`validate_assignment`) calls it on the spec's actual assignment; a non-empty
-   verdict stops accepted materialization.
-2. **`RealizabilityIndex`**, a stateful index over a working assignment for
-   callers that ask many hypothetical questions. `apply` commits the legacy
-   single-target `ModuleAssignmentDelta`; `apply_batch` commits one final mapping
-   for several source units and destinations. Both update quotient edge buckets
-   and graph adjacency through the same edge-contribution primitive, once per
-   impacted edge. Speculative moves use a non-mutating overlay because the
-   `CondensationOrder` union-find cannot be rolled back and reverting a move
-   that merged SCCs costs an `O(|V| + |E|)` rebuild.
+Explicit checks may repair rejected baselines by providing a complete accepted
+ownership/order decision. Plans retain both decisions and their source/spec
+identity. Selector realization is preflighted before an executable proposal is
+returned. Graph-only inventory cannot be presented as an executable plan.
 
-   A batch is simultaneous: all moved units receive their final destinations
-   before incident edges are reprojected. An edge whose two endpoints move is
-   projected once from the original assignment to the final assignment; no
-   intermediate single-move verdict is part of the batch result. The index
-   requires a caller-fixed module universe and entry `ModuleId`. Callers rebuild
-   it if path insertion or ordering changes those IDs; it does not assume that
-   module IDs remain invariant under path insertion.
+### Quotient updates
 
-Differential tests (`realizability/tests.rs`,
-`peel/gate_differential_test.rs`) assert that the two forms agree.
-
-### Invariant: no bespoke parallel walks
-
-Concrete assignment certification uses the shared primitive or index. The
-constructive proposer derives necessary graph constraints from the canonical
-projection and calls the same exact schedule constructor; its final positive
-witness is certified through the full primitive. Do not introduce a second
-interpretation of edge kinds or a weaker gate. Adjacent diagnostics may read the
-verdict's dependency-edge provenance without becoming acceptance authority.
+An ownership batch can add and remove quotient edges simultaneously. Indexed
+projection visits the union of incident source edges once under the final map,
+maintains parallel counts and emits final pair zero crossings. Structural SCC
+maintenance can restrict affected graph work, but does not decide the existence
+of a valid import order. Local/touching diagnostics cannot certify a complete
+assignment: changed topology can invalidate finish constraints elsewhere.
+Do not project or certify the full source graph separately for each inventory
+seed. The shared full verifier certifies the one selected result.
 
 ## At-init call promotion
 
@@ -1912,49 +1892,25 @@ current chunk-admission check sees only eager eval.
 
 ## Lemma 2: entry-side import ordering
 
-Pass 1 rejects any multi-module SCC in the constraining projection `C` of the
-quotient: no import-list order can make every dependency in a directed `C`
-cycle evaluate first. When Pass 1 passes, the full import graph `I` can still
-contain cycles closed by lazy imports. Their validity depends on the actual
-ordered import lists because ESM evaluates imports by depth-first traversal.
+Pass 1 rejects a directed cycle in the constraining projection C: no finish
+order can put every provider before its consumer around that cycle. An acyclic
+C does not suffice. Lazy imports can close cycles in I, and ESM follows the
+actual ordered import lists by DFS.
 
-`EsmImportOrder` computes a preferred deterministic policy from the canonical
-edge projection. It uses the constraining linker order and reverses members
-within import SCCs, with readable source-order refinements where safe. This
-policy is a preference, not the complete validity rule. The scheduler first
-reifies and verifies those ordered target lists. If they expose a TDZ, the exact
-constructor searches the complete `I` and `C` relations for another set of
-actual ordered target lists. It preserves successful DFS subtrees and explores
-only choices among currently unvisited actual imports; it does not treat a failed
-preferred traversal as proof that all schedules fail. The
-[exact trial argument](polynomial_esm_scheduling.md#exact-trial-completeness)
-proves completeness without a polynomial running-time bound.
+Every materialized chunk therefore supplies one shared `import_order` priority
+containing every emitted nonentry owner exactly once. Each module sorts its
+canonical targets by that list; entry's universal fanout uses it too. Imports
+of entry target the already-gray root. The verifier checks exact target sets,
+traverses those lists and rejects every C edge whose provider fails to finish
+before its consumer. A C edge into entry is always invalid because entry finishes
+last. A pure-lazy cycle imposes no finish constraint.
 
-The true entry imports every emitted module, including binding-less and empty
-authored modules. A constraining dependency into entry is unschedulable because
-entry is the ESM DFS root and evaluates last. Pure-lazy import cycles need no
-constraining-order repair. For other cycles, the exact scheduler's output is a
-concrete list for entry and for every module; an independent verifier checks
-that each list contains exactly the canonical import targets and that every
-constraining dependency evaluates before its consumer.
-
-`AssignmentAnalysis` retains the preferred policy for deterministic ordering and
-diagnostics and the concrete schedule used by validation. Gate validation,
-candidate translation/effect sweeps, and lowering consume that retained
-schedule. The from-scratch and incremental realizability paths use the same
-`EsmImportSchedule::construct` routine when they assess a hypothetical
-assignment. If construction fails, both use `EsmImportSchedule::from_policy`
-only to produce a useful TDZ witness:
-a Pass-2 `esm_evaluation_tdz` rejection means no valid schedule exists, while the
-displayed emitted-order TDZ identifies one blocking constraining pair. The
-witness by itself does not establish that one fixed policy is exhaustive.
-
-SCC partitions remain specific to their graph: Pass 1 uses `C`, while Pass 2
-uses `I` and checks constraining edges within its cyclic components. A pure-lazy
-`I`-cycle carries no constraining obligation and passes. The shared concrete schedule,
-rather than a second policy sort in the gate or emitter, keeps simulated ESM
-evaluation and emitted import lists aligned. Real-source and Node differential
-tests cover rescued asymmetric-cycle behavior.
+`AssignmentAnalysis` retains that priority and concrete schedule through gate,
+translation/effect sweeps and emission. An invalid priority is rejected without
+repair. Its Pass-2 TDZ diagnoses this supplied witness; it does not establish
+that no other witness exists. Checking is polynomial; arbitrary order discovery
+is NP-complete. Capturing an accepted traversal in discovery order reproduces
+its DFS trace under a shared priority, as proved in <placement_algorithm.md>.
 
 ## The realizability theorem
 
@@ -1964,13 +1920,10 @@ tests cover rescued asymmetric-cycle behavior.
 >
 > **Gate.** The gate accepts iff no rebinding write crosses a module boundary
 > (clause 2), the constraining-edge subgraph (`R ∪ S`) has no multi-module SCC
-> (Pass 1), and a concrete ordered import schedule exists whose ESM post-order
-> evaluates every constraining dependency before its consumer (Pass 2). The
-> exact scheduler preserves the preferred policy when valid and constructs an
-> alternative when needed. An independent verifier checks the complete target
-> lists and the resulting evaluation order. If construction fails, the
-> preferred-order TDZ is retained as a diagnostic witness; the Pass-2 rejection
-> means no valid schedule exists, not that one fixed policy was exhaustive.
+> (Pass 1), and the concrete schedule determined by the supplied priority
+> evaluates every constraining dependency before its consumer (Pass 2).
+> The shared verifier checks the complete target lists and resulting order.
+> A failed priority is rejected without seeking another witness.
 >
 > A cycle with no constraining edge (every cross-module edge lazy) has no
 > constraining-order obligation.
@@ -2000,13 +1953,13 @@ judges it in two passes. Two weaker gates would be wrong:
 1. **Pass 1 alone (`R ∪ S` acyclic).** A cycle in `I` whose constraining
    projection is acyclic still affects the linker: lazy reads emit `import`
    directives that the linker's DFS follows. Whether an at-init read TDZs
-   depends on the actual ordered import lists. Pass 2 constructs a concrete
-   schedule and checks its ESM post-order; a constraining DAG alone does not
+   depends on the actual ordered import lists. Pass 2 checks the supplied
+   priority's concrete ESM post-order; a constraining DAG alone does not
    guarantee that a valid schedule exists.
 2. **Rejecting every I-cycle that contains a constraining edge.** Some mixed
    cycles admit an actual import-list order that evaluates each constraining
    dependency first. Rejecting every such cycle would force colocation even
-   when the exact scheduler can construct a valid schedule, such as an eager
+   when a supplied valid schedule exists, such as an eager
    read one way with a lazy reference back.
 
 A cycle whose every cross-module edge is lazy needs neither pass to fail: no
@@ -2418,21 +2371,13 @@ in `I`, sort the import list so that the earliest-in-`L` successor
 appears first (DFS goes deepest into the first import). The
 resulting DFS post-order is `L`. ∎
 
-**Implementation.** `EsmImportOrder` on `AssignmentAnalysis` supplies the
-deterministic preferred policy. The exact scheduler first reifies that policy
-as concrete import lists; if the lists do not satisfy the constraining
-post-order, it constructs an alternative from the complete import and
-constraining graphs. `AssignmentAnalysis` retains the resulting schedule, and
-the gate independently checks its exact target sets. Lowering orders entry's
-complete fanout and every module's merged intra-chunk import list from those
-retained lists, so emission cannot silently choose a different traversal. The
-[exact trial argument](polynomial_esm_scheduling.md#exact-trial-completeness)
-and [target-list verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
-separate completeness from the cost of finding a witness.
-
-A constraining edge into entry is always impossible to schedule: entry is the
-ESM DFS root and evaluates last. Other cycles involving entry are assessed by
-the complete constructor, which may find an order or reject the assignment.
+**Implementation.** `AssignmentAnalysis` retains the schedule determined by the
+chunk's supplied shared priority. The gate checks its exact target sets and
+finish constraints; lowering uses those same lists for entry fanout and merged
+intra-chunk imports. It cannot silently choose a different traversal. A
+constraining edge into entry always fails because entry finishes last. Other
+cycles are checked under this concrete priority, without order discovery. See
+[verification and construction proof](placement_algorithm.md).
 
 **Lemma 3 (At-init read correctness).**
 Under any evaluation order `L` respecting `I`, every at-init read
@@ -2488,12 +2433,10 @@ _Proof._ Pass 1 makes the constraining subgraph `R ∪ S` acyclic, so it
 admits a topological linearization `L`. The full graph `I` may have
 additional cycles. A cycle whose cross-module edges are all lazy is sound
 for lazy reads regardless of which member the DFS enters first (Lemma 4). A
-cycle that also carries constraining edges is accepted only when the exact
-scheduler constructs concrete imports whose ESM post-order satisfies every
-constraining dependency; the independent target-list verifier checks that
-result. The concrete scheduling obligations are given in
-the [certificate verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
-and [schedule-existence complexity boundary](polynomial_esm_scheduling.md). By Lemmas 3
+cycle that also carries constraining edges is accepted only when the supplied
+priority determines concrete imports whose ESM post-order satisfies every
+constraining dependency. The shared target-list verifier checks that result;
+no schedule-existence solver is needed for this soundness argument. By Lemmas 3
 and 4 every binding read in the emitted bundle sees an initialized value
 identical to the input chunk's read at the same source ordinal. By Lemma 5 every side-effecting
 statement fires in the same relative order as in the input chunk. By the
@@ -2503,9 +2446,9 @@ bundle is therefore identical to the input chunk's. ∎
 
 Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
 respecting `I`. An I-SCC that carries both constraining and lazy edges has no
-such `L`; the exact scheduler instead constructs ordered import lists and
-the verifier checks their ESM post-order against the constraining dependencies.
-The certificate checks and scheduling boundary are linked above; `e2e/simulator_node_differential_sweep_test`
+such `L`; the supplied priority determines ordered import lists and the
+verifier checks their ESM post-order against the constraining dependencies.
+The verification proof is in <placement_algorithm.md>; `e2e/simulator_node_differential_sweep_test`
 compares the simulated evaluation order with Node for its covered fixtures.
 
 ### Coverage gaps (what the proof does NOT cover)
@@ -2566,9 +2509,9 @@ The constraining subgraph holds only `(mod_b, mod_a)` and is acyclic, so
 Pass 1 passes, but the lazy `readB` body emits `import { B } from "./mod_b"`
 in `mod_a`, so `I` has the cycle `{mod_a, mod_b}`. Its outcome depends on the
 linker's DFS order: entering `mod_a` first would evaluate `mod_b` first, and
-`const B = A + "-postfix"` would run while `A` is in TDZ. The preferred policy gives the entry imports with the SCC's dependent first
-(`[mod_b, mod_a]`, Lemma 2). Because that concrete schedule is valid, the exact
-constructor preserves it: DFS runs `entry → mod_b → mod_a → mod_b` (cycle,
+`const B = A + "-postfix"` would run while `A` is in TDZ. The supplied
+priority lists the SCC's dependent first (`[mod_b, mod_a]`, Lemma 2).
+DFS runs `entry → mod_b → mod_a → mod_b` (cycle,
 no-op), `mod_a` evaluates first, and `mod_b` sees `A` initialized. The
 schedule verifier accepts it; the e2e test
 `lemma_two_rescued_asymmetric_cycle_test`
@@ -2776,11 +2719,11 @@ destination assignment passes the shared gate.
 An assignment-induced cycle is one level up. Distinct singleton atoms
 can be grouped into destinations so that the quotient has a constraining
 cycle or a full import SCC with no valid concrete import schedule. A reported
-Pass-2 TDZ is a witness from the preferred schedule; the constructor establishes
-that no valid schedule exists. The worked example in §"Worked example: cycle
+Pass-2 TDZ diagnoses the supplied schedule; it makes no claim about other
+possible import orders. The worked example in §"Worked example: cycle
 through a lazy back-edge" has a binding-level read DAG, while the spec's choice
 to put `B` and `readB` in different modules creates a module-level `I ∪ S`
-cycle. It is unrealizable when Pass 2 finds no valid schedule. Co-location may repair that
+cycle. Its supplied witness is rejected when Pass 2 finds a violated constraint. Co-location may repair that
 assignment, but it is only one candidate repair and still needs the
 shared gate.
 
@@ -2866,17 +2809,17 @@ Five layers, bottom-up:
 4. **Module quotient** — the dependency graph projected under the spec's
    assignment. Cross-module edges are the realizability evidence
    `check_realizability` operates on.
-5. **Module placement reports** — the default `debundle modules propose`
-   strategy constructs exact graph placements from the captured graph and
-   reports a witness, scoped exhaustion, or incomplete analysis. Explicit
-   Neither report is emitted by `debundle run`.
+5. **Module placement reports** — `debundle modules propose` constructs exact
+   graph placements from the captured graph and reports a witness, scoped
+   exhaustion, or incomplete analysis. The report is not emitted by
+   `debundle run`.
 
-When debugging planner output, start with the atomic group. If an
-assignment would split a unit, the assignment is wrong regardless
-of how plausible the binding names look. If a proposal is too
-broad, inspect the atomic-DAG edges that close it and decide
-whether the edge classification is too conservative or whether the
-larger module is genuinely required.
+When debugging a candidate assignment, start with its atomic groups. If an
+assignment would split a group, the assignment is wrong regardless of how
+plausible the binding names look. If a candidate is too broad, inspect the
+atomic-DAG edges and source that constrain it; decide whether the edge
+classification is too conservative or whether the larger module is genuinely
+required.
 
 ### Assignment assembly inside `debundle run`
 
@@ -2953,9 +2896,10 @@ wholly-unclaimed atomic groups. It assigns each
 candidate atom a temporary destination using the borrowed graph and ownership
 catalogue, then initially groups atoms with equal reachable nonvirtual owners
 in the canonical strict constraining module projection and the same interval
-between fixed-owner evaluations in the fine layout. The shared ESM schedule
-constructor supplies that evaluation order from the borrowed canonical quotient,
-preserving the preferred policy when valid and deriving an alternative otherwise.
+between fixed-owner evaluations in the fine layout. A deterministic polynomial
+layout heuristic supplies that provisional evaluation order from the borrowed
+canonical quotient; it never seeks an alternative schedule. Generated ownership
+and Pass-1 SCC contraction settle before the final declared priority is checked.
 Its temporary module and entry IDs match fine lowering's domain and tie breaks.
 Atoms in the same candidate bucket combine only when each literal public
 export name still identifies one source binding or export site in the combined
@@ -3008,10 +2952,11 @@ records the fine-grained "this source unit uses that source unit" relation befor
 any module-level quotienting. Diagnostics are projections of that
 graph: validation cycles explain why the current explicit assignment
 is not realizable, `atomic_graph` records which source-unit sets are
-indivisible, and the read-only query surface (`debundle modules
-propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`, `scc`,
-`cluster`, `graph-summary`) can rank or annotate DAG-derived proposals. None of those projections silently assign bindings on
-behalf of the spec author.
+indivisible, and read-only queries (`atoms`, `coverage`, `describe`,
+`inspect-source --id`, `scc`, `cluster`, `graph-summary`) expose that evidence.
+The whole-residual `modules propose` search uses the graph to construct and
+certify one exact assignment plan. None of these commands silently changes
+the spec.
 
 Each materialized chunk has reports under `reports/tree/<chunk_id>/`.
 `dependency_graph.json.gz` carries the detailed dependency graph, current module quotient,
@@ -3048,10 +2993,9 @@ use the dependency graph and source bodies for drill-down.
    - **Atomic-group conflicts** when the spec splits an indivisible unit.
    - **Atomic DAG facts** in `dependency_graph.json.gz` for planning the next peel.
 3. Spec author resolves: first fix any validation cycles or atomic-group
-   conflicts; then use the default exact `debundle modules propose` placement
-   search and the `atoms`, `coverage`, `describe`, and `inspect-source --id`
-   views to choose explicit source-unit sets for new spec modules with good
-   public names.
+   conflicts; then use `debundle modules propose` and the `atoms`, `coverage`,
+   `describe`, and `inspect-source --id` views to review a complete placement
+   for new spec modules with good public names.
 4. Re-run validator. Iterate until validation is green and the
    residual contains only intentionally generated or low-value noise.
 
@@ -3059,16 +3003,26 @@ The spec is now fully explicit. The validator is a one-shot
 predicate: "given this spec, is the bundle realizable?" — no
 implicit transformation in the middle.
 
-## Atomic DAG Planner Data
+## Atomic graph inspection and placement
 
-The same dependency graph drives the next-spec workflow. A pipeline that
-only reports whether the current spec passed forces spec authors into
-speculative edit/build/test loops. `debundle run` therefore emits the
-atomic-group DAG in `dependency_graph.json.gz`. Top-level read-only queries
-(`modules propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`,
-`scc`, `cluster`, and `graph-summary`) produce graph-grounded reports from
-that stable graph. `modules propose` uses the exact constructive placement
-search; the other queries report graph and ownership views.
+The same dependency graph drives the next-spec workflow. A pipeline that only
+reports whether the current spec passed forces authors into speculative
+edit/build/test loops. `debundle run` therefore emits the atomic-group DAG in
+`dependency_graph.json.gz`. Read-only queries (`modules propose`, `atoms`,
+`coverage`, `describe`, `inspect-source --id`, `scc`, `cluster`, and
+`graph-summary`) provide graph-grounded evidence from that stable report.
+
+`modules propose` constructs an unseeded peel within the declared
+baseline-preserving entry-residual family. It returns a snapshot-bound plan,
+graph-feasibility inventory, or a completed negative scoped to that family. It does not choose semantic module names. The CLI contract is in
+<module_proposals.md>; the construction and coverage arguments are in
+<placement_algorithm.md>.
+
+The atomic DAG records structural co-location constraints. It does not carry
+semantic module boundaries or selector quality; authors decide those from
+source, callers and project conventions. The source-unit facts, module quotient
+and atomic DAG are emitted by `debundle run`; no second planner representation
+is needed for inspection or editing.
 
 ### Detailed graph side output
 
@@ -3131,9 +3085,8 @@ A destination assignment is **valid** iff:
 3. The I-graph of `Q` passes the two-pass gate ("Lemma 2: entry-side import
    ordering"): its constraining-edge subgraph — `Q` with every `LazyUse` and
    `HoistedUse` cross edge dropped — has no multi-module SCC (Pass 1), and a
-   concrete schedule exists whose ESM post-order evaluates every constraining
-   dependency before its consumer (Pass 2). The exact constructor preserves the
-   preferred policy when valid and otherwise searches the complete graphs.
+   schedule determined by the supplied priority evaluates every constraining
+   dependency before its consumer (Pass 2). No alternative order is sought.
    Pure lazy-read import cycles carry no constraining-order obligation.
 
 Clauses 2 and 3 are what the "Realizability primitive" section above defines
@@ -3148,7 +3101,7 @@ a non-importable read crosses the cut, a rebinding write crosses the
 cut, or a quotient SCC keeps a constraining cycle or a simulated TDZ.
 
 This definition is intentionally a predicate over a complete
-destination assignment, not a single graph-factorization trick. Some
+destination assignment. Some
 relations are true equivalence constraints:
 
 - Rebinding edges force colocation because ESM imports are read-only.
@@ -3173,8 +3126,7 @@ Other relations are not equivalence constraints:
   to every unrelated side-effecting source unit that happens to appear
   before or after it in source order.
 
-So "factorize the graph" is not the problem statement. The problem is:
-construct source-unit sets whose induced destination assignment is valid under
+The problem is to construct source-unit sets whose induced destination assignment is valid under
 the same static semantics as materialization. The graph is the data
 structure used to compute that proof.
 
@@ -3358,15 +3310,20 @@ When a decorator application matches an annotated
 `effect: typescript_decorate_helper`, the dependency graph records it as a
 target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class source unit for
-materialization. The author still materializes it with
-`anonymous_statements:` because it has no binding name, and the atomic group
-keeps it with the class.
+materialization. The author still
+materializes it with `anonymous_statements:` because it has no binding
+name, but the atomic-group closure that contains the class also covers
+the anonymous source unit, so an exact placement containing the class also
+contains the anonymous source unit (listed under
+`anonymous_statement_source_unit_ids`, or `extension_source_unit_ids` when it
+extends an existing module); the placement search cannot assign the class
+alone.
 
 The unannotated case — `__decorate(...)`, `register(...)`, and
 target-mutating `Foo.x = ...` installs that the analyzer cannot tag
-as target-local because no helper annotation matches — must be reviewed against
-the graph and source. Any chosen module boundary still passes through the
-materializer's shared realizability checks.
+as target-local because no helper annotation matches — must be reviewed as part
+of the complete assignment. The author chooses the destination and writes the
+named or anonymous claim shape indicated by the source units.
 
 ### Resolution
 
@@ -3563,8 +3520,7 @@ design invariants:
 4. **Source-order emission** — each module's body in source order;
    cross-module imports + source-chunk re-imports; `export { ... }`.
    No init wrappers. `AssignmentAnalysis` retains the exact ordered
-   intra-chunk target lists selected by the preferred-policy-first
-   constructor. The gate verifies those lists; the entry fanout and each
+   intra-chunk target lists determined by the supplied chunk priority. The gate verifies those lists; the entry fanout and each
    module's merged intra-chunk imports (binding, phantom side-effect,
    residual-entry) are emitted in that same schedule.
 
@@ -4052,7 +4008,7 @@ class B extends A { … }
 init, and class declarations are TDZ-prone. If `mod_a` also reads anything
 owned by `mod_b` at module top, the cycle is mutual and Pass 1 rejects it. If
 `mod_a`'s read is lazy (inside a function body), the cycle is asymmetric.
-The exact scheduler accepts when a concrete import order evaluates `mod_a`
+The verifier accepts when the supplied import order evaluates `mod_a`
 before `mod_b`; it rejects when `mod_a` is the entry destination, which as
 the DFS root evaluates last — `class B extends A` would throw
 `ReferenceError: Cannot access 'A' before initialization`.

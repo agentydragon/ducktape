@@ -3,6 +3,7 @@
 use super::{
     CaseWorkspace, CommandResult, case_commands, command_result, debundler_path, write_text_file,
 };
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -126,12 +127,37 @@ pub fn write_tree_fixture(fixture: &TreeFixture<'_>) -> TreeWorkspace {
     for (path, body) in fixture.modules {
         write_text_file(&modules.join(path), body);
     }
+    // The fixture's authored file order is its witness. Tests that need another
+    // traversal or generated owners must explicitly replace the priority.
+    let mut import_order: BTreeMap<_, Vec<spec::ModulePath>> = fixture
+        .chunks
+        .iter()
+        .map(|(chunk, _)| (*chunk, Vec::new()))
+        .collect();
+    for (file, _) in fixture.modules {
+        let file = Path::new(file);
+        let owner = if fixture.module_roots.is_empty() {
+            Some((fixture.chunks[0].0, file))
+        } else {
+            fixture
+                .module_roots
+                .iter()
+                .find_map(|(tree, chunk)| file.strip_prefix(tree).ok().map(|path| (*chunk, path)))
+        };
+        if let Some((chunk, path)) = owner {
+            let path = path.with_extension("");
+            let module = spec::ModulePath::parse(path.to_str().unwrap(), "").unwrap();
+            import_order.entry(chunk).or_default().push(module);
+        }
+    }
+    let import_order = serde_yaml::to_string(&BTreeMap::from([("import_order", import_order)]))
+        .expect("serialize the fixture's authored import priority");
     let config = root.path().join("spec_config.yaml");
     write_text_file(
         &config,
         &format!(
             "main_chunk_id: {}\n{module_roots}inputs:\n  root: snapshot\n  \
-             js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}",
+             js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n{unassigned_mode}{import_order}",
             fixture.chunks[0].0,
         ),
     );

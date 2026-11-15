@@ -447,8 +447,9 @@ closure`, conflating unresolved host requests, missing captured chunks,
   while changes to the selected declaration, source or effect contract still
   invalidate them.
 
-`debundle run` (report opt-out, chunk-level incremental rebuilds, codegen
-cache), and materialize-stage performance work lives in <perf/pipeline.md>.
+Placement-gate, `debundle run` (report opt-out, chunk-level incremental
+rebuilds, codegen cache), and materialize-stage performance work lives in
+<perf/pipeline.md>.
 
 1. `JsChunk::{get_file,remove_file}` (`artifacts/artifact.rs`) are linear
    scans over `files`, so passes that touch every file go O(n²) per chunk.
@@ -590,7 +591,7 @@ paths and source-unit IDs belong in the consuming repo.
   Use ordinary reports for assignment and acceptance probes; request complete
   graph sidecars when the operation needs them. Check the combined canonical
   result and relevant runtime behavior after reuse. Coordinate the implementation
-  with the existing incremental/codegen work and retain phase-specific evidence.
+  with the existing incremental/codegen work in <perf/pipeline.md>.
 - **W5 — Reduce cached-emission and graph-export memory.** Analysis reuse still
   leaves large action peaks in these later stages. Identify duplicate retained
   representations and unnecessary lifetimes, then remove a demonstrated source
@@ -637,7 +638,7 @@ paths and source-unit IDs belong in the consuming repo.
   baseline-preserving residual family and report that exact completeness scope.
   Derive all-seed feasibility once on the closure SCC DAG, materialize one
   selected group and certify it once. Keep selector realization distinct from
-  graph feasibility. Retire competing proposal/factorization/refine paths and
+  graph feasibility. Retire proposal-ID, factorizer, decompose and refine paths and
   update the supported CLI, docs, AGENTS, skills and executable recipes.
   Close with independent tiny subset/import oracles, real CLI/apply/Node tests,
   passing public/private controls and a fresh unseeded useful peel followed by
@@ -653,14 +654,6 @@ paths and source-unit IDs belong in the consuming repo.
   supported scope only with a useful residual-reduction example, independent
   small-case soundness/completeness evidence and prepared-query measurements;
   do not silently widen the initial family's negative result.
-
-### Planner CLI follow-ups
-
-- **Patch-plan naming.** `coverage` reports current module claims against
-  atomic-group coverage. `atoms --readable-only` and the exact default
-  `modules propose` search can help identify work; a reviewed snapshot-bound
-  plan is the only proposed edit artifact. Do not imply that empty coverage
-  output means there is no placement.
 
 ### Cache graph export across authored presentation edits
 

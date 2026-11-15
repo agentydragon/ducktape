@@ -23,7 +23,7 @@ use anyhow::{Context, Result, bail, ensure};
 use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
-use gate::simulated_evaluation_post_order;
+use gate::{EsmImportOrder, EsmImportSchedule};
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };
@@ -1722,8 +1722,24 @@ impl ChunkPlanBuilder {
         )?
         .assignment;
         let canonical_edges = chunk_constraining_module_edges(dependency_graph, &assignment);
-        let evaluation_order =
-            simulated_evaluation_post_order(&canonical_edges, dependency_graph, &assignment);
+        // This deterministic layout heuristic chooses coarse buckets only;
+        // it is not an accepted schedule and never tries alternate orders.
+        // The settled layout is checked against the author's priority later.
+        let nodes = (0..=entry_module.0).map(ModuleId).collect();
+        let policy = EsmImportOrder::build_for_assignment(
+            &canonical_edges,
+            dependency_graph,
+            &assignment,
+            &nodes,
+        );
+        let evaluation_order = EsmImportSchedule::from_policy(
+            entry_module,
+            &canonical_edges.i_successors,
+            &nodes,
+            &policy,
+        )
+        .post_order()
+        .clone();
         let mut successors = BTreeMap::<ModuleId, BTreeSet<ModuleId>>::new();
         for &(from, to) in canonical_edges.edges.keys() {
             successors.entry(from).or_default().insert(to);

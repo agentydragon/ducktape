@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::graph::{build_module_quotient, chunk_constraining_module_edges};
+use analysis::graph::build_module_quotient;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
     BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
@@ -18,10 +18,8 @@ use analysis::{
 use source_identity::SourceUnitId;
 
 use crate::AssignmentInputs;
-use crate::esm_import_order::EsmImportOrder;
 use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 use crate::realizability::CrossRebindEdge;
-use crate::realizability::RealizabilityIndex;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
     EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
@@ -29,19 +27,17 @@ use crate::realizability::{
     TranslationValidationResult, check_realizability_with_schedule, effect_translation_assess,
     translation_validate,
 };
-use crate::validation::{AssignmentReport, AssignmentValidation, validation_from_verdict};
+use crate::validation::{
+    AssignmentReport, AssignmentValidation, validate_assignment_with_priority,
+    validation_from_verdict,
+};
 
 #[derive(Debug, Error)]
 pub enum AssignmentAnalysisBuildError {
     #[error(transparent)]
     BindingScope(#[from] BindingScopeError),
-    #[error(
-        "entry destination logical:{entry} must follow the {planned_module_count} planned output modules"
-    )]
-    InvalidEntryDestination {
-        entry: usize,
-        planned_module_count: usize,
-    },
+    #[error(transparent)]
+    ImportSchedule(#[from] ImportScheduleError),
 }
 
 /// Per-chunk assignment analysis: the spec's assignment of the
@@ -78,63 +74,12 @@ pub struct AssignmentAnalysis {
     /// topological order. Precomputed at build time for
     /// `report_builders::build_quotient_scc_reports`.
     module_quotient_sccs: Vec<Vec<ModuleId>>,
-    /// Preferred policy and its linker order for diagnostics. The concrete
-    /// schedule below is the authority for validation and emission.
-    import_order: EsmImportOrder,
+    /// The author-supplied shared priority, retained exactly for reports/plans.
+    import_priority: Vec<spec::ModulePath>,
     import_schedule: EsmImportSchedule,
     /// Planning and final validation share this verdict for the immutable
     /// graph/assignment pair. A rebuilt assignment starts with an empty cache.
     realizability: OnceLock<RealizabilityVerdict>,
-}
-
-/// Reuses one indexed baseline for independent whole-atom probes. The index
-/// is constructed here, so its assignment cannot disagree with the analysis.
-pub struct AtomicMoveProbe<'a> {
-    analysis: &'a AssignmentAnalysis,
-    index: RealizabilityIndex,
-}
-
-impl AtomicMoveProbe<'_> {
-    pub fn validate_atom(
-        &self,
-        atom_index: usize,
-        to: ModuleId,
-        target_path: &spec::ModulePath,
-    ) -> AssignmentValidation {
-        let atom = &self.analysis.atomic_groups[atom_index];
-        let source_units: Vec<_> = atom.members.iter().copied().collect();
-        assert!(
-            source_units
-                .iter()
-                .all(|&unit| self.analysis.assignment.of(unit)
-                    == self.analysis.assignment.of(source_units[0])),
-            "whole-atom probe requires one current destination"
-        );
-        let graph = self.analysis.inputs.dependency_graph();
-        let mut moved = self.analysis.assignment.clone();
-        for &unit in &source_units {
-            moved.set(unit, to);
-        }
-        let verdict = self
-            .index
-            .verdict_after_moving_source_units(graph, &source_units, to);
-        let mut validation = validation_from_verdict(
-            graph,
-            &moved,
-            &|id| {
-                if id == to {
-                    target_path.clone()
-                } else {
-                    self.analysis.module_path(id)
-                }
-            },
-            verdict,
-        );
-        // A whole atom already sharing one current destination cannot repair
-        // a baseline split-atom conflict, including one in another atom.
-        validation.report.atomic_group_conflicts = self.analysis.assembly_conflicts.clone();
-        validation
-    }
 }
 
 /// An immutable assignment whose atomic-group, schedule, and rebinding checks
@@ -600,12 +545,11 @@ impl AssignmentAnalysis {
     /// their `PlannedModule`; the entry keeps the historic report label at
     /// this serialization boundary without becoming a planned output.
     pub fn module_path(&self, id: ModuleId) -> spec::ModulePath {
-        if id == self.assignment.entry_destination().module_id() {
-            let report_id = format!("{}::anon_residual_sentinel", self.inputs.chunk_id());
-            return spec::ModulePath::parse(&report_id, self.inputs.chunk_id())
-                .expect("entry destination report path is canonical");
-        }
-        self.inputs.planned_module_path(id)
+        module_path(
+            &self.inputs,
+            self.assignment.entry_destination().module_id(),
+            id,
+        )
     }
 
     /// Build an assignment analysis from a caller-computed dependency graph +
@@ -624,15 +568,10 @@ impl AssignmentAnalysis {
         binding_catalogue: BindingCatalogue,
         planned_modules: Vec<PlannedModule>,
         chunk_renames: HashMap<swc_ecma_ast::Id, swc_atoms::Atom>,
-        entry_destination: EntryDestination,
+        priority: &[spec::ModulePath],
     ) -> Result<Self, AssignmentAnalysisBuildError> {
+        let entry_destination = EntryDestination::after_planned_modules(planned_modules.len());
         let entry_module_id = entry_destination.module_id();
-        if entry_module_id != ModuleId(planned_modules.len()) {
-            return Err(AssignmentAnalysisBuildError::InvalidEntryDestination {
-                entry: entry_module_id.0,
-                planned_module_count: planned_modules.len(),
-            });
-        }
         let DependencyGraphAndAtomicGroups {
             dependency_graph,
             atomic_groups,
@@ -657,32 +596,6 @@ impl AssignmentAnalysis {
         // verdict path) share one Tarjan walk instead of each
         // recomputing it.
         let module_quotient_sccs = module_quotient.sccs();
-        // Drive Lemma-2 ordering through the canonical
-        // `ChunkConstrainingEdgeSet` so the emitter and the gate's
-        // simulator share one source of truth — see
-        // `graph::chunk_constraining_module_edges` for the invariant doc.
-        let canonical_edges = chunk_constraining_module_edges(&dependency_graph, &assignment);
-        let import_order = EsmImportOrder::build_for_assignment(
-            &canonical_edges,
-            &dependency_graph,
-            &assignment,
-            &emitted_modules(planned_modules.len(), entry_module_id),
-        );
-        let import_schedule = EsmImportSchedule::construct(
-            entry_module_id,
-            &canonical_edges.pairs().collect(),
-            &canonical_edges.i_successors,
-            &emitted_modules(planned_modules.len(), entry_module_id),
-            &import_order,
-        )
-        .unwrap_or_else(|_| {
-            EsmImportSchedule::from_policy(
-                entry_module_id,
-                &canonical_edges.i_successors,
-                &emitted_modules(planned_modules.len(), entry_module_id),
-                &import_order,
-            )
-        });
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,
@@ -691,6 +604,13 @@ impl AssignmentAnalysis {
             planned_modules,
             &chunk_renames,
         )?);
+        let (validation, import_schedule) = validate_assignment_with_priority(
+            inputs.dependency_graph(),
+            &assignment,
+            &|id| module_path(&inputs, entry_module_id, id),
+            &emitted_modules(inputs.planned_modules().len(), entry_module_id),
+            priority,
+        )?;
         Ok(Self {
             inputs,
             assignment,
@@ -698,9 +618,9 @@ impl AssignmentAnalysis {
             assembly_conflicts,
             module_quotient,
             module_quotient_sccs,
-            import_order,
+            import_priority: priority.to_vec(),
             import_schedule,
-            realizability: OnceLock::new(),
+            realizability: OnceLock::from(validation.verdict),
         })
     }
 
@@ -717,11 +637,15 @@ impl AssignmentAnalysis {
         &self.import_schedule
     }
 
+    pub fn import_priority(&self) -> &[spec::ModulePath] {
+        &self.import_priority
+    }
+
     /// Accepted output must match the retained schedule exactly. Rejected
     /// assignments can still be lowered for `--emit-on-rejection` diagnostics:
     /// invalid writes may invent imports and entry constraints may have no
     /// binding import at all. Such reading-only output has no valid schedule;
-    /// preserve the preferred ordering without certifying its target set.
+    /// retain the supplied priority without certifying its target set.
     pub fn sort_candidate_imports<T>(
         &self,
         module: ModuleId,
@@ -730,11 +654,18 @@ impl AssignmentAnalysis {
         if self.realizability_verdict().is_realizable() && self.assembly_conflicts.is_empty() {
             return self.import_schedule.sort_imports(module, imports);
         }
-        if module == self.assignment.entry_destination().module_id() {
-            self.import_order.sort_entry_imports(imports);
-        } else {
-            self.import_order.sort_module_imports(imports);
-        }
+        let entry = self.assignment.entry_destination().module_id();
+        let positions: HashMap<_, _> = std::iter::once((entry, 0))
+            .chain(
+                self.import_schedule
+                    .imports(entry)
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .map(|(index, module)| (module, index + 1)),
+            )
+            .collect();
+        imports.sort_by_key(|(target, _)| positions[target]);
         Ok(())
     }
 
@@ -753,26 +684,16 @@ impl AssignmentAnalysis {
             &self.assignment,
             &|id| self.module_path(id),
             self.realizability_verdict().clone(),
+            &self.import_schedule,
         );
         validation.report.atomic_group_conflicts = self.assembly_conflicts.clone();
-        validation.report.linker_order = self
-            .import_order
-            .linker_order()
-            .iter()
-            .map(|id| self.module_path(*id))
+        let mut modules: Vec<_> = self.import_schedule.post_order().iter().collect();
+        modules.sort_unstable_by_key(|(_, rank)| *rank);
+        validation.report.linker_order = modules
+            .into_iter()
+            .map(|(&id, _)| self.module_path(id))
             .collect();
         validation
-    }
-
-    /// Prepare repeated independent whole-atom probes against this assignment.
-    pub fn atomic_move_probe(&self) -> AtomicMoveProbe<'_> {
-        AtomicMoveProbe {
-            analysis: self,
-            index: RealizabilityIndex::from_assignment(
-                self.inputs.dependency_graph(),
-                self.assignment.clone(),
-            ),
-        }
     }
 
     /// Whether the emitted tree may not resolve a name the way the source
@@ -896,6 +817,15 @@ impl AssignmentAnalysis {
     ) -> DependencyGraphReport {
         build_dependency_graph_report(self, program_graph, author_inputs)
     }
+}
+
+fn module_path(inputs: &AssignmentInputs, entry: ModuleId, id: ModuleId) -> spec::ModulePath {
+    if id == entry {
+        let report_id = format!("{}::anon_residual_sentinel", inputs.chunk_id());
+        return spec::ModulePath::parse(&report_id, inputs.chunk_id())
+            .expect("entry destination report path is canonical");
+    }
+    inputs.planned_module_path(id)
 }
 
 /// The modules the emitted entry imports, plus the entry itself.
