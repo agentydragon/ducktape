@@ -411,7 +411,7 @@ mod tests {
     {
         let bytes = analysis_codec::encode_protobuf(&spec_wire::Wire::to_proto(value)).unwrap();
         let wire: T::Proto = analysis_codec::decode_protobuf(&bytes).unwrap();
-        assert_eq!(&spec_wire::Wire::from_proto(wire).unwrap(), value);
+        assert_eq!(&T::from_proto(wire).unwrap(), value);
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
         let bytes = analysis_codec::encode_protobuf(&wire).unwrap();
         let decoded: <spec::HostBehavior as spec_wire::Wire>::Proto =
             analysis_codec::decode_protobuf(&bytes).unwrap();
-        let restored = spec_wire::Wire::from_proto(decoded).unwrap();
+        let restored: spec::HostBehavior = spec_wire::Wire::from_proto(decoded).unwrap();
         assert!(restored.note.is_none());
         assert_eq!(spec_wire::Wire::to_proto(&restored), wire);
         let mut host = spec_wire::Wire::to_proto(&spec::HostBehavior::default());
@@ -662,7 +662,7 @@ mod tests {
             bindings: Vec::new(),
             note: Some("selector audit".into()),
         };
-        round_trip(&claim);
+        round_trip_spec_wire(&claim);
         let wire = spec_wire::Wire::to_proto(&claim);
         let restored: spec::SourceMatchClaim = spec_wire::Wire::from_proto(wire).unwrap();
         assert_eq!(restored, claim);
