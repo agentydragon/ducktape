@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
+import pytest_asyncio
 import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
@@ -20,22 +21,13 @@ from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.scenarios import cert_manager_reissue, egress_native, workload_trust
 
-# AnyIO's pytest plugin is discovered through its package entry point.
-# gazelle:include_dep @pypi//anyio
-
-
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 # gazelle:include_dep //agentplane/system_tests/driver:native_fixtures
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.driver.native_fixtures")
-pytestmark = pytest.mark.anyio
+pytestmark = pytest.mark.asyncio(loop_scope="module")
 
 
-@pytest.fixture(scope="module")
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.fixture(scope="module")
+@pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def native_platform(
     cluster: Cluster, tmp_path_factory: pytest.TempPathFactory
 ) -> AsyncIterator[NativePlatformClients]:
