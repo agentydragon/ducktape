@@ -188,7 +188,7 @@ fn global_observer_cell_constraints_survive_saved_analysis() {
         "import './observer.js';\nglobalThis.inspect();\nexport var callback = () => 1;\n",
         &chunks,
     ));
-    let invocation = staged.run(&["--analysis", path(&staged.artifact)]);
+    let invocation = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
     assert_eq!(
         invocation.result.status.code(),
         Some(3),
