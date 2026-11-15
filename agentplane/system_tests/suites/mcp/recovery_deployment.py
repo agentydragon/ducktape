@@ -2,9 +2,8 @@
 
 from dataclasses import asdict
 
-from cdk8s import Testing
-
 from agentplane.system_tests.deployment import fixture_chart, fixture_database
+from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
 from agentplane.system_tests.deployment.render_fixture import write_output
 from agentplane.system_tests.deployment.rendered_fixture import (
     MODEL_PLACEHOLDERS,
@@ -36,25 +35,11 @@ def render() -> RenderedFixture:
     fixture_chart.add_backend_services(
         chart, env, models=models, platform_callers=fixture_chart.NATIVE_CALLERS, notification_callers=[]
     )
-    fixture_chart.add_central_sampler(chart, env)
+    central_sampler = fixture_chart.add_central_sampler(chart, env)
     fixture_chart.add_sandbox_templates(chart, env)
     fixture_chart.add_model_credentials(chart, env, models=models)
     fixture_chart.add_policy_controller(chart, env)
-    documents = list(Testing.synth(chart))
-    fixture_chart.add_svid_box_template(documents)
-    fixture_chart.configure_port_forward_tls(documents)
-    # Bare k3s has no Cilium controller.
-    documents = [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
-    return RenderedFixture(
-        backend=Backend.LOCAL_MODEL,
-        runtime=SandboxRuntime.POD,
-        central_sampler=True,
-        namespace=env.namespace,
-        app_origin=None,
-        browser_services=[],
-        mcp_fixtures=None,
-        objects=documents,
-    )
+    return finalize_fixture(chart, env, models, central_sampler=central_sampler)
 
 
 if __name__ == "__main__":

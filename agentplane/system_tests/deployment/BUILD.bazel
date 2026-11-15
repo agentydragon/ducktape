@@ -306,6 +306,19 @@ py_library(
 )
 
 py_library(
+    name = "fixture_finalization",
+    srcs = ["fixture_finalization.py"],
+    deps = [
+        ":dex",
+        ":fixture_chart",
+        ":rendered_fixture",
+        "//cluster/cdk8s/agentplane:environment",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "mcp_fixture_chart",
     testonly = True,
     srcs = ["mcp_fixture_chart.py"],

@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +73,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
 from agentplane.system_tests.deployment.rendered_fixture import (
+    BrowserService,
     LocalModel,
     Models,
     OperatorTokenIssuer,
@@ -131,11 +132,25 @@ from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cert_manager.certificate import Certificate, CertificatePrivateKey
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
-from cluster.cdk8s.service_ref import Pods
+from cluster.cdk8s.service_ref import Pods, ServiceRef
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, HAIKU_API
 
 RUNNER_GATEWAY = "runner-gateway"
 SESSION_DISPATCHER = "session-dispatcher"
+
+
+@dataclass(frozen=True)
+class AppFixture:
+    """The integration App and the fixture access facts it exposes to system-test setup."""
+
+    construct: Construct
+    service: ServiceRef
+    origin: str
+    operator_tokens: OperatorTokenIssuer | None
+
+    @property
+    def browser_service(self) -> BrowserService:
+        return BrowserService(name=self.service.name, host=self.service.host, fqdn=self.service.fqdn)
 
 
 # The fixture's one Pod execution environment. Nothing outside the fixture names it -- no live Sandbox
@@ -714,7 +729,9 @@ def add_central_sampler(chart: Chart, env: Environment) -> Construct:
     )
 
 
-def add_app(chart: Chart, env: Environment) -> Construct:
+def add_app(chart: Chart, env: Environment) -> AppFixture:
+    if env.app is None:
+        raise ValueError("the fixture App requires app configuration")
     app_database_url = fixture_database.Database.APP.url(chart, namespace=env.namespace, key="async-uri")
     service = app_component.App(
         chart,
@@ -768,7 +785,12 @@ def add_app(chart: Chart, env: Environment) -> Construct:
         metadata=ApiObjectMetadata(name=send_grant.POLICY_SET, namespace=NAMESPACE),
         rules=[Rule.send_message(inbox_tags=[send_grant.INBOX_TAG])],
     )
-    return service
+    return AppFixture(
+        construct=service,
+        service=APP_SERVICE,
+        origin=env.app.origin,
+        operator_tokens=(OPERATOR_TOKENS if env.app.config.oidc.static_ed25519_keys is not None else None),
+    )
 
 
 def add_mcp_edge(chart: Chart, env: Environment) -> Construct:

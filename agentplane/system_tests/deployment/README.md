@@ -103,8 +103,10 @@ fixtures keep Dex as the app's issuer, and the stack takes the operator's token 
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
 Each suite owns a Python deployment recipe beside its test entrypoints. Recipes call `add_*`
-functions directly, then synthesize a chart and serialize its runtime metadata. The rendering rule
-only runs that recipe; it does not select services, images, plugins or executor policy.
+functions directly, then use the shared finalizer to synthesize the chart, apply the bare-k3s
+fixture edits, and derive runtime metadata from the environment and constructed services. The
+rendering rule only runs that recipe; it does not select services, images, plugins or executor
+policy.
 The native recovery recipe adds backend services, the central sampler and a bound test caller.
 The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
 

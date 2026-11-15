@@ -82,7 +82,13 @@ def configure_environment(env: Environment, mcp: McpInputs) -> Environment:
 
 
 def add_mcp_fixtures(
-    chart: Chart, mcp: McpInputs, *, system_roots: str, app: Construct, actions: Construct, edge: Construct
+    chart: Chart,
+    mcp: McpInputs,
+    *,
+    system_roots: str,
+    app: fixture_chart.AppFixture,
+    actions: Construct,
+    edge: Construct,
 ) -> None:
     """Add Dex, OAuth fixture servers and the external test caller's policy."""
     mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
@@ -121,7 +127,7 @@ def add_mcp_fixtures(
         mcp_linkage=fixture_chart.linkage_client(mcp.app_origin),
         mcp_edge_login=mcp_edge_login,
         system_roots=system_roots,
-        dex_clients=[app, actions, edge],
+        dex_clients=[app.construct, actions, edge],
     )
 
 
