@@ -16,7 +16,8 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.runner_gateway.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.deployment import launch_preset
 from agentplane.system_tests.driver.agent import RUNNER_ANSWERS_SECONDS, Agent
-from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.app_sandbox import wait_until_running
+from agentplane.system_tests.driver.sandbox import SANDBOX_READY_SECONDS, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.scripted_model import ShellCall, Text

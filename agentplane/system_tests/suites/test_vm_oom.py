@@ -17,7 +17,8 @@ from agentplane.system_tests.scenarios import vm_sandbox
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 # gazelle:include_dep @pypi//protobuf
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.app_fixtures", "agentplane.system_tests.deployment.pytest_plugin")
 
 
 @pytest.mark.vm_sandboxes

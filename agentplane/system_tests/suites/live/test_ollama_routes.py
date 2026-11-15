@@ -21,6 +21,10 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 # gazelle:include_dep @pypi//protobuf
 
 
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.app_fixtures",)
+
+
 def _id(case: tuple[session_pb2.Harness, str]) -> str:
     harness, route = case
     return f"{session_pb2.Harness.Name(harness).lower()}-{route.replace('/', '-')}"
