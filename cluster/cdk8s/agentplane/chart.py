@@ -14,9 +14,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata, App, Chart
+from cdk8s_plus_34 import ConfigMap
 from cert_manager_crds.io.cert_manager import CertificateSpecPrivateKeyRotationPolicy, CertificateSpecUsages
 from constructs import Construct
 
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.agentplane import (
@@ -26,10 +28,14 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
+    environment_firecracker,
+    environment_guest,
     environment_sandbox,
     environment_service,
+    environment_vm,
     frontend,
     history_service,
+    launcher_relay,
     llm_ingress,
     mcp_edge,
     notifications,
@@ -41,6 +47,7 @@ from cluster.cdk8s.agentplane import (
     telemetry,
 )
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME as REGISTRY_SECRET_NAME
 from cluster.cdk8s.namespaces import Vpa
@@ -207,15 +214,81 @@ def environment_chart(
         registry_secret_name=REGISTRY_SECRET_NAME,
     ).add_platform_resources()
     frontend.Frontend(chart, "frontend", env).add_platform_resources()
-    environment_sandbox.EnvironmentSandbox(
-        chart,
-        "runner-sandbox",
+    runner_scope = Construct(chart, "runner-sandbox")
+    runner_template = environment_sandbox.EnvironmentSandboxTemplate(
+        runner_scope,
+        "runner-template",
         env,
         name=environment_template_name,
         image=environment_tools_image,
         key_files=environment_runtime_key_files,
         image_pull_secret_name=sandbox_pod.SECRET_NAME,
-    ).add_platform_resources()
+    )
+    if env.vm_sandboxes:
+        relay_settings = runner_template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar")
+        launcher_relay.LauncherRelayPolicy(
+            runner_scope,
+            "launcher-relay",
+            namespace=env.namespace,
+            runner_pod=runner_template.spec["pod"],
+            settings_config_map=relay_settings,
+        )
+        state_volume = runner_template.spec["stateVolume"]
+        state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
+        if env.vm_storage_class is not None:
+            state_claim["storageClassName"] = env.vm_storage_class
+        vm_state_volume = {**state_volume, "claim": state_claim}
+        vm_config = ConfigMap(
+            runner_scope,
+            "environment-vm-config",
+            metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
+            data=environment_guest.guest_config_data(
+                env,
+                gateway=launcher_relay.GUEST_GATEWAY,
+                block_devices=("/dev/disk/by-id/virtio-workspace",),
+                platform_instructions=platform_instructions(
+                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
+                ),
+                harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
+            ),
+        )
+        environment_vm.EnvironmentVmTemplate(
+            runner_scope,
+            "environment-vm-template",
+            env,
+            template_name=environment_vm.NAME,
+            root_image=environment_vm.ROOT_IMAGE,
+            config_map=vm_config,
+            labels=runner_template.spec["pod"]["metadata"]["labels"],
+            state_volume=vm_state_volume,
+            workspace_volume=environment_sandbox.workspace_volume_spec(
+                vm_state_volume, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
+            ),
+        )
+    if env.firecracker_sandboxes:
+        state_volume = runner_template.spec["stateVolume"]
+        claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
+        if env.vm_storage_class is not None:
+            claim["storageClassName"] = env.vm_storage_class
+        firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
+        firecracker_workspace = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+        firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
+        guest_gateway = environment_firecracker.GATEWAY
+        environment_firecracker.EnvironmentFirecrackerTemplate(
+            runner_scope,
+            "firecracker-template",
+            env,
+            labels=runner_template.spec["pod"]["metadata"]["labels"],
+            state_volume=firecracker_state,
+            workspace_volume=firecracker_workspace,
+            runner_image=environment_vm.RUNNER_DISK_IMAGE,
+            platform_instructions=platform_instructions(
+                env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
+            ),
+            harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
+            image_pull_secret_name=sandbox_pod.SECRET_NAME,
+        )
+    runner_template.add_platform_resources()
     sandbox_controller.SandboxController(
         chart,
         "sandbox-controller",

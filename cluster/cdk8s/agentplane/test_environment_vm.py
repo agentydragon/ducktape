@@ -8,16 +8,13 @@ from typing import Any, cast
 
 import pytest
 import pytest_bazel
-from cdk8s import (
-    App,
-    Chart,
-    Testing as Cdk8sTesting,  # not collected by pytest
-)
+from cdk8s import ApiObjectMetadata, App, Chart, Testing as Cdk8sTesting  # not collected by pytest
+from cdk8s_plus_34 import ConfigMap
 from more_itertools import one
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, VMEnvironment
-from cluster.cdk8s.agentplane import environment_sandbox, environment_vm, staging
+from cluster.cdk8s.agentplane import environment_guest, environment_sandbox, environment_vm, launcher_relay, staging
 
 HARNESS_ENV = {"EXAMPLE_SERVICE_URL": "http://service.test"}
 
@@ -30,10 +27,28 @@ def _environment_vm_manifests(
     codex_readiness: CodexReadiness | None = None,
 ) -> dict[str, dict[str, Any]]:
     chart = Chart(app, "test")
+    env = replace(staging.ENV, vm_console_autologin=console_autologin)
+    config_map = ConfigMap(
+        chart,
+        "environment-vm-config",
+        metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
+        data=environment_guest.guest_config_data(
+            env,
+            gateway=launcher_relay.GUEST_GATEWAY,
+            block_devices=("/dev/disk/by-id/virtio-workspace",),
+            platform_instructions="Test platform guidance.",
+            harness_env=HARNESS_ENV,
+            session_reconcile_concurrency=session_reconcile_concurrency,
+            codex_readiness=codex_readiness,
+        ),
+    )
     environment_vm.EnvironmentVmTemplate(
         chart,
         "environment-vm-template",
-        replace(staging.ENV, vm_console_autologin=console_autologin),
+        env,
+        template_name=environment_vm.NAME,
+        root_image=environment_vm.ROOT_IMAGE,
+        config_map=config_map,
         labels={},
         state_volume={
             "name": "state",
@@ -43,10 +58,6 @@ def _environment_vm_manifests(
         workspace_volume=environment_sandbox.workspace_volume_spec(
             {"claim": {"storageClassName": "test-storage"}}, layout_type="BlockFilesystem"
         ),
-        platform_instructions="Test platform guidance.",
-        harness_env=HARNESS_ENV,
-        session_reconcile_concurrency=session_reconcile_concurrency,
-        codex_readiness=codex_readiness,
     )
     docs = cast(list[dict[str, Any]], Cdk8sTesting.synth(chart))
     config_map = one(

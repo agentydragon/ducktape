@@ -48,10 +48,8 @@ from agentplane.session_instructions.platform_instructions import SessionRuntime
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import (
     egress,
-    environment_firecracker,
     environment_vm,
     history_service,
-    launcher_relay,
     llm_ingress,
     platform_routes,
     runner_gateway,
@@ -155,155 +153,6 @@ def workspace_volume_spec(
             raise ValueError("storage_class cannot be empty")
         claim["storageClassName"] = storage_class
     return {"name": _WORKSPACE_VOLUME_NAME, "claim": claim, "layout": layout}
-
-
-class EnvironmentSandbox(Construct):
-    """The environment's Pod execution environment, plus the VM template and relay when enabled. Fleet
-    network and route fences are added separately. A VM workspace can name a distinct class when its
-    Block claim needs a different provisioner from the state filesystem. A hermetic fixture with no
-    trace collector can disable the Pod runner and sidecar SDKs without changing the VM guest."""
-
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        env: Environment,
-        *,
-        name: str,
-        image: str,
-        key_files: Sequence[KeyFile] = (),
-        vm_workspace_storage_class: str | None = None,
-        storage_class: str = _STORAGE_CLASS,
-        environment_runtime_resources: k8s.ResourceRequirements | None = None,
-        executor_resources: k8s.ResourceRequirements | None = None,
-        sidecar_resources: k8s.ResourceRequirements | None = None,
-        image_pull_secret_name: str | None = sandbox_pod.SECRET_NAME,
-        trust_mounts: Sequence[k8s.VolumeMount] | None = None,
-        session_reconcile_concurrency: int | None = None,
-        pod_codex_readiness: CodexReadiness | None = None,
-        vm_codex_readiness: CodexReadiness | None = None,
-        disable_otel_sdk: bool = False,
-    ) -> None:
-        super().__init__(scope, id)
-        if vm_workspace_storage_class is not None:
-            if not vm_workspace_storage_class:
-                raise ValueError("vm_workspace_storage_class cannot be empty")
-            if not env.vm_sandboxes:
-                raise ValueError("vm_workspace_storage_class requires vm_sandboxes")
-        self.env = env
-        namespace = env.namespace
-        template = EnvironmentSandboxTemplate(
-            self,
-            "runner-template",
-            env,
-            name=name,
-            image=image,
-            key_files=key_files,
-            storage_class=storage_class,
-            environment_runtime_resources=environment_runtime_resources,
-            executor_resources=executor_resources,
-            sidecar_resources=sidecar_resources,
-            image_pull_secret_name=image_pull_secret_name,
-            trust_mounts=trust_mounts,
-            session_reconcile_concurrency=session_reconcile_concurrency,
-            codex_readiness=pod_codex_readiness,
-            disable_otel_sdk=disable_otel_sdk,
-        )
-        if env.vm_sandboxes:
-            launcher_relay.LauncherRelayPolicy(
-                self,
-                "launcher-relay",
-                namespace=namespace,
-                runner_pod=template.spec["pod"],
-                settings_config_map=template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar"),
-            )
-            # VM claim storage is separate from the runner Pod's state claim. Copy it before
-            # selecting the VM class so the Pod template keeps its own storage policy.
-            state_volume = template.spec["stateVolume"]
-            state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
-            if env.vm_storage_class is not None:
-                state_claim["storageClassName"] = env.vm_storage_class
-            vm_state_volume = {**state_volume, "claim": state_claim}
-            workspace_storage_class = vm_workspace_storage_class
-            if workspace_storage_class is None:
-                workspace_storage_class = env.vm_storage_class
-            environment_vm.EnvironmentVmTemplate(
-                self,
-                "environment-vm-template",
-                env,
-                labels={**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS},
-                state_volume=vm_state_volume,
-                workspace_volume=workspace_volume_spec(
-                    vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
-                ),
-                platform_instructions=platform_instructions(
-                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
-                ),
-                harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
-                session_reconcile_concurrency=session_reconcile_concurrency,
-                codex_readiness=vm_codex_readiness,
-            )
-
-        if env.firecracker_sandboxes:
-            guest_gateway = environment_firecracker.GATEWAY
-            state_volume = template.spec["stateVolume"]
-            claim = {
-                **state_volume["claim"],
-                "volumeMode": "Filesystem",
-                "resources": {"requests": {"storage": "100Gi"}},
-            }
-            if env.vm_storage_class is not None:
-                claim["storageClassName"] = env.vm_storage_class
-            firecracker_state = {
-                **state_volume,
-                "claim": claim,
-                "layout": {"type": "RawDiskImage", "filesystem": "ext4"},
-            }
-            firecracker_workspace = workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
-            firecracker_workspace["claim"]["resources"] = state_volume["claim"]["resources"]
-            environment_firecracker.EnvironmentFirecrackerTemplate(
-                self,
-                "firecracker-template",
-                env,
-                labels={**_LABELS, **telemetry.EMITTER_ENVIRONMENT_RUNTIME_CLASS_LABELS},
-                state_volume=firecracker_state,
-                workspace_volume=firecracker_workspace,
-                runner_image=environment_vm.RUNNER_DISK_IMAGE,
-                platform_instructions=platform_instructions(
-                    env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
-                ),
-                harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
-                image_pull_secret_name=image_pull_secret_name,
-                session_reconcile_concurrency=session_reconcile_concurrency,
-                codex_readiness=vm_codex_readiness,
-            )
-
-    def add_platform_resources(self) -> None:
-        """Add the fleet runner network and platform-route fences."""
-        namespace = self.env.namespace
-        proxy_egress = [cilium.dns_egress(), egress.proxy(namespace).egress()]
-        NetworkPolicy(
-            self,
-            "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            endpoint_selector=pods(namespace).selector,
-            ingress=isolate_ingress(),
-            egress=proxy_egress,
-        )
-        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
-        NetworkPolicy(
-            self,
-            "environment-runtime-listener",
-            metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
-            endpoint_selector=pods(namespace).selector,
-            ingress=[
-                runner_gateway.service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT),
-                IngressRule.from_endpoints(
-                    {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
-                    ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
-                ),
-            ],
-        )
 
 
 class EnvironmentSandboxTemplate(Construct):
@@ -599,3 +448,30 @@ class EnvironmentSandboxTemplate(Construct):
             metadata=ApiObjectMetadata(name=self.name, namespace=self.env.namespace),
         ).add_json_patch(JsonPatch.add("/spec", spec))
         return spec
+
+    def add_platform_resources(self) -> None:
+        """Add the network and platform-route fences for every environment runtime Pod."""
+        namespace = self.env.namespace
+        proxy_egress = [cilium.dns_egress(), egress.proxy(namespace).egress()]
+        NetworkPolicy(
+            self,
+            "networkpolicy",
+            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            endpoint_selector=pods(namespace).selector,
+            ingress=isolate_ingress(),
+            egress=proxy_egress,
+        )
+        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        NetworkPolicy(
+            self,
+            "environment-runtime-listener",
+            metadata=ApiObjectMetadata(name=f"{NAME.removeprefix('agentplane-')}-listener", namespace=namespace),
+            endpoint_selector=pods(namespace).selector,
+            ingress=[
+                runner_gateway.service(namespace).pods.admit(ENVIRONMENT_RUNTIME_SERVICE_PORT),
+                IngressRule.from_endpoints(
+                    {**_SANDBOX_CONTROLLER_CILIUM_LABELS, "k8s:io.kubernetes.pod.namespace": namespace},
+                    ports=[ENVIRONMENT_RUNTIME_SERVICE_PORT],
+                ),
+            ],
+        )

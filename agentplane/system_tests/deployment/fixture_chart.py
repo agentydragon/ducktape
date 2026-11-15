@@ -11,9 +11,7 @@ and standalone edge use loopback HTTP origins for OAuth callbacks, served by por
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
-from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -41,7 +39,11 @@ from cert_manager_crds.io.cert_manager import (
     CertificateSpecUsages,
 )
 from constructs import Construct
-from more_itertools import one
+from kubevirt_virtualmachine_crds.io.kubevirt import (
+    VirtualMachineSpecTemplateSpecDomainFirmware,
+    VirtualMachineSpecTemplateSpecDomainFirmwareKernelBoot,
+    VirtualMachineSpecTemplateSpecDomainFirmwareKernelBootContainer,
+)
 from pydantic import AnyHttpUrl
 from trust_manager_crds.io.cert_manager.trust import (
     BundleSpecSources,
@@ -71,6 +73,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 # gazelle:include_dep @pypi//protobuf
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
+from agentplane.session_instructions.platform_instructions import SessionRuntime
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
@@ -92,10 +95,13 @@ from cluster.cdk8s.agentplane import (
     central_sampler_workload,
     command_sandbox,
     egress,
+    environment_firecracker,
+    environment_guest,
     environment_sandbox,
     environment_service,
     environment_vm,
     history_service,
+    launcher_relay,
     llm_ingress,
     mcp_edge,
     notifications,
@@ -130,6 +136,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccounts
 from cluster.cdk8s.agentplane.model_selections import HarnessRoutes, model_configs
 from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
+from cluster.cdk8s.agentplane.platform_instructions import agent_cli_environment, platform_instructions, service_urls
 from cluster.cdk8s.cert_manager.cluster_ca import add_workload_ca
 from cluster.cdk8s.providers.agentplane.policy_set import PolicySet, Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
@@ -191,6 +198,10 @@ _VM_GUEST_BOOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot
 _VM_GUEST_ROOT_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset"
 # The serial guest/initramfs_init mounts as the root.
 _VM_GUEST_ROOT_SERIAL = "guest-root"
+_VM_CODEX_READINESS = CodexReadiness(
+    exec_server_ready_timeout_ms=60_000, exec_server_probe_timeout_ms=5_000, exec_server_dependency_timeout_ms=120_000
+)
+_VM_GUEST_KERNEL_ARGS = "console=ttyS0 net.ifnames=0"
 # What the app offers when LLM ingress forwards to the scenario's scripted model. Scenarios take each harness's
 # first model; a ChatGPT route puts Codex in code mode.
 LOCAL_MODEL_ROUTES = HarnessRoutes(
@@ -834,7 +845,7 @@ def add_mcp_edge(chart: Chart, env: Environment) -> Construct:
     )
 
 
-def add_runner_templates(chart: Chart, env: Environment) -> environment_sandbox.EnvironmentSandbox:
+def add_runner_templates(chart: Chart, env: Environment) -> environment_sandbox.EnvironmentSandboxTemplate:
     sandbox_sidecar_resources = k8s.ResourceRequirements(
         requests={
             "cpu": k8s.Quantity.from_string(Cpu.millis(10).amount),
@@ -842,14 +853,14 @@ def add_runner_templates(chart: Chart, env: Environment) -> environment_sandbox.
         }
     )
     sandbox_pod.add_tool_config(chart, env)
-    return environment_sandbox.EnvironmentSandbox(
-        chart,
-        "environment-sandbox",
+    scope = Construct(chart, "environment-sandbox")
+    return environment_sandbox.EnvironmentSandboxTemplate(
+        scope,
+        "runner-template",
         env,
         name=POD_TEMPLATE,
         image=ENVIRONMENT_TOOLS_IMAGE,
         storage_class="local-path",
-        vm_workspace_storage_class=block_storage.STORAGE_CLASS if env.vm_sandboxes else None,
         # Sized so the pod suites' concurrent Sandboxes fit the nested node; the limits make an
         # outgrown request an OOM kill rather than a silent squeeze. Measured working sets:
         # `memory/peaks.json` in the suite's undeclared outputs.
@@ -873,15 +884,139 @@ def add_runner_templates(chart: Chart, env: Environment) -> environment_sandbox.
         sidecar_resources=sandbox_sidecar_resources,
         image_pull_secret_name=None,
         trust_mounts=sandbox_pod.egress_proxy_mounts(),
-        vm_codex_readiness=(
-            CodexReadiness(
-                exec_server_ready_timeout_ms=60_000,
-                exec_server_probe_timeout_ms=5_000,
-                exec_server_dependency_timeout_ms=120_000,
-            )
-            if env.vm_sandboxes or env.firecracker_sandboxes
-            else None
+    )
+
+
+def _fixture_vm_firmware(kernel_args: str) -> VirtualMachineSpecTemplateSpecDomainFirmware:
+    return VirtualMachineSpecTemplateSpecDomainFirmware(
+        kernel_boot=VirtualMachineSpecTemplateSpecDomainFirmwareKernelBoot(
+            kernel_args=kernel_args,
+            container=VirtualMachineSpecTemplateSpecDomainFirmwareKernelBootContainer(
+                image=_VM_GUEST_BOOT_IMAGE,
+                image_pull_policy="IfNotPresent",
+                kernel_path="/boot/vmlinuz",
+                initrd_path="/boot/initramfs.cpio",
+            ),
+        )
+    )
+
+
+def add_vm_templates(
+    chart: Chart,
+    env: Environment,
+    runner_template: environment_sandbox.EnvironmentSandboxTemplate,
+    *,
+    workspace_storage_class: str = block_storage.STORAGE_CLASS,
+) -> None:
+    """Compose the ordinary and test-only VM templates from the fixture's runner Pod."""
+    scope = chart
+    relay_settings = runner_template.add_launcher_relay_settings(name="launcher-relay-egress-sidecar")
+    launcher_relay.LauncherRelayPolicy(
+        scope,
+        "launcher-relay",
+        namespace=env.namespace,
+        runner_pod=runner_template.spec["pod"],
+        settings_config_map=relay_settings,
+    )
+    state_volume = runner_template.spec["stateVolume"]
+    state_claim = {**state_volume["claim"], "volumeMode": "Filesystem"}
+    if env.vm_storage_class is not None:
+        state_claim["storageClassName"] = env.vm_storage_class
+    vm_state_volume = {**state_volume, "claim": state_claim}
+    workspace_volume = environment_sandbox.workspace_volume_spec(
+        vm_state_volume, layout_type="BlockFilesystem", storage_class=workspace_storage_class
+    )
+    config_data = environment_guest.guest_config_data(
+        env,
+        gateway=launcher_relay.GUEST_GATEWAY,
+        block_devices=("/dev/disk/by-id/virtio-workspace",),
+        platform_instructions=platform_instructions(
+            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=launcher_relay.GUEST_GATEWAY
         ),
+        harness_env=agent_cli_environment(service_urls(env, egress_host=launcher_relay.GUEST_GATEWAY)),
+        codex_readiness=_VM_CODEX_READINESS,
+    )
+    config = ConfigMap(
+        scope,
+        "environment-vm-config",
+        metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
+        data=config_data,
+    )
+    labels = runner_template.spec["pod"]["metadata"]["labels"]
+    environment_vm.EnvironmentVmTemplate(
+        scope,
+        "environment-vm-template",
+        env,
+        template_name=environment_vm.NAME,
+        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_disk_serial=_VM_GUEST_ROOT_SERIAL,
+        firmware=_fixture_vm_firmware(_VM_GUEST_KERNEL_ARGS),
+        config_map=config,
+        labels=labels,
+        state_volume=vm_state_volume,
+        workspace_volume=workspace_volume,
+    )
+    oom_config = ConfigMap(
+        scope,
+        "oom-vm-config",
+        metadata=ApiObjectMetadata(name=f"{vm_configuration.OOM_TEMPLATE}-config", namespace=env.namespace),
+        data=config_data,
+    )
+    environment_vm.EnvironmentVmTemplate(
+        scope,
+        "oom-vm-template",
+        env,
+        template_name=vm_configuration.OOM_TEMPLATE,
+        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_disk_serial=_VM_GUEST_ROOT_SERIAL,
+        firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} agentplane.cgroup-observer=1"),
+        config_map=oom_config,
+        labels=labels,
+        state_volume=vm_state_volume,
+        workspace_volume=workspace_volume,
+    )
+    environment_vm.EnvironmentVmTemplate(
+        scope,
+        "supervision-vm-template",
+        env,
+        template_name=vm_configuration.SUPERVISION_TEMPLATE,
+        root_image=_VM_GUEST_ROOT_IMAGE,
+        root_disk_serial=_VM_GUEST_ROOT_SERIAL,
+        firmware=_fixture_vm_firmware(f"{_VM_GUEST_KERNEL_ARGS} {vm_configuration.SUPERVISION_KERNEL_ARG}"),
+        config_map=config,
+        labels=labels,
+        state_volume=vm_state_volume,
+        workspace_volume=workspace_volume,
+    )
+
+
+def add_firecracker_template(
+    chart: Chart, env: Environment, runner_template: environment_sandbox.EnvironmentSandboxTemplate
+) -> None:
+    """Compose the opt-in Firecracker template beside its runner Pod template."""
+    scope = chart
+    state_volume = runner_template.spec["stateVolume"]
+    claim = {**state_volume["claim"], "volumeMode": "Filesystem", "resources": {"requests": {"storage": "100Gi"}}}
+    if env.vm_storage_class is not None:
+        claim["storageClassName"] = env.vm_storage_class
+    firecracker_state = {**state_volume, "claim": claim, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}
+    workspace_volume = environment_sandbox.workspace_volume_spec(firecracker_state, layout_type="RawDiskImage")
+    workspace_volume["claim"]["resources"] = state_volume["claim"]["resources"]
+    guest_gateway = environment_firecracker.GATEWAY
+    environment_firecracker.EnvironmentFirecrackerTemplate(
+        scope,
+        "firecracker-template",
+        env,
+        labels=runner_template.spec["pod"]["metadata"]["labels"],
+        state_volume=firecracker_state,
+        workspace_volume=workspace_volume,
+        runner_image=environment_vm.RUNNER_DISK_IMAGE,
+        platform_instructions=platform_instructions(
+            env, session_runtime=SessionRuntime.NATIVE_HARNESS, egress_host=guest_gateway
+        ),
+        harness_env=agent_cli_environment(service_urls(env, egress_host=guest_gateway)),
+        image_pull_secret_name=None,
+        codex_readiness=_VM_CODEX_READINESS,
     )
 
 
@@ -958,60 +1093,6 @@ def add_svid_box_template(boxes: command_sandbox.CommandSandbox, env: Environmen
         ),
         volumes=[environment],
     )
-
-
-def configure_test_vm_guests(objects: list[dict[str, Any]]) -> None:
-    """Put the test guest (guest/) in the VM template in place of production's NixOS image, which boots
-    too slowly without KVM. KubeVirt boots the guest's kernel directly; its initramfs finds the root disk
-    by serial."""
-    template = one(
-        doc for doc in objects if doc["kind"] == "SandboxTemplate" and doc["metadata"]["name"] == environment_vm.NAME
-    )
-    spec = template["spec"]["vm"]["template"]["spec"]
-    spec["domain"]["firmware"] = {
-        "kernelBoot": {
-            "kernelArgs": "console=ttyS0 net.ifnames=0",
-            "container": {
-                "image": _VM_GUEST_BOOT_IMAGE,
-                "kernelPath": "/boot/vmlinuz",
-                "initrdPath": "/boot/initramfs.cpio",
-                "imagePullPolicy": "IfNotPresent",
-            },
-        }
-    }
-    root = one(disk for disk in spec["domain"]["devices"]["disks"] if "bootOrder" in disk)
-    root["serial"] = _VM_GUEST_ROOT_SERIAL
-    volume = one(volume for volume in spec["volumes"] if volume["name"] == root["name"])
-    volume["containerDisk"]["image"] = _VM_GUEST_ROOT_IMAGE
-    # Keep the smaller executor cgroup local to the OOM scenario; all other VM cases share environment-vm.
-    oom_template = deepcopy(template)
-    oom_template["metadata"]["name"] = vm_configuration.OOM_TEMPLATE
-    oom_config_map_name = f"{vm_configuration.OOM_TEMPLATE}-config"
-    oom_config_map = deepcopy(
-        one(
-            doc
-            for doc in objects
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == f"{environment_vm.NAME}-config"
-        )
-    )
-    oom_config_map["metadata"]["name"] = oom_config_map_name
-    oom_config = json.loads(oom_config_map["data"]["environment-runtime.json"])
-    oom_config_map["data"]["environment-runtime.json"] = json.dumps(oom_config, separators=(",", ":"))
-    oom_spec = oom_template["spec"]["vm"]["template"]["spec"]
-    oom_spec["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += " agentplane.cgroup-observer=1"
-    config_volume = one(
-        disk for disk in oom_spec["volumes"] if disk.get("configMap", {}).get("name") == f"{environment_vm.NAME}-config"
-    )
-    config_volume["configMap"]["name"] = oom_config_map_name
-    objects.extend([oom_config_map, oom_template])
-    # Run the private supervisor checks once, in an existing harness VM. All templates use
-    # the same guest root; the boot argument selects the fixture executable before Environment Runtime starts.
-    supervision = deepcopy(template)
-    supervision["metadata"]["name"] = vm_configuration.SUPERVISION_TEMPLATE
-    supervision["spec"]["vm"]["template"]["spec"]["domain"]["firmware"]["kernelBoot"]["kernelArgs"] += (
-        " " + vm_configuration.SUPERVISION_KERNEL_ARG
-    )
-    objects.append(supervision)
 
 
 def _litellm_url(models: Models) -> str:

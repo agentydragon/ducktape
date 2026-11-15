@@ -62,6 +62,8 @@ def container_disk_template(
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
     controller_attached_disks: Sequence[str] = (),
+    firmware: VirtualMachineSpecTemplateSpecDomainFirmware | None = None,
+    root_disk_serial: str | None = None,
     affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
     tolerations: Sequence[VirtualMachineSpecTemplateSpecTolerations] | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
@@ -82,15 +84,19 @@ def container_disk_template(
             domain=VirtualMachineSpecTemplateSpecDomain(
                 cpu=cpu,
                 resources=resources,
-                firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
-                    bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
-                        efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
+                firmware=(
+                    firmware
+                    if firmware is not None
+                    else VirtualMachineSpecTemplateSpecDomainFirmware(
+                        bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
+                            efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
+                        )
                     )
                 ),
                 devices=VirtualMachineSpecTemplateSpecDomainDevices(
                     autoattach_graphics_device=autoattach_graphics_device,
                     disks=[
-                        _virtio_disk(_ROOT_DISK, boot_order=1),
+                        _virtio_disk(_ROOT_DISK, serial=root_disk_serial, boot_order=1),
                         *(_virtio_disk(volume.name, serial=serial) for serial, volume in disks.items()),
                         *(_virtio_disk(name, serial=name) for name in controller_attached_disks),
                     ],
