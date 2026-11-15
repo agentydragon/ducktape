@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use output_layout::DebundleOutputLayout;
 use spec::{
@@ -14,7 +14,7 @@ use spec::{
 };
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompileSpecTreeOptions {
     pub config_path: PathBuf,
     pub modules_root: PathBuf,

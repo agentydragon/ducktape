@@ -1479,6 +1479,7 @@ rust_library(
         ":vendor",
         ":write_tree",
         "@crates//:anyhow",
+        "@crates//:serde",
         "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],

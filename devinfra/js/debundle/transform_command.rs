@@ -29,6 +29,24 @@ impl ProjectAnalysisArgs {
     }
 }
 
+/// Project the inputs of a default apply action without parsing JavaScript.
+#[derive(Debug, ClapArgs)]
+pub struct ProjectApplyArgs {
+    #[command(flatten)]
+    context: TransformContextArgs,
+    #[arg(long)]
+    out: PathBuf,
+    /// Root against which the projection stores relocatable filesystem paths.
+    #[arg(long, default_value = ".")]
+    projection_root: PathBuf,
+}
+
+impl ProjectApplyArgs {
+    pub fn run(self) -> Result<()> {
+        pipeline::project_apply(&self.context.resolve()?, &self.projection_root, &self.out)
+    }
+}
+
 /// Spec, source and package inputs shared by runs and assessment-only callers.
 #[derive(ClapArgs, Debug, Clone, Default)]
 pub struct TransformContextArgs {

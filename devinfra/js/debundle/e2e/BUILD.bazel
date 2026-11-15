@@ -86,6 +86,17 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "apply_projection_test",
+    saved_analysis_tools = True,
+    deps = [
+        "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:spec",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "saved_analysis_parity_test",
     saved_analysis_tools = True,
     deps = [

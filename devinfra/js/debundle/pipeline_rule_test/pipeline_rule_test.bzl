@@ -17,7 +17,7 @@ def _pipeline_report_flags_test_impl(ctx):
     target = analysistest.target_under_test(env)
     actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
     baseline = {action.mnemonic: action for action in ctx.attr.baseline[_BaselineActions].actions}
-    expected_actions = ["DebundleApply"]
+    expected_actions = ["DebundleApply", "DebundleProjectApply"]
     if ctx.attr.readable:
         expected_actions.append("DebundleExportGraphs")
     asserts.equals(env, sorted(expected_actions), sorted(actions))
@@ -75,9 +75,13 @@ def _pipeline_report_flags_test_impl(ctx):
     pipeline_inputs = actions["DebundleApply"].inputs.to_list()
     expected_native_inputs = [
         file
-        for file in pipeline_inputs
-        if file != analyzed and file.basename not in ["debundle", "debundle.runfiles"]
+        for file in actions["DebundleProjectApply"].inputs.to_list()
+        if file.basename not in ["debundle", "debundle.runfiles"]
     ]
+    asserts.false(env, any([file.extension in ["yaml", "yml"] for file in pipeline_inputs]))
+    projected = groups.apply_projection.to_list()[0]
+    asserts.true(env, projected in pipeline_inputs)
+    asserts.equals(env, [projected], actions["DebundleProjectApply"].outputs.to_list())
     asserts.equals(
         env,
         sorted([file.path for file in expected_native_inputs]),
@@ -147,7 +151,7 @@ def _shared_analysis_test_impl(ctx):
     asserts.false(env, any([file.basename in ["debundle", "debundle_analyze"] for file in project_inputs]))
     for variant in ctx.attr.variants:
         applied = {action.mnemonic: action for action in variant[_BaselineActions].actions}
-        asserts.equals(env, ["DebundleApply"], sorted(applied))
+        asserts.equals(env, ["DebundleApply", "DebundleProjectApply"], sorted(applied))
         asserts.true(env, analyzed in applied["DebundleApply"].inputs.to_list())
     return analysistest.end(env)
 

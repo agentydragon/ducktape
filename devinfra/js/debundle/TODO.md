@@ -583,3 +583,15 @@ paths and source-unit IDs belong in the consuming repo.
   Docs and skill text should reserve "plan" for proposed edits that can be
   reviewed/applied, and avoid implying that empty coverage output means there
   is no landable work.
+
+### Cache graph export across authored presentation edits
+
+Default apply can reuse its canonical typed projection after YAML presentation
+or module-level note edits. Full graph export still captures all authored bytes
+and YAML membership before lowering, and report writers enrich evidence with
+authored notes and locations. A shared core for graph export needs typed deferred
+provenance/report finalization: verify the current authored projection against the
+core, retain source/vendor/native compatibility evidence, then bind the exact
+current inventory. Require accepted and rejected graph replay tests, note and
+membership freshness, relocation between execroots, and measured Bazel cache
+reuse before removing raw YAML from graph export inputs.

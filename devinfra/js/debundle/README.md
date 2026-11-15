@@ -163,7 +163,8 @@ elsewhere in the repo are not the live implementation.
 ## Bazel integration and profiling
 
 `pipeline.bzl` exposes `debundle_analysis` for shared source facts and
-`debundle_apply` for each spec's assignment, gates, and emission. Each apply target
+`debundle_apply` for each spec's canonical apply projection, assignment, gates,
+and emission. Each apply target
 requires an explicit analysis target.
 `debundle_cli.bzl` provides a runfiles-backed launcher for graph queries; profile
 with `perf_wrapper.sh`: <docs/bazel_integration.md>.
