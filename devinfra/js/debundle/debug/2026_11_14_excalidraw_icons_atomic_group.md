@@ -25,7 +25,8 @@ short directed cycle in the group is:
 
 The editor imports its field helper `T` from `chunk-DIC2VAWC.js`. That file's
 export `p` stores the passed value through a property definition or assignment
-and returns it; it does not invoke a callback passed as the value. The graph's
+and returns it; its body does not directly call a callback passed as the value.
+Assignment to a host-provided accessor can still run code. The graph's
 only imported callable summary is for `Ve`, not `T`. `unit:675` consequently
 reports nine `unknown_call_target` losses for `T`. The icon initializer also
 reports unknown calls and member reads through the JSX namespace and its
@@ -76,12 +77,41 @@ minimality. The synthetic fallback path also differs from the editor's `Ed`
 effect and possible-getter path; matching edge kinds do not establish
 identical causes.
 
-To make the desired split acceptable, the engine needs sound facts about the
-imported field helper's callback timing and about the JSX/icon construction
-effects sufficient to remove the spurious ordering cycle. An ordinary purity
-assertion on all icon initializers would hide the unresolved call, result and
-heap effects. The remaining source/spec pair must then pass the canonical
-gate and browser smoke; this investigation has not established that result.
+The reduced fixture has a narrower, experimentally verified cause. In its
+shared peer chunk, both helpers are `export const` arrow functions.
+`isolated_callable_initializer` accepts a const callable only when its
+declaration is the provider's sole declaration, with no other statements or
+imports, so `node` cannot get an imported callable summary in this form.
+`field` also has no summary; its global assignment has separate host-effect
+questions. The `field` and `node` calls are therefore both unresolved;
+the opaque-callback fallback can invoke the stored `() => later` while `node`
+initializes `icon`. This gives `unit:2` an assumed eager read of `later` and a
+writer-after-reader timeline edge from `unit:3`; the analogous opposing edges
+between `unit:1` and `unit:3` complete the three-unit atomic SCC. These are
+conservative inferences under the missing summary, not evidence that `node`
+actually invokes the callback.
+
+A focused CLI probe changed only `node` to `export function node(tag) { return
+tag; }` in the same peer chunk. The report then derived `node` as a foreign
+call returning argument 0 with no retained arguments, the requested icon
+split passed the gate, and original and emitted Node output were both `svg`.
+Keeping `node` as a const arrow but placing it alone in its own imported chunk
+gave the same summary and accepted output. The original two-const form still
+had no imported callable summary and rejected the split. Thus a sound `node`
+call summary alone suffices for this fixture; a summary for `field` was not
+needed. The probe used an uncommitted diagnostic test in a detached scratch
+worktree, not a change to the checked-in regression test
+([passing RBE invocation](https://app.buildbuddy.io/invocation/703b105f-8eb9-4031-bfc1-7ae3d30157f0)).
+
+A prospective engine fix is a per-binding initializer-availability proof that
+can recognize an independent const callable in a multi-declaration provider,
+while retaining the existing body, value-flow, capture and module-order
+checks. Simply treating every imported call as pure or every const callable
+as available would discard real callback, getter and host effects. The editor
+still has unresolved calls through its JSX namespace and `createIcon`, plus
+the large fallback callback pool and the `Ed`/`Sa` ordering cycle. The fixture
+result does not establish that the pinned editor icons split passes the
+canonical gate or browser smoke.
 
 Evidence: `bbr build //devinfra/js/debundle/excalidraw:debundle
 --remote_build_event_upload=all` with the one-icon diagnostic spec failed in
