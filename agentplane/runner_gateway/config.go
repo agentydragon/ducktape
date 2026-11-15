@@ -214,8 +214,8 @@ func (c *config) validate() error {
 	if err := c.GatewayTLS.Validate(); err != nil {
 		return fmt.Errorf("gateway_tls: %w", err)
 	}
-	if c.GatewayTLS.ServerURI != peertls.SessionDispatcherURI {
-		return errors.New("gateway_tls.server_uri must identify the Session Dispatcher service")
+	if c.GatewayTLS.ServerURI != peertls.SessionDispatcherURI && c.GatewayTLS.ServerURI != peertls.SandboxControllerURI {
+		return errors.New("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
 	}
 	if err := c.GatewayTLS.ValidateCaller(c.RunnerTokenFile, peertls.SessionsURI); err != nil {
 		return fmt.Errorf("gateway_tls caller authentication: %w", err)

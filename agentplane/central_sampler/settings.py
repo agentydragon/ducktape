@@ -11,6 +11,7 @@ from pydantic_settings import SettingsConfigDict
 from agentplane.net.peertls.config import (
     CENTRAL_SAMPLER_URI,
     LLM_INGRESS_URI,
+    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
     TLS,
     ClientTLS,
@@ -413,9 +414,12 @@ class Settings(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def gateway_tls_names_runner_gateway_listener(self) -> Self:
-        if self.gateway_tls is not None and self.gateway_tls.server_uri != SESSION_DISPATCHER_URI:
-            raise ValueError("gateway_tls.server_uri must name the Runner Gateway RPC listener")
+    def gateway_tls_names_runtime_proxy_listener(self) -> Self:
+        if self.gateway_tls is not None and self.gateway_tls.server_uri not in {
+            SESSION_DISPATCHER_URI,
+            SANDBOX_CONTROLLER_URI,
+        }:
+            raise ValueError("gateway_tls.server_uri must name the Gateway or Environments Runtime proxy listener")
         return self
 
     @model_validator(mode="after")

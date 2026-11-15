@@ -225,6 +225,23 @@ func TestOutboundPeersAcceptNotificationsSVIDWithoutBearerFallback(t *testing.T)
 		t.Fatalf("tokenless SVID caller settings were rejected: %v", err)
 	}
 
+	t.Run("Runtime proxy accepts Environments", func(t *testing.T) {
+		migrated := c
+		migrated.RunnerGateway.TLS = clientTLS(peertls.SandboxControllerURI)
+		if err := migrated.validate(); err != nil {
+			t.Fatal(err)
+		}
+		migrated.SessionDispatcher.TLS = clientTLS(peertls.SandboxControllerURI)
+		if err := migrated.validate(); err == nil {
+			t.Fatal("accepted Environments as Session Dispatcher")
+		}
+		migrated.SessionDispatcher.TLS = c.SessionDispatcher.TLS
+		migrated.RunnerGateway.TLS = clientTLS(peertls.ActionsURI)
+		if err := migrated.validate(); err == nil {
+			t.Fatal("accepted unrelated Runtime proxy server identity")
+		}
+	})
+
 	t.Run("rejects bearer fallback with an SVID", func(t *testing.T) {
 		withBearer := c
 		withBearer.Actions.TokenFile = "/test/tokens/actions"

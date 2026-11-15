@@ -159,7 +159,11 @@ and TLS for `https`. A peer `tls` block verifies its configured server SPIFFE UR
 With `cert_file`, `key_file` and `client_uri`, it presents Notifications' exact service SVID and
 requires `token_file` to be absent. This block applies independently of the legacy Actions URL scheme.
 `runner_gateway` uses `control_target` for runner proxy calls through the stable
-Runner Gateway Service.
+Runner Gateway Service. Its `tls.server_uri` accepts that receiver's
+`spiffe://agentplane/session-dispatcher` identity or Environments'
+`spiffe://agentplane/sandbox-controller` identity for the staged proxy cutover. Each connection pins
+only the configured identity. The separate `session_dispatcher` connection always pins
+`spiffe://agentplane/session-dispatcher`.
 `history_service` and `session_dispatcher` each contain a `target`
 (`request_timeout_s` is optional for both). The Dispatcher setting is required. Staging selects
 service SVIDs for all four peers, with no bearer fallback. The projected tokens and account RBAC

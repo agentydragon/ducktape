@@ -161,8 +161,8 @@ func (s Settings) Validate() error {
 		return invalidSetting("gateway_target,gateway_token_file,gateway_tls", "Gateway transport settings require gateway_target")
 	}
 	if gateway {
-		if s.GatewayTLS != nil && s.GatewayTLS.ServerURI != peertls.SessionDispatcherURI {
-			return invalidSetting("gateway_tls.server_uri", "must name the Runner Gateway RPC listener")
+		if s.GatewayTLS != nil && s.GatewayTLS.ServerURI != peertls.SessionDispatcherURI && s.GatewayTLS.ServerURI != peertls.SandboxControllerURI {
+			return invalidSetting("gateway_tls.server_uri", "must name the Gateway or Environments Runtime proxy listener")
 		}
 		if err := s.GatewayTLS.ValidateCaller(s.GatewayTokenFile, peertls.CentralSamplerURI); err != nil {
 			return invalidSettingWithCause("gateway_target,gateway_token_file,gateway_tls", "must configure exactly one bearer token or central sampler service SVID, with verified Gateway TLS", err)

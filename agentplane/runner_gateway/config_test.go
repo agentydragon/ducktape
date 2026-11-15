@@ -450,3 +450,20 @@ func TestLegacyReceiverSettingsMayBeOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRuntimeProxyPeerAcceptsEachCutoverReceiver(t *testing.T) {
+	for _, uri := range []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI, peertls.ActionsURI} {
+		t.Run(uri, func(t *testing.T) {
+			contents := strings.Replace(requiredFile, peertls.SessionDispatcherURI, uri, 1)
+			path := configtest.WriteSettings(t, contents)
+			c, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path))
+			if uri == peertls.ActionsURI {
+				if err == nil {
+					t.Fatal("accepted unrelated Runtime proxy server identity")
+				}
+			} else if err != nil || c.GatewayTLS.ServerURI != uri {
+				t.Fatalf("Runtime proxy peer %q: %v", uri, err)
+			}
+		})
+	}
+}

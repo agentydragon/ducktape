@@ -662,6 +662,15 @@ func TestSettingsAcceptCentralSamplerSVIDForHistoryAndGateway(t *testing.T) {
 		t.Fatalf("valid SVID transports rejected: %v", err)
 	}
 
+	t.Run("Runtime proxy accepts Environments", func(t *testing.T) {
+		migrated := settings
+		migrated.GatewayTLS = cloneClientTLS(settings.GatewayTLS)
+		migrated.GatewayTLS.ServerURI = peertls.SandboxControllerURI
+		if err := migrated.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	for name, edit := range map[string]func(*Settings){
 		"history mixed credentials": func(s *Settings) { s.HistoryTokenFile = "/run/agentplane/history-token" },
 		"history wrong caller":      func(s *Settings) { s.HistoryTLS.ClientURI = peertls.AppURI },

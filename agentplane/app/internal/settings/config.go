@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -422,17 +423,18 @@ func (c Config) validate() error {
 		return errors.New("policy_service_tls is required")
 	}
 	for _, caller := range []struct {
-		name, tokenFile, serverURI string
-		tls                        *peertls.ClientTLS
+		name, tokenFile string
+		serverURIs      []string
+		tls             *peertls.ClientTLS
 	}{
-		{"session_dispatcher", c.SessionDispatcherTokenFile, peertls.SessionDispatcherURI, c.SessionDispatcherTLS},
-		{"runner_gateway", c.RunnerGatewayTokenFile, peertls.SessionDispatcherURI, c.RunnerGatewayTLS},
-		{"history_service", c.HistoryServiceTokenFile, peertls.HistoryIngressURI, c.HistoryServiceTLS},
-		{"policy_service", c.PolicyServiceTokenFile, peertls.PolicyControllerURI, c.PolicyServiceTLS},
-		{"egress_admin", c.EgressAdminTokenFile, peertls.EgressProxyURI, c.EgressAdminTLS},
-		{"notifications", c.NotificationsTokenFile, peertls.NotificationsURI, c.NotificationsTLS},
+		{"session_dispatcher", c.SessionDispatcherTokenFile, []string{peertls.SessionDispatcherURI}, c.SessionDispatcherTLS},
+		{"runner_gateway", c.RunnerGatewayTokenFile, []string{peertls.SessionDispatcherURI, peertls.SandboxControllerURI}, c.RunnerGatewayTLS},
+		{"history_service", c.HistoryServiceTokenFile, []string{peertls.HistoryIngressURI}, c.HistoryServiceTLS},
+		{"policy_service", c.PolicyServiceTokenFile, []string{peertls.PolicyControllerURI}, c.PolicyServiceTLS},
+		{"egress_admin", c.EgressAdminTokenFile, []string{peertls.EgressProxyURI}, c.EgressAdminTLS},
+		{"notifications", c.NotificationsTokenFile, []string{peertls.NotificationsURI}, c.NotificationsTLS},
 	} {
-		if err := validateAppServiceCaller(caller.name, caller.tls, caller.tokenFile, caller.serverURI); err != nil {
+		if err := validateAppServiceCaller(caller.name, caller.tls, caller.tokenFile, caller.serverURIs); err != nil {
 			return err
 		}
 	}
@@ -443,7 +445,7 @@ func (c Config) validate() error {
 		if peer.RequestTimeoutSeconds <= 0 || math.IsNaN(peer.RequestTimeoutSeconds) || math.IsInf(peer.RequestTimeoutSeconds, 0) {
 			return errors.New("environment_service.request_timeout_s must be positive")
 		}
-		if err := validateAppServiceCaller("environment_service", peer.TLS, "", peertls.SandboxControllerURI); err != nil {
+		if err := validateAppServiceCaller("environment_service", peer.TLS, "", []string{peertls.SandboxControllerURI}); err != nil {
 			return err
 		}
 	}
@@ -540,9 +542,9 @@ func (c *Config) clearImplicitServiceTokensForSVID(raw map[string]any) {
 	}
 }
 
-func validateAppServiceCaller(name string, tls *peertls.ClientTLS, tokenFile, serverURI string) error {
-	if tls != nil && tls.ServerURI != serverURI {
-		return fmt.Errorf("%s_tls.server_uri must identify %s", name, serverURI)
+func validateAppServiceCaller(name string, tls *peertls.ClientTLS, tokenFile string, serverURIs []string) error {
+	if tls != nil && !slices.Contains(serverURIs, tls.ServerURI) {
+		return fmt.Errorf("%s_tls.server_uri must identify one of %q", name, serverURIs)
 	}
 	if err := tls.ValidateCaller(tokenFile, peertls.AppURI); err != nil {
 		return fmt.Errorf("%s caller authentication: %w", name, err)

@@ -163,6 +163,21 @@ func TestAppServiceCallersCanUseSVIDWithoutProjectedTokens(t *testing.T) {
 		t.Fatalf("SVID caller config rejected: %v", err)
 	}
 
+	config.RunnerGatewayTLS = appSVIDTLS(peertls.SandboxControllerURI)
+	if err := config.validate(); err != nil {
+		t.Fatalf("Environments Runtime proxy rejected: %v", err)
+	}
+	config.RunnerGatewayTLS = appSVIDTLS(peertls.ActionsURI)
+	if err := config.validate(); err == nil {
+		t.Fatal("accepted unrelated Runtime proxy identity")
+	}
+	config.RunnerGatewayTLS = appSVIDTLS(peertls.SandboxControllerURI)
+	config.SessionDispatcherTLS = appSVIDTLS(peertls.SandboxControllerURI)
+	if err := config.validate(); err == nil {
+		t.Fatal("accepted Environments as Session Dispatcher")
+	}
+	config.SessionDispatcherTLS = appSVIDTLS(peertls.SessionDispatcherURI)
+
 	config.SessionDispatcherTokenFile = "/run/legacy/token"
 	if err := config.validate(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
 		t.Fatalf("SVID plus configured bearer error = %v, want caller-authentication error", err)
