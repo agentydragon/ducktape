@@ -840,7 +840,7 @@ async def gateway_roll_keeps_live_central_read_and_turn(
     """A real Gateway outage interrupts process/read, then the same call and turn finish."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -1010,7 +1010,7 @@ async def delegated_action_wait_keeps_code_mode_live(
     session_id, command_id = str(uuid4()), str(uuid4())
     message = f"central-sampler-action-{uuid4()}"
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -1118,7 +1118,7 @@ async def gateway_crash_settles_live_central_read_and_accepts_next_input(
     async with central_stack(
         cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
     ) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(
@@ -1237,7 +1237,7 @@ async def gateway_retry_exhaustion_reports_unknown_and_accepts_next_input(
     async with central_stack(
         cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
     ) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(
@@ -1378,7 +1378,7 @@ async def gateway_outage_restarts_exec_server_then_notifies_model(
     """An in-flight read loses its native server during Gateway outage and the model sees the loss."""
     session_id, first_command, second_command = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -1544,7 +1544,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
     reasoning = "I will read the marker created during setup."
     answer = "The executor returned prepared-on-executor."
     async with central_stack(cluster, tmp_path, template=template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -1555,6 +1555,8 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             cwd=cwd,
             model=MODEL,
         )
+        interrupted_model = scripted.session_model(interrupted_session_id, session_pb2.HARNESS_CODEX)
+        assert isinstance(interrupted_model, CodexModel)
         interrupted_created = await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(
                 session_id=interrupted_session_id, spec=session_spec, setup_script=":\n"
@@ -1575,7 +1577,7 @@ async def dispatcher_central_setup_tool_and_retained_answer(
         )
         assert interrupted_input.dispatch.command_id == interrupted_command_id
         await _wait_for_setup(deployed, interrupted_session_id)
-        interrupted_request = await model.request()
+        interrupted_request = await interrupted_model.request()
         assert interrupted_request.native.client_metadata.session_id == interrupted_session_id
         assert interrupted_request.native.code_mode
         async with interrupted_request._exchange as exchange:
@@ -1609,11 +1611,10 @@ async def dispatcher_central_setup_tool_and_retained_answer(
             event_pb2.ExecutionProgress.PHASE_LIVE,
         )
         host_pid_file, host_pid = await _sampler_code_mode_host_pid(cluster, deployed)
-        # A yielded cell returns control to sampling. Hold that continuation explicitly so
-        # B's request is the next scripted exchange and A remains active until interruption.
-        continuation = await model.request()
+        # Hold A's yielded continuation while B runs through its separate Session queue.
+        continuation = await interrupted_model.request()
         assert continuation.native.client_metadata.session_id == interrupted_session_id
-        await model.hold(continuation)
+        await interrupted_model.hold(continuation)
 
         created = await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(
@@ -1833,7 +1834,7 @@ async def pod_exec_session_rebinds_after_sandbox_suspend_resume(
         target = identity_pb2.EnvironmentTarget(
             namespace=cluster.namespace, name=deployed.sandbox, uid=deployed.sandbox_uid
         )
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         session_spec = session_pb2.SessionSpec(
             placement=session_pb2.SessionPlacement(
@@ -2019,7 +2020,7 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
     async with central_stack(
         cluster, tmp_path, template=executor.template, caller_account="system-test-native-client"
     ) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(
@@ -2111,13 +2112,11 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
         )
         (successor,) = [pod for pod in pods["items"] if not pod["metadata"].get("deletionTimestamp")]
         assert successor["metadata"]["uid"] != sampler["metadata"]["uid"]
-        successor_model = scripted.model(successor["metadata"]["name"], session_pb2.HARNESS_CODEX)
-        assert isinstance(successor_model, CodexModel)
         # The former owner's real 60-second lease can outlive Pod readiness.
         async with asyncio.timeout(90):
-            request = await successor_model.request()
+            request = await model.request()
         assert request.native.client_metadata.session_id == session_id
-        await successor_model.reply(request, Text("The sampler changed; the earlier process outcome is unknown."))
+        await model.reply(request, Text("The sampler changed; the earlier process outcome is unknown."))
         await _wait_for_turn_status(deployed, session_id, command_id, event_pb2.TURN_STATUS_COMPLETED)
 
         # History can lag the sampler; its fold cursor must reach the sampler's terminal event.
@@ -2167,16 +2166,16 @@ async def sampler_roll_retains_active_turn_and_history_accepts_next_input(
             timeout=15,
         )
         assert submitted.dispatch.command_id == next_command_id
-        request = await successor_model.request()
+        request = await model.request()
         assert request.native.client_metadata.session_id == session_id
-        await successor_model.reply(request, ShellCall("read-roll-effects", "cat roll-effects.txt"))
-        request = await successor_model.request()
+        await model.reply(request, ShellCall("read-roll-effects", "cat roll-effects.txt"))
+        request = await model.request()
         (output,) = [output for output in request.tool_outputs if output.call_id == "read-roll-effects"]
         output_text = "\n".join(output.blocks)
         _, separator, process_output = output_text.partition("Output:\n")
         assert separator, output_text
         assert process_output.strip() == "started", process_output
-        await successor_model.reply(request, Text("The next input completed on the same executor."))
+        await model.reply(request, Text("The next input completed on the same executor."))
         await _wait_for_turn_status(deployed, session_id, next_command_id, event_pb2.TURN_STATUS_COMPLETED)
         frames = deployed.sampler.FollowEvents(
             sampler_pb2.FollowEventsRequest(session_id=session_id), metadata=deployed.sampler_metadata, timeout=10
@@ -2336,7 +2335,7 @@ async def history_outage_backfills_completed_turn(
     """A completed active turn is committed by the sampler and folded after History returns."""
     session_id, command_id, next_command_id = str(uuid4()), str(uuid4()), str(uuid4())
     async with central_stack(cluster, tmp_path, template=executor.template) as deployed:
-        model = scripted.model(deployed.sampler_pod_name, session_pb2.HARNESS_CODEX)
+        model = scripted.session_model(session_id, session_pb2.HARNESS_CODEX)
         assert isinstance(model, CodexModel)
         await deployed.dispatcher.CreateSession(
             session_dispatcher_pb2.CreateSessionRequest(

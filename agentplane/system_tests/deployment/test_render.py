@@ -778,11 +778,15 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert ingress_connection.base_url == (
         f"https://{llm_ingress.service(NAMESPACE).fqdn}:{llm_ingress.service(NAMESPACE).port.number}"
     )
-    assert ingress_connection.auth.type == "bearer"
-    assert str(ingress_connection.auth.credential_file) == "/var/run/secrets/central-sampler/llm"
+    assert ingress_connection.auth.type == "agentplane_ingress"
+    assert ingress_connection.auth.credential_file is None
+    assert ingress_connection.auth.credential is None
     assert ingress_connection.tls is not None
     assert str(ingress_connection.tls.ca_file) == "/run/agentplane/workload-trust/ca-certificates.crt"
     assert ingress_connection.tls.server_uri == LLM_INGRESS_URI
+    assert ingress_connection.tls.client_uri == CENTRAL_SAMPLER_URI
+    assert str(ingress_connection.tls.cert_file) == settings.actions.tls.cert_file
+    assert str(ingress_connection.tls.key_file) == settings.actions.tls.key_file
     assert set(settings.models) == {fixture_chart.GPT6_LUNA_RESPONSES.id}
     model = settings.models[fixture_chart.GPT6_LUNA_RESPONSES.id]
     assert model.connection == "llm-ingress"

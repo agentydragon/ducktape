@@ -289,6 +289,7 @@ py_test(
         ":scripted_upstream",
         "//:conftest",
         "//agentplane/native/claude/testing:requests",
+        "//agentplane/native/codex/testing:requests",
         "//agentplane/proto:session_pb2",
         "//agentplane/system_tests:conftest",
         "//agentplane/testing:scripted_model",
