@@ -130,6 +130,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "ownership_subset_contract_test",
+    deps = ["@crates//:tempfile"],
+)
+
+debundle_e2e_test(
     name = "saved_analysis_reports_test",
     saved_analysis_tools = True,
     deps = [
