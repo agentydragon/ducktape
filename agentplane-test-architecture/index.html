@@ -206,6 +206,35 @@
               Actual fixtures still use pytest-asyncio.
             <//>
           <//>
+          ${
+            data.pod_concurrency &&
+            html`<${Section}
+              id="pod-concurrency"
+              title="Pod concurrency with memory settings held fixed"
+            >
+              ${paragraph(data.pod_concurrency.decision)}
+              <${Rows}
+                headers=${["Case slots", "Fresh passes", "Mean action (s)", "Mean case envelope (s)", "Mean CPU (s)", "Maximum action memory (GiB)", "Immutable runs"]}
+                rows=${data.pod_concurrency.rows.map((row) => [
+                  row.slots,
+                  row.passes + "/" + row.runs,
+                  row.mean_action_seconds.toFixed(1),
+                  row.mean_case_envelope_seconds.toFixed(1),
+                  row.mean_cpu_seconds.toFixed(1),
+                  row.max_action_memory_gib.toFixed(2),
+                  html`<${Group} gap="xs"
+                    >${row.invocations.map((id, index) => html`<${Anchor} key=${id} href=${"https://app.buildbuddy.io/invocation/" + id}>${"Run " + (index + 1)}<//>`)}<//
+                  >`,
+                ])}
+              />
+              ${paragraph(data.pod_concurrency.scope)}
+              ${paragraph(data.pod_concurrency.memory_finding)}
+              <${Anchor}
+                href=${repo + "/commit/" + data.pod_concurrency.source_head}
+                >Fixed benchmark source<//
+              >
+            <//>`
+          }
           <${Section} id="measurements" title="Current experiment evidence">
             <${Rows}
               headers=${["Screen", "Observed result", "What it establishes"]}

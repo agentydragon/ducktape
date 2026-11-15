@@ -7,7 +7,7 @@ report snapshots. The CI reports are:
 - **Agentplane test architecture:** [current branch plan](agentplane-test-architecture/index.html),
   [fixture ownership](agentplane-test-architecture/index.html#pytest-fixtures),
   [current evidence](agentplane-test-architecture/evidence.json),
-  [source manifest](agentplane-test-architecture/manifest.json). Compares PR #16489 with its pinned devel base: native suite partitions, explicit App fixture ownership, checked resource reuse, configured-input and selector evidence, and the ordinary-pytest shard screen. Earlier states are linked as immutable records; a 30% complete-feedback improvement is not yet established.
+  [source manifest](agentplane-test-architecture/manifest.json). Compares PR #16489 with its pinned devel base: native suite partitions, explicit App fixture ownership, checked resource reuse, configured-input and selector evidence, and matched two/three/four-worker Pod concurrency. The [six-action screen](agentplane-test-architecture/evidence.json) preserves resource settings and all 15 case identities; four workers averaged 239s versus 304s at two. Setup varied independently; a 30% complete-feedback improvement is not yet established.
 
 - **Latency:** [standalone HTML](latency/index.html), [evidence](latency/evidence.json),
   [source and observation window](latency/manifest.json). Original backend windows and denominators are retained; iteration 14 adds the shared-guest screen, targeted retry repair and VM-tail phases without a whole-CI saving claim.
