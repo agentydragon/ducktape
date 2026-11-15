@@ -2917,10 +2917,10 @@ the saved data, compressed in a checksummed zstd frame. See
 binding encodings are wrong.
 
 The runtime `ProgramSummary`, `AnalysisArtifactBody`, `ChunkFactAnalysis` and
-`StatementFacts` do not implement the saved wire format. Their explicit saved
-representations reconstruct runtime structures after the header has been
-checked. The analysis crate owns its saved fact and purity types beside the
-runtime structures; the staged artifact owns their composition.
+`StatementFacts` are reconstructed after the header has been checked. Chunk
+facts snapshot directly into generated messages; adapters handle process-local
+binding contexts and shared purity nodes. Stored messages have no cross-version
+compatibility guarantee. The staged artifact owns their composition.
 
 One postorder purity node table belongs to the entire saved body. Imported
 verdicts, statement verdicts, and completion-disagreement diagnostics all share
