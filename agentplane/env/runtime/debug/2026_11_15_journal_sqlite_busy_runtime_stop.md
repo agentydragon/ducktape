@@ -179,7 +179,7 @@ aggregate blocker snapshots would identify the cleanup stage. Current post-resta
 recover those facts. Diagnostic instrumentation would need a separate change; none is introduced
 here. Increasing `busy_timeout` or blindly retrying cannot identify or repair the cause.
 
-## Questions for Claude
+## Proposals
 
 Proposal for a separate cleanup change: preserve the existing Runtime-wide fail-stop and ownership
 fences, but let failed-journal Sessions reach native halt/cleanup without requiring a successful
