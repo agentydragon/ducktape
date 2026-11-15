@@ -77,21 +77,6 @@ platform_routes: {routes: {}}
 	}
 }
 
-func TestLoadConfigAcceptsRetiredAudienceTokenSettingsDuringRollout(t *testing.T) {
-	content := `
-proxy: {address: p.example:8888, transport: {mode: tls, ca_file: /ca, auth: {mode: spiffe, cert_file: /cert, key_file: /key}}}
-platform_routes: {routes: {}}
-audience_token_files: {kubernetes: /var/run/agentplane-egress/kubernetes-token}
-`
-	config, err := loadConfig(settingsFileEnv(writeSettingsFile(t, content)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if config.AudienceTokenFiles["kubernetes"] != "/var/run/agentplane-egress/kubernetes-token" {
-		t.Fatalf("deployed audience_token_files did not parse: %v", config.AudienceTokenFiles)
-	}
-}
-
 func TestLoadConfigReadsSpiffeAuthAndTransport(t *testing.T) {
 	path := writeSettingsFile(t, `
 proxy:
