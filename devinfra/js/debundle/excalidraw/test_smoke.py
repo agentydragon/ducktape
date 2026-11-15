@@ -225,6 +225,33 @@ async def test_stats_drag_input_updates_selected_rectangle(playwright_driver: Pl
         assert await page.evaluate("globalThis.__debundleHarness.errors") == []
 
 
+async def test_hyperlink_popup_saves_selected_rectangle_link(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+
+        rectangle = page.get_by_test_id("toolbar-rectangle")
+        await page.locator("label", has=rectangle).click()
+        canvas = page.locator("canvas.excalidraw__canvas.interactive")
+        await canvas.hover(position={"x": 400, "y": 300})
+        await page.mouse.down()
+        await page.mouse.move(600, 450, steps=5)
+        await page.mouse.up()
+
+        await page.keyboard.press("Control+k")
+        editor = page.locator(".excalidraw-hyperlinkContainer-input")
+        await expect(editor).to_be_visible()
+        await editor.fill("https://example.com/")
+        await editor.press("Enter")
+        await expect(page.locator("a.excalidraw-hyperlinkContainer-link")).to_have_attribute(
+            "href", "https://example.com/"
+        )
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 async def test_resize_and_crop_geometry(playwright_driver: Playwright, origin: str) -> None:
     async with deterministic_browser_context(
         playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
