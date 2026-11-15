@@ -8700,6 +8700,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         values: &Values,
         outcome: &mut Outcome,
     ) {
+        let inputs = self.inputs;
         let effect_owner = self.state.current_top_owner.unwrap();
         let mut owners = BTreeSet::new();
         for callback in self.callback_values(values) {
@@ -8728,12 +8729,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         }
         if self.state.world.reachability.incomplete {
             for owner in owners {
-                let (reads, rebinds) = self
-                    .inputs
+                let (reads, rebinds) = inputs
                     .source_unit_read_closure
                     .lazy_effects_for_source_unit(owner);
-                let reads = reads.clone();
-                let rebinds = rebinds.clone();
                 let referenced: Values = reads
                     .iter()
                     .flat_map(|id| {
@@ -8748,7 +8746,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     })
                     .collect();
                 self.taint_objects(&referenced);
-                self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
+                self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
             }
             return;
         }
@@ -8761,9 +8759,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             // This coverage-checked union includes every retained callable's
             // synchronous prefix, including returned callbacks and getters.
             // Bodies past a definite await cannot run during this protocol.
-            let (reads, rebinds) = self.inputs.synchronous_effects(owner, false);
-            let reads = reads.clone();
-            let rebinds = rebinds.clone();
+            let (reads, rebinds) = inputs.synchronous_effects(owner, false);
             let referenced: Values = reads
                 .iter()
                 .flat_map(|id| {
@@ -8778,7 +8774,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 })
                 .collect();
             self.taint_objects(&referenced);
-            self.promote_lazy_effects(&reads, &rebinds, effect_owner, outcome);
+            self.promote_lazy_effects(reads, rebinds, effect_owner, outcome);
         }
     }
 
