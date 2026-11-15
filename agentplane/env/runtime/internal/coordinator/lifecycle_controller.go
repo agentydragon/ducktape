@@ -71,12 +71,14 @@ func (c *runtimeCloseController) Run(ctx context.Context, r controller.Runtime, 
 		// loop or waiting for COSI's engine to finish joining controllers.
 		c.r.lifecycleCancel()
 		close(c.stopped)
-		if c.plan.cancelFence != nil {
-			c.plan.cancelFence()
-		}
+		// Preparation may still be installing the fence context. Cancel its
+		// parent before joining, then read the plan after the worker settles.
 		cancelClose()
 		if c.op != nil {
 			<-c.op.done
+		}
+		if c.plan.cancelFence != nil {
+			c.plan.cancelFence()
 		}
 	}()
 	for {
@@ -257,7 +259,7 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage runtimeClos
 	p := &c.plan
 	switch stage {
 	case runtimeClosePreparing:
-		return c.prepare()
+		return c.prepare(ctx)
 	case runtimeCloseExecutionFencing:
 		return c.r.waitForExecutionFenced(p.fenceCtx, p.generation)
 	case runtimeCloseHistoryFlushing:
@@ -281,7 +283,7 @@ func (c *runtimeCloseController) runStage(ctx context.Context, stage runtimeClos
 	}
 }
 
-func (c *runtimeCloseController) prepare() error {
+func (c *runtimeCloseController) prepare(ctx context.Context) error {
 	r := c.r
 	// Close published its generation under transitionMu after the accepted
 	// transition settled. No new transition can start after closing was set.
@@ -296,6 +298,6 @@ func (c *runtimeCloseController) prepare() error {
 	c.plan.sessionsStarted = r.sessions != nil
 	c.plan.sessionLossErr = r.failureLocked()
 	c.plan.sealUID = r.desired.SealUID
-	c.plan.fenceCtx, c.plan.cancelFence = context.WithTimeout(context.Background(), executionFenceGrace)
+	c.plan.fenceCtx, c.plan.cancelFence = context.WithTimeout(ctx, executionFenceGrace)
 	return nil
 }
