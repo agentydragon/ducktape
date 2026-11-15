@@ -1,7 +1,7 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
@@ -74,14 +74,18 @@ export { first, middle, last };
         ],
     ));
     assert_preserved_entry_output(&fixture, "ready ready ready\n");
-    let graph = fixture.dependency_graph();
-    let first = source_unit_for_binding(&graph, "first");
-    let seed = source_unit_for_binding(&graph, "seed");
-    assert!(graph.edges.iter().any(|edge| {
-        edge.source == first
-            && edge.target == seed
-            && edge.edge_kind == analysis_model::DepKind::EagerUse
-    }));
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/outer.js",
+        &["first", "last"],
+        &["seed", "middle"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/inner.js",
+        &["seed", "middle"],
+        &["first", "last"],
+    );
 }
 
 #[test]
