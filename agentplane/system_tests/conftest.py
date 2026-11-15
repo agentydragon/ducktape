@@ -26,6 +26,7 @@ from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.ollama_warmup import warm_ollama
 from agentplane.system_tests.driver.sandbox import Sandboxes, sandbox_scope
 from agentplane.system_tests.driver.tracing import timing_summary, tracer
+from agentplane.system_tests.k3s.pytest_plugin import k3s_binary
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.net import Listener
 from util.testing.otel_tracing import configure_tracing
