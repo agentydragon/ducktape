@@ -173,8 +173,10 @@ whether cleanup is proved; coordinator restart never replays accepted work.
 
 Concurrent Close callers share one accepted worker. Caller cancellation ends only that wait.
 Session recovery or History failure closes admission and starts cleanup without manufacturing a
-seal. Failed native cleanup, engine failure or failed sealed delivery retains ownership. A terminal
-bootstrap error is a settled durable outcome and does not by itself mean cleanup failed.
+seal. During shutdown, a control-command lookup against a failed journal does not block native halt
+and process cleanup. The journal remains failed for durable writes and sealing. Failed native
+cleanup, engine failure or failed sealed delivery retains ownership. A terminal bootstrap error is
+a settled durable outcome and does not by itself mean cleanup failed.
 
 The [lifecycle contract](docs/lifecycle.md) and [COSI map](docs/cosi.md) describe the barriers and
 resource writers. The [public control contract](docs/control.md) describes caller-visible behavior.
