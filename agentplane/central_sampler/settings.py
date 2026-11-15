@@ -236,7 +236,10 @@ class Settings(BaseModel):
 
     actions: ActionsConfig | None = None
     database_url: str | None = None
-    listen: str
+    listen: str | None = None
+    health_listen: str | None = Field(
+        default=None, description="Optional gRPC health-only plaintext listener; defaults to :8081."
+    )
     listen_tls: ServerTLSListener | None = Field(
         default=None, description="Optional server-authenticated TLS listener for sampler RPCs."
     )
@@ -313,6 +316,22 @@ class Settings(BaseModel):
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
     kubeconfig: Path | None = None
+
+    @model_validator(mode="after")
+    def has_application_listener(self) -> Self:
+        if self.listen is None and self.listen_tls is None:
+            raise ValueError("configure at least one application RPC listener")
+        health_listen = self.health_listen if self.health_listen is not None else ":8081"
+        if self.health_listen is not None and not self.health_listen.strip():
+            raise ValueError("health_listen must not be empty when configured")
+        if self.listen is not None and self.listen == health_listen:
+            raise ValueError("health_listen must differ from listen")
+        if self.listen_tls is not None:
+            if self.listen is not None and self.listen == self.listen_tls.listen:
+                raise ValueError("listen_tls.listen must differ from listen")
+            if health_listen == self.listen_tls.listen:
+                raise ValueError("listen_tls.listen must differ from health_listen")
+        return self
 
     @model_validator(mode="after")
     def observation_budget_fits_duration(self) -> Self:
