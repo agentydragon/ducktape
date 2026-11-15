@@ -1302,7 +1302,6 @@ pub fn resolve_imported_callable_summaries(
             let mut prepared_module =
                 crate::facts::sync_effects::execution_index::prepare_callable_capabilities(
                     &views,
-                    crate::facts::StableArraySpreadShapes::collect(facts.body, &views),
                     locals,
                     selected_value_inputs
                         .get(module)
@@ -1803,43 +1802,17 @@ pub fn resolve_imported_callable_summaries(
             }
         }
     }
-    // Array-protocol contradictions use a premise-relative copy of the
-    // all-source census. It preserves each candidate's Array effect and its
-    // conservative fallback, but the selected Array-spread premise may
-    // identify the iterator receiver while Object/Symbol remain independent.
-    let array_spread_request = selected_native_operation_inputs
-        .values()
-        .flatten()
-        .find_map(|input| {
-            (input.evidence.operation
-                == NativeInputKind::Operation(
-                    spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                ))
-            .then_some(input.evidence.spec_location.as_str())
-        })
-        .or_else(|| {
-            resolved_native_operation_inputs
-                .values()
-                .flatten()
-                .find_map(|input| {
-                    (input.evidence.operation
-                        == NativeInputKind::Operation(
-                            spec::NativeOperationKind::ArraySpreadFromPrimitiveArrays,
-                        ))
-                    .then_some(input.evidence.spec_location.as_str())
-                })
-        });
-    let array_spread_request = array_spread_request.map(str::to_owned).or_else(|| {
-        selected_imported_primitive_array_spread_inputs
-            .iter()
-            .find_map(|(consumer, inputs)| {
-                (!inputs.is_empty()).then(|| {
-                    format!(
-                        "chunk_analysis_options.{consumer}.imported_primitive_array_spread_inputs[0]"
-                    )
-                })
+    // Imported spread premises use a premise-relative view of the all-source
+    // census while preserving each candidate's Array effect and fallback.
+    let array_spread_request = selected_imported_primitive_array_spread_inputs
+        .iter()
+        .find_map(|(consumer, inputs)| {
+            (!inputs.is_empty()).then(|| {
+                format!(
+                    "chunk_analysis_options.{consumer}.imported_primitive_array_spread_inputs[0]"
+                )
             })
-    });
+        });
     if let Some(request) = array_spread_request {
         let protocol_integrity =
             crate::facts::sync_effects::execution_index::resolve_array_spread_protocol_integrity(

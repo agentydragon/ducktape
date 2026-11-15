@@ -1164,7 +1164,6 @@ pub enum NativeOperationKind {
     SymbolWellKnownClassKeys,
     /// Exact class-key reads of own data properties with unknown primitive values.
     SymbolPrimitiveClassKeys,
-    ArraySpreadFromPrimitiveArrays,
     PromiseResolve,
 }
 

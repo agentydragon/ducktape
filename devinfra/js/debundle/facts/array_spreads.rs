@@ -1,8 +1,8 @@
 //! Source-shape candidates for an exact, contiguous primitive-array spread.
 //!
 //! This reads the original declaration before `TopLevelItemView` splits it.
-//! A certificate still needs native iterator integrity (or an exact author
-//! premise) and graph co-location of every producer with its consumer.
+//! A certificate still needs native iterator integrity and graph co-location
+//! of every producer with its consumer.
 
 use super::*;
 use source_identity::SourceUnitOrdinal;
