@@ -184,7 +184,7 @@ its old ordering does not give it precedence over the selected tracks.
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
-States as of 15:05 UTC.
+States as of 14:55 UTC.
 
 | Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
