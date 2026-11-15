@@ -138,10 +138,14 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	client := dispatcherpb.NewSessionDispatcherClient(connection)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(
-		"authorization", "Bearer forged-backend-token",
-		"x-agentplane-subject", "attacker/forged",
-	))
+	mixed := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer forged-backend-token")
+	if _, err := client.ListSessions(mixed, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("certificate plus bearer = %v, want Unauthenticated", err)
+	}
+	if probe.calls != 0 {
+		t.Fatalf("mixed credentials reached handler %d times", probe.calls)
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-agentplane-subject", "attacker/forged")
 	if _, err := client.ListSessions(ctx, &dispatcherpb.ListSessionsRequest{}); err != nil {
 		t.Fatal(err)
 	}
