@@ -195,14 +195,22 @@ pub fn search(problem: &AssignmentProblem<'_>, options: &SearchOptions) -> Resul
         return Ok(report);
     }
     let mut visit = |digits: &[usize]| -> Result<bool> {
-        // Scope filters can skip exponentially many combinations. Honor the
-        // clock even when this combination will not invoke the gate.
+        // Scope filters can skip exponentially many combinations. Honor both
+        // budgets even when this combination will not invoke the gate.
         if options
             .time_budget
             .is_some_and(|budget| started.elapsed() >= budget)
         {
             report.status = SearchStatus::Incomplete;
             report.stop_reason = Some(StopReason::TimeBudget);
+            return Ok(true);
+        }
+        if options
+            .max_checks
+            .is_some_and(|limit| report.checks >= limit)
+        {
+            report.status = SearchStatus::Incomplete;
+            report.stop_reason = Some(StopReason::MaxChecks);
             return Ok(true);
         }
         let moved: BTreeSet<_> = atoms
@@ -222,14 +230,6 @@ pub fn search(problem: &AssignmentProblem<'_>, options: &SearchOptions) -> Resul
             .collect();
         if new_modules.len() > new_limit {
             return Ok(false);
-        }
-        if options
-            .max_checks
-            .is_some_and(|limit| report.checks >= limit)
-        {
-            report.status = SearchStatus::Incomplete;
-            report.stop_reason = Some(StopReason::MaxChecks);
-            return Ok(true);
         }
         let mut candidate = problem.baseline.clone();
         for (atom, digit) in atoms.iter().zip(digits) {

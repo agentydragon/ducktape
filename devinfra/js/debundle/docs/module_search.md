@@ -131,7 +131,7 @@ a witness or exhausts it. It can be exponential and makes no optimality promise.
   Increase `PROPTEST_CASES` for longer runs and turn any shrunk failure into a
   named regression before fixing it.
 - `modules_complete_cli_test` pins joint peels, actual existing owners, intact
-  three-unit atoms, honest negatives/budgets (including time spent skipping
+  three-unit atoms, honest negatives/budgets (including exhaustion while skipping
   out-of-scope combinations), scope errors, stale plan IDs and physical tree
   roots. `modules_check_cli_test` also distinguishes a valid
   asymmetric import cycle from a Pass-2 ESM rejection with no constraining cycle.

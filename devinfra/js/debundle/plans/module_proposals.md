@@ -509,7 +509,7 @@ shims.
       Another property run shrank identical literal declarations to a graph-valid
       but selector-ambiguous peel; that case is retained as a named no-write CLI
       regression. Graph completeness does not imply synthesis completeness.
-- [ ] **Prove a useful fixed-owner workflow end to end.** Run the common workflow
+- [x] **Prove a useful fixed-owner workflow end to end.** Run the common workflow
       against a real accepted partial spec, apply a returned plan exactly and
       materialize it through the normal pipeline. Check relevant emitted behavior
       and record meaningful residual reduction and disturbance. Exercise the
@@ -519,7 +519,12 @@ shims.
       it removes three residual source units, keeps authored units fixed and
       regenerates an entry that executes under Node
       ([passing packaged recipe](https://app.buildbuddy.io/invocation/72d935b5-0647-4d15-8b9c-89758ee67a0e)).
-      Real downstream acceptance remains a separate release check.
+      The same round trip also passed on a copied real consumer spec: checked
+      proposal, selector preview, exact application and normal full materialization.
+      The resulting ownership maps confirm positive residual reduction, zero moved
+      authored units and unchanged destinations for every omitted unit. Consumer
+      sources and evidence stay downstream. Runtime evidence here comes from the
+      neutral Node fixtures; this does not claim consumer browser execution.
 - [ ] **Accelerate and consolidate after the release gates pass.** Profile actual
       search costs, add heuristic ordering and completeness-preserving optimizations,
       and compare them against the complete reference. Migrate live callers and
