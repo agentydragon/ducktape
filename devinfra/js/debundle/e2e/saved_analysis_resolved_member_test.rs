@@ -209,6 +209,7 @@ fn analyze_refuses_provider_source_changed_after_site_projection() {
     let fixture = write_validate_fixture_spec(native_member_fixture());
     let root = fixture.spec_path.parent().unwrap().to_path_buf();
     let staged = Staged {
+        workspace: fixture.workspace(),
         spec: fixture.spec_path.clone(),
         projection: root.join("analysis.projection"),
         artifact: root.join("analysis.dba"),

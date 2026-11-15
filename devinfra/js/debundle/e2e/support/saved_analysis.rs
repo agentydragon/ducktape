@@ -9,11 +9,11 @@ pub struct StagedInvocation {
     pub result: CommandResult,
     pub harness_root: Option<PathBuf>,
     pub invocation_spec: Option<PathBuf>,
-    pub _outputs: TempDir,
+    pub _outputs: CaseWorkspace,
 }
 
 impl StagedInvocation {
-    pub fn tree_command(args: &[String], outputs: TempDir) -> Self {
+    pub fn tree_command(args: &[String], outputs: CaseWorkspace) -> Self {
         Self {
             result: command(&args.iter().map(String::as_str).collect::<Vec<_>>()),
             _outputs: outputs,
@@ -87,6 +87,7 @@ export { A, B, C };
 }
 
 pub struct Staged {
+    pub workspace: CaseWorkspace,
     pub spec: PathBuf,
     pub projection: PathBuf,
     pub artifact: PathBuf,
@@ -132,7 +133,7 @@ impl Staged {
     }
 
     pub fn run_with_graphs(&self, graphs: bool, extra: &[&str]) -> StagedInvocation {
-        let outputs = TempDir::new_in(self.root()).expect("create per-run output directory");
+        let outputs = self.workspace.child();
         let invocation_spec = outputs.path().join("transform_spec.yaml");
         let harness_root = outputs.path().join("harness");
         let output_root = outputs.path().join("out");
@@ -214,7 +215,7 @@ impl TreeStaged {
         dry_run: bool,
     ) -> StagedInvocation {
         let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec![
             "bindings".to_string(),
@@ -242,7 +243,7 @@ impl TreeStaged {
 
     pub fn unassign(&self, sym: &str, analysis: Option<&Path>, dry_run: bool) -> StagedInvocation {
         let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec![
             "bindings".to_string(),
@@ -274,7 +275,7 @@ impl TreeStaged {
         dry_run: bool,
     ) -> StagedInvocation {
         let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
@@ -308,7 +309,7 @@ impl TreeStaged {
         dry_run: bool,
     ) -> StagedInvocation {
         let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
@@ -392,7 +393,7 @@ impl TreeStaged {
         complete_context: bool,
         partial_context_without_analysis: bool,
     ) -> StagedInvocation {
-        let outputs = TempDir::new_in(self.root()).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let args = self.apply_args(
             batch,
@@ -413,7 +414,7 @@ impl TreeStaged {
         partial_context_without_analysis: bool,
     ) -> StagedInvocation {
         let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec![
             "modules".to_string(),
@@ -452,8 +453,7 @@ impl TreeStaged {
     }
 
     pub fn run_with_analysis(&self, analysis: &Path, emit_on_rejection: bool) -> StagedInvocation {
-        let root = self.root();
-        let outputs = TempDir::new_in(root).expect("create per-invocation staged output directory");
+        let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
         let mut args = vec!["run".to_string(), "--graphs".to_string()];
         args.extend(self.analysis_args(analysis, &output_root));
@@ -627,6 +627,7 @@ pub fn staged(opts: FixtureOpts<'_>) -> (Staged, ValidateFixture) {
     let fixture = write_validate_fixture_spec(opts);
     let root = fixture.spec_path.parent().unwrap().to_path_buf();
     let staged = Staged {
+        workspace: fixture._root.clone(),
         spec: fixture.spec_path.clone(),
         projection: root.join("analysis.projection"),
         artifact: root.join("analysis.dba"),

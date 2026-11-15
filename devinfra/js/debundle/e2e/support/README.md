@@ -11,13 +11,19 @@ The library's existing public test helpers are re-exported by `mod.rs`:
   initial graph-producing run.
 - `tree_assertions.rs` collects relative paths and raw bytes; exact-tree comparison
   and staged report normalization apply their separate policies to that collection.
+- `failure_workspace.rs` owns a case's lifetime. Flat, tree, graph and staged fixtures
+  retain the whole workspace under `$TEST_UNDECLARED_OUTPUTS_DIR/failed-fixtures/`
+  when an assertion unwinds through an owning handle, including assertions after a
+  successful CLI run. Retention is best effort and does not replace the original
+  panic. Per-invocation output directories share the input owner's lifetime; a
+  returned staged invocation remains usable after its setup owner is dropped.
+  `case.json` records the original root, and per-test names plus process/case IDs
+  distinguish concurrent failures. Successful cases remove their temporary files.
 - `mod.rs` owns flat-fixture setup, CLI/Node execution, and report
-  fixtures. An unexpected CLI exit preserves the spec, available per-chunk reports,
-  root program graph, and any emitted `app/` tree under undeclared outputs; outputs not
-  reached before an early failure remain absent. Runtime-only `extra_files` are mirrored
+  fixtures. Runtime-only `extra_files` are mirrored
   into `app/` after transformation and before exit handling; on a failed exit, mirroring
   happens only if the transform produced `app/`. `failed_fixture_dirs_for_current_test()`
-  locates those retained artifacts without changing the shared output environment.
+  locates retained workspaces without changing the shared output environment.
 
 For valid vendor marks, use the production spec types (including `WrapperShape` and
 `PartialSwapKind`) in the test's fixture builders. Keep raw JSON/YAML where a test
