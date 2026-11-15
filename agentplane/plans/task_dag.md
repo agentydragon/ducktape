@@ -191,7 +191,7 @@ is [section 17](#17-two-binaries-and-the-go-layout).
 | One service authentication mode    | 04:56, "One auth mode can fire off"     | `PRIVILEGED_BACKEND_AUTH_DESIGN`                                    | Stages 1–2 and stage 3 receivers merged (last: #16354, #16357, #16358, #16364, #16371)                                                                             |
 | Stage 2 Go layout fixes            | 20:04, "3, 4, 5: yes, do dispatch that" | [Section 17](#17-two-binaries-and-the-go-layout)                    | Merged #16394, #16402, #16415, #16427, #16433, #16435, #16441; the Go plan keeps `runner-era-names` open for runner wording in comments and errors                 |
 | Central code-mode tools as Actions | 20:04, same release                     | `CENTRAL_SESSION_DELEGATED_ACTING`                                  | Merged #16418, #16422, #16423                                                                                                                                      |
-| Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Caller code, grants and switches merged through #16442; #16447 in review                                                                                           |
+| Callers present service SVIDs      | 20:15, "Sounds to me good to dispatch"  | `PRIVILEGED_BACKEND_AUTH_DESIGN` (stage 4)                          | Most callers switched; [readiness audit](service_svid_stage5_readiness.md) finds Actions→Dispatcher/History and sampler→LLM still on bearers; #16467 grant merged  |
 | Dead Dispatcher command states     | 21:15, card "Delete dead states only"   | `DISPATCHER_HARNESS_CONFIRMATION`                                   | Stored rows rewritten (#16438); removing `HARNESS_CONFIRMED` and `NO_OP` follows                                                                                   |
 | EnvironmentService serving note    | 23:13, card "Serving design note first" | `ENVIRONMENT_SERVICE_TO_ENVIRONMENTS`                               | Serving contract approved and implementation released by operator, 2026-11-15; receiver code precedes configuration                                                |
 
@@ -3738,24 +3738,22 @@ Stages, each a separate set of PRs that is safe to roll and states its rollback:
 **Roll gates:** certificates exist before code relies on them; receiver images admitting SVIDs are
 pinned before callers switch; code accepting settings is pinned before manifests set them. No
 fallback from a failed or absent certificate to a bearer. PRs #16333 (Policy Controller and sampler
-server TLS) and #16334 (verified client TLS) are separate in-flight work to build on, not duplicate.
-Stop after stage 3 and app-agent-token step (a) are open and green; later stages wait for operator
-confirmation of image pins.
+server TLS) and #16334 (verified client TLS) are merged foundations. Stage 4 is released; stage 5
+implementation remains held. The readiness audit prepares its sequence without releasing it.
 
 **Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
 verification, rotation, caller denial and delegation without a bearer fallback.
 
-State at 00:05 UTC: the path inventory is [service SVID authentication](service_svid_authentication.md);
-service SVIDs are issued and mounted ([#16359](https://github.com/agentydragon/ducktape/pull/16359));
-exact service SVID admission and certificate-backed delegation landed in
-[#16350](https://github.com/agentydragon/ducktape/pull/16350); Policy and Egress Admin admit service
-SVIDs ([#16355](https://github.com/agentydragon/ducktape/pull/16355)), and so do History
-([#16369](https://github.com/agentydragon/ducktape/pull/16369)), Actions (#16354), the sampler
-(#16357), LLM ingress (#16358), the Gateway (#16364) and the MCP edge (#16371), all merged. Stage 4
-was released 20:15 UTC ("Sounds to me good to dispatch"): the callers' service-SVID code and the
-per-service grants and switches, each after its image pin, merged from #16395 through #16442;
-#16447 (the Notifications SVID's automatic wake role) is in review. Stage 5 is not released. TLS:
-#16333 (parallel listeners) merged; #16334 (verified clients) remains in review.
+State at 2026-11-15 07:08 UTC: stages 1–3 and most stage 4 caller switches have landed.
+The [stage 1 inventory](service_svid_authentication.md) is a dated baseline; the
+[cutover readiness audit](service_svid_stage5_readiness.md) checks fresh devel, pinned images,
+actual Pods and mounted settings. Actions still selects bearers for direct and delegated
+Dispatcher/History calls; the sampler still selects a bearer for LLM ingress. The Actions direct
+Dispatcher grant (#16467) is now merged and live. Finish those separate caller cutovers before
+receiver removal. The sampler provider cutover must preserve retained Session shapes and the
+selected zero-or-several central environment attachments. Stage 5 is not released: its plan
+lists receiver-specific admission removal, manifests-before-fields gates, token cleanup and RBAC
+removal last. App OIDC, MCP OAuth and Kubernetes API credentials retain their own contracts.
 
 #### Authentication: dead or stale today
 
