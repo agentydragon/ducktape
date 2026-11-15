@@ -150,16 +150,23 @@ const APPLY_OUTPUT_ROOT: &str = "__debundle_apply_output_root__";
 /// in the projection and bind them to the consuming target's output root.
 /// Authored source paths remain subject to the ordinary projection-root mapping.
 fn map_tree_output_paths(spec: &mut TransformSpec, from: &Path, to: &Path) -> Result<()> {
-    let mut map = |path: &mut Option<PathBuf>| -> Result<()> {
+    fn replace_root(path: &Path, from: &Path, to: &Path) -> Result<PathBuf> {
+        let suffix = path.strip_prefix(from).with_context(|| {
+            format!(
+                "tree output {} is outside its output root {}",
+                path.display(),
+                from.display()
+            )
+        })?;
+        Ok(if suffix.as_os_str().is_empty() {
+            to.to_path_buf()
+        } else {
+            to.join(suffix)
+        })
+    }
+    let map = |path: &mut Option<PathBuf>| -> Result<()> {
         if let Some(path) = path {
-            let suffix = path.strip_prefix(from).with_context(|| {
-                format!(
-                    "tree output {} is outside its output root {}",
-                    path.display(),
-                    from.display()
-                )
-            })?;
-            *path = to.join(suffix);
+            *path = replace_root(path, from, to)?;
         }
         Ok(())
     };
@@ -167,12 +174,59 @@ fn map_tree_output_paths(spec: &mut TransformSpec, from: &Path, to: &Path) -> Re
     map(&mut spec.swap_vendor_chunks.output_wrapper_dir)?;
     map(&mut spec.materialize_logical_modules.report_out_dir)?;
     if let Some(write) = &mut spec.write_js_tree {
-        write.out_dir = to.join(write.out_dir.strip_prefix(from)?);
+        write.out_dir = replace_root(&write.out_dir, from, to)?;
     }
     if let Some(browser) = &mut spec.emit_browser_harness {
-        browser.out_dir = to.join(browser.out_dir.strip_prefix(from)?);
+        browser.out_dir = replace_root(&browser.out_dir, from, to)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod apply_projection_output_tests {
+    use super::*;
+
+    #[test]
+    fn tree_output_binding_moves_only_generated_paths() {
+        let mut spec: TransformSpec = serde_json::from_value(serde_json::json!({
+            "inputs": {"input_root": "snapshot", "js_list_path": "js-files.txt"},
+            "swap_vendor_chunks": {
+                "output_manifest_path": "first/reports/vendor_swaps.json",
+                "output_wrapper_dir": "first/app/vendors/generated"
+            },
+            "materialize_logical_modules": {"report_out_dir": "first/reports/tree"},
+            "write_js_tree": {"out_dir": "first"},
+            "emit_browser_harness": {
+                "asset_summary_path": "snapshot/assets.json",
+                "out_dir": "first",
+                "snapshot_root": "snapshot"
+            }
+        }))
+        .unwrap();
+
+        map_tree_output_paths(&mut spec, Path::new("first"), Path::new("second")).unwrap();
+        assert_eq!(
+            spec.swap_vendor_chunks.output_manifest_path.as_deref(),
+            Some(Path::new("second/reports/vendor_swaps.json"))
+        );
+        assert_eq!(
+            spec.swap_vendor_chunks.output_wrapper_dir.as_deref(),
+            Some(Path::new("second/app/vendors/generated"))
+        );
+        assert_eq!(
+            spec.materialize_logical_modules.report_out_dir.as_deref(),
+            Some(Path::new("second/reports/tree"))
+        );
+        assert_eq!(spec.write_js_tree.unwrap().out_dir, Path::new("second"));
+        let browser = spec.emit_browser_harness.unwrap();
+        assert_eq!(browser.out_dir, Path::new("second"));
+        assert_eq!(
+            browser.asset_summary_path,
+            Path::new("snapshot/assets.json")
+        );
+        assert_eq!(browser.snapshot_root, Path::new("snapshot"));
+        assert_eq!(spec.inputs.input_root, Path::new("snapshot"));
+    }
 }
 
 /// Which spec paths were absolute beneath the producer root. Relative authored

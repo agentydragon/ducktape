@@ -271,6 +271,19 @@ fn tree_projection_is_shared_across_consumer_output_roots() {
             "members:\n  - selector: { binding: { name: value } }\n",
         )],
     );
+    let mut config = fs::read_to_string(&staged.config).unwrap();
+    config.push_str("browser_harness:\n  asset_summary_path: assets.json\n");
+    fs::write(&staged.config, config).unwrap();
+    fs::write(
+        staged.root().join("assets.json"),
+        r#"{"entryPoints":{"html":"index.html"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        staged.root().join("snapshot/index.html"),
+        "<!doctype html><html><body><script type=\"module\" src=\"main.js\"></script></body></html>",
+    )
+    .unwrap();
     let first_out = staged.root().join("first-out");
     let second_out = staged.root().join("second-out");
     let projection = staged.root().join("apply.json");
@@ -282,6 +295,33 @@ fn tree_projection_is_shared_across_consumer_output_roots() {
         !String::from_utf8_lossy(&first_projection).contains("first-out"),
         "consumer output root leaked into projection"
     );
+    let projected: Value = serde_json::from_slice(&first_projection).unwrap();
+    let output_root = "__debundle_apply_output_root__";
+    assert_eq!(
+        projected["spec"]["swap_vendor_chunks"]["output_manifest_path"],
+        format!("{output_root}/reports/vendor_swaps.json")
+    );
+    assert_eq!(
+        projected["spec"]["swap_vendor_chunks"]["output_wrapper_dir"],
+        format!("{output_root}/app/vendors/generated")
+    );
+    assert_eq!(
+        projected["spec"]["materialize_logical_modules"]["report_out_dir"],
+        format!("{output_root}/reports/tree")
+    );
+    assert_eq!(projected["spec"]["write_js_tree"]["out_dir"], output_root);
+    assert_eq!(
+        projected["spec"]["emit_browser_harness"]["out_dir"],
+        output_root
+    );
+    assert_eq!(
+        projected["spec"]["emit_browser_harness"]["asset_summary_path"],
+        path(&staged.root().join("assets.json"))
+    );
+    assert_eq!(
+        projected["spec"]["emit_browser_harness"]["snapshot_root"],
+        path(&staged.root().join("snapshot"))
+    );
 
     let run_args: Vec<&str> = ["run"]
         .into_iter()
@@ -290,6 +330,8 @@ fn tree_projection_is_shared_across_consumer_output_roots() {
         .collect();
     assert_ok(&command(&run_args), "apply at second output root");
     assert_source_file(&second_out.join("app/main/values.js"), &["42"], &[]);
+    assert!(second_out.join("reports/tree/main").is_dir());
+    assert!(second_out.join("app/index.html").is_file());
     assert!(
         !first_out.exists(),
         "apply wrote to the producer's output root"
