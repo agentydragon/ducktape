@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -29,19 +28,7 @@ def _storage(chart: Chart) -> None:
         tenant=_NAMESPACE,
         adopt_existing=True,
         description="Tempo's tenant-local SeaweedFS trace bucket.",
-        # Not the default `tempo-s3-credentials`: that is the legacy Secret below.
         secret_name=_CREDENTIALS_SECRET,
-    )
-    # Retain the previous credential Secret during the staged handoff. The old
-    # S3Credentials resource is retired separately; revoking its retained key and
-    # removing this rollback Secret is an explicit follow-up.
-    k8s.KubeSecret(
-        chart,
-        "legacy-credentials",
-        metadata=k8s.ObjectMeta(
-            name="tempo-s3-credentials", namespace=_NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
-        ),
-        type="Opaque",
     )
 
 

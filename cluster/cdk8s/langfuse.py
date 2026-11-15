@@ -70,19 +70,6 @@ def _database(scope: Construct) -> None:
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:
-    # Retain the previous credential Secret during the staged handoff. The old
-    # S3Credentials resource is retired separately; revoking its retained key and
-    # removing this rollback Secret is an explicit follow-up.
-    k8s.KubeSecret(
-        scope,
-        "legacy-s3-credentials",
-        metadata=k8s.ObjectMeta(
-            name="langfuse-s3-credentials",
-            namespace=_NAMESPACE,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
     return s3.PrivateBucket(
         scope,
         "storage",
@@ -90,8 +77,6 @@ def _storage(scope: Construct) -> s3.PrivateBucket:
         tenant=_NAMESPACE,
         adopt_existing=True,
         description="Langfuse event, export, and media objects.",
-        # Not the default `langfuse-s3-credentials`: that is the legacy Secret above, populated by
-        # the old cross-namespace S3Credentials, which this one cannot adopt.
         secret_name="langfuse-seaweedfs-credentials",
         key_fields=s3.SecretKeyFields(access_key="s3-access-key-id", secret_key="s3-secret-access-key"),
     )

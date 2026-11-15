@@ -133,15 +133,6 @@ spec:
     name: barman-cloud.cloudnative-pg.io
   schedule: 0 51 2 * * *
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  annotations:
-    kustomize.toolkit.fluxcd.io/ssa: Merge
-  name: langfuse-s3-credentials
-  namespace: langfuse
-type: Opaque
----
 apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
