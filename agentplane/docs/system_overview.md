@@ -352,14 +352,22 @@ The co-hosted receivers can additionally admit exact service SVIDs when configur
 Their reader, manager, launcher, operator, Executor and proxy grants remain separate.
 App and Notifications have exact service-SVID automatic wake-broker grants, separately from
 explicit operator resume. Notification wake remains conditional on the target's wake-on-send policy.
-The Sessions, Environments and Runtime-proxy roles can move with the planned binary split.
-No caller or production listener configuration switches in this stage.
+When `orchestration_v1` is configured, the exact `spiffe://agentplane/actions` SVID also receives
+Dispatcher component authority and EnvironmentService launcher authority. Both grants follow the
+existing `actions.orchestration_callers` map; session delegation alone does not enable them. The
+launcher handler allows template listing and environment creation with a complete Action launch
+origin, while the Dispatcher role remains separate from operator authority. History's exact reader
+SVID list already includes Actions, and the production listener fix from #16451 is pinned and Ready,
+so direct Action-to-History SVID reads work. This change keeps bearer tokens and receiver bearer
+admission unchanged.
 
 ```mermaid
 flowchart LR
     app[App service] -->|service mTLS: read, manage and direct create grants| environments[EnvironmentService]
-    actions[Action service] -->|service mTLS + typed Identity envelope| dispatcher[Dispatcher / Sessions role]
-    actions -->|service mTLS + typed launch origin| environments
+    actions[Action service] -->|direct service mTLS: orchestration Dispatcher role| dispatcher[Dispatcher / Sessions role]
+    actions -->|service mTLS + typed Identity envelope: session delegation| dispatcher
+    actions -->|direct service mTLS: orchestration launcher role| environments
+    actions -->|service mTLS + typed Identity envelope: session delegation| environments
     sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]
     controller[Sandbox Controller service] -->|service mTLS: controller methods| proxy
     sampler[Central sampler service] -->|service mTLS: Executor grant| executor[Executor]

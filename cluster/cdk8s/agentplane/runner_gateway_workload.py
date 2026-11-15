@@ -177,6 +177,14 @@ class RunnerGateway(Construct):
         self.sandbox_controller_pods = controller_peer[1]
         proxy = runner_gateway.service(namespace)
         own_account = ServiceAccountRef(namespace=namespace, name=runner_gateway.NAME)
+        # `environment_launchers` is the existing orchestration_callers map from serving_chart.
+        # The direct Actions SVID roles follow that exact feature gate; delegated session tools
+        # do not make the Actions service a direct component caller.
+        actions_orchestration_svids = (
+            frozenset({ACTIONS_URI})
+            if ServiceAccountRef(namespace=namespace, name=actions.NAME) in environment_launchers
+            else frozenset()
+        )
         # A delivery worker may run on a different replica from the holder. It calls
         # the stable Runner Gateway Service with this projected Gateway-audience token.
         proxy_callers = {**gateway_callers, own_account: proxy.pods}
@@ -348,7 +356,7 @@ class RunnerGateway(Construct):
             runtime_proxy_controller_callers=[SANDBOX_CONTROLLER_URI],
             executor_service_callers=[CENTRAL_SAMPLER_URI] if central_sampler_target is not None else [],
             dispatcher_callers=dispatcher_accounts,
-            dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}),
+            dispatcher_service_callers=frozenset({APP_URI, NOTIFICATIONS_URI}) | actions_orchestration_svids,
             environment_service_readers=environment_authority.service_readers,
             environment_service_managers=environment_authority.service_managers,
             environment_service_launchers=environment_authority.service_launchers,

@@ -158,9 +158,10 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
         f"{staging.ENV.namespace}/{actions.NAME}",
     }
     assert settings["operator_callers"] == [f"{staging.ENV.namespace}/{app.NAME}"]
-    assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
+    assert set(settings["dispatcher_service_callers"]) == {ACTIONS_URI, APP_URI, NOTIFICATIONS_URI}
     assert settings["environment_service_readers"] == [APP_URI]
     assert settings["environment_service_managers"] == [APP_URI]
+    assert settings["environment_service_launchers"] == [ACTIONS_URI]
     assert settings["environment_service_operators"] == [APP_URI]
     assert set(settings["wake_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert f"{staging.ENV.namespace}/{notifications.NAME}" in settings["wake_callers"]
@@ -325,8 +326,10 @@ def test_session_delegation_is_a_dispatcher_caller_without_wake_authority(scratc
         f"{env.namespace}/{notifications.NAME}",
         f"{env.namespace}/{actions.NAME}",
     }
+    assert set(settings["dispatcher_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     assert "operator_callers" not in settings
     assert settings["environment_launchers"] == []
+    assert "environment_service_launchers" not in settings
     assert f"{env.namespace}/{actions.NAME}" not in settings["wake_callers"]
 
 
