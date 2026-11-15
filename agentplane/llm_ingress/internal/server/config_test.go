@@ -15,7 +15,7 @@ policy_namespace: test-policy
 token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 log_llm_requests: true
-rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: kubernetes_bearer, audiences: [yaml-audience]}]}
+rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: spiffe, ca_file: /tls/ca}]}
 codex_model_catalog_file: /yaml/codex_models.json
 kubeconfig: /yaml/kubeconfig
 central_sampler_accounts: [yaml-namespace/sampler]
@@ -151,7 +151,7 @@ func TestLoadConfigRejectsInvalidModelBudgetsAndUnknownKeys(t *testing.T) {
 	}
 	for name, settings := range map[string]string{
 		"top level":       validSettings + "unknown_setting: secret-value\n",
-		"nested listener": strings.Replace(validSettings, "auth: [{mode: kubernetes_bearer, audiences: [yaml-audience]}]", "auth: [{mode: kubernetes_bearer, audiences: [yaml-audience], ignored: secret-value}]", 1),
+		"nested listener": strings.Replace(validSettings, "auth: [{mode: spiffe, ca_file: /tls/ca}]", "auth: [{mode: spiffe, ca_file: /tls/ca, ignored: secret-value}]", 1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := loadSettings(t, settings); err == nil || strings.Contains(err.Error(), "secret-value") {
@@ -169,7 +169,7 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 		LiteLLMURL:                      "http://127.0.0.1:8100",
 		LiteLLMKey:                      testLiteLLMKey,
 		Attribution:                     defaultAttribution(),
-		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []listener.Authentication{&listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}},
+		RPC:                             listener.Config{ListenAddress: ":8080", Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: "/tls/ca"}}},
 	}
 	if err := validateConfig(&c); err == nil {
 		t.Fatal("shared HTTP/2 listener accepted plaintext")
@@ -177,5 +177,16 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 	c.RPC.TLS = &listener.TLS{CertFile: "/tls/cert", KeyFile: "/tls/key"}
 	if err := validateConfig(&c); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRetiredBearerSettingsMayBeOmittedAndDoNotEnableDelegation(t *testing.T) {
+	withoutLegacy := strings.ReplaceAll(validSettings, "token_audience: yaml-audience\n", "")
+	withoutLegacy = strings.ReplaceAll(withoutLegacy, "central_sampler_accounts: [yaml-namespace/sampler]\n", "")
+	if _, err := loadSettings(t, withoutLegacy); err != nil {
+		t.Fatalf("retired settings still required: %v", err)
+	}
+	if _, err := loadSettings(t, validSettings+"central_sampler_identity_callers: true\n"); err == nil {
+		t.Fatal("legacy sampler accounts granted typed service delegation")
 	}
 }

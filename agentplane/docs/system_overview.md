@@ -459,16 +459,17 @@ flowchart LR
     sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
 ```
 
-### Staged LLM ingress certificate admission
+### LLM ingress certificate admission
 
 Exact service SVID allowlists cover ModelConfig reads and the Central Sampler's typed inference
 calls. A sampler actor must also prove the effective live Identity and Session in the delegation
-envelope. These edges wait for receiver pins and separate caller settings; staging retains its
-current bearer mode until that cutover.
+envelope. Workload calls resolve the live credential's Identity; inference and ModelConfig never
+admit Kubernetes bearers. A failed certificate cannot fall back to a token.
 
 ```mermaid
 flowchart LR
-    readers[Configured service SVID readers] -->|mTLS: ModelConfig read methods| llm[LLM ingress]
+    workload[Workload Identity SVID] -->|mTLS: live credential verification| llm[LLM ingress]
+    readers[Configured service SVID readers] -->|mTLS: ModelConfig read methods| llm
     sampler[Central Sampler service SVID] -->|mTLS plus typed Identity and Session delegation| llm
     llm -->|effective Identity egress grants| provider[Model provider]
 ```
@@ -732,9 +733,9 @@ The required mTLS hop resolves the SVID's live `WorkloadCredential` before using
 ServiceAccount as the policy subject; no bearer authenticates it. Rules uses that same
 authentication policy
 and terminates TLS through an opaque central tunnel;
-the proxy never asserts the caller. History, Notification, Gateway, Action and LLM each serve
-bearer-authenticated and Sandbox-SVID RPCs on their primary TLS listener, with method-specific
-authorization preserved. With `service_callers` configured, the central sampler's TLS listener
+the proxy never asserts the caller. History, Notification, Gateway and Action retain their
+method-specific authorization while their receiver retirements roll out. LLM ingress authenticates
+workload and service SVIDs on its primary TLS listener, with no bearer admission. With `service_callers` configured, the central sampler's TLS listener
 presents its service SVID and admits exact service peers. Its History exporter presents the
 sampler SVID with typed Session delegation for the effective Identity. Only LLM ingress holds the LiteLLM key.
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.

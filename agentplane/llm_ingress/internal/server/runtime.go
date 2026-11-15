@@ -15,7 +15,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	authlistener "github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
@@ -26,7 +25,6 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	authenticationclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -73,23 +71,8 @@ func serve(ctx context.Context, c config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	authentication, err := authenticationclient.NewForConfig(kubeConfig)
-	if err != nil {
-		return errors.New("could not create Kubernetes client")
-	}
-	callers, err := auth.NewResolver(authentication.TokenReviews(), c.TokenAudience, c.AllowedServiceAccountNamespaces)
-	if err != nil {
-		return err
-	}
-	var svidResolver *auth.SVIDResolver
-	if c.RPC.Has(authlistener.SPIFFE) {
-		svidResolver, err = auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces,
-			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
-		if err != nil {
-			return err
-		}
-	}
-	callers, err = callers.WithListenerAuthentication(c.RPC, svidResolver)
+	callers, err := auth.NewKubernetesSVIDResolver(kubeConfig, c.AllowedServiceAccountNamespaces,
+		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
 	if err != nil {
 		return err
 	}

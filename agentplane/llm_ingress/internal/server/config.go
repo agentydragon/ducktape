@@ -71,16 +71,15 @@ type modelConfig struct {
 type config struct {
 	ModelConfigServiceCallers []string `mapstructure:"model_config_service_callers"`
 	CentralSamplerServices    []string `mapstructure:"central_sampler_services"`
-	// CentralSamplerAccounts may claim a central Session (`x-agentplane-session-id`) on their own
-	// bearer calls.
+	// CLEANUP(added 2026-11-15): Remove after manifests omit central_sampler_accounts and that rollout completes.
+	// Decoded for rollout compatibility; no longer admits callers.
 	CentralSamplerAccounts []string `mapstructure:"central_sampler_accounts"`
-	// CentralSamplerIdentityCallers lets those accounts also call as delegating actors for an
-	// Identity in policy_namespace, which the call is then attributed to. It is a grant of its own:
-	// claiming a Session never implies asserting an Identity.
+	// CentralSamplerIdentityCallers enables the exact service actors to call for a live Identity.
 	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name.
-	PolicyNamespace       string            `mapstructure:"policy_namespace"`
+	PolicyNamespace string `mapstructure:"policy_namespace"`
+	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes. Ignored.
 	TokenAudience         string            `mapstructure:"token_audience"`
 	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`
 	Models                []modelConfig     `mapstructure:"models"`
@@ -166,9 +165,6 @@ func validateConfig(c *config) error {
 			return errors.New("allowed_service_account_namespaces cannot contain an empty namespace")
 		}
 	}
-	if c.TokenAudience == "" {
-		return errors.New("token_audience is required")
-	}
 	backend, err := url.Parse(c.LiteLLMURL)
 	if err != nil || (backend.Scheme != "http" && backend.Scheme != "https") || backend.Hostname() == "" ||
 		backend.User != nil || backend.RawQuery != "" || backend.Fragment != "" {
@@ -183,17 +179,14 @@ func validateConfig(c *config) error {
 	if !attributesIdentity(c.Attribution) {
 		return errors.New("policy_namespace requires every attribution output to carry the identity claim")
 	}
-	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerAccounts) == 0 && len(c.CentralSamplerServices) == 0 {
-		return errors.New("central_sampler_identity_callers requires central_sampler_accounts or central_sampler_services")
+	if c.CentralSamplerIdentityCallers && len(c.CentralSamplerServices) == 0 {
+		return errors.New("central_sampler_identity_callers requires central_sampler_services")
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return err
 	}
 	if c.RPC.TLS == nil {
 		return errors.New("rpc.tls is required for the shared HTTP/2 listener")
-	}
-	if c.RPC.Has(listener.KubernetesBearer) && !c.RPC.AllowsBearerAudience(c.TokenAudience) {
-		return errors.New("rpc bearer audiences must include token_audience")
 	}
 	for _, model := range c.Models {
 		if model.Model == "" || model.TotalContextBudgetTokens <= 0 {
