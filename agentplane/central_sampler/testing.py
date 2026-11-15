@@ -196,9 +196,13 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
     binary = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/central_sampler/cmd/main_bin_/main_bin"
     if config.database_url is None:
         raise ValueError("system-test sampler settings require database_url")
-    with listen_tcp() as health_listener:
+    with (
+        listen_tcp() as health_listener,
+        listen_tcp() as bound,
+        TemporaryDirectory(prefix="sampler-credentials-") as credentials_directory,
+    ):
         health_port = health_listener.port
-    with listen_tcp() as bound, TemporaryDirectory(prefix="sampler-credentials-") as credentials_directory:
+        health_fd = health_listener.socket.fileno()
         fd = bound.socket.fileno()
         ca = make_ca("central sampler fixture")
         cert_path, key_path = issue_workload_leaf(
@@ -212,7 +216,7 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             .render_as_string(hide_password=False)
         )
         values["listen_tls"].update(listen=f"fd:{fd}", cert_file=str(cert_path), key_file=str(key_path))
-        values["health_listen"] = f"127.0.0.1:{health_port}"
+        values["health_listen"] = f"fd:{health_fd}"
         values["kubeconfig"] = str(kubeconfig)
         for index, (connection, connection_config) in enumerate(config.connections.items()):
             credential = connection_config.auth.credential
@@ -232,7 +236,7 @@ async def go_sampler(config: Settings, kubeconfig: Path, directory: Path) -> Asy
             stderr=directory / "sampler.log",
             health_port=health_port,
             grace_s=10,
-            pass_fds=(fd,),
+            pass_fds=(fd, health_fd),
         ):
             yield f"localhost:{bound.port}", ca.cert_pem
 
