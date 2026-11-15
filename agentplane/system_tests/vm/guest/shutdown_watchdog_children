@@ -22,8 +22,10 @@ snapshot_child() {
 		stack) max_bytes=2048 ;;
 		esac
 		echo "AGENTPLANE_SHUTDOWN_PID1_CHILD_${snapshot_pid}_${field} max_bytes=$max_bytes"
-		"$busybox" head -c "$max_bytes" "$snapshot_dir/$field" 2>/dev/null || echo "Child $snapshot_pid $field unavailable"
-		echo
+		# Frame proc values before publishing them; wchan/syscall need not end
+		# with a newline and another tty writer may emit the shutdown receipt.
+		value=$("$busybox" head -c "$max_bytes" "$snapshot_dir/$field" 2>/dev/null) || value="Child $snapshot_pid $field unavailable"
+		printf '%s\n' "$value"
 	done
 }
 

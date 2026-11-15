@@ -25,8 +25,10 @@ while :; do
 	/usr/bin/busybox cat /proc/1/stat
 	for field in wchan syscall stack; do
 		echo "AGENTPLANE_SHUTDOWN_PID1_$field"
-		/usr/bin/busybox cat "/proc/1/$field"
-		echo
+		# Proc fields such as wchan have no trailing newline. Collect them off-tty
+		# so the shutdown proof cannot land between the value and its newline.
+		value=$(/usr/bin/busybox cat "/proc/1/$field")
+		printf '%s\n' "$value"
 	done
 	echo "AGENTPLANE_SHUTDOWN_PID1_descriptors"
 	/usr/bin/busybox ls -l /proc/1/fd
