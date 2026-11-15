@@ -318,8 +318,8 @@ impl Candidate {
                     kind: ConstraintKind::InitBeforeRead,
                 });
             }
-            for before in 0..self.init {
-                if positions[before] > positions[reader] {
+            for before in 0..reader {
+                if before != self.init && positions[before] > positions[reader] {
                     violations.push(Violation {
                         before,
                         after: reader,
@@ -332,7 +332,7 @@ impl Candidate {
     }
 
     pub fn fence_count(&self) -> usize {
-        self.readers.len() * (self.init + 1)
+        self.readers.iter().sum()
     }
 }
 

@@ -217,3 +217,41 @@ fn node_observes_publication_fence_and_tdz_boundary() {
         });
     }
 }
+
+#[test]
+fn ordinary_construction_remains_a_publication_barrier() {
+    use runfiles::{Runfiles, rlocation};
+    let runfiles = Runfiles::create().unwrap();
+    let node = rlocation!(runfiles, "nodejs_linux_amd64/bin/node").unwrap();
+    let source = "var Factory = class { constructor(){ console.log(typeof alias); } }; var Hidden = class {}; new Factory(); var alias = Hidden; console.log(alias === Hidden);";
+    js_ast::with_swc_globals(|| {
+        let parsed = js_ast::parse_js_module("fixture.js", source).unwrap();
+        let index = SourceIndex::new(&parsed.module);
+        let candidates = index.certificates();
+        let certificate = candidates
+            .iter()
+            .find(|candidate| candidate.binding == "Hidden")
+            .unwrap();
+        assert_eq!(certificate.refusal, None);
+        for (order, expected, accepted) in [
+            (vec![0, 1, 2, 3, 4], "undefined\ntrue\n", true),
+            (vec![1, 0, 2, 3, 4], "undefined\ntrue\n", true),
+            (vec![0, 1, 3, 2, 4], "function\ntrue\n", false),
+        ] {
+            let mut emitted = parsed.module.clone();
+            emitted.body = order
+                .iter()
+                .map(|unit| parsed.module.body[*unit].clone())
+                .collect();
+            let code = js_ast::emit_module_source(&emitted).unwrap();
+            let result = std::process::Command::new(&node)
+                .args(["--input-type=module", "--eval", &code])
+                .output()
+                .unwrap();
+            assert!(result.status.success());
+            assert_eq!(String::from_utf8(result.stdout).unwrap(), expected);
+            let positions = positions(&order, index.unit_count()).unwrap();
+            assert_eq!(certificate.violations(&positions).is_empty(), accepted);
+        }
+    });
+}
