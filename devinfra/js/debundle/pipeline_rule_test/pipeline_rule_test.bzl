@@ -209,9 +209,19 @@ def _shared_analysis_test_impl(ctx):
         asserts.equals(env, ["DebundleApply"], sorted(applied))
         asserts.true(env, analyzed in applied["DebundleApply"].inputs.to_list())
         asserts.true(env, projected_apply in applied["DebundleApply"].inputs.to_list())
+    for variant in ctx.attr.distinct_variants:
+        applied = {action.mnemonic: action for action in variant[_BaselineActions].actions}
+        asserts.equals(env, ["DebundleApply", "DebundleProjectApply"], sorted(applied))
+        asserts.true(env, analyzed in applied["DebundleApply"].inputs.to_list())
+        asserts.false(env, projected_apply in applied["DebundleApply"].inputs.to_list())
+        own_projection = applied["DebundleProjectApply"].outputs.to_list()[0]
+        asserts.true(env, own_projection in applied["DebundleApply"].inputs.to_list())
     return analysistest.end(env)
 
 shared_analysis_test = analysistest.make(
     _shared_analysis_test_impl,
-    attrs = {"variants": attr.label_list(aspects = [_baseline_actions], mandatory = True)},
+    attrs = {
+        "variants": attr.label_list(aspects = [_baseline_actions], mandatory = True),
+        "distinct_variants": attr.label_list(aspects = [_baseline_actions]),
+    },
 )

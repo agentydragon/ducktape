@@ -320,11 +320,15 @@ package, spec and ownership-subset inputs for native replay. Requesting it alone
 selects their producers. The `analysis` and `debundler` groups supply the
 matching analysis artifacts and executable.
 
-The public `debundle_analysis` rule registers projection and source-analysis
-actions only. It returns a typed provider containing the canonical projection and
-saved facts. Every `debundle_apply` requires that direct analysis target and
-registers its canonical apply projection, assignment, gates, translation
-validation, emission, and optional graph export. No combined rule creates analysis implicitly. Multiple apply
+The public `debundle_analysis` rule registers one two-output projection action
+and the source-analysis action. It returns a typed provider containing the
+canonical analysis and apply projections and saved facts. The producer parses
+the authored spec once. Every `debundle_apply` requires that direct analysis
+target and reuses its apply projection when the spec paths and complete declared
+spec inputs match, ignoring only the output root. A different spec registers
+its own apply projection action. Each apply target separately registers
+assignment, gates, translation validation, emission, and optional graph export.
+No combined rule creates analysis implicitly. Multiple apply
 specs share one source-fact computation when their semantic projections match;
 different analysis premises require separate explicit analysis targets. Engine,
 source and projection compatibility checks remain mandatory. Each consumer
@@ -367,6 +371,13 @@ projection bytes while keeping spec and source-path compatibility checks.
 Flat specs retain their authored output paths. Projected input cannot export full graphs: graph
 export continues to read exact authored files and capture their membership and
 bytes for replay validation.
+
+The shared projection action reads source and package inputs needed by analysis,
+so changing either may rerun both projection outputs even if the canonical apply
+bytes remain the same. `DebundleAnalyze` reads only its analysis projection and
+source/package inputs. Each apply action reads its selected apply projection,
+saved analysis, and its own source/package inputs; native compatibility checks
+still reject stale or mismatched facts.
 
 The analysis projection omits only fields explicitly declared as author-note
 provenance. Semantic map entries remain data even when a chunk, export, or
