@@ -3913,8 +3913,8 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released, section 13] --> DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released, section 13] -->|lease build| DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN -->|lease build| DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
@@ -3924,8 +3924,10 @@ raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decis
 
 ### Blocked
 
-`DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` wait for delivery ownership in the
-selected two-binary topology (`DISPATCHER_PERSISTENCE_MODEL_DESIGN`).
+`DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` wait for the per-Session delivery lease
+build in `DISPATCHER_PERSISTENCE_MODEL_DESIGN` (selected 2026-11-15, not released): keyed
+reconciliation replaces the per-Sandbox scans that build removes, and the watch's terminal notices
+commit under the `sandbox_ownership` row lock it replaces (`dispatcher/terminal.go`).
 
 ## 17. Two binaries and the Go layout
 
