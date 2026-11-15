@@ -48,15 +48,7 @@ class WorkspaceStorage(Protocol):
 
 
 class GuestLifecycle(Protocol):
-    setup_objects: list[dict[str, Any]]
-
     def configure(self, objects: list[dict[str, Any]]) -> None: ...
-
-    def install(self, k3s: K3s) -> None: ...
-
-    def wait_for_apis(self, k3s: K3s) -> None: ...
-
-    def wait_until_ready(self, k3s: K3s) -> None: ...
 
     def capture(
         self, k3s: K3s, namespace: str, validate_shutdown: Callable[[], bool]
@@ -67,11 +59,22 @@ class GuestLifecycle(Protocol):
     def clean(self, k3s: K3s) -> None: ...
 
 
+class RuntimeSetup(Protocol):
+    setup_objects: list[dict[str, Any]]
+
+    def install(self, k3s: K3s) -> None: ...
+
+    def wait_for_apis(self, k3s: K3s) -> None: ...
+
+    def wait_until_ready(self, k3s: K3s) -> None: ...
+
+
 @dataclass(frozen=True)
 class RuntimeCapabilities:
     guest: GuestLifecycle
     retained_infrastructure: RetainedInfrastructure | None = None
     workspace_storage: WorkspaceStorage | None = None
+    runtime_setup: RuntimeSetup | None = None
 
 
 RuntimeFactory = Callable[[Path], RuntimeCapabilities]

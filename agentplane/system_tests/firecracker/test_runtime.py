@@ -25,7 +25,9 @@ def test_readiness_accepts_kubernetes_quantity_without_vm_policies(
         return "condition met"
 
     monkeypatch.setattr(node, "kubectl", kubectl)
-    firecracker_runtime(tmp_path).guest.wait_until_ready(node)
+    runtime_setup = firecracker_runtime(tmp_path).runtime_setup
+    assert runtime_setup is not None
+    runtime_setup.wait_until_ready(node)
     assert any(call[:2] == ("get", "nodes") for call in calls)
 
 

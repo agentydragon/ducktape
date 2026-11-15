@@ -390,10 +390,11 @@ def running_stack(
     work = Path(tempfile.mkdtemp())
     runtime = runtime_factory(work) if runtime_factory is not None else None
     guest = runtime.guest if runtime is not None else None
+    runtime_setup = runtime.runtime_setup if runtime is not None else None
     retained_infrastructure = runtime.retained_infrastructure if runtime is not None else None
     workspace_storage = runtime.workspace_storage if runtime is not None else None
     baseline_resources = retained_infrastructure.resources if retained_infrastructure is not None else []
-    guest_setup_objects = guest.setup_objects if guest is not None else []
+    guest_setup_objects = runtime_setup.setup_objects if runtime_setup is not None else []
     infrastructure_images = inputs.vm_image_layouts
     guest_setup_image_references = _runtime_images(guest_setup_objects)
     if missing := guest_setup_image_references - infrastructure_images.keys():
@@ -537,8 +538,8 @@ def running_stack(
                 if retained_infrastructure is not None and install_baseline:
                     retained_infrastructure.install(k3s)
                     setup.add_event("KubeVirt and Kyverno applied")
-                if guest is not None:
-                    guest.install(k3s)
+                if runtime_setup is not None:
+                    runtime_setup.install(k3s)
                 # Applying a workload before its image is imported would pull it from the registry.
                 if pki_import is not None:
                     pki_import.result()
@@ -577,8 +578,8 @@ def running_stack(
                         k3s.kubectl("apply", "-f", str(crd))
                 if retained_infrastructure is not None:
                     retained_infrastructure.wait_for_apis(k3s)
-                if guest is not None:
-                    guest.wait_for_apis(k3s)
+                if runtime_setup is not None:
+                    runtime_setup.wait_for_apis(k3s)
                 setup.add_event("CRDs applied")
                 # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
                 namespaces = [d for d in fixture.objects if d["kind"] == "Namespace"]
@@ -623,8 +624,8 @@ def running_stack(
             if retained_infrastructure is not None:
                 retained_infrastructure.wait_until_ready(k3s)
                 setup.add_event("KubeVirt and Kyverno ready")
-            if guest is not None:
-                guest.wait_until_ready(k3s)
+            if runtime_setup is not None:
+                runtime_setup.wait_until_ready(k3s)
                 setup.add_event("guest runtime ready")
             _resolve_on_node(k3s, fixture)
             access = None
