@@ -1,0 +1,60 @@
+# Original home: packages/excalidraw/components/App.tsx
+source_matches:
+  - match: |
+      var ANYTHING = ANYTHING,
+        didTapTwice = !1,
+        tappedTwiceTimer = 0,
+        isHoldingSpace = !1,
+        isPanning = !1,
+        isDraggingScrollBar = !1,
+        currentScrollBars = { horizontal: null, vertical: null },
+        touchTimeout = 0,
+        invalidateContextMenu = !1,
+        YOUTUBE_VIDEO_STATES = new Map(),
+        IS_PLAIN_PASTE = !1,
+        IS_PLAIN_PASTE_TIMER = 0,
+        PLAIN_PASTE_TOAST_SHOWN = !1,
+        lastPointerUp = null,
+        gesture = {
+          pointers: new Map(),
+          lastCenter: null,
+          initialDistance: null,
+          initialScale: null
+        },
+        selectedApp = class appClass extends ANYTHING {
+          ANYTHING;
+          render() { STMT_LIST; }
+          ANYTHING;
+          async componentDidMount() { STMT_LIST; }
+          componentWillUnmount() { STMT_LIST; }
+          ANYTHING;
+          componentDidUpdate(ANYTHING, ANYTHING) { STMT_LIST; }
+          ANYTHING;
+        }, ANYTHING = ANYTHING;
+    bindings:
+      - local: didTapTwice
+        name: didTapTwice
+      - local: tappedTwiceTimer
+        name: tappedTwiceTimer
+      - local: isHoldingSpace
+        name: isHoldingSpace
+      - local: isPanning
+        name: isPanning
+      - local: isDraggingScrollBar
+        name: isDraggingScrollBar
+      - local: currentScrollBars
+        name: currentScrollBars
+      - local: touchTimeout
+        name: touchTimeout
+      - local: invalidateContextMenu
+        name: invalidateContextMenu
+      - local: IS_PLAIN_PASTE
+        name: IS_PLAIN_PASTE
+      - local: IS_PLAIN_PASTE_TIMER
+        name: IS_PLAIN_PASTE_TIMER
+      - local: PLAIN_PASTE_TOAST_SHOWN
+        name: PLAIN_PASTE_TOAST_SHOWN
+      - local: lastPointerUp
+        name: lastPointerUp
+      - local: selectedApp
+        name: App

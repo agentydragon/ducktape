@@ -150,6 +150,7 @@ fn claimed_modules_export_their_entry_points() {
             "editor/packages/excalidraw/element/cropElement.js",
             &["cropElement", "getUncroppedWidthAndHeight"],
         ),
+        ("main/packages/excalidraw/components/App.js", &["App"]),
         ("main/packages/excalidraw/components/Card.js", &["Card"]),
         (
             "main/packages/excalidraw/components/CommandPalette/CommandPalette.js",
