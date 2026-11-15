@@ -43,7 +43,7 @@ metadata:
   name: session-backup-db-backups
   namespace: session-backup
 spec:
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs
@@ -56,7 +56,7 @@ metadata:
 spec:
   identityRef:
     name: session-backup-db-backups
-  reclaimPolicy: Retain
+  reclaimPolicy: Delete
   seaweedRef:
     name: seaweedfs
     namespace: seaweedfs

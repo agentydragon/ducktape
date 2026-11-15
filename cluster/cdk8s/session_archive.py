@@ -6,6 +6,8 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
+from seaweed_s3credentials_crds.com.seaweedfs.seaweed import S3CredentialsSpecReclaimPolicy
+from seaweed_s3identity_crds.com.seaweedfs.seaweed import S3IdentitySpecReclaimPolicy
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, session_backup
 from cluster.cdk8s.cnpg import cluster
@@ -66,9 +68,18 @@ def _database(chart: Chart) -> None:
         # The Restic snapshots are the durable backup; this database is a rebuildable projection.
         wal_archive=False,
     )
-    # Keep IAM writers until the backup bucket's Delete finalizer completes.
+    # CLEANUP(added 2026-11-15): Remove credentials only after these Delete policies
+    # reconcile and the retired bucket/collection are absent. Keep the identity until
+    # credential finalization and per-filer key revocation are verified; delete it last.
+    # See cluster/docs/runbooks/seaweedfs_s3_retirement.md.
     retired_bucket = "session-backup-db-backups"
-    s3.identity(chart, "retired-backup-identity", name=retired_bucket, namespace=NAMESPACE)
+    s3.identity(
+        chart,
+        "retired-backup-identity",
+        name=retired_bucket,
+        namespace=NAMESPACE,
+        reclaim_policy=S3IdentitySpecReclaimPolicy.DELETE,
+    )
     s3.credentials(
         chart,
         "retired-backup-credentials",
@@ -76,6 +87,7 @@ def _database(chart: Chart) -> None:
         namespace=NAMESPACE,
         secret=f"{retired_bucket}-s3-credentials",
         key_fields=s3.AWS_ENV_KEY_FIELDS,
+        reclaim_policy=S3CredentialsSpecReclaimPolicy.DELETE,
     )
 
 
