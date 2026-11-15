@@ -1,4 +1,4 @@
-"""Gateway reconnect-budget exhaustion with an in-flight central-sampler executor read."""
+"""Runtime proxy reconnect-budget exhaustion with an in-flight central-sampler executor read."""
 
 from pathlib import Path
 
