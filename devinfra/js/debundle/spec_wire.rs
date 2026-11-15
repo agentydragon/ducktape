@@ -4,7 +4,7 @@
 //! not run when restoring internal selectors. Collections retain canonical BTree
 //! order. Protobuf maps use last-value semantics; sets and composite keys reject
 //! duplicates where the domain requires unique members.
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use spec_wire_proto::debundle::spec as pb;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;

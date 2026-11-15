@@ -344,8 +344,11 @@ impl AnalysisWire for AnalysisAssumptions {
         );
         Ok(pb::AnalysisAssumptions {
             retained_record_factories: retained_record_factories.to_proto(),
-            reentry_free_operations: reentry_free_operations.to_proto(),
-            predefined_globals: Some(predefined_globals.to_proto()),
+            reentry_free_operations: reentry_free_operations
+                .iter()
+                .map(|operation| *operation as i32)
+                .collect(),
+            predefined_globals: Some(*predefined_globals as i32),
             bundle_globals: Some(bundle_globals.to_wire()?),
             deferred_global_publications: spec_wire::global_names_to_proto(
                 deferred_global_publications,
@@ -387,8 +390,14 @@ impl AnalysisWire for AnalysisAssumptions {
     fn from_wire(v: Self::Message) -> Result<Self> {
         Ok(Self {
             retained_record_factories: Wire::from_proto(v.retained_record_factories)?,
-            reentry_free_operations: Wire::from_proto(v.reentry_free_operations)?,
-            predefined_globals: required(v.predefined_globals)?,
+            reentry_free_operations: unique_set(
+                v.reentry_free_operations
+                    .into_iter()
+                    .map(|value| Ok(spec::ReentryFreeOperation::try_from(value)?)),
+            )?,
+            predefined_globals: spec::PredefinedGlobals::try_from(
+                v.predefined_globals.context("missing predefined globals")?,
+            )?,
             bundle_globals: analysis_required(v.bundle_globals)?,
             deferred_global_publications: spec_wire::global_names_from_proto(
                 v.deferred_global_publications,
