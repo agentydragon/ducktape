@@ -10,6 +10,9 @@ use thiserror::Error;
 
 use crate::esm_import_order::EsmImportOrder;
 
+mod construct;
+pub use construct::ScheduleObstruction;
+
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EsmImportSchedule {
     entry: ModuleId,
@@ -250,6 +253,7 @@ mod tests {
                     permutations(&targets)
                 })
                 .collect();
+            let mut oracle_orders = Vec::new();
             for first in &targets[0] {
                 for second in &targets[1] {
                     for root in &targets[2] {
@@ -260,6 +264,7 @@ mod tests {
                         ]);
                         let mut finished = Vec::new();
                         oracle(entry, &imports, &mut BTreeSet::new(), &mut finished);
+                        oracle_orders.push(finished.clone());
                         let schedule =
                             EsmImportSchedule::from_imports(entry, &successors, &nodes, imports)
                                 .unwrap();
@@ -279,6 +284,37 @@ mod tests {
                             );
                         }
                     }
+                }
+            }
+            let present: Vec<_> = edges
+                .iter()
+                .enumerate()
+                .filter(|(bit, _)| mask & (1 << bit) != 0)
+                .map(|(_, &edge)| edge)
+                .collect();
+            for constraints in 0..(1 << present.len()) {
+                let pairs: BTreeSet<_> = present
+                    .iter()
+                    .enumerate()
+                    .filter(|(bit, _)| constraints & (1 << bit) != 0)
+                    .map(|(_, &edge)| edge)
+                    .collect();
+                let exists = oracle_orders.iter().any(|finished| {
+                    pairs.iter().all(|(from, to)| {
+                        finished.iter().position(|m| m == to)
+                            < finished.iter().position(|m| m == from)
+                    })
+                });
+                let policy = EsmImportOrder::build(&pairs, &successors, &nodes);
+                let derived =
+                    EsmImportSchedule::construct(entry, &pairs, &successors, &nodes, &policy);
+                assert_eq!(
+                    derived.is_ok(),
+                    exists,
+                    "I mask {mask}, C mask {constraints}: {derived:?}"
+                );
+                if let Ok(schedule) = derived {
+                    assert!(schedule.tdz_pairs(&pairs).next().is_none());
                 }
             }
         }

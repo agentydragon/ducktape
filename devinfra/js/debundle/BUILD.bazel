@@ -860,6 +860,7 @@ rust_library(
         "counted_digraph.rs",
         "esm_import_order.rs",
         "esm_schedule.rs",
+        "esm_schedule/construct.rs",
         "gate.rs",
         "realizability/condensation_order.rs",
         "realizability/condensation_order_proptest.rs",

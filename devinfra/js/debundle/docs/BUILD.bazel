@@ -6,6 +6,7 @@ exports_files([
     "bug_reproductions.md",
     "cli.md",
     "integration.md",
+    "module_placement.md",
     "module_search.md",
     "naming.md",
     "peel_proposer.md",
