@@ -132,7 +132,7 @@ fn immediate_pre_await_tdz_observation_is_preserved() {
             "let result; try { result = late; } catch (error) { result = error.name; } await 0; return result;"
         )
     );
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, Vec::new()).with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_preserved_entry_output(&fixture, "ReferenceError\nready\n");

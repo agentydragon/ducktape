@@ -660,7 +660,7 @@ fn expected_purity(value_inputs: BTreeSet<ValueInputRef>) -> Purity {
 
 #[test]
 fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
-    let fixture = assert_pure_cycle_break_with_opts(
+    let fixture = assert_pure_cycle_break_with_graphs_and_opts(
         composition_options(COMPOSITION_SOURCE, &[]),
         "registry",
         &[

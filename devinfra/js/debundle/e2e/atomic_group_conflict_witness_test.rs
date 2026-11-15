@@ -18,7 +18,7 @@ fn conflict_witness(rejected: &RejectedFixture) -> Value {
 
 #[test]
 fn eager_cycle_witness_keeps_directed_initialization_dependencies_forward() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         "const alpha = beta;\nconst beta = alpha;\n",
         vec![
             logical_module("left", &[Member::new("alpha")]),
@@ -50,7 +50,7 @@ fn eager_cycle_witness_keeps_directed_initialization_dependencies_forward() {
 
 #[test]
 fn symmetric_rebind_path_excludes_lazy_and_hoisted_uses() {
-    let rejected = run_rejection_fixture(FixtureOpts::new(
+    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
         "let alpha = beta;\nfunction beta() { alpha = 1; return alpha; }\n",
         vec![
             logical_module("left", &[Member::new("alpha")]),
@@ -98,7 +98,7 @@ fn long_witness_paths_report_total_length_and_truncate_steps() {
         });
     }
 
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(&source, modules).with_unassigned_mode(unassigned_mode_inline()),
     );
     let witness = conflict_witness(&rejected);

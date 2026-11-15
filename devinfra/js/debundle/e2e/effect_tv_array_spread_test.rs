@@ -39,7 +39,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
         let source = format!(
             "function merge() {{ {body} }}\nconst independent = 7;\nvar result = merge();\nconsole.log(independent, result.join(','));\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "merge",
@@ -55,7 +55,7 @@ fn callable_array_spreads_keep_receipts_across_an_independent_inversion() {
 #[test]
 fn root_array_spread_of_module_arrays_keeps_its_receipt_across_an_inversion() {
     let source = "const first = ['a'];\nconst second = ['b'];\nconst independent = 7;\nconst scopes = ['base', ...first, ...second];\nconsole.log(independent, scopes.join(','));\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "scopes",
@@ -99,7 +99,7 @@ fn spread_reads_the_source_contents_at_its_initialization_prefix() {
 #[test]
 fn array_hole_and_spread_mix_keeps_its_receipt() {
     let source = "function merge() { const items = ['a']; return [, ...items, 'c']; }\nconst independent = 7;\nvar result = merge();\nconsole.log(independent, result.length, result[1], result[2]);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "merge",
@@ -117,7 +117,7 @@ fn array_hole_and_spread_mix_keeps_its_receipt() {
 #[test]
 fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
     let source = "function build() { const items = ['a']; items.push('b'); return [...items, 'c']; }\nconst independent = 7;\nvar result = build();\nconsole.log(independent, result.join(','));\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "build",
@@ -140,7 +140,7 @@ fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
 fn spread_of_an_imported_array_without_a_premise_refuses_with_a_typed_reason() {
     let source = "import { left } from './provider.js';\nconst independent = 7;\nconst merged = [...left, 'c'];\nconsole.log(independent, merged.join(','));\n";
     let peers = [("static/provider", "export const left = ['a', 'b'];\n")];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module("merged", &[Member::new("merged")])],

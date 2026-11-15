@@ -895,8 +895,11 @@ fn ownership_subset_rejects_invalid_anonymous_indices_without_hiding_full_select
 fn ownership_subset_still_rejects_full_graph_export() {
     let subset = write_subset(r#"{"modules":[]}"#);
     let subset_path = subset.path().to_str().unwrap();
-    let rejected =
-        run_rejection_fixture_with_args(subset_spec(), &["--ownership-subset", subset_path], 2);
+    let rejected = run_rejection_fixture_with_graphs_and_args(
+        subset_spec(),
+        &["--ownership-subset", subset_path],
+        2,
+    );
     assert!(
         rejected.stderr.contains("cannot be used with") && rejected.stderr.contains("--graphs"),
         "{}",

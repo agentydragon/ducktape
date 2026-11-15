@@ -939,6 +939,18 @@ fn run_exported_record_factory(source: &str, modules: Vec<LogicalModuleEntry>) -
     )
 }
 
+fn run_exported_record_factory_with_graphs(
+    source: &str,
+    modules: Vec<LogicalModuleEntry>,
+) -> Fixture {
+    run_fixture_with_graphs(
+        FixtureOpts::new(ACYCLIC_COMMAND_IMPORTER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&[("static/provider", source)])
+            .with_extra_chunk_logical_modules(&[("static/provider", modules)]),
+    )
+}
+
 fn fixture_source(
     prefix: &str,
     factory: &str,
@@ -1448,7 +1460,7 @@ fn assert_forwarding_factory_refused(
 
 #[test]
 fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
-    let fixture = run_exported_record_factory(
+    let fixture = run_exported_record_factory_with_graphs(
         EXPORTED_RECORD_PROVIDER,
         exported_record_factory_modules(&[]),
     );

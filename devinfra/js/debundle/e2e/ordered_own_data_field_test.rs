@@ -416,7 +416,7 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
 
 #[test]
 fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
-    let frozen = run_fixture(FixtureOpts::new(
+    let frozen = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst holder = Object.freeze({ run: () => early });\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -432,7 +432,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
     assert_preserved_entry_error(&frozen, "Cannot assign to read only property 'run'");
     assert_no_fallback_suppressing_authority(&frozen, "result", "frozen receiver");
 
-    let descriptor = run_fixture(FixtureOpts::new(
+    let descriptor = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst source = Object.freeze({ run: () => early });\nconst holder = {};\nObject.defineProperties(holder, Object.getOwnPropertyDescriptors(source));\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
@@ -450,7 +450,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
     assert_preserved_entry_error(&descriptor, "Cannot assign to read only property 'run'");
     assert_no_fallback_suppressing_authority(&descriptor, "result", "non-writable descriptor");
 
-    let accessor = run_fixture(FixtureOpts::new(
+    let accessor = run_fixture_with_graphs(FixtureOpts::new(
         "const early = 7;\nconst later = 42;\nconst holder = { get run() { return () => early; }, set run(value) { console.log('setter'); } };\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module(
             "all",
@@ -466,7 +466,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
     assert_preserved_entry_output(&accessor, "setter\n7\n");
     assert_no_fallback_suppressing_authority(&accessor, "result", "accessor receiver");
 
-    let tainted = run_fixture(FixtureOpts::new(
+    let tainted = run_fixture_with_graphs(FixtureOpts::new(
         "globalThis.accept = function(value) {};\nconst early = 7;\nconst later = 42;\nconst holder = { run: () => early };\nglobalThis.accept(holder);\nfunction mutate() { holder.run = () => later; return 0; }\nconst result = holder.run(mutate());\nconsole.log(result);\n",
         vec![logical_module_with_anon(
             "all",
@@ -486,7 +486,7 @@ fn invalid_or_borrowed_own_data_receivers_do_not_seal_root_receipts() {
     assert_preserved_entry_output(&tainted, "7\n");
     assert_no_fallback_suppressing_authority(&tainted, "result", "externally tainted receiver");
 
-    let borrowed = run_fixture(FixtureOpts::new(
+    let borrowed = run_fixture_with_graphs(FixtureOpts::new(
         "const holder = { value: 1 };\nfunction mutate(record) { record.value = 42; return 0; }\nfunction take() { return 0; }\nconst result = take(mutate(holder));\nconsole.log(result, holder.value);\n",
         vec![logical_module(
             "all",

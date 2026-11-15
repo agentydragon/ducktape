@@ -405,7 +405,7 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
 /// the SCC row counts the endpoints left unproven.
 #[test]
 fn limit_keeps_the_best_proposals_and_counts_the_rest() {
-    let rejected = run_rejection_fixture(opaque_split(vec![]));
+    let rejected = run_rejection_fixture_with_graphs(opaque_split(vec![]));
     let all = propose_rejected(&rejected, &["--all"]);
     let every = array(&all, "proposals");
     assert_eq!(every.len(), 3, "{all:#}");
@@ -436,7 +436,7 @@ fn limit_keeps_the_best_proposals_and_counts_the_rest() {
 #[test]
 fn comma_list_declarator_excerpt_is_the_declarator() {
     const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\"),\n  beta = (globalThis.record(\"beta\"), \"B\"),\n  gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -495,7 +495,7 @@ fn comma_list_declarator_excerpt_is_the_declarator() {
 #[test]
 fn eager_cycle_needs_co_location() {
     const SOURCE: &str = "const alpha = 1;\nconst beta = alpha + 1;\nconst gamma = beta + 1;\nconsole.log(alpha, beta, gamma);\nexport { alpha, beta, gamma };\n";
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -551,7 +551,7 @@ fn eager_cycle_needs_co_location() {
 #[test]
 fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
     const SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = beta.length;\nconst delta = gamma + 1;\nconsole.log(alpha, beta, gamma, delta, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma, delta };\n";
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![
@@ -591,7 +591,7 @@ fn mixed_eager_cycle_never_claims_a_single_pair_cut() {
 #[test]
 fn known_global_property_conflict_is_reported_not_proposed() {
     const SOURCE: &str = "globalThis.flag = \"first\";\nconst snapshot = globalThis.flag;\nglobalThis.flag = \"second\";\nconsole.log(snapshot, globalThis.flag);\nexport { snapshot };\n";
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             SOURCE,
             vec![

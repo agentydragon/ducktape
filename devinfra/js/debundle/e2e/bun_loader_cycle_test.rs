@@ -76,7 +76,7 @@ fn colocated_late_binding_preserves_called_cycle_observation_under_pinned_bun() 
 
 #[test]
 fn splitting_the_late_binding_from_the_cycle_is_rejected() {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             APP,
             vec![

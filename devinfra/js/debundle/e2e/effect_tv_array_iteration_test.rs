@@ -95,7 +95,7 @@ fn iteration_rows_keep_receipts_across_an_independent_inversion() {
     ] {
         let source = format!("{declarations}\n{RELOCATION}");
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module("run", &members)],
         ));
@@ -143,7 +143,7 @@ fn top_level_iteration_roots_keep_receipts_across_an_independent_inversion() {
             "{declarations}const items = [1, 2, 3];\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, [result].flat().join(','));\n"
         );
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module("run", &members)],
         ));
@@ -254,7 +254,7 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "run",
@@ -335,7 +335,7 @@ fn row_refusals_carry_their_typed_reasons() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "run",
@@ -358,7 +358,7 @@ fn an_empty_receiver_keeps_its_receipt() {
     let source = format!(
         "function run() {{ const items = []; return items.map((x) => x * 2); }}\n{RELOCATION}"
     );
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![logical_module(
             "run",
@@ -446,7 +446,7 @@ fn record_element_roots_beside_a_bare_assignment_stay_pending() {
         let source = format!(
             "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst independent = 7;\nconst result = {initializer};\nlater = 42;\nconsole.log(independent, [result].flat().join(','));\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "run",
@@ -507,7 +507,7 @@ fn record_element_roots_seal_across_an_independent_inversion() {
         let source = format!(
             "let later = 0;\nconst items = [{{ size: 1, executor: () => later }}, {{ size: 2, executor: () => later }}];\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, {printed});\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "run",

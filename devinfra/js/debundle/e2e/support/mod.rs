@@ -342,7 +342,7 @@ pub fn run_fixture_to_gate_outcome(opts: FixtureOpts<'_>) -> GateOutcome {
 /// Runs `opts` and asserts the realizability gate rejected it: returns the blocking SCC of
 /// `cycles.json` whose modules include every one of `modules`.
 pub fn expect_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str]) -> Value {
-    let cycles = run_rejection_fixture_with_graphs(opts).cycles();
+    let cycles = run_rejection_fixture(opts).cycles();
     cycles
         .iter()
         .find(|scc| {
@@ -373,7 +373,7 @@ pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str])
 /// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
 /// `atomic_group_conflicts.json` has claims in every one of `modules` and every one of `causes`.
 pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
-    let conflicts = run_rejection_fixture_with_graphs(opts).atomic_group_conflicts();
+    let conflicts = run_rejection_fixture(opts).atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -1006,6 +1006,24 @@ pub fn assert_pure_cycle_break_with_opts(
     expected_stdout: &str,
 ) -> Fixture {
     let fixture = run_fixture(opts);
+    assert_module_source(
+        &fixture.out_root,
+        &format!("{}/modules/{module_path}.js", fixture.chunk_id),
+        contains,
+        does_not_contain,
+    );
+    assert_entry_output(&fixture, expected_stdout);
+    fixture
+}
+
+pub fn assert_pure_cycle_break_with_graphs_and_opts(
+    opts: FixtureOpts<'_>,
+    module_path: &str,
+    contains: &[&str],
+    does_not_contain: &[&str],
+    expected_stdout: &str,
+) -> Fixture {
+    let fixture = run_fixture_with_graphs(opts);
     assert_module_source(
         &fixture.out_root,
         &format!("{}/modules/{module_path}.js", fixture.chunk_id),

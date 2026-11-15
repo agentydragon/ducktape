@@ -6,7 +6,8 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, TreeFixture, debundler_path, run_fixture, run_tree_graph_fixture, tree_spec_args,
+    FixtureOpts, TreeFixture, debundler_path, run_fixture_with_graphs, run_tree_graph_fixture,
+    tree_spec_args,
 };
 use tempfile::TempDir;
 

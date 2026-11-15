@@ -323,7 +323,7 @@ fn extracting_and_invoking_either_returned_callback_keeps_all_reads() {
         .into_iter()
         .map(Member::new)
         .collect();
-        let colocated = run_fixture(
+        let colocated = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon(
@@ -511,7 +511,7 @@ fn returned_callback_roots_grow_across_captures_and_rebinds_in_one_initializer()
             "static/peer",
             "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n",
         )];
-        let colocated = run_fixture(
+        let colocated = run_fixture_with_graphs(
             FixtureOpts::new(
                 &source,
                 vec![logical_module_with_anon("all", &all, &["later = 42;"])],
@@ -546,7 +546,7 @@ fn returned_class_superclass_can_reenter_returned_callback_fallback() {
         "static/peer",
         "export function consume(callback) { const returned = callback(); return returned.prototype ? new returned() : returned(); }\n",
     )];
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -587,7 +587,7 @@ fn returned_class_superclass_can_reenter_returned_callback_fallback() {
 
 #[test]
 fn returned_callback_effects_are_applied_at_each_initialization_prefix() {
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "import { consume } from './peer.js';\nlet later = 0;\nfunction callback() { return () => later; }\nconst first = consume(callback);\nlater = 42;\nconst second = consume(callback);\nconsole.log(first, second);\n",
         vec![logical_module_with_anon("all", &[Member::new("callback"), Member::new("first"), Member::new("second"), Member::new("later")], &["later = 42;"])],
     ).with_extra_chunks(&[("static/peer", "export function consume(callback) { return Reflect.apply(Reflect.apply(callback, null, []), null, []); }\n")]));
@@ -940,7 +940,7 @@ fn diagnose_namespace_member_write_links_contract_dependency_and_inspection() {
 
 #[test]
 fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -994,7 +994,7 @@ fn same_source_unit_unrelated_callback_is_not_attributed_to_factory_barrier() {
 
 #[test]
 fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -1084,7 +1084,7 @@ fn dynamic_namespace_write_reports_analyzer_witness_without_changing_gate() {
 
 #[test]
 fn computed_write_through_aggregate_receiver_remains_inconclusive() {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -1134,7 +1134,7 @@ fn computed_write_through_aggregate_receiver_remains_inconclusive() {
 
 #[test]
 fn direct_namespace_call_argument_has_exact_callback_barrier_witness() {
-    let rejected = run_rejection_fixture(
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
              let later = 0;\n\
@@ -1235,7 +1235,7 @@ fn rejected_namespace_argument_variant(
         Member::new("wrapped"),
     ];
     members.extend(extra_members.iter().copied().map(Member::new));
-    run_rejection_fixture(
+    run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             &source,
             vec![
@@ -1395,7 +1395,7 @@ fn publishing_returned_graph_exposes_both_callback_positions() {
         .into_iter()
         .map(Member::new)
         .collect();
-    let colocated = run_fixture(
+    let colocated = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(
@@ -1442,7 +1442,7 @@ fn callback_argument_evaluation_effects_remain_eager_and_ordered() {
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_retained_callback_factory("factory", 2, &[0, 1])
         .build()];
-    let colocated = run_fixture(
+    let colocated = run_fixture_with_graphs(
         FixtureOpts::new(
             source,
             vec![logical_module_with_anon(

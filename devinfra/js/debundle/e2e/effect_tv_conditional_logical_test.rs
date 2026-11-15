@@ -51,7 +51,7 @@ fn callable_branches_join_into_one_receipt_across_an_independent_inversion() {
         let source = format!(
             "const verbose = true;\nconst missing = null;\nfunction pick() {{ {body} }}\nconst independent = 7;\nvar result = pick();\nconsole.log(independent, JSON.stringify(result));\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "pick",
@@ -81,7 +81,7 @@ fn an_object_operand_decides_the_test_without_running_the_other_operand() {
         let source = format!(
             "const settings = {{ name: 'configured' }};\nfunction fallback() {{ return {{ name: later }}; }}\nfunction choose() {{ {body} }}\nconst independent = 7;\nconst chosen = choose();\nconst later = 'late';\nconsole.log(independent, chosen.name, later);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
+        let fixture = run_fixture_with_graphs(FixtureOpts::new(
             &source,
             vec![logical_module(
                 "chosen",
@@ -152,7 +152,7 @@ fn a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected() {
 #[test]
 fn a_call_on_one_arm_only_stays_a_may_effect_without_a_receipt() {
     let source = "const state = { count: 0 };\nfunction bump() { state.count = state.count + 1; return state.count; }\nfunction maybe(flag) { return flag ? bump() : 0; }\nconst first = maybe(true);\nconst observed = state.count;\nconsole.log(first, observed);\n";
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![logical_module(
             "counter",
