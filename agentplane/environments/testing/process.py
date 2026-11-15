@@ -34,7 +34,9 @@ async def run_environment_service(
 ) -> AsyncIterator[EnvironmentServiceProcess]:
     runfiles = Runfiles.Create()
     assert runfiles is not None
-    binary = runfiles.Rlocation("_main/agentplane/environments/testing/serving_fixture/serving_fixture")
+    binary = runfiles.Rlocation(
+        "ducktape/agentplane/environments/testing/serving_fixture/serving_fixture_/serving_fixture"
+    )
     assert binary is not None
     with TemporaryDirectory(prefix="environments-test-") as work, listen_tcp() as listener:
         directory = Path(work)
