@@ -91,11 +91,16 @@ CPU and memory limits.
 Server-owned configuration names the service, provider connections and credential sources,
 model contracts and per-model reasoning-effort allowlists, the rendered Agentplane
 optional `platform_instructions`, TokenReview audience and allowed caller accounts,
-code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named connection uses `auth.type` (`bearer` or `anthropic_api_key`) and exactly one of
-`auth.credential` or `auth.credential_file`; the service reads the file before each request so projected service-account tokens can rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
+code-mode host binary, executor-side Codex path, logs, concurrency/deadlines and limits. Each named
+connection uses `auth.type` (`bearer`, `agentplane_ingress` or `anthropic_api_key`). Bearer and
+Anthropic connections require exactly one of `auth.credential` or `auth.credential_file`;
+`agentplane_ingress` also accepts a central sampler service SVID in `tls`, with neither credential
+field set. The Python manifest model validates the same authentication choices as the Go service.
+The service reads credential files before each request so projected service-account tokens can
+rotate. `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL`
 overrides `database_url` in the JSON settings, so database credentials can stay in a Secret-backed
-environment variable. Gateway mode requires `gateway_target` and a rotating projected
-`gateway_token_file`. The sampler uses one generated `Executor` client for its Gateway and direct
+environment variable. Gateway mode requires `gateway_target` and either a rotating projected
+`gateway_token_file` or the sampler service SVID in `gateway_tls`. The sampler uses one generated `Executor` client for its Gateway and direct
 local-test targets. It keeps one `OpenSession` gRPC stream to Runner and sends process and file
 operations as typed unary RPCs. Runner owns the connection to Codex's exec-server; the gRPC stream
 is not the Codex session itself. Closing the stream releases that adapter connection without
@@ -124,9 +129,9 @@ multiple replicas. Fixed targets support single-process fixtures. Templates acce
 executor names and only these two placeholders. A fixed
 `direct_executor_target` supports standalone fixtures without Gateway only when
 `direct_executor_insecure_localtest` is explicitly true and the target is a loopback IP address.
-Choose exactly one Gateway or direct execution target. Production execution uses Gateway bearer
-authentication.
-Optional `history_target` and `history_token_file` enable retained History export.
+Choose exactly one Gateway or direct execution target. Gateway service-SVID mode verifies the
+receiver and sends no bearer. Optional `history_target` enables retained History export with either
+`history_token_file` or the sampler service SVID in `history_tls`.
 
 `max_live_sessions` caps concurrent active-execution slots, not resident Session drivers. A replica
 retains the authoritative ownership lease, a lightweight driver and its heartbeat across idle turns
