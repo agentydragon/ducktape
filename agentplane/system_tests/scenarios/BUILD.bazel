@@ -76,7 +76,6 @@ py_library(
         "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:executor",
-        "//agentplane/system_tests/driver:native_auth",
         "//agentplane/system_tests/driver:native_sandbox",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",

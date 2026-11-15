@@ -40,7 +40,8 @@ class IngressSettings(BaseModel):
     # CLEANUP(added 2026-11-15): Remove after manifests omit ingress.token_audience and that rollout completes.
     token_audience: str = Field(default="", description="Ignored legacy bearer audience.")
     writer_namespaces: frozenset[str] = Field(
-        min_length=1, description="Namespaces whose ServiceAccounts may push: the ones Sandboxes run in."
+        min_length=1,
+        description="Namespaces in which live workload Identity credential records are resolved for journal writers.",
     )
     # CLEANUP(added 2026-11-15): Remove these ignored legacy sampler settings after manifests omit them and that rollout completes.
     sampler_accounts: frozenset[ServiceAccountRef] = Field(

@@ -1,4 +1,4 @@
-// Command history-service takes the Session journals runners push (agentplane/docs/runner_control.md § Event
+// Command history-service accepts Session journals through the ingress (agentplane/docs/runner_control.md § Event
 // ingress), serves retained Session history, and folds it into Threads.
 package main
 
@@ -49,7 +49,7 @@ import (
 const (
 	// shutdownGrace bounds how long open calls may finish once the process is told to stop.
 	shutdownGrace = 5 * time.Second
-	// A runner heartbeats an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
+	// Journal writers heartbeat on an idle call at the rate agentplane/docs/runner_control.md § Event ingress names, so the
 	// ingress serves with the protocol's pacing.
 	ingressIdleAck      = 10 * time.Second
 	ingressSilenceLimit = 30 * time.Second
@@ -118,7 +118,7 @@ func run(ctx context.Context, c config) error {
 	return serve(ctx, c, rpcListener)
 }
 
-// serve answers the read API and runner ingress on one native gRPC listener until ctx ends.
+// serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	var svids *auth.SVIDResolver
 	if c.RPC.Has(listener.SPIFFE) {
