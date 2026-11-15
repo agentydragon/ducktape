@@ -15,7 +15,9 @@ UID before facts are published. The Runtime rejects stale Sandbox, incarnation o
 the shared Gateway SVID cannot select or advance the binding. The Gateway's per-method caller
 authorization remains in force, and uncertain mutations are never replayed automatically.
 
-Dispatcher delivery Leases are unchanged.
+The Gateway Role reads workloads and policy, patches existing Sandboxes for Dispatcher automatic
+wake, and maintains Dispatcher delivery Leases. It cannot create or delete Sandboxes or read
+SandboxTemplates; EnvironmentService owns launch and deletion through the Controller Role.
 
 One TLS gRPC listener serves Dispatcher, Gateway proxy, Executor and health
 methods, with independent per-method authorization. Only the Pod-bound Gateway/Dispatcher workload

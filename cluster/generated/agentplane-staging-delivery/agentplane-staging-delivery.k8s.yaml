@@ -494,16 +494,7 @@ rules:
       - get
       - list
       - watch
-      - create
       - patch
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
   - apiGroups:
       - agentplane.allegedly.works
     resources:
