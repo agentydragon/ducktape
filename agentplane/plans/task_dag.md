@@ -2487,6 +2487,7 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
+    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: live Session status ownership]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment Identity binding and Session creation order]
@@ -2597,6 +2598,44 @@ The former [Dispatcher/Gateway merge proposal](https://github.com/agentydragon/d
 queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
 Runtime restructuring does not wait for this decision.
 `DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
+
+### `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` — decide ownership of current Session status
+
+**Candidate design decision; operator request, 2026-11-15 UTC.** A shared Codex app-server can
+host several Session threads. History can retain one Session's last `HarnessExited` projection after
+that host has stopped, even while the Sandbox is ready and the shared server later hosts sibling
+Sessions. The UI's single “Harness not running” label does not say whether it describes the Sandbox,
+shared host, this Session's attachment or its turn.
+
+Decide the source of truth and read path for current operational status of Sessions in existing
+Sandboxes, and how that status relates to retained Session history. Keep these facts distinct:
+Sandbox readiness/lifecycle, Runtime or shared-host incarnation and liveness, per-Session harness
+attachment, setup and active-turn state, and History feed and retained events. Define current, stale,
+unknown and historical results, including what readers may conclude when the Runtime cannot be
+reached or has restarted.
+
+Compare a Dispatcher-owned current-status record fed by exact Runtime observations; a Dispatcher
+read that routes to the live Runtime while History remains historical; and keeping a History
+summary as the read model with explicit observation time and current-versus-historical semantics.
+For each, evaluate incarnation fencing, missed updates and recovery, replica/read availability,
+shared-host Sessions, and behavior after Sandbox suspension or restart.
+
+**Recommendation for review:** use the Session owner/Dispatcher for the canonical current-status
+query when an Environment exists, backed by fenced Runtime observations; keep History authoritative
+for retained events and conversation history. The Runtime remains the source of native process and
+attachment observations, and a Dispatcher view must distinguish stale or unavailable evidence from
+a confirmed stopped host or Session. **Question for review:** should the Dispatcher persist that
+current view or route a fresh read to Runtime, and which state belongs only to History?
+
+Coordinate with `SESSION_DATA_OWNERSHIP_DESIGN`: this task settles current-status semantics and the
+read/update contract; the broader node inventories other Session-keyed facts and service/database
+boundaries without repeating this decision.
+
+**Exit:** a reviewed state/owner/reader table and update/read contract covering a shared Codex host
+with both attached and dormant Sessions, Runtime and Sandbox restart, and historical Sessions with
+no live Environment. Specify freshness and incarnation rules, user-facing distinctions and scoped
+implementation follow-ups. This decision authorizes no API migration, schema change or live data
+move.
 
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
