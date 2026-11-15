@@ -56,9 +56,9 @@ follows it; code that differs converges on it.
 - First-party backend calls present a service SVID over mutual TLS, verifying the receiver's
   workload-CA chain, exact service URI and `serverAuth` usage. Role-specific service identities
   authenticate the component; exact method grants authorize it. App OIDC and external MCP OAuth
-  retain their separate edge authority. Some receivers still decode legacy bearer settings while
-  their admission retires; that does not select bearer proof in their callers. Invalid configured
-  TLS fails without downgrading.
+  retain their separate edge authority. Receivers reject Kubernetes bearers; some still decode
+  ignored legacy settings until manifest omission rolls out. Invalid configured TLS fails without
+  downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves
   the verified peer through its live `WorkloadCredential`, yielding the bound Identity and
@@ -66,16 +66,13 @@ follows it; code that differs converges on it.
   destination TLS through the central proxy's opaque CONNECT tunnel; the proxy asserts no caller.
 - A Go server admits callers in one interceptor, `auth.Methods.ServerOptions`
   (`agentplane/identity/auth`): `auth.Methods` maps every served method's full name to a
-  `Rule` (`Services` for exact service SVIDs only, `Accounts` for a bearer account allowlist, `AnySubject` for any workload subject a resolver authenticates,
-  `SVIDOrAccounts` for workload SVIDs plus a bearer account allowlist, `ReviewedServiceAccount` when a
-  handler needs a verified ServiceAccount UID with an optional Pod proof, `ReviewedServiceAccountOrIdentity`
-  when it also serves Identity callers, read
-  with `auth.Admitted`, `Public` only for the health service via `auth.HealthMethods`). A method it does not list is
-  refused before its credentials are resolved, so a new RPC is closed until its Rule is written. The package
-  owning a servicer exports its `Methods`; the handler reads the admitted identity with
-  `auth.Caller`, `auth.AdmittedReviewedCaller`, or `auth.EffectiveCaller` as appropriate. Delegation
-  is added to exact served methods through `Methods.WithDelegation`; tests iterate the generated
-  `ServiceDesc` with `agentplane/testing/grpcmethods`.
+  `Rule` (`Services` for exact service SVIDs, `AnySubject` with an `SVIDResolver` for workload
+  Identities, and `Public` only for the health service through `auth.HealthMethods`). A method it does
+  not list is refused before its credentials are resolved, so a new RPC is closed until its Rule is
+  written. The owning package exports its `Methods`; handlers consume the typed `auth.Admitted`
+  result. `AllowServiceCallers` adds exact direct service peers independently of workload admission.
+  `Methods.WithServiceDelegation` adds actor grants to exact served methods. Tests iterate the
+  generated `ServiceDesc` with `agentplane/testing/grpcmethods`.
 - Resource authorization stays in the handler and uses the identity admitted by the method Rule. For
   example, History ingress binds a Session to its first writer. If a handler needs a richer proof,
   its method Rule and typed context accessor must admit that proof; it does not resolve the request's
@@ -98,8 +95,8 @@ SVID over mutual TLS and verifies the receiver's service SVID on every hop. It n
 service principal and exact per-method service allowlist; a service SPIFFE URI is neither an
 `auth.Account` nor a workload `IdentityPrincipal` and supplies no ServiceAccount UID or Pod proof.
 For delegated calls, preserve the service actor, effective Identity, and typed provenance separately.
-Service admission uses `ServicePrincipal` and exact service allowlists, separately from bearer rules
-and workload `SVIDResolver` rules. App OIDC and external MCP OAuth remain separate
+Service admission uses `ServicePrincipal` and exact service allowlists, separately from
+workload `SVIDResolver` rules. App OIDC and external MCP OAuth remain separate
 edge protocols.
 
 ## Errors
