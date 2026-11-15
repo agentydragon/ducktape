@@ -108,9 +108,12 @@ Eight initial focused tests passed on exact-commit RBE invocation
 [7f1ffa92-37eb-443a-93ff-4039e858dbd6](https://app.buildbuddy.io/invocation/7f1ffa92-37eb-443a-93ff-4039e858dbd6).
 The frozen report binary compiled with Clippy and ran successfully under invocation
 [094300c7-d562-4eb5-b047-83f21d78747b](https://app.buildbuddy.io/invocation/094300c7-d562-4eb5-b047-83f21d78747b).
-A ninth constructor-observation test was added afterward; its final result is
-recorded in the task handoff. Changed-file pre-commit passed before the first
-commit. No native timing loops, production acceptance claims, PR, or benchmark
+All nine final tests passed on implementation commit
+`513e425de80ec5a057a0408106db7a948d325b80` under exact-commit RBE invocation
+[175cfebf-487e-4410-9158-dec5d589d89d](https://app.buildbuddy.io/invocation/175cfebf-487e-4410-9158-dec5d589d89d).
+Changed-file pre-commit and commit hooks passed. `bbr --run_from_commit` needs the
+full 40-character object ID: an abbreviated ID failed remote Git setup before
+tests ran; the full-ID retry above passed. No native timing loops, production acceptance claims, PR, or benchmark
 speedup are part of this experiment.
 
 ## Artifacts and reproduction
