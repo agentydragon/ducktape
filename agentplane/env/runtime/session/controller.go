@@ -8,6 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -208,7 +209,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 	}
 	if current.Phase != Halted {
 		if err := s.dispatchControl(ctx); err != nil {
-			return err
+			if desiredState.Mode == lifecycle.Running || !errors.Is(err, journal.ErrFailed) {
+				return err
+			}
+			// A failed journal cannot dispatch retained controls, but native
+			// halt and process cleanup must still reach their barriers.
 		}
 	}
 	if desiredState.Mode != lifecycle.Running {

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -21,6 +23,43 @@ import (
 )
 
 const lifecycleTestTimeout = 10 * time.Second
+
+func TestCloseStopsNativeProcessAfterJournalFailure(t *testing.T) {
+	var gate sync.Mutex
+	s, process, manager := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+	before := s.journal.RecoveryState()
+	withSessionControllerGate(t, s, &gate, func() {
+		setLifecycleStatusReady(t, manager, s)
+		failure := errors.New("injected journal transaction failure")
+		err := s.journal.WithBatch(t.Context(), func(ctx context.Context) error {
+			if _, err := s.journal.Append(ctx, observation(&eventpb.HarnessStderr{Text: "uncommitted"}), journal.AppendOptions{}); err != nil {
+				return err
+			}
+			return failure
+		})
+		if !errors.Is(err, failure) {
+			t.Fatalf("fail journal transaction: %v", err)
+		}
+		if err := lifecycle.PublishEnvironmentDesired(t.Context(), manager.state, lifecycle.EnvironmentDesired{Mode: lifecycle.Closing, Generation: 1}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	waitSession(t, s, func(current LifecycleStatus) bool {
+		return current.EnvironmentGeneration == 1 && current.Phase == Halted && current.ProcessStopped && current.PreFenceSettled
+	}, "native cleanup after journal failure")
+	if process.Running() {
+		t.Fatal("native cleanup published before process stopped")
+	}
+	if got := s.journal.RecoveryState(); got != before {
+		t.Fatalf("cleanup changed failed journal checkpoint: before=%+v after=%+v", before, got)
+	}
+	if s.journal.SealState() != nil {
+		t.Fatal("failed-journal cleanup manufactured a seal")
+	}
+	if _, err := s.journal.Append(t.Context(), observation(&eventpb.HarnessStderr{Text: "after cleanup"}), journal.AppendOptions{}); !errors.Is(err, journal.ErrFailed) {
+		t.Fatalf("cleanup cleared journal failure: %v", err)
+	}
+}
 
 type preparationDuringQuiesceAdapter struct {
 	harness.Adapter
