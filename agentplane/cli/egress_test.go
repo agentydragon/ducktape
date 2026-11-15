@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	egressrulespb "github.com/agentydragon/ducktape/agentplane/egress/api/rules/egress_rulespb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,7 +130,7 @@ func TestEgressRulesUsesGRPCAndDisplaysTheResponse(t *testing.T) {
 	}
 	fake.err = status.Error(codes.PermissionDenied, "refused")
 	code, _, _ = invoke(egressEnv(endpoint), "egress", "rules")
-	if code != exitRefused {
+	if code != invocation.ExitRefused {
 		t.Errorf("refusal exit %d", code)
 	}
 }

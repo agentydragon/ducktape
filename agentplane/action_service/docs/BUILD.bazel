@@ -7,7 +7,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/docs",
     visibility = [
         "//agentplane/action_service:__pkg__",
-        "//agentplane/cli:__pkg__",
+        "//agentplane/cli/internal/actions:__pkg__",
         "//agentplane/mcp_edge/internal/mcpserver:__pkg__",
     ],
 )

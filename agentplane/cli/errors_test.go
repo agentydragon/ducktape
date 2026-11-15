@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	rpcCode "google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -27,15 +28,15 @@ func TestGRPCFailuresMapToExitCodes(t *testing.T) {
 		code     codes.Code
 		wantExit int
 	}{
-		{"invalid argument", codes.InvalidArgument, exitRefused},
-		{"unauthenticated", codes.Unauthenticated, exitRefused},
-		{"permission denied", codes.PermissionDenied, exitRefused},
-		{"not found", codes.NotFound, exitNotFound},
-		{"already exists", codes.AlreadyExists, exitConflict},
-		{"aborted", codes.Aborted, exitConflict},
-		{"rate limited", codes.ResourceExhausted, exitTransient},
-		{"unavailable", codes.Unavailable, exitTransient},
-		{"deadline exceeded", codes.DeadlineExceeded, exitTransient},
+		{"invalid argument", codes.InvalidArgument, invocation.ExitRefused},
+		{"unauthenticated", codes.Unauthenticated, invocation.ExitRefused},
+		{"permission denied", codes.PermissionDenied, invocation.ExitRefused},
+		{"not found", codes.NotFound, invocation.ExitNotFound},
+		{"already exists", codes.AlreadyExists, invocation.ExitConflict},
+		{"aborted", codes.Aborted, invocation.ExitConflict},
+		{"rate limited", codes.ResourceExhausted, invocation.ExitTransient},
+		{"unavailable", codes.Unavailable, invocation.ExitTransient},
+		{"deadline exceeded", codes.DeadlineExceeded, invocation.ExitTransient},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -48,7 +49,7 @@ func TestGRPCFailuresMapToExitCodes(t *testing.T) {
 				t.Fatalf("exit %d, stdout %q, calls %+v; want exit %d after one RPC", code, stdout, fake.callLog(), tc.wantExit)
 			}
 			got := errorOf(t, stderr)
-			if got.Code != rpcCode.Code_name[int32(tc.code)] || got.Source != sourceService || got.HTTPStatus != nil || got.Message != "test service refusal" {
+			if got.Code != rpcCode.Code_name[int32(tc.code)] || got.Source != "service" || got.HTTPStatus != nil || got.Message != "test service refusal" {
 				t.Errorf("envelope %+v; want %s from service without an HTTP status", got, tc.code)
 			}
 		})
@@ -66,7 +67,7 @@ func TestGRPCRetryInfoBecomesRetryAfterSeconds(t *testing.T) {
 	}
 	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json")
 	got := errorOf(t, stderr)
-	if code != exitTransient || got.Code != "RESOURCE_EXHAUSTED" || got.RetryAfterSeconds == nil || *got.RetryAfterSeconds != 7 {
+	if code != invocation.ExitTransient || got.Code != "RESOURCE_EXHAUSTED" || got.RetryAfterSeconds == nil || *got.RetryAfterSeconds != 7 {
 		t.Errorf("exit %d, envelope %+v; want transient with a 7-second retry delay", code, got)
 	}
 }
@@ -80,7 +81,7 @@ func TestUnreachableServiceExitsTransient(t *testing.T) {
 	_ = listener.Close()
 	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json")
 	got := errorOf(t, stderr)
-	if code != exitTransient || stdout != "" || got.Code != "UNAVAILABLE" || got.Source != sourceClient || got.HTTPStatus != nil {
+	if code != invocation.ExitTransient || stdout != "" || got.Code != "UNAVAILABLE" || got.Source != "client" || got.HTTPStatus != nil {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want exit 3 with UNAVAILABLE from the client", code, stdout, got)
 	}
 }
@@ -93,7 +94,7 @@ func TestDeadlineExitsTransient(t *testing.T) {
 	}
 	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "get", missingID, "--json", "--timeout", "0.2")
 	got := errorOf(t, stderr)
-	if code != exitTransient || stdout != "" || got.Code != "DEADLINE_EXCEEDED" || fake.count("GetActionRequest") != 1 {
+	if code != invocation.ExitTransient || stdout != "" || got.Code != "DEADLINE_EXCEEDED" || fake.count("GetActionRequest") != 1 {
 		t.Errorf("exit %d, stdout %q, envelope %+v; want deadline exceeded after one RPC", code, stdout, got)
 	}
 }
@@ -213,7 +214,7 @@ func TestGRPCConnectRefusalPreservesProxySourceAndReason(t *testing.T) {
 	if os.Getenv("AGENTPLANE_CLI_PROXY_CHILD") == "1" {
 		code, stdout, stderr := invoke(actionsEnv(os.Getenv("AGENTPLANE_ACTIONS_URL")), "actions", "groups", "--json")
 		got := errorOf(t, stderr)
-		if code != exitTransient || stdout != "" || got.Source != sourceEgress || got.Reason == nil || *got.Reason != "no-rule" {
+		if code != invocation.ExitTransient || stdout != "" || got.Source != "egress" || got.Reason == nil || *got.Reason != "no-rule" {
 			t.Fatalf("exit %d, stdout %q, error %+v; want the egress CONNECT refusal", code, stdout, got)
 		}
 		return
@@ -225,7 +226,7 @@ func TestGRPCConnectRefusalPreservesProxySourceAndReason(t *testing.T) {
 			t.Errorf("proxy method %s, want CONNECT", r.Method)
 		}
 		connected <- struct{}{}
-		w.Header().Set(egressHeader, "denied; reason=no-rule")
+		w.Header().Set("x-agentplane-egress", "denied; reason=no-rule")
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer proxy.Close()
@@ -245,7 +246,7 @@ func TestCredentialIsSentAsBearerAndNeverPrinted(t *testing.T) {
 	}
 	for _, args := range [][]string{{"actions", "get", missingID}, {"actions", "get", missingID, "--json"}} {
 		code, stdout, stderr := invoke(actionsEnv(endpoint), args...)
-		if code != exitRefused || strings.Contains(stdout+stderr, testCredential) {
+		if code != invocation.ExitRefused || strings.Contains(stdout+stderr, testCredential) {
 			t.Errorf("%v: exit %d; the credential appears in the output: %q %q", args, code, stdout, stderr)
 		}
 	}
@@ -268,7 +269,7 @@ func TestEachGroupNeedsItsOwnConfiguration(t *testing.T) {
 	for _, tc := range cases {
 		code, stdout, stderr := invoke(nil, append(tc.args, "--json")...)
 		got := errorOf(t, stderr)
-		if code != exitUsage || stdout != "" || !strings.Contains(got.Message, tc.missing) {
+		if code != invocation.ExitUsage || stdout != "" || !strings.Contains(got.Message, tc.missing) {
 			t.Errorf("%v: exit %d, stdout %q, error %+v; want exit 2 naming %s", tc.args, code, stdout, got, tc.missing)
 		}
 	}
@@ -290,7 +291,7 @@ func TestUsageErrorsExitBeforeAnyActionRPC(t *testing.T) {
 	}
 	for _, args := range cases {
 		code, stdout, stderr := invoke(actionsEnv(endpoint), args...)
-		if code != exitUsage || stdout != "" || fake.count("ListActionGroups")+fake.count("GetAction") +
+		if code != invocation.ExitUsage || stdout != "" || fake.count("ListActionGroups")+fake.count("GetAction") +
 			+fake.count("GetActionPolicy") + fake.count("SubmitActionRequest") + fake.count("GetActionRequest") +
 			+fake.count("WatchActionRequest") + fake.count("ListActionRequests") + fake.count("ListActionRequestEvents") != 0 {
 			t.Errorf("%v: exit %d, stdout %q, calls %+v, stderr %q; want exit 2 before any action RPC", args, code, stdout, fake.callLog(), stderr)
@@ -308,7 +309,7 @@ func TestWaitDeadlineUsesTheClientBudget(t *testing.T) {
 		return status.FromContextError(stream.Context().Err()).Err()
 	}
 	code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0.2")
-	if code != exitDeadline {
+	if code != invocation.ExitDeadline {
 		t.Errorf("exit %d; want deadline exit after a 0.2s budget", code)
 	}
 }

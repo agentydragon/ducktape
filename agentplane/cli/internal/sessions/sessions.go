@@ -1,4 +1,4 @@
-package main
+package sessions
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
@@ -29,13 +30,13 @@ must already be authorized by each backend it reads.`
 
 type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
 
-func (a *app) sessionsCommand() *cobra.Command {
-	return group("sessions", "Create and direct Sessions in an existing Sandbox", sessionsHelp,
+func (a *commands) sessionsCommand() *cobra.Command {
+	return invocation.Group("sessions", "Create and direct Sessions in an existing Sandbox", sessionsHelp,
 		a.createSessionCommand(), a.listSessionsCommand(), a.submitInputCommand(), a.getSessionCommand(), a.getDispatchCommand(),
 		a.cancelInputCommand(), a.interruptTurnCommand(), a.readTurnsCommand(), a.observeInputCommand())
 }
 
-func (a *app) getSessionCommand() *cobra.Command {
+func (a *commands) getSessionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get SESSION_ID",
 		Short: "Read a Session and retained History summary",
@@ -45,23 +46,23 @@ Both backends authorize this caller independently.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if args[0] == "" {
-				return usageFailure("SESSION_ID must not be empty")
+				return invocation.UsageFailure("SESSION_ID must not be empty")
 			}
 			sessionID, err := uuid.Parse(args[0])
 			if err != nil {
-				return usageFailure("SESSION_ID must be a UUID")
+				return invocation.UsageFailure("SESSION_ID must be a UUID")
 			}
-			dispatcherConnection, err := a.connectGRPC("SESSIONS")
+			dispatcherConnection, err := a.ConnectGRPC("SESSIONS")
 			if err != nil {
 				return err
 			}
 			defer dispatcherConnection.Close()
-			historyConnection, err := a.connectGRPC("HISTORY")
+			historyConnection, err := a.ConnectGRPC("HISTORY")
 			if err != nil {
 				return err
 			}
 			defer historyConnection.Close()
-			ctx, cancel := a.deadline()
+			ctx, cancel := a.Deadline()
 			defer cancel()
 			result, err := sessionclient.GetSession(
 				ctx,
@@ -70,18 +71,18 @@ Both backends authorize this caller independently.`,
 				sessionID,
 			)
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			body, err := json.Marshal(result)
 			if err != nil {
-				return invalidResponse("marshal Session snapshot: %v", err)
+				return invocation.InvalidResponse("marshal Session snapshot: %v", err)
 			}
-			return a.showOne(body, sessionSnapshotLine)
+			return a.ShowOne(body, sessionSnapshotLine)
 		},
 	}
 }
 
-func (a *app) readTurnsCommand() *cobra.Command {
+func (a *commands) readTurnsCommand() *cobra.Command {
 	var count uint32 = 20
 	var pageCursor string
 	command := &cobra.Command{
@@ -93,33 +94,33 @@ The page cursor is opaque, Session-scoped and carries no authority.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if args[0] == "" {
-				return usageFailure("SESSION_ID must not be empty")
+				return invocation.UsageFailure("SESSION_ID must not be empty")
 			}
 			sessionID, err := uuid.Parse(args[0])
 			if err != nil {
-				return usageFailure("SESSION_ID must be a UUID")
+				return invocation.UsageFailure("SESSION_ID must be a UUID")
 			}
 			if count < 1 || count > 100 {
-				return usageFailure("--count must be between 1 and 100")
+				return invocation.UsageFailure("--count must be between 1 and 100")
 			}
-			connection, err := a.connectGRPC("HISTORY")
+			connection, err := a.ConnectGRPC("HISTORY")
 			if err != nil {
 				return err
 			}
 			defer connection.Close()
-			ctx, cancel := a.deadline()
+			ctx, cancel := a.Deadline()
 			defer cancel()
 			result, err := sessionclient.ReadTurns(ctx, historypb.NewHistoryServiceClient(connection), sessionclient.ReadTurnsRequest{
 				SessionID: sessionID, Count: count, PageCursor: pageCursor,
 			})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			body, err := json.Marshal(result)
 			if err != nil {
-				return invalidResponse("marshal retained turns: %v", err)
+				return invocation.InvalidResponse("marshal retained turns: %v", err)
 			}
-			return a.showOne(body, turnPageLine)
+			return a.ShowOne(body, turnPageLine)
 		},
 	}
 	command.Flags().Uint32Var(&count, "count", count, "maximum completed turns to return (1-100)")
@@ -127,7 +128,7 @@ The page cursor is opaque, Session-scoped and carries no authority.`,
 	return command
 }
 
-func (a *app) observeInputCommand() *cobra.Command {
+func (a *commands) observeInputCommand() *cobra.Command {
 	var waitSeconds int
 	var resumeToken string
 	var commandID string
@@ -141,22 +142,22 @@ coverage facts. Both backends authorize this caller independently.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if args[0] == "" || commandID == "" {
-				return usageFailure("SESSION_ID and --command-id must be non-empty")
+				return invocation.UsageFailure("SESSION_ID and --command-id must be non-empty")
 			}
 			if waitSeconds < 0 || waitSeconds > 30 {
-				return usageFailure("--wait-seconds must be between 0 and 30")
+				return invocation.UsageFailure("--wait-seconds must be between 0 and 30")
 			}
-			dispatcherConnection, err := a.connectGRPC("SESSIONS")
+			dispatcherConnection, err := a.ConnectGRPC("SESSIONS")
 			if err != nil {
 				return err
 			}
 			defer dispatcherConnection.Close()
-			historyConnection, err := a.connectGRPC("HISTORY")
+			historyConnection, err := a.ConnectGRPC("HISTORY")
 			if err != nil {
 				return err
 			}
 			defer historyConnection.Close()
-			ctx, cancel := a.deadline()
+			ctx, cancel := a.Deadline()
 			defer cancel()
 			result, err := sessionclient.ObserveInput(
 				ctx,
@@ -167,27 +168,27 @@ coverage facts. Both backends authorize this caller independently.`,
 				},
 			)
 			if err != nil {
-				if deadlineElapsed(ctx) {
+				if invocation.DeadlineElapsed(ctx) {
 					body, marshalErr := json.Marshal(result)
 					if marshalErr != nil {
-						return invalidResponse("marshal input observation: %v", marshalErr)
+						return invocation.InvalidResponse("marshal input observation: %v", marshalErr)
 					}
-					if showErr := a.showOne(body, inputObservationLine); showErr != nil {
+					if showErr := a.ShowOne(body, inputObservationLine); showErr != nil {
 						return showErr
 					}
-					return exitWith(exitDeadline)
+					return invocation.ExitWith(invocation.ExitDeadline)
 				}
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			body, err := json.Marshal(result)
 			if err != nil {
-				return invalidResponse("marshal input observation: %v", err)
+				return invocation.InvalidResponse("marshal input observation: %v", err)
 			}
-			if err := a.showOne(body, inputObservationLine); err != nil {
+			if err := a.ShowOne(body, inputObservationLine); err != nil {
 				return err
 			}
-			if deadlineElapsed(ctx) && result.Observation.Kind == sessionclient.ObservationNotObserved {
-				return exitWith(exitDeadline)
+			if invocation.DeadlineElapsed(ctx) && result.Observation.Kind == sessionclient.ObservationNotObserved {
+				return invocation.ExitWith(invocation.ExitDeadline)
 			}
 			return nil
 		},
@@ -199,20 +200,20 @@ coverage facts. Both backends authorize this caller independently.`,
 	return command
 }
 
-func (a *app) sessionCommand(fn sessionCall) func(*cobra.Command, []string) error {
+func (a *commands) sessionCommand(fn sessionCall) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, args []string) error {
-		connection, err := a.connectGRPC("SESSIONS")
+		connection, err := a.ConnectGRPC("SESSIONS")
 		if err != nil {
 			return err
 		}
 		defer connection.Close()
-		ctx, cancel := a.deadline()
+		ctx, cancel := a.Deadline()
 		defer cancel()
 		return fn(ctx, dispatcherpb.NewSessionDispatcherClient(connection), args)
 	}
 }
 
-func (a *app) createSessionCommand() *cobra.Command {
+func (a *commands) createSessionCommand() *cobra.Command {
 	var sandbox, sandboxUID, specSource, additionalInstructions, setupScript string
 	var setupScriptSet bool
 	command := &cobra.Command{
@@ -228,16 +229,16 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			setupScriptSet = cmd.Flags().Changed("setup-script")
 			if id, err := uuid.Parse(args[0]); err != nil || id.String() != args[0] {
-				return usageFailure("SESSION_ID must be a canonical UUID")
+				return invocation.UsageFailure("SESSION_ID must be a canonical UUID")
 			}
 			return nil
 		},
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if sandbox == "" || sandboxUID == "" || specSource == "" {
-				return usageFailure("--sandbox, --sandbox-uid and --spec are required")
+				return invocation.UsageFailure("--sandbox, --sandbox-uid and --spec are required")
 			}
 			if specSource == "-" && setupScript == "-" {
-				return usageFailure("only one of --spec and --setup-script may read stdin")
+				return invocation.UsageFailure("only one of --spec and --setup-script may read stdin")
 			}
 			spec, err := a.readSessionSpec(specSource, additionalInstructions)
 			if err != nil {
@@ -251,7 +252,7 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 				target = spec.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 			}
 			if target.GetName() != sandbox || target.GetUid() != sandboxUID {
-				return usageFailure("--spec placement must match --sandbox and --sandbox-uid")
+				return invocation.UsageFailure("--spec placement must match --sandbox and --sandbox-uid")
 			}
 			if setupScriptSet {
 				contents, err := a.readSessionValue("--setup-script", setupScript)
@@ -262,16 +263,16 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 			}
 			response, err := client.CreateSession(ctx, request)
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetSession() == nil {
-				return invalidResponse("CreateSession returned no Session")
+				return invocation.InvalidResponse("CreateSession returned no Session")
 			}
-			body, err := protoJSON(response.GetSession())
+			body, err := invocation.ProtoJSON(response.GetSession())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, sessionLine)
+			return a.ShowOne(body, sessionLine)
 		}),
 	}
 	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
@@ -285,7 +286,7 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 	return command
 }
 
-func (a *app) submitInputCommand() *cobra.Command {
+func (a *commands) submitInputCommand() *cobra.Command {
 	var commandID, text string
 	command := &cobra.Command{
 		Use:   "submit-input SESSION_ID --command-id ID --text TEXT",
@@ -296,22 +297,22 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" || commandID == "" {
-				return usageFailure("SESSION_ID and --command-id must be non-empty")
+				return invocation.UsageFailure("SESSION_ID and --command-id must be non-empty")
 			}
 			response, err := client.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{
 				SessionId: args[0], CommandId: commandID, Text: text,
 			})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetDispatch() == nil {
-				return invalidResponse("SubmitInput returned no dispatch")
+				return invocation.InvalidResponse("SubmitInput returned no dispatch")
 			}
-			body, err := protoJSON(response.GetDispatch())
+			body, err := invocation.ProtoJSON(response.GetDispatch())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, dispatchLine)
+			return a.ShowOne(body, dispatchLine)
 		}),
 	}
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key for this input")
@@ -322,7 +323,7 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 	return command
 }
 
-func (a *app) listSessionsCommand() *cobra.Command {
+func (a *commands) listSessionsCommand() *cobra.Command {
 	var limit uint32
 	var pageToken string
 	command := &cobra.Command{
@@ -335,28 +336,28 @@ This is not retained History or environment-free central Session discovery.`,
 		Args: cobra.NoArgs,
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, _ []string) error {
 			if limit < 1 || limit > 100 {
-				return usageFailure("--limit must be between 1 and 100")
+				return invocation.UsageFailure("--limit must be between 1 and 100")
 			}
 			response, err := client.ListSessions(ctx, &dispatcherpb.ListSessionsRequest{Limit: limit, PageToken: pageToken})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
-			if a.asJSON {
-				body, err := protoJSON(response)
+			if a.JSON() {
+				body, err := invocation.ProtoJSON(response)
 				if err != nil {
 					return err
 				}
-				return a.showOne(body, nil)
+				return a.ShowOne(body, nil)
 			}
-			items, err := protoJSONList(response.GetSessions())
+			items, err := invocation.ProtoJSONList(response.GetSessions())
 			if err != nil {
 				return err
 			}
-			if err := a.show(items, sessionLine); err != nil {
+			if err := a.Show(items, sessionLine); err != nil {
 				return err
 			}
 			if response.GetNextPageToken() != "" {
-				fmt.Fprintf(a.stderr, "more may follow: --after %s\n", response.GetNextPageToken())
+				fmt.Fprintf(a.Stderr(), "more may follow: --after %s\n", response.GetNextPageToken())
 			}
 			return nil
 		}),
@@ -366,7 +367,7 @@ This is not retained History or environment-free central Session discovery.`,
 	return command
 }
 
-func (a *app) getDispatchCommand() *cobra.Command {
+func (a *commands) getDispatchCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get-dispatch COMMAND_ID",
 		Short: "Read a Dispatcher command record",
@@ -374,25 +375,25 @@ func (a *app) getDispatchCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" {
-				return usageFailure("COMMAND_ID must not be empty")
+				return invocation.UsageFailure("COMMAND_ID must not be empty")
 			}
 			response, err := client.GetDispatch(ctx, &dispatcherpb.GetDispatchRequest{CommandId: args[0]})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetDispatch() == nil {
-				return invalidResponse("GetDispatch returned no dispatch")
+				return invocation.InvalidResponse("GetDispatch returned no dispatch")
 			}
-			body, err := protoJSON(response.GetDispatch())
+			body, err := invocation.ProtoJSON(response.GetDispatch())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, dispatchLine)
+			return a.ShowOne(body, dispatchLine)
 		}),
 	}
 }
 
-func (a *app) cancelInputCommand() *cobra.Command {
+func (a *commands) cancelInputCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel-input COMMAND_ID",
 		Short: "Cancel an input before delivery begins",
@@ -402,25 +403,25 @@ lost reply. After an unknown outcome, use get-dispatch with the same COMMAND_ID.
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" {
-				return usageFailure("COMMAND_ID must not be empty")
+				return invocation.UsageFailure("COMMAND_ID must not be empty")
 			}
 			response, err := client.CancelDispatch(ctx, &dispatcherpb.CancelDispatchRequest{CommandId: args[0]})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetDispatch() == nil {
-				return invalidResponse("CancelDispatch returned no dispatch")
+				return invocation.InvalidResponse("CancelDispatch returned no dispatch")
 			}
-			body, err := protoJSON(response.GetDispatch())
+			body, err := invocation.ProtoJSON(response.GetDispatch())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, dispatchLine)
+			return a.ShowOne(body, dispatchLine)
 		}),
 	}
 }
 
-func (a *app) interruptTurnCommand() *cobra.Command {
+func (a *commands) interruptTurnCommand() *cobra.Command {
 	var commandID, turnID string
 	command := &cobra.Command{
 		Use:   "interrupt-turn SESSION_ID --command-id ID --turn-id ID",
@@ -430,22 +431,22 @@ the idempotency key; it is not generated or replaced by this CLI.`,
 		Args: cobra.ExactArgs(1),
 		RunE: a.sessionCommand(func(ctx context.Context, client dispatcherpb.SessionDispatcherClient, args []string) error {
 			if args[0] == "" || commandID == "" || turnID == "" {
-				return usageFailure("SESSION_ID, --command-id and --turn-id must be non-empty")
+				return invocation.UsageFailure("SESSION_ID, --command-id and --turn-id must be non-empty")
 			}
 			response, err := client.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{
 				SessionId: args[0], CommandId: commandID, TurnId: turnID,
 			})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			if response.GetDispatch() == nil {
-				return invalidResponse("InterruptTurn returned no dispatch")
+				return invocation.InvalidResponse("InterruptTurn returned no dispatch")
 			}
-			body, err := protoJSON(response.GetDispatch())
+			body, err := invocation.ProtoJSON(response.GetDispatch())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, dispatchLine)
+			return a.ShowOne(body, dispatchLine)
 		}),
 	}
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key")
@@ -456,14 +457,14 @@ the idempotency key; it is not generated or replaced by this CLI.`,
 	return command
 }
 
-func (a *app) readSessionSpec(source, additionalInstructions string) (*sessionpb.SessionSpec, error) {
+func (a *commands) readSessionSpec(source, additionalInstructions string) (*sessionpb.SessionSpec, error) {
 	data, err := a.readSessionValue("--spec", source)
 	if err != nil {
 		return nil, err
 	}
 	spec := &sessionpb.SessionSpec{}
 	if err := protojson.Unmarshal([]byte(data), spec); err != nil {
-		return nil, usageFailure("--spec: %v", err)
+		return nil, invocation.UsageFailure("--spec: %v", err)
 	}
 	if additionalInstructions != "" {
 		instructions := strings.TrimRight(spec.Instructions, "\r\n")
@@ -475,19 +476,19 @@ func (a *app) readSessionSpec(source, additionalInstructions string) (*sessionpb
 	return spec, nil
 }
 
-func (a *app) readSessionValue(flag, source string) (string, error) {
+func (a *commands) readSessionValue(flag, source string) (string, error) {
 	var data []byte
 	var err error
 	switch {
 	case source == "-":
-		data, err = io.ReadAll(a.stdin)
+		data, err = io.ReadAll(a.Stdin())
 	case strings.HasPrefix(source, "@"):
 		data, err = os.ReadFile(source[1:])
 	default:
 		data = []byte(source)
 	}
 	if err != nil {
-		return "", usageFailure("%s: %v", flag, err)
+		return "", invocation.UsageFailure("%s: %v", flag, err)
 	}
 	return string(data), nil
 }
@@ -495,29 +496,29 @@ func (a *app) readSessionValue(flag, source string) (string, error) {
 func sessionLine(raw json.RawMessage) (string, error) {
 	session := &dispatcherpb.Session{}
 	if err := protojson.Unmarshal(raw, session); err != nil {
-		return "", invalidResponse("%v", err)
+		return "", invocation.InvalidResponse("%v", err)
 	}
 	if session.GetSessionId() == "" {
-		return "", invalidResponse("no session ID in the Session")
+		return "", invocation.InvalidResponse("no session ID in the Session")
 	}
 	if session.GetStatus() == nil {
-		return "", invalidResponse("no materialization status in the Session")
+		return "", invocation.InvalidResponse("no materialization status in the Session")
 	}
 	target := session.GetPlacement().GetEnvironmentHosted().GetEnvironment()
 	if session.GetPlacement().GetCentralSamplerV1() != nil {
 		target = session.GetPlacement().GetCentralSamplerV1().GetExecutorEnvironment()
 	}
 	if target.GetName() == "" || target.GetUid() == "" {
-		return "", invalidResponse("no exact environment target in the Session")
+		return "", invocation.InvalidResponse("no exact environment target in the Session")
 	}
-	line := fields(
+	line := invocation.Fields(
 		session.GetSessionId(),
-		enumSuffix(session.GetStatus().GetMaterialization().String(), "SESSION_MATERIALIZATION_"),
+		invocation.EnumSuffix(session.GetStatus().GetMaterialization().String(), "SESSION_MATERIALIZATION_"),
 		target.GetName(),
 		"Kubernetes Sandbox UID "+target.GetUid(),
 	)
 	if session.GetStatus().Reason != nil {
-		line += fields("reason", fmt.Sprintf("%q", session.GetStatus().GetReason()))
+		line += invocation.Fields("reason", fmt.Sprintf("%q", session.GetStatus().GetReason()))
 	}
 	return line, nil
 }
@@ -525,26 +526,26 @@ func sessionLine(raw json.RawMessage) (string, error) {
 func dispatchLine(raw json.RawMessage) (string, error) {
 	normalized, err := normalizeDispatchStateJSON(raw)
 	if err != nil {
-		return "", invalidResponse("%v", err)
+		return "", invocation.InvalidResponse("%v", err)
 	}
 	dispatch := &dispatcherpb.Dispatch{}
 	if err := protojson.Unmarshal(normalized, dispatch); err != nil {
-		return "", invalidResponse("%v", err)
+		return "", invocation.InvalidResponse("%v", err)
 	}
 	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	if dispatch.GetCommandId() == "" {
-		return "", invalidResponse("no command ID in the dispatch")
+		return "", invocation.InvalidResponse("no command ID in the dispatch")
 	}
-	line := fields(
+	line := invocation.Fields(
 		dispatch.GetCommandId(),
-		enumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"),
-		enumSuffix(dispatch.GetOperation().String(), "OPERATION_"),
+		invocation.EnumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"),
+		invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"),
 		dispatch.GetSessionId(),
 		dispatch.GetSandbox(),
 		"Kubernetes Sandbox UID "+dispatch.GetSandboxUid(),
 	)
 	if dispatch.Reason != nil {
-		line += fields("reason", fmt.Sprintf("%q", dispatch.GetReason()))
+		line += invocation.Fields("reason", fmt.Sprintf("%q", dispatch.GetReason()))
 	}
 	return line, nil
 }
@@ -552,49 +553,49 @@ func dispatchLine(raw json.RawMessage) (string, error) {
 func inputObservationLine(raw json.RawMessage) (string, error) {
 	var observation sessionclient.InputObservation
 	if err := json.Unmarshal(raw, &observation); err != nil {
-		return "", invalidResponse("%v", err)
+		return "", invocation.InvalidResponse("%v", err)
 	}
-	line := fields(observation.SessionID, observation.CommandID, string(observation.Observation.Kind))
+	line := invocation.Fields(observation.SessionID, observation.CommandID, string(observation.Observation.Kind))
 	if observation.Dispatch.Kind != "" {
-		line += fields("dispatcher " + observation.Dispatch.Kind)
+		line += invocation.Fields("dispatcher " + observation.Dispatch.Kind)
 	}
 	if len(observation.Dispatch.Value) > 0 {
 		normalized, err := normalizeDispatchStateJSON(observation.Dispatch.Value)
 		if err != nil {
-			return "", invalidResponse("dispatcher receipt: %v", err)
+			return "", invocation.InvalidResponse("dispatcher receipt: %v", err)
 		}
 		dispatch := &dispatcherpb.Dispatch{}
 		if err := protojson.Unmarshal(normalized, dispatch); err != nil {
-			return "", invalidResponse("dispatcher receipt: %v", err)
+			return "", invocation.InvalidResponse("dispatcher receipt: %v", err)
 		}
 		dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
-		line += fields(enumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"), enumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
+		line += invocation.Fields(invocation.EnumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"), invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
 	}
 	if observation.Observation.TurnID != nil {
-		line += fields("turn " + *observation.Observation.TurnID)
+		line += invocation.Fields("turn " + *observation.Observation.TurnID)
 	}
 	if observation.Observation.Turn != nil {
 		turn := observation.Observation.Turn
-		line += fields("turn " + turn.TurnID)
-		line += fields("status " + turn.Status)
+		line += invocation.Fields("turn " + turn.TurnID)
+		line += invocation.Fields("status " + turn.Status)
 		if turn.FinalAssistantMessage != nil {
-			line += fields("message", strconv.Quote(firstLine(*turn.FinalAssistantMessage)))
+			line += invocation.Fields("message", strconv.Quote(invocation.FirstLine(*turn.FinalAssistantMessage)))
 		}
 	}
 	if observation.Observation.Reason != nil {
-		line += fields("reason", strconv.Quote(*observation.Observation.Reason))
+		line += invocation.Fields("reason", strconv.Quote(*observation.Observation.Reason))
 	}
 	if observation.Observation.ThroughCursor != "" {
-		line += fields("history through " + observation.Observation.ThroughCursor)
+		line += invocation.Fields("history through " + observation.Observation.ThroughCursor)
 	}
 	if len(observation.Observation.Gaps) > 0 {
 		line += fmt.Sprintf("  history gaps %d", len(observation.Observation.Gaps))
 	}
 	if observation.Dispatch.Error != nil {
-		line += fields("dispatcher error", observation.Dispatch.Error.Code)
+		line += invocation.Fields("dispatcher error", observation.Dispatch.Error.Code)
 	}
 	if observation.Observation.Error != nil {
-		line += fields("history error", observation.Observation.Error.Code)
+		line += invocation.Fields("history error", observation.Observation.Error.Code)
 	}
 	return line, nil
 }
@@ -636,51 +637,57 @@ func normalizeDispatchStateJSON(raw json.RawMessage) (json.RawMessage, error) {
 }
 
 func sessionSnapshotLine(raw json.RawMessage) (string, error) {
-	snapshot, err := decode[sessionclient.SessionSnapshot](raw)
+	snapshot, err := invocation.Decode[sessionclient.SessionSnapshot](raw)
 	if err != nil {
 		return "", err
 	}
-	line := fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Session.Kind), "history "+string(snapshot.History.Kind))
+	line := invocation.Fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Session.Kind), "history "+string(snapshot.History.Kind))
 	if snapshot.Session.Error != nil {
-		line += fields("dispatcher error " + snapshot.Session.Error.Code)
+		line += invocation.Fields("dispatcher error " + snapshot.Session.Error.Code)
 	}
 	if snapshot.History.Error != nil {
-		line += fields("history error " + snapshot.History.Error.Code)
+		line += invocation.Fields("history error " + snapshot.History.Error.Code)
 	}
 	if len(snapshot.History.Value) > 0 {
 		summary := &historypb.SessionSummary{}
 		if err := protojson.Unmarshal(snapshot.History.Value, summary); err != nil {
-			return "", invalidResponse("History summary: %v", err)
+			return "", invocation.InvalidResponse("History summary: %v", err)
 		}
-		line += fields("history cursor "+strconv.FormatUint(summary.GetCommittedCursor(), 10), enumSuffix(summary.GetFeedStatus().String(), "FEED_STATUS_"))
+		line += invocation.Fields("history cursor "+strconv.FormatUint(summary.GetCommittedCursor(), 10), invocation.EnumSuffix(summary.GetFeedStatus().String(), "FEED_STATUS_"))
 	}
 	return line, nil
 }
 
 func turnPageLine(raw json.RawMessage) (string, error) {
-	page, err := decode[sessionclient.TurnPage](raw)
+	page, err := invocation.Decode[sessionclient.TurnPage](raw)
 	if err != nil {
 		return "", err
 	}
-	line := fields(page.SessionID.String(), "history through "+page.ThroughCursor, fmt.Sprintf("%d turns", len(page.Turns)))
+	line := invocation.Fields(page.SessionID.String(), "history through "+page.ThroughCursor, fmt.Sprintf("%d turns", len(page.Turns)))
 	if page.NextCursor != "" {
-		line += fields("more turns available")
+		line += invocation.Fields("more turns available")
 	}
 	if len(page.Gaps) > 0 {
-		line += fields(fmt.Sprintf("history gaps %d", len(page.Gaps)))
+		line += invocation.Fields(fmt.Sprintf("history gaps %d", len(page.Gaps)))
 	}
 	if page.Error != nil {
-		line += fields("history error " + page.Error.Code)
+		line += invocation.Fields("history error " + page.Error.Code)
 	}
 	for _, turn := range page.Turns {
 		statusText := "status not observed"
 		if turn.Status != nil {
 			statusText = string(*turn.Status)
 		}
-		line += "\n" + fields(string(turn.TurnID), statusText, fmt.Sprintf("%d inputs", len(turn.Input)), fmt.Sprintf("%d tool calls", len(turn.ToolCalls)))
+		line += "\n" + invocation.Fields(string(turn.TurnID), statusText, fmt.Sprintf("%d inputs", len(turn.Input)), fmt.Sprintf("%d tool calls", len(turn.ToolCalls)))
 		if turn.FinalAssistantMessage != nil {
-			line += fields("message", strconv.Quote(firstLine(*turn.FinalAssistantMessage)))
+			line += invocation.Fields("message", strconv.Quote(invocation.FirstLine(*turn.FinalAssistantMessage)))
 		}
 	}
 	return line, nil
+}
+
+type commands struct{ *invocation.Invocation }
+
+func Command(in *invocation.Invocation) *cobra.Command {
+	return (&commands{Invocation: in}).sessionsCommand()
 }

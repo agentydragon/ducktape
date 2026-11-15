@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
@@ -81,7 +82,7 @@ func environmentVars(endpoint string) map[string]string {
 
 func TestEnvironmentResumeRequiresOpaqueToken(t *testing.T) {
 	code, stdout, stderr := invoke(nil, "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "required flag(s) \"resume-token\"") {
+	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "required flag(s) \"resume-token\"") {
 		t.Fatalf("resume without token: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 }
@@ -116,7 +117,7 @@ func TestEnvironmentResumeDoesNotRetryAnUncertainReply(t *testing.T) {
 	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
 	endpoint := environmentEndpoint(t, fixture)
 	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != exitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 || !strings.Contains(stderr, "outcome is unknown") {
+	if code != invocation.ExitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 || !strings.Contains(stderr, "outcome is unknown") {
 		t.Fatalf("uncertain resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
 	}
 	var result struct {
@@ -147,7 +148,7 @@ func TestEnvironmentResumeReportsInvalidDetailsWithoutLosingUnknownOutcome(t *te
 	endpoint := environmentEndpoint(t, fixture)
 	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
 	failure := errorOf(t, stderr)
-	if code != exitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 ||
+	if code != invocation.ExitExecutionUnknown || stdout != "" || fixture.resumeCalls != 1 ||
 		!strings.Contains(failure.Message, "outcome is unknown") || !strings.Contains(failure.Message, "encode wake assessment") {
 		t.Fatalf("invalid resume detail: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
 	}
@@ -165,7 +166,7 @@ func TestEnvironmentResumePreservesEligibilityDenial(t *testing.T) {
 	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
 	endpoint := environmentEndpoint(t, fixture)
 	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != exitRefused || stdout != "" || fixture.resumeCalls != 1 {
+	if code != invocation.ExitRefused || stdout != "" || fixture.resumeCalls != 1 {
 		t.Fatalf("denied resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
 	}
 	var result struct {
@@ -198,7 +199,7 @@ func TestEnvironmentResumePreservesRateLimitRetryTime(t *testing.T) {
 	fixture := &environmentFixture{resumeErr: resumeStatus.Err()}
 	endpoint := environmentEndpoint(t, fixture)
 	code, stdout, stderr := invoke(environmentVars(endpoint), "--json", "environments", "resume", "agentplane-staging", "sandbox-one", "sandbox-uid-1", "--resume-token", "opaque-generation-bound-token")
-	if code != exitTransient || stdout != "" || fixture.resumeCalls != 1 {
+	if code != invocation.ExitTransient || stdout != "" || fixture.resumeCalls != 1 {
 		t.Fatalf("rate limited resume: exit %d stdout %q stderr %q calls %d", code, stdout, stderr, fixture.resumeCalls)
 	}
 	var result struct {
@@ -283,7 +284,7 @@ func TestEnvironmentCredentialWithoutEndpointIsUsageError(t *testing.T) {
 	env["AGENTPLANE_ENVIRONMENTS_CREDENTIAL"] = "environment-only-placeholder"
 
 	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL not set") {
+	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL not set") {
 		t.Fatalf("credential without endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	select {
@@ -299,7 +300,7 @@ func TestInvalidEnvironmentEndpointDoesNotFallBackToSessions(t *testing.T) {
 	env["AGENTPLANE_ENVIRONMENTS_URL"] = "not a URL"
 
 	code, stdout, stderr := invoke(env, "--json", "environments", "get", "test-ns", "test-sandbox", "test-uid")
-	if code != exitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL") {
+	if code != invocation.ExitUsage || stdout != "" || !strings.Contains(stderr, "AGENTPLANE_ENVIRONMENTS_URL") {
 		t.Fatalf("invalid EnvironmentService endpoint: exit %d stdout %q stderr %q", code, stdout, stderr)
 	}
 	select {

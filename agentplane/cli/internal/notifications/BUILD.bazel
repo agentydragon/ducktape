@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "notifications",
+    srcs = [
+        "doc.go",
+        "notifications.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/cli/internal/notifications",
+    visibility = ["//agentplane/cli:__subpackages__"],
+    deps = [
+        "//agentplane/cli/internal/invocation",
+        "//agentplane/notification_service/api/notifications:notifications_go_proto",
+        "//agentplane/notification_service/docs",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spf13_cobra//:cobra",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "notifications_test",
+    size = "small",
+    srcs = [
+        "text_test.go",
+    ],
+    embed = [":notifications"],
+    deps = [
+        "//agentplane/notification_service/api/notifications:notifications_go_proto",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

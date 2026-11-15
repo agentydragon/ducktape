@@ -521,7 +521,7 @@ pkg_tar(
     name = "deletion_test_disk_bin",
     srcs = [
         ":deletion_test_runtime_file",
-        "//agentplane/cli:agentplane",
+        "//agentplane/cli/cmd:agentplane",
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",
     ],
     mode = "0755",

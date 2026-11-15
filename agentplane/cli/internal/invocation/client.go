@@ -1,4 +1,4 @@
-package main
+package invocation
 
 import (
 	"context"
@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,7 +18,7 @@ func parseServiceURL(base, variable string) (*url.URL, error) {
 	parsed, err := url.Parse(base)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return nil, usageFailure("%s must be an http(s) base URL without credentials, query or fragment", variable)
+		return nil, UsageFailure("%s must be an http(s) base URL without credentials, query or fragment", variable)
 	}
 	return parsed, nil
 }
@@ -29,11 +27,11 @@ func parseServiceURL(base, variable string) (*url.URL, error) {
 // resolver otherwise treats a bare host as port 443 even when the URL says http.
 func grpcTarget(parsed *url.URL, variable string) (string, error) {
 	if strings.HasSuffix(parsed.Host, ":") {
-		return "", usageFailure("%s must not have an empty port", variable)
+		return "", UsageFailure("%s must not have an empty port", variable)
 	}
 	host := parsed.Hostname()
 	if host == "" {
-		return "", usageFailure("%s must include a host", variable)
+		return "", UsageFailure("%s must include a host", variable)
 	}
 	port := parsed.Port()
 	if port == "" {
@@ -45,19 +43,11 @@ func grpcTarget(parsed *url.URL, variable string) (string, error) {
 	} else {
 		portNumber, err := strconv.Atoi(port)
 		if err != nil || portNumber < 1 || portNumber > 65535 {
-			return "", usageFailure("%s has invalid port %q", variable, port)
+			return "", UsageFailure("%s has invalid port %q", variable, port)
 		}
 		port = strconv.Itoa(portNumber)
 	}
 	return net.JoinHostPort(host, port), nil
-}
-
-// actionService is a generated gRPC client of the Action Service. Sandbox endpoints use the
-// credential-holding sidecar's local gRPC route. An explicitly configured credential is sent as
-// Authorization metadata. grpc-go uses HTTPS_PROXY and CONNECT even for an http origin.
-type actionService struct {
-	connection *grpc.ClientConn
-	client     action_servicepb.ActionServiceClient
 }
 
 type bearerCredential string
@@ -68,18 +58,18 @@ func (c bearerCredential) GetRequestMetadata(context.Context, ...string) (map[st
 
 func (bearerCredential) RequireTransportSecurity() bool { return false }
 
-func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
-	urlVariable, credentialVariable := "AGENTPLANE_"+group+"_URL", "AGENTPLANE_"+group+"_CREDENTIAL"
+func (a *Invocation) ConnectGRPC(Group string) (*grpc.ClientConn, error) {
+	urlVariable, credentialVariable := "AGENTPLANE_"+Group+"_URL", "AGENTPLANE_"+Group+"_CREDENTIAL"
 	base, credential := a.getenv(urlVariable), a.getenv(credentialVariable)
 	if base == "" {
-		return nil, usageFailure("%s not set", urlVariable)
+		return nil, UsageFailure("%s not set", urlVariable)
 	}
 	parsed, err := parseServiceURL(base, urlVariable)
 	if err != nil {
 		return nil, err
 	}
 	if parsed.Path != "" && parsed.Path != "/" {
-		return nil, usageFailure("%s must not include a path", urlVariable)
+		return nil, UsageFailure("%s must not include a path", urlVariable)
 	}
 	target, err := grpcTarget(parsed, urlVariable)
 	if err != nil {
@@ -98,30 +88,7 @@ func (a *app) connectGRPC(group string) (*grpc.ClientConn, error) {
 	}
 	connection, err := grpc.NewClient(target, options...)
 	if err != nil {
-		return nil, usageFailure("%s is not a valid gRPC endpoint", urlVariable)
+		return nil, UsageFailure("%s is not a valid gRPC endpoint", urlVariable)
 	}
 	return connection, nil
-}
-
-func (a *app) connectActions() (*actionService, error) {
-	connection, err := a.connectGRPC("ACTIONS")
-	if err != nil {
-		return nil, err
-	}
-	return &actionService{connection: connection, client: action_servicepb.NewActionServiceClient(connection)}, nil
-}
-
-type actionCall func(context.Context, action_servicepb.ActionServiceClient, []string) error
-
-func (a *app) actionCommand(fn actionCall) func(*cobra.Command, []string) error {
-	return func(_ *cobra.Command, args []string) error {
-		connected, err := a.connectActions()
-		if err != nil {
-			return err
-		}
-		defer connected.connection.Close()
-		ctx, cancel := a.deadline()
-		defer cancel()
-		return fn(ctx, connected.client, args)
-	}
 }

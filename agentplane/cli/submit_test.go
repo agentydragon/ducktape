@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -109,7 +110,7 @@ func TestRepeatedKeyExitsConflictWithoutALookup(t *testing.T) {
 		return nil, status.Error(codes.AlreadyExists, "key is already used")
 	}
 	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
-	if code != exitConflict || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 0 || !strings.Contains(stderr, "actions get --key test-key") {
+	if code != invocation.ExitConflict || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 0 || !strings.Contains(stderr, "actions get --key test-key") {
 		t.Errorf("exit %d, calls %+v, stderr %q; want conflict with no lookup", code, fake.callLog(), stderr)
 	}
 }
@@ -120,7 +121,7 @@ func TestSubmitRefusalIsFinalAndDoesNotLookUpTheKey(t *testing.T) {
 		return nil, status.Error(codes.PermissionDenied, "policy refused")
 	}
 	code, _, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
-	if code != exitRefused || fake.count("ListActionRequests") != 0 {
+	if code != invocation.ExitRefused || fake.count("ListActionRequests") != 0 {
 		t.Errorf("exit %d, calls %+v; want a refusal without lookup", code, fake.callLog())
 	}
 }
@@ -150,7 +151,7 @@ func TestSubmitThatCannotConfirmItsOutcomeDoesNotClaimTheKeyWasUnused(t *testing
 		return nil, status.Error(codes.Unavailable, "lookup unavailable")
 	}
 	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
-	if code != exitTransient || !strings.Contains(stderr, "outcome is unknown") || strings.Contains(stderr, "found no request") {
+	if code != invocation.ExitTransient || !strings.Contains(stderr, "outcome is unknown") || strings.Contains(stderr, "found no request") {
 		t.Errorf("exit %d, stderr %q; want a transient unverified outcome", code, stderr)
 	}
 }
@@ -164,7 +165,7 @@ func TestSubmitWithAnAmbiguousResponseAndSuccessfulEmptyLookupExitsLost(t *testi
 		return &action_servicepb.ListActionRequestsResponse{}, nil
 	}
 	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key")
-	if code != exitSubmitLost || !strings.Contains(stderr, "lookup by the key found no request") || fake.count("ListActionRequests") != 1 {
+	if code != invocation.ExitSubmitLost || !strings.Contains(stderr, "lookup by the key found no request") || fake.count("ListActionRequests") != 1 {
 		t.Errorf("exit %d, stderr %q, calls %+v; want exit 15 after one successful empty lookup", code, stderr, fake.callLog())
 	}
 }
@@ -193,7 +194,7 @@ func TestSubmitThatCannotReachTheServiceIsTransient(t *testing.T) {
 	endpoint := "http://" + listener.Addr().String()
 	_ = listener.Close()
 	code, stdout, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--json")
-	if code != exitTransient || stdout != "" || errorOf(t, stderr).Source != sourceClient {
+	if code != invocation.ExitTransient || stdout != "" || errorOf(t, stderr).Source != "client" {
 		t.Errorf("exit %d, stdout %q, stderr %q; want an uncommitted transient connect failure", code, stdout, stderr)
 	}
 }
@@ -205,7 +206,7 @@ func TestSubmitDeadlineAfterTheRPCStartsChecksTheSameKey(t *testing.T) {
 		return nil, status.FromContextError(ctx.Err()).Err()
 	}
 	code, _, stderr := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--timeout", "0.2")
-	if code != exitSubmitLost || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 1 ||
+	if code != invocation.ExitSubmitLost || fake.count("SubmitActionRequest") != 1 || fake.count("ListActionRequests") != 1 ||
 		!strings.Contains(stderr, "found no request") {
 		t.Errorf("exit %d, calls %+v, stderr %q; want one submit and one key lookup after the deadline", code, fake.callLog(), stderr)
 	}
@@ -281,7 +282,7 @@ func TestArgumentsMustBeAnObjectBeforeSubmission(t *testing.T) {
 	fake, endpoint := newActionFake(t)
 	for _, value := range []string{`[]`, `null`, `4`, `"text"`} {
 		code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "submit", "test-group/test-action", "--title", "test title", "--key", "test-key", "--arguments", value)
-		if code != exitUsage || stdout != "" || fake.count("SubmitActionRequest") != 0 {
+		if code != invocation.ExitUsage || stdout != "" || fake.count("SubmitActionRequest") != 0 {
 			t.Errorf("arguments %s: exit %d, stdout %q, calls %+v", value, code, stdout, fake.callLog())
 		}
 	}
@@ -293,7 +294,7 @@ func TestMalformedWatchReceiptDoesNotPrintPartialOutput(t *testing.T) {
 		return &action_servicepb.GetActionRequestResponse{ActionRequest: testActionRequest("", action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
 	}
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "0")
-	if code != exitDeadline || stdout == "" || fake.count("WatchActionRequest") != 0 {
+	if code != invocation.ExitDeadline || stdout == "" || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v", code, stdout, fake.callLog())
 	}
 }

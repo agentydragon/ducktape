@@ -106,7 +106,7 @@
       "release": "gazelle"
     },
     "agentplane-cli": {
-      "target": "//agentplane/cli:cli_release",
+      "target": "//agentplane/cli/cmd:cli_release",
       "filename": "agentplane-cli",
       "release": "agentplane-cli"
     },

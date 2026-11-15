@@ -1,0 +1,18 @@
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary")
+
+go_binary(
+    name = "agentplane",
+    srcs = ["main.go"],
+    pure = "on",
+    visibility = ["//visibility:public"],
+    deps = ["//agentplane/cli"],
+)
+
+copy_file(
+    name = "cli_release",
+    src = ":agentplane",
+    out = "agentplane-cli",
+    is_executable = True,
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,35 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "sessions",
+    srcs = [
+        "doc.go",
+        "sessions.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/cli/internal/sessions",
+    visibility = ["//agentplane/cli:__subpackages__"],
+    deps = [
+        "//agentplane/cli/internal/invocation",
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "//agentplane/proto:session_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "//agentplane/runner_gateway/dispatcher/api/session/dispatchstate",
+        "//agentplane/session_client",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_spf13_cobra//:cobra",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)
+
+go_test(
+    name = "sessions_test",
+    size = "small",
+    srcs = [
+        "text_test.go",
+    ],
+    embed = [":sessions"],
+    deps = [
+        "//agentplane/runner_gateway/dispatcher/api/session:session_dispatcher_go_proto",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

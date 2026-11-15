@@ -1,4 +1,4 @@
-package main
+package actions
 
 import (
 	"bytes"
@@ -8,32 +8,22 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
-// The text forms are for a reader; a script uses --json.
-
-func fields(values ...string) string {
-	return strings.Join(values, "  ")
-}
-
-func firstLine(text string) string {
-	line, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
-	return line
-}
-
 func indented(raw json.RawMessage) (string, error) {
 	var out bytes.Buffer
 	if err := json.Indent(&out, raw, "", "  "); err != nil {
-		return "", invalidResponse("%v", err)
+		return "", invocation.InvalidResponse("%v", err)
 	}
 	return out.String(), nil
 }
 
 func unmarshalActionJSON(raw json.RawMessage, message proto.Message) error {
 	if err := protojson.Unmarshal(raw, message); err != nil {
-		return invalidResponse("%v", err)
+		return invocation.InvalidResponse("%v", err)
 	}
 	return nil
 }
@@ -52,7 +42,7 @@ func groupLine(raw json.RawMessage) (string, error) {
 		status += " (unavailable)"
 	}
 	kind := actionEnumText(group.GetExecutorKind().String(), "EXECUTOR_KIND_")
-	return fields(group.GetKey(), kind, status, group.GetTitle()), nil
+	return invocation.Fields(group.GetKey(), kind, status, group.GetTitle()), nil
 }
 
 func actionLine(raw json.RawMessage) (string, error) {
@@ -60,7 +50,7 @@ func actionLine(raw json.RawMessage) (string, error) {
 	if err := unmarshalActionJSON(raw, action); err != nil {
 		return "", err
 	}
-	return fields(action.GetGroup()+"/"+action.GetName(), firstLine(action.GetDescription())), nil
+	return invocation.Fields(action.GetGroup()+"/"+action.GetName(), invocation.FirstLine(action.GetDescription())), nil
 }
 
 func actionDetail(raw json.RawMessage) (string, error) {
@@ -73,7 +63,7 @@ func actionDetail(raw json.RawMessage) (string, error) {
 		var err error
 		schema, err = protojson.Marshal(action.GetInputSchema())
 		if err != nil {
-			return "", invalidResponse("input schema: %v", err)
+			return "", invocation.InvalidResponse("input schema: %v", err)
 		}
 	}
 	formatted, err := indented(schema)
@@ -94,7 +84,7 @@ func policyText(raw json.RawMessage) (string, error) {
 		for _, set := range binding.GetPolicySets() {
 			sets = append(sets, set.GetName())
 		}
-		line := fields("binding "+binding.GetName(), "sets "+strings.Join(sets, ","))
+		line := invocation.Fields("binding "+binding.GetName(), "sets "+strings.Join(sets, ","))
 		if binding.GetExpiresAt() != nil {
 			line += "  expires " + binding.GetExpiresAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
 		}
@@ -116,14 +106,14 @@ func policyText(raw json.RawMessage) (string, error) {
 		case *action_servicepb.Policy_HomeAssistantEntityControl:
 			policyType, groups = "home_assistant_entity_control", value.HomeAssistantEntityControl.GetActions()
 		default:
-			return "", invalidResponse("policy entry %q has no policy kind", entry.GetPolicySet())
+			return "", invocation.InvalidResponse("policy entry %q has no policy kind", entry.GetPolicySet())
 		}
 		for _, group := range groups {
 			for _, name := range group.GetNames() {
 				actions = append(actions, group.GetGroup()+"/"+name)
 			}
 		}
-		lines = append(lines, fields(fmt.Sprintf("auto-approve %s#%d", entry.GetPolicySet(), entry.GetIndex()), policyType, strings.Join(actions, ",")))
+		lines = append(lines, invocation.Fields(fmt.Sprintf("auto-approve %s#%d", entry.GetPolicySet(), entry.GetIndex()), policyType, strings.Join(actions, ",")))
 	}
 	return strings.Join(lines, "\n"), nil
 }
@@ -134,7 +124,7 @@ func receiptLine(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
-	line := fields(r.GetId(), state, r.GetAction().GetGroup()+"/"+r.GetAction().GetName(), strconv.Quote(r.GetTitle()))
+	line := invocation.Fields(r.GetId(), state, r.GetAction().GetGroup()+"/"+r.GetAction().GetName(), strconv.Quote(r.GetTitle()))
 	if decision := r.GetDecision(); decision != nil {
 		var reason *string
 		switch decider := decision.GetDecider().(type) {
@@ -150,7 +140,7 @@ func receiptLine(raw json.RawMessage) (string, error) {
 	if execution := r.GetExecution(); execution != nil && execution.GetError() != nil {
 		errorJSON, err := protojson.Marshal(execution.GetError())
 		if err != nil {
-			return "", invalidResponse("execution error: %v", err)
+			return "", invocation.InvalidResponse("execution error: %v", err)
 		}
 		line += "  error: " + string(errorJSON)
 	}
@@ -185,14 +175,14 @@ func eventLine(raw json.RawMessage) (string, error) {
 	if err := unmarshalActionJSON(raw, event); err != nil {
 		return "", err
 	}
-	line := fields(strconv.Itoa(int(event.GetSequence())), actionEnumText(event.GetState().String(), "ACTION_STATE_"))
+	line := invocation.Fields(strconv.Itoa(int(event.GetSequence())), actionEnumText(event.GetState().String(), "ACTION_STATE_"))
 	if event.GetAt() != nil {
 		line += "  " + event.GetAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
 	}
 	if event.GetActor() != nil {
 		actor, err := protojson.Marshal(event.GetActor())
 		if err != nil {
-			return "", invalidResponse("event actor: %v", err)
+			return "", invocation.InvalidResponse("event actor: %v", err)
 		}
 		line += "  actor " + string(actor)
 	}
@@ -204,7 +194,7 @@ func cancellationLine(raw json.RawMessage) (string, error) {
 	if err := unmarshalActionJSON(raw, cancellation); err != nil {
 		return "", err
 	}
-	request, err := protoJSON(cancellation.GetActionRequest())
+	request, err := invocation.ProtoJSON(cancellation.GetActionRequest())
 	if err != nil {
 		return "", err
 	}
@@ -213,99 +203,5 @@ func cancellationLine(raw json.RawMessage) (string, error) {
 		return "", err
 	}
 	outcome := actionEnumText(cancellation.GetOutcome().String(), "CANCELLATION_OUTCOME_")
-	return fields(outcome, requestLine), nil
-}
-
-func rulesText(raw json.RawMessage) (string, error) {
-	type list struct {
-		Values []string `json:"values"`
-	}
-	rules, err := decode[struct {
-		Subject *struct {
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"subject"`
-		Identity *struct {
-			Name string `json:"name"`
-		} `json:"identity"`
-		Policies []struct {
-			Name  string `json:"name"`
-			Rules []struct {
-				Hosts      []string `json:"hosts"`
-				Methods    *list    `json:"methods"`
-				Paths      *list    `json:"paths"`
-				Credential *struct {
-					Name        string             `json:"name"`
-					Description string             `json:"description"`
-					Placeholder string             `json:"placeholder"`
-					Targets     []credentialTarget `json:"targets"`
-				} `json:"credential"`
-			} `json:"rules"`
-		} `json:"policies"`
-	}](raw)
-	if err != nil {
-		return "", err
-	}
-	orAny := func(values *list) string {
-		if values == nil {
-			return "*"
-		}
-		return strings.Join(values.Values, ",")
-	}
-	var caller string
-	switch {
-	case rules.Subject != nil:
-		caller = fmt.Sprintf("subject %s/%s", rules.Subject.Namespace, rules.Subject.Name)
-	case rules.Identity != nil:
-		caller = "identity " + rules.Identity.Name
-	default:
-		return "", invalidResponse("rules name no caller")
-	}
-	lines := []string{caller}
-	for _, policy := range rules.Policies {
-		for _, rule := range policy.Rules {
-			line := fields(policy.Name, strings.Join(rule.Hosts, ","), orAny(rule.Methods), orAny(rule.Paths))
-			if credential := rule.Credential; credential != nil {
-				presented := make([]string, len(credential.Targets))
-				for i, place := range credential.Targets {
-					presented[i] = place.presenting(credential.Placeholder)
-				}
-				line += fmt.Sprintf("  credential %s: send %s", credential.Name, strings.Join(presented, "  or  "))
-				if credential.Description != "" {
-					line += "  " + credential.Description
-				}
-			}
-			lines = append(lines, line)
-		}
-	}
-	return strings.Join(lines, "\n"), nil
-}
-
-// credentialTarget is one place the proxy substitutes a credential; the method selects which fields it carries.
-type credentialTarget struct {
-	Method string `json:"method"`
-	Header string `json:"header"`
-	Field  string `json:"field"`
-	Scheme string `json:"scheme"`
-}
-
-// presenting is how a request carries placeholder at this target, as the egress credentials guide
-// describes each method. A method this build does not know is named, so a newer service's rules still print.
-func (t credentialTarget) presenting(placeholder string) string {
-	switch t.Method {
-	case "METHOD_SCHEME_TOKEN":
-		return fmt.Sprintf("%s: %s %s", t.Header, t.Scheme, placeholder)
-	case "METHOD_WHOLE_VALUE":
-		return fmt.Sprintf("%s: %s", t.Header, placeholder)
-	case "METHOD_BASIC_USERNAME":
-		return fmt.Sprintf("%s: Basic with the username %s", t.Header, placeholder)
-	case "METHOD_BASIC_PASSWORD":
-		return fmt.Sprintf("%s: Basic with the password %s", t.Header, placeholder)
-	case "METHOD_BASIC_WHOLE":
-		return fmt.Sprintf("%s: Basic with the whole user:password %s", t.Header, placeholder)
-	case "METHOD_JSON_FIELD":
-		return fmt.Sprintf("the top-level JSON field %q as %s", t.Field, placeholder)
-	default:
-		return fmt.Sprintf("%s %s (see --json)", t.Method, placeholder)
-	}
+	return invocation.Fields(outcome, requestLine), nil
 }

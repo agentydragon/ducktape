@@ -1,4 +1,4 @@
-package main
+package actions
 
 import (
 	"context"
@@ -11,10 +11,9 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -32,42 +31,22 @@ result, get and events; withdraw it with cancel. Approval is not success: wait a
 for a succeeded Action, 11 denied, 12 failed, 13 cancelled, 14 execution_unknown, 10 when --timeout
 ran out first. Whatever a succeeded Action's result says, the exit status is 0.`
 
-func (a *app) actionsCommand() *cobra.Command {
-	return group("actions", "Discover, submit, follow and cancel Actions", actionsHelp,
+func (a *commands) actionsCommand() *cobra.Command {
+	return invocation.Group("actions", "Discover, submit, follow and cancel Actions", actionsHelp,
 		a.groupsCommand(), a.listCommand(), a.showCommand(), a.policyCommand(),
 		a.actionsGuideCommand(), a.submitCommand(), a.getCommand(), a.resultCommand(),
 		a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
 }
 
-func protoJSON(message proto.Message) ([]byte, error) {
-	encoded, err := protojson.Marshal(message)
-	if err != nil {
-		return nil, invalidResponse("%v", err)
-	}
-	return encoded, nil
-}
-
-func protoJSONList[T proto.Message](messages []T) ([]json.RawMessage, error) {
-	items := make([]json.RawMessage, 0, len(messages))
-	for _, message := range messages {
-		encoded, err := protoJSON(message)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, encoded)
-	}
-	return items, nil
-}
-
 func catalog(ctx context.Context, client action_servicepb.ActionServiceClient) ([]json.RawMessage, error) {
 	response, err := client.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
 	if err != nil {
-		return nil, grpcFailure(ctx, err)
+		return nil, invocation.GRPCFailure(ctx, err)
 	}
-	return protoJSONList(response.GetActionGroups())
+	return invocation.ProtoJSONList(response.GetActionGroups())
 }
 
-func (a *app) groupsCommand() *cobra.Command {
+func (a *commands) groupsCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "groups",
 		Short: "List ActionGroups",
@@ -78,12 +57,12 @@ func (a *app) groupsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.show(groups, groupLine)
+			return a.Show(groups, groupLine)
 		}),
 	}
 }
 
-func (a *app) listCommand() *cobra.Command {
+func (a *commands) listCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list [GROUP]",
 		Short: "List Actions, one per line",
@@ -97,7 +76,7 @@ func (a *app) listCommand() *cobra.Command {
 			var actions []json.RawMessage
 			found := len(args) == 0
 			for _, raw := range groups {
-				group, err := decode[struct {
+				group, err := invocation.Decode[struct {
 					Key     string            `json:"key"`
 					Actions []json.RawMessage `json:"actions"`
 				}](raw)
@@ -110,9 +89,9 @@ func (a *app) listCommand() *cobra.Command {
 				}
 			}
 			if !found {
-				return clientFailure(exitNotFound, "NOT_FOUND", "no ActionGroup %q", args[0])
+				return invocation.ClientFailure(invocation.ExitNotFound, "NOT_FOUND", "no ActionGroup %q", args[0])
 			}
-			return a.show(actions, actionLine)
+			return a.Show(actions, actionLine)
 		}),
 	}
 }
@@ -121,12 +100,12 @@ func (a *app) listCommand() *cobra.Command {
 func splitAction(spec string) (group, name string, err error) {
 	group, name, found := strings.Cut(spec, "/")
 	if !found || group == "" || name == "" || strings.Contains(name, "/") {
-		return "", "", usageFailure("want GROUP/ACTION, got %q", spec)
+		return "", "", invocation.UsageFailure("want GROUP/ACTION, got %q", spec)
 	}
 	return group, name, nil
 }
 
-func (a *app) showCommand() *cobra.Command {
+func (a *commands) showCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show GROUP/ACTION",
 		Short: "Show one Action's argument schema",
@@ -139,18 +118,18 @@ func (a *app) showCommand() *cobra.Command {
 			}
 			response, err := client.GetAction(ctx, &action_servicepb.GetActionRequest{GroupKey: group, ActionKey: name})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := protoJSON(response.GetAction())
+			body, err := invocation.ProtoJSON(response.GetAction())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, actionDetail)
+			return a.ShowOne(body, actionDetail)
 		}),
 	}
 }
 
-func (a *app) policyCommand() *cobra.Command {
+func (a *commands) policyCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "policy",
 		Short: "Show this account's Action auto-approval policy",
@@ -159,13 +138,13 @@ func (a *app) policyCommand() *cobra.Command {
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, _ []string) error {
 			response, err := client.GetActionPolicy(ctx, &action_servicepb.GetActionPolicyRequest{})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := protoJSON(response.GetActionPolicy())
+			body, err := invocation.ProtoJSON(response.GetActionPolicy())
 			if err != nil {
 				return err
 			}
-			return a.showOne(body, policyText)
+			return a.ShowOne(body, policyText)
 		}),
 	}
 }
@@ -175,7 +154,7 @@ type target struct{ id, key string }
 
 func newTarget(args []string, key string) (target, error) {
 	if (len(args) == 1) == (key != "") {
-		return target{}, usageFailure("give exactly one of ID or --key KEY")
+		return target{}, invocation.UsageFailure("give exactly one of ID or --key KEY")
 	}
 	if len(args) == 1 {
 		return target{id: args[0]}, nil
@@ -190,15 +169,15 @@ func (t target) read(ctx context.Context, client action_servicepb.ActionServiceC
 	return lookupByKey(ctx, client, t.key)
 }
 
-func (a *app) printReceipt(r *receipt) error {
-	raw, err := protoJSON(r.request)
+func (a *commands) printReceipt(r *receipt) error {
+	raw, err := invocation.ProtoJSON(r.request)
 	if err != nil {
 		return err
 	}
-	return a.showOne(raw, receiptLine)
+	return a.ShowOne(raw, receiptLine)
 }
 
-func (a *app) getCommand() *cobra.Command {
+func (a *commands) getCommand() *cobra.Command {
 	var key string
 	command := &cobra.Command{
 		Use:   "get {ID | --key KEY}",
@@ -222,7 +201,7 @@ exits 0 whatever its state; use wait or result to follow it. Exit 5 if there is 
 	return command
 }
 
-func (a *app) waitCommand() *cobra.Command {
+func (a *commands) waitCommand() *cobra.Command {
 	var key, until string
 	command := &cobra.Command{
 		Use:   "wait {ID | --key KEY} [--until decision|terminal]",
@@ -256,7 +235,7 @@ with the last receipt read on stdout. Ending the watch never cancels the Action.
 	return command
 }
 
-func (a *app) resultCommand() *cobra.Command {
+func (a *commands) resultCommand() *cobra.Command {
 	var key string
 	command := &cobra.Command{
 		Use:   "result {ID | --key KEY}",
@@ -288,19 +267,19 @@ learn a script's own exit code or an MCP isError.`,
 	return command
 }
 
-func (a *app) printResult(r *receipt) error {
+func (a *commands) printResult(r *receipt) error {
 	result := []byte("null")
 	if execution := r.request.GetExecution(); execution != nil && execution.GetResult() != nil {
 		var err error
-		result, err = protoJSON(execution.GetResult())
+		result, err = invocation.ProtoJSON(execution.GetResult())
 		if err != nil {
 			return err
 		}
 	}
-	return a.showOne(result, resultText)
+	return a.ShowOne(result, resultText)
 }
 
-func (a *app) submitCommand() *cobra.Command {
+func (a *commands) submitCommand() *cobra.Command {
 	var key, title, description, arguments, until string
 	var wait bool
 	command := &cobra.Command{
@@ -329,7 +308,7 @@ Without --wait it prints the receipt and exits 0 once the request is recorded, w
 				return err
 			}
 			if !wait && until != "terminal" {
-				return usageFailure("--until needs --wait")
+				return invocation.UsageFailure("--until needs --wait")
 			}
 			parsedArguments, err := a.readArguments(arguments)
 			if err != nil {
@@ -337,7 +316,7 @@ Without --wait it prints the receipt and exits 0 once the request is recorded, w
 			}
 			if key == "" {
 				key = uuid.NewString()
-				a.announceKey(key)
+				a.AnnounceKey(key)
 			}
 			request := &action_servicepb.SubmitActionRequestRequest{
 				IdempotencyKey: key, Action: &action_servicepb.ActionIdentity{Group: group, Name: name},
@@ -370,77 +349,69 @@ Without --wait it prints the receipt and exits 0 once the request is recorded, w
 	return command
 }
 
-func (a *app) readArguments(spec string) (*structpb.Struct, error) {
+func (a *commands) readArguments(spec string) (*structpb.Struct, error) {
 	var data []byte
 	var err error
 	switch {
 	case spec == "":
 		return structpb.NewStruct(map[string]any{})
 	case spec == "-":
-		data, err = io.ReadAll(a.stdin)
+		data, err = io.ReadAll(a.Stdin())
 	case strings.HasPrefix(spec, "@"):
 		data, err = os.ReadFile(spec[1:])
 	default:
 		data = []byte(spec)
 	}
 	if err != nil {
-		return nil, usageFailure("--arguments: %v", err)
+		return nil, invocation.UsageFailure("--arguments: %v", err)
 	}
 	var object map[string]any
 	if err := json.Unmarshal(data, &object); err != nil || object == nil {
-		return nil, usageFailure("--arguments must be a JSON object")
+		return nil, invocation.UsageFailure("--arguments must be a JSON object")
 	}
 	return structpb.NewStruct(object)
 }
 
-func (a *app) announceKey(key string) {
-	if a.asJSON {
-		fmt.Fprintf(a.stderr, "{\"idempotency_key\": %q}\n", key)
-	} else {
-		fmt.Fprintf(a.stderr, "idempotency key: %s\n", key)
-	}
-}
-
 // post makes the one submission. A failure that may have committed it is followed by one lookup under the same key.
-func (a *app) post(ctx context.Context, client action_servicepb.ActionServiceClient, request *action_servicepb.SubmitActionRequestRequest) (*receipt, error) {
+func (a *commands) post(ctx context.Context, client action_servicepb.ActionServiceClient, request *action_servicepb.SubmitActionRequestRequest) (*receipt, error) {
 	response, err := client.SubmitActionRequest(ctx, request)
 	if err == nil {
 		created, parseErr := receiptFromProto(response.GetActionRequest())
 		if parseErr == nil {
 			return created, nil
 		}
-		unreadable := clientFailure(exitRefused, "INTERNAL", "%v", parseErr)
-		unreadable.sent = true
+		unreadable := invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "%v", parseErr)
+		unreadable.Sent = true
 		err = unreadable
 	} else {
-		err = grpcFailure(ctx, err)
+		err = invocation.GRPCFailure(ctx, err)
 	}
-	var failed *failure
+	var failed *invocation.Failure
 	if !errors.As(err, &failed) {
 		return nil, err
 	}
 	switch {
-	case failed.exit == exitConflict:
+	case failed.Exit == invocation.ExitConflict:
 		failed.Message = fmt.Sprintf("%s; idempotency key %s is in use: read that request with `agentplane actions get --key %s`",
 			failed.Message, request.GetIdempotencyKey(), request.GetIdempotencyKey())
-	case failed.ambiguous():
-		lookup, cancel := context.WithTimeout(a.ctx, recoveryTimeout)
+	case failed.Ambiguous():
+		lookup, cancel := context.WithTimeout(a.Context(), recoveryTimeout)
 		defer cancel()
 		found, lookupErr := lookupByKey(lookup, client, request.GetIdempotencyKey())
-		if errors.Is(lookupErr, errInterrupted) {
+		if errors.Is(lookupErr, invocation.ErrInterrupted) {
 			return nil, lookupErr
 		}
 		if lookupErr == nil {
 			return found, nil
 		}
-		var lookupFailure *failure
+		var lookupFailure *invocation.Failure
 		if errors.As(lookupErr, &lookupFailure) && lookupFailure.Code == "NOT_FOUND" {
-			failed.exit = exitSubmitLost
+			failed.Exit = invocation.ExitSubmitLost
 			failed.Message = fmt.Sprintf("%s; a lookup by the key found no request: look again later with `agentplane actions get --key %s`, and do not resubmit",
 				failed.Message, request.GetIdempotencyKey())
 			return nil, failed
 		}
-		return nil, clientFailure(exitTransient, failed.Code, "%s; submission outcome is unknown because lookup by the same key failed (%v): check `agentplane actions get --key %s` before retrying",
+		return nil, invocation.ClientFailure(invocation.ExitTransient, failed.Code, "%s; submission outcome is unknown because lookup by the same key failed (%v): check `agentplane actions get --key %s` before retrying",
 			failed.Message, lookupErr, request.GetIdempotencyKey())
 	}
 	return nil, failed
@@ -450,12 +421,12 @@ func actionState(value string) (action_servicepb.ActionState, error) {
 	name := "ACTION_STATE_" + strings.ToUpper(value)
 	state := action_servicepb.ActionState(action_servicepb.ActionState_value[name])
 	if state == action_servicepb.ActionState_ACTION_STATE_UNSPECIFIED {
-		return 0, usageFailure("unknown Action state %q", value)
+		return 0, invocation.UsageFailure("unknown Action state %q", value)
 	}
 	return state, nil
 }
 
-func (a *app) requestsCommand() *cobra.Command {
+func (a *commands) requestsCommand() *cobra.Command {
 	var states []string
 	var limit int
 	var after string
@@ -474,7 +445,7 @@ unlimited). To continue, pass the last item's id as --after.`,
 				}
 				parsedStates = append(parsedStates, state)
 			}
-			items, err := collect(limit, after, func(after string, size int) ([]json.RawMessage, error) {
+			items, err := invocation.Collect(limit, after, func(after string, size int) ([]json.RawMessage, error) {
 				request := &action_servicepb.ListActionRequestsRequest{State: parsedStates}
 				limit := int32(size)
 				request.Limit = &limit
@@ -483,23 +454,23 @@ unlimited). To continue, pass the last item's id as --after.`,
 				}
 				response, err := client.ListActionRequests(ctx, request)
 				if err != nil {
-					return nil, grpcFailure(ctx, err)
+					return nil, invocation.GRPCFailure(ctx, err)
 				}
-				return protoJSONList(response.GetActionRequests())
-			}, idOf)
+				return invocation.ProtoJSONList(response.GetActionRequests())
+			}, invocation.IDOf)
 			if err != nil {
 				return err
 			}
-			return showPage(a, items, limit, idOf, receiptLine)
+			return invocation.ShowPage(a.Invocation, items, limit, invocation.IDOf, receiptLine)
 		}),
 	}
 	command.Flags().StringArrayVar(&states, "state", nil, "only requests in this state; repeatable")
-	command.Flags().IntVar(&limit, "limit", defaultLimit, "stop after this many items; 0 is unlimited")
+	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
 	command.Flags().StringVar(&after, "after", "", "continue after this request id")
 	return command
 }
 
-func (a *app) eventsCommand() *cobra.Command {
+func (a *commands) eventsCommand() *cobra.Command {
 	var limit, after int
 	command := &cobra.Command{
 		Use:   "events ID [--after SEQUENCE]",
@@ -509,30 +480,30 @@ func (a *app) eventsCommand() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, args []string) error {
 			if after < 0 || after > int(1<<31-1) {
-				return usageFailure("--after must be between 0 and 2147483647")
+				return invocation.UsageFailure("--after must be between 0 and 2147483647")
 			}
-			items, err := collect(limit, after, func(after, size int) ([]json.RawMessage, error) {
+			items, err := invocation.Collect(limit, after, func(after, size int) ([]json.RawMessage, error) {
 				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: int32(after)}
 				limit := int32(size)
 				request.Limit = &limit
 				response, err := client.ListActionRequestEvents(ctx, request)
 				if err != nil {
-					return nil, grpcFailure(ctx, err)
+					return nil, invocation.GRPCFailure(ctx, err)
 				}
-				return protoJSONList(response.GetEvents())
-			}, sequenceOf)
+				return invocation.ProtoJSONList(response.GetEvents())
+			}, invocation.SequenceOf)
 			if err != nil {
 				return err
 			}
-			return showPage(a, items, limit, sequenceOf, eventLine)
+			return invocation.ShowPage(a.Invocation, items, limit, invocation.SequenceOf, eventLine)
 		}),
 	}
-	command.Flags().IntVar(&limit, "limit", defaultLimit, "stop after this many items; 0 is unlimited")
+	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
 	command.Flags().IntVar(&after, "after", 0, "continue after this event sequence")
 	return command
 }
 
-func (a *app) cancelCommand() *cobra.Command {
+func (a *commands) cancelCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "cancel ID",
 		Short: "Cancel an Action request",
@@ -544,27 +515,33 @@ the original and do not repeat work. After an ambiguous failure (3), cancel agai
 		RunE: a.actionCommand(func(ctx context.Context, client action_servicepb.ActionServiceClient, args []string) error {
 			response, err := client.CancelActionRequest(ctx, &action_servicepb.CancelActionRequestRequest{RequestId: args[0]})
 			if err != nil {
-				return grpcFailure(ctx, err)
+				return invocation.GRPCFailure(ctx, err)
 			}
 			var code int
 			switch response.GetOutcome() {
 			case action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED,
 				action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_CANCELLED:
 			case action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_TOO_LATE:
-				code = exitTooLate
+				code = invocation.ExitTooLate
 			case action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_ALREADY_FINISHED:
-				code = exitAlreadyFinished
+				code = invocation.ExitAlreadyFinished
 			default:
-				return invalidResponse("unrecognized cancellation outcome %q", response.GetOutcome())
+				return invocation.InvalidResponse("unrecognized cancellation outcome %q", response.GetOutcome())
 			}
-			body, err := protoJSON(response)
+			body, err := invocation.ProtoJSON(response)
 			if err != nil {
 				return err
 			}
-			if err := a.showOne(body, cancellationLine); err != nil {
+			if err := a.ShowOne(body, cancellationLine); err != nil {
 				return err
 			}
-			return exitWith(code)
+			return invocation.ExitWith(code)
 		}),
 	}
+}
+
+type commands struct{ *invocation.Invocation }
+
+func Command(in *invocation.Invocation) *cobra.Command {
+	return (&commands{Invocation: in}).actionsCommand()
 }
