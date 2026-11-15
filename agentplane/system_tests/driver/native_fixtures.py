@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
+from pathlib import Path
 
 import pytest
 from opentelemetry import trace
 
+from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_platform import NativePlatformClients, native_platform_clients
+from agentplane.system_tests.driver.native_sandbox import native_sandbox_scope
+from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import timing_summary, tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -29,6 +34,18 @@ async def scripted(scripted_listener: Listener) -> AsyncIterator[ScriptedUpstrea
     upstream = ScriptedUpstream()
     async with upstream.serving(listener=scripted_listener.socket):
         yield upstream
+
+
+@pytest.fixture
+async def native_platform(cluster: Cluster, tmp_path: Path) -> AsyncIterator[NativePlatformClients]:
+    async with native_platform_clients(cluster, tmp_path / "native-platform") as clients:
+        yield clients
+
+
+@pytest.fixture
+async def native_sandbox(cluster: Cluster, native_platform: NativePlatformClients) -> AsyncIterator[Sandboxes]:
+    async with native_sandbox_scope(cluster, native_platform) as create:
+        yield create
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:

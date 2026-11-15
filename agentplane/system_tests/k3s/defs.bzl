@@ -71,6 +71,8 @@ K3S_BINARY = "@k3s_linux_amd64//file:k3s"
 
 K3S_BINARY_RLOCATION = "$(rlocationpath " + K3S_BINARY + ")"
 
+_POD_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod-native.json"
+_MCP_SERVICES_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-mcp-services.json"
 _POD_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-pod.json"
 _FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model.json"
 _CENTRAL_NATIVE_FIXTURE = "//agentplane/system_tests/deployment:rendered/local-model-central-native.json"
@@ -168,6 +170,8 @@ _SERVICE_IMAGES = _merge_image_maps(_COMMON_SERVICE_IMAGES, _MCP_EDGE_IMAGES)
 # uses a dedicated stack because it mutates shared controller Deployments.
 _STACKS = {
     "pod": struct(service_images = _SERVICE_IMAGES, fixture = _FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "pod_scenarios_native": struct(service_images = _APP_FREE_SERVICE_IMAGES, fixture = _POD_NATIVE_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
+    "mcp_services": struct(service_images = _SERVICE_IMAGES, fixture = _MCP_SERVICES_FIXTURE, vm = False, firecracker = False, real_model = False, images = _merge_image_maps(_HARNESSES_IMAGES, _MCP_FIXTURE_IMAGES)),
     "pod_scenarios": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
     # Deletion keeps its dedicated runner disk but does not exercise external MCP Connections.
     "deletion": struct(service_images = _COMMON_SERVICE_IMAGES, fixture = _POD_FIXTURE, vm = False, firecracker = False, real_model = False, images = _HARNESSES_IMAGES),
@@ -236,7 +240,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _CERT_MANAGER_INSTALL + ")",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath " + _TRUST_MANAGER_INSTALL + ")",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath " + config.fixture + ")",
-        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if stack == "central_native" else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
+        "PYTEST_PLUGINS": "agentplane.system_tests.k3s.pytest_plugin,agentplane.system_tests.deployment.system_test_target" + (",agentplane.system_tests.driver.native_fixtures" if stack in ["central_native", "pod_scenarios_native"] else "") + (",agentplane.system_tests.vm.pytest_plugin" if config.vm else ",agentplane.system_tests.firecracker.pytest_plugin" if config.firecracker else ""),
     }
     properties = {}
     suite_tags = K3S_TAGS + tags
@@ -302,7 +306,7 @@ def k3s_suite(name, srcs, deps, stack, tags = [], profile_guest = False, boot_ev
         deps = deps + [
             "//agentplane/system_tests/deployment:system_test_target",
             "//agentplane/system_tests/k3s:pytest_plugin",
-        ] + (["//agentplane/system_tests/driver:native_fixtures"] if stack == "central_native" else []) + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
+        ] + (["//agentplane/system_tests/driver:native_fixtures"] if stack in ["central_native", "pod_scenarios_native"] else []) + (["//agentplane/system_tests/vm:pytest_plugin"] if config.vm else ["//agentplane/system_tests/firecracker:pytest_plugin"] if config.firecracker else []),
     )
 
 def k3s_tcg_vm_image_manifest(name):

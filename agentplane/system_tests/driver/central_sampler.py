@@ -14,7 +14,6 @@ from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 
 from agentplane.central_sampler.api import sampler_pb2_grpc
-from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc.calls import ServiceError, dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
@@ -23,6 +22,7 @@ from agentplane.runner_gateway.dispatcher.api.session import session_dispatcher_
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.identity import LAUNCH_DEFAULT_POLICY_SETS, scenario_identity
+from agentplane.system_tests.driver.sandbox_cleanup import delete_sandbox
 from agentplane.system_tests.driver.tls import service_credentials
 from agentplane.system_tests.driver.tracing import tracer
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -87,34 +87,6 @@ async def _address(cluster: Cluster, core: k8s.CoreV1Api, service: str, port: in
     endpoint = await core.read_namespaced_service(service, cluster.namespace)
     assert endpoint.spec.cluster_ip not in (None, "None"), service
     return f"{endpoint.spec.cluster_ip}:{port}"
-
-
-async def _delete_sandbox(cluster: Cluster, name: str, uid: str) -> None:
-    with tracer.start_as_current_span(
-        "system_test.central_sampler.sandbox_cleanup", record_exception=False, set_status_on_exception=False
-    ):
-        await cluster.kubectl(
-            "patch",
-            "sandbox",
-            name,
-            "--type=merge",
-            "-p",
-            json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
-        )
-        await cluster.kubectl(
-            "wait", f"sandbox/{name}", "--for=jsonpath={.status.operatingMode}=Suspended", "--timeout=300s"
-        )
-        await cluster.kubectl("wait", f"sandbox/{name}", "--for=jsonpath={.status.stopStage}=Stopped", "--timeout=300s")
-        async with cluster.api_client() as connection:
-            await k8s.CustomObjectsApi(connection).delete_namespaced_custom_object(
-                GROUP,
-                VERSION,
-                cluster.namespace,
-                "sandboxes",
-                name,
-                body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
-            )
-        await cluster.kubectl("wait", f"sandbox/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _diagnostics(cluster: Cluster) -> None:
@@ -226,7 +198,7 @@ async def central_stack(
                 )
             )
             uid = created["metadata"]["uid"]
-            cleanup.push_async_callback(_delete_sandbox, cluster, sandbox, uid)
+            cleanup.push_async_callback(delete_sandbox, cluster, sandbox, uid)
             with tracer.start_as_current_span(
                 "system_test.central_sampler.sandbox.ready",
                 attributes={"sandbox.name": sandbox, "sandbox.uid": uid, "sandbox.template": template},

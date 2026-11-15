@@ -411,3 +411,24 @@ k3s_suite(
         "@pypi//pytest_bazel",
     ],
 )
+
+# gazelle:ignore
+k3s_suite(
+    name = "test_pod_platform",
+    srcs = ["test_pod_platform.py"],
+    stack = "pod_scenarios_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:native_auth",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/scenarios:cert_manager_reissue",
+        "//agentplane/system_tests/scenarios:egress_native",
+        "//agentplane/system_tests/scenarios:policy_objects",
+        "//agentplane/system_tests/scenarios:workload_trust",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)

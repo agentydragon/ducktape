@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import asdict
+from enum import StrEnum
 from pathlib import Path
 
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_chart
@@ -18,7 +19,16 @@ from agentplane.system_tests.deployment.rendered_fixture import (
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 
 
-def render(output: Path) -> None:
+class FixtureVariant(StrEnum):
+    LOCAL_MODEL_MCP_FIXTURES = "local-model-mcp-fixtures"
+    LOCAL_MODEL_MCP_SERVICES = "local-model-mcp-services"
+
+    @property
+    def central_sampler(self) -> bool:
+        return self == FixtureVariant.LOCAL_MODEL_MCP_FIXTURES
+
+
+def render(output: Path, variant: FixtureVariant) -> None:
     mcp = MCP_PLACEHOLDERS
     models = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
     app_service = fixture_chart.APP_SERVICE
@@ -27,7 +37,7 @@ def render(output: Path) -> None:
     fixture = RenderedFixture(
         backend=Backend.LOCAL_MODEL,
         vm_sandboxes=False,
-        central_sampler=True,
+        central_sampler=variant.central_sampler,
         namespace=NAMESPACE,
         app_origin=mcp.app_origin,
         browser_services=[
@@ -43,13 +53,15 @@ def render(output: Path) -> None:
             app_service=app_service.name,
             app_port=app_service.port.number,
         ),
-        objects=mcp_fixture_chart.objects(**asdict(PLACEHOLDERS), models=models, mcp=mcp),
+        objects=mcp_fixture_chart.objects(
+            **asdict(PLACEHOLDERS), models=models, mcp=mcp, central_sampler=variant.central_sampler
+        ),
     )
-    write_fixture(output / "local-model-mcp-fixtures.json", fixture, models=models, mcp=mcp)
+    write_fixture(output / f"{variant}.json", fixture, models=models, mcp=mcp)
 
 
 def main() -> None:
-    render(Path(os.environ["K3S_FIXTURE_DIR"]))
+    render(Path(os.environ["K3S_FIXTURE_DIR"]), FixtureVariant(os.environ["K3S_MCP_FIXTURE_VARIANT"]))
 
 
 if __name__ == "__main__":

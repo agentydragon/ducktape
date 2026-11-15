@@ -223,3 +223,49 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+# gazelle:ignore
+k3s_suite(
+    name = "test_services_mcp",
+    srcs = ["test_services_mcp.py"],
+    main = "test_services_mcp.py",
+    stack = "mcp_services",
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:harness_pair",
+        "//agentplane/system_tests/driver:operator_login",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:dcr",
+        "//agentplane/system_tests/scenarios:external_connection",
+        "//agentplane/system_tests/scenarios:mcp",
+        "//agentplane/system_tests/scenarios:policy_objects",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# gazelle:ignore
+k3s_suite(
+    name = "test_services_central",
+    srcs = ["test_services_central.py"],
+    main = "test_services_central.py",
+    stack = "central_native",
+    deps = [
+        "//:conftest",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/scenarios:central_sampler",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

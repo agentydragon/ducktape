@@ -34,6 +34,7 @@ from agentplane.system_tests.driver.sandbox import Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import mcp
+from agentplane.system_tests.scenarios.policy_objects import PolicyObjects
 from util.net import Listener
 
 # gazelle:include_dep @pypi//protobuf
@@ -63,8 +64,8 @@ class ActionResources:
 
 
 @asynccontextmanager
-async def _policy_objects(cluster: Cluster) -> AsyncIterator[mcp.PolicyObjects]:
-    objects = mcp.PolicyObjects(cluster=cluster)
+async def _policy_objects(cluster: Cluster) -> AsyncIterator[PolicyObjects]:
+    objects = PolicyObjects(cluster=cluster)
     try:
         yield objects
     finally:

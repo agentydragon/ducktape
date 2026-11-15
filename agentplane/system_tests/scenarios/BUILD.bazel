@@ -59,7 +59,6 @@ py_library(
     deps = [
         ":mcp",
         "//agentplane/action_service/api/contracts:action_service_pb2",
-        "//agentplane/app/testing:client",
         "//agentplane/central_sampler/api:sampler_pb2",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/grpc:calls",
@@ -74,7 +73,9 @@ py_library(
         "//agentplane/system_tests/deployment:mcp_servers",
         "//agentplane/system_tests/driver:central_sampler",
         "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:environment_transport",
         "//agentplane/system_tests/driver:executor",
+        "//agentplane/system_tests/driver:native_sandbox",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
@@ -135,29 +136,20 @@ py_library(
     name = "egress",
     srcs = ["egress.py"],
     deps = [
-        ":mcp",
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/action_service/api/contracts:action_service_pb2",
+        ":egress_platform",
         "//agentplane/app/testing:client",
-        "//agentplane/egress:resources",
-        "//agentplane/egress:sidecar_config",
         "//agentplane/egress/api/admin:egress_admin_pb2",
         "//agentplane/environments/v1:environment_service_pb2",
-        "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/runner_gateway/dispatcher:testing_client",
         "//agentplane/system_tests/deployment:runtime_grant",
-        "//agentplane/system_tests/deployment:svid_box",
         "//agentplane/system_tests/driver:agent",
         "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:egress_decisions",
         "//agentplane/system_tests/driver:sandbox",
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/testing:scripted_model",
         "//cluster/cdk8s/agentplane:namespaces",
-        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//tenacity",
@@ -190,7 +182,8 @@ py_library(
     name = "mcp",
     srcs = ["mcp.py"],
     deps = [
-        "//agentplane:crd_group",
+        ":action_cli",
+        ":policy_objects",
         "//agentplane:policy_sets",
         "//agentplane/action_service/api/contracts:action_service_pb2",
         "//agentplane/action_service/api/contracts:operator_action_service_pb2",
@@ -463,5 +456,94 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "action_cli",
+    srcs = ["action_cli.py"],
+)
+
+py_library(
+    name = "cert_manager_reissue",
+    srcs = ["cert_manager_reissue.py"],
+    deps = [
+        "//agentplane/system_tests/driver:cluster",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "egress_native",
+    srcs = ["egress_native.py"],
+    deps = [
+        ":action_cli",
+        ":egress_platform",
+        ":policy_objects",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/egress:resources",
+        "//agentplane/egress:sidecar_config",
+        "//agentplane/egress/api/admin:egress_admin_pb2",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/deployment:svid_box",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:tracing",
+        "//cluster/cdk8s/agentplane:namespaces",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "egress_platform",
+    srcs = ["egress_platform.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/egress/api/admin:egress_admin_pb2",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:egress_decisions",
+        "//agentplane/system_tests/driver:tracing",
+        "//cluster/cdk8s/agentplane:namespaces",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "external_connection",
+    srcs = ["external_connection.py"],
+    deps = [
+        ":mcp",
+        "//agentplane/action_service/api/contracts:action_service_pb2",
+        "//agentplane/mcp_edge/api/connection:connection_service_pb2",
+        "//agentplane/net/peertls:config",
+        "//agentplane/system_tests/deployment:mcp_servers",
+        "//agentplane/system_tests/deployment:stack",
+        "//agentplane/system_tests/driver:mcp_connection",
+        "//agentplane/system_tests/driver:operator_login",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "policy_objects",
+    srcs = ["policy_objects.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane/action_service/policies:resources",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:tracing",
+        "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
