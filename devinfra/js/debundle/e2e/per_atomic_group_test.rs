@@ -678,6 +678,94 @@ fn ownership_subset_rejects_invalid_named_selections_and_records() {
 }
 
 #[test]
+fn ownership_subset_named_selection_keeps_destructuring_companions_together() {
+    let subset = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableLeft"]}]}"#,
+    );
+    let fixture = run_fixture_without_graphs_with_args(
+        FixtureOpts::new(
+            r#"const { left, right } = (() => {
+  globalThis.evaluations = (globalThis.evaluations || 0) + 1;
+  return { left: 1, right: 2 };
+})();
+console.log(left, right, globalThis.evaluations);
+export { left, right };
+"#,
+            vec![logical_module(
+                "values",
+                &[
+                    Member::renamed("readableLeft", "left"),
+                    Member::renamed("readableRight", "right"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--ownership-subset", subset.path().to_str().unwrap()],
+    );
+    assert_preserved_entry_output(&fixture, "1 2 1\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values.js",
+        &["readableLeft", "right"],
+        &["left", "readableRight"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["console.log"],
+        &["const {", "evaluations =", "readableRight"],
+    );
+}
+
+#[test]
+fn ownership_subset_named_selection_keeps_every_shared_var_declaration_site() {
+    let subset = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"values","bindings":["readableShared"]}]}"#,
+    );
+    let fixture = run_fixture_without_graphs_with_args(
+        FixtureOpts::new(
+            r#"var shared = (console.log("first"), 1);
+var shared = (console.log("second"), 2);
+const other = 3;
+console.log(shared, other);
+export { shared, other };
+"#,
+            vec![logical_module(
+                "values",
+                &[
+                    Member::renamed("readableShared", "shared"),
+                    Member::renamed("readableOther", "other"),
+                ],
+            )],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["--ownership-subset", subset.path().to_str().unwrap()],
+    );
+    assert_preserved_entry_output(&fixture, "first\nsecond\n2 3\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values.js",
+        &[
+            "var readableShared",
+            "console.log(\"first\")",
+            "console.log(\"second\")",
+        ],
+        &["const other", "readableOther"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["const other"],
+        &["var shared", "var readableShared", "readableOther"],
+    );
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const { readableShared } = await import('./static/app/modules/values.js');\nconsole.log(readableShared);\n",
+        "2\n",
+    );
+}
+
+#[test]
 fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let options = || {
         FixtureOpts::new(
