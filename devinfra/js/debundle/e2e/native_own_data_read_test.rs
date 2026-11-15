@@ -393,7 +393,7 @@ fn resolved_member_rejects_stale_hash_and_wrong_reference_or_shape() {
             "static/app",
             vec![resolved_member_input(SOURCE, "alpha", "other")],
         ),
-        &["direct Symbol(...) call"],
+        &["must select a direct uncomputed Symbol identifier call"],
     );
 }
 
