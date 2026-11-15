@@ -503,8 +503,8 @@ def _add_runner_root(chart: Chart) -> None:
     )
 
 
-def add_native_test_client(chart: Chart) -> None:
-    """Give native system-test clients one explicit Pod-bound ServiceAccount principal."""
+def add_native_test_client(chart: Chart, env: Environment) -> None:
+    """Give backend-only clients the App role SVID and a legacy History reader account."""
     account = ServiceAccount(
         chart,
         "native-test-client-account",
@@ -522,7 +522,7 @@ def add_native_test_client(chart: Chart) -> None:
         automount_service_account_token=False,
         security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000),
     )
-    deployment.add_container(
+    container = deployment.add_container(
         name="native-test-client",
         image=NATIVE_TEST_CLIENT_IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
@@ -532,6 +532,8 @@ def add_native_test_client(chart: Chart) -> None:
             cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=Size.mebibytes(16))
         ),
     )
+
+    workload_tls.service_certificate(deployment, env, container=container, name=app_component.NAME, uri=APP_URI)
 
 
 def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:

@@ -866,7 +866,7 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
-def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfiles) -> None:
+def test_native_recovery_profile_uses_service_caller_without_app(runfiles: Runfiles) -> None:
     fixture = _filled_fixture(runfiles, "K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION")
     assert fixture.app_origin is None
     assert fixture.operator_tokens is None
@@ -881,6 +881,9 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
     pod = _resource(docs, "Deployment", native)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == native
     assert pod["automountServiceAccountToken"] is False
+    certificate = _resource(docs, "Certificate", "app-workload")["spec"]
+    assert certificate["uris"] == ["spiffe://agentplane/app"]
+    assert any(volume.get("secret", {}).get("secretName") == certificate["secretName"] for volume in pod["volumes"])
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     caller = f"{NAMESPACE}/{native}"
     assert "operator_callers" not in gateway
