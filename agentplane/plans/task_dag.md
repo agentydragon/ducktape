@@ -3787,9 +3787,6 @@ a specific stopping condition.
   network-policy identities. The remaining check is the staging proxy decision log naming the
   `haku-ci` relay's Identity for the expected egress decision; this does not imply that rollout is
   blocked today.
-- **The Action Service's rollout that stops writing `action_execution.heartbeat_at`** (2026-11-10;
-  nothing reads it): drop the column in a new Action Service migration once no older replica runs, so
-  none writes it mid-roll.
 - **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
   per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records

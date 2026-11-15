@@ -80,7 +80,7 @@ func TestFreshBaseline(t *testing.T) {
 func TestDelegationAttributionMigrationAndOlderWriterCompatibility(t *testing.T) {
 	db := cloneDatabase(t)
 	exec(t, db, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
-	priorSchema := schemaThroughVersion11(t)
+	priorSchema := schemaThroughVersion(t, 11)
 	priorProvider, err := priorSchema.Provider(db)
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestDelegationAttributionMigrationAndOlderWriterCompatibility(t *testing.T)
 	}
 }
 
-func schemaThroughVersion11(t *testing.T) postgresmigrate.Schema {
+func schemaThroughVersion(t *testing.T, version int) postgresmigrate.Schema {
 	t.Helper()
 	entries, err := fs.ReadDir(scripts, "actions")
 	if err != nil {
@@ -140,7 +140,7 @@ func schemaThroughVersion11(t *testing.T) postgresmigrate.Schema {
 	}
 	files := fstest.MapFS{}
 	for _, entry := range entries {
-		if entry.Name() >= "00012_" {
+		if entry.Name() >= fmt.Sprintf("%05d_", version+1) {
 			continue
 		}
 		name := path.Join("actions", entry.Name())
@@ -151,4 +151,37 @@ func schemaThroughVersion11(t *testing.T) postgresmigrate.Schema {
 		files[name] = &fstest.MapFile{Data: content, Mode: 0o644}
 	}
 	return postgresmigrate.Schema{Files: files, Dir: "actions", Table: schema.Table, LockID: schema.LockID}
+}
+
+func TestExecutionHeartbeatMigrationPreservesExecutionsAndExecutorLiveness(t *testing.T) {
+	db := cloneDatabase(t)
+	exec(t, db, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`)
+	priorProvider, err := schemaThroughVersion(t, 12).Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := priorProvider.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	seed(t, db)
+	exec(t, db, `INSERT INTO action_execution (id, request_id, state, created_at, heartbeat_at)
+		VALUES ('00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001',
+			'succeeded', now(), now())`)
+	exec(t, db, `INSERT INTO action_executor_heartbeat (executor_id, started_at, heartbeat_at)
+		VALUES ('test-executor', now(), now())`)
+
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(t, db, `SELECT count(*) FROM action_execution
+		WHERE id = '00000000-0000-0000-0000-000000000002'
+		AND request_id = '00000000-0000-0000-0000-000000000001' AND state = 'succeeded'`); got != 1 {
+		t.Fatalf("preserved execution rows = %d, want 1", got)
+	}
+	exec(t, db, `UPDATE action_executor_heartbeat SET heartbeat_at = heartbeat_at + interval '1 minute'
+		WHERE executor_id = 'test-executor'`)
+	if got := count(t, db, `SELECT count(*) FROM action_executor_heartbeat
+		WHERE executor_id = 'test-executor' AND heartbeat_at = started_at + interval '1 minute'`); got != 1 {
+		t.Fatalf("live executor heartbeat rows = %d, want 1", got)
+	}
 }

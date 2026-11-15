@@ -161,7 +161,7 @@ func TestAbsentValuesAreWrittenAsNull(t *testing.T) {
 				AND policy_evidence_proto IS NULL`, 1},
 		{"execution", `SELECT count(*) FROM action_execution
 			WHERE result IS NULL AND error IS NULL AND started_at IS NULL AND completed_at IS NULL AND executor_id IS NULL
-				AND lease_token IS NULL AND lease_expires_at IS NULL AND heartbeat_at IS NULL AND reconciled_at IS NULL`, 1},
+				AND lease_token IS NULL AND lease_expires_at IS NULL AND reconciled_at IS NULL`, 1},
 	} {
 		if got := f.count(t, test.query); got != test.rows {
 			t.Errorf("%s: %d rows hold only NULLs for what is absent, want %d", test.name, got, test.rows)
@@ -210,7 +210,7 @@ func (f fixture) insertInFlightAsPython(t *testing.T, key string, states []strin
 	f.exec(t, `
 		UPDATE action_execution
 		SET state = $2, executor_id = $3, lease_token = $4, lease_expires_at = now() - interval '1 minute',
-			heartbeat_at = now() - interval '2 minutes', error = $5::jsonb
+			error = $5::jsonb
 		WHERE request_id = $1`,
 		id, ExecutionState(last), lease.ExecutorID, lease.Token, jsonParam(failure))
 	return id
