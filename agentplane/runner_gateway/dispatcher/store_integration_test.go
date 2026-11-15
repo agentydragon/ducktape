@@ -14,6 +14,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -22,12 +26,12 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/wake"
+	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -37,7 +41,7 @@ import (
 
 const sandboxUID = "00000000-0000-4000-8000-000000000001"
 
-// caller is the account the store tests' calls were admitted as.
+// caller supplies the legacy account provenance and namespace used by retained-row fixtures.
 var caller = auth.Account{Namespace: "test-callers", Name: "test-app"}
 
 func configuredDispatcherCallers() sets.Set[auth.Account] {
@@ -60,29 +64,39 @@ func (s admissionContextCapture) GetDispatch(ctx context.Context, _ *dispatcherp
 // The fixture holds its RPC open so the context remains valid for direct handler/store tests.
 func admitted(t *testing.T) context.Context {
 	t.Helper()
-	const audience, token = "dispatcher-test", "dispatcher-test-token"
-	resolver, err := auth.NewResolver(tokenReviewStub{
-		token: {account: caller, uid: "test-account-uid", pod: true},
-	}, audience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
+	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := auth.Methods{dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName: auth.ReviewedServiceAccount(resolver)}
+	return captureAdmission(t, rule, peertls.AppURI)
+}
+
+func captureAdmission(t *testing.T, rule auth.Rule, uri string) context.Context {
+	t.Helper()
+	ca := transporttesting.NewCA(t)
+	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientTLS, err := ca.Issue(t, uri).ClientTLSConfig(peertls.SessionDispatcherURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods := auth.Methods{dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName: rule}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	service := admissionContextCapture{captured: make(chan context.Context, 1), release: make(chan struct{})}
-	server := grpc.NewServer(methods.ServerOptions(0)...)
+	server := grpc.NewServer(append(methods.ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
 	go func() { _ = server.Serve(listener) }()
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 	if err != nil {
 		server.Stop()
 		t.Fatal(err)
 	}
 	callContext, cancel := context.WithCancel(context.Background())
-	callContext = metadata.AppendToOutgoingContext(callContext, "authorization", "Bearer "+token)
 	go func() {
 		_, _ = dispatcherpb.NewSessionDispatcherClient(connection).GetDispatch(callContext, &dispatcherpb.GetDispatchRequest{})
 	}()
@@ -878,7 +892,7 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 func TestRPCAdmissionReturnsSameQueuedReceiptAndConflicts(t *testing.T) {
 	store := testStore(t, 3)
 	service := &Service{
-		Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{},
+		Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{},
 	}
 	ctx := admitted(t)
 	if _, err := store.CreateSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
@@ -967,7 +981,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 		}
 	}
 	service := &Service{
-		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
+		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -1030,7 +1044,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	watchCtx, cancelWatch := context.WithCancel(base)
 	defer cancelWatch()
 	service := &Service{
-		Store: store, DispatcherCallers: configuredDispatcherCallers(), Hub: hub, WatchLease: time.Minute,
+		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
 	}
 	stream := &channelWatch{ctx: watchCtx, frames: make(chan *dispatcherpb.WatchDispatchesResponse, 8)}
 	watchDone := make(chan error, 1)
@@ -1107,7 +1121,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			defer endLease()
 			if tc.cancel {
 				service := &Service{
-					Store: testStore(t, 5), DispatcherCallers: configuredDispatcherCallers(), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
+					Store: testStore(t, 5), DispatcherServices: sets.New(peertls.AppURI), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
 					WatchLease: time.Hour,
 				}
 				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{
@@ -1163,7 +1177,7 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
+	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
 	if _, err := store.CreateSession(ctx, "api-session", "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -2108,7 +2122,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	if ready, err := worker.prepareDispatch(ctx, row, sandbox, *owner); err != nil || !ready {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}}
+	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}}
 	result, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{CommandId: "central-interrupt", SessionId: opening.SessionID, ExpectedSandboxUid: sandboxUID, TurnId: "active-turn"})
 	if err != nil || result.GetDispatch().GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 		t.Fatalf("central interrupt: %v %v", result, err)
@@ -2118,7 +2132,7 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 func TestCentralSessionUsesConfiguredSampler(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
+	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}, CentralTarget: &CentralTarget{Target: "configured", TokenFile: "configured"}}
 	request := &dispatcherpb.CreateSessionRequest{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "sandbox-api", Uid: sandboxUID}}}}, Model: "test-model", Cwd: "/test"}}
 	opened, err := service.CreateSession(ctx, request)
 	if err != nil {
@@ -2219,7 +2233,7 @@ func TestSandboxCleanupFencesStaleAdmissionAcrossReplicas(t *testing.T) {
 			defer db.Close()
 			restarted := NewStore(db, 3)
 			service := &Service{
-				Store: restarted, DispatcherCallers: configuredDispatcherCallers(),
+				Store: restarted, DispatcherServices: sets.New(peertls.AppURI),
 				Sandboxes: deletedDuringLookup{
 					snapshot: SandboxSnapshot{Name: "sandbox-api", Namespace: caller.Namespace, UID: uid},
 					cleanup: func() {
@@ -2659,7 +2673,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 func TestEveryCommandAdmissionRequiresSession(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 3)
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
+	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
 			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: "missing-input", SessionId: "missing", ExpectedSandboxUid: sandboxUID, Text: "input"})
@@ -2699,7 +2713,7 @@ func TestPrivilegedCommandsCannotCrossSessionPlacement(t *testing.T) {
 	if _, err := store.CreateSession(ctx, sessionID, "different-sandbox", uuid.NewString(), &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, DispatcherCallers: configuredDispatcherCallers(), Sandboxes: oneSandbox{}}
+	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: oneSandbox{}}
 	for _, invoke := range []func() error{
 		func() error {
 			_, err := service.SubmitInput(ctx, &dispatcherpb.SubmitInputRequest{CommandId: uuid.NewString(), SessionId: sessionID, ExpectedSandboxUid: sandboxUID, Text: "input"})
@@ -2808,25 +2822,52 @@ type deletingSessionInventory struct {
 	oneSandbox
 	store     *Store
 	sessionID string
+	identity  *identitypb.Identity
+	calls     int
 }
 
-func (i deletingSessionInventory) GetExecutionIdentity(ctx context.Context, _ SandboxSnapshot) (*identitypb.Identity, bool, error) {
+func (i *deletingSessionInventory) GetExecutionIdentity(ctx context.Context, _ SandboxSnapshot) (*identitypb.Identity, bool, error) {
+	i.calls++
 	_, err := i.store.DB.ExecContext(ctx, "DELETE FROM session WHERE session_id=$1", i.sessionID)
-	return testExecutionIdentity(), true, err
+	return i.identity, true, err
 }
 
 func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
-	ctx := admitted(t)
-	store := testStore(t, 3)
-	identity := serviceAccountIdentityFor(Account(caller), "test-account-uid")
-	admission := ServiceAccountCaller{ServiceAccountIdentity: identity, Attribution: &AdmissionAttribution{Actor: identity, EffectiveCaller: identity}}
-	sessionID := uuid.NewString()
-	if _, err := store.CreateSessionForCaller(ctx, sessionID, "sandbox-api", sandboxUID, &sessionpb.SessionSpec{}, nil, nil, testExecutionIdentity(), admission); err != nil {
+	api, err := kubeapiserver.Start()
+	if err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, Sandboxes: deletingSessionInventory{store: store, sessionID: sessionID}}
+	t.Cleanup(func() {
+		if err := api.Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+	const policyNamespace = "interrupt-recheck-policies"
+	workload := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "interrupt-recheck", policyNamespace)
+	svids, err := auth.NewSVIDResolver(workload.Objects, []string{caller.Namespace}, &resolver.Identities{PolicyNamespace: policyNamespace})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := captureAdmission(t, auth.AnySubject(svids), workload.URI)
+	store := testStore(t, 3)
+	identity := &identitypb.Identity{Name: workload.Identity.Name, Uid: string(workload.Identity.UID)}
+	admission := IdentityCaller{Identity: identity, Proof: IdentitySVID{}}
+	sessionID := uuid.NewString()
+	spec := &sessionpb.SessionSpec{}
+	testPlacement(spec, "sandbox-api", sandboxUID)
+	if _, err := store.CreateSessionWithPlacementForCaller(ctx, sessionID, "sandbox-api", sandboxUID, spec, nil, nil, SessionExecution{Identity: identity}, admission); err != nil {
+		t.Fatal(err)
+	}
+	inventory := &deletingSessionInventory{store: store, sessionID: sessionID, identity: identity}
+	service := &Service{Store: store, Sandboxes: inventory}
 	if _, err := service.InterruptTurn(ctx, &dispatcherpb.InterruptTurnRequest{SessionId: sessionID, ExpectedSandboxUid: sandboxUID, CommandId: "deleted-interrupt", TurnId: "turn"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("deleted Session interrupt: %v", err)
+	}
+	if inventory.calls != 1 {
+		t.Fatalf("live Identity checks = %d, want one", inventory.calls)
+	}
+	if _, err := store.GetDispatch(ctx, "deleted-interrupt"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted Session admitted interrupt: %v", err)
 	}
 }
 
