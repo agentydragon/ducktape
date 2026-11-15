@@ -28,9 +28,10 @@ from agentplane.system_tests.driver.agent import (
     Turn,
     environment_runtime_startup_retries,
 )
+from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
-from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.testing.codex_model import CodexModel

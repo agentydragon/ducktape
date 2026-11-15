@@ -61,6 +61,10 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
+# gazelle:include_dep //agentplane/system_tests:app_fixtures
+pytest_plugins = ("agentplane.system_tests.app_fixtures",)
+
+
 # An Electric row as the proxy relays it: every value its column's text form, or null.
 Row = dict[str, Any]
 

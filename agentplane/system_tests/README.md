@@ -74,6 +74,13 @@ entrypoints; helper unit tests live beside their implementation. Use the [deploy
 README](deployment/README.md) for stack behavior and the [VM Sandboxes guide](deployment/README.md#vm-sandboxes)
 for VM image layout and lifecycle.
 
+The common `conftest.py` owns tracing, harness parameters, and scripted-model fixtures. Suites
+using App clients, App-bound Dispatcher credentials, model discovery, or App-backed Sandbox
+fixtures explicitly load `agentplane.system_tests.app_fixtures` in `pytest_plugins` and declare
+`//agentplane/system_tests:app_fixtures` as a dependency. Native suites retain the common hooks
+without importing the App client. Shared Sandbox descriptors and template choices live in
+`driver/sandbox.py`; App lifecycle operations live in `driver/app_sandbox.py`.
+
 ## Behavior-specific anchors
 
 - [`thread_history.py`](scenarios/thread_history.py) checks concurrent typed History readers,
@@ -192,7 +199,7 @@ separate traces, which can be joined by `session.id`, `thread.id` or `sandbox.ui
 
 Use bounded identity and outcome attributes only: no credentials, headers, request bodies or model
 content. Common case/scenario/readiness and cleanup spans separate Sandbox suspend acceptance,
-effective suspension, delete acceptance and actual deletion ([`sandbox.py`](driver/sandbox.py)). See the
+effective suspension, delete acceptance and actual deletion ([`sandbox.py`](driver/app_sandbox.py)). See the
 [deployment guide](deployment/README.md) for export paths and the [VM guide](vm/README.md) for retained
 guest artifacts. VM journals live under `vm-artifacts/journals/<state-volume>/<machine-id>/`; inspect
 or verify them with `journalctl --directory=<machine-id-directory>` or
@@ -258,7 +265,7 @@ Keep test output with proxy and app decision evidence. The transcript explains w
 attempted; decision history is authoritative for what the proxy served. Teardown watches the live
 inventory until the created Sandbox's exact UID has effective `Suspended` mode before requesting
 deletion. It rejects a replacement UID and does not reconnect a dropped watch; a delete acknowledgment
-does not prove deletion completed ([`sandbox.py`](driver/sandbox.py)). After teardown, confirm no
+does not prove deletion completed ([`sandbox.py`](driver/app_sandbox.py)). After teardown, confirm no
 `systest-*` Sandboxes remain in the selected namespace (the command below uses the default):
 
 ```bash

@@ -25,9 +25,10 @@ from agentplane.system_tests.driver.agent import (
     environment_runtime_startup_retries,
     scripted_turn_with_admission_and_history,
 )
+from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.offered_models import models_offered_for
-from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes, wait_until_running
+from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
