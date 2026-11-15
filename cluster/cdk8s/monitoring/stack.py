@@ -1,13 +1,11 @@
-"""kube-prometheus-stack (Prometheus Operator, Alertmanager, node-exporter,
-kube-state-metrics) and Prometheus's ingress policy.
+"""kube-prometheus-stack's Operator, Alertmanager, node-exporter and kube-state-metrics.
 
-Hand-written beside the generated output: `grafana-admin-password.sops.yaml`.
+Alloy collects metrics; Mimir stores them and evaluates the alerting/recording rules.
 """
 
 from __future__ import annotations
 
 from cdk8s import App, Chart, JsonPatch
-from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
@@ -18,7 +16,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
-from cluster.cdk8s import cilium, node_scheduling
+from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -27,7 +25,6 @@ NAME = "monitoring-stack"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/monitoring"
 _NAMESPACE = "monitoring"
 _HELM_REPOSITORY = "prometheus-community"
-_PROMETHEUS_PORT = 9090
 
 
 def _flux_state_metrics(
@@ -197,7 +194,6 @@ def _values() -> dict[str, object]:
         "fullnameOverride": "monitoring",
         "cleanPrometheusOperatorObjectNames": True,
         "defaultRules": {
-            "create": True,
             "disabled": {
                 # Temporary suppression for the two disabled ServiceMonitors until
                 # issue #8567 restores a valid scrape path. These four rules cover
@@ -214,31 +210,13 @@ def _values() -> dict[str, object]:
                 "NodeDiskIOSaturation": True,
             },
             "rules": {
-                "alertmanager": True,
                 # Static Talos etcd endpoints are scraped through cluster/cdk8s/etcd.py; keep the
                 # chart's stock etcd rule bundle disabled until the scrape is verified.
                 "etcd": False,
-                "configReloaders": True,
-                "general": True,
-                "kubeApiserverAvailability": True,
-                "kubeApiserverSlos": True,
-                "kubelet": True,
                 # kube-proxy is intentionally absent: Cilium runs kube-proxy replacement,
                 # so the stock KubeProxyDown rule would always be noise here.
                 "kubeProxy": False,
-                "kubePrometheusGeneral": True,
-                "kubePrometheusNodeRecording": True,
-                "kubernetesApps": True,
-                "kubernetesResources": True,
-                "kubernetesStorage": True,
-                "kubernetesSystem": True,
-                "kubeStateMetrics": True,
-                "network": True,
-                "node": True,
-                "nodeExporterAlerting": True,
-                "nodeExporterRecording": True,
                 "prometheus": False,  # Prometheus disabled; Mimir Ruler evaluates rules
-                "prometheusOperator": True,
             },
         },
         "alertmanager": {
@@ -290,7 +268,7 @@ def _values() -> dict[str, object]:
         },
         # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
         # Mimir Ruler evaluates alerting/recording rules.
-        # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
+        # The Operator still manages Alertmanager; monitoring-crds owns the CRDs.
         "prometheus": {"enabled": False, "serviceAccount": {"createTokenSecret": False}},
         "prometheus-node-exporter": {
             "fullnameOverride": "prometheus-node-exporter",
@@ -436,18 +414,6 @@ def _values() -> dict[str, object]:
     }
 
 
-def _prometheus_ingress_rule(namespace: str, pod_labels: dict[str, str]) -> k8s.NetworkPolicyIngressRule:
-    return k8s.NetworkPolicyIngressRule(
-        from_=[
-            k8s.NetworkPolicyPeer(
-                namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": namespace}),
-                pod_selector=k8s.LabelSelector(match_labels=pod_labels),
-            )
-        ],
-        ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(_PROMETHEUS_PORT), protocol="TCP")],
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     release = helm_release(
@@ -483,26 +449,6 @@ def chart(app: App) -> Chart:
     # because this endpoint is scraped by Alloy without a bearer token. A patch,
     # because synthesis drops a None inside `values`.
     release.add_json_patch(JsonPatch.add("/spec/values/coreDns/serviceMonitor/authorization", None))
-    # Restrict Prometheus API (port 9090) to authorized consumers.
-    # Prometheus has no authentication; unrestricted access exposes full cluster
-    # topology, node IPs, resource usage, and secret cardinality to any pod.
-    k8s.KubeNetworkPolicy(
-        chart,
-        "prometheus-ingress",
-        metadata=k8s.ObjectMeta(name="prometheus-ingress", namespace=_NAMESPACE),
-        spec=k8s.NetworkPolicySpec(
-            pod_selector=k8s.LabelSelector(match_labels={"app.kubernetes.io/name": "prometheus"}),
-            policy_types=["Ingress"],
-            ingress=[
-                # Grafana: datasource queries for dashboards
-                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "grafana"}),
-                # Alertmanager: Prometheus pushes alerts to Alertmanager; allow return traffic
-                _prometheus_ingress_rule(_NAMESPACE, {"app.kubernetes.io/name": "alertmanager"}),
-                # Gatus: health check probes
-                _prometheus_ingress_rule(cilium.PROBER.namespace, cilium.PROBER.selector),
-            ],
-        ),
-    )
     return chart
 
 

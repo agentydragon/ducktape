@@ -92,7 +92,6 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -100,7 +99,6 @@ py_library(
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
     ],
 )
 
