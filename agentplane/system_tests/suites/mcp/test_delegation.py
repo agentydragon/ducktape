@@ -35,7 +35,11 @@ from agentplane.system_tests.driver.port_forward import PortForward, async_port_
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
+# gazelle:include_dep //agentplane/system_tests/suites/mcp:operator_fixtures
+pytest_plugins = (
+    "agentplane.system_tests.suites.mcp.operator_fixtures",
+    "agentplane.system_tests.deployment.pytest_plugin",
+)
 
 _REQUIRED_TOOLS = {"environments__list", "environments__get", "sessions__create"}
 _UNGRANTED_TOOLS = {
