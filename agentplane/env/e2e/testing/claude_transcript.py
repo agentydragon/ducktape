@@ -33,6 +33,11 @@ async def wait_for_claude_transcript(
         if frame.get("type") == "system" and frame.get("subtype") == "init"
     ]
     native_id = inits[-1]["session_id"]
+    await wait_for_claude_transcript_id(session_id, native_id, state_dir, text)
+
+
+async def wait_for_claude_transcript_id(session_id: str, native_id: str, state_dir: Path, text: str) -> None:
+    """Wait until Claude has persisted `text` in this Session's native transcript."""
     directory = state_dir / "sessions" / session_id / "claude" / "projects"
 
     def recorded() -> bool:

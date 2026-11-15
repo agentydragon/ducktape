@@ -25,6 +25,7 @@ from agentplane.app.testing.client import Client
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
+from agentplane.env.e2e.testing.claude_transcript import wait_for_claude_transcript_id
 from agentplane.env.e2e.testing.failure_journal import FailureEvidence
 from agentplane.env.e2e.testing.process import RunningRunner, kill_harness
 from agentplane.history_service.api.history import history_service_pb2
@@ -807,6 +808,12 @@ async def test_open_and_inputs_reach_the_runner_while_history_lags(
                 assert summary.last_cursor > seed.admission.cursor
                 assert not summary.active_turn_id
 
+        if spec.placement.environment_hosted.harness == session_pb2.HARNESS_CLAUDE:
+            runner_session = await _runner_session(sandbox_runner, thread_id)
+            assert runner_session.HasField("native_session_id")
+            await wait_for_claude_transcript_id(
+                str(thread_id), runner_session.native_session_id, runner.state_dir, "SEED_REPLY"
+            )
         await _kill_harness(runner, sandbox_runner, thread_id)
         # The native process exited while History stayed behind; later input prepares it again.
         async for attempt in AsyncRetrying(
