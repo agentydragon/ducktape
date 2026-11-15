@@ -6,6 +6,7 @@ use Environment-created Sandbox descriptors and retain their real controller and
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_NAME
+from agentplane.system_tests.driver.native_platform import NativePlatformClients, native_platform_clients
 from agentplane.system_tests.driver.native_pod_pool import Borrow
 from agentplane.system_tests.driver.policy_objects import PolicyObjects
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
@@ -31,6 +33,14 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture(scope="module")
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(scope="module")
+async def native_platform(
+    cluster: Cluster, tmp_path_factory: pytest.TempPathFactory
+) -> AsyncIterator[NativePlatformClients]:
+    async with native_platform_clients(cluster, tmp_path_factory.mktemp("native-platform")) as clients:
+        yield clients
 
 
 async def test_a_cluster_ca_leaf_with_a_live_sandbox_uri_is_refused(cluster: Cluster, native_trust_pod: Borrow) -> None:
