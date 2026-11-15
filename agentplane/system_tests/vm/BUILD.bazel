@@ -220,6 +220,7 @@ py_library(
     name = "infrastructure",
     srcs = ["infrastructure.py"],
     deps = [
+        ":env_flags",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/k3s:release_manifests",
         "@pypi//pyyaml",
@@ -234,6 +235,7 @@ py_library(
         ":block_storage",
         ":boot_interrupts",
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -369,6 +371,7 @@ py_test(
     tags = K3S_TAGS + ["manual"],
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -397,6 +400,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -420,6 +424,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -443,6 +448,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -475,6 +481,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -498,6 +505,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -521,6 +529,7 @@ py_test(
     main = "test_tcg_vmi_shutdown.py",
     deps = [
         ":boot_rcu",
+        ":env_flags",
         ":guest_logs",
         ":host_qemu",
         ":infrastructure",
@@ -642,4 +651,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "env_flags",
+    srcs = ["env_flags.py"],
 )

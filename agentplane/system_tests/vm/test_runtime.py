@@ -93,6 +93,26 @@ def test_vm_runtime_skips_qmp_report_probe_for_opted_in_passive_timeline(
     assert calls == []
 
 
+def test_kvm_flag_controls_emulation_and_rejects_other_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    name = "AGENTPLANE_K3S_REQUIRE_KVM"
+
+    def use_emulation() -> bool:
+        (kubevirt,) = vm_infrastructure.baseline_objects()
+        enabled = kubevirt["spec"]["configuration"]["developerConfiguration"]["useEmulation"]
+        assert isinstance(enabled, bool)
+        return enabled
+
+    monkeypatch.delenv(name, raising=False)
+    assert use_emulation() is True
+    monkeypatch.setenv(name, "0")
+    assert use_emulation() is True
+    monkeypatch.setenv(name, "1")
+    assert use_emulation() is False
+    monkeypatch.setenv(name, "true")
+    with pytest.raises(ValueError, match=f"{name} must be '0' or '1'"):
+        use_emulation()
+
+
 def _vm_template(name: str) -> dict[str, Any]:
     return {
         "apiVersion": "agentplane.allegedly.works/v1alpha1",

@@ -21,17 +21,11 @@ from agentplane.system_tests.vm import (
     infrastructure as vm_infrastructure,
     sandboxes as vm_sandboxes,
 )
+from agentplane.system_tests.vm.env_flags import strict_env_flag
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 BOOT_RCU_OBSERVER_ENV = "AGENTPLANE_VM_BOOT_RCU_OBSERVER"
 SHUTDOWN_SYSRQ_ENV = "AGENTPLANE_VM_SHUTDOWN_SYSRQ"
-
-
-def _opt_in(name: str, *, default: str = "0") -> bool:
-    value = os.environ.get(name, default)
-    if value not in {"0", "1"}:
-        raise ValueError(f"{name} must be '0' or '1', got {value!r}")
-    return value == "1"
 
 
 class VmRuntime:
@@ -39,9 +33,9 @@ class VmRuntime:
         self._boot_rcu_observer = False
 
     def configure(self, objects: list[dict[str, Any]]) -> None:
-        self._boot_rcu_observer = _opt_in(BOOT_RCU_OBSERVER_ENV)
+        self._boot_rcu_observer = strict_env_flag(BOOT_RCU_OBSERVER_ENV)
         vm_sandboxes.select_boot_rcu_observer(objects, enabled=self._boot_rcu_observer)
-        vm_sandboxes.select_shutdown_sysrq(objects, enabled=_opt_in(SHUTDOWN_SYSRQ_ENV, default="1"))
+        vm_sandboxes.select_shutdown_sysrq(objects, enabled=strict_env_flag(SHUTDOWN_SYSRQ_ENV, default="1"))
         vm_sandboxes.select_boot_evidence(objects, enabled=os.environ.get("AGENTPLANE_VM_BOOT_EVIDENCE") == "1")
         vm_sandboxes.select_libvirt_monitor_debug(
             objects, enabled=os.environ.get("AGENTPLANE_VM_LIBVIRT_MONITOR_DEBUG") == "1"
