@@ -11,20 +11,10 @@ import (
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 )
 
 func TestHealthOnlyServerDoesNotRegisterSamplerRPCs(t *testing.T) {
-	var applicationRegistered bool
-	if server := newPlaintextServer("", nil, func(*grpc.Server) { applicationRegistered = true }, health.NewServer()); server != nil {
-		server.Stop()
-		t.Fatal("created an application server with an omitted listen address")
-	}
-	if applicationRegistered {
-		t.Fatal("registered application RPCs with an omitted listen address")
-	}
-
 	healthOnly := newHealthOnlyServer(health.NewServer())
 	defer healthOnly.Stop()
 	services := healthOnly.GetServiceInfo()
@@ -95,7 +85,7 @@ func validStartupDiagnosticSettings(t *testing.T) samplersettings.Settings {
 		"models": {"route": {"connection": "provider", "provider_model": "model", "api": "responses", "responses": {"dialect": "lite"}, "exec_encoding": "freeform", "reasoning_efforts": ["high"]}},
 		"connections": {"provider": {"base_url": "https://provider.invalid", "auth": {"type": "bearer", "credential": "fixture-secret"}}},
 		"database_url": "postgresql://user:secret@db.invalid/sampler",
-		"listen": "127.0.0.1:8080",
+		"listen_tls": {"listen": "127.0.0.1:8083", "cert_file": "/fixture/tls.crt", "key_file": "/fixture/tls.key"},
 		"audience": "sampler",
 		"allowed_accounts": ["namespace/service-account"],
 		"code_mode_host": "/usr/local/bin/codex-code-mode-host",

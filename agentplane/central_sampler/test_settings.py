@@ -19,7 +19,11 @@ def service_tls(server: str) -> dict[str, str]:
 
 def settings_data() -> dict[str, Any]:
     return {
-        "listen": "127.0.0.1:9000",
+        "listen_tls": {
+            "listen": "127.0.0.1:9000",
+            "cert_file": Path("/fixture/tls.crt"),
+            "key_file": Path("/fixture/tls.key"),
+        },
         "connections": {
             "provider": {
                 "base_url": "https://provider.invalid",
@@ -69,27 +73,25 @@ def test_actions_are_optional_and_only_accept_service_mtls() -> None:
             Settings.model_validate({**settings_data(), "actions": actions})
 
 
-def test_plaintext_listener_and_health_listener_are_optional_settings() -> None:
+def test_tls_application_listener_is_required_and_plaintext_listener_is_unknown() -> None:
     data = settings_data()
-    data.pop("listen")
-    data["listen_tls"] = {
-        "listen": "0.0.0.0:8083",
-        "cert_file": Path("/fixture/tls.crt"),
-        "key_file": Path("/fixture/tls.key"),
-    }
     settings = Settings.model_validate(data)
-    assert settings.listen is None
+    assert settings.listen_tls.listen == "127.0.0.1:9000"
     assert settings.health_listen is None
     serialized = settings.model_dump(mode="json", exclude_none=True)
     assert "listen" not in serialized
     assert "health_listen" not in serialized
 
-    configured = Settings.model_validate({**data, "health_listen": "0.0.0.0:8081"})
-    assert configured.health_listen == "0.0.0.0:8081"
+    configured = Settings.model_validate({**data, "health_listen": "127.0.0.1:8081"})
+    assert configured.health_listen == "127.0.0.1:8081"
     with pytest.raises(ValidationError):
         Settings.model_validate({**data, "unknown_listener": "0.0.0.0:8081"})
-    with pytest.raises(ValidationError, match="configure at least one application RPC listener"):
-        Settings.model_validate({**data, "listen_tls": None})
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**data, "listen": "127.0.0.1:8080"})
+    without_tls = dict(data)
+    del without_tls["listen_tls"]
+    with pytest.raises(ValidationError):
+        Settings.model_validate(without_tls)
 
 
 def test_provider_phase_budgets_are_optional_and_independent() -> None:

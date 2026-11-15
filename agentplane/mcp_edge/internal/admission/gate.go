@@ -142,8 +142,7 @@ func hasSVIDPeer(ctx context.Context) bool {
 	return ok && len(info.State.PeerCertificates) > 0
 }
 
-// rejectUnauthenticatedPeer prevents health and unknown RPCs from becoming a way to bypass the TLS listener's
-// allowlist. Plaintext health stays public; a TLS peer must also present an allowlisted service SVID and operator OIDC.
+// rejectUnauthenticatedPeer prevents health and unknown RPCs from bypassing the configured TLS peer allowlist.
 func (g *Gate) rejectUnauthenticatedPeer(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {

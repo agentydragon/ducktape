@@ -11,6 +11,10 @@ import (
 const testSettings = `actions_target: actions:8080
 policy_namespace: test-policy
 actions_token_file: /run/agentplane/action-token/token
+rpc_tls:
+  listen: 0.0.0.0:8443
+  cert_file: /etc/agentplane/tls/tls.crt
+  key_file: /etc/agentplane/tls/tls.key
 operator_oidc:
   issuer: https://operator.example
   audience: edge
@@ -51,6 +55,14 @@ func TestLoadConfigReadsDatabaseURLFromExplicitSecretInput(t *testing.T) {
 }
 
 func TestOperatorServicesRequireAnAdditionalMutualTLSEndpoint(t *testing.T) {
+	baseSettings := `actions_target: actions:8080
+policy_namespace: test-policy
+actions_token_file: /run/agentplane/action-token/token
+operator_oidc:
+  issuer: https://operator.example
+  audience: edge
+  jwks_uri: https://operator.example/jwks
+`
 	validTLS := `rpc_tls:
   listen: 0.0.0.0:8082
   cert_file: /etc/agentplane/tls/tls.crt
@@ -60,7 +72,7 @@ operator_services:
   - spiffe://agentplane/app
 `
 	t.Run("allowlisted service", func(t *testing.T) {
-		settingsFile(t, testSettings+validTLS)
+		settingsFile(t, baseSettings+validTLS)
 		c, err := loadConfig()
 		if err != nil {
 			t.Fatal(err)
@@ -70,22 +82,22 @@ operator_services:
 		}
 	})
 	for name, settings := range map[string]string{
-		"no TLS listener": testSettings + "operator_services: [spiffe://agentplane/app]\n",
-		"no client CA": testSettings + `rpc_tls:
+		"no TLS listener": baseSettings + "operator_services: [spiffe://agentplane/app]\n",
+		"no client CA": baseSettings + `rpc_tls:
   listen: 0.0.0.0:8082
   cert_file: /etc/agentplane/tls/tls.crt
   key_file: /etc/agentplane/tls/tls.key
 operator_services: [spiffe://agentplane/app]
 `,
-		"unsupported service": testSettings + `rpc_tls:
+		"unsupported service": baseSettings + `rpc_tls:
   listen: 0.0.0.0:8082
   cert_file: /etc/agentplane/tls/tls.crt
   key_file: /etc/agentplane/tls/tls.key
   client_ca_file: /etc/agentplane/tls/client-ca.crt
 operator_services: [spiffe://agentplane/not-a-service]
 `,
-		"duplicate service": testSettings + validTLS + "  - spiffe://agentplane/app\n",
-		"client CA without allowlist": testSettings + `rpc_tls:
+		"duplicate service": baseSettings + validTLS + "  - spiffe://agentplane/app\n",
+		"client CA without allowlist": baseSettings + `rpc_tls:
   listen: 0.0.0.0:8082
   cert_file: /etc/agentplane/tls/tls.crt
   key_file: /etc/agentplane/tls/tls.key
@@ -133,6 +145,12 @@ func TestConfigFileRejectsUnknownKeysAndAdditionalDocuments(t *testing.T) {
 			t.Fatal("accepted an unknown settings key")
 		}
 	})
+	t.Run("removed plaintext gRPC port", func(t *testing.T) {
+		settingsFile(t, testSettings+"port: 8080\n")
+		if _, err := loadConfig(); err == nil {
+			t.Fatal("accepted the removed plaintext gRPC port setting")
+		}
+	})
 
 	t.Run("second document", func(t *testing.T) {
 		path := settingsFile(t, testSettings)
@@ -157,7 +175,7 @@ func TestStaticEnvironmentDoesNotOverrideFileSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "0.0.0.0" || c.Port != 8080 || c.ActionsTarget != "actions:8080" || c.OAuth != nil {
+	if c.Host != "0.0.0.0" || c.HTTPPort != 8081 || c.ActionsTarget != "actions:8080" || c.OAuth != nil {
 		t.Fatalf("static settings were changed by environment variables: %+v", c)
 	}
 }

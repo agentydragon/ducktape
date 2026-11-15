@@ -19,9 +19,7 @@ class Settings(BaseModel):
 
     config_file_env: ClassVar[str] = "AGENTPLANE_MCP_EDGE_CONFIG_FILE"
     actions_tls: ClientTLS | None = None
-    rpc_tls: ServerTLSListener | None = Field(
-        default=None, description="Optional additional gRPC listener with a workload SVID."
-    )
+    rpc_tls: ServerTLSListener = Field(description="The gRPC listener using the edge's workload SVID.")
     operator_services: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,
@@ -37,7 +35,6 @@ class Settings(BaseModel):
         default=None, description="Provider-owned OAuth settings projected from its Secret."
     )
     host: str = "0.0.0.0"
-    port: int = Field(default=8080, ge=1, le=65535, description="The gRPC listener's port.")
     http_port: int = Field(
         default=8081,
         ge=1,
@@ -51,18 +48,13 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_ports(self) -> Settings:
-        if self.port == self.http_port:
-            raise ValueError("port and http_port must differ")
-        if self.rpc_tls is not None and self.rpc_tls.listen in {
-            f"{self.host}:{self.port}",
-            f"{self.host}:{self.http_port}",
-        }:
-            raise ValueError("rpc_tls.listen must differ from port and http_port")
+        if self.rpc_tls.listen == f"{self.host}:{self.http_port}":
+            raise ValueError("rpc_tls.listen must differ from http_port")
         if len(set(self.operator_services)) != len(self.operator_services):
             raise ValueError("operator_services must not contain duplicates")
-        if self.operator_services and (self.rpc_tls is None or self.rpc_tls.client_ca_file is None):
+        if self.operator_services and self.rpc_tls.client_ca_file is None:
             raise ValueError("operator_services requires rpc_tls.client_ca_file")
-        if self.rpc_tls is not None and self.rpc_tls.client_ca_file is not None and not self.operator_services:
+        if self.rpc_tls.client_ca_file is not None and not self.operator_services:
             raise ValueError("rpc_tls.client_ca_file requires operator_services")
         if self.oauth_file is not None and self.oauth is not None:
             raise ValueError("oauth_file and inline oauth settings are mutually exclusive")

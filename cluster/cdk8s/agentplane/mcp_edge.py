@@ -47,7 +47,6 @@ from cluster.cdk8s.settings_file import SettingsFile
 
 NAME = "mcp-edge"
 DATABASE_URL_ENV = "AGENTPLANE_MCP_EDGE_DATABASE_URL"
-RPC_PORT = 8080
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-mcp-edge:unset"
 _SECRET_DIR = "/etc/agentplane-mcp"
@@ -93,7 +92,6 @@ class McpEdge(Construct):
             serves=[self.http, self.tls],
             container=NAME,
             image=_IMAGE,
-            extra_ports=[Port(name="grpc", number=RPC_PORT).container_port()],
             image_pull_policy=image_pull_policy,
             replica_profile=props.replicas,
             env_variables=variables,
@@ -156,7 +154,6 @@ class McpEdge(Construct):
             actions_token_file=None,
             oauth_file=Path(_SECRET_DIR) / "oauth" if props.oauth_secret_name is not None else None,
             host="0.0.0.0",
-            port=RPC_PORT,
             http_port=self.http.pod_port,
             operator_oidc=props.operator_oidc,
         )
@@ -164,7 +161,7 @@ class McpEdge(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
-            content=yaml_config(settings_contract.model_dump(mode="json", exclude={"port"})),
+            content=yaml_config(settings_contract),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)
