@@ -944,7 +944,7 @@ def add_vm_templates(
         metadata=ApiObjectMetadata(name=f"{environment_vm.NAME}-config", namespace=env.namespace),
         data=config_data,
     )
-    labels = runner_template.spec["pod"]["metadata"]["labels"]
+    labels = environment_sandbox.ENVIRONMENT_RUNTIME_LABELS
     environment_vm.EnvironmentVmTemplate(
         scope,
         "environment-vm-template",
@@ -1009,7 +1009,7 @@ def add_firecracker_template(
         scope,
         "firecracker-template",
         env,
-        labels=runner_template.spec["pod"]["metadata"]["labels"],
+        labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
         state_volume=firecracker_state,
         workspace_volume=workspace_volume,
         runner_image=environment_vm.RUNNER_DISK_IMAGE,

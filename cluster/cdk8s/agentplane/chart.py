@@ -259,7 +259,7 @@ def environment_chart(
             template_name=environment_vm.NAME,
             root_image=environment_vm.ROOT_IMAGE,
             config_map=vm_config,
-            labels=runner_template.spec["pod"]["metadata"]["labels"],
+            labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
             state_volume=vm_state_volume,
             workspace_volume=environment_sandbox.workspace_volume_spec(
                 vm_state_volume, layout_type="BlockFilesystem", storage_class=env.vm_storage_class
@@ -278,7 +278,7 @@ def environment_chart(
             runner_scope,
             "firecracker-template",
             env,
-            labels=runner_template.spec["pod"]["metadata"]["labels"],
+            labels=environment_sandbox.ENVIRONMENT_RUNTIME_LABELS,
             state_volume=firecracker_state,
             workspace_volume=firecracker_workspace,
             runner_image=environment_vm.RUNNER_DISK_IMAGE,
