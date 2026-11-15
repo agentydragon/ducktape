@@ -527,6 +527,156 @@ export const styles = (console.log("styles"), {});
     );
 }
 
+fn named_subset_spec() -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        "const keep = 1;\nconst drop = 2;\nconsole.log(keep, drop);\nexport { keep, drop };\n",
+        vec![logical_module_with_anon(
+            "features/values",
+            &[
+                Member::source_alpha_target("readableKeep", "keep", "const keep = 1;"),
+                Member::source_alpha_target("readableDrop", "drop", "const drop = 2;"),
+            ],
+            &["console.log(keep, drop);"],
+        )],
+    )
+    .with_unassigned_mode(unassigned_mode_catchall_file(None))
+}
+
+#[test]
+fn ownership_subset_keeps_only_requested_readable_named_member() {
+    let subset = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/values","bindings":["readableKeep"],"anonymous_statements":[]}]}"#,
+    );
+    let fixture = run_fixture_without_graphs_with_args(
+        named_subset_spec().with_unassigned_mode(unassigned_mode_inline()),
+        &["--ownership-subset", subset.path().to_str().unwrap()],
+    );
+    assert_preserved_entry_output(&fixture, "1 2\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/features/values.js",
+        &["readableKeep"],
+        &["readableDrop", "keep", "drop"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/features/values.js",
+        &["const readableKeep"],
+        &["readableDrop", "drop", "console.log"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/entry.js",
+        &["const drop", "console.log"],
+        &["const keep", "const readableKeep", "readableDrop"],
+    );
+    assert!(
+        !fixture
+            .out_root
+            .join("static/app/modules/residual")
+            .exists(),
+        "inline residual bindings must remain in entry.js",
+    );
+}
+
+#[test]
+fn ownership_subset_empty_bindings_keeps_anonymous_claim_but_no_named_claims() {
+    for bindings in ["", r#", "bindings": []"#] {
+        let subset = write_subset(&format!(
+            r#"{{"modules":[{{"chunk":"static/app","module":"features/values","anonymous_statements":[0]{bindings}}}]}}"#,
+        ));
+        let fixture = run_fixture_without_graphs_with_args(
+            named_subset_spec(),
+            &["--ownership-subset", subset.path().to_str().unwrap()],
+        );
+        assert_preserved_entry_output(&fixture, "1 2\n");
+        if bindings.is_empty() {
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/features/values.js",
+                &["const readableKeep", "const readableDrop", "console.log"],
+                &["const keep", "const drop"],
+            );
+            assert!(
+                !fixture
+                    .out_root
+                    .join("static/app/modules/residual")
+                    .exists(),
+                "omitting bindings must retain all named claims",
+            );
+        } else {
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/features/values.js",
+                &["console.log"],
+                &["const keep", "const drop", "readableKeep", "readableDrop"],
+            );
+            assert_module_exports(
+                &fixture.out_root,
+                "static/app/modules/residual/unhandled.js",
+                &["keep", "drop"],
+                &["readableKeep", "readableDrop"],
+            );
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/residual/unhandled.js",
+                &["const keep", "const drop"],
+                &["console.log", "readableKeep", "readableDrop"],
+            );
+        }
+    }
+}
+
+#[test]
+fn ownership_subset_rejects_invalid_named_selections_and_records() {
+    for (modules, diagnostic) in [
+        (
+            r#"[{"chunk":"static/app","module":"features/values","bindings":["missing"]}]"#,
+            "names unknown binding",
+        ),
+        (
+            r#"[{"chunk":"static/app","module":"features/values","bindings":["keep"]}]"#,
+            "names unknown binding",
+        ),
+        (
+            r#"[{"chunk":"static/app","module":"features/values","bindings":["readableKeep","readableKeep"]}]"#,
+            "repeats binding",
+        ),
+        (
+            r#"[{"chunk":"static/app","module":"features/missing"}]"#,
+            "names unknown module",
+        ),
+        (
+            r#"[{"chunk":"static/missing","module":"features/values"}]"#,
+            "names unknown materialized chunk",
+        ),
+        (
+            r#"[{"chunk":"static/app","module":"features/values"},{"chunk":"static/app","module":"features/values"}]"#,
+            "repeats module",
+        ),
+        (
+            r#"[{"chunk":"static/app","module":"features/values","binding":["readableKeep"]}]"#,
+            "unknown field",
+        ),
+    ] {
+        let subset = write_subset(&format!(r#"{{"modules":{modules}}}"#));
+        let rejected = run_rejection_fixture_without_graphs_with_args(
+            named_subset_spec(),
+            &["--ownership-subset", subset.path().to_str().unwrap()],
+            1,
+        );
+        assert!(
+            rejected.stderr.contains(diagnostic),
+            "expected {diagnostic:?} for {modules}, got:\n{}",
+            rejected.stderr,
+        );
+        assert!(
+            !rejected.out_root.join("app/static/app/entry.js").exists(),
+            "invalid ownership selection must not emit a runnable entry",
+        );
+    }
+}
+
 #[test]
 fn ownership_subset_anonymous_index_controls_adopted_declarations() {
     let options = || {
