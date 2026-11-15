@@ -17,6 +17,8 @@ from agentplane.system_tests.driver.environment_transport import EnvironmentServ
 from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.sandbox import Sandboxes
 
+# gazelle:include_dep @pypi//protobuf
+
 
 @pytest.mark.parametrize("failure", ["body", "sandbox-replaced", "pod-replaced", "readiness"])
 async def test_native_pod_reuses_healthy_guest_and_recreates_after_failure(
