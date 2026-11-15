@@ -728,7 +728,7 @@ func (a *codexAdapter) itemCompletedTool(ctx context.Context, itemID, output str
 func (a *codexAdapter) answerServerRequest(ctx context.Context, frame jsonrpc.Message) error {
 	return a.send(ctx, jsonrpc.ErrorReply{
 		ID:    frame.ID,
-		Error: jsonrpc.Error{Code: -32601, Message: "the agentplane runner does not answer " + frame.Method},
+		Error: jsonrpc.Error{Code: -32601, Message: "the Environment Runtime does not answer " + frame.Method},
 	})
 }
 

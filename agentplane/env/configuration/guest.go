@@ -48,7 +48,7 @@ func (r guestResources) Validate() error {
 		return fmt.Errorf("invalid process limits: %w", err)
 	}
 	if r.Aggregate.MemoryMaxBytes > r.ServiceMemoryHighBytes || r.Aggregate.PidsMax > r.ServicePidsMax || r.Aggregate.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
-		return errors.New("aggregate limits must fit within Runner service limits")
+		return errors.New("aggregate limits must fit within Environment Runtime service limits")
 	}
 	if r.Executor != nil {
 		if err := r.Executor.Validate(); err != nil {
@@ -59,10 +59,10 @@ func (r guestResources) Validate() error {
 			return errors.New("harness and executor memory caps must fit below service memory high")
 		}
 		if r.Executor.PidsMax >= r.ServicePidsMax-r.Aggregate.PidsMax {
-			return errors.New("harness and executor PID caps must leave room for Runner and supervisors")
+			return errors.New("harness and executor PID caps must leave room for Environment Runtime and supervisors")
 		}
 		if r.Executor.CPUQuotaMicros > r.ServiceCPUQuotaMicros {
-			return errors.New("executor CPU quota must fit within Runner service quota")
+			return errors.New("executor CPU quota must fit within Environment Runtime service quota")
 		}
 	}
 	return nil
@@ -92,7 +92,7 @@ func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) (
 		return nil, fmt.Errorf("cannot verify guest memory for config at %s: %w", configPath, err)
 	}
 	if err := validateGuestMemoryCapacity(vm.Resources, actualMemory); err != nil {
-		return nil, fmt.Errorf("invalid Runner config at %s: %w", configPath, err)
+		return nil, fmt.Errorf("invalid Environment Runtime config at %s: %w", configPath, err)
 	}
 	return guestResourceProperties(vm.Resources), nil
 }

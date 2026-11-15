@@ -112,7 +112,7 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 	}
 	if err := migrateJournalSchema(ctx, db); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("migrate runner journal schema: %w", err)
+		return nil, fmt.Errorf("migrate Environment Runtime journal schema: %w", err)
 	}
 	conn, err := db.Conn(ctx)
 	if err != nil {
@@ -126,7 +126,7 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 	}
 	for _, statement := range journalTemporarySchema {
 		if _, err := conn.ExecContext(ctx, statement); err != nil {
-			return closeOnError(fmt.Errorf("create runner journal temporary schema: %w", err))
+			return closeOnError(fmt.Errorf("create Environment Runtime journal temporary schema: %w", err))
 		}
 	}
 	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
@@ -201,7 +201,7 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 			return rollback(errors.New("journal has Events after its seal"))
 		}
 		if !sealUID.Valid || sealUID.String == "" {
-			return rollback(errors.New("journal seal does not name a runner incarnation UID"))
+			return rollback(errors.New("journal seal does not name an Environment Runtime incarnation UID"))
 		}
 		seal = &SealState{Cursor: uint64(sealCursor.Int64), IncarnationUID: sealUID.String}
 	}
@@ -322,7 +322,7 @@ func (j *Journal) Since(ctx context.Context, afterCursor uint64, limit int) ([]*
 			return nil, err
 		}
 		if cursor < 0 || uint64(cursor) != expected {
-			return nil, errors.New("gap in stored runner EventEntry prefix")
+			return nil, errors.New("gap in stored Environment Runtime EventEntry prefix")
 		}
 		entry, err := decodeEntry(payload, j.sourceID, expected)
 		if err != nil {
@@ -336,7 +336,7 @@ func (j *Journal) Since(ctx context.Context, afterCursor uint64, limit int) ([]*
 	}
 	wanted := min(uint64(limit), through-afterCursor)
 	if uint64(len(entries)) != wanted {
-		return nil, errors.New("incomplete stored runner EventEntry prefix")
+		return nil, errors.New("incomplete stored Environment Runtime EventEntry prefix")
 	}
 	return entries, nil
 }
@@ -344,10 +344,10 @@ func (j *Journal) Since(ctx context.Context, afterCursor uint64, limit int) ([]*
 func decodeEntry(payload []byte, sourceID string, cursor uint64) (*eventlogpb.EventEntry, error) {
 	entry := &eventlogpb.EventEntry{}
 	if err := proto.Unmarshal(payload, entry); err != nil {
-		return nil, fmt.Errorf("decode stored runner EventEntry at cursor %d: %w", cursor, err)
+		return nil, fmt.Errorf("decode stored Environment Runtime EventEntry at cursor %d: %w", cursor, err)
 	}
 	if entry.GetCursor() != cursor || entry.GetOrigin().GetSourceId() != sourceID || entry.GetOrigin().GetSequence() != cursor {
-		return nil, errors.New("invalid stored runner EventEntry origin or cursor")
+		return nil, errors.New("invalid stored Environment Runtime EventEntry origin or cursor")
 	}
 	return entry, nil
 }
@@ -672,10 +672,10 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 	}
 	payload, err := proto.Marshal(entry)
 	if err != nil {
-		return nil, storageError("encode runner EventEntry", err)
+		return nil, storageError("encode Environment Runtime EventEntry", err)
 	}
 	if _, err := j.conn.ExecContext(ctx, "INSERT INTO event_entry (cursor, payload) VALUES (?, ?)", cursor, payload); err != nil {
-		return nil, storageError("insert runner EventEntry", err)
+		return nil, storageError("insert Environment Runtime EventEntry", err)
 	}
 	nextState := RecoveryState{ThroughCursor: uint64(through), HarnessRunning: harnessRunning, ActiveTurnID: activeTurn, Model: model, ReasoningEffort: effort}
 	applyCheckpoint(&nextState, entry)
@@ -1203,7 +1203,7 @@ func (j *Journal) NextAdapterBlock(ctx context.Context, adapterID, messageID str
 
 func (j *Journal) Seal(ctx context.Context, incarnationUID string) (uint64, error) {
 	if incarnationUID == "" {
-		return 0, errors.New("a journal seal requires a runner incarnation UID")
+		return 0, errors.New("a journal seal requires an Environment Runtime incarnation UID")
 	}
 	var cursor uint64
 	err := j.write(ctx, func(batch *journalBatch) error {
@@ -1241,7 +1241,7 @@ func (j *Journal) Seal(ctx context.Context, incarnationUID string) (uint64, erro
 
 func (j *Journal) Reopen(ctx context.Context, incarnationUID string) error {
 	if incarnationUID == "" {
-		return errors.New("journal reopening requires a runner incarnation UID")
+		return errors.New("journal reopening requires an Environment Runtime incarnation UID")
 	}
 	return j.write(ctx, func(batch *journalBatch) error {
 		if _, err := j.conn.ExecContext(ctx, "DELETE FROM seal"); err != nil {

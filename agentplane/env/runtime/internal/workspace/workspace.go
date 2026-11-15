@@ -99,7 +99,7 @@ func Ensure(ctx context.Context, cwd string, config Config) (string, error) {
 	parts := strings.Split(relative, string(filepath.Separator))
 	executable, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("locate runner executable for workspace creation: %w", err)
+		return "", fmt.Errorf("locate Environment Runtime executable for workspace creation: %w", err)
 	}
 	command := append([]string{executable, HelperMode, root}, parts...)
 	process, err := config.LaunchHelper(ctx, supervision.ProcessConfig{

@@ -75,7 +75,7 @@ type Resolved struct {
 
 func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, sandbox SandboxIdentity) error {
 	if err := control.Security.Validate(); err != nil {
-		return fmt.Errorf("Runner control security: %w", err)
+		return fmt.Errorf("Environment Runtime control security: %w", err)
 	}
 	if control.Security.Mode == environmentruntimetransport.Insecure {
 		return nil
@@ -87,15 +87,15 @@ func ValidateControlIdentity(control EnvironmentRuntimeControlConfiguration, san
 	}
 	identity, err := control.Security.TLS.LocalIdentity(x509.ExtKeyUsageServerAuth)
 	if err != nil {
-		return fmt.Errorf("Runner control certificate: %w", err)
+		return fmt.Errorf("Environment Runtime control certificate: %w", err)
 	}
 	workload, err := workloadid.Parse(identity)
 	if err != nil {
-		return fmt.Errorf("Runner control certificate: %w", err)
+		return fmt.Errorf("Environment Runtime control certificate: %w", err)
 	}
 	// The Sandbox's WorkloadCredential takes its name; the credential ID tells incarnations apart.
 	if workload.Namespace != sandbox.Namespace || workload.Name != sandbox.Name {
-		return errors.New("Runner control certificate does not name the configured Sandbox namespace and name")
+		return errors.New("Environment Runtime control certificate does not name the configured Sandbox namespace and name")
 	}
 	return nil
 }

@@ -23,8 +23,8 @@ const (
 	EnvironmentRuntimeTrustBundleName = "cluster-internal-ca-bundle"
 	EnvironmentRuntimeTrustBundleKey  = "ca-certificates.crt"
 
-	// The workload CA alone, which verifies the Gateway's client SVID at the runner's control
-	// listener and, in the egress sidecar or launcher relay, the server SVIDs a runner dials; the
+	// The workload CA alone, which verifies the Gateway's client SVID at the Environment Runtime's control
+	// listener and, in the egress sidecar or launcher relay, the server SVIDs the Environment Runtime dials; the
 	// cluster bundle above verifies only the Runtime's own chain. A Pod gets it as
 	// EnvironmentRuntimeWorkloadTrustFile beside ca.crt, a VM as its own filesystem.
 	EnvironmentRuntimeWorkloadTrustVolumeName = "runner-workload-trust"
@@ -150,7 +150,7 @@ func (r *Reconciler) ensurePodRuntimeCredential(ctx context.Context, sandbox *sa
 	pod := w.pod
 	id := pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]
 	if !validRuntimeCredentialID(id) {
-		// A legacy runner can stay published only while it is the exact incarnation already
+		// A legacy Environment Runtime can stay published only while it is the exact incarnation already
 		// recorded in status. A replacement without a credential must never inherit that route.
 		w.runtimeIncarnationPublished = previouslyPublishedRuntimeIncarnation(sandbox, w)
 		return w, &unready{reason: "RunnerCredentialMissing", message: fmt.Sprintf("Pod %s has no controller-issued runner credential", pod.Name)}, nil

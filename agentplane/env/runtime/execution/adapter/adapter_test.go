@@ -702,7 +702,7 @@ func TestConcurrentResumeDoesNotExceedSessionAdmissionLimit(t *testing.T) {
 }
 
 func TestExecutorAdmissionRefusalIsKnownRejection(t *testing.T) {
-	p := &peer{acquireErr: status.Error(codes.FailedPrecondition, "Runner has no configured Codex executor")}
+	p := &peer{acquireErr: status.Error(codes.FailedPrecondition, "Environment Runtime has no configured Codex executor")}
 	adapter, client := fixture(t, p)
 	response, _ := open(t, client, testScope(), nil)
 	if response.Status.GetOutcome() != executorpb.ExecutionStatus_OUTCOME_REJECTED || !strings.Contains(response.Status.GetMessage(), "no configured Codex executor") {

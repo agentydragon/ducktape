@@ -19,7 +19,7 @@ import (
 
 const runtimeWatchHeartbeatTimeout = 30 * time.Second
 
-// RuntimeWatcher observes a runner's facts directly. It is passive: reconnect and
+// RuntimeWatcher observes an Environment Runtime's facts directly. It is passive: reconnect and
 // incarnation-generation decisions belong to its caller.
 type RuntimeWatcher struct {
 	Security peertls.Security
@@ -41,23 +41,23 @@ func (w RuntimeWatcher) Watch(
 	receive func(*environmentruntimepb.WatchStateResponse) error,
 ) error {
 	if sandbox == nil || pod == nil {
-		return errors.New("Sandbox and runner Pod are required")
+		return errors.New("Sandbox and Environment Runtime Pod are required")
 	}
 	if receive == nil {
 		return errors.New("state response receiver is required")
 	}
 	if sandbox.UID == "" || pod.UID == "" || pod.Status.PodIP == "" {
-		return errors.New("Sandbox UID, runner Pod UID, and Pod IP are required")
+		return errors.New("Sandbox UID, Environment Runtime Pod UID, and Pod IP are required")
 	}
 	peerURI, err := (workloadid.ID{
 		Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: credentialID,
 	}).URI()
 	if err != nil {
-		return fmt.Errorf("derive runner peer identity: %w", err)
+		return fmt.Errorf("derive Environment Runtime peer identity: %w", err)
 	}
 	credentials, err := w.Security.ClientCredentials(peerURI)
 	if err != nil {
-		return fmt.Errorf("configure runner transport: %w", err)
+		return fmt.Errorf("configure Environment Runtime transport: %w", err)
 	}
 	target := net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(sandboxapi.EnvironmentRuntimeServicePort))
 	conn, err := grpc.NewClient(

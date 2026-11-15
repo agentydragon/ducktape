@@ -167,7 +167,7 @@ func (p *executionProxy) OpenSession(request *executorpb.OpenSessionRequest, str
 	if unconfigured {
 		return stream.Send(&executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
 			Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED,
-			Message: "Runner has no configured Codex executor",
+			Message: "Environment Runtime has no configured Codex executor",
 		}})
 	}
 	defer func() {

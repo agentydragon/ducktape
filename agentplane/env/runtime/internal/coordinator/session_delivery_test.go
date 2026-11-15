@@ -69,7 +69,7 @@ func (s *quiesceIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 			return err
 		}
 		if entry := frame.GetEntry(); entry == nil || entry.GetCursor() != cursor {
-			return errors.New("runner sent a nonsequential EventEntry")
+			return errors.New("Environment Runtime sent a nonsequential EventEntry")
 		}
 	}
 	if err := stream.Send(&ingresspb.Acknowledgement{Cursor: s.sealCursor - 1}); err != nil {
@@ -86,7 +86,7 @@ func (s *quiesceIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 		return err
 	}
 	if entry := frame.GetEntry(); entry == nil || entry.GetCursor() != s.sealCursor {
-		return errors.New("runner did not send the last EventEntry before the seal")
+		return errors.New("Environment Runtime did not send the last EventEntry before the seal")
 	}
 	frame, err = stream.Recv()
 	if err != nil {
@@ -94,7 +94,7 @@ func (s *quiesceIngress) Push(stream grpc.BidiStreamingServer[ingresspb.PushFram
 	}
 	sealed := frame.GetSealed()
 	if sealed == nil || sealed.GetCursor() != s.sealCursor {
-		return errors.New("runner sent the seal before the final journal cursor")
+		return errors.New("Environment Runtime sent the seal before the final journal cursor")
 	}
 	return stream.Send(&ingresspb.Acknowledgement{Cursor: s.sealCursor, Sealed: true})
 }

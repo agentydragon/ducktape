@@ -98,7 +98,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := p.Start(ctx); err == nil {
-			t.Fatal("missing Runner invocation marker admitted a native process")
+			t.Fatal("missing Environment Runtime invocation marker admitted a native process")
 		}
 		if _, err := p.Wait(ctx); err == nil {
 			t.Fatal("skipped invocation start lost its error")
@@ -811,7 +811,7 @@ func loadSystemdProofConfiguration(t *testing.T) (systemdProofRuntimeConfig, str
 	var config systemdProofRuntimeConfig
 	readSystemdProofJSON(t, "/run/agentplane/config/environment-runtime.json", &config)
 	if config.StateDir == "" {
-		t.Fatal("Runner configuration has no state_dir")
+		t.Fatal("Environment Runtime configuration has no state_dir")
 	}
 	var launch struct {
 		Sandbox struct {

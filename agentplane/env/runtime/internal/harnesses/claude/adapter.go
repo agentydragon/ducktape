@@ -581,7 +581,7 @@ func (a *claudeAdapter) answerControlRequest(ctx context.Context, frame types.SD
 		}
 		response.Subtype, response.Response = "success", payload
 	default:
-		message := fmt.Sprintf("the agentplane runner does not answer %q requests", header.Subtype)
+		message := fmt.Sprintf("the Environment Runtime does not answer %q requests", header.Subtype)
 		response.Subtype, response.Error = "error", &message
 	}
 	raw, err := json.Marshal(response)
@@ -934,7 +934,7 @@ func (a *claudeAdapter) peekStartedLocked(started []claudeStartedInput) ([]claud
 	for _, input := range started {
 		pending, ok := a.pending[input.messageUUID]
 		if !ok {
-			return nil, errors.New("Claude started an input the runner did not have pending")
+			return nil, errors.New("Claude started an input the Environment Runtime did not have pending")
 		}
 		confirmed = append(confirmed, pending)
 	}

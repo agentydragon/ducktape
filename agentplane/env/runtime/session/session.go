@@ -229,7 +229,7 @@ func (s *Session) recover(ctx context.Context) error {
 		}
 	}
 	if turn := s.Session().ActiveTurnID; turn != "" {
-		if err := s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: "the runner restarted while the turn was active"}, nil); err != nil {
+		if err := s.completeTurn(ctx, &eventpb.TurnCompleted{TurnId: turn, Status: eventpb.TurnStatus_TURN_STATUS_PROCESS_LOST, Error: "the Environment Runtime restarted while the turn was active"}, nil); err != nil {
 			return err
 		}
 	}
@@ -239,7 +239,7 @@ func (s *Session) recover(ctx context.Context) error {
 	}
 	for _, record := range commands {
 		if record.Command.GetInterruptTurn() != nil && !record.DispatchPlanned {
-			if err := s.NoopCommand(ctx, record.Command.CommandId, "the target turn is no longer active after the runner restarted", nil); err != nil {
+			if err := s.NoopCommand(ctx, record.Command.CommandId, "the target turn is no longer active after the Environment Runtime restarted", nil); err != nil {
 				return err
 			}
 		}

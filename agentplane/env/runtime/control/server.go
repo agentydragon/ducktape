@@ -147,7 +147,7 @@ func (s *Server) Authorize(ctx context.Context) (*Authorization, error) {
 	}
 	values, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "Runner control metadata is required")
+		return nil, status.Error(codes.Unauthenticated, "Environment Runtime control metadata is required")
 	}
 	value := func(name string) (string, bool) {
 		return oneMetadataValue(values.Get(name))
@@ -156,13 +156,13 @@ func (s *Server) Authorize(ctx context.Context) (*Authorization, error) {
 	incarnationUID, incarnationOK := value(IncarnationMetadata)
 	bootID, bootOK := value(BootMetadata)
 	if !sandboxOK || !incarnationOK || !bootOK {
-		return nil, status.Error(codes.Unauthenticated, "Runner control metadata is incomplete or invalid")
+		return nil, status.Error(codes.Unauthenticated, "Environment Runtime control metadata is incomplete or invalid")
 	}
 	if sandboxUID != s.config.SandboxUID {
-		return nil, status.Error(codes.PermissionDenied, "Runner control metadata names another Sandbox")
+		return nil, status.Error(codes.PermissionDenied, "Environment Runtime control metadata names another Sandbox")
 	}
 	if s.config.IsClosing() {
-		return nil, status.Error(codes.Unavailable, "Runner is closing")
+		return nil, status.Error(codes.Unavailable, "Environment Runtime is closing")
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -171,7 +171,7 @@ func (s *Server) Authorize(ctx context.Context) (*Authorization, error) {
 		current.incarnationUID != incarnationUID || bootID != s.config.BootID {
 		// A process restart can leave a caller briefly holding the previous boot's
 		// connection. Reject before admission with a retryable status.
-		return nil, status.Error(codes.Unavailable, "Runner control call does not match the current Runtime incarnation and boot ID")
+		return nil, status.Error(codes.Unavailable, "Environment Runtime control call does not match the current incarnation and boot ID")
 	}
 	return &Authorization{server: s, identity: current}, nil
 }
@@ -192,7 +192,7 @@ func (s *Server) Admit(ctx context.Context, admit func(*Authorization) error) er
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if err := s.validateLocked(authorization); err != nil {
-		return status.Error(codes.Unavailable, "Runner control call does not match the current Runtime incarnation")
+		return status.Error(codes.Unavailable, "Environment Runtime control call does not match the current incarnation")
 	}
 	return admit(authorization)
 }
@@ -367,7 +367,7 @@ func (s *Server) forwardWatchState(
 		if forceHeartbeat || lastResponse == nil || !proto.Equal(lastResponse, current) {
 			if err := streaming.SendWithin(ctx, forwardWriteTimeout, send, current); err != nil {
 				if errors.Is(err, streaming.ErrSendTimeout) {
-					return status.Error(codes.DeadlineExceeded, "Runner state write timed out")
+					return status.Error(codes.DeadlineExceeded, "Environment Runtime state write timed out")
 				}
 				return err
 			}

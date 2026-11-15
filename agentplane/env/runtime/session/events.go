@@ -34,7 +34,7 @@ func observation(value proto.Message) *eventpb.Event {
 			return e
 		}
 	}
-	panic(fmt.Sprintf("%T is not a runner observation", value))
+	panic(fmt.Sprintf("%T is not an Environment Runtime observation", value))
 }
 
 func (s *Session) RecordNativeRequest(ctx context.Context, requestID string, kind harness.NativeRequestKind, commandIDs []string) error {

@@ -43,7 +43,7 @@ func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	case harnessKind == sessionpb.Harness_HARNESS_CODEX && s.deps.codexAppServer != nil:
 		return s.startOnCodexServer(ctx)
 	default:
-		return errors.New("this runner is not configured for the selected harness")
+		return errors.New("this Environment Runtime is not configured for the selected harness")
 	}
 }
 

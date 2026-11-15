@@ -123,7 +123,7 @@ func (e EnvironmentVariables) resolve(environ map[string]string) (map[string]str
 		if value, ok := environ[name]; ok {
 			child[name] = value
 		} else {
-			zap.L().Warn("inherited variable is absent from Runner environment", zap.String("name", name))
+			zap.L().Warn("inherited variable is absent from Environment Runtime environment", zap.String("name", name))
 		}
 	}
 	for name, value := range e.Values {
@@ -290,10 +290,10 @@ func readConfiguration(path string) (Configuration, error) {
 	}
 	var file Configuration
 	if err := decodeStrict(data, &file); err != nil {
-		return Configuration{}, fmt.Errorf("invalid Runner configuration: %w", err)
+		return Configuration{}, fmt.Errorf("invalid Environment Runtime configuration: %w", err)
 	}
 	if file.Version != 2 {
-		return Configuration{}, errors.New("Runner configuration version must be 2")
+		return Configuration{}, errors.New("Environment Runtime configuration version must be 2")
 	}
 	return file, nil
 }
@@ -410,7 +410,7 @@ func (f Configuration) compose(launchPath string) (Resolved, map[string]string, 
 		return Resolved{}, nil, err
 	}
 	if _, ok := child["CODEX_EXEC_SERVER_URL"]; ok {
-		return Resolved{}, nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Runner executor configuration")
+		return Resolved{}, nil, errors.New("CODEX_EXEC_SERVER_URL is owned by Environment Runtime executor configuration")
 	}
 	claude, err := f.Claude.resolve(environ)
 	if err != nil {

@@ -185,7 +185,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		return nil, errors.New("environment Runtime requires Sandbox namespace, name and UID")
 	}
 	if err := config.Control.Security.Validate(); err != nil {
-		return nil, fmt.Errorf("Runner control security: %w", err)
+		return nil, fmt.Errorf("Environment Runtime control security: %w", err)
 	}
 	if config.Supervision != "pid1" && config.Supervision != "systemd" {
 		return nil, errors.New("environment Runtime requires explicit pid1 or systemd supervision")
@@ -207,7 +207,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	}
 	security, err := config.Control.Security.Open(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("open Runner control security: %w", err)
+		return nil, fmt.Errorf("open Environment Runtime control security: %w", err)
 	}
 	securityTransferred := false
 	defer func() {
@@ -218,15 +218,15 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 	if config.Control.Security.Mode != environmentruntimetransport.Insecure {
 		identity, err := security.LocalIdentity(x509.ExtKeyUsageServerAuth)
 		if err != nil {
-			return nil, fmt.Errorf("Runner control certificate: %w", err)
+			return nil, fmt.Errorf("Environment Runtime control certificate: %w", err)
 		}
 		workload, err := workloadid.Parse(identity)
 		if err != nil {
-			return nil, fmt.Errorf("Runner control certificate: %w", err)
+			return nil, fmt.Errorf("Environment Runtime control certificate: %w", err)
 		}
 		// The Sandbox's WorkloadCredential takes its name; the credential ID tells incarnations apart.
 		if workload.Namespace != config.Launch.Sandbox.Namespace || workload.Name != config.Launch.Sandbox.Name {
-			return nil, errors.New("Runner control certificate does not name the configured Sandbox namespace and name")
+			return nil, errors.New("Environment Runtime control certificate does not name the configured Sandbox namespace and name")
 		}
 	}
 	// Acquire the backing store before preparing any native supervision. The

@@ -17,7 +17,7 @@ func (r *Runtime) adoptIncarnation(ctx context.Context, uid string) error {
 		return err
 	}
 	if uid == "" {
-		return errors.New("Runner incarnation UID is required")
+		return errors.New("Environment Runtime incarnation UID is required")
 	}
 	r.transitionMu.Lock()
 	defer r.transitionMu.Unlock()

@@ -101,7 +101,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 		return errors.New("VM process launcher has not fenced its owner scope")
 	}
 	if b.launcher.lifetimeMarker == "" {
-		return errors.New("VM process launcher has no Runner invocation guard")
+		return errors.New("VM process launcher has no Environment Runtime invocation guard")
 	}
 	conn, cancelConnection, err := openSystemdConnection()
 	if err != nil {
@@ -224,7 +224,7 @@ func (b *systemdBackend) start(ctx context.Context, p *Process) error {
 				} else {
 					pid := service.ExecMainPID
 					if pid == 0 {
-						err = errors.New("native start job completed without executing a process; Runner invocation may have ended")
+						err = errors.New("native start job completed without executing a process; Environment Runtime invocation may have ended")
 						break
 					}
 					if service.InvocationID == "" {
