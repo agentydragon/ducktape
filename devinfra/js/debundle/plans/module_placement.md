@@ -37,15 +37,17 @@ The intended flow is:
 prepared program + accepted ownership + permitted moves
     -> placement constraints
     -> forced groups, forbidden owners, remaining relations
-    -> constructive placement
-    -> exact graph certification
+    -> constructive placement and import schedule
+    -> exact placement and schedule certification
     -> reviewed selectors and names -> exact application -> materialization
 ```
 
 Use existing typed graph, atom, assignment and gate objects. Add constraint and
 query capabilities to them; do not create another serialized graph or parallel
-interpretation of dependency kinds. The emitter's current import-order policy
-and the analyzer's assumptions remain unchanged by this work.
+interpretation of dependency kinds. The analyzer's assumptions remain unchanged. First make the current import-order
+policy an explicit checked schedule without changing acceptance. Then derive
+alternative schedules from the same constraints for placements the current
+policy rejects. Preserve an already accepted schedule whenever possible.
 
 ## Problem and guarantee
 
@@ -207,6 +209,47 @@ local SCC alone is not a sufficient cache key.
 Ordinary prediction returns a decision and concise evidence. Detailed rejection
 reports are rendered on demand; they must not be rebuilt on every cheap probe.
 
+## Explicit import scheduling
+
+A placement does not uniquely determine a valid ESM traversal. Retain a typed
+schedule containing ordered import targets for entry and every emitted module,
+including phantom imports. The verifier checks the exact required target sets,
+then runs actual ESM DFS and checks every constraining edge. A freely chosen
+module topological rank is not a schedule witness; acyclic `C` alone is not
+sufficient for schedulability of `I`.
+
+Stage this change deliberately:
+
+1. Materialize the current `EsmImportOrder` policy into a concrete schedule and
+   prove equivalent acceptance. Share that retained object through
+   `AssignmentAnalysis`, the gate, candidate translation/effect validation and
+   lowering. Emission must consume the verified schedule, not recalculate one.
+2. Construct alternative schedules from the canonical constraints only when the
+   current policy fails. Verify every result with the same traversal verifier.
+   Keep accepted existing order stable. Prove the constructor's coverage, or
+   explicitly retain an incomplete status until that proof is supplied.
+3. Retain the checked schedule witness in machine-generated plans when needed for
+   exact replay. Keep generated schedules out of authored module YAML. Applying
+   a plan checks its snapshot, complete placement and schedule before any write;
+   ordinary materialization must derive the same accepted schedule.
+
+Three real-source CLI probes obtained during design must become regressions:
+
+- A residual atom placed after two fixed owners fails Pass 2 while placing it
+  before them succeeds, with no constraining cycle or eager dependency into
+  entry. This pins owner-name sensitivity of the original policy.
+- An incoming eager consumer joining a different fixed owner repairs that
+  extraction; either individual move rejects but the simultaneous batch runs
+  correctly. Outgoing dependency closure alone misses this companion.
+- Two required residual atoms have incompatible single-new-owner lexical gaps
+  under the original policy, but two new owners work. This characterizes that
+  policy, not an eternal requirement for two semantic owners after scheduling
+  is derived explicitly.
+
+Implement this scheduling work in this project. It is not a deferred permanent
+TODO. Keep policy-characterization tests distinct from semantic impossibility
+claims and add independent tiny import-list enumeration as the schedule oracle.
+
 ## Constructing the placement constraints
 
 Use a worklist. Record each deduction with its source edges, fixed-owner premise
@@ -353,21 +396,34 @@ not establish universal completeness.
 
 The implementation sequence is:
 
-1. Pin canonical-model equivalence and missing gate regressions. Document the
-   necessary-and-sufficient placement relation and the existing index's limits.
-2. Deliver shared whole-batch prediction with differential tests. Preserve the
-   existing check/apply contracts and final checker certification.
-3. Deliver graph-derived implications, owner exclusions and worklist propagation,
-   with completion-based soundness tests and structural work-count tests.
-4. Complete the construction and coverage derivation, including the ESM and
-   fresh-owner ordering cases. Make unresolved relations explicit before choosing
-   any additional mechanism. This is a prerequisite for the generator switch.
-5. Replace production enumeration with the proved constructive generator. Preserve
-   result/scope contracts; move the exhaustive implementation to test support
-   after it no longer supplies the shipped complete invocation.
-6. Consolidate duplicate placement paths and update all agent guidance and
-   packaged examples. Consider bounded owner reorganization only after a witness
-   demonstrates additional residual reduction.
+1. Commit this complete plan and W9, including scheduling and the three neutral
+   CLI regressions. Pin canonical-model equivalence before changing semantics.
+2. Deliver shared whole-batch prediction with differential tests, preserving
+   existing exact check/apply contracts.
+3. Introduce explicit schedules preserving the current policy first; route the
+   gate, translation/effect validation and emitter through the retained witness.
+   Then derive alternative schedules with a coverage argument and independent
+   raw import-list oracle.
+4. Deliver graph-derived implications, owner exclusions and worklist propagation
+   with completion-based soundness and structural work-count tests. Include
+   incoming consumers, conditional promotion and joint owner/order relations.
+5. Complete the construction and general coverage derivation across the entire
+   permitted scope, including required queries and several destinations. Resolve
+   only the genuine remaining choices exposed by constraints. This proof is a
+   prerequisite for replacing the complete implementation.
+6. Replace production Cartesian enumeration with the proved constructor and move
+   exhaustive placement and schedule enumeration into test support. Keep honest
+   found/exhausted/incomplete/error outcomes and scope/budget contracts.
+7. Consolidate duplicate placement paths; deliver matching CLI, stable docs,
+   AGENTS.md and repository-owned skills. Build skill archives, execute the
+   packaged workflow and validate fresh downstream residual reduction while
+   preserving authored owners and all omitted assignments. Consider bounded
+   owner reorganization only after it demonstrably unblocks another peel.
+
+The project is complete only when the production constructor and schedule path
+meet those proof, independent-test, packaging and downstream obligations. Publish
+reviewable commits on the existing PR, splitting dependent PRs if needed, and
+report validation and exact-head CI separately.
 
 Keep the currently delivered complete invocation until its replacement has both
 the coverage argument and differential/CLI evidence. This migration constraint
@@ -375,7 +431,7 @@ does not make exhaustive enumeration the desired long-term implementation.
 The old advisor remains advisory until migrated; an empty shortlist is never an
 impossibility proof.
 
-The public workflow remains `inspect -> propose -> check -> apply -> run`.
+The public workflow is `inspect -> propose -> review -> check -> preview/apply -> run`.
 Keep existing fixed-owner and destination-scope options; strategy selection must
 not silently change permitted ownership edits. Do not add a menu of overlapping
 search algorithms as a substitute for the shared analysis. `found` means an exact

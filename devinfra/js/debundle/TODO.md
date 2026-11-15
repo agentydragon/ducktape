@@ -619,6 +619,12 @@ paths and source-unit IDs belong in the consuming repo.
   production architecture with prepared placement constraints, graph-derived
   implications/owner exclusions and inexpensive whole-batch prediction. Keep
   authored owners fixed by default and retain global ESM ordering checks.
+  Implement explicit verified import schedules: preserve the current policy in
+  the first refactor, then derive alternatives from constraints. The gate,
+  translation/effect validation and emitter must consume the same witness; saved
+  machine plans may retain it, authored YAML must not. This scheduling work is
+  part of W9, not a permanently deferred follow-up. Pin the three real-source
+  ordering/joint-move cases in the plan before changing their behavior.
 
   Prove deduction soundness and construction coverage, including joint moves,
   promoted-edge activation and fresh-owner ordering. Do not assume generic search
