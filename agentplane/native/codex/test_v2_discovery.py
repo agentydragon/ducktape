@@ -16,62 +16,19 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
 from typing import Any
-from uuid import uuid4
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel
 
 from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
+from agentplane.native.codex.testing.probe_support import rpc, server
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
-
-
-class ProbeRequest(BaseModel):
-    """Experimental RPCs retain their full response in the native trace."""
-
-    id: str
-    method: str
-    params: dict[str, Any]
-
-
-async def rpc(process: AsyncNativeProcess, method: str, **params: Any) -> dict[str, Any]:
-    request = ProbeRequest(id=str(uuid4()), method=method, params=params)
-    receipt = await process.request(request, matches=lambda frame: frame.get("id") == request.id)
-    assert "error" not in receipt.frame, receipt.frame
-    result = receipt.frame["result"]
-    assert isinstance(result, dict)
-    return result
-
-
-@asynccontextmanager
-async def server(codex: CodexHarness, model: OpenAIResponses, incarnation: str) -> AsyncIterator[AsyncNativeProcess]:
-    endpoint = f"{model.origin}/v1"
-    logs = codex.logs / incarnation
-    logs.mkdir()
-    async with AsyncNativeProcess(
-        logs,
-        scenarios.command(codex.binary, endpoint=endpoint, max_retries=scenarios.MAX_RETRIES),
-        cwd=codex.workspace,
-        environment={
-            **codex.base_environment,
-            **scenarios.environment(endpoint=endpoint, token="test-key", codex_home=str(codex.codex_home)),
-        },
-    ) as process:
-        await rpc(
-            process,
-            "initialize",
-            clientInfo={"name": "agentplane-v2-probe", "version": "0.1"},
-            capabilities={"experimentalApi": True},
-        )
-        await process.send(wire.InitializedNotification())
-        yield process
 
 
 async def listed(process: AsyncNativeProcess, method: str, **params: Any) -> list[Any]:
@@ -92,7 +49,7 @@ async def test_v2_child_discovery_and_resume(
 ) -> None:
     active = scenario == "crash-active"
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "initial") as process:
+        async with server(codex, openai_responses, "initial", client_name="agentplane-v2-probe") as process:
             root = (
                 await rpc(
                     process,
@@ -191,7 +148,7 @@ async def test_v2_child_discovery_and_resume(
             spawn_model = wire.SubAgentActivityItem.model_validate(spawn["item"])
             assert spawn_model.model == MODEL
             assert spawn_model.reasoning_effort == EFFORT
-        async with server(codex, openai_responses, "resumed") as resumed:
+        async with server(codex, openai_responses, "resumed", client_name="agentplane-v2-probe") as resumed:
             assert await listed(resumed, "thread/loaded/list") == []
             restored = (await rpc(resumed, "thread/resume", threadId=root_id, excludeTurns=True))["thread"]
             assert restored["id"] == root_id
@@ -234,7 +191,7 @@ async def test_concurrent_child_transcripts_and_recovery(
     child_ids: dict[str, str] = {}
     completed_items: dict[str, list[dict[str, Any]]] = {}
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "siblings") as process:
+        async with server(codex, openai_responses, "siblings", client_name="agentplane-v2-probe") as process:
             root = (
                 await rpc(
                     process,
@@ -381,7 +338,9 @@ async def test_concurrent_child_transcripts_and_recovery(
                     ]
                 assert await process.crash() < 0
                 await parent.wait_client_closed()
-        async with server(codex, openai_responses, "recovered-siblings") as recovered:
+        async with server(
+            codex, openai_responses, "recovered-siblings", client_name="agentplane-v2-probe"
+        ) as recovered:
             assert await listed(recovered, "thread/loaded/list") == []
             for name, child_id in child_ids.items():
                 snapshot = (await rpc(recovered, "thread/read", threadId=child_id, includeTurns=True))["thread"]
@@ -411,7 +370,7 @@ async def test_nested_child_ancestry_and_terminal_recovery(
     namespace = "collaboration" if v2 else "multi_agent_v1"
     ancestry: dict[str, str] = {}
     async with asyncio.timeout(90):
-        async with server(codex, openai_responses, "nested") as process:
+        async with server(codex, openai_responses, "nested", client_name="agentplane-v2-probe") as process:
             root = (
                 await rpc(
                     process,
@@ -502,7 +461,7 @@ async def test_nested_child_ancestry_and_terminal_recovery(
                     await parent.wait_client_closed()
                 if ending == "crash-active":
                     await current.wait_client_closed()
-        async with server(codex, openai_responses, "nested-recovery") as recovered:
+        async with server(codex, openai_responses, "nested-recovery", client_name="agentplane-v2-probe") as recovered:
             for child_id, parent_id in ancestry.items():
                 snapshot = (await rpc(recovered, "thread/read", threadId=child_id, includeTurns=True))["thread"]
                 assert snapshot["id"] == child_id
