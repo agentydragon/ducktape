@@ -3,10 +3,7 @@ package sessiondelegation
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,6 +17,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
@@ -29,39 +28,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	authenticationv1 "k8s.io/api/authentication/v1"
+	"google.golang.org/grpc/credentials"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-const (
-	integrationNamespace = "test-delegation-sandboxes"
-	integrationActorUID  = "test-actions-uid"
-	integrationToken     = "test-actions-token"
-)
-
-var integrationActor = auth.Account{Namespace: integrationNamespace, Name: "test-session-delegation"}
-
-// actorReviews proves only the Action Service actor's token, bound to one Pod.
-type actorReviews struct{}
-
-func (actorReviews) Create(_ context.Context, review *authenticationv1.TokenReview, _ metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	if review.Spec.Token != integrationToken {
-		return &authenticationv1.TokenReview{}, nil
-	}
-	return &authenticationv1.TokenReview{Status: authenticationv1.TokenReviewStatus{
-		Authenticated: true, Audiences: review.Spec.Audiences,
-		User: authenticationv1.UserInfo{
-			Username: fmt.Sprintf("system:serviceaccount:%s:%s", integrationActor.Namespace, integrationActor.Name),
-			UID:      integrationActorUID,
-			Extra: map[string]authenticationv1.ExtraValue{
-				"authentication.kubernetes.io/pod-name": {"test-actions-pod"},
-				"authentication.kubernetes.io/pod-uid":  {"test-actions-pod-uid"},
-			},
-		},
-	}}, nil
-}
+const integrationNamespace = "test-delegation-sandboxes"
 
 // identitySandbox is one live Sandbox naming an Identity.
 type identitySandbox struct {
@@ -108,10 +81,6 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}, Spec: sandboxapi.SandboxSpec{Identity: &sandboxapi.IdentityRef{Name: ownerIdentity.GetName()}, Running: true}}
 	environmentRules := access.NewIndex()
 	environmentRules.PutIdentity(owner.Identity)
-	resolver, err := auth.NewResolver(actorReviews{}, "test-dispatcher", []string{integrationNamespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
 	identities, err := auth.KubernetesIdentityUIDs(owner.Objects, policyNamespace)
 	if err != nil {
 		t.Fatal(err)
@@ -120,14 +89,23 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	for method := range dispatcher.Methods(auth.Rule{}) {
 		methods = append(methods, method)
 	}
-	served, err := dispatcher.MethodsWithDelegation(resolver, auth.Delegator{Account: integrationActor, IdentityCallers: true}, identities, methods)
+	rule, err := auth.Services([]string{peertls.ActionsURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	served, err := dispatcher.Methods(rule).WithServiceDelegation(methods, []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
 	sessions := dispatcher.NewStore(postgres.Open(t, dispatcherDatabase.Clone(t)), 10)
-	server := grpc.NewServer(served.ServerOptions(time.Second)...)
+	ca := transporttesting.NewCA(t)
+	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(served.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &dispatcher.Service{
-		Store: sessions, DispatcherCallers: sets.New(integrationActor), WatchLease: 10 * time.Second,
+		Store: sessions, DispatcherServices: sets.New(peertls.ActionsURI), WatchLease: 10 * time.Second,
 		Sandboxes: identitySandbox{sandbox: sandbox, environment: environment, identity: ownerIdentity}, EnvironmentRules: environmentRules,
 		PolicyReady: func() error { return nil },
 	})
@@ -137,11 +115,12 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte(integrationToken+"\n"), 0o600); err != nil {
-		t.Fatal(err)
+	leaf := ca.Issue(t, peertls.ActionsURI)
+	clientTLS := &peertls.ClientTLS{
+		CAFile: leaf.CAFile, ServerURI: peertls.SessionDispatcherURI,
+		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: peertls.ActionsURI,
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 10*time.Second, nil, workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), "", 10*time.Second, clientTLS, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,9 +177,9 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	recorded, ok := queued.Attribution.(*dispatcher.DelegatedIdentityAttribution)
-	if !ok || recorded.Identity.GetUid() != ownerIdentity.GetUid() || recorded.Delegation.Actor.GetAccount().GetName() != integrationActor.Name ||
-		recorded.Delegation.Action.RequestID != requestID.String() {
+	recorded, ok := queued.Attribution.(*dispatcher.ServiceAttribution)
+	if !ok || recorded.Identity.GetUid() != ownerIdentity.GetUid() || recorded.ActorSPIFFEID != peertls.ActionsURI || recorded.Action == nil ||
+		recorded.Action.RequestID != requestID.String() {
 		t.Fatalf("queued input attributed to %#v, want the Action Service acting for %v in request %v", queued.Attribution, ownerIdentity, requestID)
 	}
 

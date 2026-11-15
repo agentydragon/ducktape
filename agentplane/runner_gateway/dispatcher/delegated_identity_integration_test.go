@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,6 +11,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadgrpc "github.com/agentydragon/ducktape/agentplane/identity/auth/grpc"
 	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,12 +56,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	rules.PutIdentity(other.Identity)
 	var policyError error
 
-	actor := auth.Account{Namespace: caller.Namespace, Name: "test-delegating-actions"}
-	resolver, err := auth.NewResolver(tokenReviewStub{"test-actions-token": {account: actor, uid: "test-actions-uid", pod: true}},
-		authorityTestAudience, []string{caller.Namespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	const actor = peertls.ActionsURI
 	identities, err := auth.KubernetesIdentityUIDs(owner.Objects, policyNamespace)
 	if err != nil {
 		t.Fatal(err)
@@ -69,15 +65,24 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	for method := range Methods(auth.Rule{}) {
 		delegated = append(delegated, method)
 	}
-	methods, err := MethodsWithDelegation(resolver, auth.Delegator{Account: actor, IdentityCallers: true}, identities, delegated)
+	rule, err := auth.Services([]string{actor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	methods, err := Methods(rule).WithServiceDelegation(delegated, []auth.ServiceDelegator{{SPIFFEID: actor}}, identities)
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
 	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
-	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
+	ca := transporttesting.NewCA(t)
+	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{
-		Store: store, DispatcherCallers: sets.New(actor), Sandboxes: inventory,
+		Store: store, DispatcherServices: sets.New(actor), Sandboxes: inventory,
 		EnvironmentRules: rules, PolicyReady: func() error { return policyError },
 		Hub: hub, WatchLease: 10 * time.Second,
 	})
@@ -87,11 +92,12 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	}
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("test-actions-token\n"), 0o600); err != nil {
-		t.Fatal(err)
+	leaf := ca.Issue(t, actor)
+	clientTLS := &peertls.ClientTLS{
+		CAFile: leaf.CAFile, ServerURI: peertls.SessionDispatcherURI,
+		CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: actor,
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), tokenFile, 10*time.Second, nil, workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), "", 10*time.Second, clientTLS, workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,15 +144,10 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := &DelegatedIdentityAttribution{Identity: ownerIdentity, Delegation: IdentityDelegation{
-		Actor:    serviceAccountIdentityFor(actor, "test-actions-uid"),
-		ActorPod: PodIdentity{Name: "dispatcher-backend", UID: "dispatcher-backend-uid"},
-		Action:   ActionCorrelation{RequestID: requestID, ExecutionID: executionID},
-	}}
-	recorded, ok := queued.Attribution.(*DelegatedIdentityAttribution)
-	if !ok || !proto.Equal(recorded.Identity, want.Identity) || !proto.Equal(recorded.Delegation.Actor, want.Delegation.Actor) ||
-		recorded.Delegation.ActorPod != want.Delegation.ActorPod || recorded.Delegation.Action != want.Delegation.Action {
-		t.Fatalf("Dispatch attributed to %#v, want %#v", queued.Attribution, want)
+	recorded, ok := queued.Attribution.(*ServiceAttribution)
+	if !ok || recorded.ActorSPIFFEID != actor || !proto.Equal(recorded.Identity, ownerIdentity) ||
+		recorded.Action == nil || *recorded.Action != (ActionCorrelation{RequestID: requestID, ExecutionID: executionID}) {
+		t.Fatalf("Dispatch attribution = %#v", queued.Attribution)
 	}
 	if got, err := client.GetSession(actingFor(ownerIdentity), &dispatcherpb.GetSessionRequest{SessionId: owned}); err != nil || got.GetSession().GetSessionId() != owned {
 		t.Fatalf("delegated Identity GetSession: %v, %v", got, err)
@@ -200,9 +201,9 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 	if err != nil || !proto.Equal(createdRow.ExecutionIdentity, ownerIdentity) {
 		t.Fatalf("delegated created Session executes as %v, %v", createdRow, err)
 	}
-	creator, ok := createdRow.Attribution.(*DelegatedIdentityAttribution)
-	if !ok || !proto.Equal(creator.Identity, otherIdentity) || creator.Delegation.Actor.GetAccount().GetName() != actor.Name ||
-		creator.Delegation.Action.RequestID != requestID || creator.Delegation.Action.ExecutionID != executionID {
+	creator, ok := createdRow.Attribution.(*ServiceAttribution)
+	if !ok || !proto.Equal(creator.Identity, otherIdentity) || creator.ActorSPIFFEID != actor || creator.Action == nil ||
+		creator.Action.RequestID != requestID || creator.Action.ExecutionID != executionID {
 		t.Fatalf("delegated creator provenance = %#v", createdRow.Attribution)
 	}
 	if _, err := client.CreateSession(actingFor(ownerIdentity), createAsOther); status.Code(err) != codes.NotFound {
