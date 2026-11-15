@@ -13,6 +13,7 @@ from agentplane.system_tests.suites import pod_runners
 from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
 from util.net import Listener
 
+# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
 pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin",)
 pytestmark = pytest.mark.asyncio(loop_scope="module")
 

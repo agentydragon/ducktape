@@ -384,9 +384,6 @@ py_test(
     deps = _POD_DEPS + ["//agentplane/system_tests/deployment:pytest_plugin"],
 )
 
-# The two manual targets share one source; Gazelle must not add an unsharded ordinary target.
-# gazelle:exclude test_pod_sequential_spike.py
-
 # Group compatible shared-runner probes together. Prior cbce799899 run ce7ff66d spans
 # estimate roughly 216/229 seconds; this is an allocation hypothesis, not a speed result.
 _POD_SEQUENTIAL_A = " or ".join([
@@ -399,9 +396,51 @@ _POD_SEQUENTIAL_A = " or ".join([
     "an_unknown_history_session_is_not_found",
 ])
 
+# Unsharded standard-pytest control; all three experimental targets remain manual.
+py_test(
+    name = "test_pod_sequential_spike",
+    size = "enormous",
+    srcs = ["test_pod_sequential_spike.py"],
+    data = [
+        "//agentplane/crds",
+        K3S_BINARY,
+        ":pod_image_manifest",
+        "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
+        "//agentplane/system_tests/suites:pod_manifests",
+        "@cert_manager_v1_21_2_release//file",
+    ],
+    env = {
+        "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
+        "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
+        "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
+    },
+    exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
+        "test.runner-recycling-key": k3s_recycling_key(vm = False),
+    },
+    main = "test_pod_sequential_spike.py",
+    tags = K3S_TAGS + ["manual"],
+    deps = [
+        ":pod_cases",
+        ":pod_runners",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:dispatcher_transport",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//util:net",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_pod_sequential_a_spike",
     size = "enormous",
+    srcs = ["test_pod_sequential_spike.py"],
     args = [
         "-k",
         "'" + _POD_SEQUENTIAL_A + "'",
@@ -426,11 +465,13 @@ py_test(
     },
     main = "test_pod_sequential_spike.py",
     tags = K3S_TAGS + ["manual"],
+    deps = _POD_DEPS + ["//agentplane/system_tests/deployment:pytest_plugin"],  # keep: sibling target shares the sequential source
 )
 
 py_test(
     name = "test_pod_sequential_b_spike",
     size = "enormous",
+    srcs = ["test_pod_sequential_spike.py"],
     args = [
         "-k",
         "'not (" + _POD_SEQUENTIAL_A + ")'",
@@ -455,6 +496,7 @@ py_test(
     },
     main = "test_pod_sequential_spike.py",
     tags = K3S_TAGS + ["manual"],
+    deps = _POD_DEPS + ["//agentplane/system_tests/deployment:pytest_plugin"],  # keep: sibling target shares the sequential source
 )
 
 # This suite scales Dispatcher and deletes controller Pods on its own stack.
