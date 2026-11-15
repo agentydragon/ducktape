@@ -235,6 +235,8 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert edge_container["livenessProbe"]["httpGet"]["path"] == "/healthz"
     assert edge_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     edge_config = yaml.safe_load(_resource(docs, "ConfigMap", "mcp-edge-settings")["data"]["settings.yaml"])
+    assert "port" not in edge_config
+    assert edge_config["http_port"] == 8081
     assert edge_config["actions_target"] == (
         f"{fixture_chart.ACTIONS_SERVICE.fqdn}:{fixture_chart.ACTIONS_SERVICE.port.number}"
     )
