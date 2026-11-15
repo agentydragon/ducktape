@@ -1,0 +1,49 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
+load("//devinfra/js:prettier_js_tree.bzl", "prettier_js_tree")
+load("//devinfra/python:defs.bzl", "py_test")
+
+package(default_testonly = True)
+
+js_binary(
+    name = "make_fixture_tree",
+    entry_point = "make_fixture_tree.mjs",
+)
+
+js_run_binary(
+    name = "fixture_tree",
+    srcs = [],
+    args = ["$(RULEDIR)/fixture_tree"],
+    out_dirs = ["fixture_tree"],
+    tool = ":make_fixture_tree",
+)
+
+prettier_js_tree(
+    name = "formatted_all",
+    src = ":fixture_tree",
+)
+
+prettier_js_tree(
+    name = "formatted_app",
+    src = ":fixture_tree",
+    input_subdir = "app",
+    prettier = "//:node_modules/prettier",
+    prettier_config = ":custom_prettierrc.cjs",
+)
+
+py_test(
+    name = "prettier_js_tree_test",
+    srcs = ["prettier_js_tree_test.py"],
+    data = [
+        ":formatted_all",
+        ":formatted_app",
+    ],
+    env = {
+        "APP_TREE": "$(rlocationpath :formatted_app)",
+        "ALL_TREE": "$(rlocationpath :formatted_all)",
+    },
+    deps = [
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)

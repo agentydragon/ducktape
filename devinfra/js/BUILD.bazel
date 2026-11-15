@@ -5,7 +5,10 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/python:defs.bzl", "py_binary", "py_test")
 
 exports_files(
-    ["eslint.typed.config.js"],
+    [
+        "eslint.typed.config.js",
+        "prettier_js_tree.mjs",
+    ],
     visibility = ["//visibility:public"],
 )
 
