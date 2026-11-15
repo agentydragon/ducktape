@@ -1,7 +1,7 @@
 # Agentplane service boundaries
 
 The integration app is a user-facing composition layer, not a backend dependency. The former
-Sandbox Service is not deployed: the Runner Gateway's `EnvironmentService` accepts authenticated
+Sandbox Service is not deployed: the Sandbox Controller's `EnvironmentService` accepts authenticated
 management requests from the app and Action Service and writes Sandbox desired state to Kubernetes.
 The Sandbox Controller reconciles resources and owns
 `Sandbox.status`.
@@ -13,11 +13,11 @@ and shared infrastructure, never services to the app.
 
 ```mermaid
 flowchart LR
-    App[Integration app] -->|authenticated management facade| Gateway[Runner Gateway]
-    Gateway --> Kubernetes[Kubernetes API: Sandbox spec]
+    App[Integration app] -->|authenticated management facade| Controller[Sandbox Controller + EnvironmentService]
+    Controller --> Kubernetes[Kubernetes API: Sandbox spec]
     App -->|generated PolicyService facade| Policy[Policy Controller]
     Policy --> Kubernetes
-    App -->|health probe| Gateway
+    App -->|health probe| Gateway[Runner Gateway]
     App -->|UID/owner-fenced live inventory and status| Proxy[Per-Sandbox Runner Proxy]
     App -->|Session creation and durable commands| Dispatcher[Session Dispatcher]
     Dispatcher -->|delivery through runner proxy| Gateway
@@ -28,7 +28,6 @@ flowchart LR
     Notifications --> Gateway
     Notifications --> History
     Notifications --> Actions
-    Controller[Sandbox Controller] --> Kubernetes
     Controller --> Gateway
     Gateway --> Runners[Runners]
     Proxy --> Runners

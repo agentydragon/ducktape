@@ -19,7 +19,6 @@ from agentplane.net.peertls.config import (
     Security,
     ServiceSPIFFEID,
 )
-from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
 
 type ServiceAccountName = Annotated[str, StringConstraints(pattern=r"^[^/]+/[^/]+$")]
 
@@ -132,46 +131,6 @@ class Settings(BaseModel):
     dispatcher_callers: Set[ServiceAccountName] = Field(
         min_length=1, description="ServiceAccounts admitted as Dispatcher callers, as namespace/name."
     )
-    environment_readers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="ServiceAccounts granted read access to all managed Environments.",
-    )
-    environment_managers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Direct Pod-bound ServiceAccounts allowed to manage Environments.",
-    )
-    environment_launchers: Set[ServiceAccountName] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Direct Pod-bound Action brokers authorized to create Environments.",
-    )
-    environment_service_readers: Set[ServiceSPIFFEID] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Exact service SVIDs granted broad EnvironmentService inventory reads.",
-    )
-    environment_service_managers: Set[ServiceSPIFFEID] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Exact service SVIDs granted EnvironmentService management mutations.",
-    )
-    environment_service_launchers: Set[ServiceSPIFFEID] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Exact service SVIDs granted creation with a complete Action origin.",
-    )
-    environment_service_operators: Set[ServiceSPIFFEID] = Field(
-        default_factory=frozenset,
-        exclude_if=lambda value: not value,
-        description="Exact service SVIDs granted explicit EnvironmentService resume authority.",
-    )
-    environment_service_delegation: ServiceDelegation | None = Field(
-        default=None,
-        exclude_if=lambda value: not value,
-        description="Independent certificate actors allowed to call exact EnvironmentService read or resume methods as a live Identity.",
-    )
     delegation: DelegationSettings | None = Field(
         default=None,
         description="Independent Actions delegation trust; does not grant direct or privileged caller access.",
@@ -192,13 +151,6 @@ class Settings(BaseModel):
         exclude_if=lambda value: not value,
         description="Exact Dispatcher service SVIDs allowed to request automatic Sandbox wake, subject to wakeOnSend.",
     )
-    operator_callers: Set[ServiceAccountName] | None = Field(
-        default=None,
-        description=(
-            "Direct, Pod-bound ServiceAccounts authorized to explicitly resume a Sandbox, including a requested stop; "
-            "this does not grant delegation or automatic wake authority."
-        ),
-    )
     sandbox_controller_account: ServiceAccountName | None = Field(
         default=None, description="ServiceAccount admitted to Quiesce through the Gateway, as namespace/name."
     )
@@ -212,16 +164,6 @@ class Settings(BaseModel):
     executor_callers: Set[ServiceAccountName] = Field(
         default_factory=frozenset, description="ServiceAccounts allowed to open fixed exec-server streams."
     )
-    runtime_catalog: Catalog | None = Field(
-        default=None,
-        description="Deployment-published runtime offers and template-scoped workspace guidance for discovery.",
-    )
-
-    @model_validator(mode="after")
-    def validate_operator_callers(self) -> Settings:
-        if self.operator_callers and not self.operator_callers <= self.dispatcher_callers:
-            raise ValueError("operator_callers must be a subset of dispatcher_callers")
-        return self
 
     @model_validator(mode="after")
     def validate_service_caller_scopes(self) -> Settings:
@@ -232,16 +174,10 @@ class Settings(BaseModel):
                 self.runtime_proxy_controller_callers,
                 self.executor_service_callers,
                 self.dispatcher_service_callers,
-                self.environment_service_readers,
-                self.environment_service_managers,
-                self.environment_service_launchers,
-                self.environment_service_operators,
                 self.wake_service_callers,
             )
         )
-        service_delegation_present = (
-            self.dispatcher_service_delegation is not None or self.environment_service_delegation is not None
-        )
+        service_delegation_present = self.dispatcher_service_delegation is not None
         spiffe_listener = any(method.mode == "spiffe" for method in self.rpc.auth)
         if (service_callers_present or service_delegation_present) and not spiffe_listener:
             raise ValueError("service caller settings require rpc.auth to include spiffe")
@@ -263,18 +199,6 @@ class Settings(BaseModel):
             }
             if not set(self.dispatcher_service_delegation.methods) <= dispatcher_methods:
                 raise ValueError("dispatcher_service_delegation methods must belong to SessionDispatcher")
-        if self.environment_service_delegation is not None:
-            delegated_methods = {
-                "/agentplane.environments.v1.EnvironmentService/ListEnvironments",
-                "/agentplane.environments.v1.EnvironmentService/WatchEnvironments",
-                "/agentplane.environments.v1.EnvironmentService/GetEnvironment",
-                "/agentplane.environments.v1.EnvironmentService/WatchEnvironment",
-                "/agentplane.environments.v1.EnvironmentService/ResumeEnvironment",
-            }
-            if not set(self.environment_service_delegation.methods) <= delegated_methods:
-                raise ValueError(
-                    "environment_service_delegation methods must be allowed EnvironmentService delegation methods"
-                )
         return self
 
     @model_validator(mode="after")
@@ -299,28 +223,14 @@ class Settings(BaseModel):
             raise ValueError("kubernetes_client_qps must be -1 or nonnegative")
         return value
 
-    @field_serializer(
-        "dispatcher_callers",
-        "environment_readers",
-        "environment_managers",
-        "environment_launchers",
-        "gateway_callers",
-        "executor_callers",
-    )
+    @field_serializer("dispatcher_callers", "gateway_callers", "executor_callers")
     def sorted_accounts(self, value: Set[str]) -> list[str]:
         return sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))
 
-    @field_serializer(
-        "environment_service_readers",
-        "environment_service_managers",
-        "environment_service_launchers",
-        "environment_service_operators",
-        "wake_service_callers",
-        "dispatcher_service_callers",
-    )
+    @field_serializer("wake_service_callers", "dispatcher_service_callers")
     def sorted_service_callers(self, value: Set[str]) -> list[str]:
         return sorted(value)
 
-    @field_serializer("wake_callers", "operator_callers")
+    @field_serializer("wake_callers")
     def sorted_optional_accounts(self, value: Set[str] | None) -> list[str] | None:
         return None if value is None else sorted(value, key=lambda account: tuple(account.split("/", maxsplit=1)))

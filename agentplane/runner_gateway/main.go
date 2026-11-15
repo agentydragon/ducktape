@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
-	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/grpc/graceful"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
@@ -31,7 +30,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/gateway"
 	"github.com/agentydragon/ducktape/agentplane/runner_gateway/internal/sandboxinventory"
@@ -255,25 +253,9 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	store := dispatcher.NewStore(db, c.QueueCap)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	environmentRules := access.NewIndex()
-	policyHealth := watchhealth.New()
-	policyWatches := reader.NewWatches(config, policyHealth)
-	if err := reader.WatchRules(policyWatches, environmentRules, c.PolicyNamespace, access.Ready); err != nil {
-		return fmt.Errorf("configure environment policy watches: %w", err)
-	}
-	go policyWatches.Run(ctx)
-	defer policyHealth.MarkDraining()
-	policyReady := func() error {
-		if !policyHealth.Available() {
-			return errors.New("environment policy state is unavailable")
-		}
-		return nil
-	}
 	lifecycleManager, err := lifecycle.NewManager(lifecycle.Options{
 		Namespace: c.Namespace, Objects: objects, WakeBudget: lifecycleWakeBudget{store: store},
 		WakeCallers: c.WakeCallers, WakeServiceCallers: c.WakeServiceCallers,
-		OperatorCallers: c.OperatorCallers, OperatorServiceCallers: c.EnvironmentServiceOperators,
-		EnvironmentRules: environmentRules, PolicyReady: policyReady,
 	})
 	if err != nil {
 		return err
@@ -282,20 +264,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	environmentService, err := environments.New(c.Namespace, objects, c.RuntimeCatalog, lifecycleManager, sets.New(c.EnvironmentReaders...), environments.ManagementOptions{
-		Managers: sets.New(c.EnvironmentManagers...), Launchers: sets.New(c.EnvironmentLaunchers...),
-		ServiceReaders: sets.New(c.EnvironmentServiceReaders...), ServiceManagers: sets.New(c.EnvironmentServiceManagers...),
-		ServiceLaunchers: sets.New(c.EnvironmentServiceLaunchers...),
-	})
-	if err != nil {
-		return err
-	}
 	var delegatedActors []auth.Account
 	if c.Delegation != nil {
 		delegatedActors = append(delegatedActors, c.Delegation.Actor)
 	}
-	dispatchAccounts := append(append(append(append([]auth.Account{}, c.DispatcherCallers...), c.EnvironmentReaders...), c.EnvironmentManagers...), c.EnvironmentLaunchers...)
-	workloadNamespaces := accountNamespaces(dispatchAccounts, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
+	workloadNamespaces := accountNamespaces(c.DispatcherCallers, &auth.Account{Namespace: c.Namespace}, delegatedActors...)
 	dispatchAuth, err := auth.NewResolver(kube.AuthenticationV1().TokenReviews(), c.DispatcherAudience, workloadNamespaces)
 	if err != nil {
 		return err
@@ -375,8 +348,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	// Native placement owns a policy reader independently of explicit resume. The selected
-	// Environments/Sessions split can move each consumer without sharing an in-process index.
+	// Dispatcher admission owns this policy view independently of the Environments process.
 	dispatchEnvironmentRules := access.NewIndex()
 	dispatchPolicyHealth := watchhealth.New()
 	dispatchPolicyWatches := reader.NewWatches(config, dispatchPolicyHealth)
@@ -404,22 +376,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	dispatcherMethods := dispatcher.Methods(dispatcherRule)
 	methods := auth.HealthMethods()
 	maps.Copy(methods, dispatcherMethods)
-	environmentMethods, err := environments.WithServiceCallers(environments.Methods(dispatcherAuth),
-		c.EnvironmentServiceReaders, c.EnvironmentServiceManagers, c.EnvironmentServiceLaunchers, c.EnvironmentServiceOperators)
-	if err != nil {
-		return fmt.Errorf("configure EnvironmentService service roles: %w", err)
-	}
-	if c.EnvironmentServiceDelegation != nil {
-		identityReader, err := auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
-		if err != nil {
-			return err
-		}
-		environmentMethods, err = environmentMethods.WithServiceDelegation(c.EnvironmentServiceDelegation.Methods, c.EnvironmentServiceDelegation.Actors, identityReader)
-		if err != nil {
-			return fmt.Errorf("configure EnvironmentService service delegation: %w", err)
-		}
-	}
-	maps.Copy(methods, environmentMethods)
 	if c.Delegation != nil {
 		delegator := auth.Delegator{
 			Account: c.Delegation.Actor, IdentityCallers: c.Delegation.IdentityCallers,
@@ -444,7 +400,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 			return fmt.Errorf("configure service delegation: %w", err)
 		}
 	}
-	// Delegation remains scoped to the configured Dispatcher and Environment methods. The Gateway proxy and Executor
+	// Delegation remains scoped to the configured Dispatcher methods. The Gateway proxy and Executor
 	// retain their separate method-scoped grants.
 	proxyMethods, err := g.Methods()
 	if err != nil {
@@ -464,7 +420,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		}),
 	)...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, service)
-	environmentpb.RegisterEnvironmentServiceServer(server, environmentService)
 	defer server.Stop()
 	g.RegisterProxy(server)
 	if len(c.ExecutorCallers) > 0 {

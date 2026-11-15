@@ -292,6 +292,11 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             )
         )
         stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
+        with pytest.raises(grpc.aio.AioRpcError) as retired_environment_api:
+            await environment_service_pb2_grpc.EnvironmentServiceStub(channel).ListEnvironments(
+                environments_pb.ListEnvironmentsRequest(), metadata=authentication.metadata, timeout=15
+            )
+        assert retired_environment_api.value.code() == grpc.StatusCode.UNIMPLEMENTED
         with pytest.raises(grpc.aio.AioRpcError) as unauthenticated:
             await stub.ListDispatches(pb.ListDispatchesRequest(filter=pb.DispatchFilter(sandbox=sandbox)), timeout=15)
         assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED

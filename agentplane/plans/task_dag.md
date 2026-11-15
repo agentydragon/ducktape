@@ -4023,7 +4023,10 @@ Ready on that configuration (2026-11-15). App and Actions retargeting landed in 
 both services have rolled on staging. Config-first retirement removes the Gateway component
 EnvironmentService grants before decoder/registration removal, retaining automatic wake grants. CLI support
 (#16550) and route/launch configuration (#16568) landed after the accepting runner-disk pin.
-Keep the Gateway registration until existing CLI callers have moved and service callers have rolled.
+Config retirement (#16593) is merged and applied on staging; both Gateway Pods rolled Ready at
+06:34 UTC on 2026-11-15. Gateway registration/decoder removal follows the App fixture migration
+(#16598) and the remaining old Sandbox CLI launch moving. RBAC reduction
+follows the removal image pin and rollout.
 The agreed destination remains the Sandbox Controller (operator, 2026-11-14 01:10 UTC).
 Explicit resume already reserves no budget ([lifecycle contract](../runner_gateway/environments/lifecycle/SPEC.md)).
 Then move `runner_gateway/environments` with `lifecycle`,

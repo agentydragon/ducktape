@@ -110,12 +110,14 @@ Service caller routing:
    launch-time URLs after their accepting tools image is pinned. Pin caller code before enabling
    new caller settings; roll callers and verify their effective configuration. Long-lived watches
    reconnect and reauthorize normally. Update system overview diagrams in the implementation PRs.
-4. Retire Gateway component EnvironmentService roles, delegation and catalog from manifests first,
+4. Retire Gateway component EnvironmentService roles, delegation and catalog from manifests first (#16593),
    retaining its decoder and registration. App (#16565) and Actions (#16573) have rolled on the
    Controller target. CLI routes and launch URLs (#16568) apply to new incarnations; the old live
    `codex-cleanup-tls` launch still lacks `AGENTPLANE_ENVIRONMENTS_URL` as of 2026-11-15 06:19 UTC.
    Coordinate its cycle before retiring the endpoint. Retain Dispatcher automatic-wake grants.
-5. After the caller cutover and config rollout, remove the old registration and obsolete decoders;
+5. Config retirement #16593 is merged and applied on staging; Gateway Pods rolled Ready at 06:34 UTC
+   on 2026-11-15. After the live CLI cutover and App fixture migration #16598, remove the old
+   registration and obsolete decoders;
    then remove unused RBAC only after that accepting image is pinned and running. Move the serving
    implementation internal once no external importer remains. Preserve automatic wake with Sessions.
 

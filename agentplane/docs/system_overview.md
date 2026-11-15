@@ -11,14 +11,12 @@ history and browser sync, notifications, actions and egress) and direct API defi
 The Controller serves EnvironmentService on each replica at `sandbox-controller:8082`, with
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
 reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
-preserves typed delegation. Existing Sandbox CLI processes retain the Gateway API during overlap.
-The Gateway has no deployed component EnvironmentService roles or delegation; its retained API
-registration serves the final workload CLI overlap. Runtime-proxy calls remain at the Gateway.
+preserves typed delegation. Runtime-proxy calls remain at the Gateway, which no longer registers
+EnvironmentService.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
-`sandbox-controller:8082`; Session calls keep their Gateway route. Existing Sandbox processes keep
-their launch-time URLs, so Gateway EnvironmentService remains registered until those callers move.
+`sandbox-controller:8082`; Session calls keep their Gateway route.
 
 ```mermaid
 flowchart LR
@@ -29,7 +27,7 @@ flowchart LR
     app[Integration API]
     subgraph services[Agentplane services]
         direction TB
-        gw[Runner Gateway TLS RPC :8080: Dispatcher, EnvironmentService, proxy and observation]
+        gw[Runner Gateway TLS RPC :8080: Dispatcher, proxy and observation]
         sandboxctl[Sandbox Controller + EnvironmentService :8082]
         policy[Policy Controller]
         hs[History TLS RPC :8080: readers and JournalIngress]
@@ -312,7 +310,7 @@ flowchart LR
     relay -.->|mTLS proxy hop and CONNECT| egress
     egress -.->|Opaque Runner SVID TLS to :8080| rpc
     egress -.->|Sandbox SVID TLS: EnvironmentService| sandboxctl
-    rpc -->|Method-authorized Session and legacy EnvironmentService calls| dispatcher
+    rpc -->|Method-authorized Session calls| dispatcher
 ```
 
 Managed Pod and VM callers receive the `AGENTPLANE_SESSIONS_URL`, but no bearer credential for the
@@ -320,7 +318,7 @@ Sandbox route. The URL targets the `session-dispatcher.<namespace>.svc.cluster.l
 Gateway's shared TLS RPC listener. The egress sidecar or VM launcher relay maps that exact origin through
 central CONNECT and presents its Runner SVID on the same `:8080` listener; the central proxy carries the
 destination TLS bytes opaquely. The Gateway resolves the current Sandbox credential and ServiceAccount UID before applying
-the unchanged Session and EnvironmentService method rules. No Dispatcher audience token is projected
+the unchanged Session method rules. No Dispatcher audience token is projected
 into Sandbox Pods. Backend checks of the Sandbox identity and
 object UID remain authoritative; network reachability grants no Session authority. The Action Service
 continues to use the configured Dispatcher audience and a pod-bound Actions token on the opted-in
