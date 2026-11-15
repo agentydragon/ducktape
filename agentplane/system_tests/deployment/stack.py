@@ -256,7 +256,7 @@ def _baseline_evidence(
         "pki_controller_uids": controllers,
         "vm_controller_uids": vm_controllers,
         "workspace_storage_class_uid": (virtualization.storage_class_uid(k3s) if virtualization is not None else None),
-        "layers_in_memory": not fixture.vm_sandboxes,
+        "layers_in_memory": fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT,
         "model_endpoint": models.url if isinstance(models, rendered_fixture.LocalModel) else None,
     }
 
@@ -352,10 +352,12 @@ def running_stack(
     fixture = inputs.fixture
     # Virtualized suites keep image layers on disk: a 2026-10-30 tmpfs trial beside six VM guests
     # lost an executor without a reliable warm-start gain.
-    uses_virtualization = fixture.vm_sandboxes or fixture.firecracker_sandboxes
-    if fixture.firecracker_sandboxes and os.environ.get("AGENTPLANE_K3S_REQUIRE_KVM") != "1":
+    uses_virtualization = fixture.runtime is not rendered_fixture.SandboxRuntime.POD
+    if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER) and os.environ.get(
+        "AGENTPLANE_K3S_REQUIRE_KVM"
+    ) != "1":
         raise ValueError("the Firecracker fixture requires a KVM-enabled executor")
-    if fixture.firecracker_sandboxes and persist_infrastructure:
+    if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER) and persist_infrastructure:
         raise ValueError("the Firecracker fixture does not retain executor snapshots")
     cert_manager, trust_manager = pki_infrastructure.releases()
     pki_images = inputs.pki_image_layouts
@@ -415,7 +417,7 @@ def running_stack(
                 process = k3s.start(
                     layers_in_memory=not uses_virtualization,
                     preserve_image_store=k3s.image_store_is_retainable(),
-                    database_in_memory=fixture.firecracker_sandboxes,
+                    database_in_memory=(fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER),
                 )
                 cleanup.callback(k3s.stop, process)
             setup.add_event("node Ready")
@@ -524,7 +526,7 @@ def running_stack(
                     if deferred_images
                     else None
                 )
-                if fixture.firecracker_sandboxes:
+                if fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER:
                     # The raw boot disk's cold unpack competes with PostgreSQL initialization and
                     # k3s SQLite writes on the KVM worker. Finish it before starting app workloads.
                     guest_import.result()

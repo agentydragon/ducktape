@@ -55,7 +55,7 @@ def test_vm_clean_certification_requires_empty_vm_inventory_and_removed_storage_
     monkeypatch.setattr(node, "kubectl", kubectl)
     fixture = rendered_fixture.RenderedFixture(
         backend=rendered_fixture.Backend.LOCAL_MODEL,
-        vm_sandboxes=True,
+        runtime=rendered_fixture.SandboxRuntime.KUBEVIRT,
         namespace="systest",
         app_origin="http://app.test.invalid",
         browser_services=[],

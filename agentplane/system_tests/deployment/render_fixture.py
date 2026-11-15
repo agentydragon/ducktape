@@ -1,38 +1,18 @@
-"""Render one ordinary, central-recovery or VM fixture chart into `$K3S_FIXTURE_DIR`.
-
-`K3S_FIXTURE_VARIANT` selects an ordinary, Pod, VM or Firecracker fixture.
-The selector is an environment variable because the app's Settings parse `sys.argv` as their own.
-"""
+"""Serialize a chart recipe and verify that runtime placeholders survived synthesis."""
 
 import os
 from dataclasses import asdict
-from enum import StrEnum
 from pathlib import Path
 
-from agentplane.system_tests.deployment import fixture_chart
 from agentplane.system_tests.deployment.rendered_fixture import (
-    MODEL_PLACEHOLDERS,
     OPERATOR_TOKEN_KEY_PLACEHOLDER,
     PLACEHOLDERS,
-    Backend,
-    BrowserService,
     LocalModel,
     McpInputs,
     Models,
     PublicLiteLLM,
     RenderedFixture,
 )
-from agentplane.system_tests.k3s.namespaces import NAMESPACE
-
-
-class FixtureVariant(StrEnum):
-    LOCAL_MODEL = "local-model"
-    LOCAL_MODEL_CENTRAL = "local-model-central"
-    LOCAL_MODEL_CENTRAL_NATIVE = "local-model-central-native"
-    LOCAL_MODEL_POD = "local-model-pod"
-    LOCAL_MODEL_VM = "local-model-vm"
-    LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
-    PUBLIC_LITELLM = "public-litellm"
 
 
 def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: McpInputs | None) -> None:
@@ -50,97 +30,6 @@ def write_fixture(path: Path, fixture: RenderedFixture, *, models: Models, mcp: 
     path.write_text(text)
 
 
-def _render(
-    output: Path,
-    variant: FixtureVariant,
-    backend: Backend,
-    *,
-    vm_sandboxes: bool,
-    firecracker_sandboxes: bool = False,
-    central_sampler: bool = False,
-    profile: fixture_chart.FixtureProfile = fixture_chart.FixtureProfile.FULL,
-) -> None:
-    models = MODEL_PLACEHOLDERS[backend]
-    fixture = RenderedFixture(
-        backend=backend,
-        vm_sandboxes=vm_sandboxes,
-        firecracker_sandboxes=firecracker_sandboxes,
-        central_sampler=central_sampler,
-        namespace=NAMESPACE,
-        app_origin=fixture_chart.APP_ORIGIN if profile.app_enabled else None,
-        browser_services=[
-            BrowserService(
-                name=fixture_chart.APP_SERVICE.name,
-                host=fixture_chart.APP_SERVICE.host,
-                fqdn=fixture_chart.APP_SERVICE.fqdn,
-            )
-        ]
-        if profile.app_enabled
-        else [],
-        mcp_fixtures=None,
-        operator_tokens=fixture_chart.OPERATOR_TOKENS if profile.app_enabled else None,
-        objects=fixture_chart.objects(
-            **asdict(PLACEHOLDERS),
-            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER if profile.app_enabled else None,
-            models=models,
-            vm_sandboxes=vm_sandboxes,
-            firecracker_sandboxes=firecracker_sandboxes,
-            central_sampler=central_sampler,
-            profile=profile,
-        ),
-    )
-    write_fixture(output / f"{variant}.json", fixture, models=models, mcp=None)
-
-
-def render_variant(output: Path, variant: FixtureVariant) -> None:
-    match variant:
-        case FixtureVariant.LOCAL_MODEL:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
-        case FixtureVariant.LOCAL_MODEL_CENTRAL:
-            _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
-        case FixtureVariant.LOCAL_MODEL_CENTRAL_NATIVE:
-            _render(
-                output,
-                variant,
-                Backend.LOCAL_MODEL,
-                vm_sandboxes=False,
-                central_sampler=True,
-                profile=fixture_chart.FixtureProfile.APP_FREE,
-            )
-        case FixtureVariant.LOCAL_MODEL_POD:
-            _render(
-                output,
-                variant,
-                Backend.LOCAL_MODEL,
-                vm_sandboxes=False,
-                profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
-            )
-        case FixtureVariant.LOCAL_MODEL_VM:
-            _render(
-                output,
-                variant,
-                Backend.LOCAL_MODEL,
-                vm_sandboxes=True,
-                profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
-            )
-        case FixtureVariant.LOCAL_MODEL_FIRECRACKER:
-            _render(
-                output,
-                variant,
-                Backend.LOCAL_MODEL,
-                vm_sandboxes=False,
-                firecracker_sandboxes=True,
-                profile=fixture_chart.FixtureProfile.NO_MCP_EDGE,
-            )
-        case FixtureVariant.PUBLIC_LITELLM:
-            _render(output, variant, Backend.PUBLIC_LITELLM, vm_sandboxes=False)
-
-
-def main() -> None:
-    output = Path(os.environ["K3S_FIXTURE_DIR"])
-    variant = FixtureVariant(os.environ["K3S_FIXTURE_VARIANT"])
-    render_variant(output, variant)
-
-
-if __name__ == "__main__":
-    main()
+def write_output(fixture: RenderedFixture, *, models: Models, mcp: McpInputs | None = None) -> None:
+    """Write the calling recipe's declared Bazel output."""
+    write_fixture(Path(os.environ["K3S_FIXTURE_OUTPUT"]), fixture, models=models, mcp=mcp)

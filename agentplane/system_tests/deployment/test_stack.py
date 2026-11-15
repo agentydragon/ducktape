@@ -18,7 +18,7 @@ from cluster.cdk8s.agentplane.namespaces import kubernetes_accounts_namespace
 def fixture() -> rendered_fixture.RenderedFixture:
     return rendered_fixture.RenderedFixture(
         backend=rendered_fixture.Backend.LOCAL_MODEL,
-        vm_sandboxes=False,
+        runtime=rendered_fixture.SandboxRuntime.POD,
         namespace=NAMESPACE,
         app_origin="http://app.test.invalid",
         browser_services=[],

@@ -1,6 +1,6 @@
 # System test deployment
 
-This package owns fixture charts and rendering, fresh application workloads, database and identity
+This package owns shared chart additions and rendering support, fresh application workloads, database and identity
 fixtures, per-action tracing, and the pytest deployment adapter. Retained node setup belongs to
 [`k3s/`](../k3s/README.md); VM runtime, storage and guest images belong to
 [`vm/`](../vm/README.md). The guide below describes how these parts compose into a running stack.
@@ -99,11 +99,13 @@ generates (`oidc.static_ed25519_keys`); the test process signs the token, so no 
 fixtures keep Dex as the app's issuer, and the stack takes the operator's token from Dex's password
 grant for the app's client ([`operator_tokens.py`](operator_tokens.py)).
 
-The central-recovery suites use the plain operator-token fixture with the central sampler enabled.
-They retain the common services and MCP edge, while omitting the separate Dex, `mcp-everything` and
-OAuth fixture workloads; suites that exercise those OAuth and MCP servers keep the full MCP fixture.
+Each suite owns a Python deployment recipe beside its test entrypoints. Recipes call `add_*`
+functions directly, then synthesize a chart and serialize its runtime metadata. The rendering rule
+only runs that recipe; it does not select services, images, plugins or executor policy.
+The native recovery recipe adds backend services, the central sampler and a bound test caller.
+The History outage recipe also adds App and MCP edge. Neither adds Dex or OAuth fixture servers.
 
-A suite using the MCP fixture stack takes the `rendered/local-model-mcp-fixtures.json`
+A suite using the MCP fixture stack takes the `//agentplane/system_tests/suites/mcp:mcp_manifests`
 rendering and also imports and runs Dex, `mcp-everything` and the OAuth MCP fixture, with
 test-only Dex clients, operator, MCP server and Action groups. The
 standalone MCP edge serves its OAuth and MCP endpoints in this fixture; Actions keeps its separate
@@ -242,7 +244,7 @@ Exact bootstrap and seal-before-stop ordering belongs in deterministic
 
 VM stacks, `test_vm` and the opt-in `test_vm_manual` and `test_vm_oom`,
 ([system tests README](../README.md)), run on a stack rendered with VM Sandboxes
-(`rendered/local-model-vm.json`), so [`sandboxes.py`](../vm/sandboxes.py)
+(`//agentplane/system_tests/suites:vm_manifests`), so [`sandboxes.py`](../vm/sandboxes.py)
 installs production's KubeVirt release with `useEmulation` (QEMU TCG; the executor has no `/dev/kvm`)
 and Kyverno's admission controller, which adds the egress relay to each launcher Pod as in
 production. The fixture applies once KubeVirt's VirtualMachine API is served: the Sandbox Controller

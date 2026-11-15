@@ -39,6 +39,14 @@ class Backend(StrEnum):
     PUBLIC_LITELLM = "public-litellm"
 
 
+class SandboxRuntime(StrEnum):
+    """The deployment's lifecycle implementation, independent of test scenarios."""
+
+    POD = "pod"
+    KUBEVIRT = "kubevirt"
+    FIRECRACKER = "firecracker"
+
+
 @dataclass(frozen=True)
 class RuntimeInputs:
     ca_cert: str
@@ -128,9 +136,7 @@ class McpFixtures(BaseModel):
 
 class RenderedFixture(BaseModel):
     backend: Backend
-    # VM templates use KubeVirt and Kyverno. Firecracker uses KubeVirt's KVM device plugin.
-    vm_sandboxes: bool
-    firecracker_sandboxes: bool = False
+    runtime: SandboxRuntime
     central_sampler: bool = False
     namespace: str
     app_origin: str | None
