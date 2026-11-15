@@ -36,6 +36,11 @@ class CaseBatch:
     async def result(self, name: str) -> Result:
         return await asyncio.shield(self._results[name])
 
+    def _finish_pending(self, error: BaseException) -> None:
+        for future in self._results.values():
+            if not future.done():
+                future.set_result(Result(error=error, seconds=0))
+
     async def _run_case(self, name: str, case: Case) -> None:
         error: BaseException | None = None
         with tracer.start_as_current_span(
@@ -44,7 +49,13 @@ class CaseBatch:
             try:
                 with tracer.start_as_current_span("system_test.scenario", attributes={"pytest.nodeid": case.nodeid}):
                     await case.run()
-            except (Exception, pytest.fail.Exception, pytest.skip.Exception, pytest.xfail.Exception) as caught:
+            except (
+                Exception,
+                asyncio.CancelledError,
+                pytest.fail.Exception,
+                pytest.skip.Exception,
+                pytest.xfail.Exception,
+            ) as caught:
                 # The matching pytest item re-raises this after its owned cleanup completes.
                 error = caught
                 span.set_status(Status(StatusCode.ERROR, str(caught)))
@@ -97,12 +108,10 @@ class CaseBatch:
         async def drive() -> None:
             try:
                 await batch._run(cases, limit=limit, exclusive=exclusive)
-            except (Exception, BaseExceptionGroup) as error:
+            except BaseException as error:
                 # An internal driver error must wake every result waiter as well as
                 # propagate at fixture teardown; otherwise pytest waits until timeout.
-                for future in batch._results.values():
-                    if not future.done():
-                        future.set_result(Result(error=error, seconds=0))
+                batch._finish_pending(error)
                 raise
 
         driver = asyncio.create_task(drive())
@@ -110,5 +119,9 @@ class CaseBatch:
             yield batch
         finally:
             driver.cancel()
-            with suppress(asyncio.CancelledError):
-                await driver
+            try:
+                with suppress(asyncio.CancelledError):
+                    await driver
+            finally:
+                # The driver can be cancelled before its coroutine starts.
+                batch._finish_pending(asyncio.CancelledError("case batch closed"))

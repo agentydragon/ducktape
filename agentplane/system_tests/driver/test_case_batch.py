@@ -199,13 +199,23 @@ async def test_caller_cancellation_propagates_and_drains_case_cleanup() -> None:
         with pytest.raises(asyncio.CancelledError):
             await use_batch()
     assert cleaned.is_set()
-    result_waiting.clear()
-    pending_result = asyncio.create_task(wait_for_result(batch_holder[0]))
-    await result_waiting.wait()
-    assert not pending_result.done()
-    pending_result.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await pending_result
+    assert isinstance((await batch_holder[0].result("active")).error, asyncio.CancelledError)
+
+
+async def test_cancelled_case_reports_a_result_without_cancelling_its_peer() -> None:
+    peer_finished = asyncio.Event()
+
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    async def peer() -> None:
+        peer_finished.set()
+
+    cases = {"cancelled": Case("cancelled", cancelled), "peer": Case("peer", peer)}
+    async with asyncio.timeout(2), CaseBatch.running(cases, limit=2, exclusive=None) as batch:
+        assert isinstance((await batch.result("cancelled")).error, asyncio.CancelledError)
+        assert (await batch.result("peer")).error is None
+    assert peer_finished.is_set()
 
 
 async def test_exclusive_failure_does_not_run_other_cases() -> None:
@@ -241,10 +251,11 @@ async def test_early_exit_cancels_and_drains_active_cleanup() -> None:
 
     cases = {"active": Case("active", active), "queued": Case("queued", queued)}
     async with asyncio.timeout(2):
-        async with CaseBatch.running(cases, limit=1, exclusive=None):
+        async with CaseBatch.running(cases, limit=1, exclusive=None) as batch:
             await started.wait()
         assert cleaned.is_set()
         assert not queued_started.is_set()
+        assert isinstance((await batch.result("queued")).error, asyncio.CancelledError)
 
 
 async def test_driver_failure_wakes_result_waiters(monkeypatch: pytest.MonkeyPatch) -> None:
