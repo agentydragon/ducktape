@@ -19,6 +19,13 @@ use crate::ids::ModuleId;
 use crate::purity::Purity;
 use crate::{SourceUnitClass, StatementKind};
 
+pub use crate::saved_proto::proto::{
+    BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
+    ClassMembersPublicationWriter, NativeIntegrityGuard, NativeMutationOperation,
+    NativeProgramPointKind, NativePrototypeMutationKind, NeverWrittenReach,
+    RecordFactoryRejectionReason, ReturnedRecordUseKind,
+};
+
 /// Accumulates the minimum start-line and maximum end-line across a
 /// collection of `SourceLocation`s. Used to compute the
 /// `source_line_range` field of `AtomicGroupReport` and similar.
@@ -126,19 +133,6 @@ pub struct NeverWrittenOverride {
     pub reach: NeverWrittenReach,
 }
 
-/// How an overridden witness reaches a named family.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NeverWrittenReach {
-    /// The receiver may be any native object.
-    UnknownReceiver,
-    /// A write to the global object, whose unknown key may name a binding or
-    /// which couples every prototype slot.
-    GlobalObject,
-    /// A write the census resolves to the family without an exact path.
-    Family,
-}
-
 /// One applied `commuting_statements` premise: the pair's source units
 /// (`unit:N` keys into `nodes`) and the `sequenced` edges (`edges[].id`) it
 /// made inert. An applied premise inerts at least one edge.
@@ -168,17 +162,6 @@ pub struct ImportedCallableSummaryReport {
     pub returned_record: Option<ReturnedRecordSummary>,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CallbackFactoryUseKind {
-    /// The checked call suppressed opaque callback promotion.
-    CallTiming,
-    /// The checked return shape retained callbacks in a deferred result.
-    ReturnShape,
-    /// The private initializer result was omitted as a reachability root.
-    ClosedResultRoot,
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallbackFactoryUseReport {
     pub summary_ref: String,
@@ -186,13 +169,6 @@ pub struct CallbackFactoryUseReport {
     pub lexical_statement_ordinal: SourceUnitOrdinal,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReturnedRecordUseKind {
-    CallTiming,
-    ReturnCapability,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -405,34 +381,6 @@ pub struct NativeUnreachableBranch {
     pub(crate) callback_span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, strum::Display)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum NativeMutationOperation {
-    PropertyAssignment,
-    BindingAssignment,
-    Update,
-    Delete,
-    MutationCall,
-}
-
-#[derive(
-    Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, strum::Display,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum NativeIntegrityGuard {
-    OrdinaryObjectPrototype,
-    ArrayIntrinsics,
-    HostPromiseResolve,
-    NativeCallIdentity,
-    SetIterable,
-    LocalClassConstruction,
-    ForeignCallSummary,
-    /// `Object.fromEntries` over an Array `map` whose callbacks are retained.
-    MappedFromEntries,
-}
-
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct NativeIntegrityCheck {
     pub guard: NativeIntegrityGuard,
@@ -459,36 +407,12 @@ pub struct NativePrototypeMutation {
     pub(crate) span: swc_common::Span,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum NativePrototypeMutationKind {
-    Write,
-    Delete,
-    Reflective,
-    Escape,
-    DynamicScope,
-}
-
 /// An evaluated property-specific absence obligation, including its source blockers.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct NativePrototypePropertyCheck {
     pub property: String,
     pub intact: bool,
     pub blocking_mutation_count: usize,
-}
-
-/// Diagnostic effects activated before a modeled native premise. This does
-/// not certify the premise or impose an emitted-module ordering constraint.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum NativeProgramPointKind {
-    Evaluate,
-    Invoke,
-    Call,
-    OwnProperty,
-    Heap,
-    Callbacks,
-    Model,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -938,105 +862,6 @@ pub enum BoundedInvocationFallbackPathEdge {
     DescriptorMapRetainedValue,
     EscapedCallbackPoolExpansion,
     ClassMembersCapability,
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BoundedInvocationFallbackUnknownPathReason {
-    SeedUnavailable,
-    RetainedReferencePathUnavailable,
-}
-
-/// The operation that first exposed class members to the opaque callback pool.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ClassMembersPublicationWriter {
-    GlobalOrIntrinsicMemberWrite,
-    InstanceMemberWrite,
-    OwnDescriptorMapMemberWrite,
-    UntrackedReceiverMemberWrite,
-    PublishedObjectMemberWrite,
-    MemberChainStore,
-    PossibleCallbackRetention,
-    BoundedInvocationFallback,
-    NoReentryCallRetention,
-    LocalOperationFallback,
-    ThrowValuePublication,
-    /// A store to a local the source-summary lane reads as unknown.
-    UntrackedLocalStore,
-    /// A generator call: whoever later resumes the generator object runs
-    /// the body.
-    GeneratorCreation,
-    /// `Object.assign` onto a target the analysis does not track.
-    ObjectAssignCopy,
-    /// The receiver of a local method that reads `this`, which the summary
-    /// does not bind.
-    MethodReceiver,
-    /// The unknown instance of a refused local class construction.
-    RefusedConstructionInstance,
-    /// The receiver of a member read or write that may run an accessor
-    /// reading `this`.
-    AccessorReceiver,
-    /// What an escaped class's construction stored on an instance or the
-    /// class.
-    ClassReach,
-    /// A store on a local class or its prototype.
-    ClassSurfaceMemberWrite,
-}
-
-/// Why an annotated record-factory call kept the conservative path. The
-/// first group refuses the argument's shape; the rest are checked-constructor
-/// proof conditions outside the record.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RecordFactoryRejectionReason {
-    /// The call does not pass exactly one direct object literal.
-    NotObjectLiteral,
-    /// An object spread whose source is not a proven fresh plain-data record.
-    Spread,
-    ComputedKey,
-    /// A getter or setter, which a constructor property read could invoke.
-    Accessor,
-    /// A `__proto__` key, which sets the prototype instead of a field.
-    PrototypeKey,
-    DuplicateKey,
-    /// An array hole or array spread.
-    ArrayShape,
-    /// A value whose evaluation can run code (calls, assignments, sequences, ...).
-    UnsupportedValue,
-    /// A binding read not proven to hold a primitive or a function at the call.
-    UnprovenBinding,
-    /// A member read not proven to be a closed enum's own primitive member.
-    UnprovenMemberRead,
-    /// A template substitution not proven primitive, so `ToString` could run code.
-    TemplateSubstitution,
-    /// Synchronous execution was already incomplete before this statement.
-    IncompleteExecution,
-    /// The result binding is exported, with importer reentry not ruled out.
-    ExportedResult,
-    /// The call is not the sole initializer of one declared binding, or the
-    /// statement also writes properties or exports values.
-    StatementShape,
-    /// The statement evaluates other calls or unproven conversions.
-    ArgumentEffects,
-    /// The callee is not a direct binding read.
-    FactoryCalleeShape,
-    /// The callee binding has no hoisted source function.
-    FactoryNotHoisted,
-    /// The result binding is not a declared, definitely initialized binding.
-    InitializerBinding,
-    /// The factory binding is exported.
-    FactoryExported,
-    /// The factory function was published to the global escaped-callback set.
-    FactoryEscaped,
-    /// Whole-chunk flow does not contain only the hoisted factory function.
-    FactoryFlowIdentity,
-    /// The current prefix does not contain only the hoisted factory function.
-    FactoryPrefixIdentity,
-    /// The factory body is not one return of checked local allocations.
-    FactoryBody,
-    /// A constructed class failed the checked local constructor proof.
-    ConstructorProof,
 }
 
 /// A successful timing refinement that consumed a `reentry_free_operations`

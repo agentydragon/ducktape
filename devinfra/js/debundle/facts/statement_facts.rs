@@ -1230,7 +1230,7 @@ impl ProtoConvert<proto::CallbackFactoryUseFact> for CallbackFactoryUseFact {
         Ok(proto::CallbackFactoryUseFact {
             imported_local: Some(self.imported_local.clone()),
             evidence: self.evidence.to_proto()?,
-            kind: Some(self.kind.to_proto()?),
+            kind: Some(self.kind as i32),
             lexical_statement_ordinal: Some(self.lexical_statement_ordinal.to_proto()?),
             source_location: self.source_location.to_proto()?,
             span: Some(self.span.to_proto()?),
@@ -1244,7 +1244,10 @@ impl ProtoConvert<proto::CallbackFactoryUseFact> for CallbackFactoryUseFact {
                 "CallbackFactoryUseFact.imported_local",
             )?,
             evidence: Vec::from_proto(value.evidence)?,
-            kind: ProtoConvert::from_proto(required(value.kind, "CallbackFactoryUseFact.kind")?)?,
+            kind: proto::CallbackFactoryUseKind::try_from(required(
+                value.kind,
+                "CallbackFactoryUseFact.kind",
+            )?)?,
             lexical_statement_ordinal: SourceUnitOrdinal::from_proto(required(
                 value.lexical_statement_ordinal,
                 "CallbackFactoryUseFact.lexical_statement_ordinal",
@@ -1260,7 +1263,7 @@ impl ProtoConvert<proto::ReturnedRecordUseFact> for ReturnedRecordUseFact {
         Ok(proto::ReturnedRecordUseFact {
             imported_local: Some(self.imported_local.clone()),
             evidence: Some(self.evidence.to_proto()?),
-            kind: Some(self.kind.to_proto()?),
+            kind: Some(self.kind as i32),
             lexical_statement_ordinal: Some(self.lexical_statement_ordinal.to_proto()?),
             source_location: self.source_location.to_proto()?,
             span: Some(self.span.to_proto()?),
@@ -1274,7 +1277,10 @@ impl ProtoConvert<proto::ReturnedRecordUseFact> for ReturnedRecordUseFact {
                 value.evidence,
                 "ReturnedRecordUseFact.evidence",
             )?)?,
-            kind: ProtoConvert::from_proto(required(value.kind, "ReturnedRecordUseFact.kind")?)?,
+            kind: proto::ReturnedRecordUseKind::try_from(required(
+                value.kind,
+                "ReturnedRecordUseFact.kind",
+            )?)?,
             lexical_statement_ordinal: SourceUnitOrdinal::from_proto(required(
                 value.lexical_statement_ordinal,
                 "ReturnedRecordUseFact.lexical_statement_ordinal",

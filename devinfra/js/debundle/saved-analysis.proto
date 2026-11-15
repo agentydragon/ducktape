@@ -184,8 +184,11 @@ message CallbackFactoryUseFact {
 
 enum CallbackFactoryUseKind {
   CALLBACK_FACTORY_USE_KIND_UNSPECIFIED = 0;
+  // The checked call suppressed opaque callback promotion.
   CALLBACK_FACTORY_USE_KIND_CALL_TIMING = 1;
+  // The checked return shape retained callbacks in a deferred result.
   CALLBACK_FACTORY_USE_KIND_RETURN_SHAPE = 2;
+  // The private initializer result was omitted as a reachability root.
   CALLBACK_FACTORY_USE_KIND_CLOSED_RESULT_ROOT = 3;
 }
 
@@ -200,6 +203,7 @@ message CallbackObjectArguments {
   repeated uint64 object_arguments = 2;
 }
 
+// The operation that first exposed class members to the opaque callback pool.
 enum ClassMembersPublicationWriter {
   CLASS_MEMBERS_PUBLICATION_WRITER_UNSPECIFIED = 0;
   CLASS_MEMBERS_PUBLICATION_WRITER_GLOBAL_OR_INTRINSIC_MEMBER_WRITE = 1;
@@ -213,13 +217,25 @@ enum ClassMembersPublicationWriter {
   CLASS_MEMBERS_PUBLICATION_WRITER_NO_REENTRY_CALL_RETENTION = 9;
   CLASS_MEMBERS_PUBLICATION_WRITER_LOCAL_OPERATION_FALLBACK = 10;
   CLASS_MEMBERS_PUBLICATION_WRITER_THROW_VALUE_PUBLICATION = 11;
+  // A store to a local the source-summary lane reads as unknown.
   CLASS_MEMBERS_PUBLICATION_WRITER_UNTRACKED_LOCAL_STORE = 12;
+  // A generator call: whoever later resumes the generator object runs
+  // the body.
   CLASS_MEMBERS_PUBLICATION_WRITER_GENERATOR_CREATION = 13;
+  // `Object.assign` onto a target the analysis does not track.
   CLASS_MEMBERS_PUBLICATION_WRITER_OBJECT_ASSIGN_COPY = 14;
+  // The receiver of a local method that reads `this`, which the summary
+  // does not bind.
   CLASS_MEMBERS_PUBLICATION_WRITER_METHOD_RECEIVER = 15;
+  // The unknown instance of a refused local class construction.
   CLASS_MEMBERS_PUBLICATION_WRITER_REFUSED_CONSTRUCTION_INSTANCE = 16;
+  // The receiver of a member read or write that may run an accessor
+  // reading `this`.
   CLASS_MEMBERS_PUBLICATION_WRITER_ACCESSOR_RECEIVER = 17;
+  // What an escaped class's construction stored on an instance or the
+  // class.
   CLASS_MEMBERS_PUBLICATION_WRITER_CLASS_REACH = 18;
+  // A store on a local class or its prototype.
   CLASS_MEMBERS_PUBLICATION_WRITER_CLASS_SURFACE_MEMBER_WRITE = 19;
 }
 
@@ -904,6 +920,7 @@ enum NativeIntegrityGuard {
   NATIVE_INTEGRITY_GUARD_SET_ITERABLE = 5;
   NATIVE_INTEGRITY_GUARD_LOCAL_CLASS_CONSTRUCTION = 6;
   NATIVE_INTEGRITY_GUARD_FOREIGN_CALL_SUMMARY = 7;
+  // `Object.fromEntries` over an Array `map` whose callbacks are retained.
   NATIVE_INTEGRITY_GUARD_MAPPED_FROM_ENTRIES = 8;
 }
 
@@ -1001,6 +1018,8 @@ message NativePrefixObservation {
   optional bool uncertain_execution = 6;
 }
 
+// Diagnostic effects activated before a modeled native premise. This does
+// not certify the premise or impose an emitted-module ordering constraint.
 enum NativeProgramPointKind {
   NATIVE_PROGRAM_POINT_KIND_UNSPECIFIED = 0;
   NATIVE_PROGRAM_POINT_KIND_EVALUATE = 1;
@@ -1096,10 +1115,15 @@ message NeverWrittenOverride {
   optional .ducktape.debundle.saved_analysis.NeverWrittenReach reach = 5;
 }
 
+// How an overridden witness reaches a named family.
 enum NeverWrittenReach {
   NEVER_WRITTEN_REACH_UNSPECIFIED = 0;
+  // The receiver may be any native object.
   NEVER_WRITTEN_REACH_UNKNOWN_RECEIVER = 1;
+  // A write to the global object, whose unknown key may name a binding or
+  // which couples every prototype slot.
   NEVER_WRITTEN_REACH_GLOBAL_OBJECT = 2;
+  // A write the census resolves to the family without an exact path.
   NEVER_WRITTEN_REACH_FAMILY = 3;
 }
 
@@ -1236,31 +1260,57 @@ enum PurityRule {
   PURITY_RULE_OTHER = 22;
 }
 
+// Why an annotated record-factory call kept the conservative path. The
+// first group refuses the argument's shape; the rest are checked-constructor
+// proof conditions outside the record.
 enum RecordFactoryRejectionReason {
   RECORD_FACTORY_REJECTION_REASON_UNSPECIFIED = 0;
+  // The call does not pass exactly one direct object literal.
   RECORD_FACTORY_REJECTION_REASON_NOT_OBJECT_LITERAL = 1;
+  // An object spread whose source is not a proven fresh plain-data record.
   RECORD_FACTORY_REJECTION_REASON_SPREAD = 2;
   RECORD_FACTORY_REJECTION_REASON_COMPUTED_KEY = 3;
+  // A getter or setter, which a constructor property read could invoke.
   RECORD_FACTORY_REJECTION_REASON_ACCESSOR = 4;
+  // A `__proto__` key, which sets the prototype instead of a field.
   RECORD_FACTORY_REJECTION_REASON_PROTOTYPE_KEY = 5;
   RECORD_FACTORY_REJECTION_REASON_DUPLICATE_KEY = 6;
+  // An array hole or array spread.
   RECORD_FACTORY_REJECTION_REASON_ARRAY_SHAPE = 7;
+  // A value whose evaluation can run code (calls, assignments, sequences, ...).
   RECORD_FACTORY_REJECTION_REASON_UNSUPPORTED_VALUE = 8;
+  // A binding read not proven to hold a primitive or a function at the call.
   RECORD_FACTORY_REJECTION_REASON_UNPROVEN_BINDING = 9;
+  // A member read not proven to be a closed enum's own primitive member.
   RECORD_FACTORY_REJECTION_REASON_UNPROVEN_MEMBER_READ = 10;
+  // A template substitution not proven primitive, so `ToString` could run code.
   RECORD_FACTORY_REJECTION_REASON_TEMPLATE_SUBSTITUTION = 11;
+  // Synchronous execution was already incomplete before this statement.
   RECORD_FACTORY_REJECTION_REASON_INCOMPLETE_EXECUTION = 12;
+  // The result binding is exported, with importer reentry not ruled out.
   RECORD_FACTORY_REJECTION_REASON_EXPORTED_RESULT = 13;
+  // The call is not the sole initializer of one declared binding, or the
+  // statement also writes properties or exports values.
   RECORD_FACTORY_REJECTION_REASON_STATEMENT_SHAPE = 14;
+  // The statement evaluates other calls or unproven conversions.
   RECORD_FACTORY_REJECTION_REASON_ARGUMENT_EFFECTS = 15;
+  // The callee is not a direct binding read.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_CALLEE_SHAPE = 16;
+  // The callee binding has no hoisted source function.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_NOT_HOISTED = 17;
+  // The result binding is not a declared, definitely initialized binding.
   RECORD_FACTORY_REJECTION_REASON_INITIALIZER_BINDING = 18;
+  // The factory binding is exported.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_EXPORTED = 19;
+  // The factory function was published to the global escaped-callback set.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_ESCAPED = 20;
+  // Whole-chunk flow does not contain only the hoisted factory function.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_FLOW_IDENTITY = 21;
+  // The current prefix does not contain only the hoisted factory function.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_PREFIX_IDENTITY = 22;
+  // The factory body is not one return of checked local allocations.
   RECORD_FACTORY_REJECTION_REASON_FACTORY_BODY = 23;
+  // A constructed class failed the checked local constructor proof.
   RECORD_FACTORY_REJECTION_REASON_CONSTRUCTOR_PROOF = 24;
 }
 

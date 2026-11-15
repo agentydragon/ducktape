@@ -1,19 +1,18 @@
 //! Saved report evidence; report enrichment stays outside the stage boundary.
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, ensure};
 
 use super::schema::{
     BoundedInvocationFallbackCallSite, BoundedInvocationFallbackInputPath,
     BoundedInvocationFallbackPathEdge, BoundedInvocationFallbackSeed,
-    BoundedInvocationFallbackUnknownPathReason, CallbackFactoryUseKind,
-    ClassMembersPublicationWriter, FirstClassMembersPublication, InitializerBindingEffectsUse,
-    InitializerExternalEffectsUse, LocalRecordFactoryRejection, LocalRecordFactoryUse,
-    NativeIntegrityCheck, NativeIntegrityGuard, NativeIntegrityUse, NativeMutationOperation,
-    NativeMutationWitness, NativeOperationInputUse, NativePrefixObservation,
-    NativeProgramPointKind, NativeProgramPointStep, NativePropertyKey, NativePrototypeMutation,
-    NativePrototypeMutationKind, NativePrototypePropertyCheck, NativeReceiverPath,
-    NativeUnreachableBranch, NativeWriteSlot, NeverWrittenOverride, NeverWrittenReach,
-    RecordFactoryRejectionReason, ReentryFreeOperationUse, ReturnedRecordUseKind,
+    BoundedInvocationFallbackUnknownPathReason, ClassMembersPublicationWriter,
+    FirstClassMembersPublication, InitializerBindingEffectsUse, InitializerExternalEffectsUse,
+    LocalRecordFactoryRejection, LocalRecordFactoryUse, NativeIntegrityCheck, NativeIntegrityGuard,
+    NativeIntegrityUse, NativeMutationOperation, NativeMutationWitness, NativeOperationInputUse,
+    NativePrefixObservation, NativeProgramPointKind, NativeProgramPointStep, NativePropertyKey,
+    NativePrototypeMutation, NativePrototypeMutationKind, NativePrototypePropertyCheck,
+    NativeReceiverPath, NativeUnreachableBranch, NativeWriteSlot, NeverWrittenOverride,
+    NeverWrittenReach, RecordFactoryRejectionReason, ReentryFreeOperationUse,
 };
 use crate::saved_proto::{ProtoConvert, decode_set, proto, required};
 
@@ -74,7 +73,7 @@ impl ProtoConvert<proto::FirstClassMembersPublication> for FirstClassMembersPubl
             "report-only class publication source location cannot be saved"
         );
         Ok(proto::FirstClassMembersPublication {
-            writer: Some(self.writer.to_proto()?),
+            writer: Some(self.writer as i32),
             top_level_owner: encode_optional(&self.top_level_owner)?,
             span_start: self.span_start,
             span_end: self.span_end,
@@ -84,7 +83,10 @@ impl ProtoConvert<proto::FirstClassMembersPublication> for FirstClassMembersPubl
     }
     fn from_proto(value: proto::FirstClassMembersPublication) -> Result<Self> {
         Ok(Self {
-            writer: read(value.writer, "FirstClassMembersPublication.writer")?,
+            writer: ClassMembersPublicationWriter::try_from(required(
+                value.writer,
+                "FirstClassMembersPublication.writer",
+            )?)?,
             top_level_owner: decode_optional(value.top_level_owner)?,
             span_start: value.span_start,
             span_end: value.span_end,
@@ -114,7 +116,7 @@ impl ProtoConvert<proto::LocalRecordFactoryRejection> for LocalRecordFactoryReje
     fn to_proto(&self) -> Result<proto::LocalRecordFactoryRejection> {
         Ok(proto::LocalRecordFactoryRejection {
             factory_binding: Some(self.factory_binding.clone()),
-            reason: Some(self.reason.to_proto()?),
+            reason: Some(self.reason as i32),
             property: self.property.clone(),
             construction: encode_optional(&self.construction)?,
             first_callback_publication_owner: encode_optional(
@@ -134,7 +136,10 @@ impl ProtoConvert<proto::LocalRecordFactoryRejection> for LocalRecordFactoryReje
                 value.factory_binding,
                 "LocalRecordFactoryRejection.factory_binding",
             )?,
-            reason: read(value.reason, "LocalRecordFactoryRejection.reason")?,
+            reason: RecordFactoryRejectionReason::try_from(required(
+                value.reason,
+                "LocalRecordFactoryRejection.reason",
+            )?)?,
             property: value.property,
             construction: decode_optional(value.construction)?,
             first_callback_publication_owner: decode_optional(
@@ -183,14 +188,17 @@ impl ProtoConvert<proto::LocalRecordFactoryUse> for LocalRecordFactoryUse {
 impl ProtoConvert<proto::NativeIntegrityCheck> for NativeIntegrityCheck {
     fn to_proto(&self) -> Result<proto::NativeIntegrityCheck> {
         Ok(proto::NativeIntegrityCheck {
-            guard: Some(self.guard.to_proto()?),
+            guard: Some(self.guard as i32),
             slots: encode_items(&self.slots)?,
             affected_roots: encode_items(&self.affected_roots)?,
         })
     }
     fn from_proto(value: proto::NativeIntegrityCheck) -> Result<Self> {
         Ok(Self {
-            guard: read(value.guard, "NativeIntegrityCheck.guard")?,
+            guard: NativeIntegrityGuard::try_from(required(
+                value.guard,
+                "NativeIntegrityCheck.guard",
+            )?)?,
             slots: decode_set(value.slots)?,
             affected_roots: decode_set(value.affected_roots)?,
         })
@@ -200,7 +208,7 @@ impl ProtoConvert<proto::NativeIntegrityCheck> for NativeIntegrityCheck {
 impl ProtoConvert<proto::NativeIntegrityUse> for NativeIntegrityUse {
     fn to_proto(&self) -> Result<proto::NativeIntegrityUse> {
         Ok(proto::NativeIntegrityUse {
-            guard: Some(self.guard.to_proto()?),
+            guard: Some(self.guard as i32),
             value_input_refs: encode_items(&self.value_input_refs)?,
             no_accessor_install_refs: encode_items(&self.no_accessor_install_refs)?,
             program_premises: encode_items(&self.program_premises)?,
@@ -208,7 +216,10 @@ impl ProtoConvert<proto::NativeIntegrityUse> for NativeIntegrityUse {
     }
     fn from_proto(value: proto::NativeIntegrityUse) -> Result<Self> {
         Ok(Self {
-            guard: read(value.guard, "NativeIntegrityUse.guard")?,
+            guard: NativeIntegrityGuard::try_from(required(
+                value.guard,
+                "NativeIntegrityUse.guard",
+            )?)?,
             value_input_refs: decode_set(value.value_input_refs)?,
             no_accessor_install_refs: decode_set(value.no_accessor_install_refs)?,
             program_premises: decode_set(value.program_premises)?,
@@ -222,7 +233,7 @@ impl ProtoConvert<proto::NativeMutationWitness> for NativeMutationWitness {
             chunk_id: Some(self.chunk_id.clone()),
             statement_ordinal: Some(self.statement_ordinal.to_proto()?),
             source_location: encode_optional(&self.source_location)?,
-            operation: Some(self.operation.to_proto()?),
+            operation: Some(self.operation as i32),
             receiver_roots: encode_items(&self.receiver_roots)?,
             through_local_alias: Some(self.through_local_alias),
             receiver_global: self.receiver_global.clone(),
@@ -244,7 +255,10 @@ impl ProtoConvert<proto::NativeMutationWitness> for NativeMutationWitness {
                 "NativeMutationWitness.statement_ordinal",
             )?,
             source_location: decode_optional(value.source_location)?,
-            operation: read(value.operation, "NativeMutationWitness.operation")?,
+            operation: NativeMutationOperation::try_from(required(
+                value.operation,
+                "NativeMutationWitness.operation",
+            )?)?,
             receiver_roots: decode_set(value.receiver_roots)?,
             through_local_alias: required(
                 value.through_local_alias,
@@ -283,7 +297,7 @@ impl ProtoConvert<proto::NativeOperationInputUse> for NativeOperationInputUse {
 impl ProtoConvert<proto::NativePrefixObservation> for NativePrefixObservation {
     fn to_proto(&self) -> Result<proto::NativePrefixObservation> {
         Ok(proto::NativePrefixObservation {
-            guard: Some(self.guard.to_proto()?),
+            guard: Some(self.guard as i32),
             program_point_path: encode_items(&self.program_point_path)?,
             property: self.property.clone(),
             prior_affected_roots: encode_items(&self.prior_affected_roots)?,
@@ -295,7 +309,10 @@ impl ProtoConvert<proto::NativePrefixObservation> for NativePrefixObservation {
     }
     fn from_proto(value: proto::NativePrefixObservation) -> Result<Self> {
         Ok(Self {
-            guard: read(value.guard, "NativePrefixObservation.guard")?,
+            guard: NativeIntegrityGuard::try_from(required(
+                value.guard,
+                "NativePrefixObservation.guard",
+            )?)?,
             program_point_path: decode_items(value.program_point_path)?,
             property: value.property,
             prior_affected_roots: decode_set(value.prior_affected_roots)?,
@@ -314,13 +331,16 @@ impl ProtoConvert<proto::NativePrefixObservation> for NativePrefixObservation {
 impl ProtoConvert<proto::NativeProgramPointStep> for NativeProgramPointStep {
     fn to_proto(&self) -> Result<proto::NativeProgramPointStep> {
         Ok(proto::NativeProgramPointStep {
-            kind: Some(self.kind.to_proto()?),
+            kind: Some(self.kind as i32),
             ordinal: Some(self.ordinal.to_proto()?),
         })
     }
     fn from_proto(value: proto::NativeProgramPointStep) -> Result<Self> {
         Ok(Self {
-            kind: read(value.kind, "NativeProgramPointStep.kind")?,
+            kind: NativeProgramPointKind::try_from(required(
+                value.kind,
+                "NativeProgramPointStep.kind",
+            )?)?,
             ordinal: read(value.ordinal, "NativeProgramPointStep.ordinal")?,
         })
     }
@@ -332,7 +352,7 @@ impl ProtoConvert<proto::NativePrototypeMutation> for NativePrototypeMutation {
             chunk_id: Some(self.chunk_id.clone()),
             statement_ordinal: Some(self.statement_ordinal.to_proto()?),
             source_location: encode_optional(&self.source_location)?,
-            kind: Some(self.kind.to_proto()?),
+            kind: Some(self.kind as i32),
             properties: self.properties.as_ref().map(|properties| {
                 proto::native_prototype_mutation::NamedProperties {
                     names: properties.iter().cloned().collect(),
@@ -350,7 +370,10 @@ impl ProtoConvert<proto::NativePrototypeMutation> for NativePrototypeMutation {
                 "NativePrototypeMutation.statement_ordinal",
             )?,
             source_location: decode_optional(value.source_location)?,
-            kind: read(value.kind, "NativePrototypeMutation.kind")?,
+            kind: NativePrototypeMutationKind::try_from(required(
+                value.kind,
+                "NativePrototypeMutation.kind",
+            )?)?,
             properties: value
                 .properties
                 .map(|properties| decode_set(properties.names))
@@ -436,7 +459,7 @@ impl ProtoConvert<proto::NeverWrittenOverride> for NeverWrittenOverride {
             chunk_id: Some(self.chunk_id.clone()),
             source_location: encode_optional(&self.source_location)?,
             families: encode_items(&self.families)?,
-            reach: Some(self.reach.to_proto()?),
+            reach: Some(self.reach as i32),
         })
     }
     fn from_proto(value: proto::NeverWrittenOverride) -> Result<Self> {
@@ -445,7 +468,10 @@ impl ProtoConvert<proto::NeverWrittenOverride> for NeverWrittenOverride {
             chunk_id: required(value.chunk_id, "NeverWrittenOverride.chunk_id")?,
             source_location: decode_optional(value.source_location)?,
             families: decode_set(value.families)?,
-            reach: read(value.reach, "NeverWrittenOverride.reach")?,
+            reach: NeverWrittenReach::try_from(required(
+                value.reach,
+                "NeverWrittenOverride.reach",
+            )?)?,
         })
     }
 }
@@ -606,7 +632,7 @@ impl ProtoConvert<proto::BoundedInvocationFallbackInputPath>
                     seed: Some(seed.to_proto()?),
                     edges: encode_items(edges)?,
                 }),
-                Self::Unknown { reason } => Value::Unknown(reason.to_proto()?),
+                Self::Unknown { reason } => Value::Unknown(*reason as i32),
             }),
         })
     }
@@ -621,9 +647,14 @@ impl ProtoConvert<proto::BoundedInvocationFallbackInputPath>
                     )?,
                     edges: decode_items(value.edges)?,
                 },
-                Value::Unknown(value) => Self::Unknown {
-                    reason: BoundedInvocationFallbackUnknownPathReason::from_proto(value)?,
-                },
+                Value::Unknown(value) => {
+                    let reason = BoundedInvocationFallbackUnknownPathReason::try_from(value)?;
+                    ensure!(
+                        reason != BoundedInvocationFallbackUnknownPathReason::Unspecified,
+                        "unspecified fallback path reason"
+                    );
+                    Self::Unknown { reason }
+                }
             },
         )
     }
@@ -727,398 +758,6 @@ impl ProtoConvert<proto::BoundedInvocationFallbackPathEdge> for BoundedInvocatio
     }
 }
 
-impl ProtoConvert<i32> for BoundedInvocationFallbackUnknownPathReason {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::SeedUnavailable => {
-                proto::BoundedInvocationFallbackUnknownPathReason::SeedUnavailable
-            }
-            Self::RetainedReferencePathUnavailable => {
-                proto::BoundedInvocationFallbackUnknownPathReason::RetainedReferencePathUnavailable
-            }
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(match proto::BoundedInvocationFallbackUnknownPathReason::try_from(value).context("unknown fallback path reason")? {
-            proto::BoundedInvocationFallbackUnknownPathReason::SeedUnavailable => Self::SeedUnavailable,
-            proto::BoundedInvocationFallbackUnknownPathReason::RetainedReferencePathUnavailable => Self::RetainedReferencePathUnavailable,
-            proto::BoundedInvocationFallbackUnknownPathReason::Unspecified => bail!("unspecified fallback path reason"),
-        })
-    }
-}
-
-impl ProtoConvert<i32> for CallbackFactoryUseKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::CallTiming => proto::CallbackFactoryUseKind::CallTiming,
-            Self::ReturnShape => proto::CallbackFactoryUseKind::ReturnShape,
-            Self::ClosedResultRoot => proto::CallbackFactoryUseKind::ClosedResultRoot,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::CallbackFactoryUseKind::try_from(value)
-                .context("unknown callback factory use kind")?
-            {
-                proto::CallbackFactoryUseKind::CallTiming => Self::CallTiming,
-                proto::CallbackFactoryUseKind::ReturnShape => Self::ReturnShape,
-                proto::CallbackFactoryUseKind::ClosedResultRoot => Self::ClosedResultRoot,
-                proto::CallbackFactoryUseKind::Unspecified => {
-                    bail!("unspecified callback factory use kind")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for ClassMembersPublicationWriter {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::GlobalOrIntrinsicMemberWrite => {
-                proto::ClassMembersPublicationWriter::GlobalOrIntrinsicMemberWrite
-            }
-            Self::InstanceMemberWrite => proto::ClassMembersPublicationWriter::InstanceMemberWrite,
-            Self::OwnDescriptorMapMemberWrite => {
-                proto::ClassMembersPublicationWriter::OwnDescriptorMapMemberWrite
-            }
-            Self::UntrackedReceiverMemberWrite => {
-                proto::ClassMembersPublicationWriter::UntrackedReceiverMemberWrite
-            }
-            Self::PublishedObjectMemberWrite => {
-                proto::ClassMembersPublicationWriter::PublishedObjectMemberWrite
-            }
-            Self::MemberChainStore => proto::ClassMembersPublicationWriter::MemberChainStore,
-            Self::PossibleCallbackRetention => {
-                proto::ClassMembersPublicationWriter::PossibleCallbackRetention
-            }
-            Self::BoundedInvocationFallback => {
-                proto::ClassMembersPublicationWriter::BoundedInvocationFallback
-            }
-            Self::NoReentryCallRetention => {
-                proto::ClassMembersPublicationWriter::NoReentryCallRetention
-            }
-            Self::LocalOperationFallback => {
-                proto::ClassMembersPublicationWriter::LocalOperationFallback
-            }
-            Self::ThrowValuePublication => {
-                proto::ClassMembersPublicationWriter::ThrowValuePublication
-            }
-            Self::UntrackedLocalStore => proto::ClassMembersPublicationWriter::UntrackedLocalStore,
-            Self::GeneratorCreation => proto::ClassMembersPublicationWriter::GeneratorCreation,
-            Self::ObjectAssignCopy => proto::ClassMembersPublicationWriter::ObjectAssignCopy,
-            Self::MethodReceiver => proto::ClassMembersPublicationWriter::MethodReceiver,
-            Self::RefusedConstructionInstance => {
-                proto::ClassMembersPublicationWriter::RefusedConstructionInstance
-            }
-            Self::AccessorReceiver => proto::ClassMembersPublicationWriter::AccessorReceiver,
-            Self::ClassReach => proto::ClassMembersPublicationWriter::ClassReach,
-            Self::ClassSurfaceMemberWrite => {
-                proto::ClassMembersPublicationWriter::ClassSurfaceMemberWrite
-            }
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::ClassMembersPublicationWriter::try_from(value)
-                .context("unknown class publication writer")?
-            {
-                proto::ClassMembersPublicationWriter::GlobalOrIntrinsicMemberWrite => {
-                    Self::GlobalOrIntrinsicMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::InstanceMemberWrite => {
-                    Self::InstanceMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::OwnDescriptorMapMemberWrite => {
-                    Self::OwnDescriptorMapMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::UntrackedReceiverMemberWrite => {
-                    Self::UntrackedReceiverMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::PublishedObjectMemberWrite => {
-                    Self::PublishedObjectMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::MemberChainStore => Self::MemberChainStore,
-                proto::ClassMembersPublicationWriter::PossibleCallbackRetention => {
-                    Self::PossibleCallbackRetention
-                }
-                proto::ClassMembersPublicationWriter::BoundedInvocationFallback => {
-                    Self::BoundedInvocationFallback
-                }
-                proto::ClassMembersPublicationWriter::NoReentryCallRetention => {
-                    Self::NoReentryCallRetention
-                }
-                proto::ClassMembersPublicationWriter::LocalOperationFallback => {
-                    Self::LocalOperationFallback
-                }
-                proto::ClassMembersPublicationWriter::ThrowValuePublication => {
-                    Self::ThrowValuePublication
-                }
-                proto::ClassMembersPublicationWriter::UntrackedLocalStore => {
-                    Self::UntrackedLocalStore
-                }
-                proto::ClassMembersPublicationWriter::GeneratorCreation => Self::GeneratorCreation,
-                proto::ClassMembersPublicationWriter::ObjectAssignCopy => Self::ObjectAssignCopy,
-                proto::ClassMembersPublicationWriter::MethodReceiver => Self::MethodReceiver,
-                proto::ClassMembersPublicationWriter::RefusedConstructionInstance => {
-                    Self::RefusedConstructionInstance
-                }
-                proto::ClassMembersPublicationWriter::AccessorReceiver => Self::AccessorReceiver,
-                proto::ClassMembersPublicationWriter::ClassReach => Self::ClassReach,
-                proto::ClassMembersPublicationWriter::ClassSurfaceMemberWrite => {
-                    Self::ClassSurfaceMemberWrite
-                }
-                proto::ClassMembersPublicationWriter::Unspecified => {
-                    bail!("unspecified class publication writer")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for NativeIntegrityGuard {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::OrdinaryObjectPrototype => proto::NativeIntegrityGuard::OrdinaryObjectPrototype,
-            Self::ArrayIntrinsics => proto::NativeIntegrityGuard::ArrayIntrinsics,
-            Self::HostPromiseResolve => proto::NativeIntegrityGuard::HostPromiseResolve,
-            Self::NativeCallIdentity => proto::NativeIntegrityGuard::NativeCallIdentity,
-            Self::SetIterable => proto::NativeIntegrityGuard::SetIterable,
-            Self::LocalClassConstruction => proto::NativeIntegrityGuard::LocalClassConstruction,
-            Self::ForeignCallSummary => proto::NativeIntegrityGuard::ForeignCallSummary,
-            Self::MappedFromEntries => proto::NativeIntegrityGuard::MappedFromEntries,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::NativeIntegrityGuard::try_from(value)
-                .context("unknown native integrity guard")?
-            {
-                proto::NativeIntegrityGuard::OrdinaryObjectPrototype => {
-                    Self::OrdinaryObjectPrototype
-                }
-                proto::NativeIntegrityGuard::ArrayIntrinsics => Self::ArrayIntrinsics,
-                proto::NativeIntegrityGuard::HostPromiseResolve => Self::HostPromiseResolve,
-                proto::NativeIntegrityGuard::NativeCallIdentity => Self::NativeCallIdentity,
-                proto::NativeIntegrityGuard::SetIterable => Self::SetIterable,
-                proto::NativeIntegrityGuard::LocalClassConstruction => Self::LocalClassConstruction,
-                proto::NativeIntegrityGuard::ForeignCallSummary => Self::ForeignCallSummary,
-                proto::NativeIntegrityGuard::MappedFromEntries => Self::MappedFromEntries,
-                proto::NativeIntegrityGuard::Unspecified => {
-                    bail!("unspecified native integrity guard")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for NativeMutationOperation {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::PropertyAssignment => proto::NativeMutationOperation::PropertyAssignment,
-            Self::BindingAssignment => proto::NativeMutationOperation::BindingAssignment,
-            Self::Update => proto::NativeMutationOperation::Update,
-            Self::Delete => proto::NativeMutationOperation::Delete,
-            Self::MutationCall => proto::NativeMutationOperation::MutationCall,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::NativeMutationOperation::try_from(value)
-                .context("unknown native mutation operation")?
-            {
-                proto::NativeMutationOperation::PropertyAssignment => Self::PropertyAssignment,
-                proto::NativeMutationOperation::BindingAssignment => Self::BindingAssignment,
-                proto::NativeMutationOperation::Update => Self::Update,
-                proto::NativeMutationOperation::Delete => Self::Delete,
-                proto::NativeMutationOperation::MutationCall => Self::MutationCall,
-                proto::NativeMutationOperation::Unspecified => {
-                    bail!("unspecified native mutation operation")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for NativeProgramPointKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Evaluate => proto::NativeProgramPointKind::Evaluate,
-            Self::Invoke => proto::NativeProgramPointKind::Invoke,
-            Self::Call => proto::NativeProgramPointKind::Call,
-            Self::OwnProperty => proto::NativeProgramPointKind::OwnProperty,
-            Self::Heap => proto::NativeProgramPointKind::Heap,
-            Self::Callbacks => proto::NativeProgramPointKind::Callbacks,
-            Self::Model => proto::NativeProgramPointKind::Model,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::NativeProgramPointKind::try_from(value)
-                .context("unknown native program point kind")?
-            {
-                proto::NativeProgramPointKind::Evaluate => Self::Evaluate,
-                proto::NativeProgramPointKind::Invoke => Self::Invoke,
-                proto::NativeProgramPointKind::Call => Self::Call,
-                proto::NativeProgramPointKind::OwnProperty => Self::OwnProperty,
-                proto::NativeProgramPointKind::Heap => Self::Heap,
-                proto::NativeProgramPointKind::Callbacks => Self::Callbacks,
-                proto::NativeProgramPointKind::Model => Self::Model,
-                proto::NativeProgramPointKind::Unspecified => {
-                    bail!("unspecified native program point kind")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for NativePrototypeMutationKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::Write => proto::NativePrototypeMutationKind::Write,
-            Self::Delete => proto::NativePrototypeMutationKind::Delete,
-            Self::Reflective => proto::NativePrototypeMutationKind::Reflective,
-            Self::Escape => proto::NativePrototypeMutationKind::Escape,
-            Self::DynamicScope => proto::NativePrototypeMutationKind::DynamicScope,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::NativePrototypeMutationKind::try_from(value)
-                .context("unknown native prototype mutation kind")?
-            {
-                proto::NativePrototypeMutationKind::Write => Self::Write,
-                proto::NativePrototypeMutationKind::Delete => Self::Delete,
-                proto::NativePrototypeMutationKind::Reflective => Self::Reflective,
-                proto::NativePrototypeMutationKind::Escape => Self::Escape,
-                proto::NativePrototypeMutationKind::DynamicScope => Self::DynamicScope,
-                proto::NativePrototypeMutationKind::Unspecified => {
-                    bail!("unspecified native prototype mutation kind")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for NeverWrittenReach {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::UnknownReceiver => proto::NeverWrittenReach::UnknownReceiver,
-            Self::GlobalObject => proto::NeverWrittenReach::GlobalObject,
-            Self::Family => proto::NeverWrittenReach::Family,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::NeverWrittenReach::try_from(value)
-                .context("unknown never-written reach")?
-            {
-                proto::NeverWrittenReach::UnknownReceiver => Self::UnknownReceiver,
-                proto::NeverWrittenReach::GlobalObject => Self::GlobalObject,
-                proto::NeverWrittenReach::Family => Self::Family,
-                proto::NeverWrittenReach::Unspecified => bail!("unspecified never-written reach"),
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for RecordFactoryRejectionReason {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::NotObjectLiteral => proto::RecordFactoryRejectionReason::NotObjectLiteral,
-            Self::Spread => proto::RecordFactoryRejectionReason::Spread,
-            Self::ComputedKey => proto::RecordFactoryRejectionReason::ComputedKey,
-            Self::Accessor => proto::RecordFactoryRejectionReason::Accessor,
-            Self::PrototypeKey => proto::RecordFactoryRejectionReason::PrototypeKey,
-            Self::DuplicateKey => proto::RecordFactoryRejectionReason::DuplicateKey,
-            Self::ArrayShape => proto::RecordFactoryRejectionReason::ArrayShape,
-            Self::UnsupportedValue => proto::RecordFactoryRejectionReason::UnsupportedValue,
-            Self::UnprovenBinding => proto::RecordFactoryRejectionReason::UnprovenBinding,
-            Self::UnprovenMemberRead => proto::RecordFactoryRejectionReason::UnprovenMemberRead,
-            Self::TemplateSubstitution => proto::RecordFactoryRejectionReason::TemplateSubstitution,
-            Self::IncompleteExecution => proto::RecordFactoryRejectionReason::IncompleteExecution,
-            Self::ExportedResult => proto::RecordFactoryRejectionReason::ExportedResult,
-            Self::StatementShape => proto::RecordFactoryRejectionReason::StatementShape,
-            Self::ArgumentEffects => proto::RecordFactoryRejectionReason::ArgumentEffects,
-            Self::FactoryCalleeShape => proto::RecordFactoryRejectionReason::FactoryCalleeShape,
-            Self::FactoryNotHoisted => proto::RecordFactoryRejectionReason::FactoryNotHoisted,
-            Self::InitializerBinding => proto::RecordFactoryRejectionReason::InitializerBinding,
-            Self::FactoryExported => proto::RecordFactoryRejectionReason::FactoryExported,
-            Self::FactoryEscaped => proto::RecordFactoryRejectionReason::FactoryEscaped,
-            Self::FactoryFlowIdentity => proto::RecordFactoryRejectionReason::FactoryFlowIdentity,
-            Self::FactoryPrefixIdentity => {
-                proto::RecordFactoryRejectionReason::FactoryPrefixIdentity
-            }
-            Self::FactoryBody => proto::RecordFactoryRejectionReason::FactoryBody,
-            Self::ConstructorProof => proto::RecordFactoryRejectionReason::ConstructorProof,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::RecordFactoryRejectionReason::try_from(value)
-                .context("unknown record factory rejection reason")?
-            {
-                proto::RecordFactoryRejectionReason::NotObjectLiteral => Self::NotObjectLiteral,
-                proto::RecordFactoryRejectionReason::Spread => Self::Spread,
-                proto::RecordFactoryRejectionReason::ComputedKey => Self::ComputedKey,
-                proto::RecordFactoryRejectionReason::Accessor => Self::Accessor,
-                proto::RecordFactoryRejectionReason::PrototypeKey => Self::PrototypeKey,
-                proto::RecordFactoryRejectionReason::DuplicateKey => Self::DuplicateKey,
-                proto::RecordFactoryRejectionReason::ArrayShape => Self::ArrayShape,
-                proto::RecordFactoryRejectionReason::UnsupportedValue => Self::UnsupportedValue,
-                proto::RecordFactoryRejectionReason::UnprovenBinding => Self::UnprovenBinding,
-                proto::RecordFactoryRejectionReason::UnprovenMemberRead => Self::UnprovenMemberRead,
-                proto::RecordFactoryRejectionReason::TemplateSubstitution => {
-                    Self::TemplateSubstitution
-                }
-                proto::RecordFactoryRejectionReason::IncompleteExecution => {
-                    Self::IncompleteExecution
-                }
-                proto::RecordFactoryRejectionReason::ExportedResult => Self::ExportedResult,
-                proto::RecordFactoryRejectionReason::StatementShape => Self::StatementShape,
-                proto::RecordFactoryRejectionReason::ArgumentEffects => Self::ArgumentEffects,
-                proto::RecordFactoryRejectionReason::FactoryCalleeShape => Self::FactoryCalleeShape,
-                proto::RecordFactoryRejectionReason::FactoryNotHoisted => Self::FactoryNotHoisted,
-                proto::RecordFactoryRejectionReason::InitializerBinding => Self::InitializerBinding,
-                proto::RecordFactoryRejectionReason::FactoryExported => Self::FactoryExported,
-                proto::RecordFactoryRejectionReason::FactoryEscaped => Self::FactoryEscaped,
-                proto::RecordFactoryRejectionReason::FactoryFlowIdentity => {
-                    Self::FactoryFlowIdentity
-                }
-                proto::RecordFactoryRejectionReason::FactoryPrefixIdentity => {
-                    Self::FactoryPrefixIdentity
-                }
-                proto::RecordFactoryRejectionReason::FactoryBody => Self::FactoryBody,
-                proto::RecordFactoryRejectionReason::ConstructorProof => Self::ConstructorProof,
-                proto::RecordFactoryRejectionReason::Unspecified => {
-                    bail!("unspecified record factory rejection reason")
-                }
-            },
-        )
-    }
-}
-
-impl ProtoConvert<i32> for ReturnedRecordUseKind {
-    fn to_proto(&self) -> Result<i32> {
-        Ok(match self {
-            Self::CallTiming => proto::ReturnedRecordUseKind::CallTiming,
-            Self::ReturnCapability => proto::ReturnedRecordUseKind::ReturnCapability,
-        } as i32)
-    }
-    fn from_proto(value: i32) -> Result<Self> {
-        Ok(
-            match proto::ReturnedRecordUseKind::try_from(value)
-                .context("unknown returned record use kind")?
-            {
-                proto::ReturnedRecordUseKind::CallTiming => Self::CallTiming,
-                proto::ReturnedRecordUseKind::ReturnCapability => Self::ReturnCapability,
-                proto::ReturnedRecordUseKind::Unspecified => {
-                    bail!("unspecified returned record use kind")
-                }
-            },
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1190,29 +829,6 @@ mod tests {
                 .to_proto()
                 .is_err()
         );
-    }
-
-    fn rejects_unknown_enum<T: ProtoConvert<i32>>() {
-        for value in [0, -1, i32::MAX] {
-            assert!(
-                T::from_proto(value).is_err(),
-                "invalid enum {value} accepted"
-            );
-        }
-    }
-
-    #[test]
-    fn report_enums_reject_unknown_and_unspecified_values() {
-        rejects_unknown_enum::<BoundedInvocationFallbackUnknownPathReason>();
-        rejects_unknown_enum::<CallbackFactoryUseKind>();
-        rejects_unknown_enum::<ClassMembersPublicationWriter>();
-        rejects_unknown_enum::<NativeIntegrityGuard>();
-        rejects_unknown_enum::<NativeMutationOperation>();
-        rejects_unknown_enum::<NativeProgramPointKind>();
-        rejects_unknown_enum::<NativePrototypeMutationKind>();
-        rejects_unknown_enum::<NeverWrittenReach>();
-        rejects_unknown_enum::<RecordFactoryRejectionReason>();
-        rejects_unknown_enum::<ReturnedRecordUseKind>();
     }
 
     #[test]
@@ -1332,7 +948,7 @@ mod tests {
             );
         }
         let empty = proto::NativeIntegrityCheck {
-            guard: Some(NativeIntegrityGuard::ArrayIntrinsics.to_proto().unwrap()),
+            guard: Some(NativeIntegrityGuard::ArrayIntrinsics as i32),
             slots: Vec::new(),
             affected_roots: Vec::new(),
         };
