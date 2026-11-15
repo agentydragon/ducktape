@@ -35,13 +35,20 @@ identity and one credential claimant. Both retained session resources had
 timestamp, and their respective protection finalizers present.
 
 The credential-only PR [#16664](https://github.com/agentydragon/ducktape/pull/16664)
-merged at 10:48:45. At 10:49:41 its credential was still present, so credential
-finalization is still a live gate. Keep the dedicated identity present until
-all-key absence through both filers and owned Secret deletion are verified.
-Remove the identity in a later change, then verify no user/key recreation after
-reconciliation. The first Action stopped on an unrelated Mimir consumer preflight
-before any probes or IAM mutations; its session policy observations passed
-independently.
+merged at 10:48:45. At 10:58:02–10:58:25, read-only Action
+`a3d73351-20aa-4cf2-853a-b02a3e10b2ab` verified the credential had finalized:
+zero credential claimants, the owned Secret absent, and zero surviving Bucket,
+bucket-access, policy-binding or consumer writers. The dedicated identity was
+still present with `Delete`, generation 2 / observed generation 2, Ready and its
+protection finalizer intact.
+
+Each filer independently reported the identity present with zero keys and the
+retired bucket and related collections absent. The reads repeated after ten
+seconds with the same results. The Action exited 0 without output truncation.
+This permits removal of the dedicated identity. After its finalizer completes,
+verify identity and key absence through both filers again before removing the
+unused tenant admission grant. Preserve the actual Restic repository and its
+credentials.
 
 ## Mimir, Tempo and Langfuse: obsolete keys revoked
 

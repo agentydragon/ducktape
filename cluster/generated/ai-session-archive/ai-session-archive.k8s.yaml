@@ -37,17 +37,6 @@ spec:
     size: 100Gi
     storageClass: piraeus-hdd-local
 ---
-apiVersion: seaweed.seaweedfs.com/v1
-kind: S3Identity
-metadata:
-  name: session-backup-db-backups
-  namespace: session-backup
-spec:
-  reclaimPolicy: Delete
-  seaweedRef:
-    name: seaweedfs
-    namespace: seaweedfs
----
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
