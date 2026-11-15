@@ -1,0 +1,13 @@
+# Original home: packages/excalidraw/element/textWysiwyg.tsx
+source_matches:
+  - match: |
+      var selected = ({ id, onChange, onSubmit, getViewportCoords, element, canvas, excalidrawContainer, app, autoSelect: autoSelect = !0 }) => {
+        let textPropertiesUpdated = (updatedTextElement, editable) => {
+          if (!editable.style.fontFamily || !editable.style.fontSize) return !1;
+          STMT_LIST;
+        }, ANYTHING = ANYTHING;
+        STMT_LIST;
+      };
+    bindings:
+      - local: selected
+        name: textWysiwyg

@@ -1474,5 +1474,27 @@ async def test_excalidraw_logo(playwright_driver: Playwright, origin: str) -> No
         }
 
 
+async def test_create_text_element(playwright_driver: Playwright, origin: str) -> None:
+    async with deterministic_browser_context(
+        playwright_driver, viewport={"width": 1280, "height": 800}, frozen_now_ms=None
+    ) as context:
+        page = await context.new_page()
+        await page.goto(origin)
+        await page.wait_for_function("document.documentElement.dataset.debundleHarnessLoaded === 'true'")
+        await expect(page.locator(".App-toolbar")).to_be_visible()
+        text_tool = page.get_by_test_id("toolbar-text")
+        await page.locator("label", has=text_tool).click()
+        await expect(text_tool).to_be_checked()
+        canvas = page.locator("canvas.excalidraw__canvas.interactive")
+        await canvas.click(position={"x": 400, "y": 300})
+        editor = page.locator("textarea.excalidraw-wysiwyg")
+        await expect(editor).to_be_visible()
+        await editor.fill("Recovered text editor")
+        await editor.press("Control+Enter")
+        await expect(editor).to_have_count(0)
+        await expect(page.get_by_test_id("button-undo")).to_be_enabled()
+        assert await page.evaluate("globalThis.__debundleHarness.errors") == []
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
