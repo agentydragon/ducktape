@@ -234,11 +234,12 @@ rust_library(
     deps = [":support"],
 )
 
-# The ordinary target covers all 820 stable case IDs once. Manual targets use
-# the same compiled case registry for matched 2- and 4-way experiments.
+# A manual unsplit baseline retains the full 820-row sweep; routine CI runs
+# the two disjoint halves. All variants share the same case registry.
 debundle_e2e_test(
     name = "foreign_state_node_differential_sweep_test",
     timeout = "moderate",
+    tags = ["manual"],
     deps = [":foreign_state_node_differential_sweep_cases"],
 )
 
@@ -250,7 +251,7 @@ debundle_e2e_test(
             "DEBUNDLE_SWEEP_PARTITION_INDEX": str(index),
         },
         source = "foreign_state_node_differential_sweep_test.rs",
-        tags = ["manual"],
+        tags = ["manual"] if partitions == 4 else [],
         deps = [":foreign_state_node_differential_sweep_cases"],
     )
     for partitions in [
