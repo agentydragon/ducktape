@@ -20,10 +20,11 @@ type Settings struct {
 	GatewayTLS                           *peertls.ClientTLS          `mapstructure:"gateway_tls" json:"gateway_tls,omitempty"`
 	HistoryTLS                           *peertls.ClientTLS          `mapstructure:"history_tls" json:"history_tls,omitempty"`
 	ListenTLS                            *peertls.ServerTLSListener  `json:"listen_tls,omitempty"`
+	HealthListen                         *string                     `json:"health_listen,omitempty"`
 	Models                               map[string]ModelConfig      `json:"models"`
 	Connections                          map[string]ConnectionConfig `json:"connections"`
 	DatabaseURL                          string                      `json:"database_url"`
-	Listen                               string                      `json:"listen"`
+	Listen                               string                      `json:"listen,omitempty"`
 	Audience                             string                      `json:"audience"`
 	AllowedAccounts                      []string                    `json:"allowed_accounts"`
 	PlatformInstructions                 *string                     `json:"platform_instructions,omitempty"`
@@ -50,6 +51,17 @@ type Settings struct {
 	AutoCompactTokens                    *int                        `json:"auto_compact_tokens"`
 	Kubeconfig                           string                      `json:"kubeconfig"`
 	SetupTimeoutSeconds                  *int                        `json:"setup_timeout_seconds,omitempty"`
+}
+
+const defaultHealthListen = ":8081"
+
+// HealthListenAddress returns the gRPC health-only listener address. The default is kept in
+// code so a binary can introduce the listener before a manifest needs to set a new key.
+func (s Settings) HealthListenAddress() string {
+	if s.HealthListen == nil {
+		return defaultHealthListen
+	}
+	return *s.HealthListen
 }
 
 func LoadSettings(path string) (Settings, error) {

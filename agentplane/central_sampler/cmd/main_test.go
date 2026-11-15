@@ -11,7 +11,30 @@ import (
 
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
 )
+
+func TestHealthOnlyServerDoesNotRegisterSamplerRPCs(t *testing.T) {
+	var applicationRegistered bool
+	if server := newPlaintextServer("", nil, func(*grpc.Server) { applicationRegistered = true }, health.NewServer()); server != nil {
+		server.Stop()
+		t.Fatal("created an application server with an omitted listen address")
+	}
+	if applicationRegistered {
+		t.Fatal("registered application RPCs with an omitted listen address")
+	}
+
+	healthOnly := newHealthOnlyServer(health.NewServer())
+	defer healthOnly.Stop()
+	services := healthOnly.GetServiceInfo()
+	if _, ok := services["grpc.health.v1.Health"]; !ok {
+		t.Fatal("health-only server does not register gRPC health")
+	}
+	if _, ok := services["agentplane.x.central_sampler.Sampler"]; ok {
+		t.Fatal("health-only server registered sampler application RPCs")
+	}
+}
 
 func TestStartupDiagnosticsReportFieldAndOmitRawError(t *testing.T) {
 	var output bytes.Buffer

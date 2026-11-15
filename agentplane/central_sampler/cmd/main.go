@@ -52,6 +52,27 @@ func atStartupStage(stage string, err error) error {
 	return &startupFailure{stage: stage, err: err}
 }
 
+func newPlaintextServer(
+	listen string,
+	options []grpc.ServerOption,
+	registerApplication func(*grpc.Server),
+	healthServer *health.Server,
+) *grpc.Server {
+	if listen == "" {
+		return nil
+	}
+	server := grpc.NewServer(options...)
+	registerApplication(server)
+	healthpb.RegisterHealthServer(server, healthServer)
+	return server
+}
+
+func newHealthOnlyServer(healthServer *health.Server) *grpc.Server {
+	server := grpc.NewServer()
+	healthpb.RegisterHealthServer(server, healthServer)
+	return server
+}
+
 func startupLogAttrs(err error) []any {
 	stage := "startup"
 	var failure *startupFailure
@@ -145,15 +166,25 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	register := func(server *grpc.Server) {
 		samplerpb.RegisterSamplerServer(server, &samplerrpc.Sampler{Store: store, Runtime: runtime, Resolver: resolver, Settings: settings, Wakeups: hub})
 	}
-	server := grpc.NewServer(serverOptions...)
-	register(server)
 	healthServer := health.NewServer()
-	healthpb.RegisterHealthServer(server, healthServer)
-	listener, err := netlistener.Open(settings.Listen)
+	healthOnlyServer := newHealthOnlyServer(healthServer)
+	healthListener, err := netlistener.Open(settings.HealthListenAddress())
 	if err != nil {
-		return atStartupStage("grpc_listener", err)
+		healthOnlyServer.Stop()
+		return atStartupStage("grpc_health_listener", err)
 	}
-	defer listener.Close()
+	defer healthListener.Close()
+	server := newPlaintextServer(settings.Listen, serverOptions, register, healthServer)
+	var listener net.Listener
+	if server != nil {
+		listener, err = netlistener.Open(settings.Listen)
+		if err != nil {
+			server.Stop()
+			healthOnlyServer.Stop()
+			return atStartupStage("grpc_listener", err)
+		}
+		defer listener.Close()
+	}
 	var tlsServer *grpc.Server
 	var tlsListener net.Listener
 	if settings.ListenTLS != nil {
@@ -180,12 +211,21 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 		})
 	}
 	running.Go(func() error {
-		err := server.Serve(listener)
+		err := healthOnlyServer.Serve(healthListener)
 		if errors.Is(err, grpc.ErrServerStopped) {
 			return nil
 		}
 		return err
 	})
+	if server != nil {
+		running.Go(func() error {
+			err := server.Serve(listener)
+			if errors.Is(err, grpc.ErrServerStopped) {
+				return nil
+			}
+			return err
+		})
+	}
 	if tlsServer != nil {
 		running.Go(func() error {
 			err := tlsServer.Serve(tlsListener)
@@ -198,11 +238,13 @@ func run(ctx context.Context, settings samplersettings.Settings) error {
 	running.Go(func() error {
 		<-runningCtx.Done()
 		healthServer.Shutdown()
-		stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
-		defer release()
-		graceful.Stop(stopping, server)
-		if tlsServer != nil {
-			graceful.Stop(stopping, tlsServer)
+		for _, server := range []*grpc.Server{healthOnlyServer, server, tlsServer} {
+			if server == nil {
+				continue
+			}
+			stopping, release := context.WithTimeout(context.Background(), 5*time.Second)
+			graceful.Stop(stopping, server)
+			release()
 		}
 		return nil
 	})

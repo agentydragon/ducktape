@@ -69,6 +69,29 @@ def test_actions_are_optional_and_only_accept_service_mtls() -> None:
             Settings.model_validate({**settings_data(), "actions": actions})
 
 
+def test_plaintext_listener_and_health_listener_are_optional_settings() -> None:
+    data = settings_data()
+    data.pop("listen")
+    data["listen_tls"] = {
+        "listen": "0.0.0.0:8083",
+        "cert_file": Path("/fixture/tls.crt"),
+        "key_file": Path("/fixture/tls.key"),
+    }
+    settings = Settings.model_validate(data)
+    assert settings.listen is None
+    assert settings.health_listen is None
+    serialized = settings.model_dump(mode="json", exclude_none=True)
+    assert "listen" not in serialized
+    assert "health_listen" not in serialized
+
+    configured = Settings.model_validate({**data, "health_listen": "0.0.0.0:8081"})
+    assert configured.health_listen == "0.0.0.0:8081"
+    with pytest.raises(ValidationError):
+        Settings.model_validate({**data, "unknown_listener": "0.0.0.0:8081"})
+    with pytest.raises(ValidationError, match="configure at least one application RPC listener"):
+        Settings.model_validate({**data, "listen_tls": None})
+
+
 def test_provider_phase_budgets_are_optional_and_independent() -> None:
     settings = Settings(**settings_data())
     assert settings.gateway_tls is not None

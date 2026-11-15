@@ -78,12 +78,26 @@ func (s Settings) Validate() error {
 	if len(s.ServiceCallers) > 0 && (s.ListenTLS == nil || s.ListenTLS.ClientCAFile == "") {
 		return invalidSetting("service_callers", "requires listen_tls.client_ca_file")
 	}
+	if s.Listen == "" && s.ListenTLS == nil {
+		return invalidSetting("listen,listen_tls", "configure at least one application RPC listener")
+	}
 	if s.ListenTLS != nil {
 		if err := s.ListenTLS.Validate(); err != nil {
 			return prefixValidationError("listen_tls", err)
 		}
-		if s.ListenTLS.Listen == s.Listen {
+		if s.Listen != "" && s.ListenTLS.Listen == s.Listen {
 			return invalidSetting("listen_tls.listen", "must differ from listen")
+		}
+		if s.ListenTLS.Listen == s.HealthListenAddress() {
+			return invalidSetting("listen_tls.listen", "must differ from health_listen")
+		}
+	}
+	if s.HealthListen != nil {
+		if strings.TrimSpace(*s.HealthListen) == "" {
+			return invalidSetting("health_listen", "must not be empty when configured")
+		}
+		if s.Listen != "" && *s.HealthListen == s.Listen {
+			return invalidSetting("health_listen", "must differ from listen")
 		}
 	}
 	if s.PlatformInstructions != nil && strings.TrimSpace(*s.PlatformInstructions) == "" {
@@ -91,7 +105,6 @@ func (s Settings) Validate() error {
 	}
 	for name, value := range map[string]string{
 		"database_url":   s.DatabaseURL,
-		"listen":         s.Listen,
 		"audience":       s.Audience,
 		"code_mode_host": s.CodeModeHost,
 		"executor_codex": s.ExecutorCodex,
