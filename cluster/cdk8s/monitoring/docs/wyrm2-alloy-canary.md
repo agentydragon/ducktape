@@ -56,6 +56,10 @@ Expect both collector labels `alloy`, one Ready `alloy-node`, one Ready
 Pod UID and restart count remain unchanged, metrics continue, and WAL health
 remains normal.
 
+Both journal collectors select NixOS using NFD's
+`feature.node.kubernetes.io/system-os_release.ID=nixos` label. Confirm this label
+is present too: the collector gate alone does not schedule the journal Pod.
+
 Query Loki across the full change interval using the test ID. Check every
 numbered record (duplicates allowed), timestamps, partial CRI messages,
 stdout/stderr `stream`, and the bounded labels `app`, `instance`, `component`,

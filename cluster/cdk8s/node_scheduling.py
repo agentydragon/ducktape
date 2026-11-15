@@ -25,6 +25,8 @@ REGION_LABEL = "topology.kubernetes.io/region"
 ROAMING_REGION = "roaming"
 # A dict typed read-only: jsii serializes only `dict` instances as maps.
 HIL_OVH_NODE_SELECTOR: Mapping[str, str] = {ZONE_LABEL: HIL_OVH_ZONE}
+# NFD reconciles the host's OS release independently of kubelet registration.
+NIXOS_NODE_SELECTOR: Mapping[str, str] = {"feature.node.kubernetes.io/system-os_release.ID": "nixos"}
 # Control-plane nodes also carry this key as a label, which node affinities and selectors match.
 CONTROL_PLANE_TAINT_KEY = "node-role.kubernetes.io/control-plane"
 CONTROL_PLANE_TOLERATION = k8s.Toleration(key=CONTROL_PLANE_TAINT_KEY, operator="Exists", effect="NoSchedule")

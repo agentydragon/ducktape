@@ -270,8 +270,7 @@ def _promtail_values() -> dict[str, object]:
 
 def _promtail_journal_values() -> dict[str, object]:
     return {
-        # Restrict to systemd/journald nodes; label set in nix/nixos/hosts/*/default.nix.
-        "nodeSelector": {"node-vendor": "nixos"},
+        "nodeSelector": node_scheduling.NIXOS_NODE_SELECTOR,
         "affinity": _legacy_collector_affinity(JOURNAL_COLLECTOR_LABEL),
         "tolerations": _TOLERATE_NO_SCHEDULE,
         "config": {

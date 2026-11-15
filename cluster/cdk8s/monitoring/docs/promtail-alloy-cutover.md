@@ -33,7 +33,7 @@ The linked wyrm2 replay canary changes directly to `alloy` with duplicates and
 transient overlap accepted; it does not require a metrics restart or state reset.
 Manage collector labels through partial, prune-disabled Node manifests in Flux;
 keep existing label ownership in one place. Journal opt-in additionally requires
-`node-vendor=nixos`. Offline roaming nodes stay on Promtail until they return and are individually migrated. Keep both
+NFD's `feature.node.kubernetes.io/system-os_release.ID=nixos`. Offline roaming nodes stay on Promtail until they return and are individually migrated. Keep both
 legacy releases and their Loki ingress permission until every node is verified.
 The existing [roaming node controller](../../../docs/plans/roaming_nodes.md)
 marks offline laptops `node.kubernetes.io/out-of-service:NoExecute`; the new

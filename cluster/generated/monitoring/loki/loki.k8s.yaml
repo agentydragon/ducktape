@@ -384,7 +384,7 @@ spec:
           path: /etc/machine-id
         name: machine-id
     nodeSelector:
-      node-vendor: nixos
+      feature.node.kubernetes.io/system-os_release.ID: nixos
     resources:
       limits:
         cpu: 500m

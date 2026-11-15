@@ -232,7 +232,7 @@ def chart(app: App) -> Chart:
             },
             "controller": {
                 "type": "daemonset",
-                "nodeSelector": {"node-vendor": "nixos", loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
+                "nodeSelector": dict(node_scheduling.NIXOS_NODE_SELECTOR) | {loki.JOURNAL_COLLECTOR_LABEL: "alloy"},
                 "tolerations": [{"effect": "NoSchedule", "operator": "Exists"}],
                 "volumes": {
                     "extra": [
