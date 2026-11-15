@@ -9124,6 +9124,19 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         publication_span: Option<Span>,
         outcome: &mut Outcome,
     ) {
+        // A static importer can observe an exported cell even before it holds
+        // a callable. Keep that observation separate from callback discovery:
+        // moving its initializer earlier changes undefined or TDZ into a value.
+        if self.inputs.export_reentry_enabled {
+            self.promote_top_effects(
+                self.top_restricted(&self.inputs.reentry_bindings),
+                Vec::new(),
+                self.state
+                    .current_top_owner
+                    .expect("export reentry has a top owner"),
+                outcome,
+            );
+        }
         // Opaque code may run each available callback any number of times and
         // in any order. One fixed-order pass would let a member run before a
         // later member's write and miss the value it publishes. Repeat the
