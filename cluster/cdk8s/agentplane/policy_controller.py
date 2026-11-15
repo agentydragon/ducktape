@@ -39,7 +39,6 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-policy-controller"
 _HEALTH_PORT = 8081
 _TLS_PORT = 8083
-TOKEN_AUDIENCE = "agentplane-policy"
 # How long a PolicyBinding may outlive its expiresAt before it alerts: the controller deletes it
 # within seconds, so this is the controller being down or its deletes failing.
 _OVERDUE_SECONDS = 300
@@ -101,12 +100,9 @@ class PolicyController(Construct):
                 key_file=Path(workload_tls.KEY_FILE),
                 client_ca_file=Path(workload_tls.TRUST_BUNDLE_FILE),
             ),
-            grpc_audience=TOKEN_AUDIENCE,
             workload_issuer=WORKLOAD_ISSUER.name,
             # policy_controller_rbac.py grants the issuer the same namespaces.
             workload_namespaces=workload_namespaces,
-            reader_accounts=frozenset({f"{namespace}/app"}),
-            writer_accounts=frozenset({f"{namespace}/app"}),
             reader_services=frozenset({APP_URI}),
             writer_services=frozenset({APP_URI}),
         )
@@ -114,7 +110,10 @@ class PolicyController(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name="policy-controller-settings", namespace=namespace),
-            content=yaml_config(settings),
+            # CLEANUP(added 2026-11-15): Drop this projection when the decoded legacy fields retire.
+            content=yaml_config(
+                settings.model_dump(mode="json", exclude={"grpc_audience", "reader_accounts", "writer_accounts"})
+            ),
             path="/etc/agentplane-policy-controller/config.yaml",
         )
         workload = add_service_workload(

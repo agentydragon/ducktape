@@ -11380,11 +11380,6 @@ data:
       cert_file: /run/agentplane/workload-tls/tls.crt
       key_file: /run/agentplane/workload-tls/tls.key
       client_ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-    grpc_audience: agentplane-policy
-    reader_accounts:
-      - agentplane-staging/app
-    writer_accounts:
-      - agentplane-staging/app
     reader_services:
       - spiffe://agentplane/app
     writer_services:
