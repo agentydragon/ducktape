@@ -531,7 +531,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 		expired := errors.Is(turnCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
 		cancel()
 		if expired && err != nil {
-			settled, settleErr := r.failExpiredProviderCommand(ctx, owner, sessionID, command.ID)
+			settled, settleErr := r.settleExpiredProviderCommand(ctx, owner, sessionID, command.ID)
 			if settleErr != nil {
 				return activeCommand, &deferredProviderError{cause: settleErr}
 			}
@@ -563,9 +563,10 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 	}
 }
 
-// A configured turn limit stops provider work after the call has joined. Settle that safe
+// A configured turn limit stops provider work after the call has joined. A response whose
+// persistence won the cancellation race can already prove the turn complete. Otherwise settle
 // provider-only failure; native work still follows FailExecution's uncertainty checks.
-func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
+func (r *Runtime) settleExpiredProviderCommand(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(r.settings.RPCTimeoutSeconds)*time.Second)
 	defer cancel()
 	attempt, err := r.store.CurrentProviderAttempt(ctx, owner, sessionID)
@@ -584,12 +585,35 @@ func (r *Runtime) failExpiredProviderCommand(ctx context.Context, owner sessions
 		}
 	} else {
 		attempt, err = r.store.ProviderRecoveryFrontier(ctx, owner, sessionID)
-		if err != nil || attempt == nil {
+		if err != nil {
 			return false, err
+		}
+		if attempt == nil {
+			return r.finishCompletedInputTurn(ctx, owner, sessionID, commandID)
 		}
 		if attempt.CommandID != commandID {
 			return false, protocol.ErrPrecondition
 		}
 	}
 	return true, r.store.FailProviderCommand(ctx, owner, sessionID, commandID, attempt.IntentID, reason)
+}
+
+// This only records an already-completed input turn; it cannot dispatch another provider or
+// native step. Read and FinishCommand both retain the original lease generation fence.
+func (r *Runtime) finishCompletedInputTurn(ctx context.Context, owner sessionstore.Owner, sessionID, commandID string) (bool, error) {
+	conversation, err := r.store.Read(ctx, owner)
+	if err != nil {
+		return false, err
+	}
+	if conversation.Pending != nil || conversation.Stopped || !conversation.Transcript.TurnComplete() || conversation.Transcript.CheckSettled() != nil {
+		return false, nil
+	}
+	session, err := r.store.GetSession(ctx, sessionID, "")
+	if err != nil {
+		return false, err
+	}
+	if session.ConversationID != owner.ConversationID || session.Blocked || session.ActiveCommand == nil || *session.ActiveCommand != commandID || session.ActiveTurn == nil || *session.ActiveTurn != commandID {
+		return false, nil
+	}
+	return true, r.store.FinishCommand(ctx, owner, sessionID, commandID, sessionstore.TurnDone)
 }
