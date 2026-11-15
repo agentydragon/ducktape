@@ -3,7 +3,8 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
+from dataclasses import dataclass
+from typing import Literal, cast
 from unittest.mock import create_autospec
 from uuid import uuid4
 
@@ -18,9 +19,15 @@ from agentplane.system_tests.driver import native_artifacts, sandbox, scenario
 from agentplane.system_tests.driver.cluster import Cluster
 
 
+@dataclass(frozen=True)
+class LifecycleEvent:
+    operation: Literal["diagnostics", "delete", "client-close"]
+    sandbox_name: str
+
+
 @pytest.fixture
-def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
-    events: list[tuple[str, str]] = []
+def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[LifecycleEvent]:
+    events: list[LifecycleEvent] = []
     views: dict[str, environment_service_pb2.EnvironmentDescriptor] = {}
 
     @asynccontextmanager
@@ -43,7 +50,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 
         async def close(opened: Client) -> None:
             events.extend(
-                ("client-close", view.target.name)
+                LifecycleEvent("client-close", view.target.name)
                 for view in views.values()
                 if view.target.uid in opened.opened_sandbox_uids
             )
@@ -71,10 +78,10 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
 
     async def capture(client: Client, *, sandbox_uid: str) -> None:
         (view,) = [view for view in views.values() if view.target.uid == sandbox_uid]
-        events.append(("diagnostics", view.target.name))
+        events.append(LifecycleEvent("diagnostics", view.target.name))
 
     async def delete(cluster: Cluster, client: Client, name: str, uid: str) -> None:
-        events.append(("delete", name))
+        events.append(LifecycleEvent("delete", name))
 
     monkeypatch.setattr(Client, "connect", staticmethod(new_client))
     monkeypatch.setattr(sandbox, "wait_until_running", ready)
@@ -89,7 +96,7 @@ def cluster() -> Cluster:
 
 
 async def test_finished_scenario_releases_its_guest_while_peer_is_running(
-    cluster: Cluster, lifecycle: list[tuple[str, str]]
+    cluster: Cluster, lifecycle: list[LifecycleEvent]
 ) -> None:
     peer_started = asyncio.Event()
     finished = asyncio.Event()
@@ -108,9 +115,9 @@ async def test_finished_scenario_releases_its_guest_while_peer_is_running(
             await create("slow")
             peer_started.set()
             await finished.wait()
-            assert ("delete", "fast") in lifecycle
-            assert ("client-close", "fast") in lifecycle
-            assert ("delete", "slow") not in lifecycle
+            assert LifecycleEvent("delete", "fast") in lifecycle
+            assert LifecycleEvent("client-close", "fast") in lifecycle
+            assert LifecycleEvent("delete", "slow") not in lifecycle
 
     async with asyncio.timeout(2), asyncio.TaskGroup() as tasks:
         tasks.create_task(fast())
@@ -118,13 +125,13 @@ async def test_finished_scenario_releases_its_guest_while_peer_is_running(
 
     assert clients[0] is not clients[1]
     for name in ("fast", "slow"):
-        assert lifecycle.index(("diagnostics", name)) < lifecycle.index(("delete", name))
-        assert lifecycle.index(("delete", name)) < lifecycle.index(("client-close", name))
+        assert lifecycle.index(LifecycleEvent("diagnostics", name)) < lifecycle.index(LifecycleEvent("delete", name))
+        assert lifecycle.index(LifecycleEvent("delete", name)) < lifecycle.index(LifecycleEvent("client-close", name))
 
 
 @pytest.mark.parametrize("failure", ["readiness", "assertions", "diagnostics", "deletion"])
 async def test_failure_still_releases_every_created_guest_and_closes_client(
-    cluster: Cluster, lifecycle: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch, failure: str
+    cluster: Cluster, lifecycle: list[LifecycleEvent], monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     if failure == "readiness":
         original_ready = sandbox.wait_until_running
@@ -164,12 +171,37 @@ async def test_failure_still_releases_every_created_guest_and_closes_client(
         await run()
 
     for name in ("first", "second"):
-        assert ("delete", name) in lifecycle
-        assert lifecycle.index(("delete", name)) < lifecycle.index(("client-close", name))
+        assert LifecycleEvent("delete", name) in lifecycle
+        assert lifecycle.index(LifecycleEvent("delete", name)) < lifecycle.index(LifecycleEvent("client-close", name))
+
+
+@pytest.mark.parametrize("failure", ["diagnostics", "deletion"])
+async def test_scenario_failure_remains_primary_when_cleanup_also_fails(
+    cluster: Cluster, lifecycle: list[LifecycleEvent], monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    async def cleanup_failure(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("cleanup failed")
+
+    if failure == "diagnostics":
+        monkeypatch.setattr(native_artifacts, "capture", cleanup_failure)
+    else:
+        monkeypatch.setattr(sandbox, "suspend_and_delete", cleanup_failure)
+    original = AssertionError("scenario failed")
+
+    async def run() -> None:
+        async with scenario.open_resources(cluster, "https://app.test", "test", trace.NoOpTracer()) as (_, create):
+            await create("owned")
+            raise original
+
+    with pytest.raises(AssertionError) as caught:
+        await run()
+
+    assert caught.value is original
+    assert LifecycleEvent("client-close", "owned") in lifecycle
 
 
 async def test_cancellation_during_teardown_waits_for_deletion_before_closing_client(
-    cluster: Cluster, lifecycle: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
+    cluster: Cluster, lifecycle: list[LifecycleEvent], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     deleting = asyncio.Event()
     release = asyncio.Event()
@@ -194,18 +226,18 @@ async def test_cancellation_during_teardown_waits_for_deletion_before_closing_cl
         with pytest.raises(asyncio.CancelledError):
             await task
 
-    assert lifecycle.index(("delete", "owned")) < lifecycle.index(("client-close", "owned"))
+    assert lifecycle.index(LifecycleEvent("delete", "owned")) < lifecycle.index(LifecycleEvent("client-close", "owned"))
 
 
 async def test_pod_case_can_disable_native_capture_and_still_delete_its_guests(
-    cluster: Cluster, lifecycle: list[tuple[str, str]]
+    cluster: Cluster, lifecycle: list[LifecycleEvent]
 ) -> None:
     async with scenario.open_resources(
         cluster, "https://app.test", "test", trace.NoOpTracer(), native_diagnostics=False
     ) as (_, create):
         await create("pod")
-    assert ("diagnostics", "pod") not in lifecycle
-    assert lifecycle == [("delete", "pod"), ("client-close", "pod")]
+    assert LifecycleEvent("diagnostics", "pod") not in lifecycle
+    assert lifecycle == [LifecycleEvent("delete", "pod"), LifecycleEvent("client-close", "pod")]
 
 
 if __name__ == "__main__":

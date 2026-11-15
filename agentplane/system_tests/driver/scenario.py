@@ -33,14 +33,40 @@ async def open_resources(
 
             # ExitStack runs diagnostics before deleting guests, and closes their client last.
             resources.push_async_callback(diagnostics)
+        error: BaseException | None = None
         try:
             yield client, sandbox
+        except BaseException as caught:
+            error = caught
+            raise
         finally:
             # A peer can fail while this scenario is already cleaning up. Finish teardown
             # before propagating TaskGroup cancellation; the stack must outlive every guest.
-            closing = asyncio.create_task(resources.pop_all().aclose())
+            closing = asyncio.create_task(
+                resources.pop_all().__aexit__(
+                    type(error) if error is not None else None,
+                    error,
+                    error.__traceback__ if error is not None else None,
+                )
+            )
+            cancellation: asyncio.CancelledError | None = None
+            while not closing.done():
+                try:
+                    await asyncio.shield(closing)
+                except asyncio.CancelledError as caught:
+                    task = asyncio.current_task()
+                    if task is not None and task.cancelling():
+                        cancellation = cancellation or caught
+                except BaseException:
+                    break
             try:
-                await asyncio.shield(closing)
-            except asyncio.CancelledError:
-                await closing
-                raise
+                closing.result()
+            except BaseException as cleanup_error:
+                if error is not None:
+                    error.add_note(f"Scenario cleanup also failed ({type(cleanup_error).__name__}).")
+                elif cancellation is not None:
+                    raise cancellation from cleanup_error
+                else:
+                    raise
+            if error is None and cancellation is not None:
+                raise cancellation
