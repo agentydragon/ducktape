@@ -1,25 +1,12 @@
-//! End-to-end coverage for `passed_to_call` member selectors through the **full
-//! lowering pipeline** — the `resolves_to`-of-argument primitive. It pins a target
-//! by the target binding being **passed as an argument** to a call of a known
-//! callee (`registry.register(Target)`) — rather than by the target's own body,
-//! its own use sites (`reads_member` / `member_of_module`), or its own minified
-//! name. This is the inverse direction of `member_of_module`: that primitive pins
-//! the source_unit whose *own* subtree consumes `mod.X` and explicitly cannot reach a
-//! target distinguished only by an external registration statement (the call site
-//! declares nothing, so its `declares` conjunct excludes it). This primitive closes
-//! that gap.
+//! End-to-end coverage for `passed_to_call` member selectors through the full
+//! lowering pipeline. The selector pins a top-level declaration by its binding
+//! being passed to a method call, with optional receiver, argument-position and
+//! declaration-kind constraints. It does not claim the registration statement.
 //!
-//! These tests drive the real `debundle` binary: the spec carries
-//! `passed_to_call` selectors, the call-argument facts are derived from the chunk
-//! AST and joined to each argument's declaring source_unit, and we assert the resolved
-//! binding lands in the right module and the emitted tree runs under Node.
-//!
-//! ## The registry-distinguished empty class (the headline case)
-//!
-//! The headline shape is a top-level **empty** class with no internal anchor of
-//! its own, distinguished *only* by an external `registry.register(C)` statement,
-//! which the use-site primitives cannot reach. The argument-pass in the
-//! registration call is what the `passed_to_call` EDB rides.
+//! Use-site `source_matches[]` covers simple registrations too; see
+//! `use_site_pinning_test.rs`. The final test covers the distinct nonlocal join:
+//! neither the declaration shape nor the call shape alone identifies the class,
+//! while the call relation combined with its declaration kind does.
 
 use debundle_e2e_support::*;
 
@@ -255,4 +242,57 @@ export { r, A };
         ),
         &["passed_to_call", "register"],
     );
+}
+
+/// A use-site shape alone sees both the class and function argument; a class
+/// shape alone sees both empty classes. The relational kind constraint joins
+/// the distant registration call to the declaration without owning the call.
+#[test]
+fn passed_to_call_filters_declaration_kind_without_adjacency() {
+    const SOURCE: &str = r#"const registry = { register(x) { (this.items ||= []).push(x); } };
+class A {}
+class B {}
+function helper() {}
+console.log("before registration");
+registry.register(A);
+registry.register(helper);
+console.log(registry.items[0].name, registry.items.length, new B().constructor.name);
+export { registry, A, B, helper };
+"#;
+    let fixture = run_fixture(FixtureOpts::new(
+        SOURCE,
+        vec![logical_module(
+            "services",
+            &[Member::passed_to_call(
+                "ServiceClass",
+                "register",
+                None,
+                None,
+                Some("class_declaration"),
+            )],
+        )],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/services.js",
+        &["class ServiceClass"],
+        &["class B", "function helper", ".register("],
+    );
+    assert_entry_output(&fixture, "before registration\nServiceClass 2 B\n");
+
+    for template in ["registry.register(Target);", "class Target {}"] {
+        let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+            SOURCE,
+            vec![logical_module_with_binding_groups(
+                "services",
+                &[],
+                &[BindingGroup::source_alpha(
+                    template,
+                    &[("Target", "ServiceClass")],
+                )],
+            )],
+        ));
+        let outcomes = read_selector_outcomes(&rejected.report_root);
+        find_outcome(&outcomes, "ambiguous", "ServiceClass");
+    }
 }

@@ -5,9 +5,10 @@
 //! through a statement that uses it.
 
 use debundle_e2e_support::{
-    BindingGroup, FixtureOpts, Member, assert_entry_output, assert_module_source, find_outcome,
-    logical_module_with_binding_groups, read_selector_outcomes, run_dry_run_rejection_fixture,
-    run_fixture, run_spec_validate, write_validate_fixture_spec,
+    BindingGroup, FixtureOpts, Member, assert_entry_output, assert_module_source,
+    assert_source_file, find_outcome, logical_module, logical_module_with_binding_groups,
+    read_selector_outcomes, run_dry_run_rejection_fixture, run_fixture, run_spec_validate,
+    write_validate_fixture_spec,
 };
 
 const TWO_HELPER_COPIES: &str = r#"var ga = Object.getOwnPropertyDescriptor;
@@ -175,4 +176,158 @@ fn local_absent_from_the_template_is_rejected() {
         "{}",
         out.stderr
     );
+}
+
+/// The registry anchor and claimed argument survive raw binding renames. The
+/// use-site pattern claims only the class, leaving registration in the entry.
+#[test]
+fn registration_target_uses_the_resolved_registry_anchor() {
+    for source in [
+        r#"const firstRegistry = { kind: "primary", register(x) { (this.items ||= []).push(x); } };
+const secondRegistry = { kind: "secondary", register(x) { (this.items ||= []).push(x); } };
+class First {}
+class Second {}
+firstRegistry.register(First);
+secondRegistry.register(Second);
+console.log(new First().constructor.name, firstRegistry.items[0] === First, secondRegistry.items[0] === Second);
+export { firstRegistry, secondRegistry, First, Second };
+"#,
+        r#"const r = { kind: "primary", register(x) { (this.items ||= []).push(x); } };
+const s = { kind: "secondary", register(x) { (this.items ||= []).push(x); } };
+class a {}
+class b {}
+r.register(a);
+s.register(b);
+console.log(new a().constructor.name, r.items[0] === a, s.items[0] === b);
+export { r, s, a, b };
+"#,
+    ] {
+        let fixture = run_fixture(FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "registry",
+                    &[Member::source_alpha(
+                        "appRegistry",
+                        r#"const registry = { kind: "primary", ANYTHING };"#,
+                    )],
+                ),
+                logical_module_with_binding_groups(
+                    "services",
+                    &[],
+                    &[BindingGroup::source_alpha(
+                        "appRegistry.register(ARGS_before, Service, ARGS_after);",
+                        &[("Service", "ServiceClass")],
+                    )],
+                ),
+            ],
+        ));
+        assert_module_source(
+            &fixture.out_root,
+            "static/app/modules/services.js",
+            &["class ServiceClass"],
+            &[".register("],
+        );
+        assert_source_file(
+            &fixture.entry_path,
+            &["appRegistry.register(ServiceClass)"],
+            &["class ServiceClass"],
+        );
+        assert_entry_output(&fixture, "ServiceClass true true\n");
+    }
+}
+
+/// The receiver is an unclaimed free identifier, so its spelling alpha-renames
+/// rather than requiring a spec entity with that name.
+#[test]
+fn registration_target_uses_the_argument_position() {
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const host = { define(name, ctor, mixin) { this.selected = ctor; } };
+class Widget {}
+class Mixin {}
+host.define("widget", Widget, Mixin);
+console.log(host.selected.name, host.selected === Widget, host.selected !== Mixin);
+export { host, Widget, Mixin };
+"#,
+        vec![logical_module_with_binding_groups(
+            "widgets",
+            &[],
+            &[BindingGroup::source_alpha(
+                "unclaimedReceiver.define(EXPR_name, Target, ARGS_after);",
+                &[("Target", "WidgetClass")],
+            )],
+        )],
+    ));
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/widgets.js",
+        &["class WidgetClass"],
+        &["class Mixin", ".define("],
+    );
+    assert_entry_output(&fixture, "WidgetClass true true\n");
+}
+
+#[test]
+fn registration_target_rejects_multiple_candidate_bindings() {
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        r#"const r = { register(x) { (this.items ||= []).push(x); } };
+class A {}
+class B {}
+r.register(A);
+r.register(B);
+export { r, A, B };
+"#,
+        vec![logical_module_with_binding_groups(
+            "services",
+            &[],
+            &[BindingGroup::source_alpha(
+                "registry.register(Target);",
+                &[("Target", "ServiceClass")],
+            )],
+        )],
+    ));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    find_outcome(&outcomes, "ambiguous", "ServiceClass");
+}
+
+#[test]
+fn registration_target_rejects_absent_calls_and_non_identifier_arguments() {
+    for source in [
+        "const r = { other(x) {} };\nclass A {}\nr.other(A);\n",
+        "const r = { register(x) {} };\nclass A {}\nr.register(new A());\n",
+    ] {
+        no_match_for(source, "registry.register(Target);", "Target");
+    }
+}
+
+/// A failed declared anchor remains a spec error even though the target's
+/// template can match a call locally without that anchor.
+#[test]
+fn registration_target_rejects_an_unresolved_declared_registry() {
+    let rejected = run_dry_run_rejection_fixture(FixtureOpts::new(
+        r#"const registry = { kind: "actual", register(x) {} };
+class A {}
+registry.register(A);
+export { registry, A };
+"#,
+        vec![
+            logical_module(
+                "registry",
+                &[Member::source_alpha(
+                    "appRegistry",
+                    r#"const registry = { kind: "missing", ANYTHING };"#,
+                )],
+            ),
+            logical_module_with_binding_groups(
+                "services",
+                &[],
+                &[BindingGroup::source_alpha(
+                    "appRegistry.register(Target);",
+                    &[("Target", "ServiceClass")],
+                )],
+            ),
+        ],
+    ));
+    let outcomes = read_selector_outcomes(&rejected.report_root);
+    find_outcome(&outcomes, "no_match", "appRegistry");
 }

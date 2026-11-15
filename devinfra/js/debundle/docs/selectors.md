@@ -60,11 +60,24 @@ ranked menu rather than an automatic accept list.
 
 ## Relational selectors
 
-`source_matches[]` pins an entity by its own AST shape. When that shape is not
-distinctive — and for shapeless delegators, empty subclasses, registry targets
-and bundler-helper copies it never is — pin the entity by an invariant
-**relation** instead. These live under `members[].selector` and are one-of with
-`binding`; each names another spec member by its readable `name:`, written
+`source_matches[]` can pin a binding through its declaration or a statement
+that uses it. For example, `appRegistry.register(Target);` with a binding claim
+for `Target` selects the argument's declaration; a spec entity named
+`appRegistry` anchors the receiver. Add `ARGS_before` / `ARGS_after` holes to
+ignore other argument positions. Claiming only the free argument leaves the
+registration statement in its existing owner. See
+<../e2e/use_site_pinning_test.rs>.
+
+Use a relational selector when the required facts span distant declarations
+and uses. `passed_to_call.kind: class_declaration`, for example, can select the
+class among a registry's class and function arguments, even with another
+identical unregistered class in the chunk. The call template alone and the
+class template alone are each ambiguous; contiguous source context would pin
+unrelated neighboring statements. See the
+[replacement experiment](../debug/2026_11_14_call_argument_selector_replacement.md).
+
+Relational selectors live under `members[].selector` and are one-of with
+`binding`; anchors name another spec member by its readable `name:`, written
 `@Name` in prose. They match through facts derived from the chunk, not through
 templates (<../SPEC.md> § Matching), in the same joint program as every other
 selector. An anchor names a member anywhere in the chunk, except that
