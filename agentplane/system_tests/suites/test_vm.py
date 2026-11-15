@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from contextlib import nullcontext
 from dataclasses import dataclass
 from functools import partial
 from typing import cast
@@ -88,7 +89,7 @@ async def vm_cases(
 ) -> AsyncIterator[CaseBatch]:
     scripted = ScriptedUpstream()
 
-    async def turn(case: VmCase) -> None:
+    async def turn(case: VmCase, _worker: None) -> None:
         async with (
             scripted.case_scope(),
             scenario.open_resources(cluster, base_url, token, tracer) as (client, sandboxes),
@@ -107,7 +108,10 @@ async def vm_cases(
         item.nodeid: Case.for_item(item, partial(turn, cast(VmCase, item.callspec.params["case"])))
         for item in selected_items(request)
     }
-    async with scripted.serving(listener=scripted_listener.socket), CaseBatch.running(cases, limit=2) as batch:
+    async with (
+        scripted.serving(listener=scripted_listener.socket),
+        CaseBatch.running(cases, limit=2, worker_scope=nullcontext) as batch,
+    ):
         yield batch
 
 

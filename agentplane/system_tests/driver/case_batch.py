@@ -3,26 +3,27 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager, suppress
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
 from dataclasses import dataclass
 
 import pytest
 from opentelemetry.context import Context
 from opentelemetry.trace import Status, StatusCode
 
+from agentplane.system_tests.driver.cleanup import CleanupError
 from agentplane.system_tests.driver.tracing import tracer
 
 
 @dataclass(frozen=True)
-class Case:
+class Case[Worker]:
     nodeid: str
-    run: Callable[[], Awaitable[None]]
+    run: Callable[[Worker], Awaitable[None]]
     exclusive: bool = False
     timeout_seconds: float | None = None
 
     @classmethod
-    def for_item(cls, item: pytest.Function, run: Callable[[], Awaitable[None]]) -> Case:
+    def for_item(cls, item: pytest.Function, run: Callable[[Worker], Awaitable[None]]) -> Case[Worker]:
         timeout = item.get_closest_marker("timeout")
         seconds = float(timeout.args[0] if timeout.args else timeout.kwargs["timeout"]) if timeout else None
         return cls(
@@ -43,9 +44,9 @@ CASE_RESULT = pytest.StashKey[Result]()
 
 
 class CaseBatch:
-    def __init__(self, cases: Mapping[str, Case]) -> None:
+    def __init__(self, names: Iterable[str]) -> None:
         loop = asyncio.get_running_loop()
-        self._results: dict[str, asyncio.Future[Result]] = {name: loop.create_future() for name in cases}
+        self._results: dict[str, asyncio.Future[Result]] = {name: loop.create_future() for name in names}
 
     async def result(self, name: str) -> Result:
         return await asyncio.shield(self._results[name])
@@ -61,7 +62,7 @@ class CaseBatch:
         if result.error is not None:
             raise result.error
 
-    async def _run_case(self, name: str, case: Case) -> None:
+    async def _run_case[Worker](self, name: str, case: Case[Worker], worker: Worker) -> None:
         loop = asyncio.get_running_loop()
         started = loop.time()
         error: BaseException | None = None
@@ -71,7 +72,18 @@ class CaseBatch:
             try:
                 with tracer.start_as_current_span("system_test.scenario", attributes={"pytest.nodeid": case.nodeid}):
                     async with asyncio.timeout(case.timeout_seconds):
-                        await case.run()
+                        await case.run(worker)
+            except CleanupError:
+                raise
+            except BaseExceptionGroup as caught:
+                # Preserve case outcomes, but abort on failed cleanup or process control.
+                _, unhandled = caught.split(
+                    (Exception, pytest.fail.Exception, pytest.skip.Exception, pytest.xfail.Exception)
+                )
+                if unhandled is not None or caught.subgroup(CleanupError) is not None:
+                    raise
+                error = caught
+                span.set_status(Status(StatusCode.ERROR, str(caught)))
             except (
                 Exception,
                 asyncio.CancelledError,
@@ -82,41 +94,48 @@ class CaseBatch:
                 # The matching pytest item re-raises this after its owned cleanup completes.
                 error = caught
                 span.set_status(Status(StatusCode.ERROR, str(caught)))
-            except BaseExceptionGroup as caught:
-                # TaskGroup preserves pytest control outcomes as BaseException leaves. Record
-                # groups made only of case failures, but let cancellation and process-control
-                # exceptions continue through the task group.
-                _, unhandled = caught.split(
-                    (Exception, pytest.fail.Exception, pytest.skip.Exception, pytest.xfail.Exception)
-                )
-                if unhandled is not None:
-                    raise
-                error = caught
-                span.set_status(Status(StatusCode.ERROR, str(caught)))
         self._results[name].set_result(Result(error=error, seconds=loop.time() - started))
 
-    async def _run(self, cases: Mapping[str, Case], *, limit: int) -> None:
+    async def _run[Worker](
+        self,
+        cases: Mapping[str, Case[Worker]],
+        *,
+        limit: int,
+        worker_scope: Callable[[], AbstractAsyncContextManager[Worker]],
+    ) -> None:
         for name, case in cases.items():
             if not case.exclusive:
                 continue
-            await self._run_case(name, case)
+            async with worker_scope() as worker:
+                await self._run_case(name, case, worker)
             if (await self.result(name)).error is not None:
                 self._finish_pending(RuntimeError(f"Not run: exclusive case {name} failed"))
                 return
-        slots = asyncio.Semaphore(limit)
+        pending = iter((name, case) for name, case in cases.items() if not case.exclusive)
 
-        async def bounded(name: str, case: Case) -> None:
-            async with slots:
-                await self._run_case(name, case)
+        async def work() -> None:
+            task = asyncio.current_task()
+            assert task is not None
+            async with worker_scope() as worker:
+                # Taking the next case has no await; each case belongs to one worker.
+                for name, case in pending:
+                    await self._run_case(name, case, worker)
+                    if task.cancelling():
+                        return
 
         async with asyncio.TaskGroup() as tasks:
-            for name, case in cases.items():
-                if not case.exclusive:
-                    tasks.create_task(bounded(name, case), name=name)
+            for _ in range(min(limit, sum(not case.exclusive for case in cases.values()))):
+                tasks.create_task(work())
 
     @classmethod
     @asynccontextmanager
-    async def running(cls, cases: Mapping[str, Case], *, limit: int) -> AsyncIterator[CaseBatch]:
+    async def running[Worker](
+        cls,
+        cases: Mapping[str, Case[Worker]],
+        *,
+        limit: int,
+        worker_scope: Callable[[], AbstractAsyncContextManager[Worker]],
+    ) -> AsyncIterator[CaseBatch]:
         if limit < 1:
             raise ValueError("case concurrency must be positive")
         batch = cls(cases)
@@ -125,12 +144,14 @@ class CaseBatch:
         # setup and finalization themselves run in different tasks.
         async def drive() -> None:
             try:
-                await batch._run(cases, limit=limit)
+                await batch._run(cases, limit=limit, worker_scope=worker_scope)
             except BaseException as error:
                 # An internal driver error must wake every result waiter as well as
                 # propagate at fixture teardown; otherwise pytest waits until timeout.
                 batch._finish_pending(error)
                 raise
+            finally:
+                batch._finish_pending(asyncio.CancelledError("case workers stopped"))
 
         driver = asyncio.create_task(drive())
         try:

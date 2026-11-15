@@ -12,8 +12,8 @@ from agentplane.system_tests.driver.case_batch import Case, CaseBatch, selected_
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
-from agentplane.system_tests.suites import pod_runners
-from agentplane.system_tests.suites.pod_cases import SCENARIOS, Resources, Scenario
+from agentplane.system_tests.suites.pod_cases import SCENARIOS, Scenario
+from agentplane.system_tests.suites.pod_worker import Worker
 from util.net import Listener
 
 # gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
@@ -36,16 +36,14 @@ async def pod_cases(
     async with (
         native_client(cluster, tmp_path_factory.mktemp("pod-dispatcher") / "token") as dispatcher,
         upstream.serving(listener=scripted_listener.socket),
-        pod_runners.Pool(cluster, base_url, token) as runner_pool,
     ):
-        resources = Resources(
-            cluster=cluster, base_url=base_url, token=token, scripted=upstream, dispatcher=dispatcher, pool=runner_pool
-        )
         cases = {
-            item.nodeid: Case.for_item(item, partial(cast(Scenario, item.callspec.params["case"]), resources))
+            item.nodeid: Case.for_item(item, cast(Scenario, item.callspec.params["case"]))
             for item in selected_items(request)
         }
-        async with CaseBatch.running(cases, limit=CASE_LIMIT) as batch:
+        async with CaseBatch.running(
+            cases, limit=CASE_LIMIT, worker_scope=partial(Worker.open, cluster, base_url, token, upstream, dispatcher)
+        ) as batch:
             yield batch
 
 

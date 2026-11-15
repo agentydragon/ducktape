@@ -7,6 +7,10 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 
 
+class CleanupError(RuntimeError):
+    """Owned resources could not be released; further allocations are unsafe."""
+
+
 @dataclass(frozen=True)
 class CleanupResult:
     failure: BaseException | None = None

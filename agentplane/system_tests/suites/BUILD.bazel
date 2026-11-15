@@ -218,7 +218,7 @@ py_test(
 
 _POD_DEPS = [
     ":pod_cases",
-    ":pod_runners",
+    ":pod_worker",
     "//:conftest",
     "//agentplane/system_tests:conftest",
     "//agentplane/system_tests/driver:case_batch",
@@ -257,7 +257,7 @@ py_test(
     tags = K3S_TAGS,
     deps = [
         ":pod_cases",
-        ":pod_runners",
+        ":pod_worker",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "//agentplane/system_tests/deployment:pytest_plugin",
@@ -722,17 +722,12 @@ py_library(
     name = "pod_cases",
     srcs = ["pod_cases.py"],
     deps = [
-        ":pod_runners",
+        ":pod_worker",
         "//agentplane/app/testing:client",
-        "//agentplane/runner_gateway/dispatcher:testing_client",
-        "//agentplane/system_tests/driver:cluster",
         "//agentplane/system_tests/driver:executor",
         "//agentplane/system_tests/driver:harness_pair",
         "//agentplane/system_tests/driver:policy_objects",
         "//agentplane/system_tests/driver:sandbox",
-        "//agentplane/system_tests/driver:scenario",
-        "//agentplane/system_tests/driver:scripted_upstream",
-        "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:agent_messaging",
         "//agentplane/system_tests/scenarios:dispatcher_workload",
         "//agentplane/system_tests/scenarios:egress",
@@ -744,21 +739,6 @@ py_library(
         "//agentplane/system_tests/scenarios:thread_history",
         "//agentplane/system_tests/scenarios:workload_trust",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "pod_runners",
-    srcs = ["pod_runners.py"],
-    deps = [
-        "//agentplane/app/testing:client",
-        "//agentplane/environments/v1:environment_service_pb2",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/system_tests/driver:cleanup",
-        "//agentplane/system_tests/driver:cluster",
-        "//agentplane/system_tests/driver:scenario",
-        "//agentplane/system_tests/driver:tracing",
-        "@pypi//protobuf",
     ],
 )
 
@@ -913,16 +893,40 @@ py_library(
     ],
 )
 
-py_test(
-    name = "test_pod_runners",
-    srcs = ["test_pod_runners.py"],
+py_library(
+    name = "pod_worker",
+    srcs = ["pod_worker.py"],
     deps = [
-        ":pod_runners",
-        "//:conftest",
+        "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
-        "//agentplane/system_tests:conftest",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests/driver:cleanup",
         "//agentplane/system_tests/driver:cluster",
-        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "//agentplane/system_tests/driver:tracing",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_pod_worker",
+    srcs = ["test_pod_worker.py"],
+    deps = [
+        ":pod_worker",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/runner_gateway/dispatcher:testing_client",
+        "//agentplane/system_tests:conftest",
+        "//agentplane/system_tests/driver:case_batch",
+        "//agentplane/system_tests/driver:cleanup",
+        "//agentplane/system_tests/driver:cluster",
+        "//agentplane/system_tests/driver:sandbox",
+        "//agentplane/system_tests/driver:scenario",
+        "//agentplane/system_tests/driver:scripted_upstream",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
