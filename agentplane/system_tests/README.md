@@ -116,7 +116,7 @@ provider acceptance. The real standing-instructions case uses a marker absent fr
 control Session with the same prompt but no instructions; the instructed reply must contain the
 marker and the control reply must not ([`session_instructions.py`](scenarios/session_instructions.py)). Real-model tests receive
 `OPENAI_API_KEY` as a BuildBuddy test secret and carry the `live_openai_api` tag; do not print or
-save credentials ([`defs.bzl`](k3s/defs.bzl)).
+save credentials ([`test_real_model`](suites/BUILD.bazel)).
 
 For proxy behavior, compare the agent's report with the Egress decision history. The report says
 what the agent claims to have done; a proxy decision records what the proxy admitted. The egress

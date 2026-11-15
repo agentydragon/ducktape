@@ -669,6 +669,7 @@ py_test(
         "//agentplane/system_tests/driver:scripted_upstream",
         "//agentplane/system_tests/driver:tracing",
         "//agentplane/system_tests/scenarios:vm_sandbox",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
