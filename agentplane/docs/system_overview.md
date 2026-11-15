@@ -38,7 +38,7 @@ flowchart LR
         egressRules[Rules and EgressAdmin TLS gRPC :8081]
         llm[LLM inference HTTP and ModelConfig RPC over TLS :8080]
         electric[Electric]
-    sampler[Central sampler TLS gRPC :8083]
+        sampler[Central sampler TLS gRPC :8083]
         samplerdb[(Sampler PostgreSQL)]
     end
     subgraph runtimes[Sandbox environments]
