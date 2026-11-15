@@ -117,7 +117,7 @@ flowchart LR
     sampler -.->|optional Action tools: service mTLS and Session delegation, gRPC| actions
     sampler -->|Executor gRPC: mTLS, sampler SVID| gw
     sampler -->|mTLS sampler SVID + typed Session delegation: journal push| hs
-    sampler -->|Responses API| llm -->|model API| responses
+    sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
     gw --> k8s
     notif --> k8s
@@ -263,8 +263,9 @@ dashed arrows are runner-initiated platform routes.
 
 The optional central sampler runs as its own Deployment and Service in staging and the
 [k3s acceptance scenarios](../system_tests/README.md#central-sampler), using the shared cdk8s
-construct and its own image. Responses models use the projected service-account token to call LLM
-ingress; selected Anthropic API models use a dedicated mounted key and a host-pinned Cilium egress rule.
+construct and its own image. Responses models call LLM ingress with the sampler service SVID over
+mTLS and typed execution Identity/Session delegation; selected Anthropic API models use a dedicated
+mounted key and a host-pinned Cilium egress rule.
 
 ## Session delivery
 
@@ -399,7 +400,7 @@ flowchart LR
     runtime -->|direct Executor calls| execution
     execution -->|local Codex JSON-RPC over WebSocket| executor
     sampler -->|mTLS sampler SVID + typed Session delegation: acknowledged journal outbox| history
-    sampler -->|Responses API| llm -->|model API| responses
+    sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
 ```
 
@@ -412,7 +413,8 @@ The staging picker gives direct Anthropic models only to the central sampler, ke
 subscription-backed Codex and Claude harnesses. The Anthropic key is copied by ESO from the existing
 LiteLLM-owned secret and mounted only in the sampler container; Cilium pins direct API traffic to
 `api.anthropic.com` and its TLS server name. Responses calls use the LLM ingress HTTPS endpoint with
-the sampler's audience-scoped bearer token and verified service TLS.
+the sampler's service SVID over mTLS and typed Identity/Session delegation. The ingress authorizes
+the recorded effective Identity; the sampler certificate supplies only the actor proof.
 
 The sampler lazily starts one shared Codex host process when code-mode work needs it and multiplexes
 logical Sessions through it. The host retains per-Session `store()` / `load()` values across cells
@@ -712,7 +714,7 @@ flowchart LR
     egress -->|policy-approved requests| other
     egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
     egress -.->|opaque TLS to shared SVID RPC listener :8080| llm
-    sampler -->|direct TokenReview HTTP:8080| llm
+    sampler -->|HTTPS mTLS :8080; sampler SVID + typed Identity/Session delegation| llm
     llm -->|model API + server-held key| litellm
     actions -->|MCP calls| mcp_servers
     actions -->|REST + web push| github
