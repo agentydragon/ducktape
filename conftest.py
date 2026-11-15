@@ -36,7 +36,8 @@ def runfiles() -> Runfiles:
 def pytest_configure(config: pytest.Config) -> None:
     """Register all common test markers."""
     # Enable pytest-asyncio auto mode for all tests
-    config.option.asyncio_mode = "auto"
+    if config.option.asyncio_mode is None:
+        config.option.asyncio_mode = "auto"
 
     # External requirements - LLM APIs
     config.addinivalue_line(
