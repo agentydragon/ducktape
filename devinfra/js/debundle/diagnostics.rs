@@ -180,7 +180,6 @@ pub enum ExportContract {
     CallbackFactoryExports,
     PureMembers,
     FluentExports,
-    PureNewExports,
     NoReentryCallbackExports,
     RetainedCallbackConstructorExports,
     RetainedCallbackFactoryExports,

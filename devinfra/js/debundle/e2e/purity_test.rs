@@ -997,7 +997,7 @@ export { A, B, C };
 }
 
 #[test]
-fn asserted_pure_new_export_emits_no_s_cycle() {
+fn declared_imported_constructor_purity_emits_no_s_cycle() {
     let fixture = run_fixture(
         FixtureOpts::new(
             r#"import { Box as Provider } from "./vendorlib.js";
@@ -1016,15 +1016,19 @@ export { a, b, c };
             "static/vendorlib",
             "export class Box { constructor(value) { this.value = value; } }\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
-            .with_pure_new_exports(&["Box"])
-            .build()]),
+        .with_extra_chunk_logical_modules(&[(
+            "static/vendorlib",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )]),
     );
     assert_entry_output(&fixture, "1 2 3\n");
 }
 
 #[test]
-fn asserted_pure_new_export_resolves_aliased_source_path() {
+fn declared_imported_constructor_purity_resolves_aliased_source_path() {
     const ENTRY: &str = r#"import { Provider as Factory } from "/$bunfs/root/provider.js";
 const a = new Factory(1);
 const b = new Factory(2);
@@ -1039,10 +1043,14 @@ export { a, b, c };
             logical_module("bar", &[Member::new("b")]),
         ]
     };
-    let purity = || {
-        [ChunkExportPurityBuilder::new("static/provider")
-            .with_pure_new_exports(&["Provider"])
-            .build()]
+    let provider_modules = || {
+        [(
+            "static/provider",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Provider").with_purity(MemberPurity::PureNew)],
+            )],
+        )]
     };
     // Listing the physical file and its copy as independent chunks makes
     // the assertion miss the actual import target, reproducing the reported
@@ -1053,7 +1061,7 @@ export { a, b, c };
                 ("$bunfs/root/provider", PROVIDER),
                 ("static/provider", PROVIDER),
             ])
-            .with_chunk_export_purity(&purity()),
+            .with_extra_chunk_logical_modules(&provider_modules()),
         &["foo", "bar"],
     );
     let fixture = run_fixture(
@@ -1063,7 +1071,7 @@ export { a, b, c };
                 ("static/app", "$bunfs/root/app.js"),
                 ("static/provider", "$bunfs/root/provider.js"),
             ])
-            .with_chunk_export_purity(&purity()),
+            .with_extra_chunk_logical_modules(&provider_modules()),
     );
     assert_entry_output(&fixture, "1 2 3\n");
 }
@@ -1129,7 +1137,7 @@ export { a, b, c };
 }
 
 #[test]
-fn asserted_pure_new_export_still_classifies_arguments() {
+fn declared_imported_constructor_purity_still_classifies_arguments() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"import { Box as Provider } from "./vendorlib.js";
@@ -1147,15 +1155,19 @@ export { a, b, c };
             "static/vendorlib",
             "export class Box { constructor(value) { this.value = value; } }\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
-            .with_pure_new_exports(&["Box"])
-            .build()]),
+        .with_extra_chunk_logical_modules(&[(
+            "static/vendorlib",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )]),
         &["foo", "bar"],
     );
 }
 
 #[test]
-fn asserted_pure_new_export_does_not_make_plain_calls_pure() {
+fn declared_imported_constructor_purity_does_not_make_plain_calls_pure() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
             r#"import { Box as Provider } from "./vendorlib.js";
@@ -1173,9 +1185,13 @@ export { a, b, c };
             "static/vendorlib",
             "export class Box { constructor(value) { this.value = value; } }\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
-            .with_pure_new_exports(&["Box"])
-            .build()]),
+        .with_extra_chunk_logical_modules(&[(
+            "static/vendorlib",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )]),
         &["foo", "bar"],
     );
 }

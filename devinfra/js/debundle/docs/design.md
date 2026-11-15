@@ -2400,23 +2400,21 @@ output, the Vite ecosystem, and most React/Vue/Angular SPAs.
   namespace member calls unresolved. This prunes unused inference without
   changing the greatest fixpoint seen by any imported binding.
 
-  `chunk_export_purity.<chunk>.pure_new_exports` is the analogous
-  cross-module constructor contract. It projects onto each importing
-  chunk's local binding for the named export, admitting only
+  A `purity: "pure_new"` annotation on a defining chunk's selected member
+  follows that binding through its exports to importers. It admits only
   `new LocalName(...)` when its arguments classify as pure. It does not
   assert purity for ordinary calls, class definition, or the export's
-  initialization. Like `pure_exports`, it is an author assertion rather
-  than inferred constructor-body purity; a missing or excluded defining
-  chunk stays opaque. Constructor-body inference needs separate proof for
-  `super`, instance field initializers, and writes through `this` (which can
-  invoke a prototype setter); function-call purity does not establish that
-  `new` has no observable effects.
+  initialization. This is an author assertion rather than inferred
+  constructor-body purity; a missing or excluded defining chunk stays
+  opaque. Constructor-body inference needs separate proof for `super`,
+  instance field initializers, and writes through `this` (which can invoke
+  a prototype setter); function-call purity does not establish that `new`
+  has no observable effects.
 
-  A `purity: "pure_new"` annotation on a defining chunk's selected class
-  member also follows that binding through its exports to importers. A
-  `source_match` can select the class by structure, so this form does not
-  require the minified export name in the spec. Selector resolution runs
-  before the cross-module purity oracle for this reason.
+  A `source_match` can select the defining class by structure without
+  pinning its minified export name. Named and default imports receive the
+  contract under their local binding names. Selector resolution runs before
+  the cross-module purity oracle for this reason.
 
   `chunk_export_purity.<chunk>.pure_members` is the member-call form, for
   CJS-interop namespace exports whose factories are reached as member

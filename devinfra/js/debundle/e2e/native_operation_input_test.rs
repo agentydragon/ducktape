@@ -107,8 +107,14 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
             "static/box",
             "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
         )])
+        .with_extra_chunk_logical_modules(&[(
+            "static/box",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
-            .with_pure_new_exports(&["Box"])
             .with_retained_callback_constructor("Box", 1, &[0])
             .build()])
         .with_native_operation_inputs(
@@ -185,8 +191,14 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
             "static/box",
             "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
         )])
+        .with_extra_chunk_logical_modules(&[(
+            "static/box",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
-            .with_pure_new_exports(&["Box"])
             .with_retained_callback_constructor("Box", 1, &[0])
             .build()]),
     );
@@ -228,8 +240,14 @@ fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
             "static/box",
             "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
         )])
+        .with_extra_chunk_logical_modules(&[(
+            "static/box",
+            vec![logical_module(
+                "provider",
+                &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+            )],
+        )])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/box")
-            .with_pure_new_exports(&["Box"])
             .with_retained_callback_constructor("Box", 1, &[0])
             .build()]),
     );

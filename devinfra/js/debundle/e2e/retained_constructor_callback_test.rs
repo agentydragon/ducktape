@@ -5,9 +5,15 @@ use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export class Box { constructor(callback, compare, metadata) { this.callback = callback; this.compare = compare; this.metadata = metadata; } invoke() { return this.callback(); } }\n";
 
+fn constructor_module() -> Vec<LogicalModuleEntry> {
+    vec![logical_module(
+        "provider",
+        &[Member::new("Box").with_purity(MemberPurity::PureNew)],
+    )]
+}
+
 fn contract() -> ChunkExportPurityBuilder {
     ChunkExportPurityBuilder::new("static/peer")
-        .with_pure_new_exports(&["Box"])
         .with_retained_callback_constructor("Box", 1, &[0])
         .with_retained_callback_constructor("Box", 3, &[0, 1])
 }
@@ -26,8 +32,8 @@ fn audited_constructor_retains_callback_until_instance_use() {
             "static/peer",
             "export class Box { constructor(callback) { this.callback = callback; } invoke() { return this.callback(); } }\n",
         )])
+        .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_pure_new_exports(&["Box"])
             .with_retained_callback_constructor("Box", 1, &[0])
             .build()]),
     );
@@ -39,7 +45,7 @@ fn named_callbacks_aliases_and_primitive_metadata_remain_lazy() {
     let fixture = run_fixture(FixtureOpts::new(
         "import { Box as LocalBox } from './peer.js';\nfunction callback() { return later; }\nconst alias = callback;\nconst wrapped = new LocalBox(alias, () => other, 'metadata');\nconst later = 42;\nconst other = 7;\nconsole.log(wrapped.invoke(), wrapped.compare(), wrapped.metadata);\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("callback"), Member::new("alias"), Member::new("wrapped")]), logical_module("values/later", &[Member::new("later"), Member::new("other")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[contract().build()]));
+    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_extra_chunk_logical_modules(&[("static/peer", constructor_module())]).with_chunk_export_purity(&[contract().build()]));
     assert_preserved_entry_output(&fixture, "42 7 metadata\n");
 }
 
@@ -49,7 +55,8 @@ fn default_import_uses_the_defining_export_contract() {
         "import LocalBox from './peer.js';\nconst wrapped = new LocalBox(() => later);\nconst later = 42;\nconsole.log(wrapped.callback());\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
     ).with_extra_chunks(&[("static/peer", "export default class Box { constructor(callback) { this.callback = callback; } }\n")])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_pure_new_exports(&["default"]).with_retained_callback_constructor("default", 1, &[0]).build()]));
+        .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
+        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_retained_callback_constructor("default", 1, &[0]).build()]));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
@@ -58,7 +65,7 @@ fn a_retained_instance_can_flow_into_another_audited_constructor() {
     let fixture = run_fixture(FixtureOpts::new(
         "import { Box } from './peer.js';\nconst inner = new Box(() => later);\nconst wrapped = new Box(inner, () => later, 0);\nconst later = 42;\nconsole.log(wrapped.callback.callback(), wrapped.compare());\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("inner"), Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[contract().build()]));
+    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_extra_chunk_logical_modules(&[("static/peer", constructor_module())]).with_chunk_export_purity(&[contract().build()]));
     assert_preserved_entry_output(&fixture, "42 42\n");
 }
 
@@ -162,6 +169,7 @@ fn unsupported_arguments_aliases_and_callback_mutations_keep_conservative_timing
                 ],
             )
             .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
             .with_chunk_export_purity(&[contract().build()]),
             &["callbacks/wrapped", "values/later"],
             &[],
@@ -173,11 +181,8 @@ fn unsupported_arguments_aliases_and_callback_mutations_keep_conservative_timing
 fn ordinary_call_contract_and_constructor_purity_do_not_defer_construction() {
     let source = "import { Box } from './peer.js';\nconst wrapped = new Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
     for policy in [
+        ChunkExportPurityBuilder::new("static/peer").build(),
         ChunkExportPurityBuilder::new("static/peer")
-            .with_pure_new_exports(&["Box"])
-            .build(),
-        ChunkExportPurityBuilder::new("static/peer")
-            .with_pure_new_exports(&["Box"])
             .with_retained_callback_factory("Box", 1, &[0])
             .build(),
     ] {
@@ -190,6 +195,7 @@ fn ordinary_call_contract_and_constructor_purity_do_not_defer_construction() {
                 ],
             )
             .with_extra_chunks(&[("static/peer", PROVIDER)])
+            .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
             .with_chunk_export_purity(&[policy]),
             &["callbacks/wrapped", "values/later"],
             &[],
@@ -202,7 +208,7 @@ fn constructor_contract_does_not_defer_an_ordinary_call() {
     expect_atomic_conflict_rejection(FixtureOpts::new(
         "import { Box } from './peer.js';\nconst wrapped = Box(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", "export function Box(callback) { return { invoke: callback }; }\n")]).with_chunk_export_purity(&[contract().build()]), &["callbacks/wrapped", "values/later"], &[]);
+    ).with_extra_chunks(&[("static/peer", "export function Box(callback) { return { invoke: callback }; }\n")]).with_extra_chunk_logical_modules(&[("static/peer", constructor_module())]).with_chunk_export_purity(&[contract().build()]), &["callbacks/wrapped", "values/later"], &[]);
 }
 
 #[test]
@@ -239,7 +245,7 @@ fn evaluated_callback_argument_still_has_its_tdz_dependency() {
     expect_atomic_conflict_rejection(FixtureOpts::new(
         "import { Box } from './peer.js';\nconst wrapped = new Box(callback);\nconst callback = () => later;\nconst later = 42;\nconsole.log(wrapped.callback());\n",
         vec![logical_module("callbacks/wrapped", &[Member::new("wrapped")]), logical_module("values/later", &[Member::new("callback"), Member::new("later")])],
-    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_chunk_export_purity(&[contract().build()]), &["callbacks/wrapped", "values/later"], &[]);
+    ).with_extra_chunks(&[("static/peer", PROVIDER)]).with_extra_chunk_logical_modules(&[("static/peer", constructor_module())]).with_chunk_export_purity(&[contract().build()]), &["callbacks/wrapped", "values/later"], &[]);
 }
 
 #[test]
@@ -268,6 +274,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
                 )],
             )
             .with_extra_chunks(&[("static/peer", &provider)])
+            .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
             .with_chunk_export_purity(&[contract().build()]),
         );
         assert_preserved_entry_output(
@@ -307,6 +314,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
                 ],
             )
             .with_extra_chunks(&[("static/peer", &provider)])
+            .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
             .with_chunk_export_purity(&[contract().build()]),
             &["callbacks/wrapped", "values/later"],
             &[],
