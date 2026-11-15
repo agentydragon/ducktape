@@ -53,7 +53,7 @@ pub struct StatementId(pub usize);
 /// Position in the source-unit sequence after splitting comma declarations.
 /// This is a source coordinate, not a graph's dense `SourceUnitId`: a graph
 /// reconstructed from a report may allocate its nodes in another order.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SourceUnitOrdinal(pub usize);
 
