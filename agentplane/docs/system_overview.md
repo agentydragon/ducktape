@@ -25,7 +25,7 @@ Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CON
 flowchart LR
     browser([Browser])
     liveTests([Manual live system tests])
-    edge[HTTPS Gateway]
+    httpsGateway[HTTPS Gateway]
     frontend[Static frontend]
     app[Integration API]
     subgraph services[Agentplane services]
@@ -90,9 +90,9 @@ flowchart LR
     anthropic[Anthropic Messages API]
 
     liveTests -->|HTTPS: operator OIDC ID token only| app
-    browser -->|HTTPS, one origin| edge
-    edge -->|HTML, assets and service worker| frontend
-    edge -->|API, auth and streams| app
+    browser -->|HTTPS, one origin| httpsGateway
+    httpsGateway -->|HTML, assets and service worker| frontend
+    httpsGateway -->|API, auth and streams| app
     app -->|service SVID mTLS: Runtime diagnostics and health| gw
     app -->|service SVID mTLS: Dispatcher| gw
     app -->|App SVID mTLS: EnvironmentService| sandboxctl
