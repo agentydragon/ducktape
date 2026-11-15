@@ -14,13 +14,12 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from copy import deepcopy
-from dataclasses import dataclass, replace
-from enum import StrEnum
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRulesMethods
-from cdk8s import ApiObjectMetadata, App, Chart, Size, Testing
+from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
     ConfigMap,
     ContainerResources,
@@ -73,7 +72,13 @@ from agentplane.proto import session_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_database, launch_preset, runtime_grant, send_grant, svid_box
 from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
-from agentplane.system_tests.deployment.rendered_fixture import LocalModel, Models, OperatorTokenIssuer, PublicLiteLLM
+from agentplane.system_tests.deployment.rendered_fixture import (
+    LocalModel,
+    Models,
+    OperatorTokenIssuer,
+    PublicLiteLLM,
+    SandboxRuntime,
+)
 from agentplane.system_tests.k3s.namespaces import CREDENTIALS_NAMESPACE, NAMESPACE
 from agentplane.system_tests.vm import block_storage, configuration as vm_configuration
 from cluster.cdk8s import agent_access_profiles as access
@@ -193,28 +198,19 @@ def add_secret(
     )
 
 
-class FixtureProfile(StrEnum):
-    FULL = "full"
-    # These scenarios do not exercise external MCP Connections. The app retains unused
-    # Connection routes and reports Connection Service unavailable in system status.
-    NO_MCP_EDGE = "no-mcp-edge"
-    # Native acceptance candidates run real backend services and a bound test caller, without
-    # the integration App, its database, or its OIDC login.
-    APP_FREE = "app-free"
-
-    @property
-    def app_enabled(self) -> bool:
-        return self != FixtureProfile.APP_FREE
-
-
-@dataclass(frozen=True)
-class FixtureChart:
-    chart: Chart
-    app: Construct | None
-    actions: Construct
-    mcp_edge: Construct | None
-    app_login: dex.StaticClient | None
-    mcp_linkage: dex.StaticClient | None
+APP_CALLERS = {ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): APP_SERVICE.pods}
+NATIVE_CALLERS = {
+    ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT): Pods(
+        namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items())
+    )
+}
+BACKEND_DATABASES = (
+    fixture_database.Database.ACTIONS,
+    fixture_database.Database.EGRESS,
+    fixture_database.Database.NOTIFICATIONS,
+    fixture_database.Database.HISTORY,
+    fixture_database.Database.SESSION_DISPATCHER,
+)
 
 
 def login_client(app_origin: str) -> dex.StaticClient:
@@ -227,13 +223,13 @@ def linkage_client(app_origin: str) -> dex.StaticClient:
 
 def environment(
     *,
-    vm_sandboxes: bool,
+    runtime: SandboxRuntime,
+    platform_callers: dict[ServiceAccountRef, Pods],
     models: Models,
     operator_token_key: str | None,
     app_enabled: bool = True,
     app_origin: str = APP_ORIGIN,
     central_sampler: bool = False,
-    firecracker_sandboxes: bool = False,
 ) -> Environment:
     """Build the common fixture settings; MCP renderers add their servers and Dex resources separately.
     With `operator_token_key`, the app's OIDC issuer is `OPERATOR_TOKENS`'s, pinned to that key."""
@@ -390,16 +386,12 @@ def environment(
         mcp_edge=McpEdgeProps(
             replicas=_ONE_REPLICA, operator_oidc=app_operator_oidc, oauth_secret_name=None, hostname=None
         ),
-        vm_sandboxes=vm_sandboxes,
-        firecracker_sandboxes=firecracker_sandboxes,
-        vm_resources=vm_configuration.RESOURCES if vm_sandboxes or firecracker_sandboxes else None,
+        vm_sandboxes=runtime is SandboxRuntime.KUBEVIRT,
+        firecracker_sandboxes=runtime is SandboxRuntime.FIRECRACKER,
+        vm_resources=vm_configuration.RESOURCES if runtime is not SandboxRuntime.POD else None,
         vm_console_autologin=True,
         wake_caller_accounts=frozenset(
-            {
-                *([ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT)] if not app_enabled else []),
-                *([ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME)] if app_enabled else []),
-                ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME),
-            }
+            {*platform_callers, ServiceAccountRef(namespace=NAMESPACE, name=notifications.NAME)}
         ),
     )
 
@@ -477,47 +469,6 @@ def add_native_test_client(chart: Chart) -> None:
             cpu=CpuResources(request=Cpu.millis(10)), memory=MemoryResources(request=Size.mebibytes(16))
         ),
     )
-
-
-def objects(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    operator_token_key: str | None,
-    models: Models,
-    vm_sandboxes: bool,
-    firecracker_sandboxes: bool = False,
-    central_sampler: bool = False,
-    profile: FixtureProfile = FixtureProfile.FULL,
-) -> list[dict[str, Any]]:
-    """Synthesize the common one-node fixture with optional VM or production Firecracker Sandboxes."""
-    if vm_sandboxes and firecracker_sandboxes:
-        raise ValueError("the test fixture selects either VM or Firecracker Sandboxes")
-    env = environment(
-        vm_sandboxes=vm_sandboxes,
-        firecracker_sandboxes=firecracker_sandboxes,
-        models=models,
-        operator_token_key=operator_token_key,
-        app_enabled=profile.app_enabled,
-        central_sampler=central_sampler,
-    )
-    fixture = build_chart(
-        ca_cert=ca_cert,
-        ca_key=ca_key,
-        system_roots=system_roots,
-        cluster_ca=cluster_ca,
-        models=models,
-        env=env,
-        profile=profile,
-    )
-    documents = list(Testing.synth(fixture.chart))
-    if vm_sandboxes:
-        configure_test_vm_guests(documents)
-    add_svid_box_template(documents)
-    configure_port_forward_tls(documents)
-    return [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def configure_port_forward_tls(documents: list[dict[str, Any]]) -> None:
@@ -917,66 +868,6 @@ def add_model_credentials(chart: Chart, env: Environment, *, models: Models) -> 
     )
     if isinstance(models, PublicLiteLLM):
         add_secret(chart, _LITELLM_KEY_SECRET, {"api-key": key}, namespace=env.egress.credentials_namespace)
-
-
-def build_chart(
-    *,
-    ca_cert: str,
-    ca_key: str,
-    system_roots: str,
-    cluster_ca: str,
-    models: Models,
-    env: Environment,
-    profile: FixtureProfile = FixtureProfile.FULL,
-) -> FixtureChart:
-    chart = new_chart(env)
-    app_enabled = profile.app_enabled
-    databases = [
-        fixture_database.Database.ACTIONS,
-        fixture_database.Database.EGRESS,
-        fixture_database.Database.NOTIFICATIONS,
-        fixture_database.Database.HISTORY,
-        fixture_database.Database.SESSION_DISPATCHER,
-    ]
-    if app_enabled:
-        databases.append(fixture_database.Database.APP)
-    if profile == FixtureProfile.FULL:
-        databases.append(fixture_database.Database.MCP_EDGE)
-    if env.central_sampler is not None:
-        databases.append(fixture_database.Database.CENTRAL_SAMPLER)
-    fixture_database.add_database(chart, namespace=env.namespace, databases=databases)
-    if app_enabled:
-        platform_callers = {
-            ServiceAccountRef(namespace=NAMESPACE, name=app_component.NAME): app_component.service(NAMESPACE).pods
-        }
-        notification_callers = [app_component.service(NAMESPACE).pods]
-    else:
-        add_native_test_client(chart)
-        platform_callers = {
-            ServiceAccountRef(namespace=NAMESPACE, name=NATIVE_TEST_CLIENT): Pods(
-                namespace=NAMESPACE, labels=tuple(_NATIVE_TEST_CLIENT_LABELS.items())
-            )
-        }
-        notification_callers = []
-    add_fixture_pki(chart, env, ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca)
-    action_service = add_backend_services(
-        chart, env, models=models, platform_callers=platform_callers, notification_callers=notification_callers
-    )
-    if env.central_sampler is not None:
-        add_central_sampler(chart, env)
-    app_service = add_app(chart, env) if app_enabled else None
-    edge_service = add_mcp_edge(chart, env) if profile == FixtureProfile.FULL else None
-    add_sandbox_templates(chart, env)
-    add_model_credentials(chart, env, models=models)
-    add_policy_controller(chart, env)
-    return FixtureChart(
-        chart=chart,
-        app=app_service,
-        actions=action_service,
-        mcp_edge=edge_service,
-        app_login=login_client(env.app.origin) if env.app is not None else None,
-        mcp_linkage=linkage_client(env.app.origin) if env.app is not None else None,
-    )
 
 
 def add_svid_box_template(objects: list[dict[str, Any]]) -> None:

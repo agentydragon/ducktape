@@ -1,5 +1,6 @@
+load("//agentplane/system_tests/deployment:render.bzl", "render_fixture")
 load("//agentplane/system_tests/k3s:defs.bzl", "k3s_suite")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # gazelle:map_kind py_test k3s_suite //agentplane/system_tests/k3s:defs.bzl
 
@@ -226,4 +227,37 @@ py_library(
         "@pypi//httpx",
         "@pypi//pytest",
     ],
+)
+
+py_binary(
+    name = "recovery_deployment_bin",
+    main_module = "agentplane.system_tests.suites.mcp.recovery_deployment",
+    deps = [":recovery_deployment"],
+)
+
+render_fixture(
+    name = "recovery_manifests",
+    renderer = ":recovery_deployment_bin",
+)
+
+py_binary(
+    name = "history_deployment_bin",
+    main_module = "agentplane.system_tests.suites.mcp.history_deployment",
+    deps = [":history_deployment"],
+)
+
+render_fixture(
+    name = "history_manifests",
+    renderer = ":history_deployment_bin",
+)
+
+py_binary(
+    name = "mcp_deployment_bin",
+    main_module = "agentplane.system_tests.suites.mcp.mcp_deployment",
+    deps = [":mcp_deployment"],
+)
+
+render_fixture(
+    name = "mcp_manifests",
+    renderer = ":mcp_deployment_bin",
 )

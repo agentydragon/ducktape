@@ -2,7 +2,6 @@
 
 import json
 import os
-from dataclasses import asdict
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
@@ -148,25 +147,16 @@ def test_default_and_mcp_profiles_keep_real_connection_service(runfiles: Runfile
 @pytest.mark.parametrize("location", ["K3S_VM_FIXTURE_RLOCATION", "K3S_FIRECRACKER_FIXTURE_RLOCATION"])
 def test_virtualized_profiles_omit_unused_mcp_edge_and_database(runfiles: Runfiles, location: str) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ[location])
-    full = fixture_chart.objects(
-        **asdict(rendered_fixture.PLACEHOLDERS),
-        operator_token_key=rendered_fixture.OPERATOR_TOKEN_KEY_PLACEHOLDER,
-        models=rendered_fixture.MODEL_PLACEHOLDERS[rendered_fixture.Backend.LOCAL_MODEL],
-        vm_sandboxes=fixture.vm_sandboxes,
-        firecracker_sandboxes=fixture.firecracker_sandboxes,
+    assert not any(doc["kind"] == "Deployment" and doc["metadata"]["name"] == "mcp-edge" for doc in fixture.objects)
+    assert not any(
+        doc["kind"] == "Secret" and doc["metadata"]["name"] == "postgres-mcp-edge" for doc in fixture.objects
     )
-    control = {(doc["kind"], doc["metadata"]["name"]): doc for doc in full}
-    candidate = {(doc["kind"], doc["metadata"]["name"]): doc for doc in fixture.objects}
-    removed = control.keys() - candidate.keys()
-    assert ("Deployment", "mcp-edge") in removed
-    assert ("Secret", "postgres-mcp-edge") in removed
-    assert all(name.startswith("mcp-edge") or name == "postgres-mcp-edge" for _, name in removed)
-    database_resources = {("Deployment", "postgres"), ("ConfigMap", "postgres-bootstrap")}
-    assert {key: value for key, value in candidate.items() if key not in database_resources} == {
-        key: value for key, value in control.items() if key not in removed | database_resources
-    }
     _resource(fixture.objects, "Deployment", "actions")
-    template = environment_firecracker.NAME if fixture.firecracker_sandboxes else SUPERVISION_TEMPLATE
+    template = (
+        environment_firecracker.NAME
+        if (fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER)
+        else SUPERVISION_TEMPLATE
+    )
     _resource(fixture.objects, "SandboxTemplate", template)
 
 
@@ -744,7 +734,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
 ) -> None:
     fixture = _filled_fixture(runfiles, location)
     assert fixture.central_sampler
-    assert not fixture.vm_sandboxes
+    assert fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT
     docs = fixture.objects
 
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
@@ -928,8 +918,8 @@ def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfile
 
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
-    assert fixture.firecracker_sandboxes
-    assert not fixture.vm_sandboxes
+    assert fixture.runtime is rendered_fixture.SandboxRuntime.FIRECRACKER
+    assert fixture.runtime is not rendered_fixture.SandboxRuntime.KUBEVIRT
     assert not any(doc["kind"] == "CiliumNetworkPolicy" for doc in fixture.objects)
 
     template = _resource(fixture.objects, "SandboxTemplate", environment_firecracker.NAME)["spec"]

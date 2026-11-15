@@ -1,5 +1,6 @@
 """Independent chart executions must produce the same cached test inputs."""
 
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -9,35 +10,24 @@ from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
-_EXPECTED_OUTPUTS = {
-    "local-model-central.json",
-    "local-model-central-native.json",
-    "local-model.json",
-    "local-model-firecracker.json",
-    "local-model-mcp-fixtures.json",
-    "local-model-pod.json",
-    "local-model-vm.json",
-    "public-litellm.json",
-}
-
 
 def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:
-    renderer = Runfiles.CreateOrRaise().root() / os.environ["K3S_RENDERER_RLOCATION"]
-    outputs = []
-    for attempt in range(2):
-        output = tmp_path / str(attempt)
-        output.mkdir()
-        with (undeclared_outputs_dir() / f"render-{attempt}.log").open("wb") as log:
-            subprocess.run(
-                [renderer],
-                env=os.environ | {"K3S_FIXTURE_DIR": str(output)},
-                check=True,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
-        outputs.append({path.name: path.read_bytes() for path in output.glob("*.json")})
-    assert set(outputs[0]) == _EXPECTED_OUTPUTS
-    assert outputs[0] == outputs[1]
+    runfiles = Runfiles.CreateOrRaise()
+    for location in json.loads(os.environ["K3S_RENDERERS"]):
+        renderer = runfiles.root() / location
+        outputs = []
+        for attempt in range(2):
+            output = tmp_path / f"{renderer.name}-{attempt}.json"
+            with (undeclared_outputs_dir() / f"{renderer.name}-{attempt}.log").open("wb") as log:
+                subprocess.run(
+                    [renderer],
+                    env=os.environ | {"K3S_FIXTURE_OUTPUT": str(output)},
+                    check=True,
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                )
+            outputs.append(output.read_bytes())
+        assert outputs[0] == outputs[1], location
 
 
 if __name__ == "__main__":

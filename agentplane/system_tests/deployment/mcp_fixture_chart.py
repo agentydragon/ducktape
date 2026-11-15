@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
 
 import bcrypt
-from cdk8s import ApiObjectMetadata, Chart, Testing
+from cdk8s import ApiObjectMetadata, Chart
 from cdk8s_plus_34 import ConfigMap, Deployment, EnvValue, Volume
 from constructs import Construct
 from more_itertools import one
@@ -15,10 +14,10 @@ from more_itertools import one
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
 from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
-from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs, Models
+from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
 from cluster.cdk8s.agentplane import actions, mcp_edge
-from cluster.cdk8s.agentplane.environment import SessionDelegationProps
+from cluster.cdk8s.agentplane.environment import Environment, SessionDelegationProps
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, PolicySet
@@ -49,15 +48,9 @@ OPERATOR_TOKEN_GRANT = DexPasswordGrant(
 )
 
 
-def objects(
-    *, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str, models: Models, mcp: McpInputs
-) -> list[dict[str, Any]]:
-    env = fixture_chart.environment(
-        vm_sandboxes=False, models=models, operator_token_key=None, app_origin=mcp.app_origin, central_sampler=True
-    )
+def configure_environment(env: Environment, mcp: McpInputs) -> Environment:
+    """Configure the concrete MCP fixture servers and delegated action groups."""
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
-    mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
-    edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)
     actions_config = replace(
         env.actions,
         connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
@@ -85,21 +78,22 @@ def objects(
         ),
     )
     mcp_edge_config = replace(env.mcp_edge, oauth_secret_name=_MCP_EDGE_OAUTH_SECRET)
-    env = replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
-    fixture = fixture_chart.build_chart(
-        ca_cert=ca_cert, ca_key=ca_key, system_roots=system_roots, cluster_ca=cluster_ca, models=models, env=env
-    )
-    assert fixture.app is not None
-    assert fixture.app_login is not None
-    assert fixture.mcp_linkage is not None
-    assert fixture.mcp_edge is not None
+    return replace(env, actions=actions_config, mcp_edge=mcp_edge_config)
+
+
+def add_mcp_fixtures(
+    chart: Chart, mcp: McpInputs, *, system_roots: str, app: Construct, actions: Construct, edge: Construct
+) -> None:
+    """Add Dex, OAuth fixture servers and the external test caller's policy."""
+    mcp_edge_login = replace(_MCP_EDGE_LOGIN, redirect_uri=f"{mcp.mcp_edge_origin}/auth/callback")
+    edge_oauth = _mcp_edge_oauth(mcp.mcp_edge_origin, mcp.app_origin, mcp_edge_login.id)
     fixture_chart.add_secret(
-        fixture.chart,
+        chart,
         _MCP_EDGE_OAUTH_SECRET,
         {"oauth": edge_oauth.model_dump_json(), "client-secret": "test-k3s-mcp-edge-client-secret"},
     )
     caller = Identity(
-        fixture.chart,
+        chart,
         "mcp-edge-test-caller",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
         description="The external MCP acceptance-test caller Identity.",
@@ -108,31 +102,27 @@ def objects(
     # identity-owned Sandbox in test_delegation is a different principal, so these grants let the
     # test exercise backend isolation instead of failing before delegation at Action admission.
     PolicySet(
-        fixture.chart,
+        chart,
         "mcp-edge-test-caller-session-delegation",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_POLICY, namespace=NAMESPACE),
         rules=[AutoApproveIf.exact_actions(actions={"environments": ["list", "get"], "sessions": ["create"]})],
     )
     PolicyBinding(
-        fixture.chart,
+        chart,
         "mcp-edge-test-caller-session-delegation-binding",
         metadata=ApiObjectMetadata(name=_MCP_EDGE_TEST_CALLER, namespace=NAMESPACE),
         subject=caller.binding_subject(),
         policy_sets=[_MCP_EDGE_TEST_POLICY],
     )
     _add_mcp_fixtures(
-        fixture.chart,
+        chart,
         mcp,
-        app_login=fixture.app_login,
-        mcp_linkage=fixture.mcp_linkage,
+        app_login=fixture_chart.login_client(mcp.app_origin),
+        mcp_linkage=fixture_chart.linkage_client(mcp.app_origin),
         mcp_edge_login=mcp_edge_login,
         system_roots=system_roots,
-        dex_clients=[fixture.app, fixture.actions, fixture.mcp_edge],
+        dex_clients=[app, actions, edge],
     )
-    documents = list(Testing.synth(fixture.chart))
-    fixture_chart.add_svid_box_template(documents)
-    fixture_chart.configure_port_forward_tls(documents)
-    return [doc for doc in documents if doc["kind"] != "CiliumNetworkPolicy"]
 
 
 def _add_mcp_fixtures(
