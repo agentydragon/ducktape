@@ -526,7 +526,6 @@ ENV = Environment(
         litellm_key_secret_name=_LITELLM_KEY_SECRET,
         models=model_configs(STAGING_APP_MODELS),
         codex_routes=STAGING_APP_MODELS.codex,
-        log_llm_requests=True,
         attribution=AttributionConfig(
             json_headers=[
                 AttributionJsonHeader(
