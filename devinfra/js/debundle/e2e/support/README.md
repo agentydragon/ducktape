@@ -11,6 +11,10 @@ The library's existing public test helpers are re-exported by `mod.rs`:
   initial graph-producing run.
 - `tree_assertions.rs` collects relative paths and raw bytes; exact-tree comparison
   and staged report normalization apply their separate policies to that collection.
+- `process.rs` owns the mechanical subprocess boundary: it returns raw
+  `std::process::Output` for either exit status, reports spawn/capture failures with
+  command and working-directory context, and exposes the explicit Debundle invariant
+  guard. It has no fixture or transcript state.
 - `failure_workspace.rs` owns a case's lifetime. Flat, tree, graph and staged fixtures
   retain the whole workspace under `$TEST_UNDECLARED_OUTPUTS_DIR/failed-fixtures/`
   when an assertion unwinds through an owning handle, including assertions after a
@@ -25,11 +29,18 @@ The library's existing public test helpers are re-exported by `mod.rs`:
   inputs, consumed analysis/graph files, external dependencies and the previous
   output state. The shared guard runs after raw output is recorded. Executable
   SHA-256 identities are computed when a failure is retained.
-- `mod.rs` owns flat-fixture setup, CLI/Node execution, and report
+- `runtime.rs` owns Node/Bun execution checks, source-versus-output parity, and
+  emitted-module behavior probes. Case-owned launches go through the evidence wrapper;
+  the raw process boundary remains a separate lower-level API.
+- `mod.rs` is the public harness facade and owns flat-fixture setup, CLI workflows, and report
   fixtures. Runtime-only `extra_files` are mirrored
   into `app/` after transformation and before exit handling; on a failed exit, mirroring
   happens only if the transform produced `app/`. `failed_fixture_dirs_for_current_test()`
   locates retained workspaces without changing the shared output environment.
+- `defs.bzl` lets a test keep its existing Bazel target label while placing its Rust
+  source in a contract directory. The `source` argument defaults to `<name>.rs`;
+  representative sources live under `runtime/`, `cli/`, `reports/`, and
+  `staged_identity/`.
 
 For valid vendor marks, use the production spec types (including `WrapperShape` and
 `PartialSwapKind`) in the test's fixture builders. Keep raw JSON/YAML where a test
