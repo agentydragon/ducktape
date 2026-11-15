@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
@@ -42,7 +43,7 @@ from cluster.cdk8s.monitoring import mimir
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_DASHBOARDS = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards"
+_DASHBOARD_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards"
 _NAME = "grafana"
 _NAMESPACE = "monitoring"
 HOSTNAME = "grafana.allegedly.works"
@@ -315,159 +316,91 @@ def _dashboard(
     )
 
 
-def _dashboards(chart: Chart) -> None:
-    _dashboard(
-        chart,
-        "buildbuddy-executor-pool",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="CI",
-        json=(_DASHBOARDS / "buildbuddy-executor-pool.json").read_text(),
-    )
-    _dashboard(
-        chart,
+@dataclass(frozen=True)
+class LocalDashboard:
+    name: str
+    folder: str
+    datasources: tuple[tuple[str, str], ...]
+    filename: str
+
+
+@dataclass(frozen=True)
+class GrafanaComDashboard:
+    name: str
+    folder: str
+    datasources: tuple[tuple[str, str], ...]
+    dashboard_id: int
+    revision: int
+
+
+type Dashboard = LocalDashboard | GrafanaComDashboard
+
+
+_DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
+    LocalDashboard("buildbuddy-executor-pool", "CI", (("DS_MIMIR", "mimir"),), "buildbuddy-executor-pool.json"),
+    LocalDashboard(
         "zot-cache-image-pulls",
-        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
-        folder="Cluster & Platform",
-        json=(_DASHBOARDS / "zot-cache-image-pulls.json").read_text(),
-    )
-    _dashboard(
-        chart,
+        "Cluster & Platform",
+        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
+        "zot-cache-image-pulls.json",
+    ),
+    LocalDashboard(
         "interface-flap-frequency",
-        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
-        folder="Network",
-        json=(_DASHBOARDS / "interface-flap-frequency.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "node-memory",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Nodes & Hardware",
-        json=(_DASHBOARDS / "node-memory.json").read_text(),
-    )
-    _dashboard(
-        chart,
+        "Network",
+        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
+        "interface-flap-frequency.json",
+    ),
+    LocalDashboard("node-memory", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "node-memory.json"),
+    LocalDashboard(
         "cluster-storage-io",
-        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "cluster-storage-io.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "s3-operations",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "s3-operations.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "cluster-disk-usage",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "cluster-disk-usage.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "piraeus-storage",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "piraeus-storage.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "storage-service-details",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "storage-service-details.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "io-pressure",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Storage",
-        json=(_DASHBOARDS / "io-pressure.json").read_text(),
-    )
-    _dashboard(
-        chart,
+        "Storage",
+        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
+        "cluster-storage-io.json",
+    ),
+    LocalDashboard("s3-operations", "Storage", (("DS_MIMIR", "mimir"),), "s3-operations.json"),
+    LocalDashboard("cluster-disk-usage", "Storage", (("DS_MIMIR", "mimir"),), "cluster-disk-usage.json"),
+    LocalDashboard("piraeus-storage", "Storage", (("DS_MIMIR", "mimir"),), "piraeus-storage.json"),
+    LocalDashboard("storage-service-details", "Storage", (("DS_MIMIR", "mimir"),), "storage-service-details.json"),
+    LocalDashboard("io-pressure", "Storage", (("DS_MIMIR", "mimir"),), "io-pressure.json"),
+    LocalDashboard(
         "home-network-overview",
-        datasources={"DS_LOKI": LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
-        folder="Network",
-        json=(_DASHBOARDS / "home-network-overview.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "cpap-gateway-disk",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Cluster & Platform",
-        json=(_DASHBOARDS / "cpap-gateway-disk.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "flux-cluster",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Cluster & Platform",
-        json=(_DASHBOARDS / "flux-cluster.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "rugged-power",
-        datasources={"DS_MIMIR": "mimir"},
-        folder="Nodes & Hardware",
-        json=(_DASHBOARDS / "rugged-power.json").read_text(),
-    )
-    _dashboard(
-        chart,
-        "cert-manager",
-        datasources={"datasource": "Mimir"},
-        folder="Cluster & Platform",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=20842, revision=3),
-    )
-    _dashboard(
-        chart,
-        "authentik",
-        datasources={"DS_PROMETHEUS": "Mimir"},
-        folder="Cluster & Platform",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=14837, revision=2),
-    )
-    _dashboard(
-        chart,
-        "cloudnative-pg",
-        datasources={"DS_PROMETHEUS": "Mimir"},
-        folder="Cluster & Platform",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=20417, revision=3),
-    )
-    _dashboard(
-        chart,
-        "cilium-agent",
-        datasources={"DS_PROMETHEUS": "Mimir"},
-        folder="Network",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=16611, revision=1),
-    )
-    _dashboard(
-        chart,
-        "etcd",
-        datasources={"DS_PROMETHEUS": "Mimir"},
-        folder="Cluster & Platform",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=3070, revision=3),
-    )
-    # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID). Backed by the
-    # DCGM metrics from dcgm_exporter/exporter.py via Mimir.
-    _dashboard(
-        chart,
-        "gpu",
-        datasources={"DS_PROMETHEUS": "Mimir"},
-        folder="Nodes & Hardware",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=12239, revision=2),
-    )
-    # Upstream Node Exporter Full dashboard. Its Hardware Misc row includes
-    # hwmon temperature thresholds and fan-speed panels for every node-exporter
-    # target; the datasource binding points those panels at Mimir.
-    _dashboard(
-        chart,
-        "node-exporter-full",
-        datasources={"ds_prometheus": "Mimir"},
-        folder="Nodes & Hardware",
-        grafana_com=GrafanaDashboardSpecGrafanaCom(id=1860, revision=45),
-    )
+        "Network",
+        (("DS_LOKI", LOKI_DATASOURCE_UID), ("DS_MIMIR", "mimir")),
+        "home-network-overview.json",
+    ),
+    LocalDashboard("cpap-gateway-disk", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "cpap-gateway-disk.json"),
+    LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "flux-cluster.json"),
+    LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "rugged-power.json"),
+    GrafanaComDashboard("cert-manager", "Cluster & Platform", (("datasource", "Mimir"),), 20842, 3),
+    GrafanaComDashboard("authentik", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 14837, 2),
+    GrafanaComDashboard("cloudnative-pg", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 20417, 3),
+    GrafanaComDashboard("cilium-agent", "Network", (("DS_PROMETHEUS", "Mimir"),), 16611, 1),
+    GrafanaComDashboard("etcd", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 3070, 3),
+    # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID), backed by dcgm_exporter metrics.
+    GrafanaComDashboard("gpu", "Nodes & Hardware", (("DS_PROMETHEUS", "Mimir"),), 12239, 2),
+    # Node Exporter Full includes hwmon thresholds and fan-speed panels for every node-exporter target.
+    GrafanaComDashboard("node-exporter-full", "Nodes & Hardware", (("ds_prometheus", "Mimir"),), 1860, 45),
+)
+
+
+def _dashboards(chart: Chart) -> None:
+    for dashboard in _DASHBOARD_DEFINITIONS:
+        if isinstance(dashboard, LocalDashboard):
+            _dashboard(
+                chart,
+                dashboard.name,
+                datasources=dict(dashboard.datasources),
+                folder=dashboard.folder,
+                json=(_DASHBOARD_DIR / dashboard.filename).read_text(),
+            )
+        else:
+            _dashboard(
+                chart,
+                dashboard.name,
+                datasources=dict(dashboard.datasources),
+                folder=dashboard.folder,
+                grafana_com=GrafanaDashboardSpecGrafanaCom(id=dashboard.dashboard_id, revision=dashboard.revision),
+            )
 
 
 def chart(app: App) -> Chart:
