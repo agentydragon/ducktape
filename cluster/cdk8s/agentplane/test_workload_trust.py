@@ -186,6 +186,7 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
         ("notifications", NOTIFICATIONS_URI),
         ("actions", ACTIONS_URI),
         ("connection_service", MCP_EDGE_URI),
+        ("policy_service", POLICY_CONTROLLER_URI),
     ):
         tls = settings[f"{name}_tls"]
         assert tls["server_uri"] == server_uri
@@ -203,8 +204,6 @@ def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -
         ca = PurePosixPath(tls["ca_file"])
         assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
 
-    # Policy's independently owned listener/client rollout has not switched yet.
-    assert settings["policy_service_token_file"]
     port = int(settings["connection_service_url"].rstrip("/").rsplit(":", 1)[1])
     edge_service = _resource(staging_manifests, "Service", "mcp-edge")
     assert one(p for p in edge_service["spec"]["ports"] if p["name"] == "grpc-tls")["port"] == port

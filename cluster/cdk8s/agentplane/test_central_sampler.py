@@ -205,10 +205,7 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
 
     app_config = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["policy_service_target"] == policy_controller.tls_target(namespace)
-    assert app_config["policy_service_tls"] == {
-        "ca_file": workload_tls.TRUST_BUNDLE_FILE,
-        "server_uri": POLICY_CONTROLLER_URI,
-    }
+    assert app_config["policy_service_tls"]["server_uri"] == POLICY_CONTROLLER_URI
 
     history = yaml.safe_load(
         _resource(staging_manifests, "ConfigMap", f"{history_service.NAME}-config")["data"]["config.yaml"]
