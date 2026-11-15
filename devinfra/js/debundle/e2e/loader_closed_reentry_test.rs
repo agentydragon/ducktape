@@ -97,6 +97,92 @@ fn failure<'a>(derivation: &'a Value, reason: &str) -> &'a Value {
 }
 
 #[test]
+fn called_loader_split_executes_with_partial_namespace_host_and_needs_each_key() {
+    const CALLED_CONSUMER: &str = r#"import { readLater, loadHelper } from "./provider.js";
+console.log(readLater() + loadHelper().suffix);
+export { readLater };
+"#;
+    let extra_chunks = [("static/helper", HELPER), (PROVIDER_CHUNK, PROVIDER)];
+    let modules = [(PROVIDER_CHUNK, provider_modules())];
+    let options = || {
+        FixtureOpts::new(CALLED_CONSUMER, vec![])
+            .with_chunk_id("static/consumer")
+            .with_extra_chunks(&extra_chunks)
+            .with_extra_chunk_logical_modules(&modules)
+    };
+    let host = HostBehavior {
+        synchronous_module_loader: SynchronousModuleLoader::Present,
+        loader_result_for_evaluating_module: Some(
+            LoaderResultForEvaluatingModule::ReturnsPartialNamespace,
+        ),
+        ..audited_host()
+    };
+    let fixture = run_fixture(options().with_host_behavior(host.clone()));
+    assert_preserved_entry_output_with_bun(&fixture, "ready!\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/provider/modules/values/later.js",
+        &[
+            "import.meta.require",
+            "../../../helper/entry.js",
+            "class Registry",
+        ],
+        &["./helper.js"],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/provider/modules/values/later.js",
+        &["readLater", "loadHelper"],
+        &[],
+    );
+    let report = export_reentry_report(&fixture.report_root);
+    assert_eq!(report["loader"]["closed"], true);
+    for key in [
+        "loader_result_for_evaluating_module",
+        "synchronous_load_runs_app_callbacks",
+    ] {
+        assert!(
+            report["loader"]["host_keys"]
+                .as_array()
+                .unwrap()
+                .contains(&json!(key)),
+            "the accepted split must consume {key}: {report}"
+        );
+        let mut omitted = host.clone();
+        match key {
+            "loader_result_for_evaluating_module" => {
+                omitted.loader_result_for_evaluating_module = None
+            }
+            "synchronous_load_runs_app_callbacks" => {
+                omitted.synchronous_load_runs_app_callbacks = None
+            }
+            _ => unreachable!(),
+        }
+        let rejected = run_rejection_fixture(options().with_host_behavior(omitted));
+        let conflicts: Vec<Value> = read_json(
+            &rejected
+                .report_root
+                .join(PROVIDER_CHUNK)
+                .join("atomic_group_conflicts.json"),
+        );
+        assert!(
+            conflicts.iter().any(|conflict| {
+                let claims = conflict["claims"].as_array().unwrap();
+                ["values/dynamic", "values/later"]
+                    .iter()
+                    .all(|module| claims.iter().any(|claim| claim["module"] == *module))
+            }),
+            "missing {key} must bind the same provider split"
+        );
+        let report = export_reentry_report(&rejected.report_root);
+        assert_eq!(
+            failure(&report["loader"], "undeclared_host_behavior")["first"],
+            json!({ "host_behavior": key }),
+        );
+    }
+}
+
+#[test]
 fn closed_commonjs_request_keeps_the_static_importer_proof() {
     let extra_chunks = [("static/helper", HELPER), ("static/provider", PROVIDER)];
     let provider_modules = [(PROVIDER_CHUNK, provider_modules())];
