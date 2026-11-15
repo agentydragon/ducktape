@@ -9,15 +9,16 @@ use crate::imports::{
     ArtifactSourceImportResolutionCache, runtime_reimport_named_specifier,
     runtime_reimport_specifier,
 };
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use artifact::paths::{
     join_module_path, module_path_dirname, normalize_relative_module_specifier,
     relative_module_path,
 };
 use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
-use js_ast::import_decl_module_item;
+use js_ast::{import_decl_module_item, set_str_value, str_value};
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;
+use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub(crate) fn resolve_imported_binding(
     source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
@@ -97,6 +98,97 @@ pub(crate) fn source_chunk_imports_for_moved_body(
         pairs.push((rewritten_source, specifier));
     }
     Ok(group_specifiers_into_import_decls(pairs))
+}
+
+/// Rebase literal `import.meta.require` requests in a moved body from the
+/// source chunk's coordinate system to the emitted module's coordinate
+/// system. The artifact resolver supplies the target path for captured
+/// chunks; the same helper preserves the existing source-relative fallback
+/// for runtime-only sibling files and leaves bare or unresolved absolute
+/// requests unchanged.
+pub(crate) fn rebase_source_chunk_loader_calls_for_moved_body(
+    source_import_cache: &mut ArtifactSourceImportResolutionCache<'_>,
+    source_chunk_id: &str,
+    source_runtime_file: &str,
+    dest_target_file: &str,
+    body: &mut [ModuleItem],
+) -> Result<()> {
+    let mut rewriter = SourceChunkLoaderCallRewriter {
+        source_import_cache,
+        source_chunk_id,
+        source_runtime_file,
+        dest_target_file,
+        error: None,
+    };
+    for item in body {
+        item.visit_mut_with(&mut rewriter);
+    }
+    if let Some(error) = rewriter.error {
+        return Err(error);
+    }
+    Ok(())
+}
+
+struct SourceChunkLoaderCallRewriter<'a, 'cache> {
+    source_import_cache: &'a mut ArtifactSourceImportResolutionCache<'cache>,
+    source_chunk_id: &'a str,
+    source_runtime_file: &'a str,
+    dest_target_file: &'a str,
+    error: Option<anyhow::Error>,
+}
+
+impl VisitMut for SourceChunkLoaderCallRewriter<'_, '_> {
+    fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
+        call.visit_mut_children_with(self);
+        if self.error.is_some()
+            || !matches!(&call.callee, Callee::Expr(callee) if is_import_meta_require(callee))
+        {
+            return;
+        }
+        let Some(first) = call.args.first_mut() else {
+            return;
+        };
+        if first.spread.is_some() {
+            return;
+        }
+        let Expr::Lit(Lit::Str(source)) = &mut *first.expr else {
+            return;
+        };
+        let request = str_value(source);
+        match source_chunk_import_for_target(
+            self.source_import_cache,
+            self.source_chunk_id,
+            self.source_runtime_file,
+            self.dest_target_file,
+            &request,
+        )
+        .with_context(|| {
+            format!(
+                "rebase import.meta.require request {request:?} from {} into {}",
+                self.source_runtime_file, self.dest_target_file
+            )
+        }) {
+            Ok(rewritten) => set_str_value(source, rewritten),
+            Err(error) => self.error = Some(error),
+        }
+    }
+}
+
+fn is_import_meta_require(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Member(MemberExpr {
+            obj,
+            prop: MemberProp::Ident(prop),
+            ..
+        }) if matches!(
+            &**obj,
+            Expr::MetaProp(MetaPropExpr {
+                kind: MetaPropKind::ImportMeta,
+                ..
+            })
+        ) && prop.sym == *"require"
+    )
 }
 
 pub(crate) fn source_chunk_import_for_target(
