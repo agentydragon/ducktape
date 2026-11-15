@@ -1,3 +1,4 @@
+pub mod assignment;
 pub mod decompose;
 pub mod plan;
 pub mod propose;

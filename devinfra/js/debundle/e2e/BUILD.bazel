@@ -4,6 +4,14 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "modules_assignment_oracle_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "bun_loader_runtime_test",
     data = ["@debundle_bun_1_3_10//:bun"],
     env = {"DEBUNDLE_TEST_BUN": "$(rlocationpath @debundle_bun_1_3_10//:bun)"},
@@ -1372,6 +1380,15 @@ debundle_e2e_test(
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_check_cli_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
     ],
 )
 

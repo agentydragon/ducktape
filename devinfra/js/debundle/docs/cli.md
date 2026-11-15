@@ -1270,6 +1270,29 @@ array. The rest are rejected:
   one alone would trip the realizability gate: assign it together with the
   classes it references, or co-locate the source units manually first.
 
+## Checking explicit destination batches (`modules check`)
+
+`modules check --batch changes.json` checks an explicit source-unit assignment
+against the accepted starting graph. Supply the same `--graph`, `--modules`,
+source context and optional `--tree-config` used by the other graph commands.
+The batch is a JSON array of `{ "unit_id": "unit:1", "module": "helpers/value" }`
+rows; omitted units keep their current destinations. With `--tree-config`, use
+destinations under the configured physical module roots. `--batch -` reads stdin.
+
+The complete check covers structural atoms, cross-module rebinding and global
+ESM evaluation, including remaining residual code. It supports unions of atoms,
+existing-owner changes and anonymous statements. Import/export scaffolding stays
+in place. A rejected starting assignment, unknown or duplicate source units and
+invalid destinations are errors. It writes no spec files.
+
+JSON output reports `accepted`, the checked changes, residual units extracted,
+existing units moved and the full validation report. An accepted candidate exits
+0; a gate rejection emits `accepted: false` and exits 1. Input/preflight failures
+also fail rather than returning an acceptance result. Acceptance is for this
+exact complete graph assignment; names/selectors and emitted output still need
+their normal checks. Independently accepted batches must be checked together
+before combining them. This command does not search or prove no peel exists.
+
 ## Claiming fresh proposals (`modules apply`)
 
 For an app-level spec with several chunks, pass the same `--tree-config`

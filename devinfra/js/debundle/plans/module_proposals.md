@@ -460,6 +460,15 @@ shims.
       enumerator and settle the faithful finite representation before relying on
       search optimizations. Document the checker and its evidence states as they
       ship, using existing typed APIs rather than a separate graph model.
+      Delivered: `modules check` overlays explicit destination batches on the
+      accepted baseline, preserves generated residual destinations and checks
+      atoms plus the global gate. Real CLI regressions cover intact three-unit
+      atoms, joint moves, actual existing owners, anonymous units, scaffolding and
+      malformed batches ([passing suites](https://app.buildbuddy.io/invocation/48c96548-aaee-4473-9077-d19cb4267ccd)).
+      An independent oracle enumerates 64 raw statement placements, materializes
+      each concrete spec and executes accepted output under Node
+      ([passing oracle](https://app.buildbuddy.io/invocation/f2455918-665f-4b1d-bcda-151f7938d7c7)).
+      Remote-TDZ coverage, search properties and the finite-model argument remain.
 - [ ] **Deliver exact-batch realization and application.** Generalize application
       for residual and existing claims, including anonymous selectors and preserved
       metadata. Require full post-resolution assignment equality, preview/apply

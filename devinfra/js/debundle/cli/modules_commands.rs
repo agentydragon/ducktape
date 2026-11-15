@@ -8,12 +8,11 @@ use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
 use crate::module_apply::{ModulesApplyArgs, run_modules_apply};
 use crate::outcome::{MutationVerb, emit_gate_rejection_json};
-use crate::source_unit_refine::{
-    SourceUnitAssignment, SourceUnitRefineOptions, run_source_unit_refine,
-};
-use anyhow::{Context, Result};
+use crate::source_unit_refine::{SourceUnitRefineOptions, run_source_unit_refine};
+use anyhow::{Context, Result, ensure};
 use clap::{Args as ClapArgs, Subcommand};
 use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
+use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use peel::decompose::{
     ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
     ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
@@ -52,6 +51,7 @@ impl ModulesNs {
             ModulesNsCommand::Merge(args) => args.edit.format,
             ModulesNsCommand::Delete(args) => args.edit.format,
             ModulesNsCommand::Propose(args) => args.format,
+            ModulesNsCommand::Check(args) => args.format,
             ModulesNsCommand::Apply(args) => args.format,
             ModulesNsCommand::Refine(args) => args.format,
             ModulesNsCommand::Decompose(args) => args.format,
@@ -66,6 +66,14 @@ impl ModulesNs {
             ModulesNsCommand::Merge(args) => verify_edit(&args.edit, roots),
             ModulesNsCommand::Delete(args) => verify_edit(&args.edit, roots),
             ModulesNsCommand::Propose(args) => crate::verify_graph_compatibility(
+                &args.common.dependency_graph_path,
+                &args.common.modules_root,
+                args.source_root.as_deref(),
+                roots,
+                args.tree_config.as_deref(),
+            )
+            .map(Some),
+            ModulesNsCommand::Check(args) => crate::verify_graph_compatibility(
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 args.source_root.as_deref(),
@@ -171,6 +179,9 @@ enum ModulesNsCommand {
     /// — the latter need their closure grown or manual co-location
     /// before they can land.
     Propose(PlanWorkArgs),
+    /// Check an explicit source-unit destination batch against the complete
+    /// accepted assignment. Omitted units retain their owners; writes no spec.
+    Check(ModulesCheckArgs),
     /// Claim reviewed residual proposal bindings using proven structural selectors.
     /// `--dry-run --analysis` additionally reports statement-order commutation for
     /// the exact candidate using the full tree transform context; it does not
@@ -209,6 +220,74 @@ enum ModulesNsCommand {
     /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
     /// flag, `has_comment`.
     List(ModulesListArgs),
+}
+
+#[derive(Debug, ClapArgs)]
+struct ModulesCheckArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+    /// JSON array of {unit_id, module} destination changes; `-` reads stdin.
+    #[arg(long)]
+    batch: String,
+    #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
+    tree_config: Option<PathBuf>,
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    source_root: Option<PathBuf>,
+    #[arg(long, value_enum)]
+    format: Option<OutputFormat>,
+}
+
+fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) -> Result<()> {
+    let bytes = if args.batch == "-" {
+        let mut bytes = Vec::new();
+        std::io::stdin().read_to_end(&mut bytes)?;
+        bytes
+    } else {
+        fs::read(&args.batch).with_context(|| format!("reading {}", args.batch))?
+    };
+    let mut changes: Vec<SourceUnitAssignment> = serde_json::from_slice(&bytes)?;
+    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    if let Some(config) = &args.tree_config {
+        let scope = spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
+        for change in &mut changes {
+            let physical = scope.canonical_destination(&change.module)?;
+            change.module = scope.logical_destination(&physical)?.to_owned();
+        }
+    }
+    let problem = AssignmentProblem::new(&input)?;
+    let candidate = problem.candidate(&changes)?;
+    let validation = problem.validate(&candidate)?;
+    let is_accepted = accepted(&validation);
+    #[derive(serde::Serialize)]
+    struct CheckReport {
+        accepted: bool,
+        changes: Vec<SourceUnitAssignment>,
+        residual_units_extracted: usize,
+        existing_units_moved: usize,
+        validation: gate::AssignmentReport,
+    }
+    let report = CheckReport {
+        accepted: is_accepted,
+        changes,
+        residual_units_extracted: problem.residual_gain(&candidate),
+        existing_units_moved: problem.existing_units_moved(&candidate),
+        validation: validation.report,
+    };
+    emit_report(
+        output,
+        args.format,
+        &report,
+        |report, text| {
+            text.push_str(&format!(
+                "accepted={} residual_units_extracted={} existing_units_moved={}\n",
+                report.accepted, report.residual_units_extracted, report.existing_units_moved
+            ));
+            Ok(())
+        },
+        "writing assignment check",
+    )?;
+    ensure!(is_accepted, "complete assignment gate rejected the batch");
+    Ok(())
 }
 
 #[derive(Debug, ClapArgs)]
@@ -786,6 +865,7 @@ pub(super) fn run(
                 "writing propose output",
             )
         }
+        ModulesNsCommand::Check(args) => run_modules_check(args, output),
         ModulesNsCommand::Decompose(args) => {
             run_module_decompose(stderr, args, source_context, output)
         }

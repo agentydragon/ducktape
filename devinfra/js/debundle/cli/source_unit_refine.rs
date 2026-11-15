@@ -8,8 +8,8 @@ use std::path::Path;
 use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
 use anonymous_resolution::resolve_source_claims;
 use anyhow::{Context, Result, anyhow, bail};
+use peel::assignment::SourceUnitAssignment;
 use pipeline::assess_candidate_effect_relocation;
-use serde::Deserialize;
 use spec::{AnonymousStatement, LogicalModule, ModulePath, is_residual_namespace_path};
 use spec_modules::{coalesce_source_match_claims, module_path_from_file};
 use spec_tree::ModuleTreeScope;
@@ -26,16 +26,6 @@ use crate::edit_gate::{
     source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
-
-/// One reviewed source unit reassignment. source units not listed keep their current
-/// destination. This command deliberately accepts only source units already claimed
-/// by the scoped module tree; it does not synthesize selectors for residuals.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SourceUnitAssignment {
-    pub unit_id: String,
-    pub module: String,
-}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SourceUnitRefineOutcome {

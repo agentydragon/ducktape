@@ -1128,6 +1128,22 @@ semantics. JSON wraps the reports in `results`; NDJSON emits one report per
 item. A failed item emits only the command failure, with no partial reports.
 The invocation record retains the batch-file path, not its contents.
 
+## Explicit destination checks
+
+`modules check` overlays a JSON batch of source-unit destination changes on the
+accepted graph assignment, retaining the destination of every omitted unit.
+It rejects split structural atoms, cross-module rebinding and unrealizable
+global ESM evaluation. Anonymous units and joint moves are supported. Existing
+owners are preserved directly, without speculative pairwise reconstruction;
+generated residual destinations remain distinct from the entry destination.
+
+The command writes no spec files. An accepted candidate reports `accepted: true`
+and exits 0; a graph rejection reports `accepted: false` with validation evidence
+and exits 1. Invalid inputs or a rejected baseline fail before acceptance.
+This graph check does not establish selector realization, emitted behavior,
+search completeness or the validity of concatenating independently checked
+batches. The exact combined assignment requires its own check.
+
 ## Delegated input snapshots
 
 `snapshot create` copies one saved graph's verified input set and exact engine

@@ -35,6 +35,11 @@ specified in [binding-ordering effect provenance](wire_format.md#binding-orderin
 
 Choose the operation from the task chooser:
 
+- For an explicit destination batch, run `modules check --batch changes.json`
+  against the same graph and context. Include all jointly required source units
+  and the actual destination, including an existing owner. This checks the whole
+  assignment without editing selectors or spec files; graph acceptance does not
+  imply the applicator can yet realize every shape. Recheck combined batches.
 - For residual extraction, follow [propose and claim residuals](spec_editing.md#workflow-proposing-new-modules).
   Send reviewed proposals to intake. The proposal queue is a heuristic projection
   of the atomic DAG; graph readiness does not prove selectors or post-edit acceptance.

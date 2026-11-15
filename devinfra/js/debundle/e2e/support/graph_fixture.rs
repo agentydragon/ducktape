@@ -251,6 +251,27 @@ impl GraphFixture {
         );
     }
 
+    /// Independent assignment oracle: resolve and materialize the on-disk spec
+    /// through the normal CLI, then check accepted output under Node. No saved
+    /// graph or proposal/check implementation participates in this verdict.
+    pub fn current_spec_runs(&self, expected: &str) -> bool {
+        let output_root = self.run.workspace().child();
+        let out = self.run_current_spec(output_root.path());
+        if out.status.success() {
+            assert_node_output(&output_root.path().join("app/main/entry.js"), expected, "");
+            true
+        } else {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(out.status.code(), Some(1), "{stderr}");
+            assert!(
+                stderr.contains("unrealizable") || stderr.contains("atomic group"),
+                "oracle fixture failed outside the assignment gate: {stderr}"
+            );
+            assert!(!output_root.path().join("app/main/entry.js").exists());
+            false
+        }
+    }
+
     fn run_current_spec(&self, out_root: &Path) -> std::process::Output {
         let root = self.run.root();
         debundle_fixture_output(
