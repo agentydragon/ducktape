@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold"
@@ -27,7 +28,7 @@ func projectLifecycle(
 	if summary.attached != nil {
 		attached = &sessionpb.Attached{}
 		if err := protojson.Unmarshal(summary.attached, attached); err != nil {
-			return false, err
+			return false, fmt.Errorf("%w: saved attachment: %w", ErrInconsistentFold, err)
 		}
 	}
 	// end is nil for a stream that has not ended, empty for one that ended cleanly, and otherwise the failure
@@ -35,7 +36,7 @@ func projectLifecycle(
 	var end map[string]string
 	if summary.end != nil {
 		if err := json.Unmarshal(summary.end, &end); err != nil {
-			return false, err
+			return false, fmt.Errorf("%w: saved stream end: %w", ErrInconsistentFold, err)
 		}
 	}
 	if feed := page.GetFeedState(); feed != nil {

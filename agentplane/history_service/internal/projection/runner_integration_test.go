@@ -1,12 +1,16 @@
 package projection
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -290,4 +294,98 @@ func TestAFoldBugStopsTheFoldAndReportsItWhileTheServerKeepsServing(t *testing.T
 		whole != healthpb.HealthCheckResponse_SERVING {
 		t.Fatalf("health after a fold bug: fold %v, server %v", fold, whole)
 	}
+}
+
+// This models a retained attachment written before execution_principal was reserved.
+func TestPermanentAttachmentFailureParksOnlyItsPendingVersion(t *testing.T) {
+	f := newProjectorFixture(t)
+	emptyDatabase(t, f.db)
+	failed := f.discoverable(t, f.history, harnessStarted(1))
+	runner := NewFoldRunner(f.db, f.history, 2, testPageSize)
+	f.cycle(t, runner)
+	if _, err := f.db.Exec(`UPDATE thread_history_summary SET attached = '{"lastCursor":"1","executionPrincipal":{"account":{"namespace":"test","name":"old-writer"},"uid":"old-uid"}}'::jsonb WHERE thread_id=$1`, failed); err != nil {
+		t.Fatal(err)
+	}
+	f.appendTo(t, f.history, failed, harnessStarted(2))
+	healthy := f.discoverable(t, f.history, harnessStarted(1))
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	// A database failure while retaining the diagnostic must remain retryable, even
+	// though the original decode failure is permanent.
+	if _, err := f.db.Exec(`ALTER TABLE thread_entity ADD CONSTRAINT test_reject_failure
+		CHECK (state #>> '{operational,status}' IS DISTINCT FROM 'THREAD_FEED_STATUS_FAILED') NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := f.db.Exec(`ALTER TABLE thread_entity DROP CONSTRAINT IF EXISTS test_reject_failure`); err != nil {
+			t.Error(err)
+		}
+	})
+	f.cycle(t, runner)
+	if view, _ := viewStateOf(t, f.db, failed); view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_ACTIVE {
+		t.Fatalf("failed diagnostic transaction changed operational state: %+v", view.Operational)
+	}
+	if _, err := f.db.Exec(`ALTER TABLE thread_entity DROP CONSTRAINT test_reject_failure`); err != nil {
+		t.Fatal(err)
+	}
+	logs.Reset()
+	f.cycle(t, runner)
+	view, _ := viewStateOf(t, f.db, failed)
+	if view.Operational.Status != historypb.ThreadFeedStatus_THREAD_FEED_STATUS_FAILED || view.Operational.FeedError == nil || view.Operational.FeedError.Message != stalledMessage {
+		t.Fatalf("operational = %+v, want permanent projection failure", view.Operational)
+	}
+	if _, through := checkpointOf(t, f.db, failed); through != 1 {
+		t.Fatalf("failed checkpoint=%d, want 1", through)
+	}
+	if _, through := checkpointOf(t, f.db, healthy); through != 1 {
+		t.Fatalf("healthy checkpoint=%d, want 1", through)
+	}
+	if count(t, f.db, "SELECT count(*) FROM session_event WHERE session_id=$1", failed) != 2 || count(t, f.db, "SELECT count(*) FROM session_fold_pending WHERE session_id=$1", failed) != 1 {
+		t.Fatal("permanent failure removed retained history or its pending mark")
+	}
+	if !strings.Contains(logs.String(), "executionPrincipal") {
+		t.Fatalf("failure log lost the decoder cause: %s", logs.String())
+	}
+	// Unrelated history changes and periodic cycles must not retry this version.
+	once := logs.Len()
+	f.appendTo(t, f.history, healthy, harnessStarted(2))
+	for range 3 {
+		f.cycle(t, runner)
+	}
+	if logs.Len() != once {
+		t.Fatalf("unchanged permanent failure logged again: %s", logs.String())
+	}
+	if _, through := checkpointOf(t, f.db, healthy); through != 2 {
+		t.Fatalf("healthy checkpoint=%d, want 2", through)
+	}
+	second := NewFoldRunner(f.db, f.history, 2, testPageSize)
+	if got := f.cycle(t, second).Sessions; got != 0 {
+		t.Fatalf("another owner claimed %d leased Sessions", got)
+	}
+	// A newer pending version warrants one attempt even if it still cannot fold.
+	f.recordFeed(t, failed, &sessionpb.Attached{LastCursor: 2})
+	f.cycle(t, runner)
+	if logs.Len() == once {
+		t.Fatal("new pending version was never attempted")
+	}
+	twice := logs.Len()
+	f.cycle(t, runner)
+	if logs.Len() != twice {
+		t.Fatal("new failed version was not parked")
+	}
+	// A new owner re-evaluates retained failures once, allowing a new reader image
+	// to recover them without rewriting queue rows during deployment.
+	runner.releaseAll(t.Context())
+	f.cycle(t, second)
+	if logs.Len() == twice {
+		t.Fatal("new owner did not attempt the failed projection")
+	}
+	afterTakeover := logs.Len()
+	f.cycle(t, second)
+	if logs.Len() != afterTakeover {
+		t.Fatal("new owner retried the same failed version")
+	}
+	second.releaseAll(t.Context())
 }

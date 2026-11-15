@@ -334,18 +334,27 @@ each cycle claims the queued Sessions no other replica leases (`FOR UPDATE SKIP 
 per-Session projection lease) and folds a page of each, so work per cycle follows the Sessions that
 changed. A Session leaves the queue, and its lease is handed back, once a fold catches it up with no
 newer change. The fold writes only those tables and the queue. Cycles run back to back while any
-Session is behind, and committed history changes wake a caught-up fold. `fold_interval_s` remains
-the retry interval after failures and while another replica holds a Session lease. Each cycle logs
+Session is behind, and committed history changes wake a caught-up fold. `fold_interval_s` bounds the wait when no history-change signal arrives, including while another
+replica holds a Session lease. Each cycle logs
 how many Sessions it claimed and how many Sessions and events it left behind. A page that carries an item's completion
 carries its settlement, so the fold skips the settled cursors and drops evidence it recorded for
 them before they settled. This fold is the only one: the app reads every Thread from it, and
 Electric replicates its tables to browsers.
 
-A Session whose history this fold cannot apply, or whose page hits a lost lease or a database
-error, is logged and retried the next cycle while the others advance. Any other error stops the
-replica's fold but not its raw reads: it is logged, and the `grpc.health.v1` service
-`agentplane.history_service.Fold` turns from SERVING to NOT_SERVING. Probes check only the whole
-server; a `Health/Check` for that service on a replica's gRPC port shows it.
+A permanent projection failure, including saved lifecycle JSON that cannot be decoded strictly,
+leaves the checkpoint and retained history unchanged. Under its lease, the fold records the generic
+stalled diagnostic and `FAILED` operational state at the last verified checkpoint, then logs the
+backend cause once and parks that pending version in memory. The lease stays renewed; unrelated
+history changes and periodic cycles do not refold the parked version. A new pending version or
+lease owner (including a replica restart) attempts it again once. The pending row remains, so a
+new reader image can re-evaluate it. A failure before the first materialized checkpoint has only
+the backend diagnostic; the fold does not invent a view or Event source to report it.
+
+Lost leases, database failures and failures to retain the diagnostic remain retryable on the next
+cycle. Other Sessions advance independently. A panic stops the replica's fold but not its raw
+reads: it is logged, and the `grpc.health.v1` service `agentplane.history_service.Fold` turns from
+SERVING to NOT_SERVING. Per-Session failures leave that health service SERVING. Probes check only
+the whole server; a `Health/Check` for that service on a replica's gRPC port shows it.
 
 Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to 200 named Sessions
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
