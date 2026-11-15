@@ -119,6 +119,9 @@ def test_runner_accepts_model_config_target() -> None:
     "updates",
     [
         {"version": 1},
+        {"log_level": ""},
+        {"log_level": "trace"},
+        {"log_level": "fatal"},
         {"session_reconcile_concurrency": 0},
         {"session_reconcile_concurrency": -1},
         {"model_config_target": "host:notaport"},
@@ -316,3 +319,14 @@ def test_vm_executor_accepts_endpoint_with_budget() -> None:
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+@pytest.mark.parametrize("level", [None, "debug", "info", "warn", "error"])
+def test_log_level(level: str | None) -> None:
+    config = Configuration.model_validate(_configuration() | {"log_level": level})
+    assert config.log_level == level
+    encoded = json.loads(config.model_dump_json(exclude_none=True))
+    if level is None:
+        assert "log_level" not in encoded
+    else:
+        assert encoded["log_level"] == level

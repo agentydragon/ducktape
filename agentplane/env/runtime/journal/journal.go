@@ -15,6 +15,7 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	_ "modernc.org/sqlite"
@@ -58,6 +59,8 @@ type Journal struct {
 	db       *sql.DB
 	conn     *sql.Conn
 	sourceID string
+	logger   *zap.Logger
+	path     string
 
 	mu             sync.Mutex
 	state          RecoveryState
@@ -206,7 +209,7 @@ func Open(ctx context.Context, path, sourceID string) (*Journal, error) {
 		return closeOnError(fmt.Errorf("finish journal recovery: %w", err))
 	}
 	state.ThroughCursor = uint64(through)
-	journal := &Journal{db: db, conn: conn, sourceID: sourceID, state: state, seal: seal, changed: make(chan struct{})}
+	journal := &Journal{db: db, conn: conn, sourceID: sourceID, logger: journalLogger(path, sourceID), path: path, state: state, seal: seal, changed: make(chan struct{})}
 	journal.publishAtomicsLocked()
 	return journal, nil
 }
@@ -453,8 +456,7 @@ func (j *Journal) WithBatch(ctx context.Context, callback func(context.Context) 
 	if err := callback(batchCtx); err != nil {
 		if batch.active {
 			_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
-			j.failure = err
-			j.notifyLocked()
+			j.recordFailureLocked("batch_callback", err)
 			return errors.Join(err, rollbackErr)
 		}
 		return err
@@ -477,7 +479,7 @@ func (j *Journal) CommitBatch(ctx context.Context) error {
 		return nil
 	}
 	if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return j.failBatchLocked(batch, err)
+		return j.failBatchLocked(batch, "commit", err)
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	batch.active = false
@@ -512,8 +514,7 @@ func (j *Journal) ensureBatch(ctx context.Context, batch *journalBatch) error {
 		return err
 	}
 	if _, err := j.conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		j.failure = err
-		j.notifyLocked()
+		j.recordFailureLocked("begin", err)
 		return &StorageError{Err: err}
 	}
 	batch.active = true
@@ -528,7 +529,7 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 		batch.sequence++
 		savepoint := fmt.Sprintf("journal_op_%d", batch.sequence)
 		if _, err := j.conn.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
-			return j.failBatchLocked(batch, err)
+			return j.failBatchLocked(batch, "savepoint", err)
 		}
 		beforeAppended := len(batch.appended)
 		beforeSeal, beforeSealChanged := cloneSeal(batch.sealOverride), batch.sealChanged
@@ -538,12 +539,12 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 			batch.appended = batch.appended[:beforeAppended]
 			batch.sealOverride, batch.sealChanged = beforeSeal, beforeSealChanged
 			if isStorageError(err) || rollbackErr != nil || releaseErr != nil {
-				return j.failBatchLocked(batch, errors.Join(err, rollbackErr, releaseErr))
+				return j.failBatchLocked(batch, "operation", errors.Join(err, rollbackErr, releaseErr))
 			}
 			return err
 		}
 		if _, err := j.conn.ExecContext(ctx, "RELEASE "+savepoint); err != nil {
-			return j.failBatchLocked(batch, err)
+			return j.failBatchLocked(batch, "release_savepoint", err)
 		}
 		return nil
 	}
@@ -555,21 +556,19 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 	}
 	batch := &journalBatch{journal: j, sealOverride: cloneSeal(j.seal)}
 	if _, err := j.conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		j.failure = err
-		j.notifyLocked()
+		j.recordFailureLocked("begin", err)
 		return &StorageError{Err: err}
 	}
 	if err := operation(batch); err != nil {
 		_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
 		if isStorageError(err) || rollbackErr != nil {
-			j.failure = errors.Join(err, rollbackErr)
-			j.notifyLocked()
+			j.recordFailureLocked("operation", errors.Join(err, rollbackErr))
 			return &StorageError{Err: j.failure}
 		}
 		return err
 	}
 	if _, err := j.conn.ExecContext(ctx, "COMMIT"); err != nil {
-		return j.failBatchLocked(batch, err)
+		return j.failBatchLocked(batch, "commit", err)
 	}
 	j.publishLocked(batch.appended, batch.sealChanged, batch.sealOverride)
 	return nil
@@ -577,11 +576,10 @@ func (j *Journal) write(ctx context.Context, operation func(*journalBatch) error
 
 // A failed COMMIT can leave its transaction and locks active. Release them,
 // but keep the writer failed: only reopening may reconcile durable evidence.
-func (j *Journal) failBatchLocked(batch *journalBatch, err error) error {
+func (j *Journal) failBatchLocked(batch *journalBatch, phase string, err error) error {
 	_, rollbackErr := j.conn.ExecContext(context.Background(), "ROLLBACK")
 	batch.active = false
-	j.failure = errors.Join(err, rollbackErr)
-	j.notifyLocked()
+	j.recordFailureLocked(phase, errors.Join(err, rollbackErr))
 	return &StorageError{Err: j.failure}
 }
 

@@ -226,3 +226,11 @@ live Execution owner determine readiness independently of a previously published
 app-server connection. It defaults to disabled; explicit `true` enables capture for all
 Codex Sessions in the environment. This startup setting takes effect when Runtime initializes
 the connection. Disabled notifications never enter the Session journal or History.
+
+`log_level` is an optional startup log threshold (`debug`, `info`, `warn`, or `error`); omission
+keeps `info`. The first latched Session journal failure emits an error record with its transaction
+phase, SQLite error code when available, source ID, path, PID, and path device/inode observations
+at open and failure. Debug level adds the caller stack. Later calls reporting the same failed
+journal do not repeat these diagnostics. Path observations do not identify a lock holder or prove
+which inode an existing SQLite descriptor references. Diagnostics do not include event payloads
+or SQL arguments and do not alter failure, retry, admission or cleanup policy.

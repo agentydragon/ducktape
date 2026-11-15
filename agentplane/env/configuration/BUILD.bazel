@@ -20,6 +20,7 @@ go_library(
         "//agentplane/net/peertls",
         "//agentplane/session_instructions",
         "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zapcore",
     ],
 )
 
@@ -38,5 +39,6 @@ go_test(
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/execution/codexexecserver",
         "@io_bazel_rules_go//go/runfiles",
+        "@org_uber_go_zap//zapcore",
     ],
 )

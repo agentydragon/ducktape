@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "journal",
     srcs = [
+        "diagnostics.go",
         "journal.go",
         "migrations.go",
         "native_requests.go",
@@ -28,6 +29,7 @@ go_test(
     name = "journal_test",
     srcs = [
         "configuration_test.go",
+        "diagnostics_test.go",
         "journal_test.go",
         "migrations_test.go",
         "native_requests_test.go",
@@ -43,5 +45,7 @@ go_test(
         "@org_golang_google_protobuf//proto",
         "@org_modernc_sqlite//:sqlite",
         "@org_modernc_sqlite//lib",
+        "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zaptest/observer",
     ],
 )

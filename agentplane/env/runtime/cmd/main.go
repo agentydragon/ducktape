@@ -50,7 +50,7 @@ func run() int {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if err := runService(ctx, os.Args[1:]); err != nil {
+	if err := runService(ctx, os.Args[1:], loggerConfig.Level); err != nil {
 		zap.L().Error("environment Runtime stopped", zap.Error(err))
 		return 1
 	}
@@ -84,7 +84,7 @@ func internalMode(args []string) (bool, int) {
 	return true, 0
 }
 
-func runService(ctx context.Context, args []string) error {
+func runService(ctx context.Context, args []string, logLevel zap.AtomicLevel) error {
 	flags := flag.NewFlagSet("agentplane-environment-runtime", flag.ContinueOnError)
 	configPath := flags.String("config", "", "Versioned environment configuration JSON")
 	launchPath := flags.String("launch-file", "", "Sandbox identity and bootstrap JSON")
@@ -101,6 +101,7 @@ func runService(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	logLevel.SetLevel(settings.LogLevel)
 	shutdownTracing, err := observability.Init(
 		ctx, "environment-runtime", attribute.String("sandbox.uid", settings.Launch.Sandbox.UID),
 	)
