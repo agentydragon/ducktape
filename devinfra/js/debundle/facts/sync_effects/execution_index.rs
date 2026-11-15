@@ -809,6 +809,47 @@ fn collect_class_value_facts(class: &Class) -> ClassValueFacts {
     facts
 }
 
+fn collect_object_pattern_assignments(
+    object: &ObjectPat,
+    value: &ValueExpr,
+    assignments: &mut Vec<(Id, ValueExpr)>,
+) {
+    for property in &object.props {
+        match property {
+            ObjectPatProp::KeyValue(property) => {
+                let projected =
+                    static_property_name(&property.key).map_or(ValueExpr::Unknown, |name| {
+                        ValueExpr::Member(
+                            Arc::new(value.clone()),
+                            Some(name),
+                            MemberKey::Computed(None),
+                            swc_common::DUMMY_SP.into(),
+                        )
+                    });
+                collect_pattern_assignments(&property.value, &projected, assignments);
+            }
+            ObjectPatProp::Assign(property) => {
+                let projected = ValueExpr::Member(
+                    Arc::new(value.clone()),
+                    Some(property.key.id.sym.to_string()),
+                    MemberKey::Computed(None),
+                    swc_common::DUMMY_SP.into(),
+                );
+                let projected = property
+                    .value
+                    .as_deref()
+                    .map_or(projected.clone(), |default| {
+                        ValueExpr::Alternatives([projected, ValueExpr::from_expr(default)].into())
+                    });
+                assignments.push((property.key.id.to_id(), projected));
+            }
+            ObjectPatProp::Rest(rest) => {
+                collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
+            }
+        }
+    }
+}
+
 fn collect_pattern_assignments(
     pattern: &Pat,
     value: &ValueExpr,
@@ -825,47 +866,7 @@ fn collect_pattern_assignments(
         Pat::Rest(rest) => {
             collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
         }
-        Pat::Object(object) => {
-            for property in &object.props {
-                match property {
-                    ObjectPatProp::KeyValue(property) => {
-                        let projected = static_property_name(&property.key).map_or(
-                            ValueExpr::Unknown,
-                            |name| {
-                                ValueExpr::Member(
-                                    Arc::new(value.clone()),
-                                    Some(name),
-                                    MemberKey::Computed(None),
-                                    swc_common::DUMMY_SP.into(),
-                                )
-                            },
-                        );
-                        collect_pattern_assignments(&property.value, &projected, assignments);
-                    }
-                    ObjectPatProp::Assign(property) => {
-                        let projected = ValueExpr::Member(
-                            Arc::new(value.clone()),
-                            Some(property.key.id.sym.to_string()),
-                            MemberKey::Computed(None),
-                            swc_common::DUMMY_SP.into(),
-                        );
-                        let projected =
-                            property
-                                .value
-                                .as_deref()
-                                .map_or(projected.clone(), |default| {
-                                    ValueExpr::Alternatives(
-                                        [projected, ValueExpr::from_expr(default)].into(),
-                                    )
-                                });
-                        assignments.push((property.key.id.to_id(), projected));
-                    }
-                    ObjectPatProp::Rest(rest) => {
-                        collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
-                    }
-                }
-            }
-        }
+        Pat::Object(object) => collect_object_pattern_assignments(object, value, assignments),
         // Array destructuring invokes the iterator protocol. Retain its bound
         // names but do not infer element identity from a syntax-only array
         // shape; unknown iteration results must reach later publication sinks.
@@ -885,45 +886,7 @@ fn collect_assign_target_assignments(
 ) {
     match target {
         AssignTargetPat::Object(object) => {
-            for property in &object.props {
-                match property {
-                    ObjectPatProp::KeyValue(property) => {
-                        let projected = static_property_name(&property.key).map_or(
-                            ValueExpr::Unknown,
-                            |name| {
-                                ValueExpr::Member(
-                                    Arc::new(value.clone()),
-                                    Some(name),
-                                    MemberKey::Computed(None),
-                                    swc_common::DUMMY_SP.into(),
-                                )
-                            },
-                        );
-                        collect_pattern_assignments(&property.value, &projected, assignments);
-                    }
-                    ObjectPatProp::Assign(property) => {
-                        let projected = ValueExpr::Member(
-                            Arc::new(value.clone()),
-                            Some(property.key.id.sym.to_string()),
-                            MemberKey::Computed(None),
-                            swc_common::DUMMY_SP.into(),
-                        );
-                        let projected =
-                            property
-                                .value
-                                .as_deref()
-                                .map_or(projected.clone(), |default| {
-                                    ValueExpr::Alternatives(
-                                        [projected, ValueExpr::from_expr(default)].into(),
-                                    )
-                                });
-                        assignments.push((property.key.id.to_id(), projected));
-                    }
-                    ObjectPatProp::Rest(rest) => {
-                        collect_pattern_assignments(&rest.arg, &ValueExpr::Unknown, assignments);
-                    }
-                }
-            }
+            collect_object_pattern_assignments(object, value, assignments);
         }
         AssignTargetPat::Array(array) => {
             for element in array.elems.iter().flatten() {
