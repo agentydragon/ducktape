@@ -134,8 +134,8 @@ async def test_native_delete_preconditions_the_acknowledged_uid(monkeypatch: pyt
         def __init__(self, _connection: object) -> None:
             pass
 
-        async def delete_namespaced_custom_object(self, **kwargs: object) -> None:
-            body = cast(k8s.V1DeleteOptions, kwargs["body"])
+        async def delete_namespaced_custom_object(self, *_args: object, body: object, **_kwargs: object) -> None:
+            body = cast(k8s.V1DeleteOptions, body)
             delete_options.append(body)
             assert body.preconditions.uid == "owned-uid"
             assert body.preconditions.uid != current_uid
