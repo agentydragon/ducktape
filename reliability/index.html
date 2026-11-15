@@ -505,6 +505,12 @@
             >CI reliability: fresh incidents and recovery controls<//
           >
           <${CiLanes} data=${evidence.dispatch10} />
+          <${Text} size="sm" c="dimmed" my="sm">
+            Related scoped test and fixture ports are tracked in the
+            <${Anchor} href="../agentplane-test-architecture/#port-dispatch"
+              >current five-port dispatch<//
+            >; they do not refresh this report's failure window or denominator.
+          <//>
           <${Paper}
             component="section"
             id="latest-browser"
