@@ -32,12 +32,26 @@ func (r *unusedSubjectResolver) ResolveSubject(context.Context) (auth.Subject, e
 }
 
 func TestServiceCertificateAdmissionAndDelegation(t *testing.T) {
+	for _, serviceOnly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("service-only=%t", serviceOnly), func(t *testing.T) {
+			testServiceCertificateAdmissionAndDelegation(t, serviceOnly)
+		})
+	}
+}
+
+func testServiceCertificateAdmissionAndDelegation(t *testing.T, serviceOnly bool) {
+	t.Helper()
 	fallback := new(unusedSubjectResolver)
 	identity := auth.Identity{Name: "owner", UID: "owner-uid"}
 	identities := identityUIDReaderFunc(func(_ context.Context, name string) (string, bool, error) {
 		return identity.UID, name == identity.Name, nil
 	})
 	rule, err := auth.AnySubject(fallback).AllowServiceCallers([]string{peertls.ActionsURI})
+	directCode := codes.OK
+	if serviceOnly {
+		rule, err = auth.Services(nil)
+		directCode = codes.PermissionDenied
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +101,7 @@ func TestServiceCertificateAdmissionAndDelegation(t *testing.T) {
 		code      codes.Code
 		delegated bool
 	}{
-		{name: "direct exact service", tls: actorTLS, code: codes.OK},
+		{name: "direct exact service", tls: actorTLS, code: directCode},
 		{name: "delegated effective Identity", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(encoded)), code: codes.OK, delegated: true},
 		{name: "no certificate envelope", tls: backendTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(encoded)), code: codes.Unauthenticated},
 		{name: "bearer cannot supplement certificate", tls: actorTLS, md: metadata.Pairs("authorization", "Bearer valid-token"), code: codes.Unauthenticated},
@@ -185,19 +199,6 @@ func (h serviceAdmissionHealth) Check(ctx context.Context, _ *healthpb.HealthChe
 }
 
 func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
-	ca := transporttesting.NewCA(t)
-	contextFor := func(uri string) context.Context {
-		files := ca.Issue(t, uri)
-		pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		leaf, err := x509.ParseCertificate(pair.Certificate[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		return peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}}})
-	}
 	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +207,7 @@ func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := contextFor(peertls.AppURI)
+	service := servicePeerContext(t, peertls.AppURI)
 	for _, tc := range []struct {
 		name string
 		rule auth.Rule
@@ -216,8 +217,8 @@ func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
 		{"exact service", rule, service, codes.OK},
 		{"empty allowlist", empty, service, codes.PermissionDenied},
 		{"zero rule", auth.Rule{}, service, codes.PermissionDenied},
-		{"other service", rule, contextFor(peertls.NotificationsURI), codes.PermissionDenied},
-		{"workload SVID", rule, contextFor("spiffe://agentplane/fake-ns/fake-workload/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), codes.Unauthenticated},
+		{"other service", rule, servicePeerContext(t, peertls.NotificationsURI), codes.PermissionDenied},
+		{"workload SVID", rule, servicePeerContext(t, "spiffe://agentplane/fake-ns/fake-workload/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), codes.Unauthenticated},
 		{"missing certificate", rule, t.Context(), codes.Unauthenticated},
 		{"bearer only", rule, metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token")), codes.Unauthenticated},
 		{"bearer plus certificate", rule, metadata.NewIncomingContext(service, metadata.Pairs("authorization", "Bearer test-token")), codes.Unauthenticated},
@@ -265,5 +266,76 @@ func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
 	remote.AuthInfo.(credentials.TLSInfo).State.PeerCertificates[0].NotAfter = time.Now().Add(-time.Minute)
 	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expired stream admission: %v", err)
+	}
+}
+
+func servicePeerContext(t *testing.T, uri string) context.Context {
+	t.Helper()
+	files := transporttesting.NewCA(t).Issue(t, uri)
+	pair, err := tls.LoadX509KeyPair(files.CertFile, files.KeyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return peer.NewContext(t.Context(), &peer.Peer{AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}}})
+}
+
+func TestServicesDelegationKeepsItsOwnGrantsAndLiveIdentity(t *testing.T) {
+	identity := auth.Identity{Name: "owner", UID: "owner-uid"}
+	liveUID := identity.UID
+	identities := identityUIDReaderFunc(func(_ context.Context, name string) (string, bool, error) {
+		return liveUID, name == identity.Name, nil
+	})
+	rule, err := auth.Services(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rule.AllowDelegationFrom([]auth.Delegator{{Account: auth.Account{Namespace: "ns", Name: "actor"}, IdentityCallers: true}}, identities); err == nil {
+		t.Fatal("service rule acquired legacy bearer delegation")
+	}
+	rule, err = rule.AllowServiceDelegationFrom([]auth.ServiceDelegator{{SPIFFEID: peertls.MCPEdgeURI, ConnectionProvenance: true}}, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
+		Provenance: &delegationpb.Delegation_Connection{Connection: &delegationpb.ConnectionProvenance{
+			ConnectionId: "018f4e32-6632-7e7f-83dd-7f90ccf84f68", GrantId: "018f4e32-6632-7e7f-83dd-7f90ccf84f69",
+		}},
+	}
+	encoded, err := auth.MarshalDelegation(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := metadata.NewIncomingContext(servicePeerContext(t, peertls.MCPEdgeURI), metadata.Pairs(auth.DelegationMetadataKey, string(encoded)))
+	methods := auth.Methods{healthpb.Health_Watch_FullMethodName: rule}
+	admitted, err := methods.AdmitContext(ctx, healthpb.Health_Watch_FullMethodName, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := auth.Admitted(admitted)
+	delegated, ok := proof.(auth.DelegatedServiceIdentityAdmission)
+	if err != nil || !ok || delegated.Actor.SPIFFEID != peertls.MCPEdgeURI || delegated.EffectiveCaller != identity {
+		t.Fatalf("delegated proof: %#v, %v", proof, err)
+	}
+	if _, err := methods.AdmitContext(ctx, healthpb.Health_Check_FullMethodName, time.Second); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("unlisted method: %v", err)
+	}
+	withoutConnection, err := rule.AllowServiceDelegationFrom([]auth.ServiceDelegator{{SPIFFEID: peertls.MCPEdgeURI}}, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := withoutConnection.AdmitContext(ctx, time.Second); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("ungranted Connection provenance: %v", err)
+	}
+	if err := auth.RevalidateStream(admitted); err != nil {
+		t.Fatal(err)
+	}
+	liveUID = "replacement-uid"
+	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("replaced delegated Identity: %v", err)
 	}
 }
