@@ -69,7 +69,7 @@ pub(crate) use effect_translation_validation::{
 use esm_simulator::EsmEvaluationSimulator;
 use esm_simulator::simulate_esm_post_order;
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
-pub use incremental_quotient::{LadderDecision, ModuleAssignmentDelta};
+pub use incremental_quotient::{LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
 pub use translation_validation::{
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
@@ -535,19 +535,25 @@ impl RealizabilityIndex {
     /// [`Self::verdict_after_moving_source_units_touching`] and
     /// [`Self::ladder_decision_after_moving_source_units_touching`].
     pub fn apply(&mut self, dependency_graph: &DependencyGraph, delta: ModuleAssignmentDelta) {
-        let ModuleAssignmentDelta::MoveSourceUnits { source_units, to } = delta;
-        let impacted_edges = impacted_dependency_edges(dependency_graph, &source_units);
-        for edge_id in &impacted_edges {
-            self.quotient
-                .remove_current_edge(dependency_graph.edge(*edge_id), &self.assignment);
-        }
-        for source_unit in source_units {
-            self.assignment.set(source_unit, to);
-        }
-        for edge_id in &impacted_edges {
-            self.quotient
-                .add_current_edge(dependency_graph.edge(*edge_id), &self.assignment);
-        }
+        self.apply_batch(dependency_graph, &ModuleAssignmentBatch::from(delta));
+    }
+
+    /// Commit a simultaneous source-unit mapping and update the quotient once
+    /// from the old assignment to the final assignment. Each incident edge is
+    /// removed and re-added at most once, including edges whose two endpoints
+    /// both move.
+    ///
+    /// Every destination must be a canonical `ModuleId` in the fixed module
+    /// universe used to build this index. This method does not allocate or
+    /// renumber destinations; rebuild the index if module identities or the
+    /// entry destination change.
+    pub fn apply_batch(
+        &mut self,
+        dependency_graph: &DependencyGraph,
+        batch: &ModuleAssignmentBatch,
+    ) {
+        self.quotient
+            .apply_batch(dependency_graph, &mut self.assignment, batch);
     }
 
     /// Verdict against the current working assignment. Reads the
@@ -574,9 +580,30 @@ impl RealizabilityIndex {
         source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> RealizabilityVerdict {
-        let overlay =
-            self.quotient
-                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
+        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
+            source_units: source_units.to_vec(),
+            to,
+        });
+        self.verdict_after_batch(dependency_graph, &batch)
+    }
+
+    /// Full canonical verdict for one simultaneous source-unit mapping.
+    /// Unlike the candidate-oriented touching query, this checks every SCC
+    /// and the global ESM import order, including remote TDZs whose order
+    /// changes because of the batch.
+    ///
+    /// Destinations must be canonical `ModuleId`s from the fixed module
+    /// universe used to build this index, and the entry destination stays
+    /// fixed. If module paths are inserted or reordered, rebuild the index
+    /// with the new canonical IDs before querying.
+    pub fn verdict_after_batch(
+        &self,
+        dependency_graph: &DependencyGraph,
+        batch: &ModuleAssignmentBatch,
+    ) -> RealizabilityVerdict {
+        let overlay = self
+            .quotient
+            .overlay_for_batch(dependency_graph, &self.assignment, batch);
         let verdict = verdict_from_canonical(
             self.quotient.canonical_with_overlay(&overlay),
             self.quotient.cross_rebinds_with_overlay(&overlay),
@@ -584,7 +611,7 @@ impl RealizabilityIndex {
         );
         if gate_oracle_enabled() {
             let mut post_assignment = self.assignment.clone();
-            for &source_unit in source_units {
+            for (&source_unit, &to) in batch.destinations() {
                 post_assignment.set(source_unit, to);
             }
             let reference = check_realizability(dependency_graph, &post_assignment);
@@ -607,20 +634,35 @@ impl RealizabilityIndex {
         source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> RealizabilityVerdict {
-        let overlay =
-            self.quotient
-                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
-        let verdict = self.quotient.verdict_with_overlay_touching(to, &overlay);
+        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
+            source_units: source_units.to_vec(),
+            to,
+        });
+        self.verdict_after_batch_touching(dependency_graph, &batch, to)
+    }
+
+    fn verdict_after_batch_touching(
+        &self,
+        dependency_graph: &DependencyGraph,
+        batch: &ModuleAssignmentBatch,
+        module: ModuleId,
+    ) -> RealizabilityVerdict {
+        let overlay = self
+            .quotient
+            .overlay_for_batch(dependency_graph, &self.assignment, batch);
+        let verdict = self
+            .quotient
+            .verdict_with_overlay_touching(module, &overlay);
         if gate_oracle_enabled() {
             // Oracle mode: the boolean tier ladder must agree with
             // the evidence-producing verdict on every diagnostic-path
             // query.
-            let decision = self.quotient.ladder_decide(to, &overlay);
+            let decision = self.quotient.ladder_decide(module, &overlay);
             assert_eq!(
                 decision.accepts(),
                 verdict.is_realizable(),
                 "DEBUNDLE_GATE_ORACLE: ladder {decision:?} diverges from the overlay \
-                 verdict for {to:?}: {verdict:#?}",
+                 verdict for {module:?}: {verdict:#?}",
             );
         }
         verdict
@@ -640,14 +682,18 @@ impl RealizabilityIndex {
         source_units: &[SourceUnitId],
         to: ModuleId,
     ) -> LadderDecision {
-        let overlay =
-            self.quotient
-                .overlay_for_move(dependency_graph, &self.assignment, source_units, to);
+        let batch = ModuleAssignmentBatch::from(ModuleAssignmentDelta::MoveSourceUnits {
+            source_units: source_units.to_vec(),
+            to,
+        });
+        let overlay = self
+            .quotient
+            .overlay_for_batch(dependency_graph, &self.assignment, &batch);
         let decision = self.quotient.ladder_decide(to, &overlay);
         if gate_oracle_enabled() {
             let mut post_assignment = self.assignment.clone();
-            for &source_unit in source_units {
-                post_assignment.set(source_unit, to);
+            for (&source_unit, &destination) in batch.destinations() {
+                post_assignment.set(source_unit, destination);
             }
             let reference = check_realizability_touching(dependency_graph, &post_assignment, to);
             assert_eq!(
