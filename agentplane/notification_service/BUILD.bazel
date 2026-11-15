@@ -92,7 +92,6 @@ go_library(
         "@com_github_lib_pq//:pq",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@org_golang_google_grpc//:grpc",

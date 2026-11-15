@@ -329,7 +329,12 @@ func TestProductionListenerAdmitsOnlyGrantedServiceDiagnostics(t *testing.T) {
 		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 		c.OperatorReaderServices = []string{peertls.AppURI}
+		c.OperatorReaderAccount = sandboxName
 	})
+	_, err := service.notifications.ReadInbox(bearing(t, sandboxToken), &notificationspb.ReadInboxRequest{SessionId: uuid.NewString()})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("legacy operator account admitted bearer: %v", err)
+	}
 	for _, attempt := range []struct {
 		name   string
 		uri    string

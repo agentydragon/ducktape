@@ -1,8 +1,7 @@
 // Package rpc serves the Notification Service's gRPC API.
 //
-// Methods admits every RPC's caller before it runs, by a bearer reviewed on that call
-// (agentplane/docs/grpc_services.md) or a workload SVID. A workload acts for its own ServiceAccount or Identity and
-// only on what that owns.
+// Methods admits workload SVIDs and exact service SVID diagnostic grants before each RPC.
+// Workloads act for the live Identity their credential names.
 package rpc
 
 import (
@@ -31,7 +30,7 @@ type Runner interface {
 	ListSessions(ctx context.Context, sandbox *sandboxreader.Identity) ([]string, error)
 }
 
-// Actions reads the next page of an Action request's events after a sequence, if the owner's ServiceAccount or
+// Actions reads the next page of an Action request's events after a sequence, if the owner's
 // Identity incarnation submitted the request. A subscription is refused when it cannot, so a caller cannot follow
 // another's requests.
 type Actions interface {
@@ -72,8 +71,6 @@ type Options struct {
 	Sessions Sessions
 	// MessageBodyLimit is the most UTF-8 bytes a message body may hold, at most store.MessageBodyCeiling.
 	MessageBodyLimit int
-	// OperatorReader is the name, in Namespace, of the ServiceAccount that can read Session diagnostics for the namespace.
-	OperatorReader string
 	// OperatorReaderServices are exact component SVIDs allowed to read Session diagnostics, independently of agent Identity admission.
 	OperatorReaderServices []string
 	// Debounce is what the worker waits before it announces entries; the operator's reads report it.
@@ -82,11 +79,9 @@ type Options struct {
 	RequestTimeout time.Duration
 }
 
-// Methods admits authenticated workloads using the source configured on this listener; individual RPCs
-// enforce resource ownership. Passing the listener's source keeps TLS SVID and TokenReview methods on the same
-// method policy without coupling either resolver to the servicers' options. A workload's own inboxes and
-// subscriptions, subscribing and messaging also admit an Identity caller (AnySubject).
-func Methods(options Options, resolver *auth.Resolver) (auth.Methods, error) {
+// Methods admits live workload Identities; handlers enforce resource ownership.
+// Only the named diagnostic methods additionally admit exact configured service SVIDs.
+func Methods(options Options, resolver *auth.SVIDResolver) (auth.Methods, error) {
 	owners := auth.AnySubject(resolver)
 	methods := auth.Methods{
 		notificationspb.Notifications_CreateSubscription_FullMethodName: owners,

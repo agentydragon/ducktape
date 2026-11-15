@@ -36,7 +36,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -350,10 +349,6 @@ func explicitKubeDeps(path string) (kubeDeps, error) {
 		return kubeDeps{}, err
 	}
 	kubeConfig.QPS = -1
-	kube, err := kubernetes.NewForConfig(kubeConfig)
-	if err != nil {
-		return kubeDeps{}, err
-	}
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{sandboxapi.AddToScheme, policyapi.AddToScheme} {
 		if err := add(scheme); err != nil {
@@ -364,7 +359,7 @@ func explicitKubeDeps(path string) (kubeDeps, error) {
 	if err != nil {
 		return kubeDeps{}, err
 	}
-	return kubeDeps{Reviews: kube.AuthenticationV1().TokenReviews(), Sandboxes: sandboxes, Policies: kubeConfig}, nil
+	return kubeDeps{Sandboxes: sandboxes, Policies: kubeConfig}, nil
 }
 
 func writeKubeconfig(t *testing.T, config *rest.Config) string {

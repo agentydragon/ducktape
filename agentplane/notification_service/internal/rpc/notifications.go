@@ -35,7 +35,6 @@ type Notifications struct {
 	messageBodyLimit int
 	timeout          time.Duration
 	wakeups          *wakeups.Hub
-	operatorReader   string
 	operatorServices map[string]struct{}
 	debounce         store.Debounce
 	draining         context.Context
@@ -52,31 +51,13 @@ func NewNotifications(options Options) *Notifications {
 		store: options.Store, namespace: options.Namespace, sandboxes: options.Sandboxes,
 		runner: options.Runner, actions: options.Actions, github: options.GitHub, policy: options.SendPolicy,
 		history: options.History, sessions: options.Sessions, messageBodyLimit: options.MessageBodyLimit, timeout: options.RequestTimeout,
-		wakeups: options.Wakeups, operatorReader: options.OperatorReader, operatorServices: operatorServices, debounce: options.Debounce,
+		wakeups: options.Wakeups, operatorServices: operatorServices, debounce: options.Debounce,
 		draining: draining, drain: drain,
 	}
 }
 
 // Drain ends ongoing watches before graceful server shutdown.
 func (s *Notifications) Drain() { s.drain() }
-
-// caller is the ServiceAccount workload Methods admitted, who it acts for.
-func (s *Notifications) caller(ctx context.Context) (model.ServiceAccount, error) {
-	principal, err := auth.Caller(ctx)
-	if err != nil {
-		return model.ServiceAccount{}, admissionRefused{err}
-	}
-	return model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name}, nil
-}
-
-// actor is an admitted workload as it acts on Sessions: an accountActor or an identityActor.
-type actor interface{ isActor() }
-
-// accountActor is a ServiceAccount incarnation.
-type accountActor struct {
-	account model.ServiceAccount
-	uid     string
-}
 
 // identityActor is an Identity incarnation, running in the Sandbox incarnation that controls its
 // workload credential.
@@ -85,40 +66,30 @@ type identityActor struct {
 	sandbox  model.DestinationRef
 }
 
-func (accountActor) isActor()  {}
-func (identityActor) isActor() {}
-
 // admittedActor is the workload Methods admitted. An Identity caller whose credential no Sandbox
 // controls acts for no Sandbox and is refused with errSandboxMissing.
-func (s *Notifications) admittedActor(ctx context.Context) (actor, error) {
+func (s *Notifications) admittedActor(ctx context.Context) (identityActor, error) {
 	admission, err := auth.Admitted(ctx)
 	if err != nil {
-		return nil, admissionRefused{err}
+		return identityActor{}, admissionRefused{err}
 	}
 	if identity, ok := admission.(auth.IdentityAdmission); ok {
 		owner, ok := identity.Caller.Workload.Owner.(auth.ControllerOwner)
 		if !ok || owner.APIVersion != sandboxapi.GroupVersion.String() || owner.Kind != sandboxapi.SandboxKind {
-			return nil, errSandboxMissing
+			return identityActor{}, errSandboxMissing
 		}
 		return identityActor{
 			identity: model.Identity{Name: identity.Caller.Identity.Name, UID: identity.Caller.Identity.UID},
 			sandbox:  model.DestinationRef{Namespace: identity.Caller.Workload.Namespace, Name: owner.Name, UID: owner.UID},
 		}, nil
 	}
-	principal, err := auth.Caller(ctx)
-	if err != nil {
-		return nil, admissionRefused{err}
-	}
-	return accountActor{
-		account: model.ServiceAccount{Namespace: principal.Account.Namespace, Name: principal.Account.Name},
-		uid:     principal.ServiceAccountUID,
-	}, nil
+	return identityActor{}, admissionRefused{errors.New("workload Identity admission required")}
 }
 
 // serve runs handle for the admitted workload under the request timeout.
 func serve[Request, Response any](
 	ctx context.Context, s *Notifications, request *Request,
-	handle func(context.Context, actor, *Request) (*Response, error),
+	handle func(context.Context, identityActor, *Request) (*Response, error),
 ) (*Response, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
@@ -134,7 +105,7 @@ func serve[Request, Response any](
 }
 
 // serveOwned runs handle under the request timeout for a request about the caller's inboxes and subscriptions:
-// those opened for the Sandbox incarnation it runs in now, owned by its ServiceAccount or Identity incarnation
+// those opened for the Sandbox incarnation it runs in now, owned by its Identity incarnation
 // (currentWorkload). A Sandbox recreated under a deleted one's name sees none of the deleted one's. A caller whose
 // Sandbox is gone gets none, or NOT_FOUND if none is nil.
 func serveOwned[Request, Response any](
@@ -161,7 +132,7 @@ func (s *Notifications) CreateSubscription(ctx context.Context, request *notific
 	return serve(ctx, s, request, s.createSubscription)
 }
 
-func (s *Notifications) createSubscription(ctx context.Context, owner actor, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
+func (s *Notifications) createSubscription(ctx context.Context, owner identityActor, request *notificationspb.CreateSubscriptionRequest) (*notificationspb.CreateSubscriptionResponse, error) {
 	body, err := subscribeBody(request)
 	if err != nil {
 		return nil, err

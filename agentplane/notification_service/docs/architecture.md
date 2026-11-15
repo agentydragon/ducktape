@@ -109,10 +109,13 @@ propagation time or assert that Dispatcher acceptance alone proves harness confi
 
 ## Service identities
 
-Workers use rotating, audience-specific projected tokens for Actions, Runner Gateway, Dispatcher
-and History Service. Actions service-reader access does not confer operator or execution rights.
-Kubernetes grants cover caller TokenReview, destination Sandbox reads and the watched
-PolicySets/PolicyBindings used for send authorization. Network and reader allowlists are owned by
+Workers use the Notifications service SVID for Actions, Runner Gateway, Dispatcher and History Service.
+Actions service-reader access does not confer operator or execution rights. The receiver verifies workload
+SVIDs against live WorkloadCredentials and Identities and admits exact service SVID diagnostic grants.
+It performs no TokenReview. Kubernetes reads cover those records, destination Sandboxes and the watched
+PolicySets/PolicyBindings used for send authorization. Legacy receiver settings still decode but grant no
+admission; their removal follows manifest omission and rollout. Existing RBAC and token projections await
+that separate cleanup. Network and reader allowlists are owned by
 [`cluster/cdk8s/agentplane/notifications.py`](../../../cluster/cdk8s/agentplane/notifications.py),
 not by the integration app. Operator watch streams use committed invalidations to reread current
 state; PostgreSQL NOTIFY is not their replay log.

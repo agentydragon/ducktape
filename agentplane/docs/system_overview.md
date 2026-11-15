@@ -120,7 +120,7 @@ flowchart LR
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|direct Anthropic Messages API| anthropic
     gw --> k8s
-    notif --> k8s
+    notif -->|live workload credentials, Identities, Sandboxes and send grants| k8s
     actions -->|Action Pods, launched Sandboxes and their launcher grants| k8s
     policy --> k8s
     sandboxctl --> k8s
@@ -647,11 +647,11 @@ flowchart LR
     agent -.->|HTTP subscriptions, inboxes, messages| sidecar
     sidecar -.->|Sandbox SVID to destination inside CONNECT| proxy
     proxy -.->|opaque TLS| notifications
-    app -->|gRPC operator watches + health; optional exact service-SVID reader| notifications
+    app -->|gRPC diagnostics + health; exact App service SVID| notifications
     github --> notifications
     notifications --> github
     notifications -->|Action history: gRPC mTLS, Notifications SVID| actions
-    notifications -->|Sandbox identity, watched send grants| k8s
+    notifications -->|live workload credentials, Identities, Sandboxes and send grants| k8s
     notifications -->|Session validation: mTLS, Notifications SVID| gateway
     notifications -->|SubmitInput: mTLS, Notifications SVID| dispatcher
     notifications -->|command receipts: mTLS, Notifications SVID| history
@@ -659,13 +659,15 @@ flowchart LR
 
 Sandboxes keep their existing HTTP service URL. Their sidecar or relay recognizes the exact origin,
 opens CONNECT through the central proxy, and presents the Runner SVID to Notification's shared TLS
-RPC listener. Notification resolves the current Sandbox and its ServiceAccount; inbox ownership and
-send grants are unchanged. The listener keeps its method-specific bearer authorization and accepts
-the exact App service SVID only for read-only Session diagnostics. That service grant never supplies
-an agent Identity or permits inbox mutation.
+RPC listener. Notification resolves the credential's current Identity name and UID and preserves the
+existing Session and Sandbox ownership checks. The receiver rejects Kubernetes bearer credentials and
+performs no TokenReview. It accepts the exact App service SVID only for the five read-only Session
+diagnostic methods. That service grant never supplies an agent Identity or permits inbox mutation.
+Legacy receiver audience/account settings and bearer listener entries decode without granting admission
+until the separate manifest omission and rollout cleanup.
 
 The Notification service does not call the integration app, which watches subscription and notice
-state over the operator-only `NotificationsOperator` gRPC service. GitHub sends it signed webhooks; it
+state over the diagnostic methods of the `Notifications` gRPC service. GitHub sends it signed webhooks; it
 makes GitHub App REST calls, reads receipt evidence from History before retrying a delivery, and
 submits every runner notice through the Session Dispatcher. It authorizes a message against the
 PolicySets and PolicyBindings it watches, and asks History which Sandbox wrote a Session before a

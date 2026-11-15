@@ -35,7 +35,7 @@ func sendRequest(key string) *notificationspb.SendMessageRequest {
 
 func (s testServer) send(t *testing.T, request *notificationspb.SendMessageRequest) *notificationspb.Message {
 	t.Helper()
-	response, err := s.client.SendMessage(bearing(t, otherSandboxToken), request)
+	response, err := s.client.SendMessage(bearing(t, otherIdentityCaller), request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func (s testServer) sentMessage(t *testing.T, token, id string) (*notificationsp
 // requireNoInbox checks that the test Sandbox has no inbox.
 func (s testServer) requireNoInbox(t *testing.T) {
 	t.Helper()
-	inboxes, err := s.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := s.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,14 +79,14 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("retry = %v, want %v", retried, sent)
 	}
 
-	inboxes, err := server.client.ListInboxes(bearing(t, identityToken), &notificationspb.ListInboxesRequest{})
+	inboxes, err := server.client.ListInboxes(bearing(t, identityCaller), &notificationspb.ListInboxesRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(inboxes.GetInboxes()) != 1 {
 		t.Fatalf("inboxes = %v", inboxes)
 	}
-	read, err := server.client.ReadInbox(bearing(t, identityToken), &notificationspb.ReadInboxRequest{SessionId: testSession})
+	read, err := server.client.ReadInbox(bearing(t, identityCaller), &notificationspb.ReadInboxRequest{SessionId: testSession})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,6 +96,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	entry := read.GetEntries()[0]
 	want := &notificationspb.MessageEvent{
 		MessageId: sent.GetId(), Sender: &identitypb.ServiceAccount{Namespace: testNamespace, Name: otherSandboxName},
+		SenderIdentity: &identitypb.Identity{Name: server.otherWorkload.Identity.Name, Uid: string(server.otherWorkload.Identity.UID)},
 	}
 	if !proto.Equal(entry.GetEvent().GetMessage(), want) || len(entry.GetSubscriptionIds()) != 0 {
 		t.Errorf("entry = %v", entry)
@@ -105,13 +106,13 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 	}
 
 	// Only the sender follows the message.
-	if _, err := server.sentMessage(t, identityToken, sent.GetId()); status.Code(err) != codes.NotFound {
+	if _, err := server.sentMessage(t, identityCaller, sent.GetId()); status.Code(err) != codes.NotFound {
 		t.Errorf("the recipient's lookup: %v, want NotFound", err)
 	}
-	if _, err := server.client.AcknowledgeInbox(bearing(t, identityToken), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
+	if _, err := server.client.AcknowledgeInbox(bearing(t, identityCaller), &notificationspb.AcknowledgeInboxRequest{SessionId: testSession, ThroughCursor: 1}); err != nil {
 		t.Fatal(err)
 	}
-	followed, err := server.sentMessage(t, otherSandboxToken, sent.GetId())
+	followed, err := server.sentMessage(t, otherIdentityCaller, sent.GetId())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestASendNeedsAGrantCoveringTheSandboxAsItIsNow(t *testing.T) {
 			}
 			// A grant to another account is not the sender's.
 			server.grantSend(operatorName, toSandbox)
-			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("denied"))
+			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("denied"))
 			requireCode(t, err, codes.PermissionDenied)
 			server.requireNoInbox(t)
 		})
@@ -153,7 +154,7 @@ func TestASendNeedsAGrantCoveringTheSandboxAsItIsNow(t *testing.T) {
 func TestATagGrantCoversTheSandboxWhileItHoldsTheTag(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, policyapi.SandboxTargets{InboxTags: []string{"test-group"}})
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("untagged"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("untagged"))
 	requireCode(t, err, codes.PermissionDenied)
 	tag := func(tags ...string) {
 		t.Helper()
@@ -169,7 +170,7 @@ func TestATagGrantCoversTheSandboxWhileItHoldsTheTag(t *testing.T) {
 	tag("test-other-group", "test-group")
 	server.send(t, sendRequest("tagged"))
 	tag("test-other-group")
-	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("untagged-again"))
+	_, err = server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("untagged-again"))
 	requireCode(t, err, codes.PermissionDenied)
 }
 
@@ -178,9 +179,9 @@ func TestRevokingAGrantRefusesNewMessagesButKeepsTheSentOnes(t *testing.T) {
 	server.grantSend(otherSandboxName, toSandbox)
 	sent := server.send(t, sendRequest("before"))
 	server.policy.Rules.DeleteBinding(otherSandboxName)
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("after"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("after"))
 	requireCode(t, err, codes.PermissionDenied)
-	if _, err := server.sentMessage(t, otherSandboxToken, sent.GetId()); err != nil {
+	if _, err := server.sentMessage(t, otherIdentityCaller, sent.GetId()); err != nil {
 		t.Fatalf("the sent message after the revocation: %v", err)
 	}
 }
@@ -189,7 +190,7 @@ func TestASendIsRefusedWhileTheGrantsMayBeOutOfDate(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
 	server.policy.Health.RecordFailure(reader.PolicyBindings, errors.New("test: the watch failed"))
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("stale"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("stale"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
 }
@@ -204,12 +205,12 @@ func TestAMessageToNoSuchSessionOrSandboxIncarnationIsNotFound(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			server.openings.placements[testSession] = placement
 			request := sendRequest("missing")
-			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
+			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
 	delete(server.openings.placements, testSession)
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("missing-opening"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("missing-opening"))
 	requireCode(t, err, codes.NotFound)
 	server.requireNoInbox(t)
 }
@@ -224,12 +225,12 @@ func TestAMessageNeedsACompleteDispatcherSession(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			server.openings.placements[testSession] = placement
-			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("incomplete"))
+			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("incomplete"))
 			requireCode(t, err, codes.Unavailable)
 		})
 	}
 	server.openings.err = status.Error(codes.Unavailable, "test Dispatcher outage")
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("outage"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
 	if asked := server.history.questions(); len(asked) != 0 {
@@ -280,7 +281,7 @@ func TestAnOldWireDestinationFenceIsRejectedBeforeSending(t *testing.T) {
 	}
 	request := sendRequest("old-wire")
 	request.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), oldRef))
-	_, err = server.client.SendMessage(bearing(t, otherSandboxToken), request)
+	_, err = server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 	requireCode(t, err, codes.InvalidArgument)
 	server.requireNoInbox(t)
 	if asked := server.history.questions(); len(asked) != 0 {
@@ -310,12 +311,12 @@ func TestAMessageOpensAnInboxOnlyForSessionHistoryOfTheExactSandbox(t *testing.T
 			server.openings.placements[session] = nativeSession(session, sandboxName, sandboxUID)
 			request := sendRequest("unrecorded")
 			request.SessionId = session
-			_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
+			_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 			requireCode(t, err, codes.NotFound)
 		})
 	}
 	server.history.failWith(status.Error(codes.Unavailable, "test History outage"))
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("outage"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("outage"))
 	requireCode(t, err, codes.Unavailable)
 	server.requireNoInbox(t)
 }
@@ -326,10 +327,10 @@ func TestMessageToSameNameReplacementDoesNotReuseFormerSandboxInbox(t *testing.T
 	first := server.send(t, sendRequest("before-recreate"))
 
 	server.recreateSandbox(t)
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), sendRequest("after-recreate"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), sendRequest("after-recreate"))
 	requireCode(t, err, codes.NotFound)
 	server.requireNoInbox(t)
-	if _, err := server.sentMessage(t, otherSandboxToken, first.GetId()); err != nil {
+	if _, err := server.sentMessage(t, otherIdentityCaller, first.GetId()); err != nil {
 		t.Fatalf("the earlier message after Sandbox replacement: %v", err)
 	}
 }
@@ -352,6 +353,6 @@ func TestAMessageMustFitTheConfiguredLimit(t *testing.T) {
 	server.send(t, request)
 	request = sendRequest("past-limit")
 	request.Body = strings.Repeat("b", server.config.messageBodyLimit+1)
-	_, err := server.client.SendMessage(bearing(t, otherSandboxToken), request)
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 	requireCode(t, err, codes.InvalidArgument)
 }

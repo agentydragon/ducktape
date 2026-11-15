@@ -3,7 +3,6 @@ package rpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sessionidentity"
@@ -20,9 +19,8 @@ import (
 // follow. The source is authorized before anything is persisted, even when replay starts after the last event.
 //
 // An Identity owns only Sessions the Session authority recorded as executing as that exact Identity
-// incarnation in the Sandbox controlling its credential. ServiceAccounts remain authenticated actors and
-// message senders, but Session ownership is Identity-only.
-func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.Subscribe) (store.Subscription, error) {
+// incarnation in the Sandbox controlling its credential.
+func (s *Notifications) subscribe(ctx context.Context, caller identityActor, body model.Subscribe) (store.Subscription, error) {
 	session, err := s.sessions.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: body.SessionID})
 	if status.Code(err) == codes.NotFound {
 		return store.Subscription{}, errNoSession
@@ -35,19 +33,11 @@ func (s *Notifications) subscribe(ctx context.Context, caller actor, body model.
 		return store.Subscription{}, unavailable("Session", errors.New("incomplete Session placement"))
 	}
 	body.DestinationRef = model.DestinationRef{Namespace: s.namespace, Name: target.GetName(), UID: target.GetUid()}
-	var owner store.Owner
-	switch caller := caller.(type) {
-	case accountActor:
+	recorded, ok := sessionidentity.IdentityRun(session.GetSession(), body.SessionID, body.DestinationRef)
+	if !ok || recorded != caller.identity || caller.sandbox != body.DestinationRef {
 		return store.Subscription{}, store.ErrNotFound
-	case identityActor:
-		recorded, ok := sessionidentity.IdentityRun(session.GetSession(), body.SessionID, body.DestinationRef)
-		if !ok || recorded != caller.identity || caller.sandbox != body.DestinationRef {
-			return store.Subscription{}, store.ErrNotFound
-		}
-		owner = store.Owner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
-	default:
-		panic(fmt.Sprintf("unknown actor %T", caller))
 	}
+	owner := store.Owner{Identity: caller.identity, SandboxUID: body.DestinationRef.UID}
 	if err := body.Validate(); err != nil {
 		return store.Subscription{}, err
 	}

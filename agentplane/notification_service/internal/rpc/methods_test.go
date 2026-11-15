@@ -2,58 +2,87 @@ package rpc
 
 import (
 	"maps"
+	"net"
+	"slices"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 )
 
-// registerStandIns registers servicers that answer Unimplemented to every call the policy admitted.
-func registerStandIns(server *grpc.Server) {
-	notificationspb.RegisterNotificationsServer(server, notificationspb.UnimplementedNotificationsServer{})
-}
-
 func TestEveryRPCAdmitsOnlyItsCallers(t *testing.T) {
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	fixture := newServer(t)
+	svids, err := auth.NewSVIDResolver(fixture.workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Every workload of the namespace may call Notifications for its own account, the operator included.
-	workloads := map[string]codes.Code{
-		"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated, outsiderToken: codes.Unauthenticated,
-		sandboxToken: codes.Unimplemented, otherSandboxToken: codes.Unimplemented, operatorToken: codes.Unimplemented,
+	methods, err := Methods(Options{OperatorReaderServices: []string{peertls.AppURI}}, svids)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		name     string
-		reader   string
-		desc     grpc.ServiceDesc
-		expected map[string]codes.Code
-	}{
-		{"Notifications", operatorName, notificationspb.Notifications_ServiceDesc, workloads},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			methods, err := Methods(Options{Namespace: testNamespace, OperatorReader: test.reader}, resolver)
+	serving := fixture.ca.Issue(t, peertls.NotificationsURI)
+	serverTLS, err := serving.WorkloadServerTLSConfigWithServices(peertls.NotificationsURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve := func(methods auth.Methods) *routedClientConn {
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := grpc.NewServer(append(methods.ServerOptions(callDeadline), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+		notificationspb.RegisterNotificationsServer(server, notificationspb.UnimplementedNotificationsServer{})
+		go func() { _ = server.Serve(listener) }()
+		t.Cleanup(server.Stop)
+		address := listener.Addr().String()
+		connect := func(config *peertls.ClientTLS) *grpc.ClientConn {
+			security, err := config.Credentials()
 			if err != nil {
 				t.Fatal(err)
 			}
-			connection := grpcmethods.Serve(t, methods, registerStandIns)
-			for _, method := range grpcmethods.Of(test.desc) {
-				t.Run(method.Name, func(t *testing.T) {
-					for token, want := range test.expected {
-						if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
-							t.Errorf("with token %q: %v, want %v", token, got, want)
-						}
+			connection, err := grpc.NewClient(address, grpc.WithTransportCredentials(security))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = connection.Close() })
+			return connection
+		}
+		service := fixture.ca.Issue(t, peertls.AppURI)
+		serviceTLS := &peertls.ClientTLS{CAFile: service.CAFile, ServerURI: peertls.NotificationsURI, CertFile: service.CertFile, KeyFile: service.KeyFile, ClientURI: peertls.AppURI}
+		identity := connectIdentityClient(t, fixture.ca, fixture.workload.Workload, address)
+		other := connectIdentityClient(t, fixture.ca, fixture.otherWorkload.Workload, address)
+		t.Cleanup(func() { _ = identity.Close(); _ = other.Close() })
+		return &routedClientConn{identity: identity, other: other, operator: connect(serviceTLS), unauthenticated: connect(&peertls.ClientTLS{CAFile: serving.CAFile, ServerURI: peertls.NotificationsURI})}
+	}
+	connection := serve(methods)
+	for _, method := range grpcmethods.Of(notificationspb.Notifications_ServiceDesc) {
+		t.Run(method.Name, func(t *testing.T) {
+			for _, caller := range []string{identityCaller, otherIdentityCaller, operatorCaller, "", sandboxToken, otherSandboxToken, operatorToken, outsiderToken, "unknown"} {
+				want := codes.Unauthenticated
+				switch caller {
+				case identityCaller, otherIdentityCaller:
+					want = codes.Unimplemented
+				case operatorCaller:
+					want = codes.PermissionDenied
+					if slices.Contains(operatorReaderMethods(), method.Name) {
+						want = codes.Unimplemented
 					}
-					unlisted := maps.Clone(methods)
-					delete(unlisted, method.Name)
-					if got := status.Code(method.Call(bearing(t, operatorToken), grpcmethods.Serve(t, unlisted, registerStandIns))); got != codes.PermissionDenied {
-						t.Errorf("unlisted, a caller got %v", got)
-					}
-				})
+				}
+				if got := status.Code(method.Call(bearing(t, caller), connection)); got != want {
+					t.Errorf("caller %q got %v, want %v", caller, got, want)
+				}
+			}
+			unlisted := maps.Clone(methods)
+			delete(unlisted, method.Name)
+			if got := status.Code(method.Call(bearing(t, identityCaller), serve(unlisted))); got != codes.PermissionDenied {
+				t.Errorf("unlisted method got %v", got)
 			}
 		})
 	}

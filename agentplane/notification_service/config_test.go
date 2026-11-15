@@ -20,8 +20,11 @@ const (
 const requiredFile = `rpc:
   listen_address: 0.0.0.0:8080
   auth:
-    - mode: kubernetes_bearer
-      audiences: [agentplane-notifications]
+    - mode: spiffe
+      ca_file: /test/ca.pem
+  tls:
+    cert_file: /test/tls.crt
+    key_file: /test/tls.key
 namespace: test-agentplane
 actions:
   url: http://test-actions.invalid:8080
@@ -123,7 +126,7 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	}
 }
 
-func TestOperatorReaderAccountAndServiceSVIDCanCoexist(t *testing.T) {
+func TestLegacyOperatorReaderSettingStillDecodes(t *testing.T) {
 	file := strings.Replace(
 		deploymentFile,
 		"operator_reader_account: test-app\n",
@@ -347,5 +350,16 @@ func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 				t.Fatalf("retention = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestReceiverRequiresSVIDTrustAndIgnoresLegacyAudience(t *testing.T) {
+	if _, err := loadTestConfig(t, strings.Replace(requiredFile, "mode: spiffe\n      ca_file: /test/ca.pem", "mode: kubernetes_bearer\n      audiences: [agentplane-notifications]", 1)); err == nil {
+		t.Fatal("bearer-only listener accepted")
+	}
+	for _, audience := range []string{"retired-audience", "\"\""} {
+		if _, err := loadTestConfig(t, requiredFile+"token_audience: "+audience+"\noperator_reader_account: retired-account\n"); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

@@ -12,8 +12,9 @@ which calls native gRPC directly. Sandbox calls present the Runner SVID through 
 listener and opaque proxy tunnel. The service verifies the certificate chain, explicit clientAuth EKU and
 validity, then checks that the leaf names the live Sandbox and its current accepted runner credential.
 It resolves the principal to the credential's exact live Identity name and UID; caller
-headers cannot select another Identity. Backend workloads retain Pod-bound ServiceAccount tokens with
-the configured audience. Component tokens do not confer inbox ownership. Subscription creation
+headers cannot select another Identity. Kubernetes bearer credentials are rejected, including when
+presented alongside a valid SVID. Exact service SVID grants admit only diagnostic readers and do not
+confer an Identity or inbox ownership. Subscription creation
 addresses a Session by `session_id`. The service reads its existing Dispatcher Session, checks the exact
 Sandbox UID and caller ownership, and confirms current Runtime membership before source authorization.
 It reads the required environment from `environment_hosted` or the fixed `executor_environment` from
@@ -47,7 +48,7 @@ for the exact original Sandbox UID. Unknown or inconsistent owner identity pause
   or idempotently cancel. Cancelling never cancels an Action or erases accepted entries.
 - `GET /v1/inboxes`: the Identity's qualified session inboxes.
 - `GET /v1/sessions/{session_id}/inbox/entries?after_cursor=0&limit=128`: non-destructive, contiguous paging, prefix
-  metadata, and the latest notice's admission/confirmation state. The configured operator account and exact
+  metadata, and the latest notice's admission/confirmation state. Exact configured
   service SVID readers may inspect retained entries by Session ID, including after the original Sandbox
   disappears. Diagnostic readers cannot acknowledge or retire another caller's inbox. Payloads are stored provider event snapshots,
   not fetched at read time or promoted to operator instructions.
@@ -136,7 +137,7 @@ remain explicit client operations. A retried notice retains its original text.
 ## Messages
 
 A workload sends a message to a Session's inbox when a `session_inbox_access` rule of a PolicySet bound to its
-ServiceAccount or Identity allows `send_message` to the Session's Sandbox. No rule is needed between Sessions of
+Identity allows `send_message` to the Session's Sandbox. No rule is needed between Sessions of
 one Identity: a workload whose credential names an Identity sends to any Session the Dispatcher recorded as
 executing as that same Identity incarnation (name and UID; an Identity recreated under the name is another
 sender), and such a send needs no current permission view. A rule targets Sandboxes of its PolicySet's
@@ -160,7 +161,7 @@ Sandbox with the same name. An already-existing inbox is keyed by destination UI
 replacement Sandbox has a different inbox; sends to an existing inbox do not repeat the History check.
 
 A message is an inbox entry like any other, with the same cursors, notices, acknowledgement, payload expiry and
-purge. Its event identity is the message ID and the sender ServiceAccount the service authenticated; for an
+purge. Its event identity retains the message ID and sender attribution; for an
 Identity sender, `sender` names the Sandbox it sent from and `sender_identity` the Identity incarnation. Its payload
 is the `body` and the optional `from_session`, the sender's unverified label for the Session it writes from. The
 idempotency key is unique per sender within the inbox: an identical retry answers with the accepted message,
@@ -212,7 +213,7 @@ remain readable. A changed identity requires explicit subscription recreation.
 ## GitHub webhook ingestion and matching
 
 `POST /v1/webhooks/github` authenticates GitHub deliveries with `X-Hub-Signature-256`, not a
-workload bearer. It requires a UUID `X-GitHub-Delivery`, `X-GitHub-Event`, and a signature over the
+workload SVID. It requires a UUID `X-GitHub-Delivery`, `X-GitHub-Event`, and a signature over the
 exact request body. Successful acceptance returns HTTP 202 with `accepted: true` and `duplicate`.
 An identical retained App/delivery-ID retry returns `duplicate: true`; conflicting content under
 the same retained ID returns 409. A signed ping returns 202 without creating an activity event.
@@ -304,7 +305,7 @@ state. Each watch starts with current state; entry and subscription watches then
 A missing inbox is a state, since inboxes are created lazily. Reconnecting starts from fresh state.
 Watches send heartbeats and revalidate authorization; they do not end on a fixed lease. Reading
 never acknowledges entries. Workloads can read their own Sandbox incarnation's inbox; the configured
-`operator_reader_account` and exact `operator_reader_services` SVIDs can inspect Session diagnostics
+exact `operator_reader_services` SVIDs can inspect Session diagnostics
 in the namespace. Service SVID admission is restricted to these read-only methods and never asserts
 an agent Identity. Diagnostic readers cannot mutate another caller's inbox.
 
