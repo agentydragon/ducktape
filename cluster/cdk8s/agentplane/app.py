@@ -33,6 +33,7 @@ from agentplane.net.peertls.config import (
     APP_URI,
     EGRESS_PROXY_URI,
     HISTORY_SERVICE_URI,
+    MCP_EDGE_URI,
     NOTIFICATIONS_URI,
     POLICY_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
@@ -115,12 +116,18 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         settings = env.app_config.model_copy()
-        settings.egress_admin_tls = workload_tls.client_tls(EGRESS_PROXY_URI)
-        settings.runner_gateway_tls = workload_tls.client_tls(SESSION_DISPATCHER_URI)
-        settings.session_dispatcher_tls = workload_tls.client_tls(SESSION_DISPATCHER_URI)
-        settings.history_service_tls = workload_tls.client_tls(HISTORY_SERVICE_URI)
-        settings.notifications_tls = workload_tls.client_tls(NOTIFICATIONS_URI)
-        settings.actions_tls = workload_tls.client_tls(ACTIONS_URI)
+        settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
+        settings.egress_admin_token_file = None
+        settings.runner_gateway_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
+        settings.runner_gateway_token_file = None
+        settings.session_dispatcher_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
+        settings.session_dispatcher_token_file = None
+        settings.history_service_tls = workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI)
+        settings.history_service_token_file = None
+        settings.notifications_tls = workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI)
+        settings.notifications_token_file = None
+        settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
+        settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
         settings.policy_service_tls = workload_tls.client_tls(POLICY_CONTROLLER_URI)
         config = SettingsFile(
             self,

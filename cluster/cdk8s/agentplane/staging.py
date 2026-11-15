@@ -226,7 +226,7 @@ _GITHUB_MCP_CLIENT_SECRET = "haku-console-github-mcp-client-credentials"
 _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 _ANTHROPIC_API_KEY_SECRET = "agentplane-staging-anthropic-api-key"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
-_CONNECTION_SERVICE = mcp_edge.service(STAGING_NAMESPACE)
+_CONNECTION_SERVICE = mcp_edge.tls_service(STAGING_NAMESPACE)
 # staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
 # the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
 POD_TEMPLATE = "environment-tools"
@@ -436,7 +436,7 @@ def _app_config(*, identity_catalog: bool) -> Settings:
         runtime=_RUNTIME_CATALOG,
         central_sampler_enabled=True,
         action_federation=_ACTION_FEDERATION,
-        connection_service_url=AnyHttpUrl(_CONNECTION_SERVICE.url),
+        connection_service_url=AnyHttpUrl(f"https://{_CONNECTION_SERVICE.fqdn}:{_CONNECTION_SERVICE.port.number}"),
         app_origin=f"https://{_HOSTNAME}",
         oidc_issuer=f"{_AUTHENTIK}/application/o/agentplane-staging/",
         electric_url=AnyHttpUrl(electric.service(STAGING_NAMESPACE).url),
