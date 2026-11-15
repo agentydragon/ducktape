@@ -1157,8 +1157,6 @@ pub enum NativeOperationKind {
     Symbol,
     SymbolFor,
     SetFromPrimitiveArray,
-    /// One static own-data function property read on the original Object constructor.
-    ObjectOwnDataFunctionRead,
     /// Exact well-known Symbol data reads in a direct class initializer's method keys.
     SymbolWellKnownClassKeys,
     /// Exact class-key reads of own data properties with unknown primitive values.

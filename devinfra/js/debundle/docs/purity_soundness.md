@@ -358,7 +358,6 @@ author premise for one exact direct native initializer. The schema admits
 `operation: set_empty`,
 `operation: symbol`, `operation: symbol_for`, `operation: promise_resolve`,
 `operation: set_from_primitive_array`,
-`operation: object_own_data_function_read`,
 `operation: symbol_well_known_class_keys`, and
 `operation: symbol_primitive_class_keys`.
 For `symbol` and `symbol_for`, the canonical selector engine identifies one
@@ -540,18 +539,11 @@ also requires the Set iterator and iterator `next` slots. The inferred interval
 dependencies enter the shared value-flow and graph analyses, which keep the
 interval co-located. This proof grants no identity to later Set methods or
 escaped observations.
-The own-data read operation selects a single direct `Object.<name>` initializer
-whose name is in the shared native own-data function-reference table. An
-unshadowed `Object` binding is checked by the canonical source index; the
-native-write census supplies known-write exclusions. A known write to the global
-`Object` slot or the exact `Object.<name>` slot in any analyzed chunk rejects
-the assertion. Other property names, prototype mutations, and opaque receiver
-effects are not misreported as known exact-slot contradictions; the author
-must audit the latter. Without author input, intact Object/global-object
-integrity derives the same exact-read certificate. Purity, timing, and heap
-ordering consume that certificate. It certifies only a getter-free read:
-invoking the resulting function remains an ordinary call with its usual
-effects, arguments, and return uncertainty.
+Without author input, intact Object/global-object integrity derives the exact
+own-data read certificate for a recognized Object function-property read.
+Purity, timing, and heap ordering consume that shared certificate. It certifies
+only a getter-free read: invoking the resulting function remains an ordinary
+call with its usual effects, arguments, and return uncertainty.
 For a local primitive-array spread, the source shape identifies a top-level
 multi-declarator `const` whose preceding declarators are dense primitive
 literal arrays and whose initializer contains only primitive literals and

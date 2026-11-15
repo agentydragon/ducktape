@@ -9,11 +9,11 @@ use serde_json::{Value, json};
 
 #[test]
 fn saved_analysis_reuses_strict_subsets_with_an_omitted_native_anchor() {
-    const SOURCE: &str = r#"var alias = Object.defineProperty;
-var other = Object.getOwnPropertyDescriptor;
+    const SOURCE: &str = r#"var alias = Symbol(7);
+var other = Symbol(8);
 const first = alias;
 const second = other;
-console.log(first({}, "value", { value: 7 }).value, second({ value: 8 }, "value").value);
+console.log(first.description, second.description);
 export { first, second };
 "#;
     let mut options = native_member_fixture();
@@ -27,7 +27,11 @@ export { first, second };
                 Member::renamed("readableSecond", "second"),
             ],
         ),
-        logical_module_with_anon("run", &[], &["console.log(first({}, \"value\", { value: 7 }).value, second({ value: 8 }, \"value\").value);"]),
+        logical_module_with_anon(
+            "run",
+            &[],
+            &["console.log(first.description, second.description);"],
+        ),
     ]);
     let (staged, _fixture) = staged(options);
     let artifact = fs::read(&staged.artifact).unwrap();
@@ -180,7 +184,7 @@ fn resolved_member_layout_edits_keep_analysis_identity() {
 fn native_source_match_notes_keep_analysis_identity() {
     let mut opts = native_member_fixture();
     opts.native_operation_inputs[0].1[0].selector = serde_yaml::from_str(
-        "source_match:\n  match: 'var alias = Object.defineProperty;'\n  bindings: [alias]\n  note: Original selector rationale.\n",
+        "source_match:\n  match: 'var alias = Symbol(1);'\n  bindings: [alias]\n  note: Original selector rationale.\n",
     ).unwrap();
     let (staged, _fixture) = staged(opts);
     let mut spec: serde_yaml::Value =

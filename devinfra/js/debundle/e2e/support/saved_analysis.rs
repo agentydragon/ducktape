@@ -884,7 +884,8 @@ pub fn graph_node_for_binding<'a>(graph: &'a Value, binding: &str) -> &'a Value 
 }
 
 pub fn native_member_fixture() -> FixtureOpts<'static> {
-    const SOURCE: &str = "var alias = Object.defineProperty;\nvar other = Object.getOwnPropertyDescriptor;\nconsole.log(typeof alias);\n";
+    const SOURCE: &str =
+        "var alias = Symbol(1);\nvar other = Symbol(2);\nconsole.log(typeof alias);\n";
     FixtureOpts::new(
         SOURCE,
         vec![logical_module(
@@ -899,9 +900,9 @@ pub fn native_member_fixture() -> FixtureOpts<'static> {
                 module: "native".to_owned(),
                 name: "alias".to_owned(),
             }),
-            operation: NativeOperationKind::ObjectOwnDataFunctionRead,
+            operation: NativeOperationKind::Symbol,
             audited_source_sha256: source_sha256(SOURCE),
-            note: Some("The selected native read is audited.".to_owned()),
+            note: Some("The selected Symbol call is audited.".to_owned()),
         }],
     )
 }

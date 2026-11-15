@@ -1,12 +1,9 @@
-//! A native own-data function reference has no heap observation of caller arrays.
+//! Automatic Object own-data reads preserve getter-free lookup and later call effects.
 
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::saved_analysis::{assert_ok, assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 use serde_json::Value;
-
-const SOURCE: &str = "const sentinel = [1];\nconst before = external();\nvar alias = Object.defineProperty;\nconst after = alias;\n";
-const SOURCE_INFERRED: &str = "const sentinel = [1];\nconst before = Math.random();\nvar alias = Object.defineProperty;\nconst after = alias;\n";
 
 fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
@@ -14,27 +11,9 @@ fn input(source: &str, declaration: &str) -> NativeOperationInputContract {
             declaration.trim(),
             &["alias"],
         )),
-        operation: NativeOperationKind::ObjectOwnDataFunctionRead,
+        operation: NativeOperationKind::Symbol,
         audited_source_sha256: source_sha256(source),
-        note: Some("Only this original Object own-data read is audited.".to_owned()),
-    }
-}
-
-fn split(source: &'static str, certified: bool) -> FixtureOpts<'static> {
-    let opts = FixtureOpts::new(
-        source,
-        vec![
-            logical_module("alias", &[Member::new("sentinel"), Member::new("alias")]),
-            logical_module("consumer", &[Member::new("before"), Member::new("after")]),
-        ],
-    );
-    if certified {
-        opts.with_native_operation_inputs(
-            "static/app",
-            vec![input(source, "var alias = Object.defineProperty;")],
-        )
-    } else {
-        opts
+        note: Some("Only this direct Symbol call is audited.".to_owned()),
     }
 }
 
@@ -62,7 +41,7 @@ fn decorator_trio(suffix: &str, class: &str, role: &str) -> String {
     )
 }
 
-fn relational_opts<'a>(source: &'a str, input: NativeOperationInputContract) -> FixtureOpts<'a> {
+fn intrinsic_alias_opts(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(
         source,
         vec![
@@ -85,18 +64,17 @@ fn relational_opts<'a>(source: &'a str, input: NativeOperationInputContract) -> 
             ),
         ],
     )
-    .with_native_operation_inputs("static/app", vec![input])
 }
 
-fn relational_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {
+fn resolved_member_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
         selector: SourceUnitSelector::ResolvedMember(ResolvedMemberSelector {
             module: module.to_owned(),
             name: name.to_owned(),
         }),
-        operation: NativeOperationKind::ObjectOwnDataFunctionRead,
+        operation: NativeOperationKind::Symbol,
         audited_source_sha256: source_sha256(source),
-        note: Some("One resolved original read is audited.".to_owned()),
+        note: Some("One resolved Symbol call is audited.".to_owned()),
     }
 }
 
@@ -136,7 +114,7 @@ fn assert_project_analysis_rejected(opts: FixtureOpts<'_>, tokens: &[&str]) {
 }
 
 #[test]
-fn resolved_member_certifies_only_the_selected_relational_alias() {
+fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
     const EXPECTED: &str = "[[\"alpha role\",true,false,true,\"alpha role\"],[\"beta role\",true,false,true,\"beta role\"]]\n";
     let source = format!(
         "{}{}\
@@ -149,10 +127,7 @@ fn resolved_member_certifies_only_the_selected_relational_alias() {
         decorator_trio("a", "Alpha", "alpha role"),
         decorator_trio("b", "Beta", "beta role")
     );
-    let (staged, _fixture) = staged(relational_opts(
-        &source,
-        relational_input(&source, "alpha", "alphaDefine"),
-    ));
+    let (staged, _fixture) = staged(intrinsic_alias_opts(&source));
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct relational-alias run");
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
@@ -205,45 +180,12 @@ fn resolved_member_certifies_only_the_selected_relational_alias() {
         ],
         &["class Alpha", "alphaDefine", "alphaGetter"],
     );
-
-    let graph: Value =
-        read_gzip_json(&out_root.join("reports/tree/static/app/dependency_graph.json.gz"));
-    let selected = node(&graph, "pa");
-    let other = node(&graph, "pb");
-    let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
-    assert_eq!(evidence["reference"]["defining_chunk"], "static/app");
-    assert_eq!(evidence["reference"]["input_index"], 0);
-    assert!(
-        evidence["spec_location"]
-            .as_str()
-            .unwrap()
-            .contains("native_operation_inputs[0]")
-    );
-    assert_eq!(
-        evidence["audited_source_sha256"],
-        relational_input(&source, "alpha", "alphaDefine").audited_source_sha256
-    );
-    assert_eq!(
-        selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["selector"]
-            ["resolved_member"]["module"],
-        "alpha"
-    );
-    assert_eq!(
-        selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["selector"]
-            ["resolved_member"]["name"],
-        "alphaDefine"
-    );
-    assert!(
-        other["synchronous_execution"]["native_operation_input_uses"]
-            .as_array()
-            .is_none_or(Vec::is_empty)
-    );
 }
 
 #[test]
 fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
     const SOURCE: &str =
-        "var alias = Object.defineProperty;\nconst value = alias;\nexport { alias, value };\n";
+        "var alias = Symbol('alias');\nconst value = alias;\nexport { alias, value };\n";
     let modules = vec![logical_module(
         "alias_module",
         &[Member::new("alias"), Member::new("value")],
@@ -251,13 +193,13 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
     let source_match = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
             "static/app",
-            vec![input(SOURCE, "var alias = Object.defineProperty;")],
+            vec![input(SOURCE, "var alias = Symbol('alias');")],
         ),
     );
     let resolved_member = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules).with_native_operation_inputs(
             "static/app",
-            vec![relational_input(SOURCE, "alias_module", "alias")],
+            vec![resolved_member_input(SOURCE, "alias_module", "alias")],
         ),
     );
 
@@ -299,65 +241,87 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
 }
 
 #[test]
-fn native_own_data_read_composes_exact_root_effect_coverage() {
-    const SOURCE: &str = "const marker = 1;\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(marker, typeof after);\n";
-    for asserted in [false, true] {
-        let opts = FixtureOpts::new(
+fn resolved_member_selects_only_the_selected_symbol_site() {
+    const SOURCE: &str = "var first = Symbol(7);\nvar second = Symbol(8);\nconsole.log(first.description, second.description);\n";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
             SOURCE,
             vec![
-                logical_module(
-                    "alias_module",
-                    &[Member::new("alias"), Member::new("after")],
-                ),
-                logical_module_with_anon(
-                    "observe",
-                    &[Member::new("marker")],
-                    &["console.log(marker, typeof after);"],
-                ),
+                logical_module("chosen", &[Member::new("first")]),
+                logical_module("sibling", &[Member::new("second")]),
             ],
-        );
-        let opts = if asserted {
-            opts.with_native_operation_inputs(
-                "static/app",
-                vec![input(SOURCE, "var alias = Object.defineProperty;")],
-            )
-        } else {
-            opts
-        };
-        let fixture = run_fixture_with_graphs(opts);
-        assert_preserved_entry_output(&fixture, "1 function\n");
-        let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-        let execution = &node(&graph, "alias")["synchronous_execution"];
-        assert_eq!(execution["complete"], true, "{execution:#}");
-        assert_eq!(
-            execution["binding_effect_authority"]["authority"], "operation_receipt",
-            "{execution:#}"
-        );
-        let report = fixture.effect_translation_validation();
-        assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
-        assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
-        if asserted {
-            assert!(
-                report["relocation_dependencies"]["native_operation_inputs"]
-                    .as_array()
-                    .is_some_and(|inputs| !inputs.is_empty()),
-                "the exact read's author condition survives commutation: {report:#}"
-            );
-        }
-    }
+        )
+        .with_native_operation_inputs(
+            "static/app",
+            vec![resolved_member_input(SOURCE, "chosen", "first")],
+        ),
+    );
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let selected = node(&graph, "first");
+    let sibling = node(&graph, "second");
+    let evidence = &selected["synchronous_execution"]["native_operation_input_uses"][0]["evidence"];
+    assert_eq!(evidence["reference"]["defining_chunk"], "static/app");
+    assert_eq!(evidence["reference"]["input_index"], 0);
+    assert!(
+        evidence["spec_location"]
+            .as_str()
+            .unwrap()
+            .contains("native_operation_inputs[0]")
+    );
+    assert_eq!(
+        evidence["audited_source_sha256"],
+        resolved_member_input(SOURCE, "chosen", "first").audited_source_sha256
+    );
+    assert_eq!(evidence["selector"]["resolved_member"]["module"], "chosen");
+    assert_eq!(evidence["selector"]["resolved_member"]["name"], "first");
+    assert!(
+        sibling["synchronous_execution"]["native_operation_input_uses"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+    );
+    assert_preserved_entry_output(&fixture, "7 8\n");
+}
+
+#[test]
+fn native_own_data_read_composes_exact_root_effect_coverage() {
+    const SOURCE: &str = "const marker = 1;\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(marker, typeof after);\n";
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module(
+                "alias_module",
+                &[Member::new("alias"), Member::new("after")],
+            ),
+            logical_module_with_anon(
+                "observe",
+                &[Member::new("marker")],
+                &["console.log(marker, typeof after);"],
+            ),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "1 function\n");
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let execution = &node(&graph, "alias")["synchronous_execution"];
+    assert_eq!(execution["complete"], true, "{execution:#}");
+    assert_eq!(
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
+        "{execution:#}"
+    );
+    let report = fixture.effect_translation_validation();
+    assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report:#}");
+    assert_eq!(report["decision"]["status"], "accepted", "{report:#}");
 }
 
 #[test]
 fn project_analysis_rejects_missing_and_foreign_resolved_members() {
-    let source = format!(
-        "{}{}",
-        decorator_trio("a", "Alpha", "alpha role"),
-        decorator_trio("b", "Beta", "beta role")
+    const SOURCE: &str = "var alias = Symbol('alias');\nexport { alias };\n";
+    let modules = vec![logical_module("alpha", &[Member::new("alias")])];
+    let valid = project_analysis(
+        FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
+            "static/app",
+            vec![resolved_member_input(SOURCE, "alpha", "alias")],
+        ),
     );
-    let valid = project_analysis(relational_opts(
-        &source,
-        relational_input(&source, "alpha", "alphaDefine"),
-    ));
     assert!(
         valid.status.success(),
         "valid resolved member failed project-analysis\nstdout:\n{}\nstderr:\n{}",
@@ -365,9 +329,12 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
         valid.stderr,
     );
 
-    for (module, name) in [("missing", "alphaDefine"), ("alpha", "missing")] {
+    for (module, name) in [("missing", "alias"), ("alpha", "missing")] {
         assert_project_analysis_rejected(
-            relational_opts(&source, relational_input(&source, module, name)),
+            FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
+                "static/app",
+                vec![resolved_member_input(SOURCE, module, name)],
+            ),
             &[
                 "chunk_analysis_options.static/app.native_operation_inputs[0]",
                 &format!("module {module}"),
@@ -378,7 +345,7 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
     }
 
     const CONSUMER: &str = "import { alias } from './peer.js';\nconsole.log(alias);\n";
-    const PROVIDER: &str = "var alias = Object.defineProperty;\nexport { alias };\n";
+    const PROVIDER: &str = "var alias = Symbol('alias');\nexport { alias };\n";
     assert_project_analysis_rejected(
         FixtureOpts::new(CONSUMER, vec![])
             .with_extra_chunks(&[("static/peer", PROVIDER)])
@@ -388,7 +355,7 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
             )])
             .with_native_operation_inputs(
                 "static/app",
-                vec![relational_input(CONSUMER, "peer", "alias")],
+                vec![resolved_member_input(CONSUMER, "peer", "alias")],
             ),
         &[
             "chunk_analysis_options.static/app.native_operation_inputs[0]",
@@ -402,31 +369,38 @@ fn project_analysis_rejects_missing_and_foreign_resolved_members() {
 
 #[test]
 fn resolved_member_rejects_stale_hash_and_wrong_reference_or_shape() {
-    let source = format!(
-        "{}{}",
-        decorator_trio("a", "Alpha", "alpha role"),
-        decorator_trio("b", "Beta", "beta role")
-    );
-    let mut stale = relational_input(&source, "alpha", "alphaDefine");
+    const SOURCE: &str = "var alias = Symbol(1);\nvar other = Math.random();\n";
+    let modules = vec![logical_module(
+        "alpha",
+        &[Member::new("alias"), Member::new("other")],
+    )];
+    let mut stale = resolved_member_input(SOURCE, "alpha", "alias");
     stale.audited_source_sha256 = "0".repeat(64);
     expect_rejection_containing_all(
-        relational_opts(&source, stale),
+        FixtureOpts::new(SOURCE, modules.clone())
+            .with_native_operation_inputs("static/app", vec![stale]),
         &["stale audited_source_sha256"],
     );
     expect_rejection_containing_all(
-        relational_opts(&source, relational_input(&source, "alpha", "missing")),
+        FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
+            "static/app",
+            vec![resolved_member_input(SOURCE, "alpha", "missing")],
+        ),
         &["resolved_member names no logical module member"],
     );
     expect_rejection_containing_all(
-        relational_opts(&source, relational_input(&source, "alpha", "decorate")),
-        &["unshadowed static Object own-data function read initializer"],
+        FixtureOpts::new(SOURCE, modules).with_native_operation_inputs(
+            "static/app",
+            vec![resolved_member_input(SOURCE, "alpha", "other")],
+        ),
+        &["direct Symbol(...) call"],
     );
 }
 
 #[test]
 fn resolved_member_cannot_reference_another_provider_chunk() {
     const CONSUMER: &str = "import { alias } from './peer.js';\nconsole.log(alias);\n";
-    const PROVIDER: &str = "var alias = Object.defineProperty;\nexport { alias };\n";
+    const PROVIDER: &str = "var alias = Symbol(1);\nexport { alias };\n";
     expect_rejection_containing_all(
         FixtureOpts::new(CONSUMER, vec![])
             .with_extra_chunks(&[("static/peer", PROVIDER)])
@@ -436,7 +410,7 @@ fn resolved_member_cannot_reference_another_provider_chunk() {
             )])
             .with_native_operation_inputs(
                 "static/app",
-                vec![relational_input(CONSUMER, "peer", "alias")],
+                vec![resolved_member_input(CONSUMER, "peer", "alias")],
             ),
         &["resolved_member belongs to another chunk"],
     );
@@ -444,7 +418,7 @@ fn resolved_member_cannot_reference_another_provider_chunk() {
 
 #[test]
 fn native_input_requires_exactly_one_selector_variant() {
-    let common = "operation: object_own_data_function_read\naudited_source_sha256: ";
+    let common = "operation: symbol\naudited_source_sha256: ";
     let hash = "0".repeat(64);
     let none = format!("{common}{hash}\n");
     assert!(
@@ -454,7 +428,7 @@ fn native_input_requires_exactly_one_selector_variant() {
             .contains("exactly one of source_match or resolved_member")
     );
     let both = format!(
-        "{common}{hash}\nsource_match:\n  match: 'var alias = Object.defineProperty;'\n  bindings: [alias]\nresolved_member:\n  module: alpha\n  name: alphaDefine\n"
+        "{common}{hash}\nsource_match:\n  match: 'var alias = Symbol(1);'\n  bindings: [alias]\nresolved_member:\n  module: alpha\n  name: alias\n"
     );
     assert!(
         serde_yaml::from_str::<NativeOperationInputContract>(&both)
@@ -462,11 +436,11 @@ fn native_input_requires_exactly_one_selector_variant() {
             .to_string()
             .contains("exactly one of source_match or resolved_member")
     );
-    let legacy = format!(
-        "{common}{hash}\nsource_match:\n  match: 'var alias = Object.defineProperty;'\n  bindings: [alias]\n"
+    let source_match = format!(
+        "{common}{hash}\nsource_match:\n  match: 'var alias = Symbol(1);'\n  bindings: [alias]\n"
     );
     assert!(matches!(
-        serde_yaml::from_str::<NativeOperationInputContract>(&legacy)
+        serde_yaml::from_str::<NativeOperationInputContract>(&source_match)
             .unwrap()
             .selector,
         SourceUnitSelector::SourceMatch(_)
@@ -474,197 +448,38 @@ fn native_input_requires_exactly_one_selector_variant() {
 }
 
 #[test]
-fn selected_original_object_read_removes_the_heap_frontier_cycle() {
-    let fixture = run_fixture_with_graphs(split(SOURCE, true));
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    let alias = node(&graph, "alias");
-    assert_eq!(
-        alias["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]["operation"],
-        "object_own_data_function_read"
-    );
-    assert_eq!(
-        alias["synchronous_execution"]["inference_uses"][0]["conclusion"],
-        "native_own_data_read"
-    );
-}
-
-#[test]
 fn intact_object_read_has_an_independent_source_certificate() {
-    let fixture = run_fixture_with_graphs(split(SOURCE_INFERRED, false));
+    const SOURCE: &str = "const sentinel = [1];\nconst before = Math.random();\nvar alias = Object.defineProperty;\nconst after = alias;\nconsole.log(typeof after);\n";
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module("alias", &[Member::new("sentinel"), Member::new("alias")]),
+            logical_module("consumer", &[Member::new("before"), Member::new("after")]),
+        ],
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+    let app_root = fixture.output_root().join("app");
+    assert_module_source(
+        &app_root,
+        "static/app/modules/alias.js",
+        &["var alias = Object.defineProperty"],
+        &[],
+    );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let alias = node(&graph, "alias");
     assert_eq!(
         alias["synchronous_execution"]["inference_uses"][0]["conclusion"],
         "native_own_data_read"
     );
-    assert!(alias["synchronous_execution"]["native_operation_input_uses"].is_null());
 }
 
 #[test]
-fn exact_input_rejects_unsupported_and_stale_sites() {
-    for (source, expected) in [
-        (
-            "const Object = { get defineProperty() { throw Error('getter'); } };\nvar alias = Object.defineProperty;\n",
-            "unshadowed static Object own-data function read",
-        ),
-        (
-            "const Object = [];\nvar alias = Object.defineProperty;\n",
-            "unshadowed static Object own-data function read",
-        ),
-        ("var alias = Object?.defineProperty;\n", "source_match"),
-        ("var alias = Object['defineProperty'];\n", "source_match"),
-    ] {
-        expect_rejection_containing_all(
-            FixtureOpts::new(
-                source,
-                vec![logical_module("alias", &[Member::new("alias")])],
-            )
-            .with_native_operation_inputs(
-                "static/app",
-                vec![input(source, "var alias = Object.defineProperty;")],
-            ),
-            &[expected],
-        );
-    }
-    let mut stale = input(SOURCE, "var alias = Object.defineProperty;");
-    stale.audited_source_sha256 = "0".repeat(64);
-    expect_rejection_containing_all(
-        split(SOURCE, false).with_native_operation_inputs("static/app", vec![stale]),
-        &["audited_source_sha256"],
-    );
-    expect_rejection_containing_all(
-        split(SOURCE, false).with_native_operation_inputs(
-            "static/app",
-            vec![input(SOURCE, "const after = alias;")],
-        ),
-        &["source_match"],
-    );
-}
-
-#[test]
-fn sibling_initializer_effect_survives_a_certified_read() {
-    let source = "var alias = Object.defineProperty, other = external();\n";
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, vec![])
-            .with_unassigned_mode(unassigned_mode_inline())
-            .with_native_operation_inputs(
-                "static/app",
-                vec![input(
-                    source,
-                    "var alias = Object.defineProperty, other = external();",
-                )],
-            ),
-    );
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_ne!(node(&graph, "other")["purity"]["kind"], "pure");
-    assert_eq!(
-        node(&graph, "alias")["synchronous_execution"]["native_operation_input_uses"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-}
-
-#[test]
-fn uncertified_second_native_read_in_one_declaration_stays_observable() {
-    let source = "Object.entries = function replacement() {};\nvar alias = Object.defineProperty, other = Object.entries;\n";
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, vec![])
-            .with_unassigned_mode(unassigned_mode_inline())
-            .with_native_operation_inputs(
-                "static/app",
-                vec![input(
-                    source,
-                    "var alias = Object.defineProperty, other = Object.entries;",
-                )],
-            ),
-    );
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_ne!(node(&graph, "other")["purity"]["kind"], "pure");
-    let alias_uses = node(&graph, "alias")["synchronous_execution"]["native_operation_input_uses"]
-        .as_array()
-        .unwrap();
-    assert_eq!(alias_uses.len(), 1);
-}
-
-#[test]
-fn known_exact_slot_writes_contradict_only_the_relevant_premise() {
-    for write in [
-        "Object.defineProperty = function replacement() {};",
-        "Object.defineProperty(Object, 'defineProperty', { get() { throw Error('getter'); } });",
-        "const ctor = Object; ctor.defineProperty = function replacement() {};",
-        "globalThis.Object = function replacement() {};",
-    ] {
-        let source = format!("{write}\nvar alias = Object.defineProperty;\n");
-        expect_rejection_containing_all(
-            FixtureOpts::new(
-                &source,
-                vec![logical_module("alias", &[Member::new("alias")])],
-            )
-            .with_native_operation_inputs(
-                "static/app",
-                vec![input(&source, "var alias = Object.defineProperty;")],
-            ),
-            &["contradicted by a known Object binding or Object.defineProperty write"],
-        );
-    }
-    let source =
-        "Object.entries = function replacement() {};\nvar alias = Object.defineProperty;\n";
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(
-            source,
-            vec![logical_module("alias", &[Member::new("alias")])],
-        )
-        .with_native_operation_inputs(
-            "static/app",
-            vec![input(source, "var alias = Object.defineProperty;")],
-        ),
-    );
-    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
-    assert_eq!(
-        node(&graph, "alias")["synchronous_execution"]["native_operation_input_uses"][0]["evidence"]
-            ["operation"],
-        "object_own_data_function_read"
-    );
-}
-
-#[test]
-fn known_exact_slot_write_in_an_imported_chunk_contradicts_the_input() {
-    let source = "import './mutation.js';\nvar alias = Object.defineProperty;\nexport { alias };\n";
-    let mutation = "Object.defineProperty = function replacement() {};\nexport {};\n";
-    expect_rejection_containing_all(
-        FixtureOpts::new(
-            source,
-            vec![logical_module("alias", &[Member::new("alias")])],
-        )
-        .with_extra_chunks(&[("static/mutation", mutation)])
-        .with_native_operation_inputs(
-            "static/app",
-            vec![input(source, "var alias = Object.defineProperty;")],
-        ),
-        &[
-            "contradicted by a known Object binding or Object.defineProperty write",
-            "static/mutation",
-        ],
-    );
-}
-
-#[test]
-fn invoking_the_alias_keeps_call_heap_effects() {
+fn invoking_an_automatically_recognized_alias_keeps_call_heap_effects() {
     let source = "const sentinel = [1];\nvar alias = Object.defineProperty;\nconst after = alias(sentinel, 'x', { value: 2 });\nconsole.log(sentinel.x);\n";
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, vec![])
-            .with_unassigned_mode(unassigned_mode_inline())
-            .with_native_operation_inputs(
-                "static/app",
-                vec![input(source, "var alias = Object.defineProperty;")],
-            ),
+        FixtureOpts::new(source, vec![]).with_unassigned_mode(unassigned_mode_inline()),
     );
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert_preserved_entry_output(&fixture, "2\n");
     assert_ne!(node(&graph, "after")["purity"]["kind"], "pure");
-    assert!(
-        node(&graph, "after")["synchronous_execution"]["native_operation_input_uses"].is_null()
-    );
 }

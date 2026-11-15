@@ -955,9 +955,9 @@ retain their existing admission paths.
 
 An exact top-level `Object` own-data function-reference read can consume its
 existing native binding-and-slot certificate in the same ordered read transfer.
-The certificate covers the global receiver lookup and property read; its inferred
-or exact-site author dependencies remain on the root receipt and relocation
-decision. The returned value keeps its ordinary opaque projection. Shadowed
+The certificate covers the global receiver lookup and property read; its
+native-integrity dependencies remain on the root receipt and relocation decision.
+The returned value keeps its ordinary opaque projection. Shadowed
 receivers, computed keys, missing native evidence, provider-only queries and
 retained suffixes keep their ordinary read paths. Reading the reference certifies
 no later invocation through it.
@@ -3031,7 +3031,6 @@ the facts came from a saved artifact.
 | `symbol_for`                      | The same with `Symbol.for(...)`                                                                                                                         | `%Symbol%`, `%Symbol.for%`                                                  |
 | `promise_resolve`                 | Top-level simple binding initialized by a zero-argument `Promise.resolve()`                                                                             | `%Promise%`, `%Promise.resolve%`                                            |
 | `set_from_primitive_array`        | Top-level simple binding initialized by `new Set([primitive literals or earlier stable primitive bindings])` over a dense, nonspread array              | `%Set%`, `%Set.prototype%`, `%Array.prototype%`, `%ArrayIteratorPrototype%` |
-| `object_own_data_function_read`   | Top-level simple binding initialized by `Object.<name>`, a function-valued data property in the builtin summary table                                   | `%Object%`, `%Object.<name>%`                                               |
 | `symbol_well_known_class_keys`    | Top-level simple class-variable initializer with direct `Symbol.asyncIterator`, `Symbol.asyncDispose` or `Symbol.dispose` computed ordinary method keys | `%Symbol%` and the exact `%Symbol.<name>%` at each selected read            |
 | `symbol_primitive_class_keys`     | The same direct class-key shape, allowing primitive own-data values installed by checked guarded fills                                                  | Exact data reads yielding unknown primitives; no original-value identity    |
 | `callee: object_freeze`           | Top-level function whose sole statement returns `Object.freeze(arg)` with one nonspread argument                                                        | `%Object%`, `%Object.freeze%` at that call                                  |

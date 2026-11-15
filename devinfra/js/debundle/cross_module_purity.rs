@@ -1571,8 +1571,7 @@ pub fn resolve_imported_callable_summaries(
             if !matches!(
                 input.evidence.operation,
                 NativeInputKind::Operation(
-                    spec::NativeOperationKind::ObjectOwnDataFunctionRead
-                        | spec::NativeOperationKind::SymbolWellKnownClassKeys
+                    spec::NativeOperationKind::SymbolWellKnownClassKeys
                         | spec::NativeOperationKind::SymbolPrimitiveClassKeys
                 )
             ) {
