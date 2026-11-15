@@ -1154,7 +1154,6 @@ pub enum NativeOperationKind {
     WeakMapEmpty,
     SetEmpty,
     Symbol,
-    SymbolFor,
     SetFromPrimitiveArray,
     PromiseResolve,
 }

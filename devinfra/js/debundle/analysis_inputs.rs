@@ -1176,9 +1176,7 @@ impl ValidatedNativeOperationFacts {
 
     /// The exact-site native input certifies the original data slots. A bare
     /// Symbol call with no argument or one string literal has no conversion
-    /// callback; Symbol.for requires one string literal for its registry lookup.
-    /// The fresh allocation or registry operation has no separately
-    /// observable effect at these literal sites.
+    /// callback or separately observable allocation effect.
     pub(crate) fn symbol_literal_proof(
         &self,
         call: &CallExpr,
@@ -1187,15 +1185,9 @@ impl ValidatedNativeOperationFacts {
             if arg.spread.is_none() && matches!(arg.expr.as_ref(), Expr::Lit(Lit::Str(_))));
         self.inputs.iter().find(|input| {
             input.call_span == call.span
-                && match input.evidence.operation {
-                    NativeInputKind::Operation(spec::NativeOperationKind::Symbol) => {
-                        call.args.is_empty() || string_literal
-                    }
-                    NativeInputKind::Operation(spec::NativeOperationKind::SymbolFor) => {
-                        string_literal
-                    }
-                    _ => false,
-                }
+                && input.evidence.operation
+                    == NativeInputKind::Operation(spec::NativeOperationKind::Symbol)
+                && (call.args.is_empty() || string_literal)
         })
     }
 }

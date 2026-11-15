@@ -178,15 +178,13 @@ member selectors, and evidence records which selector form was used.
 The selector and parser-input digest identify the selected native initializer
 sites, while `AnalysisAssumptions` retains their validated
 evidence separately from inferred native identity. Operations include direct
-`Symbol` and `Symbol.for` calls and exact Map, WeakMap, and Set constructions.
+`Symbol` calls and exact Map, WeakMap, and Set constructions.
 For `Symbol`, the author asserts that its global data binding denotes the
 original operation through every synchronous
 initialization schedule admitted by emission. This is not a point observation
 or a whole-lifetime integrity claim; known in-source global `Symbol` changes
 anywhere in that region contradict it, and opaque receiver-write witnesses
 remain in the shared census. Only the selected call span consumes the premise.
-For `Symbol.for`, the premise additionally covers its original direct `for`
-data-property identity; known writes to that exact slot also contradict it.
 Automatic recognition of an Object function-property read requires intact
 Object/global-object integrity and certifies only a getter-free read.
 Invoking the resulting function keeps ordinary call analysis.
