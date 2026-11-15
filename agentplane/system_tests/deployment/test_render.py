@@ -886,6 +886,36 @@ def test_central_recovery_keeps_native_services_without_oauth_fixture_workloads(
         assert _resource(central.objects, "ConfigMap", config) == _resource(mcp.objects, "ConfigMap", config)
 
 
+def test_native_recovery_profile_uses_bound_caller_without_app(runfiles: Runfiles) -> None:
+    fixture = _filled_fixture(runfiles, "K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION")
+    assert fixture.app_origin is None
+    assert fixture.operator_tokens is None
+    assert fixture.mcp_fixtures is None
+    assert fixture.browser_services == []
+    docs = fixture.objects
+    deployments = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "Deployment"}
+    assert {"runner-gateway", "history-service", "central-sampler", "notifications"} <= deployments
+    assert not {"app", "dex", "mcp-edge"} & deployments
+    assert not any(doc["metadata"]["name"] in {"postgres-app", "agentplane-oidc", "app-config"} for doc in docs)
+    native = fixture_chart.NATIVE_TEST_CLIENT
+    pod = _resource(docs, "Deployment", native)["spec"]["template"]["spec"]
+    assert pod["serviceAccountName"] == native
+    assert pod["automountServiceAccountToken"] is False
+    gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
+    caller = f"{NAMESPACE}/{native}"
+    for role in ("operator_callers", "environment_readers", "environment_managers"):
+        assert gateway[role] == [caller]
+    assert caller in gateway["dispatcher_callers"]
+    assert caller in gateway["gateway_callers"]
+    assert f"{NAMESPACE}/app" not in gateway["dispatcher_callers"]
+    history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
+    readers = {(account["namespace"], account["name"]) for account in history["reader_accounts"]}
+    assert (NAMESPACE, native) in readers
+    assert (NAMESPACE, "app") not in readers
+    bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
+    assert "CREATE ROLE app " not in bootstrap
+
+
 def test_firecracker_fixture_uses_production_construct_and_discloses_cilium_boundary(runfiles: Runfiles) -> None:
     fixture = rendered_fixture.read(runfiles.root() / os.environ["K3S_FIRECRACKER_FIXTURE_RLOCATION"])
     assert fixture.firecracker_sandboxes

@@ -191,7 +191,9 @@ async def sampler_caller_after_gateway_roll(cluster: Cluster, deployed: CentralS
 
 
 @asynccontextmanager
-async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> AsyncIterator[CentralStack]:
+async def central_stack(
+    cluster: Cluster, directory: Path, *, template: str, caller_account: str = "app"
+) -> AsyncIterator[CentralStack]:
     async with AsyncExitStack() as cleanup, AsyncExitStack() as stack:
         with tracer.start_as_current_span(
             "system_test.central_sampler.setup", record_exception=False, set_status_on_exception=False
@@ -199,10 +201,10 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             stack.push_async_callback(_diagnostics, cluster)
             connection = await stack.enter_async_context(cluster.api_client())
             core = k8s.CoreV1Api(connection)
-            app = await _pod(cluster, core, "app")
-            caller_token = await _bound_token(cluster, core, "app", app, "session-dispatcher")
+            caller = await _pod(cluster, core, caller_account)
+            caller_token = await _bound_token(cluster, core, caller_account, caller, "session-dispatcher")
             reader_token = directory / "history-reader-token"
-            reader_token.write_text(await _bound_token(cluster, core, "app", app, HISTORY_READER_AUDIENCE))
+            reader_token.write_text(await _bound_token(cluster, core, caller_account, caller, HISTORY_READER_AUDIENCE))
             sandbox = "systest-central-" + uuid4().hex[:8]
             # Entered before the Sandbox's cleanup, so it is deleted after the Sandbox that acts as it.
             identity = await cleanup.enter_async_context(
@@ -243,7 +245,7 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             # Sandbox Ready proves Controller observation. A claimed EndpointSlice can precede
             # the Gateway's first snapshot, so prove the live read route before starting setup.
             gateway_token = directory / "gateway-reader-token"
-            gateway_token.write_text(await _bound_token(cluster, core, "app", app, GATEWAY_AUDIENCE))
+            gateway_token.write_text(await _bound_token(cluster, core, caller_account, caller, GATEWAY_AUDIENCE))
             gateway = SandboxControlClient(
                 control_target=gateway_target,
                 token_file=gateway_token,

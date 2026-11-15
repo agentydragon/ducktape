@@ -28,6 +28,7 @@ from agentplane.system_tests.k3s.namespaces import NAMESPACE
 class FixtureVariant(StrEnum):
     LOCAL_MODEL = "local-model"
     LOCAL_MODEL_CENTRAL = "local-model-central"
+    LOCAL_MODEL_CENTRAL_NATIVE = "local-model-central-native"
     LOCAL_MODEL_POD = "local-model-pod"
     LOCAL_MODEL_VM = "local-model-vm"
     LOCAL_MODEL_FIRECRACKER = "local-model-firecracker"
@@ -66,19 +67,21 @@ def _render(
         firecracker_sandboxes=firecracker_sandboxes,
         central_sampler=central_sampler,
         namespace=NAMESPACE,
-        app_origin=fixture_chart.APP_ORIGIN,
+        app_origin=fixture_chart.APP_ORIGIN if profile.app_enabled else None,
         browser_services=[
             BrowserService(
                 name=fixture_chart.APP_SERVICE.name,
                 host=fixture_chart.APP_SERVICE.host,
                 fqdn=fixture_chart.APP_SERVICE.fqdn,
             )
-        ],
+        ]
+        if profile.app_enabled
+        else [],
         mcp_fixtures=None,
-        operator_tokens=fixture_chart.OPERATOR_TOKENS,
+        operator_tokens=fixture_chart.OPERATOR_TOKENS if profile.app_enabled else None,
         objects=fixture_chart.objects(
             **asdict(PLACEHOLDERS),
-            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER,
+            operator_token_key=OPERATOR_TOKEN_KEY_PLACEHOLDER if profile.app_enabled else None,
             models=models,
             vm_sandboxes=vm_sandboxes,
             firecracker_sandboxes=firecracker_sandboxes,
@@ -95,6 +98,15 @@ def render_variant(output: Path, variant: FixtureVariant) -> None:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False)
         case FixtureVariant.LOCAL_MODEL_CENTRAL:
             _render(output, variant, Backend.LOCAL_MODEL, vm_sandboxes=False, central_sampler=True)
+        case FixtureVariant.LOCAL_MODEL_CENTRAL_NATIVE:
+            _render(
+                output,
+                variant,
+                Backend.LOCAL_MODEL,
+                vm_sandboxes=False,
+                central_sampler=True,
+                profile=fixture_chart.FixtureProfile.APP_FREE,
+            )
         case FixtureVariant.LOCAL_MODEL_POD:
             _render(
                 output,

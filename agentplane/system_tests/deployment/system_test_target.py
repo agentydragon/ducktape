@@ -90,11 +90,13 @@ def deployment(
 
 @pytest.fixture(scope="session")
 def base_url(deployment: Stack) -> str:
+    assert deployment.base_url is not None, "this fixture has no App"
     return deployment.base_url
 
 
 @pytest.fixture(scope="session")
 def token(deployment: Stack) -> str:
+    assert deployment.token is not None, "this fixture has no App operator"
     return deployment.token
 
 

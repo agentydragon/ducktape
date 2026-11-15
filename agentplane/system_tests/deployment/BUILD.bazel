@@ -126,6 +126,7 @@ py_test(
     data = [
         ":rendered/local-model.json",
         ":rendered/local-model-central.json",
+        ":rendered/local-model-central-native.json",
         ":rendered/local-model-firecracker.json",
         ":rendered/local-model-mcp-fixtures.json",
         ":rendered/local-model-pod.json",
@@ -134,6 +135,7 @@ py_test(
     ],
     env = {
         "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+        "K3S_CENTRAL_NATIVE_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central-native.json)",
         "K3S_CENTRAL_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-central.json)",
         "K3S_DEFAULT_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model.json)",
         "K3S_FIXTURE_RLOCATION": "$(rlocationpath :rendered/local-model-mcp-fixtures.json)",
@@ -231,6 +233,7 @@ py_library(
         ":dex",
         ":fixture_database",
         ":launch_preset",
+        ":local_models",
         ":rendered_fixture",
         ":runtime_grant",
         ":send_grant",
@@ -246,11 +249,13 @@ py_library(
         "//agentplane/env/runtime:harness",
         "//agentplane/net/peertls:config",
         "//agentplane/notification_service:settings",
+        "//agentplane/proto:session_pb2",
         "//agentplane/system_tests/k3s:namespaces",
         "//agentplane/system_tests/vm:block_storage",
         "//agentplane/system_tests/vm:configuration",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:app",
         "//cluster/cdk8s/agentplane:app_settings",
@@ -291,6 +296,7 @@ py_library(
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
         "@pypi//more_itertools",
+        "@pypi//protobuf",
         "@pypi//pydantic",
     ],
 )
@@ -407,6 +413,18 @@ genrule(
 )
 
 genrule(
+    name = "render_local_model_central_native",
+    testonly = True,
+    outs = ["rendered/local-model-central-native.json"],
+    cmd = "JSII_NODE=$(execpath @nodejs_linux_amd64//:bin/node) K3S_FIXTURE_VARIANT=local-model-central-native K3S_FIXTURE_DIR=$(RULEDIR)/rendered $(execpath :render_fixture_bin)",
+    tools = [
+        ":render_fixture_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    visibility = ["//agentplane/system_tests:__subpackages__"],
+)
+
+genrule(
     name = "render_local_model_pod",
     testonly = True,
     outs = ["rendered/local-model-pod.json"],
@@ -459,6 +477,7 @@ py_library(
     srcs = ["fixture_database.py"],
     data = [
         "bootstrap.sql",
+        "bootstrap_app.sql",
         "bootstrap_central_sampler.sql",
         "postgres_entrypoint.sh",
     ],
@@ -701,4 +720,14 @@ genrule(
 py_library(
     name = "svid_box",
     srcs = ["svid_box.py"],
+)
+
+py_library(
+    name = "local_models",
+    srcs = ["local_models.py"],
+    deps = [
+        "//agentplane/proto:session_pb2",
+        "//model_catalog:catalog",
+        "@pypi//protobuf",
+    ],
 )

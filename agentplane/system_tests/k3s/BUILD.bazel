@@ -238,3 +238,12 @@ py_test(
         "@pypi//tenacity",
     ],
 )
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    deps = [
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)

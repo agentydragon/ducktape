@@ -14,7 +14,6 @@ from typing import cast
 
 import pytest
 from opentelemetry import trace
-from python.runfiles import Runfiles
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
@@ -35,11 +34,6 @@ from util.testing.otel_tracing import configure_tracing
 # gazelle:include_dep @pypi//protobuf
 
 _CALL_REPORT = pytest.StashKey[pytest.TestReport]()
-
-
-@pytest.fixture(scope="session")
-def k3s_binary(runfiles: Runfiles) -> Path:
-    return runfiles.root() / os.environ["K3S_BINARY_RLOCATION"]
 
 
 def pytest_configure(config: pytest.Config) -> None:

@@ -101,9 +101,9 @@ class StackInputs:
 class Stack:
     k3s: K3s
     cluster: Cluster
-    base_url: str
+    base_url: str | None
     # The test operator's ID token, which the app accepts as a bearer.
-    token: str
+    token: str | None
     mcp_fixtures: McpFixtureAccess | None
 
 
@@ -609,8 +609,10 @@ def running_stack(
                 token = dex_id_token(fixture.mcp_fixtures.operator_token_grant, ca_bundle=ca_bundle)
             if operator_tokens is not None:
                 token = operator_tokens.mint(lifetime=OPERATOR_TOKEN_LIFETIME)
-            if token is None:
-                raise ValueError("the fixture neither pins an operator-token key nor runs Dex")
+            if fixture.app_origin is None and token is not None:
+                raise ValueError("an App-free fixture cannot issue an App operator token")
+            if fixture.app_origin is not None and token is None:
+                raise ValueError("the App fixture neither pins an operator-token key nor runs Dex")
             print("memory:", run("free", "-m"))
             setup.add_event("stack ready")
             if virtualization is not None:
