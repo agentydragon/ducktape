@@ -40,11 +40,12 @@ is pinned historical evidence, not a claim about the latest engine.
 ## Workflow and CLI contract
 
 The target is one plan/check/apply workflow, extending the existing
-[W9 task][w9]. The contracts below are requirements, not claims about the commands
-in the audit evidence below. In particular, `modules check` is proposed and
-`modules apply` needs a broader contract. Exact flags and serialized shapes
-remain implementation decisions; the option spellings below illustrate the
-proposed interface.
+[W9 task][w9]. The implemented fixed-owner contract is documented in
+[complete residual search](../docs/module_search.md): exact batch checking,
+snapshot-bound plans, exact application and exhaustive discovery. The broader
+strategy portfolio and owner reorganization below remain design requirements;
+they are not implemented options. Historical audit commands retain their original
+meaning and do not describe the new complete mode.
 
 ### Operations and guarantees
 
@@ -453,7 +454,7 @@ shims.
       The repair passes both module-application and landability suites in
       [the repaired run](https://app.buildbuddy.io/invocation/707c3357-deb6-4ef9-8cfc-3e7ad741dff0),
       including refusal without spec edits and a grouped Node execution control.
-- [ ] **Establish the common checker and independent reference.** Preserve the
+- [x] **Establish the common checker and independent reference.** Preserve the
       accepted starting assignment and prepared context, and expose arbitrary
       complete-batch checking. Cover P3's three-unit atom, remote TDZ, joint moves,
       anonymous units and unchanged-unit identity. Build the small-spec reference
@@ -468,13 +469,24 @@ shims.
       An independent oracle enumerates 64 raw statement placements, materializes
       each concrete spec and executes accepted output under Node
       ([passing oracle](https://app.buildbuddy.io/invocation/f2455918-665f-4b1d-bcda-151f7938d7c7)).
-      Remote-TDZ coverage, search properties and the finite-model argument remain.
-- [ ] **Deliver exact-batch realization and application.** Generalize application
+      The finite representation and coverage argument now live in
+      [the stable guide](../docs/module_search.md#finite-representation-and-coverage-argument).
+      Real-source CLI cases distinguish accepted asymmetric cycles from global
+      ESM rejection. The constructed remote-TDZ quotient regression remains the
+      remote counterexample; a real-source remote-TDZ CLI fixture is still an
+      additional coverage opportunity, not evidence already obtained.
+- [x] **Deliver exact-batch realization and application.** Generalize application
       for residual and existing claims, including anonymous selectors and preserved
       metadata. Require full post-resolution assignment equality, preview/apply
       agreement and no edits on validation failure. Add CLI and runtime regressions
       and update worker/integration guidance and executable examples together.
-- [ ] **Deliver complete fixed-owner discovery.** Implement the exhaustive
+      Delivered: `modules apply --assignments` and `--plan` share the checker,
+      synthesize residual binding/anonymous claims and preserve existing metadata.
+      The exact-application suites exercise joint and multi-destination edits,
+      generated residual owners, unchanged-unit identity and Node behavior.
+      Legacy `modules refine` can still repair a rejected starting assignment;
+      its final assignment uses the same full checker.
+- [x] **Deliver complete fixed-owner discovery.** Implement the exhaustive
       fallback over all permitted residual assignments, including multi-atom and
       multi-destination batches. Supply the representation and coverage arguments,
       exhaustive small-spec reference comparisons and property tests above. Verify
@@ -482,12 +494,24 @@ shims.
       Ship the complete-mode contract, CLI examples and planning/intake guidance
       with the command. Application and search are separate changes after the
       common checker; both are required for the end-to-end milestone.
+      Delivered: the unbounded complete mode enumerates the full permitted
+      assignment space through finite path-order representatives. Explicit budgets
+      report `incomplete`. Shrinking properties compare CLI existence against
+      independent exhaustive raw-statement materialization, then check, preview,
+      apply and execute each witness. CLI scope, freshness, empty existing owners,
+      atoms and repair regressions pass in
+      [the edge-case run](https://app.buildbuddy.io/invocation/46bdb03a-dea3-40ee-a4d8-64197aad0922).
 - [ ] **Prove a useful fixed-owner workflow end to end.** Run the common workflow
       against a real accepted partial spec, apply a returned plan exactly and
       materialize it through the normal pipeline. Check relevant emitted behavior
       and record meaningful residual reduction and disturbance. Exercise the
       packaged agent recipe too. Keep private source and measurements downstream;
       public regressions and examples remain neutral.
+      The shipped skill archive's recipe is exercised from a partial fixture:
+      it removes three residual source units, keeps authored units fixed and
+      regenerates an entry that executes under Node
+      ([passing packaged recipe](https://app.buildbuddy.io/invocation/72d935b5-0647-4d15-8b9c-89758ee67a0e)).
+      Real downstream acceptance remains a separate release check.
 - [ ] **Accelerate and consolidate after the release gates pass.** Profile actual
       search costs, add heuristic ordering and completeness-preserving optimizations,
       and compare them against the complete reference. Migrate live callers and

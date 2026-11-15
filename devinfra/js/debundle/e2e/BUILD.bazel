@@ -4,6 +4,33 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "modules_complete_proptest",
+    timeout = "long",
+    deps = [
+        ":graph_support",
+        "@crates//:proptest",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_complete_cli_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_assignments_apply_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_assignment_oracle_test",
     deps = [
         ":graph_support",

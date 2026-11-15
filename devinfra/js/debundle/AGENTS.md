@@ -25,6 +25,12 @@ the validator enforces) before working on the splitting pipeline.
   includes structural atoms and global ESM evaluation; local probes and proposal
   readiness labels cannot replace it. Recheck combined batches, and keep graph
   acceptance distinct from selector realization and emitted runtime evidence.
+- Use `modules propose --strategy complete` for the residual-peel decision.
+  Only `exhausted_no_peel` is a negative conclusion in its reported fixed-owner
+  scope; budgets and interrupted/failed searches are inconclusive. The finite
+  model and independent CLI/property-test obligations live in
+  <docs/module_search.md>. Preserve those tests when changing candidate generation,
+  gate checks, module ordering or plan application.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
   follow <docs/bug_reproductions.md> before working around it. Keep private source

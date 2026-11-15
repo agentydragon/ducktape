@@ -1070,6 +1070,7 @@ rust_library(
         ":selector_outcome",
         ":selector_resolve",
         ":shape_index",
+        ":source_identity",
         ":source_match",
         ":source_match_holes",
         ":spec",
@@ -1107,6 +1108,7 @@ rust_library(
         "peel/propose.rs",
         "peel/quotient.rs",
         "peel/quotient_integration_test.rs",
+        "peel/search.rs",
     ],
     crate_root = "peel/mod.rs",
     edition = "2024",
@@ -1135,7 +1137,10 @@ rust_test(
     name = "peel_test",
     crate = ":peel",
     edition = "2024",
-    deps = [":report_fixtures"],
+    deps = [
+        ":report_fixtures",
+        "@crates//:proptest",
+    ],
 )
 
 rust_library(

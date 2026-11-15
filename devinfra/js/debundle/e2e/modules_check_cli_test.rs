@@ -179,3 +179,53 @@ fn malformed_changes_and_scaffolding_are_refused_without_spec_edits() {
         assert_eq!(read_tree(&fixture.modules), before);
     }
 }
+
+#[test]
+fn preserves_a_runnable_asymmetric_cycle_when_a_consumer_moves() {
+    let fixture = GraphFixture::new(
+        "const base = 1;\nfunction readLater() { return later; }\nconst later = base + 1;\nconst unrelated = 0;\nconst consumer = base + 1;\nconsole.log(later, consumer, unrelated);\n",
+        &[
+            (
+                "a_dependency.yaml",
+                "members: [{selector: {binding: {name: base}}}, {selector: {binding: {name: readLater}}}]\n",
+            ),
+            (
+                "b_dependent.yaml",
+                "members: [{selector: {binding: {name: later}}}]\n",
+            ),
+            (
+                "z_mediator.yaml",
+                "members: [{selector: {binding: {name: unrelated}}}]\n",
+            ),
+        ],
+    );
+    check(
+        &fixture,
+        json!([{"unit_id": fixture.source_unit_for_binding("consumer"), "module": "z_mediator"}]),
+        true,
+    );
+    fs::write(fixture.modules.join("z_mediator.yaml"), "members: [{selector: {binding: {name: unrelated}}}, {selector: {binding: {name: consumer}}}]\n").unwrap();
+    fixture.assert_runs("2 2 0\n");
+}
+
+#[test]
+fn detects_pass_two_evaluation_failure_with_no_constraining_cycle() {
+    let fixture = GraphFixture::new(
+        "const seedValue = 'alpha';\nconst crossValue = seedValue + '-beta';\nfunction lazyBack() { return crossValue; }\nexport { seedValue, lazyBack };\n",
+        &[],
+    );
+    let rejected = check(
+        &fixture,
+        json!([{"unit_id": fixture.source_unit_for_binding("crossValue"), "module": "dependent"}]),
+        false,
+    );
+    let cycles = rejected["validation"]["cycles"].as_array().unwrap();
+    assert_eq!(cycles.len(), 1, "{rejected}");
+    assert_eq!(cycles[0]["rejection"], "esm_evaluation_tdz", "{rejected}");
+    fs::write(
+        fixture.modules.join("dependent.yaml"),
+        "members: [{selector: {binding: {name: crossValue}}}]\n",
+    )
+    .unwrap();
+    fixture.assert_current_pipeline_rejects(&["unrealizable"]);
+}

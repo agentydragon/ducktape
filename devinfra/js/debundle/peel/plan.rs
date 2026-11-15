@@ -47,13 +47,37 @@ pub struct PlanWorkArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
+    /// Use complete fixed-owner assignment search; omitted/auto uses advisory factorization.
+    #[arg(long, value_enum)]
+    pub strategy: Option<ProposalStrategy>,
+    #[arg(long, value_enum, requires = "strategy")]
+    pub existing_assignments: Option<ExistingAssignments>,
+    #[arg(long, value_enum, requires = "strategy")]
+    pub destinations: Option<super::search::Destinations>,
+    /// Restrict targets to these exact module destinations (repeatable).
+    #[arg(long, requires = "strategy")]
+    pub into: Vec<String>,
+    /// Require the witness to extract this residual unit, with necessary companions.
+    #[arg(long = "require", requires = "strategy")]
+    pub required: Vec<String>,
+    /// JSON array of units permitted to move. Must contain whole atoms.
+    #[arg(long, requires = "strategy")]
+    pub only_units: Option<PathBuf>,
+    #[arg(long, requires = "strategy")]
+    pub max_new_modules: Option<usize>,
+    /// Explicit check budget. Exhaustion reports incomplete, never no peel.
+    #[arg(long, requires = "strategy")]
+    pub max_checks: Option<u64>,
+    #[arg(long, requires = "strategy")]
+    pub time_budget_ms: Option<u64>,
+
     /// Tree config for chunk-scoped module claims in a multi-chunk spec.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     pub tree_config: Option<PathBuf>,
 
     /// Hard line ceiling per emitted proposal.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    pub size_cap_lines: usize,
+    #[arg(long = "size-cap-lines")]
+    pub size_cap_lines: Option<usize>,
 
     /// Root used to resolve relative `source_location.source_path`
     /// values when annotating anonymous-statement proposal addressability.
@@ -67,6 +91,19 @@ pub struct PlanWorkArgs {
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+#[value(rename_all = "snake_case")]
+pub enum ProposalStrategy {
+    Auto,
+    Complete,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+#[value(rename_all = "snake_case")]
+pub enum ExistingAssignments {
+    Fixed,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -464,7 +501,7 @@ pub fn run_plan_work_report(
         tree_config: args.tree_config.clone(),
         source_root: args.source_root.clone(),
         source_context: source_context.cloned(),
-        size_cap_lines: args.size_cap_lines,
+        size_cap_lines: args.size_cap_lines.unwrap_or(DEFAULT_SIZE_CAP_LINES),
     })?;
     let mut sections = BTreeMap::new();
     sort_proposal_diagnostics(&mut report.diagnostics);

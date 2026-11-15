@@ -26,7 +26,14 @@ obvious inexpensive repair, use the shared workflow's
 to retain useful passing extractions and isolate conflicting additions before
 committing to a long semantic repair.
 
-When separability is unclear, ask planning for
+For an accepted partial spec, use
+[complete fixed-owner discovery](references/docs/module_search.md) to answer
+whether a residual peel exists. Keep exhaustive negative results scoped to the
+reported move domain; budgets, interruptions and empty advisory inventories do
+not establish impossibility. Require exact-plan selector realization, normal
+materialization and relevant behavior after a graph witness.
+
+For structural inventory, ask planning for
 [atomic residual decomposition and gate-driven coarsening](references/docs/cli.md#refining-existing-modules-modules-decompose),
 or a worker for an isolated
 [`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).

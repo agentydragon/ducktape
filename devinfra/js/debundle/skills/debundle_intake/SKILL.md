@@ -16,6 +16,12 @@ dependency-closure handling, source-grounding scope, ordering, and the
 for source inspection. A graph-ready proposal still needs the worker's selector
 proof and edit gate.
 
+For [complete discovery](references/docs/module_search.md), keep the returned
+snapshot-bound plan as one packet; its joint changes are not independently
+accepted proposals. Preserve destinations and attach semantic/source review
+separately. Route destination edits or combined batches back to planning for a
+complete check. `incomplete` does not prove any residual code blocked.
+
 Return named packets, blocked/ambiguous proposals, and architecture questions.
 Keep source reading focused; route destination decisions needing broad
 architectural discovery to the architect. If Debundle blocks the task, follow

@@ -1130,6 +1130,16 @@ The invocation record retains the batch-file path, not its contents.
 
 ## Explicit destination checks
 
+`modules propose --strategy complete` decides existence of a positive-gain
+residual peel with authored owners fixed, over the whole reported permitted move
+scope. It returns a full-checker-accepted plan, `exhausted_no_peel` after exhaustive
+enumeration, or `incomplete` after an explicit budget. Errors and interruption
+never establish no peel. Complete mode has no implicit size/check/time budget.
+Its finite representation preserves module-order distinctions and covers joint
+multi-atom, multi-destination assignments. Scope, coverage argument and test
+obligations are defined in [complete residual search](docs/module_search.md).
+Default/auto factorizer output is advisory and has no completeness guarantee.
+
 `modules check` overlays a JSON batch of source-unit destination changes on the
 accepted graph assignment, retaining the destination of every omitted unit.
 It rejects split structural atoms, cross-module rebinding and unrealizable
@@ -1143,6 +1153,21 @@ and exits 1. Invalid inputs or a rejected baseline fail before acceptance.
 This graph check does not establish selector realization, emitted behavior,
 search completeness or the validity of concatenating independently checked
 batches. The exact combined assignment requires its own check.
+
+`modules apply --assignments` realizes that explicit batch, including new
+residual declarations and anonymous units, while moving existing selectors and
+binding/statement metadata intact. After synthesis the entire spec must resolve
+to exactly the requested complete assignment, then pass the common graph check.
+Dry-run and write use the same validation, and a failed check writes no spec
+edits. Empty authored owners remain in this mode. Selector synthesis can fail
+for a graph-accepted placement; this is a separate realization failure.
+
+The shared saved-plan shape binds dependency/program graph digests and explicit
+logical destination changes. `modules check --plan` and `modules apply --plan`
+verify that identity in addition to current-input graph preflight. A refreshed
+graph with reused unit IDs cannot silently retarget a saved plan. After synthesis
+the entire resolved assignment must still equal the plan, including retained
+residual and authored units.
 
 ## Delegated input snapshots
 

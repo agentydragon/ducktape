@@ -85,7 +85,15 @@ extraction uses the proposal workflow below; focused binding moves use
 
 ## Workflow: proposing new modules
 
-Use the proposer to surface what's currently extractable:
+Use [complete fixed-owner search](module_search.md) to decide what can still be
+peeled and return an exact checked plan. Save `.plan` only from a `found` result,
+review its semantic ownership, check it with `modules check --plan`, preview with
+`modules apply --plan --dry-run`, then apply that same plan. Run normal
+materialization and relevant behavior checks, and refresh the graph before the
+next operation. The linked guide defines scope, exhaustive versus incomplete
+outcomes, context identity and the finite search model.
+
+The default/auto proposer remains an advisory inventory for source review:
 
 For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml`
 to both `modules propose` and `modules apply` so proposals and the edit gate

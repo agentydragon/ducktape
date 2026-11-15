@@ -232,6 +232,55 @@ pub fn synthesize_residual_claims_for_modules(
     })
 }
 
+/// Synthesize proven anonymous selectors for graph source-unit ordinals. Raw
+/// body indices are derived from the parsed source, never treated as graph IDs.
+pub fn synthesize_anonymous_claims_for_modules(
+    source_file: &Path,
+    modules: &BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
+) -> Result<BTreeMap<String, Vec<spec::AnonymousStatement>>> {
+    js_ast::with_swc_globals(|| {
+        let source = fs::read_to_string(source_file)?;
+        let parsed = js_ast::parse_js_module_consuming(&source_file.display().to_string(), source)?;
+        with_source_unit_selector_synthesizer(&parsed.module, |synthesizer| {
+            let mut result = BTreeMap::new();
+            for (module, ordinals) in modules {
+                let mut statements = Vec::new();
+                for ordinal in ordinals {
+                    let body_index = (0..parsed.module.body.len())
+                        .find(|&index| {
+                            js_ast::source_unit_ordinal_for_statement(
+                                &parsed.module.body,
+                                source_identity::StatementId(index),
+                            ) == *ordinal
+                        })
+                        .with_context(|| format!("source unit ordinal {ordinal:?} is absent"))?;
+                    let request = SourceUnitSelectorRequest::AnonymousStatement { body_index };
+                    let SourceUnitSelectorSynthesis::Synthesized(selector) =
+                        synthesizer.synthesize(&request)?
+                    else {
+                        bail!(
+                            "anonymous source unit {ordinal:?} has no unique structural selector"
+                        );
+                    };
+                    statements.push(spec::AnonymousStatement {
+                        match_source: None,
+                        source_match: Some(SourceMatch {
+                            identifiers: selector.claim.identifiers,
+                            match_source: selector.claim.match_source,
+                            target_binding: None,
+                        }),
+                        no_reentry_call: None,
+                        note: None,
+                        comment: None,
+                    });
+                }
+                result.insert(module.clone(), statements);
+            }
+            Ok(result)
+        })
+    })
+}
+
 /// One source unit a `commuting_statements` endpoint must select
 /// (SPEC.md § Commuting statements).
 #[derive(Debug, Clone, PartialEq, Eq)]

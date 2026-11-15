@@ -24,8 +24,21 @@ use crate::outcome::{MutationAction, MutationOutcome, MutationVerb, emit_gate_re
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {
     /// JSON array of reviewed proposal IDs, destinations and readable names; `-` reads stdin.
+    #[arg(
+        long,
+        required_unless_present_any = ["assignments", "plan"],
+        conflicts_with_all = ["assignments", "plan"]
+    )]
+    batch: Option<String>,
+    /// JSON array of exact {unit_id, module} changes, including residual and anonymous units.
+    #[arg(long, conflicts_with_all = ["batch", "plan"])]
+    assignments: Option<String>,
+    /// Saved exact plan from modules propose/check, verified against the current graph.
+    #[arg(long, conflicts_with_all = ["batch", "assignments"])]
+    plan: Option<PathBuf>,
+    /// JSON map from newly claimed source binding names to readable names.
     #[arg(long)]
-    batch: String,
+    readable_names: Option<PathBuf>,
     /// Root directory of per-module YAML files.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub(super) modules_root: PathBuf,
@@ -43,8 +56,8 @@ pub struct ModulesApplyArgs {
     #[command(flatten)]
     effect_assessment: CandidateEffectAssessmentExistingTreeArgs,
     /// Match the size cap used when generating the proposal IDs.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    size_cap_lines: usize,
+    #[arg(long = "size-cap-lines")]
+    size_cap_lines: Option<usize>,
     /// Validate and show the edit without writing YAML.
     #[arg(long)]
     pub(super) dry_run: bool,
@@ -137,14 +150,147 @@ pub fn run_modules_apply(
         source_context,
         args.tree_config.as_deref(),
     )?;
-    let json = if args.batch == "-" {
+    anyhow::ensure!(
+        args.readable_names.is_none() || args.assignments.is_some() || args.plan.is_some(),
+        "--readable-names requires --assignments or --plan"
+    );
+    if args.assignments.is_some() || args.plan.is_some() {
+        anyhow::ensure!(
+            args.size_cap_lines.is_none(),
+            "--size-cap-lines applies only to advisory --batch proposals"
+        );
+        let assignments = if let Some(path) = &args.plan {
+            let plan: peel::assignment::AssignmentPlan = serde_json::from_slice(&fs::read(path)?)?;
+            plan.verify(&args.graph)?;
+            physical_plan_changes(plan.changes, &args)?
+        } else {
+            serde_json::from_str(&read_batch(
+                args.assignments.as_deref().expect("assignment mode"),
+            )?)
+            .context("parsing source-unit assignment batch")?
+        };
+        let readable_names = args
+            .readable_names
+            .as_ref()
+            .map(|path| serde_json::from_slice(&fs::read(path)?).context("parsing readable names"))
+            .transpose()?
+            .unwrap_or_default();
+        let effect_assessment_context = effect_context.as_ref().map(|context| {
+            crate::binding::CandidateEffectAssessmentContext {
+                transform: &context.transform,
+                analysis: pipeline::AnalysisArtifactInput {
+                    path: &context.analysis_path,
+                    analysis_engine_sha256,
+                },
+                graph_source: context.graph_source,
+            }
+        });
+        let outcome = crate::source_unit_refine::run_source_unit_refine(
+            stderr,
+            &args.modules_root,
+            &args.graph,
+            &args.source_root,
+            source_context,
+            crate::source_unit_refine::SourceUnitRefineOptions {
+                tree_config: args.tree_config.as_deref(),
+                assignments,
+                verb: MutationVerb::Apply,
+                readable_names,
+                dry_run: args.dry_run,
+                effect_assessment_context,
+            },
+        )
+        .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Apply, args.format, err))?;
+        outcome.outcome.warn_if_unassessed_write(stderr)?;
+        command_output::write_report(
+            &outcome,
+            OutputFormat::resolve(args.format),
+            output,
+            |out, text| {
+                use std::fmt::Write;
+                writeln!(
+                    text,
+                    "{}: {} residual source unit(s) claimed, {} existing unit(s) moved",
+                    out.outcome.action,
+                    out.residual_source_units_claimed,
+                    out.source_units_reassigned
+                )?;
+                writeln!(text, "{}", serde_yaml::to_string(&out.synthesized_claims)?)?;
+                Ok(())
+            },
+        )?;
+        return Ok(());
+    }
+    let json = read_batch(args.batch.as_deref().expect("clap requires one batch mode"))?;
+    let requests: Vec<ApplyRequest> = serde_json::from_str(&json).context("parsing apply batch")?;
+    run_proposal_apply(
+        output,
+        stderr,
+        args,
+        source_context,
+        analysis_engine_sha256,
+        effect_context,
+        requests,
+    )
+}
+
+fn physical_plan_changes(
+    mut changes: Vec<peel::assignment::SourceUnitAssignment>,
+    args: &ModulesApplyArgs,
+) -> Result<Vec<peel::assignment::SourceUnitAssignment>> {
+    let Some(config) = &args.tree_config else {
+        return Ok(changes);
+    };
+    let input = analysis::DependencyGraphInput::read(&args.graph)?;
+    let scope = ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
+    let docs = load_module_docs(&args.modules_root)?;
+    for change in &mut changes {
+        let logical = spec::ModulePath::parse(&change.module, "")?;
+        let mut existing = Vec::new();
+        for physical in docs
+            .keys()
+            .filter(|path| scope.contains(std::path::Path::new(path)))
+        {
+            if spec::ModulePath::parse(scope.logical_destination(physical)?, "")? == logical {
+                existing.push(physical.clone());
+            }
+        }
+        anyhow::ensure!(
+            existing.len() <= 1,
+            "logical destination {logical} has multiple authored files"
+        );
+        change.module = if let Some(existing) = existing.pop() {
+            existing
+        } else {
+            scope.roots()[0]
+                .join(logical.as_str())
+                .to_str()
+                .context("module destination is not UTF-8")?
+                .to_string()
+        };
+    }
+    Ok(changes)
+}
+
+fn read_batch(path: &str) -> Result<String> {
+    Ok(if path == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
         text
     } else {
-        fs::read_to_string(&args.batch).with_context(|| format!("reading {}", args.batch))?
-    };
-    let requests: Vec<ApplyRequest> = serde_json::from_str(&json).context("parsing apply batch")?;
+        fs::read_to_string(path).with_context(|| format!("reading {path}"))?
+    })
+}
+
+fn run_proposal_apply(
+    output: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
+    args: ModulesApplyArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
+    analysis_engine_sha256: &'static str,
+    effect_context: Option<crate::candidate_assessment::ResolvedCandidateEffectAssessment<'_>>,
+    requests: Vec<ApplyRequest>,
+) -> Result<()> {
     if requests.is_empty() {
         bail!("apply batch is empty");
     }
@@ -162,7 +308,7 @@ pub fn run_modules_apply(
             tree_config: args.tree_config.clone(),
             source_root: Some(args.source_root.clone()),
             source_context: source_context.cloned(),
-            size_cap_lines: args.size_cap_lines,
+            size_cap_lines: args.size_cap_lines.unwrap_or(DEFAULT_SIZE_CAP_LINES),
         },
     )?;
     let mut original_docs = load_module_docs(&args.modules_root)?;

@@ -21,7 +21,13 @@ statements. Keep omitted units in place and check the actual destination. A
 successful check is graph evidence; selector realization and emission are separate.
 Recheck the union of independently accepted batches before recommending it.
 
-To inspect separability, compare
+For "can anything still be peeled?", use
+[complete fixed-owner search](references/docs/module_search.md). Preserve the
+snapshot-bound plan and reported move scope. A budget-stopped search is
+incomplete; advisory empty output is not a negative decision. Recheck a plan
+after editing its destinations or combining it with another batch.
+
+For a structural inventory, compare
 [atomic decomposition including residuals](references/docs/cli.md#refining-existing-modules-modules-decompose)
 (`modules decompose --atomic --include-residual`) with a candidate using
 `--coarsen-blocking-sccs`. Review structural atoms, gate-reported merges, and the

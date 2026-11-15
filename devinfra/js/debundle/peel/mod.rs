@@ -3,6 +3,7 @@ pub mod decompose;
 pub mod plan;
 pub mod propose;
 pub mod quotient;
+pub mod search;
 
 #[cfg(test)]
 mod gate_differential_test;
