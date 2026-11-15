@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/reads"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -34,11 +33,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -49,10 +45,8 @@ const (
 )
 
 var (
-	kube *kubeapiserver.Server
-	// readerToken proves test-reader, an allowed caller; strangerToken proves test-stranger, which is
-	// not.
-	readerToken, strangerToken string
+	kube        *kubeapiserver.Server
+	readerToken string
 )
 
 func useAPIServer(server *kubeapiserver.Server) (err error) {
@@ -61,8 +55,7 @@ func useAPIServer(server *kubeapiserver.Server) (err error) {
 	if readerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: "test-reader"}, testAudience); err != nil {
 		return err
 	}
-	strangerToken, err = server.WorkloadToken(ctx, auth.Account{Namespace: testNamespace, Name: "test-stranger"}, testAudience)
-	return err
+	return nil
 }
 
 var testWriter = storage.ServiceAccountWriter{Namespace: testNamespace, Name: "test-writer", UID: "test-writer-uid"}
@@ -83,15 +76,6 @@ func newServer(t *testing.T, lease time.Duration) testServer {
 // newServerTimingOut serves the API over the shared database with a hub listening to the channels the watch
 // follows.
 func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testServer {
-	return newServerWithDelegation(t, lease, requestTimeout, nil, nil)
-}
-
-func newServerWithDelegation(
-	t *testing.T,
-	lease, requestTimeout time.Duration,
-	delegator *auth.Delegator,
-	identities auth.IdentityUIDReader,
-) testServer {
 	t.Helper()
 	db := postgres.Open(t, integrationDatabase.URL)
 	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, storage.ChannelHistory, projection.ChannelSummaries, storage.ChannelSessions)
@@ -99,37 +83,39 @@ func newServerWithDelegation(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
 	service := NewService(Options{
-		Reader:         &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		ReaderAccounts: []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
-		Wakeups:        hub, RequestTimeout: requestTimeout, WatchLease: lease,
+		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
+		Wakeups: hub, RequestTimeout: requestTimeout, WatchLease: lease,
 	})
+	methods, err := Methods(svids).WithServiceCallers(ReadMethods(), []string{peertls.AppURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
+	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver)
-	if delegator != nil {
-		delegatedMethods := make([]string, 0, len(methods))
-		for method := range methods {
-			delegatedMethods = append(delegatedMethods, method)
-		}
-		sort.Strings(delegatedMethods)
-		methods, err = MethodsWithDelegation(resolver, *delegator, identities, delegatedMethods)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	server := grpc.NewServer(methods.ServerOptions(requestTimeout)...)
+	server := grpc.NewServer(append(methods.ServerOptions(requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clientFiles := ca.Issue(t, peertls.AppURI)
+	clientTLS, err := clientFiles.ClientTLSConfig(peertls.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,17 +136,16 @@ func newServiceAccessServer(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
 	service := NewService(Options{
-		Reader:         &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		ReaderAccounts: []auth.Account{{Namespace: testNamespace, Name: "test-reader"}},
-		Wakeups:        hub, RequestTimeout: callDeadline, WatchLease: time.Second,
+		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
+		Wakeups: hub, RequestTimeout: callDeadline, WatchLease: time.Second,
 	})
-	methods := Methods(resolver)
+	methods := Methods(svids)
 	methods, err = methods.WithServiceCallers(ReadMethods(), directCallers)
 	if err != nil {
 		t.Fatal(err)
@@ -200,15 +185,12 @@ func newServiceAccessServer(
 	return testServer{service: service, hub: hub, history: history, db: db}, connect
 }
 
-// bearing is a call context carrying the token, or none for "".
-func bearing(t *testing.T, token string) context.Context {
+// bearing supplies the test's normal call deadline; all admitted calls use the client SVID.
+func bearing(t *testing.T, _ string) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), callDeadline)
 	t.Cleanup(cancel)
-	if token == "" {
-		return ctx
-	}
-	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+	return ctx
 }
 
 // record has the Session recorded as a journal writer's first push does, and returns its position.
@@ -240,31 +222,6 @@ func (s testServer) recordAs(t *testing.T, identity storage.Identity) (uuid.UUID
 }
 
 // Legacy account tuples are retained audit data, never new ownership assignments.
-func (s testServer) recordLegacyFor(t *testing.T, account auth.Account, uid string) uuid.UUID {
-	t.Helper()
-	sessionID, _ := s.record(t)
-	if _, err := s.db.ExecContext(t.Context(), `UPDATE session_history
-		SET execution_principal_namespace=$2, execution_principal_name=$3, execution_principal_uid=$4 WHERE id=$1`,
-		sessionID, account.Namespace, account.Name, uid); err != nil {
-		t.Fatal(err)
-	}
-	return sessionID
-}
-
-func delegatedIdentity(t *testing.T, token string, identity storage.Identity) context.Context {
-	t.Helper()
-	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
-		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: identity.UID}},
-		Provenance:      &delegationpb.Delegation_Action{Action: &delegationpb.ActionProvenance{RequestId: uuid.NewString(), ExecutionId: uuid.NewString()}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return metadata.NewOutgoingContext(t.Context(), metadata.Pairs(
-		"authorization", "Agentplane-Delegated "+token, auth.DelegationMetadataKey, string(encoded),
-	))
-}
-
 func serviceDelegatedIdentity(t *testing.T, identity storage.Identity) context.Context {
 	t.Helper()
 	encoded, err := auth.MarshalDelegation(&delegationpb.Delegation{
@@ -287,31 +244,30 @@ func testEntry(cursor uint64) *eventlogpb.EventEntry {
 	}
 }
 
-func TestEveryRPCRequiresAReviewedServiceAccount(t *testing.T) {
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
+func TestEveryRPCRequiresAWorkloadSVID(t *testing.T) {
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods := Methods(resolver)
+	methods := Methods(svids)
 	register := func(server *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(server, historypb.UnimplementedHistoryServiceServer{})
 	}
 	connection := grpcmethods.Serve(t, methods, register)
 	for _, method := range grpcmethods.Of(historypb.HistoryService_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
-			// The stand-in servicer answers Unimplemented to any reviewed account in the served namespace.
-			for token, want := range map[string]codes.Code{
-				"": codes.Unauthenticated, "test-token-unknown": codes.Unauthenticated,
-				strangerToken: codes.Unimplemented, readerToken: codes.Unimplemented,
+			for name, ctx := range map[string]context.Context{
+				"no credential": t.Context(),
+				"bearer only":   metadata.AppendToOutgoingContext(t.Context(), "authorization", "Bearer "+readerToken),
 			} {
-				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
-					t.Errorf("with token %q: %v, want %v", token, got, want)
+				if got := status.Code(method.Call(ctx, connection)); got != codes.Unauthenticated {
+					t.Errorf("%s: %v, want Unauthenticated", name, got)
 				}
 			}
 			unlisted := maps.Clone(methods)
 			delete(unlisted, method.Name)
-			if got := status.Code(method.Call(bearing(t, readerToken), grpcmethods.Serve(t, unlisted, register))); got != codes.PermissionDenied {
-				t.Errorf("unlisted, an allowed caller got %v", got)
+			if got := status.Code(method.Call(t.Context(), grpcmethods.Serve(t, unlisted, register))); got != codes.PermissionDenied {
+				t.Errorf("unlisted method got %v", got)
 			}
 		})
 	}
@@ -413,213 +369,6 @@ func containsSession(found *historypb.FindSessionsResponse, sessionID uuid.UUID)
 		}
 	}
 	return false
-}
-
-func TestServiceAccountAttributionDoesNotOwnRetainedHistory(t *testing.T) {
-	server := newServer(t, time.Second)
-	account := auth.Account{Namespace: testNamespace, Name: "legacy-owner-" + uuid.NewString()}
-	token, err := kube.WorkloadToken(t.Context(), account, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Get(t.Context(), account.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy := server.recordLegacyFor(t, account, string(current.UID))
-	identitySession, _ := server.recordAs(t, storage.Identity{Name: account.Name, UID: uuid.NewString()})
-	for _, sessionID := range []uuid.UUID{legacy, identitySession} {
-		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for name, ctx := range map[string]context.Context{
-		"direct account": bearing(t, token),
-	} {
-		t.Run(name, func(t *testing.T) {
-			for _, sessionID := range []uuid.UUID{legacy, identitySession} {
-				_, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10})
-				if status.Code(err) != codes.NotFound {
-					t.Errorf("account read of %s = %v, want NotFound", sessionID, err)
-				}
-			}
-			batch, err := server.client.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{
-				SessionIds: []string{legacy.String(), identitySession.String()},
-			})
-			if err != nil || len(batch.GetSummaries()) != 0 {
-				t.Fatalf("account summary batch = %+v, %v", batch, err)
-			}
-			found, err := server.client.FindSessions(ctx, &historypb.FindSessionsRequest{
-				Sandbox: &historypb.FindSessionsRequest_SandboxName{SandboxName: testWriter.Name},
-			})
-			if err != nil || containsSession(found, legacy) || containsSession(found, identitySession) {
-				t.Fatalf("account Session search = %+v, %v", found, err)
-			}
-		})
-	}
-	// The explicitly configured Pod-bound platform reader keeps its existing retained-data path.
-	page, err := server.client.ReadSessionEvents(bearing(t, readerToken), &historypb.ReadSessionEventsRequest{SessionId: legacy.String(), Limit: 10})
-	if err != nil || len(page.GetEntries()) != 1 {
-		t.Fatalf("platform read of retained legacy history = %+v, %v", page, err)
-	}
-	var namespace, name, uid string
-	var identityName, identityUID sql.NullString
-	if err := server.db.QueryRowContext(t.Context(), `SELECT execution_principal_namespace,
-		execution_principal_name, execution_principal_uid, execution_identity_name, execution_identity_uid
-		FROM session_history WHERE id=$1`, legacy).Scan(&namespace, &name, &uid, &identityName, &identityUID); err != nil {
-		t.Fatal(err)
-	}
-	if namespace != account.Namespace || name != account.Name || uid != string(current.UID) || identityName.Valid || identityUID.Valid {
-		t.Fatalf("legacy attribution changed or acquired an Identity: %s/%s/%s, %v/%v", namespace, name, uid, identityName, identityUID)
-	}
-}
-
-// All read paths, including watches and follows, use the delegated Identity rather than the
-// allowlisted platform actor's broad reader role. Direct Identity SVIDs exercise the same scope in
-// the serving-binary SVID tests.
-func TestDelegatedHistoryUsesTheRetainedIdentityScope(t *testing.T) {
-	owner := storage.Identity{Name: "scope-owner-" + uuid.NewString(), UID: uuid.NewString()}
-	other := storage.Identity{Name: "scope-other-" + uuid.NewString(), UID: uuid.NewString()}
-	live := newLiveIdentities(owner, other)
-	server := newServerWithDelegation(t, time.Second, callDeadline,
-		&auth.Delegator{Account: auth.Account{Namespace: testNamespace, Name: "test-reader"}, IdentityCallers: true},
-		live)
-	position := uint64(0)
-	owned, _ := server.recordAs(t, owner)
-	foreignSession, _ := server.recordAs(t, other)
-	legacy, _ := server.record(t)
-	for _, sessionID := range []uuid.UUID{owned, foreignSession, legacy} {
-		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	action := delegatedIdentity(t, readerToken, owner)
-
-	for name, ctx := range map[string]context.Context{"delegated Identity": action} {
-		t.Run(name, func(t *testing.T) {
-			for _, sessionID := range []uuid.UUID{owned} {
-				response, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10})
-				if err != nil || len(response.GetEntries()) != 1 || response.GetEntries()[0].GetCursor() != 1 {
-					t.Fatalf("owned raw read: %+v %v", response, err)
-				}
-				if _, err := server.client.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()}); err != nil {
-					t.Fatalf("owned summary: %v", err)
-				}
-			}
-			for _, sessionID := range []uuid.UUID{foreignSession, legacy} {
-				if _, err := server.client.ReadSessionEvents(ctx, &historypb.ReadSessionEventsRequest{SessionId: sessionID.String(), Limit: 10}); status.Code(err) != codes.NotFound {
-					t.Errorf("foreign or unassociated raw read = %v, want NotFound", err)
-				}
-			}
-			batch, err := server.client.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{
-				SessionIds: []string{owned.String(), foreignSession.String(), legacy.String()},
-			})
-			if err != nil || len(batch.GetSummaries()) != 1 || batch.GetSummaries()[0].GetSessionId() != owned.String() {
-				t.Fatalf("scoped summary batch: %+v %v", batch, err)
-			}
-			found, err := server.client.FindSessions(ctx, &historypb.FindSessionsRequest{
-				Sandbox: &historypb.FindSessionsRequest_SandboxName{SandboxName: testWriter.Name},
-			})
-			if err != nil || !containsSession(found, owned) || containsSession(found, foreignSession) || containsSession(found, legacy) {
-				t.Fatalf("scoped Session search: %+v %v", found, err)
-			}
-
-			follow, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
-				SessionId: owned.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
-			})
-			if err != nil {
-				t.Fatalf("owned follow: %v", err)
-			}
-			var entries int
-			for {
-				frame, err := follow.Recv()
-				if err == io.EOF {
-					break
-				}
-				if err != nil {
-					t.Fatalf("owned follow frame: %v", err)
-				}
-				if page := frame.GetEntries(); page != nil {
-					entries += len(page.GetEntries())
-				}
-			}
-			if entries != 1 {
-				t.Fatalf("owned FollowSession returned %d entries", entries)
-			}
-			foreignFollow, err := server.client.FollowSession(ctx, &historypb.FollowSessionRequest{
-				SessionId: foreignSession.String(), Start: &historypb.FollowSessionRequest_AfterCursor{AfterCursor: 0},
-			})
-			if err == nil {
-				_, err = foreignFollow.Recv()
-			}
-			if status.Code(err) != codes.NotFound {
-				t.Errorf("foreign FollowSession = %v, want NotFound", err)
-			}
-
-			watchCtx, stopWatch := context.WithTimeout(ctx, 100*time.Millisecond)
-			watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
-			if err != nil {
-				stopWatch()
-				t.Fatalf("open scoped watch: %v", err)
-			}
-			changed, err := watch.Recv()
-			if err != nil || changed.GetChanged() == nil {
-				stopWatch()
-				t.Fatalf("watch changed frame: %+v %v", changed, err)
-			}
-			opened, err := watch.Recv()
-			if err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
-				stopWatch()
-				t.Fatalf("watch leaked foreign or legacy opening: %+v %v", opened, err)
-			}
-			for {
-				frame, err := watch.Recv()
-				if err != nil {
-					break
-				}
-				if opened := frame.GetSessionRecorded(); opened != nil && opened.GetSessionId() != owned.String() {
-					stopWatch()
-					t.Fatalf("watch leaked another principal's opening: %v", opened)
-				}
-			}
-			stopWatch()
-		})
-	}
-
-	watchCtx, stopWatch := context.WithTimeout(delegatedIdentity(t, readerToken, owner), 5*time.Second)
-	watch, err := server.client.WatchSessionSummaries(watchCtx, &historypb.WatchSessionSummariesRequest{RecordedAfter: proto.Uint64(position)})
-	if err != nil {
-		stopWatch()
-		t.Fatal(err)
-	}
-	if changed, err := watch.Recv(); err != nil || changed.GetChanged() == nil {
-		stopWatch()
-		t.Fatalf("revalidation watch changed frame: %+v %v", changed, err)
-	}
-	if opened, err := watch.Recv(); err != nil || opened.GetSessionRecorded().GetSessionId() != owned.String() {
-		stopWatch()
-		t.Fatalf("revalidation watch owner frame: %+v %v", opened, err)
-	}
-	live.replace(owner.Name, uuid.NewString())
-	var reconnected bool
-	for {
-		frame, err := watch.Recv()
-		if err != nil {
-			stopWatch()
-			t.Fatalf("watch did not complete its bounded lease: %v", err)
-		}
-		if frame.GetReconnectRequired() != nil {
-			reconnected = true
-			break
-		}
-	}
-	stopWatch()
-	if !reconnected {
-		t.Fatal("delegated watch lease did not request fresh authorization")
-	}
-	if _, err := server.client.ReadSessionEvents(delegatedIdentity(t, readerToken, owner), &historypb.ReadSessionEventsRequest{SessionId: owned.String(), Limit: 10}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("delegation with replaced effective caller UID = %v, want PermissionDenied", err)
-	}
 }
 
 func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {

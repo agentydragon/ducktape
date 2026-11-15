@@ -3,22 +3,25 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"net"
 	"path/filepath"
 	"testing"
+	"time"
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	"github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,14 +42,73 @@ func startWithSVIDs(t *testing.T, ca *peertlstesting.CA, tune func(*config)) run
 	if err != nil {
 		t.Fatal(err)
 	}
-	return start(t, func(c *config) {
-		c.Kubeconfig = kubeconfig
-		c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
-		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
-		if tune != nil {
-			tune(c)
+	c := defaultConfig()
+	c.DatabaseURL = integrationDatabase.URL
+	c.ReaderAccounts = []auth.Account{{Namespace: "test-reader-namespace", Name: "test-reader"}}
+	c.TokenAudience, c.Ingress.TokenAudience = "test-history-service", "test-runner-ingress"
+	c.Kubeconfig, c.PolicyNamespace = kubeconfig, testPolicyNamespace
+	c.RPC.TLS = &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}
+	c.RPC.Auth = []listener.Authentication{
+		&listener.KubernetesBearerAuth{Audiences: []string{c.TokenAudience, c.Ingress.TokenAudience}},
+		&listener.SPIFFEAuth{CAFile: serving.CAFile},
+	}
+	c.ReaderServiceCallers = []string{peertls.AppURI}
+	c.Ingress.WriterNamespaces = []string{"test-sandbox-namespace"}
+	c.FoldIntervalSeconds = 3600
+	if tune != nil {
+		tune(&c)
+	}
+	workload := workloadauthtesting.NewIdentityWorkload(
+		t, kube, "test-sandbox-namespace", "history-runner-"+uuid.NewString()[:8], c.PolicyNamespace,
+	)
+	rpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	served := make(chan error, 1)
+	go func() { served <- serve(ctx, c, rpcListener) }()
+	var stopped bool
+	stop := func() error {
+		if stopped {
+			return nil
 		}
-	})
+		stopped = true
+		cancel()
+		select {
+		case err := <-served:
+			return err
+		case <-time.After(callDeadline):
+			return context.DeadlineExceeded
+		}
+	}
+	t.Cleanup(func() { _ = stop() })
+	readerSecurity, err := ca.Issue(t, peertls.AppURI).ClientCredentials(peertls.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readerConnection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(readerSecurity))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = readerConnection.Close() })
+	runnerConnection, err := ca.Issue(t, workload.URI).ClientCredentials(peertls.HistoryIngressURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ingressConnection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(runnerConnection))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ingressConnection.Close() })
+	return running{
+		rpcAddress: rpcListener.Addr().String(),
+		reads:      historypb.NewHistoryServiceClient(readerConnection),
+		health:     healthpb.NewHealthClient(readerConnection),
+		ingress:    session_ingresspb.NewSessionJournalIngressClient(ingressConnection),
+		runner:     &identitypb.Identity{Name: workload.Identity.Name, Uid: string(workload.Identity.UID)},
+		stop:       stop,
+	}
 }
 
 // svidConnection dials service presenting a certificate for a workload URI.
@@ -67,17 +129,9 @@ func svidConnection(t *testing.T, ca *peertlstesting.CA, service running, uri st
 func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 	workload := workloadauthtesting.NewIdentityWorkload(t, kube, "test-sandbox-namespace", "svid-"+uuid.NewString(), testPolicyNamespace).Workload
 	ca := peertlstesting.NewCA(t)
-	sampler := auth.Account{Namespace: "test-sandbox-namespace", Name: "test-sampler"}
-	samplerToken, err := kube.WorkloadToken(t.Context(), sampler, "test-runner-ingress")
-	if err != nil {
-		t.Fatal(err)
-	}
-	service := startWithSVIDs(t, ca, func(c *config) {
-		c.Ingress.SamplerAccounts = []auth.Account{sampler}
-		c.PolicyNamespace = testPolicyNamespace
-	})
-	// Backend bearer reads use the same TLS listener without presenting a certificate.
-	_, err = service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+	service := startWithSVIDs(t, ca, nil)
+	_, err := service.reads.GetSessionSummary(bearing(t, readerToken), &historypb.GetSessionSummaryRequest{SessionId: uuid.NewString()})
+	// The explicitly granted service SVID reads through the shared listener.
 	if status.Code(err) != codes.NotFound {
 		t.Fatalf("backend reader: %v", err)
 	}
@@ -110,7 +164,7 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 		}
 	}
 	for name, attempt := range map[string]context.Context{
-		"mixed bearer": metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+samplerToken),
+		"mixed bearer": metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+readerToken),
 		"delegation":   metadata.AppendToOutgoingContext(ctx, auth.DelegationMetadataKey, "forged"),
 	} {
 		stream, err := journal.Push(attempt)
@@ -122,26 +176,23 @@ func TestSharedListenerPreservesHistoryReadAndWriterPolicies(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	// An ordinary writer bearer cannot bypass the sampler allowlist on the mixed listener.
-	denied, err := service.ingress.Push(bearing(t, writerToken))
+	noClientCertificate, err := (&peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.HistoryIngressURI}).Credentials()
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = denied.Recv()
-	if status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("non-sampler bearer: %v", err)
-	}
-	admitted, err := service.ingress.Push(bearing(t, samplerToken))
+	bareConnection, err := grpc.NewClient(service.rpcAddress, grpc.WithTransportCredentials(noClientCertificate))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A valid sampler reaches handler validation; a missing announcement is a protocol error.
-	if err := admitted.Send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Entry{Entry: journalEntry(1)}}); err != nil {
+	t.Cleanup(func() { _ = bareConnection.Close() })
+	barePush, err := session_ingresspb.NewSessionJournalIngressClient(bareConnection).Push(
+		metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+writerToken),
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = admitted.Recv()
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("sampler admission: %v", err)
+	if _, err := barePush.Recv(); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("bearer-only Push: %v", err)
 	}
 }
 

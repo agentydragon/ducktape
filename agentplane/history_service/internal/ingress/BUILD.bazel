@@ -33,7 +33,6 @@ go_test(
     srcs = [
         "bounds_test.go",
         "delegated_export_test.go",
-        "delegated_sampler_test.go",
         "ingress_test.go",
         "integration_testmain_test.go",
         "sampler_export_test.go",

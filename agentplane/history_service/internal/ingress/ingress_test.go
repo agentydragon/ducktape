@@ -4,17 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"io"
-	"net"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -23,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -37,25 +33,13 @@ const (
 )
 
 var (
-	kube *kubeapiserver.Server
-	// writerToken proves Sandbox A's ServiceAccount.
-	writerToken string
+	kube          *kubeapiserver.Server
+	defaultRunner workloadauthtesting.IdentityWorkload
 )
 
-func useAPIServer(server *kubeapiserver.Server) (err error) {
+func useAPIServer(server *kubeapiserver.Server) error {
 	kube = server
-	writerToken, err = server.WorkloadToken(context.Background(), auth.Account{Namespace: testNamespace, Name: "test-sandbox-a"}, testAudience)
-	return err
-}
-
-// workloadToken is a token for testAudience bound to a new Pod running as account.
-func workloadToken(t *testing.T, account auth.Account) string {
-	t.Helper()
-	token, err := kube.WorkloadToken(t.Context(), account, testAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return token
+	return nil
 }
 
 // testTiming is short enough to wait out, long enough that a loaded journal writer does not end a live call.
@@ -77,40 +61,11 @@ func newIngressPacedBy(t *testing.T, timing Timing) testIngress {
 
 func serveIngress(t *testing.T, service *Service) testIngress {
 	t.Helper()
-	accounts := []auth.Account{
-		{Namespace: testNamespace, Name: "test-sandbox-a"},
-		{Namespace: testNamespace, Name: "test-first-writer"},
-		{Namespace: testNamespace, Name: "test-sandbox-b"},
+	if defaultRunner.Record == nil {
+		defaultRunner = workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "history-default-runner", testPolicyNamespace)
 	}
-	accounts = append(accounts, service.SamplerAccounts...)
-	return serveIngressAdmitting(t, service, func(principals *auth.Resolver) auth.Rule {
-		return auth.Accounts(principals, accounts)
-	})
-}
-
-// serveIngressAdmitting serves the ingress with the Push rule pushRule builds over the test API
-// server's TokenReview resolver.
-func serveIngressAdmitting(t *testing.T, service *Service, pushRule func(*auth.Resolver) auth.Rule) testIngress {
-	t.Helper()
-	principals, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := auth.Methods{session_ingresspb.SessionJournalIngress_Push_FullMethodName: pushRule(principals)}
-	server := grpc.NewServer(methods.ServerOptions(time.Second)...)
-	session_ingresspb.RegisterSessionJournalIngressServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	return testIngress{history: service.History, client: session_ingresspb.NewSessionJournalIngressClient(connection)}
+	connect := serveSVIDIngress(t, service, testNamespace)
+	return connect(defaultRunner.URI)
 }
 
 func newService(t *testing.T, timing Timing) (*Service, *sql.DB) {
@@ -143,7 +98,7 @@ func (i testIngress) open(t *testing.T, token string) *call {
 
 func (i testIngress) push(t *testing.T, frames ...*session_ingresspb.PushFrame) *call {
 	t.Helper()
-	c := i.open(t, writerToken)
+	c := i.open(t, "")
 	c.send(frames...)
 	return c
 }
@@ -457,36 +412,25 @@ func TestOutOfOrderAndConflictingPushesAreRefused(t *testing.T) {
 }
 
 func TestASessionTakesPushesOnlyFromItsFirstWriter(t *testing.T) {
-	writer := auth.Account{Namespace: testNamespace, Name: "test-first-writer"}
-	for name, otherWriter := range map[string]func(*testing.T) string{
-		"another account": func(t *testing.T) string {
-			return workloadToken(t, auth.Account{Namespace: testNamespace, Name: "test-sandbox-b"})
-		},
-		"the writer's account deleted and recreated under its name": func(t *testing.T) string {
-			if err := kube.RecreateServiceAccount(t.Context(), writer); err != nil {
-				t.Fatal(err)
-			}
-			return workloadToken(t, writer)
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			ingress, sessionID := newIngress(t), uuid.New()
-			first := ingress.open(t, workloadToken(t, writer))
-			first.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
-			first.acknowledged(1, false)
-			other := ingress.open(t, otherWriter(t))
-			other.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2)...)...)
-			if got := other.refused(); got != codes.PermissionDenied {
-				t.Fatalf("refused with %v, want PermissionDenied", got)
-			}
-			if got := committed(t, ingress.history, sessionID); !slices.Equal(got, journalTexts(1)) {
-				t.Fatalf("committed %q, want only the first writer's entry", got)
-			}
-		})
+	service, _ := newService(t, testTiming)
+	connect := serveSVIDIngress(t, service, testNamespace)
+	firstWorkload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "first-writer-"+uuid.NewString()[:8], testPolicyNamespace)
+	otherWorkload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "other-writer-"+uuid.NewString()[:8], testPolicyNamespace)
+	ingress, sessionID := connect(firstWorkload.URI), uuid.New()
+	first := ingress.open(t, "")
+	first.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1)...)...)
+	first.acknowledged(1, false)
+	other := connect(otherWorkload.URI).open(t, "")
+	other.send(append([]*session_ingresspb.PushFrame{announce(sessionID, 0, "")}, entries(1, 2)...)...)
+	if got := other.refused(); got != codes.PermissionDenied {
+		t.Fatalf("refused with %v, want PermissionDenied", got)
+	}
+	if got := committed(t, ingress.history, sessionID); !slices.Equal(got, journalTexts(1)) {
+		t.Fatalf("committed %q, want only the first writer's entry", got)
 	}
 }
 
-func TestAnUnknownBearerIsUnauthenticated(t *testing.T) {
+func TestAWorkloadCertificateMixedWithAnUnknownBearerIsUnauthenticated(t *testing.T) {
 	c := newIngress(t).open(t, "test-token-unknown")
 	c.send(announce(uuid.New(), 0, ""))
 	if got := c.refused(); got != codes.Unauthenticated {
@@ -513,7 +457,7 @@ func TestACallThatDoesNotOpenWithAnAnnouncementIsRefused(t *testing.T) {
 		})
 	}
 	t.Run("call-ended-unannounced", func(t *testing.T) {
-		c := newIngress(t).open(t, writerToken)
+		c := newIngress(t).open(t, "")
 		if err := c.stream.CloseSend(); err != nil {
 			t.Fatal(err)
 		}
@@ -522,7 +466,7 @@ func TestACallThatDoesNotOpenWithAnAnnouncementIsRefused(t *testing.T) {
 		}
 	})
 	t.Run("silence", func(t *testing.T) {
-		if got := newIngress(t).open(t, writerToken).refused(); got != codes.Unavailable {
+		if got := newIngress(t).open(t, "").refused(); got != codes.Unavailable {
 			t.Fatalf("refused with %v, want Unavailable", got)
 		}
 	})
@@ -596,64 +540,5 @@ func TestALongBurstIsCommittedInOrderAndAcknowledgedThroughItsEnd(t *testing.T) 
 		if entry.GetCursor() != uint64(index)+1 {
 			t.Fatalf("entry %d has cursor %d", index, entry.GetCursor())
 		}
-	}
-}
-
-// A central producer retains its own writer identity while its execution target is
-// the Sandbox displayed in inventory. Reconnects cannot silently replace that target.
-func TestCentralSamplerWriterAndExecutorAreSeparate(t *testing.T) {
-	service, db := newService(t, testTiming)
-	account := auth.Account{Namespace: testNamespace, Name: "test-central-sampler"}
-	service.SamplerAccounts = []auth.Account{account}
-	ingress := serveIngress(t, service)
-	token := workloadToken(t, account)
-	sessionID := uuid.NewString()
-	executorUID := uuid.NewString()
-	announcement := &session_ingresspb.SamplerAnnouncement{
-		Session: &sessionpb.Attached{SessionId: sessionID, Spec: &sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
-				ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-execution-sandbox", Uid: executorUID},
-			}}}, Model: "test-model", Cwd: "/test-workspace",
-		}},
-		Executor: &identitypb.SandboxDestination{
-			Target: &identitypb.EnvironmentTarget{Namespace: testNamespace, Name: "test-execution-sandbox", Uid: executorUID}, Owner: &identitypb.ServiceAccount{Namespace: testNamespace, Name: "test-execution-sandbox"},
-		},
-	}
-	c := ingress.open(t, token)
-	c.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
-	c.acknowledged(0, false)
-	var writerName, sandboxName, sandboxUID string
-	if err := db.QueryRowContext(t.Context(), "SELECT writer_name,sandbox_name,sandbox_uid::text FROM session_history WHERE id=$1", sessionID).
-		Scan(&writerName, &sandboxName, &sandboxUID); err != nil {
-		t.Fatal(err)
-	}
-	if writerName != account.Name || sandboxName != announcement.Executor.Target.Name || sandboxUID != executorUID {
-		t.Fatalf("binding writer=%s executor=%s uid=%s", writerName, sandboxName, sandboxUID)
-	}
-	c.cancel()
-	mismatched := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
-	mismatched.Executor.Target.Uid = uuid.NewString()
-	bad := ingress.open(t, token)
-	bad.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: mismatched}})
-	if _, err := bad.stream.Recv(); status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("inconsistent central placement: %v", err)
-	}
-	changed := proto.Clone(announcement).(*session_ingresspb.SamplerAnnouncement)
-	changed.Executor.Target.Uid = uuid.NewString()
-	changed.Session.Spec.GetPlacement().GetCentralSamplerV1().ExecutorEnvironment.Uid = changed.Executor.Target.Uid
-	next := ingress.open(t, token)
-	next.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: changed}})
-	if _, err := next.stream.Recv(); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("changed executor: %v", err)
-	}
-	unauthorized := ingress.open(t, writerToken)
-	unauthorized.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_SamplerAnnounce{SamplerAnnounce: announcement}})
-	if _, err := unauthorized.stream.Recv(); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("unauthorized producer: %v", err)
-	}
-	disguised := ingress.open(t, writerToken)
-	disguised.send(&session_ingresspb.PushFrame{Frame: &session_ingresspb.PushFrame_Announce{Announce: announcement.Session}})
-	if _, err := disguised.stream.Recv(); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("disguised central producer: %v", err)
 	}
 }

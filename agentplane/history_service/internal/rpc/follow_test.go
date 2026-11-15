@@ -14,14 +14,17 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	workloadauthtesting "github.com/agentydragon/ducktape/agentplane/identity/auth/testing"
+	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -445,9 +448,16 @@ func (s admissionContextHealth) Check(ctx context.Context, _ *healthpb.HealthChe
 }
 
 // directAdmissionContext captures a context from an RPC held behind the real shared auth middleware.
-func directAdmissionContext(t *testing.T) context.Context {
+func directAdmissionContext(t *testing.T) (context.Context, storage.Identity, storage.Sandbox) {
 	t.Helper()
-	resolver, err := auth.NewResolver(kube.TokenReviews(), testAudience, []string{testNamespace}, auth.WithVerdictTTL(0))
+	workload := workloadauthtesting.NewIdentityWorkload(t, kube, testNamespace, "follow-lease-"+uuid.NewString()[:8], "test-history-policies")
+	resolver, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := transporttesting.NewCA(t)
+	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
+	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,18 +466,23 @@ func directAdmissionContext(t *testing.T) context.Context {
 		t.Fatal(err)
 	}
 	service := admissionContextHealth{captured: make(chan context.Context, 1), release: make(chan struct{})}
-	server := grpc.NewServer(auth.Methods{
-		healthpb.Health_Check_FullMethodName: auth.ReviewedServiceAccount(resolver),
-	}.ServerOptions(0)...)
+	server := grpc.NewServer(append(auth.Methods{
+		healthpb.Health_Check_FullMethodName: auth.AnySubject(resolver),
+	}.ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	healthpb.RegisterHealthServer(server, service)
 	go func() { _ = server.Serve(listener) }()
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	clientFiles := ca.Issue(t, workload.URI)
+	clientTLS, err := clientFiles.ClientTLSConfig(peertls.HistoryIngressURI)
+	if err != nil {
+		server.Stop()
+		t.Fatal(err)
+	}
+	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 	if err != nil {
 		server.Stop()
 		t.Fatal(err)
 	}
 	callContext, cancel := context.WithCancel(t.Context())
-	callContext = metadata.AppendToOutgoingContext(callContext, "authorization", "Bearer "+readerToken)
 	go func() { _, _ = healthpb.NewHealthClient(connection).Check(callContext, &healthpb.HealthCheckRequest{}) }()
 	var once sync.Once
 	cleanup := func() {
@@ -479,11 +494,13 @@ func directAdmissionContext(t *testing.T) context.Context {
 	t.Cleanup(cleanup)
 	select {
 	case admitted := <-service.captured:
-		return admitted
+		return admitted, storage.Identity{Name: workload.Identity.Name, UID: string(workload.Identity.UID)}, storage.Sandbox{
+			Namespace: workload.Sandbox.Namespace, Name: workload.Sandbox.Name, UID: string(workload.Sandbox.UID),
+		}
 	case <-time.After(5 * time.Second):
 		cleanup()
 		t.Fatal("shared auth middleware did not admit the direct fixture call")
-		return nil
+		return nil, storage.Identity{}, storage.Sandbox{}
 	}
 }
 
@@ -510,8 +527,11 @@ func (s *leaseBlockedFollowStream) releaseWrite() { s.releaseOnce.Do(func() { cl
 
 func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing.T) {
 	server := newServer(t, 2*time.Second)
-	sessionID, _ := server.record(t)
-	ctx := directAdmissionContext(t)
+	ctx, identity, sandbox := directAdmissionContext(t)
+	sessionID := uuid.New()
+	if _, err := server.history.BindIdentityWriter(t.Context(), sessionID, storage.IdentityWriter{Identity: identity}, sandbox, &identity); err != nil {
+		t.Fatal(err)
+	}
 	stream := &leaseBlockedFollowStream{
 		ctx: ctx, initialCaught: make(chan struct{}), writeStarted: make(chan struct{}),
 		writeFinished: make(chan struct{}), release: make(chan struct{}),
@@ -525,6 +545,8 @@ func TestFollowSessionDoesNotReconnectAfterAWriteIsCanceledByItsLease(t *testing
 	}()
 	select {
 	case <-stream.initialCaught:
+	case err := <-done:
+		t.Fatalf("FollowSession ended before its opening caught_up frame: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("FollowSession did not send its opening caught_up frame")
 	}
