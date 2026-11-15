@@ -13,8 +13,8 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/module_proposals.md> — residual discovery, complete search, checked
-  application and regression/property-test release gates.
+- <plans/module_placement.md> — constructive residual placement, shared graph
+  constraints and prediction, exact application and completeness/test obligations.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
@@ -613,56 +613,20 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Give extraction searches one assignment and validation contract.**
-  The graph proposer, decomposition/coarsening and residual routing currently
-  solve different placement problems: graph commands cannot read an ownership
-  subset, decomposition may change existing owners, and residual routing can
-  move the entire remainder. The proposer's `landable_today` is only a graph
-  readiness signal. Treating these as interchangeable extraction strategies
-  obscures both the permitted edits and the strength of the result.
+- **W9 — Construct residual placements from shared constraints.**
+  Follow <plans/module_placement.md>. The common checker and exact application
+  exist; the current complete proposer enumerates atom assignments. Replace that
+  production architecture with prepared placement constraints, graph-derived
+  implications/owner exclusions and inexpensive whole-batch prediction. Keep
+  authored owners fixed by default and retain global ESM ordering checks.
 
-  Start every extraction strategy from the same prepared source/spec context
-  and exact current assignment, including ownership subsets. Return an explicit
-  batch of destination changes; every source unit outside that batch keeps its
-  destination, including the remaining residual. Preserve existing selected
-  owners by default. Repartitioning them is an explicit different scope, never
-  an implicit strategy choice. Strategies generate candidates; one shared
-  complete-candidate checker decides acceptance and the apply path reuses it.
-  Local contraction checks cannot certify global scheduling or emitted output.
-
-  Provide a complete invocation: if any permitted assignment over the whole
-  residual and allowed destinations yields a valid peel, it finds a checked
-  witness. Include joint multi-atom/multi-destination moves; do not restrict the
-  guarantee to a heuristic's shortlist. Exhaustive no-peel conclusions require
-  a finite faithful search space and complete coverage or a proved equivalent
-  decision procedure. Budget exhaustion, interruption and unsupported inputs
-  remain incomplete/error outcomes. Account for module-order distinctions when
-  reducing fresh-module labels; unproved symmetry must not discard solutions.
-
-  Consolidate discovery behind one planning/checking/applying workflow. Keep
-  cheap structural inspection separate and retain residual layout policies as
-  output configuration. Reuse `AssignmentAnalysis` and validated assignments,
-  not another graph model. Replace misleading readiness labels with explicit
-  validation scope; unsupported inputs, execution failures, budget exhaustion
-  and no candidates must remain distinct from candidate rejection or a claim
-  that extraction is impossible. Migrate the private caller directly when
-  retiring overlapping interfaces rather than adding compatibility shims.
-
-  Close with neutral CLI bundle/spec/starting-assignment regressions: the same
-  candidate gets the same complete verdict through every strategy; a valid
-  joint batch passes even when individual moves reject; remote ESM TDZs reject;
-  anonymous statements are covered; and units outside a plan stay put. Verify
-  preview/apply agreement and demonstrate a useful passing-subset extraction
-  through the unified workflow before retiring existing paths. Add independent
-  exhaustive small-source/spec assignment comparisons and property tests for
-  discovery completeness, proposal soundness, scope, honest termination and
-  optimization equivalence. Exercise normal CLI application and emitted behavior,
-  not only internal checker agreement. Complete search and its CI coverage are
-  release gates for the replacement workflow. Update `AGENTS.md`, stable docs,
-  role skills, shared recipes and packaged executable examples alongside each
-  implemented CLI contract. Verify the packaged agent workflow before retiring
-  obsolete commands and instructions; installed skill edits are not the source
-  change.
+  Prove deduction soundness and construction coverage, including joint moves,
+  promoted-edge activation and fresh-owner ordering. Do not assume generic search
+  is necessary or present a closure heuristic as complete. Retain the shipped
+  complete invocation until a proved replacement is ready, then keep exhaustive
+  enumeration as a tiny-spec test oracle. Preserve independent CLI/property tests
+  and exact unchanged-unit application checks. Migrate docs, AGENTS.md, skills
+  and packaged examples with the delivered contracts.
 
 ### Planner CLI follow-ups
 

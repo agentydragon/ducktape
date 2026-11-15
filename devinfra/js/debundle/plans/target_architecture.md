@@ -294,7 +294,7 @@ empty at the end.
 - <native_receiver_identity.md>, <purity_analysis.md>,
   <runtime_validation.md>: analysis precision and probe work within stage 2.
 - <relational_selectors.md>, <automated_spec_workflows.md>,
-  <module_proposals.md>: the spec surface and stage 6.
+  <module_placement.md>: the spec surface and stage 6.
 
 ## Known open problems
 

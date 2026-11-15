@@ -7,6 +7,11 @@ structural atoms, cross-module rebinding and the full global ESM gate, including
 remaining residual code. Completeness is relative to that conservative checker,
 its prepared graph and captured analysis assumptions.
 
+The current implementation enumerates assignments. The target replacement is
+[constructive module placement](../plans/module_placement.md): derive constraints
+and companion groups from the prepared graph, then predict exact placements.
+The following describes shipped behavior, not that planned replacement.
+
 ## Agent workflow
 
 Start from a successful `run --graphs` using the intended spec, engine and inputs.
