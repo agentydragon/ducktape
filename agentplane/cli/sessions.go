@@ -11,6 +11,7 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	"github.com/google/uuid"
@@ -530,7 +531,7 @@ func dispatchLine(raw json.RawMessage) (string, error) {
 	if err := protojson.Unmarshal(normalized, dispatch); err != nil {
 		return "", invalidResponse("%v", err)
 	}
-	dispatch.State = normalizeDeliveryState(dispatch.GetState())
+	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	if dispatch.GetCommandId() == "" {
 		return "", invalidResponse("no command ID in the dispatch")
 	}
@@ -566,7 +567,7 @@ func inputObservationLine(raw json.RawMessage) (string, error) {
 		if err := protojson.Unmarshal(normalized, dispatch); err != nil {
 			return "", invalidResponse("dispatcher receipt: %v", err)
 		}
-		dispatch.State = normalizeDeliveryState(dispatch.GetState())
+		dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 		line += fields(enumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"), enumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
 	}
 	if observation.Observation.TurnID != nil {
@@ -614,28 +615,24 @@ func normalizeDispatchStateJSON(raw json.RawMessage) (json.RawMessage, error) {
 		if err := json.Unmarshal(state, &name); err != nil {
 			return nil, err
 		}
-		if _, ok := dispatcherpb.DeliveryState_value[name]; !ok || name == "DELIVERY_STATE_UNSPECIFIED" {
-			fields["state"] = json.RawMessage(`"DELIVERY_STATE_UNKNOWN"`)
+		value, ok := dispatcherpb.DeliveryState_value[name]
+		if !ok {
+			value = int32(dispatcherpb.DeliveryState_DELIVERY_STATE_UNSPECIFIED)
+		}
+		normalized := dispatchstate.NormalizeDeliveryState(dispatcherpb.DeliveryState(value))
+		if normalized != dispatcherpb.DeliveryState(value) {
+			fields["state"] = json.RawMessage(strconv.Quote(normalized.String()))
 		}
 	case encodedState != "":
 		var number int32
 		if err := json.Unmarshal(state, &number); err == nil {
-			if _, ok := dispatcherpb.DeliveryState_name[number]; !ok || number == 0 {
-				fields["state"] = json.RawMessage(`"DELIVERY_STATE_UNKNOWN"`)
+			normalized := dispatchstate.NormalizeDeliveryState(dispatcherpb.DeliveryState(number))
+			if normalized != dispatcherpb.DeliveryState(number) {
+				fields["state"] = json.RawMessage(strconv.Quote(normalized.String()))
 			}
 		}
 	}
 	return json.Marshal(fields)
-}
-
-func normalizeDeliveryState(state dispatcherpb.DeliveryState) dispatcherpb.DeliveryState {
-	if state == dispatcherpb.DeliveryState_DELIVERY_STATE_UNSPECIFIED {
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
-	}
-	if _, ok := dispatcherpb.DeliveryState_name[int32(state)]; !ok {
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
-	}
-	return state
 }
 
 func sessionSnapshotLine(raw json.RawMessage) (string, error) {

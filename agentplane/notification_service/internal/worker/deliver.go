@@ -8,6 +8,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/runner_gateway/dispatcher/api/session/session_dispatcherpb"
 	"google.golang.org/grpc"
 )
@@ -141,7 +142,7 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 		return unavailable(err)
 	}
 	dispatch := response.GetDispatch()
-	state := normalizeDeliveryState(dispatch.GetState())
+	state := dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	switch state {
 	case dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
 		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER, dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
@@ -152,20 +153,6 @@ func (w *Worker) deliver(ctx context.Context, claim store.Claim, sandbox string,
 		return w.Store.DeliveryFailed(ctx, claim, *current, fmt.Sprintf("Dispatcher %s: %s", state, reason))
 	}
 	return nil
-}
-
-func normalizeDeliveryState(state dispatcherpb.DeliveryState) dispatcherpb.DeliveryState {
-	switch state {
-	case dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_DELIVERING_TO_RUNNER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-		dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN:
-		return state
-	default:
-		return dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN
-	}
 }
 
 // noticeDueAt is when the entries no notice covers become due for one: the quiet window after the newest of
