@@ -28,7 +28,13 @@ export { f };
         vec![logical_module("mod_f", &[Member::new("f")])],
     ));
 
-    assert_entry_output(&fixture, "from-f\n");
+    assert_preserved_entry_output(&fixture, "from-f\n");
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/mod_f.js",
+        &["f"],
+        &["x"],
+    );
 
     let graph = fixture.dependency_graph();
 

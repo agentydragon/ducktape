@@ -60,9 +60,8 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::{FixtureGraphExt, program_graph_path, source_unit_for_binding};
 use debundle_e2e_support::*;
 
-#[test]
-fn hoisted_factory_import_retains_runtime_evaluation_topology() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+fn hoisted_factory_opts() -> FixtureOpts<'static> {
+    FixtureOpts::new(
         r#"function factory() { return { value: 1 }; }
 const command = factory();
 const list = [command.value];
@@ -78,8 +77,42 @@ export { factory, command, list, readList };
             logical_module("command", &[Member::new("command")]),
             logical_module("list", &[Member::new("list")]),
         ],
-    ));
-    assert_entry_output(&fixture, "1\n");
+    )
+}
+
+fn hoisted_factory_fixture() -> Fixture {
+    run_fixture(hoisted_factory_opts())
+}
+
+fn hoisted_factory_fixture_with_graphs() -> Fixture {
+    run_fixture_with_graphs(hoisted_factory_opts())
+}
+
+#[test]
+fn hoisted_factory_import_retains_runtime_evaluation_topology() {
+    let fixture = hoisted_factory_fixture();
+    assert_preserved_entry_output(&fixture, "1\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const factory = await import("./static/app/modules/factory.js");
+const command = await import("./static/app/modules/command.js");
+const list = await import("./static/app/modules/list.js");
+console.log(JSON.stringify({
+  factory: Object.keys(factory).sort(),
+  command: Object.keys(command).sort(),
+  list: Object.keys(list).sort(),
+}));
+"#,
+        "{\"factory\":[\"factory\",\"readList\"],\"command\":[\"command\"],\"list\":[\"list\"]}\n",
+    );
+}
+
+#[test]
+fn hoisted_factory_import_is_reported_as_nonconstraining() {
+    // This is the graph-report contract: a hoisted factory reference is a
+    // visible HoistedUse, but the edge does not constrain initialization
+    // order (docs/design.md § G_atomic).
+    let fixture = hoisted_factory_fixture_with_graphs();
     let graph = fixture.dependency_graph();
     let command_source_unit = source_unit_for_binding(&graph, "command");
     let factory_source_unit = source_unit_for_binding(&graph, "factory");

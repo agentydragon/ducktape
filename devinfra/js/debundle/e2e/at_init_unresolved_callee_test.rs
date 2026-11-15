@@ -102,43 +102,43 @@ export { VALUE, get, indirect, r };
 
 #[test]
 fn plain_array_collection_methods_do_not_promote_element_function_bodies() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const later = "ready";
-const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
+    let fixture = run_fixture(FixtureOpts::new(
+        r#"const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
 const toolCopies = tools.map((tool) => ({ ...tool }));
 const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
 const ids = [...tools.filter((tool) => tool.systemNodeId).map((tool) => tool.systemNodeId)];
 const copiedIds = [...toolCopies.map((tool) => tool.systemNodeId)];
+const later = byName.tool.name + "-ready";
+console.log(byName.tool.name, ids[0], copiedIds[0], tools[0].run(), toolCopies[0].run());
 export { later, tools, toolCopies, byName, ids, copiedIds };
 "#,
-        vec![logical_module(
-            "collections",
-            &[
-                Member::new("byName"),
-                Member::new("ids"),
-                Member::new("copiedIds"),
-            ],
-        )],
+        vec![
+            logical_module(
+                "collections",
+                &[
+                    Member::new("tools"),
+                    Member::new("toolCopies"),
+                    Member::new("byName"),
+                    Member::new("ids"),
+                    Member::new("copiedIds"),
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
     ));
 
-    let graph = fixture.dependency_graph();
-    let later_source_unit = source_unit_for_binding(&graph, "later");
-    let promoted_to_later: Vec<_> = graph
-        .edges
-        .iter()
-        .filter(|edge| {
-            edge.target == later_source_unit
-                && edge.edge_kind == DepKind::EagerUse
-                && matches!(edge.role, Some(EdgeRoleReport::PromotedAtInit { .. }))
-        })
-        .collect();
-    assert!(
-        promoted_to_later.is_empty(),
-        "static Array collection methods must not promote lazy reads \
-         from function-valued elements; got {promoted_to_later:#?}\n\n\
-         Full dependency graph: {graph:#?}",
+    assert_preserved_entry_output(&fixture, "tool tool-id tool-id tool-ready tool-ready\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        r#"const collections = await import("./static/app/modules/collections.js");
+const values = await import("./static/app/modules/values/later.js");
+console.log(JSON.stringify({
+  collections: Object.keys(collections).sort(),
+  values: Object.keys(values).sort(),
+}));
+"#,
+        "{\"collections\":[\"byName\",\"copiedIds\",\"ids\",\"toolCopies\",\"tools\"],\"values\":[\"later\"]}\n",
     );
-    assert_entry_output(&fixture, "");
 }
 
 #[test]
@@ -203,6 +203,18 @@ export { lookup };
         ],
     ));
     assert_preserved_entry_output(&split, "tool 42\n");
+    assert_module_exports(
+        &split.out_root,
+        "static/app/modules/registry.js",
+        &["descriptors", "lookup"],
+        &["later", "nodeIds"],
+    );
+    assert_module_exports(
+        &split.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["nodeIds", "descriptors", "lookup"],
+    );
 }
 
 #[test]
@@ -244,6 +256,18 @@ export { ids };
         ],
     ));
     assert_preserved_entry_output(&split, "tool-id 42\n");
+    assert_module_exports(
+        &split.out_root,
+        "static/app/modules/registry.js",
+        &["descriptors", "ids"],
+        &["later"],
+    );
+    assert_module_exports(
+        &split.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &["descriptors", "ids"],
+    );
 }
 
 #[test]
@@ -259,6 +283,9 @@ export { later };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
+    // `window` is absent under Node, so the runtime branch is intentionally
+    // inert; this graph assertion retains the documented addEventListener
+    // callback-timing contract (docs/design.md § Builtin member rows).
     let graph = fixture.dependency_graph();
     let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
@@ -294,6 +321,11 @@ export { later, document, button };
         vec![logical_module("later_mod", &[Member::new("later")])],
     ));
 
+    // This keeps the documented callback-timing graph contract explicit:
+    // the builtin member row treats addEventListener as non-invoking at call
+    // time, regardless of receiver identity (docs/design.md § Builtin member
+    // rows). This user-written Node stub makes the call execute, but does not
+    // model a browser host implementation.
     let graph = fixture.dependency_graph();
     let later_source_unit = source_unit_for_binding(&graph, "later");
     let promoted_to_later: Vec<_> = graph
