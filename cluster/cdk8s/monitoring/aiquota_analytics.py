@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import GrafanaDashboardSpecInstanceSelector
 from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecDatasource,
@@ -12,12 +11,12 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecValuesFromValueFrom,
     GrafanaDatasourceSpecValuesFromValueFromSecretKeyRef,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_instance
-from cluster.cdk8s.monitoring.dashboards import aiquota_history
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
 from cluster.cdk8s.providers.grafana_operator.grafana_datasource import GrafanaDatasource
 
@@ -68,7 +67,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="aiquota-history", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
         folder="Analytics",
-        json=JSONEncoder().encode(aiquota_history.build_dashboard()),
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring/dashboards/aiquota-history.json"
+        ).read_text(),
     )
     return chart
 

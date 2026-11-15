@@ -1,12 +1,16 @@
+# gazelle:alias_kind grafana_dashboard py_library
 load("//devinfra/python:defs.bzl", "py_library")
+load("//grafana:dashboard.bzl", "grafana_dashboard")
 load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 py_library(
     name = "app",
     srcs = ["app.py"],
+    data = [
+        ":github-api-quotas.json",
+    ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":github_api_quotas",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
@@ -20,20 +24,19 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//grafana_foundation_sdk",
+        "@rules_python//python/runfiles",
     ],
 )
 
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
-    dashboard = "//cluster/cdk8s/monitoring/dashboards:github-api-quotas.json",
+    dashboard = ":github-api-quotas.json",
     fixture_data = ":dashboard_visual_fixture.json",
 )
 
-py_library(
+grafana_dashboard(
     name = "github_api_quotas",
     srcs = ["github_api_quotas.py"],
-    visibility = ["//cluster/cdk8s/monitoring/dashboards:__pkg__"],
     deps = [
         "//cluster/cdk8s/monitoring/dashboards:foundation",
         "@pypi//grafana_foundation_sdk",

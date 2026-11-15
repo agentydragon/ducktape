@@ -16,18 +16,20 @@ that works after an agent manually edits it.
 
 Locally authored dashboards use Grafana Foundation SDK builders and models. Monitoring
 builders live in `cluster/cdk8s/monitoring/dashboards/`; component dashboards live beside
-that component's generator. The generator embeds compact JSON in
+that component's generator. Declare each with `grafana_dashboard` from
+`//grafana:dashboard.bzl`. It builds compact JSON independently for each dashboard;
+the generator reads that Bazel output from runfiles and embeds it in
 `GrafanaDashboard.spec.json`, with datasource inputs mapped to provisioned UIDs in
 `spec.datasources`. Dashboards imported from grafana.com keep their upstream references.
 
-One test-only exporter supplies candidate JSON and browser-test artifacts, without
-formatting or checked-in JSON copies:
+Synthesis, browser tests and candidate verification consume the same generated JSON.
+Build just the dashboard needed, without formatting or checked-in JSON copies:
 
 ```sh
-bbr build //cluster/cdk8s/monitoring/dashboards:json_files
+bbr build //cluster/cdk8s/monitoring/dashboards:cpap-gateway-disk.json
 ```
 
-For a permitted live candidate check, pass the exported dashboard to `--dashboard` and
+For a permitted live candidate check, pass the built dashboard to `--dashboard` and
 its generated resource file to `--grafana-dashboard-manifest`. The verifier reads
 literal datasource mappings from that resource; it does not import generator code.
 

@@ -7,12 +7,12 @@
   screenshots; run its live verifier after Flux applies when candidate rendering was
   unavailable or deployment wiring changed.
 - Author dashboards with native Foundation SDK builders/models and shared helpers in
-  `foundation.py`. The owning generator embeds `JSONEncoder().encode(...)` directly
-  in the `GrafanaDashboard`; keep symbolic datasource references and explicit Operator
-  mappings to provisioned UIDs.
-- Add the builder to `//cluster/cdk8s/monitoring/dashboards:export_json_bin` for candidate/browser-test
-  artifacts. The shared exporter writes unformatted JSON; no per-dashboard binary or
-  checked-in JSON copy is needed.
+  `foundation.py`. Declare each builder with `grafana_dashboard` from
+  `//grafana:dashboard.bzl`; it builds one compact `.json` beside the library, independently
+  of other dashboards. The owning generator declares that output in `data` and embeds
+  its text in `GrafanaDashboard.spec.json`; browser tests consume the same output.
+  Keep symbolic datasource references and explicit Operator mappings to provisioned UIDs.
+  Generated dashboard JSON is a Bazel artifact, never a checked-in copy.
 - Don't hand over dashboards with unresolved macros, empty frames, datasource errors, or
   unexplained all-zero panels; record any explicit empty/all-zero allow-list exception and
   its reason in the PR.

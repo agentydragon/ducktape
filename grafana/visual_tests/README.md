@@ -1,9 +1,10 @@
 # Grafana dashboard PR visuals spike
 
 Each authored dashboard has a neighboring `grafana_dashboard_visual_test` Bazel
-target. One shared `//cluster/cdk8s/monitoring/dashboards:json_files` action exports the SDK
-models as transient compact JSON for those tests; deployments embed the same models
-directly in Kubernetes manifests. The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
+target. Each `grafana_dashboard` declaration builds its SDK model as an independently
+cached, compact JSON artifact. Browser tests and cdk8s synthesis consume that same file;
+synthesis embeds its text directly in Kubernetes manifests. The JSON is not committed.
+The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
 runfiles and visual-publication wiring and uses a shared scenario by default.
 
 Declare a target beside the dashboard and supply its fixture data:
@@ -13,7 +14,7 @@ load("//grafana/visual_tests:visual_test.bzl", "grafana_dashboard_visual_test")
 
 grafana_dashboard_visual_test(
     name = "dashboard_visual_test",
-    dashboard = "//cluster/cdk8s/monitoring/dashboards:home-gateway.json",
+    dashboard = ":home-gateway.json",
     fixture_data = ":dashboard_visual_fixture.json",
 )
 ```

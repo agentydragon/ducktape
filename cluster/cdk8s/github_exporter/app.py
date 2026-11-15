@@ -15,7 +15,6 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
     ExternalSecretSpecTargetTemplate,
 )
-from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafanadashboard_crds.org.integreatly.grafana import (
     GrafanaDashboardSpecDatasources,
     GrafanaDashboardSpecInstanceSelector,
@@ -26,11 +25,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecEndpointsScheme,
     ServiceMonitorSpecSelector,
 )
+from python.runfiles import Runfiles
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.github_exporter import github_api_quotas
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -291,7 +290,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="github-exporter", namespace=_NAMESPACE),
         instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels={"dashboards": "grafana"}),
         folder="GitHub",
-        json=JSONEncoder().encode(github_api_quotas.build_dashboard()),
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/github_exporter/github-api-quotas.json"
+        ).read_text(),
         datasources=[GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir")],
     )
     return chart
