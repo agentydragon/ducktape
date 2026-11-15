@@ -161,7 +161,7 @@ class McpEdge(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
-            content=yaml_config(settings_contract),
+            content=yaml_config(settings_contract.model_dump(mode="json", exclude={"port"})),
             path="/etc/agentplane-mcp-edge/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)

@@ -8910,7 +8910,6 @@ data:
     policy_namespace: agentplane-staging
     oauth_file: /etc/agentplane-mcp/oauth
     host: 0.0.0.0
-    port: 8080
     http_port: 8081
     operator_oidc:
       issuer: https://auth.allegedly.works/application/o/agentplane-staging-actions/
