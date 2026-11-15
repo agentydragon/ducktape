@@ -13,7 +13,8 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/module_proposals.md> — proposal metadata and granularity follow-ups.
+- <plans/module_proposals.md> — residual discovery, complete search, checked
+  application and regression/property-test release gates.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
@@ -629,6 +630,15 @@ paths and source-unit IDs belong in the consuming repo.
   complete-candidate checker decides acceptance and the apply path reuses it.
   Local contraction checks cannot certify global scheduling or emitted output.
 
+  Provide a complete invocation: if any permitted assignment over the whole
+  residual and allowed destinations yields a valid peel, it finds a checked
+  witness. Include joint multi-atom/multi-destination moves; do not restrict the
+  guarantee to a heuristic's shortlist. Exhaustive no-peel conclusions require
+  a finite faithful search space and complete coverage or a proved equivalent
+  decision procedure. Budget exhaustion, interruption and unsupported inputs
+  remain incomplete/error outcomes. Account for module-order distinctions when
+  reducing fresh-module labels; unproved symmetry must not discard solutions.
+
   Consolidate discovery behind one planning/checking/applying workflow. Keep
   cheap structural inspection separate and retain residual layout policies as
   output configuration. Reuse `AssignmentAnalysis` and validated assignments,
@@ -643,7 +653,12 @@ paths and source-unit IDs belong in the consuming repo.
   joint batch passes even when individual moves reject; remote ESM TDZs reject;
   anonymous statements are covered; and units outside a plan stay put. Verify
   preview/apply agreement and demonstrate a useful passing-subset extraction
-  through the unified workflow before retiring existing paths.
+  through the unified workflow before retiring existing paths. Add independent
+  exhaustive small-source/spec assignment comparisons and property tests for
+  discovery completeness, proposal soundness, scope, honest termination and
+  optimization equivalence. Exercise normal CLI application and emitted behavior,
+  not only internal checker agreement. Complete search and its CI coverage are
+  release gates for the replacement workflow.
 
 ### Planner CLI follow-ups
 
