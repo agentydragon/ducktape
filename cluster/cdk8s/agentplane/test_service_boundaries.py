@@ -1,12 +1,19 @@
-"""Staging manifests keep each service to its own data and authority: History owns its database, the Runner
-Gateway alone mutates Sandboxes, and Notifications never calls the app."""
+"""Staging manifests keep each service to its own data and authority: History owns its database, the Sandbox
+Controller owns environment management, and Notifications never calls the app."""
 
 from typing import Any
 
 import pytest_bazel
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import (
+    app,
+    history_service,
+    notifications,
+    runner_gateway,
+    sandbox_controller,
+    session_dispatcher,
+)
 
 
 def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -28,7 +35,9 @@ def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str,
     )
 
 
-def test_gateway_owns_sandbox_mutations(staging_manifests: list[dict[str, Any]]) -> None:
+def test_environment_management_and_dispatcher_wake_have_separate_authority(
+    staging_manifests: list[dict[str, Any]],
+) -> None:
     app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
     for rule in app_rules:
         if rule["resources"] == ["sandboxes"]:
@@ -40,9 +49,22 @@ def test_gateway_owns_sandbox_mutations(staging_manifests: list[dict[str, Any]])
     gateway = _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
     assert gateway["serviceAccountName"] == runner_gateway.NAME
     gateway_rules = _resource(staging_manifests, "Role", runner_gateway.NAME.removeprefix("agentplane-"))["rules"]
-    assert any(
-        rule["resources"] == ["sandboxes"] and {"create", "patch", "delete"} <= set(rule["verbs"])
-        for rule in gateway_rules
+    assert set(one(rule for rule in gateway_rules if rule["resources"] == ["sandboxes"])["verbs"]) == {
+        "get",
+        "list",
+        "watch",
+        "patch",
+    }
+    assert not any("sandboxtemplates" in rule["resources"] for rule in gateway_rules)
+
+    controller = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)["spec"]["template"]["spec"]
+    assert controller["serviceAccountName"] == sandbox_controller.NAME
+    controller_rules = _resource(staging_manifests, "Role", sandbox_controller.NAME)["rules"]
+    assert {"create", "patch", "delete"} <= set(
+        one(rule for rule in controller_rules if rule["resources"] == ["sandboxes"])["verbs"]
+    )
+    assert {"get", "list"} <= set(
+        one(rule for rule in controller_rules if rule["resources"] == ["sandboxtemplates"])["verbs"]
     )
 
 
