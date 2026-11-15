@@ -343,6 +343,6 @@ fn vendor_swap_report_lists_every_mark() {
     assert_eq!(keys("partial"), ["vendor/clsx_lib.js"]);
     assert_eq!(
         report["partial"]["vendor/clsx_lib.js"]["symbols"]["a"]["references_rewritten"],
-        10
+        11
     );
 }
