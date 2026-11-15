@@ -4315,7 +4315,13 @@ data:
       wake_on_send: true
       idle_suspend_after_seconds: 900
     egress_admin_url: http://egress-admin.agentplane-staging.svc:8081/
-    connection_service_url: http://mcp-edge.agentplane-staging.svc:8080/
+    connection_service_url: https://mcp-edge.agentplane-staging.svc.cluster.local:8443/
+    connection_service_tls:
+      ca_file: /run/agentplane/workload-trust/ca-certificates.crt
+      server_uri: spiffe://agentplane/mcp-edge
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     action_federation:
       service_url: http://actions.agentplane-staging.svc:8080/
       login_jwks_uri: https://auth.allegedly.works/application/o/agentplane-staging/jwks/
@@ -4342,21 +4348,39 @@ data:
     egress_admin_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/egress-proxy
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     runner_gateway_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     session_dispatcher_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/session-dispatcher
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     history_service_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/history-ingress
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     notifications_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/notifications
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     actions_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/actions
+      cert_file: /run/agentplane/workload-tls/tls.crt
+      key_file: /run/agentplane/workload-tls/tls.key
+      client_uri: spiffe://agentplane/app
     policy_service_tls:
       ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       server_uri: spiffe://agentplane/policy-controller
@@ -4368,19 +4392,14 @@ data:
     runner_gateway_control_target: runner-gateway.{namespace}.svc:8080
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
-    notifications_token_file: /var/run/secrets/agentplane-notifications/token
     notifications_request_timeout_s: 5
-    runner_gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    session_dispatcher_token_file: /var/run/secrets/agentplane-session-dispatcher/token
     session_dispatcher_request_timeout_s: 20
-    history_service_token_file: /var/run/secrets/agentplane-history-service/token
     history_service_request_timeout_s: 20
     runner_gateway_request_timeout_s: 20
     runner_gateway_lifecycle_timeout_s: 310
     log_levels: {}
     listen_address: 0.0.0.0:8080
     electric_url: http://electric.agentplane-staging.svc:3000/
-    egress_admin_token_file: /var/run/secrets/agentplane-egress-admin/token
     egress_admin_timeout: 5
     shutdown_timeout: 5
     oidc:
@@ -9329,7 +9348,7 @@ spec:
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
-            - port: "8080"
+            - port: "8443"
               protocol: TCP
   endpointSelector:
     matchLabels:

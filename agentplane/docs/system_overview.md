@@ -80,20 +80,20 @@ flowchart LR
     browser -->|HTTPS, one origin| edge
     edge -->|HTML, assets and service worker| frontend
     edge -->|API, auth and streams| app
-    app -->|gRPC health + read-only Runtime diagnostics| gw
-    app -->|Dispatcher commands and watches: gRPC| gw
-    app -->|History reads: gRPC; service SVID admission available| hs
-    app -->|gRPC operator watches + health; service SVID admission available| notif
-    app -->|Action and MCP Linkage RPCs: gRPC| actions
+    app -->|service SVID mTLS: Runtime diagnostics and health| gw
+    app -->|service SVID mTLS: Dispatcher and EnvironmentService| gw
+    app -->|service SVID mTLS: History reads| hs
+    app -->|service SVID mTLS: operator watches and health| notif
+    app -->|mTLS plus operator authority: Action and MCP Linkage RPCs| actions
+    app -->|mTLS peer plus operator OIDC: ConnectionService and health| edge
     app -->|PolicyService gRPC: bearer over verified server TLS| policy
-    app -->|ConnectionService RPCs and health: gRPC| edge
     edge -->|authenticated ActionService gRPC| actions
     edge -->|public MCP client metadata: gRPC| actions
     notif -->|Action history: gRPC mTLS, Notifications SVID| actions
     actions -->|Session commands: broker or delegated caller, gRPC| gw
     actions -->|delegated EnvironmentService list/get/resume: gRPC, service actor grant available| gw
     actions -->|Session reads: broker or delegated caller, gRPC| hs
-    app -->|gRPC| egress
+    app -->|service SVID mTLS: admin reads| egress
     app --> electric
     app --> k8s
     sdk_services -->|OTLP/gRPC| alloy

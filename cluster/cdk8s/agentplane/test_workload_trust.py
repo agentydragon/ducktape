@@ -171,6 +171,51 @@ def test_notifications_calls_backends_with_its_mounted_service_svid(staging_mani
         assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
 
 
+def test_app_service_calls_use_its_mounted_svid(staging_manifests: list[Body]) -> None:
+    pod = _resource(staging_manifests, "Deployment", "app")["spec"]["template"]["spec"]
+    container = one(pod["containers"])
+    volumes = {volume["name"]: volume for volume in pod["volumes"]}
+    mounts = {PurePosixPath(m["mountPath"]): volumes[m["name"]] for m in container["volumeMounts"]}
+    settings = yaml.safe_load(_resource(staging_manifests, "ConfigMap", "app-config")["data"]["config.yaml"])
+    for name, server_uri in (
+        ("egress_admin", EGRESS_PROXY_URI),
+        ("runner_gateway", SESSION_DISPATCHER_URI),
+        ("session_dispatcher", SESSION_DISPATCHER_URI),
+        ("history_service", HISTORY_SERVICE_URI),
+        ("notifications", NOTIFICATIONS_URI),
+        ("actions", ACTIONS_URI),
+        ("connection_service", MCP_EDGE_URI),
+    ):
+        tls = settings[f"{name}_tls"]
+        assert tls["server_uri"] == server_uri
+        assert tls["client_uri"] == APP_URI
+        assert f"{name}_token_file" not in settings
+        for field in ("cert_file", "key_file"):
+            path = PurePosixPath(tls[field])
+            secret_name = mounts[path.parent]["secret"]["secretName"]
+            certificate = one(
+                doc
+                for doc in staging_manifests
+                if doc["kind"] == "Certificate" and doc["spec"]["secretName"] == secret_name
+            )
+            assert certificate["spec"]["uris"] == [tls["client_uri"]]
+        ca = PurePosixPath(tls["ca_file"])
+        assert _bundle(mounts[ca.parent], ca.name) == cluster_ca.WORKLOAD_BUNDLE
+
+    # Policy's independently owned listener/client rollout has not switched yet.
+    assert settings["policy_service_token_file"]
+    port = int(settings["connection_service_url"].rstrip("/").rsplit(":", 1)[1])
+    edge_service = _resource(staging_manifests, "Service", "mcp-edge")
+    assert one(p for p in edge_service["spec"]["ports"] if p["name"] == "grpc-tls")["port"] == port
+    policy = _resource(staging_manifests, "CiliumNetworkPolicy", "app-to-mcp-edge")
+    assert any(
+        int(p["port"]) == port
+        for rule in policy["spec"]["egress"]
+        for ports in rule.get("toPorts", [])
+        for p in ports["ports"]
+    )
+
+
 def _template_pods(documents: list[Body]) -> Iterator[tuple[str, Body]]:
     """Every Sandbox Pod shape: Pod and Firecracker SandboxTemplates, and the command boxes' PodTemplates."""
     for doc in documents:

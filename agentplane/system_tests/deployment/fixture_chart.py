@@ -125,7 +125,7 @@ ENVIRONMENT_TOOLS_IMAGE = "git.allegedly.works/ducktape-ci/environment-tools"
 APP_SERVICE = app_component.service(NAMESPACE)
 APP_ORIGIN = APP_SERVICE.url
 ACTIONS_SERVICE = actions.service(NAMESPACE)
-MCP_EDGE_SERVICE = mcp_edge.service(NAMESPACE)
+MCP_EDGE_SERVICE = mcp_edge.tls_service(NAMESPACE)
 MCP_EDGE_HTTP_SERVICE = mcp_edge.http_service(NAMESPACE)
 DEX_HOST = dex.service().host
 DEX_ISSUER = dex.issuer(f"https://{DEX_HOST}:{dex.HTTPS_PORT.number}")
@@ -261,7 +261,7 @@ def environment(
         notifications_debounce=NoticeDebounceSettings(quiet_seconds=1, max_wait_seconds=2),
         app_config=Settings(
             models=catalog,
-            connection_service_url=AnyHttpUrl(MCP_EDGE_SERVICE.url),
+            connection_service_url=AnyHttpUrl(f"https://{MCP_EDGE_SERVICE.fqdn}:{MCP_EDGE_SERVICE.port.number}"),
             thread_presets={launch_preset.THREAD_PRESET: launch_preset.thread_preset(model=GPT6_LUNA_RESPONSES.id)},
             sandbox_presets={
                 launch_preset.SANDBOX_PRESET: launch_preset.sandbox_preset(

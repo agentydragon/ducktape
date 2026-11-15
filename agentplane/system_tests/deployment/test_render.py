@@ -124,7 +124,9 @@ def test_pod_profile_omits_only_mcp_edge_and_keeps_app_and_action_flows(runfiles
     _resource(pod.objects, "Deployment", "notifications")
     # The app keeps its unused Connection routes; external Connections are out of scope here.
     app_config = yaml.safe_load(_resource(pod.objects, "ConfigMap", "app-config")["data"]["config.yaml"])
-    assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
+    assert AnyHttpUrl(app_config["connection_service_url"]) == AnyHttpUrl(
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+    )
 
 
 @pytest.mark.parametrize("location", ["K3S_DEFAULT_FIXTURE_RLOCATION", "K3S_FIXTURE_RLOCATION"])
@@ -242,7 +244,9 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_settings = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert "token_subjects" not in app_settings
     assert "token_audience" not in app_settings
-    assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(fixture_chart.MCP_EDGE_SERVICE.url)
+    assert AnyHttpUrl(app_settings["connection_service_url"]) == AnyHttpUrl(
+        f"https://{fixture_chart.MCP_EDGE_SERVICE.fqdn}:{fixture_chart.MCP_EDGE_SERVICE.port.number}"
+    )
     assert "AGENTPLANE_CONNECTION_SERVICE_URL" not in app_env
     assert "AGENTPLANE_ACTIONS_OAUTH" not in {entry["name"] for entry in actions_container["env"]}
     edge_database_env_name = mcp_edge.DATABASE_URL_ENV
