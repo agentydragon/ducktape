@@ -2,11 +2,9 @@ package dispatcher
 
 import (
 	"context"
-	"crypto/tls"
 	"crypto/x509"
 	"net"
 	"net/http"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,10 +21,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
-	authenticationv1 "k8s.io/api/authentication/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const workloadTestNamespace = "workload-test"
@@ -169,60 +164,7 @@ func TestMethodsResolveSandboxSVIDAndRevalidateStream(t *testing.T) {
 	}
 }
 
-type countingTokenReviews struct {
-	delegate auth.TokenReviews
-	calls    atomic.Int32
-}
-
-func (r *countingTokenReviews) Create(ctx context.Context, review *authenticationv1.TokenReview, options metav1.CreateOptions) (*authenticationv1.TokenReview, error) {
-	r.calls.Add(1)
-	return r.delegate.Create(ctx, review, options)
-}
-
-type mixedAdmissionProbe struct {
-	dispatcherpb.UnimplementedSessionDispatcherServer
-	t        *testing.T
-	expected map[auth.Account]auth.Principal
-	identity auth.IdentityPrincipal
-	calls    atomic.Int32
-}
-
-func (p *mixedAdmissionProbe) ListSessions(ctx context.Context, _ *dispatcherpb.ListSessionsRequest) (*dispatcherpb.ListSessionsResponse, error) {
-	p.t.Helper()
-	admission, err := auth.Admitted(ctx)
-	if err != nil {
-		return nil, err
-	}
-	switch caller := admission.(type) {
-	case auth.IdentityAdmission:
-		if caller.Caller != p.identity {
-			p.t.Errorf("admitted Identity = %+v, want %+v", caller.Caller, p.identity)
-			return nil, status.Error(codes.PermissionDenied, "unexpected Identity")
-		}
-	case auth.DirectAdmission:
-		reviewed, err := auth.AdmittedReviewedCaller(ctx)
-		if err != nil || reviewed.ServiceAccount == nil || reviewed.ServiceAccount.GetAccount() == nil || reviewed.Pod == nil {
-			p.t.Errorf("admitted caller lacks account or Pod proof: %+v, %v", reviewed, err)
-			return nil, status.Error(codes.PermissionDenied, "caller proof is incomplete")
-		}
-		account := auth.Account{
-			Namespace: reviewed.ServiceAccount.GetAccount().GetNamespace(),
-			Name:      reviewed.ServiceAccount.GetAccount().GetName(),
-		}
-		expected, ok := p.expected[account]
-		if !ok || reviewed.ServiceAccount.GetUid() != expected.ServiceAccountUID || *reviewed.Pod != expected {
-			p.t.Errorf("admitted caller = %+v, want account proof %+v", reviewed, expected)
-			return nil, status.Error(codes.PermissionDenied, "unexpected caller")
-		}
-	default:
-		p.t.Errorf("unexpected admission type %T", admission)
-		return nil, status.Error(codes.PermissionDenied, "unexpected caller")
-	}
-	p.calls.Add(1)
-	return &dispatcherpb.ListSessionsResponse{}, nil
-}
-
-func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods(t *testing.T) {
+func TestSVIDListenerNeverAcceptsBearerOrDelegationWithoutItsOwnGrant(t *testing.T) {
 	api, err := kubeapiserver.Start()
 	if err != nil {
 		t.Fatal(err)
@@ -239,28 +181,7 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	bearerAccount := auth.Account{Namespace: workloadTestNamespace, Name: "workload-bearer"}
-	serviceAccount, err := api.ServiceAccount(ctx, bearerAccount)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pod, err := api.Pod(ctx, bearerAccount)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const workloadAudience = "test-runner-workload"
-	bearerToken, err := api.PodToken(ctx, pod, workloadAudience)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bearerPrincipal := auth.Principal{
-		Account: bearerAccount, ServiceAccountUID: string(serviceAccount.UID), PodName: pod.Name, PodUID: string(pod.UID),
-	}
-	reviews := &countingTokenReviews{delegate: api.TokenReviews()}
-	tokens, err := auth.NewResolver(reviews, workloadAudience, []string{workloadTestNamespace}, auth.WithVerdictTTL(0))
-	if err != nil {
-		t.Fatal(err)
-	}
+	const bearerToken = "retired-workload-token"
 	ca := transporttesting.NewCA(t)
 	serverCredential := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	listenerConfig := listener.Config{
@@ -268,28 +189,15 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 		TLS:           &listener.TLS{CertFile: serverCredential.CertFile, KeyFile: serverCredential.KeyFile},
 		Auth: []listener.Authentication{
 			&listener.SPIFFEAuth{CAFile: ca.RootFile},
-			&listener.KubernetesBearerAuth{Audiences: []string{workloadAudience}},
 		},
 	}
-	serverTLS, err := listenerConfig.TLSConfig(peertls.SessionDispatcherURI)
+	serverCredentials, err := listenerConfig.ServerCredentials(peertls.SessionDispatcherURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverTLS.NextProtos = []string{"h2"}
-	workloadAuth, err := tokens.WithListenerAuthentication(listenerConfig, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := Methods(auth.ReviewedServiceAccountOrIdentity(workloadAuth))
-	probe := &mixedAdmissionProbe{
-		t: t,
-		expected: map[auth.Account]auth.Principal{
-			workload.Principal.Account: workload.Principal,
-			bearerAccount:              bearerPrincipal,
-		},
-		identity: workload.Subject,
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	methods := Methods(auth.AnySubject(svids))
+	probe := &svidAdmissionProbe{t: t, identity: workload.Subject}
+	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, probe)
 	netListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -322,11 +230,8 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 	}
 	t.Cleanup(func() { _ = bearerConn.Close() })
 	bearerContext := metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+bearerToken))
-	if _, err := dispatcherpb.NewSessionDispatcherClient(bearerConn).ListSessions(bearerContext, &dispatcherpb.ListSessionsRequest{}); err != nil {
-		t.Fatalf("TLS bearer call = %v", err)
-	}
-	if reviews.calls.Load() != 1 {
-		t.Fatalf("TokenReview calls after direct bearer = %d, want 1", reviews.calls.Load())
+	if _, err := dispatcherpb.NewSessionDispatcherClient(bearerConn).ListSessions(bearerContext, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("bearer without certificate = %v, want Unauthenticated", err)
 	}
 
 	if _, err := client.ListSessions(bearerContext, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
@@ -351,25 +256,9 @@ func TestMixedWorkloadListenerSelectsExactlyOneCredentialBeforeDispatcherMethods
 		t.Fatalf("invalid SVID without bearer = %v, want Unauthenticated", err)
 	}
 	if _, err := dispatcherpb.NewSessionDispatcherClient(invalidClientConn).ListSessions(bearerContext, &dispatcherpb.ListSessionsRequest{}); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("invalid SVID with valid bearer = %v, want Unauthenticated", err)
+		t.Fatalf("invalid SVID with retired bearer = %v, want Unauthenticated", err)
 	}
-	if probe.calls.Load() != 2 || reviews.calls.Load() != 1 {
-		t.Fatalf("handler calls = %d, TokenReview calls = %d; want 2 and 1", probe.calls.Load(), reviews.calls.Load())
-	}
-
-	spiffeOnly := listenerConfig
-	spiffeOnly.Auth = []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}}
-	disabledBearerAuth, err := tokens.WithListenerAuthentication(spiffeOnly, svids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	noCertificatePeer := peer.NewContext(metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+bearerToken)), &peer.Peer{
-		AuthInfo: credentials.TLSInfo{State: tls.ConnectionState{}},
-	})
-	if _, err := disabledBearerAuth.ResolveReviewedCaller(noCertificatePeer); status.Code(err) != codes.Unauthenticated {
-		t.Fatalf("bearer with no certificate auth mode enabled = %v, want Unauthenticated", err)
-	}
-	if reviews.calls.Load() != 1 {
-		t.Fatalf("disabled bearer reached TokenReview; calls = %d", reviews.calls.Load())
+	if probe.calls != 1 {
+		t.Fatalf("handler calls = %d, want only the valid SVID call", probe.calls)
 	}
 }
