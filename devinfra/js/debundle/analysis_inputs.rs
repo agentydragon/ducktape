@@ -18,30 +18,9 @@ use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceM
 
 mod protobuf;
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum KnownEffect {
-    TypescriptDecorateHelper,
-    TypescriptMetadataDecorateHelper,
-    TypescriptMetadataDecorateHelperWithMemberDecorators,
-    TypescriptMetadataDecorateHelperThreeArgs,
-}
-
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LocalEffectPolicy {
-    #[default]
-    KnownEffectsOnly,
-    VendorPrune,
-    /// Recognize whole-statement local property writes —
-    /// `X.prop = <pure>;` where `X` is a chunk-top declared binding —
-    /// as a local effect on `X` instead of a globally-ordered side
-    /// effect. Opt-in via
-    /// `chunk_analysis_options.<chunk>.local_property_effects`; see
-    /// that field's doc (`spec::DependencyGraphOptions`) for the soundness
-    /// precondition the spec author accepts.
-    LocalPropertyWrites,
-}
+pub use analysis_projection_wire_proto::debundle::analysis_projection::{
+    KnownEffect, LocalEffectPolicy,
+};
 
 /// Evidence for a bare imported callable's return-only callback-factory behavior.
 /// An assertion is an author contract; an inferred wrapper depends on the

@@ -7,10 +7,11 @@ import "devinfra/js/debundle/spec_wire.proto";
 // Scalar-key maps use deterministic BTreeMap encoding in the Rust boundary.
 
 enum LocalEffectPolicy {
-  LOCAL_EFFECT_POLICY_UNSPECIFIED = 0;
-  LOCAL_EFFECT_POLICY_KNOWN_EFFECTS_ONLY = 1;
-  LOCAL_EFFECT_POLICY_VENDOR_PRUNE = 2;
-  LOCAL_EFFECT_POLICY_LOCAL_PROPERTY_WRITES = 3;
+  LOCAL_EFFECT_POLICY_KNOWN_EFFECTS_ONLY = 0;
+  LOCAL_EFFECT_POLICY_VENDOR_PRUNE = 1;
+  // Treat a whole-statement property write to a chunk-top binding as a local
+  // effect. The author opts in via chunk_analysis_options.local_property_effects.
+  LOCAL_EFFECT_POLICY_LOCAL_PROPERTY_WRITES = 2;
 }
 
 message ChunkAnalysisInputs {
@@ -39,11 +40,10 @@ message BundleGlobalNames {
 }
 
 enum KnownEffect {
-  KNOWN_EFFECT_UNSPECIFIED = 0;
-  KNOWN_EFFECT_TYPESCRIPT_DECORATE_HELPER = 1;
-  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 2;
-  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_WITH_MEMBER_DECORATORS = 3;
-  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_THREE_ARGS = 4;
+  KNOWN_EFFECT_TYPESCRIPT_DECORATE_HELPER = 0;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER = 1;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_WITH_MEMBER_DECORATORS = 2;
+  KNOWN_EFFECT_TYPESCRIPT_METADATA_DECORATE_HELPER_THREE_ARGS = 3;
 }
 
 // A source span is a composite key, so this collection uses repeated entries.

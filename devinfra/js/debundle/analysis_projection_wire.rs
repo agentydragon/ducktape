@@ -5,7 +5,7 @@ use analysis::analysis_inputs::{
     NativeOperationSelectorProvenance, NoAccessorInstallRef, SourceDeclaration,
 };
 use analysis_projection_wire_proto::debundle::analysis_projection as pb;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use spec_wire::{Wire, required, unique_map, unique_set};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -185,7 +185,7 @@ impl AnalysisWire for crate::ChunkAnalysisInputs {
             non_reentrant_global_membership: spec_wire::global_names_to_proto(
                 &self.non_reentrant_global_membership,
             ),
-            local_effect_policy: Some(self.local_effect_policy.to_wire()?),
+            local_effect_policy: Some(self.local_effect_policy as i32),
             admission_overrides: Some(self.admission_overrides.to_proto()),
             value_inputs: self.value_inputs.to_proto(),
             native_call_identity_inputs: self.native_call_identity_inputs.to_proto(),
@@ -203,31 +203,16 @@ impl AnalysisWire for crate::ChunkAnalysisInputs {
             non_reentrant_global_membership: spec_wire::global_names_from_proto(
                 v.non_reentrant_global_membership,
             )?,
-            local_effect_policy: analysis_required(v.local_effect_policy)?,
+            local_effect_policy: LocalEffectPolicy::try_from(
+                v.local_effect_policy
+                    .context("missing local effect policy")?,
+            )?,
             admission_overrides: required(v.admission_overrides)?,
             value_inputs: Wire::from_proto(v.value_inputs)?,
             native_call_identity_inputs: Wire::from_proto(v.native_call_identity_inputs)?,
             initializer_call_effect_inputs: Wire::from_proto(v.initializer_call_effect_inputs)?,
             argument_inputs: Wire::from_proto(v.argument_inputs)?,
             no_accessor_install_callables: Wire::from_proto(v.no_accessor_install_callables)?,
-        })
-    }
-}
-impl AnalysisWire for LocalEffectPolicy {
-    type Message = i32;
-    fn to_wire(&self) -> Result<Self::Message> {
-        Ok(match self {
-            Self::KnownEffectsOnly => pb::LocalEffectPolicy::KnownEffectsOnly as i32,
-            Self::VendorPrune => pb::LocalEffectPolicy::VendorPrune as i32,
-            Self::LocalPropertyWrites => pb::LocalEffectPolicy::LocalPropertyWrites as i32,
-        })
-    }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        Ok(match pb::LocalEffectPolicy::try_from(v)? {
-            pb::LocalEffectPolicy::KnownEffectsOnly => Self::KnownEffectsOnly,
-            pb::LocalEffectPolicy::VendorPrune => Self::VendorPrune,
-            pb::LocalEffectPolicy::LocalPropertyWrites => Self::LocalPropertyWrites,
-            pb::LocalEffectPolicy::Unspecified => bail!("unspecified local effect policy"),
         })
     }
 }
@@ -264,38 +249,6 @@ impl AnalysisWire for BundleGlobalNames {
             no_accessor_install_callables: AnalysisWire::from_wire(
                 v.no_accessor_install_callables,
             )?,
-        })
-    }
-}
-impl AnalysisWire for KnownEffect {
-    type Message = i32;
-    fn to_wire(&self) -> Result<Self::Message> {
-        Ok(match self {
-            Self::TypescriptDecorateHelper => pb::KnownEffect::TypescriptDecorateHelper as i32,
-            Self::TypescriptMetadataDecorateHelper => {
-                pb::KnownEffect::TypescriptMetadataDecorateHelper as i32
-            }
-            Self::TypescriptMetadataDecorateHelperWithMemberDecorators => {
-                pb::KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators as i32
-            }
-            Self::TypescriptMetadataDecorateHelperThreeArgs => {
-                pb::KnownEffect::TypescriptMetadataDecorateHelperThreeArgs as i32
-            }
-        })
-    }
-    fn from_wire(v: Self::Message) -> Result<Self> {
-        Ok(match pb::KnownEffect::try_from(v)? {
-            pb::KnownEffect::TypescriptDecorateHelper => Self::TypescriptDecorateHelper,
-            pb::KnownEffect::TypescriptMetadataDecorateHelper => {
-                Self::TypescriptMetadataDecorateHelper
-            }
-            pb::KnownEffect::TypescriptMetadataDecorateHelperWithMemberDecorators => {
-                Self::TypescriptMetadataDecorateHelperWithMemberDecorators
-            }
-            pb::KnownEffect::TypescriptMetadataDecorateHelperThreeArgs => {
-                Self::TypescriptMetadataDecorateHelperThreeArgs
-            }
-            pb::KnownEffect::Unspecified => bail!("unspecified known effect"),
         })
     }
 }
@@ -361,7 +314,10 @@ impl AnalysisWire for AnalysisAssumptions {
             declared_pure_initializers: declared_pure_initializers.to_proto(),
             declared_pure_members: spec_wire::member_names_to_proto(declared_pure_members),
             no_sync_callback_members: spec_wire::member_names_to_proto(no_sync_callback_members),
-            known_effects: known_effects.to_wire()?,
+            known_effects: known_effects
+                .iter()
+                .map(|(binding, effect)| (binding.clone(), *effect as i32))
+                .collect(),
             trusted_dataflow_summaries: Some(*trusted_dataflow_summaries),
             inline_callback_factories: inline_callback_factories.to_proto(),
             callback_factory_members: spec_wire::member_names_to_proto(callback_factory_members),
@@ -412,7 +368,11 @@ impl AnalysisWire for AnalysisAssumptions {
             no_sync_callback_members: spec_wire::member_names_from_proto(
                 v.no_sync_callback_members,
             )?,
-            known_effects: AnalysisWire::from_wire(v.known_effects)?,
+            known_effects: v
+                .known_effects
+                .into_iter()
+                .map(|(binding, effect)| Ok((binding, KnownEffect::try_from(effect)?)))
+                .collect::<Result<_>>()?,
             trusted_dataflow_summaries: required(v.trusted_dataflow_summaries)?,
             inline_callback_factories: Wire::from_proto(v.inline_callback_factories)?,
             callback_factory_members: spec_wire::member_names_from_proto(

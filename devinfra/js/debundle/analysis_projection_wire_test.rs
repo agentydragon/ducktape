@@ -274,8 +274,8 @@ fn analysis_rejects_non_utf8_paths_when_encoding_and_decoding() {
 }
 
 #[test]
-fn analysis_unit_enums_reject_missing_unspecified_and_unknown_values() {
-    for value in [None, Some(0), Some(i32::MAX)] {
+fn analysis_unit_enums_preserve_real_zero_and_reject_invalid_values() {
+    for value in [None, Some(i32::MAX)] {
         let mut message = projection().to_proto().unwrap();
         message
             .chunk_analysis_inputs
@@ -284,7 +284,7 @@ fn analysis_unit_enums_reject_missing_unspecified_and_unknown_values() {
             .local_effect_policy = value;
         assert!(AnalysisSpec::from_proto(message).is_err());
     }
-    for value in [0, i32::MAX] {
+    {
         let mut message = projection().to_proto().unwrap();
         let mut assumptions = analysis::AnalysisAssumptions::default();
         assumptions.known_effects.insert(
@@ -292,12 +292,48 @@ fn analysis_unit_enums_reject_missing_unspecified_and_unknown_values() {
             analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper,
         );
         let mut assumptions = assumptions.to_wire().unwrap();
-        assumptions.known_effects.insert("decorate".into(), value);
+        assumptions
+            .known_effects
+            .insert("decorate".into(), i32::MAX);
         message
             .declared_assumptions
             .insert("entry".into(), assumptions);
         assert!(AnalysisSpec::from_proto(message).is_err());
     }
+
+    let mut message = projection().to_proto().unwrap();
+    message
+        .chunk_analysis_inputs
+        .get_mut("entry")
+        .unwrap()
+        .local_effect_policy = Some(0);
+    let mut assumptions = analysis::AnalysisAssumptions::default();
+    assumptions.known_effects.insert(
+        "decorate".into(),
+        analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper,
+    );
+    message
+        .declared_assumptions
+        .insert("entry".into(), assumptions.to_wire().unwrap());
+    let restored = AnalysisSpec::from_proto(message).unwrap();
+    assert_eq!(
+        restored.chunk_analysis_inputs["entry"].local_effect_policy,
+        analysis::analysis_inputs::LocalEffectPolicy::KnownEffectsOnly
+    );
+    assert_eq!(
+        restored.declared_assumptions["entry"].known_effects["decorate"],
+        analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper
+    );
+    assert_eq!(
+        serde_yaml::to_value(analysis::analysis_inputs::LocalEffectPolicy::KnownEffectsOnly)
+            .unwrap(),
+        serde_yaml::Value::String("known_effects_only".into())
+    );
+    assert_eq!(
+        serde_yaml::to_value(analysis::analysis_inputs::KnownEffect::TypescriptDecorateHelper)
+            .unwrap(),
+        serde_yaml::Value::String("typescript_decorate_helper".into())
+    );
 }
 
 #[test]

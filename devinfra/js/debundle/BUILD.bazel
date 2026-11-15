@@ -818,6 +818,7 @@ rust_library(
     deps = [
         ":analysis_codec",
         ":analysis_model",
+        ":analysis_projection_wire_rust_proto",
         ":binding_targets",
         ":graph_provenance",
         ":js_ast",
@@ -2405,10 +2406,24 @@ rust_library(
     ],
 )
 
+rust_prost_transform(
+    name = "analysis_projection_wire_options",
+    prost_opts = [
+        "btree_map=.",
+        "type_attribute=debundle.analysis_projection.KnownEffect=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.analysis_projection.KnownEffect=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.analysis_projection.KnownEffect=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.analysis_projection.LocalEffectPolicy=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.analysis_projection.LocalEffectPolicy=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.analysis_projection.LocalEffectPolicy=#[serde(rename_all = \"snake_case\")]",
+    ],
+    deps = ["@crates//:serde"],
+)
+
 proto_library(
     name = "analysis_projection_wire_proto",
     srcs = ["analysis_projection_wire.proto"],
-    data = [":debundle_btree_maps"],
+    data = [":analysis_projection_wire_options"],
     deps = [":spec_wire_proto"],
 )
 
