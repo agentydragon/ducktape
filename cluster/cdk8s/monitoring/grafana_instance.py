@@ -1,6 +1,6 @@
 """The Grafana instance (run by grafana-operator), its Postgres, route, datasources and
-dashboards. A dashboard authored here is `dashboards/<name>.json` beside this module plus its
-entry in `grafana_dashboard_inputs.FILE_DASHBOARDS`.
+dashboards. Authored JSON files use `grafana_dashboard_inputs.FILE_DASHBOARDS`;
+Foundation SDK dashboards are built below and embedded in `GrafanaDashboard.spec.json`.
 """
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
+from grafana_foundation_sdk.cog.encoder import JSONEncoder
 from grafana_grafana_crds.org.integreatly.grafana import (
     GrafanaSpecClient,
     GrafanaSpecDeployment,
@@ -36,6 +37,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import mimir
+from cluster.cdk8s.monitoring.dashboards import cpap_gateway_disk, flux_cluster, rugged_power
 from cluster.cdk8s.monitoring.grafana_dashboard_inputs import FILE_DASHBOARDS
 from cluster.cdk8s.providers.grafana_operator.grafana import Grafana
 from cluster.cdk8s.providers.grafana_operator.grafana_dashboard import GrafanaDashboard
@@ -299,6 +301,7 @@ def _dashboard(
     datasources: Mapping[str, str] | None = None,
     folder: str | None = None,
     config_map: DashboardFile | None = None,
+    json: str | None = None,
     grafana_com: GrafanaDashboardSpecGrafanaCom | None = None,
 ) -> None:
     """`datasources` maps each input to its literal datasource name or UID substitution."""
@@ -315,6 +318,7 @@ def _dashboard(
         if datasources
         else None,
         config_map_ref=config_map.config_map_ref() if config_map else None,
+        json=json,
         grafana_com=grafana_com,
     )
 
@@ -324,6 +328,27 @@ def _dashboards(chart: Chart) -> None:
         _dashboard(
             chart, name, datasources=dashboard.datasources, folder=dashboard.folder, config_map=_dashboard_file(name)
         )
+    _dashboard(
+        chart,
+        "cpap-gateway-disk",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Cluster & Platform",
+        json=JSONEncoder(indent=2).encode(cpap_gateway_disk.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "flux-cluster",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Cluster & Platform",
+        json=JSONEncoder(indent=2).encode(flux_cluster.build_dashboard()),
+    )
+    _dashboard(
+        chart,
+        "rugged-power",
+        datasources={"DS_MIMIR": "mimir"},
+        folder="Nodes & Hardware",
+        json=JSONEncoder(indent=2).encode(rugged_power.build_dashboard()),
+    )
     _dashboard(
         chart,
         "cert-manager",

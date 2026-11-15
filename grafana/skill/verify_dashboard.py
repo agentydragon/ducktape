@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--grafana-dashboard-manifest",
         type=Path,
-        help="optional generated GrafanaDashboard resources for a non-monitoring dashboard",
+        help="generated GrafanaDashboard resources for embedded or non-monitoring dashboards",
     )
     parser.add_argument("--from", dest="from_range", default="now-1h")
     parser.add_argument("--to", dest="to_range", default="now")
@@ -244,7 +244,13 @@ def operator_datasources(manifest_path: Path | None, dashboard_filename: str) ->
             for document in documents
             if isinstance(document, dict)
             and document.get("kind") == "GrafanaDashboard"
-            and document.get("spec", {}).get("configMapRef", {}).get("key") == dashboard_filename
+            and (
+                document.get("spec", {}).get("configMapRef", {}).get("key") == dashboard_filename
+                or (
+                    isinstance(document.get("spec", {}).get("json"), str)
+                    and document.get("metadata", {}).get("name") == Path(dashboard_filename).stem
+                )
+            )
         ]
     except (OSError, yaml.YAMLError) as exc:
         raise VerificationError(f"cannot read generated GrafanaDashboard resources {manifest_path}: {exc}") from exc

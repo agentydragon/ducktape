@@ -14,14 +14,23 @@ Use this skill for every new or changed dashboard under
 dashboard that renders real data in Grafana, not merely valid JSON or a query
 that works after an agent manually edits it.
 
-A new dashboard is two edits: the `<name>.json` file in that directory, and its line in
+An authored JSON dashboard is two edits: the `<name>.json` file in that directory, and its line in
 `FILE_DASHBOARDS` of `cluster/cdk8s/monitoring/grafana_dashboard_inputs.py`, mapping each of its
-datasource inputs to a datasource name. `bb run //cluster/cdk8s:generate_manifests` then
+datasource inputs to a literal datasource name or UID. `bb run //cluster/cdk8s:generate_manifests` then
 writes its `GrafanaDashboard` and `configMapGenerator` entry. A component's own dashboard
 sits beside the generator module that deploys it, declared as that module's `DASHBOARD`
 (for example, `cluster/cdk8s/github_exporter/dashboard.json`). AIQuota history is
 under `monitoring/dashboards/` but remains deployed by `monitoring/aiquota_analytics.py` alongside its
 ClickHouse datasource.
+
+The Foundation SDK spike (CPAP gateway disk, Flux cluster, Rugged Power) instead authors
+typed Python builders in that directory. `grafana_instance.py` calls them directly and
+embeds serialized JSON in `GrafanaDashboard.spec.json`; there is no deployment JSON
+copy or ConfigMap. The `foundation_dashboard` Bazel macro makes transient JSON for the
+recorded-data visual tests. For a permitted live candidate check, build its `<module>_json`
+target and pass that artifact to `--dashboard`, plus
+`--grafana-dashboard-manifest cluster/generated/monitoring/grafana-instance/grafana-instance.k8s.yaml`.
+The verifier matches an embedded resource by its metadata name and candidate filename stem.
 
 ## Credential consent
 
@@ -105,14 +114,16 @@ verification.
    verified UID explicitly provisioned by the deployment, or an operator input.
    For operator-managed file dashboards, use `"datasource": "${DS_LOKI}"` and
    map it in `FILE_DASHBOARDS` with `datasources={"DS_LOKI": "Loki"}`. Regenerate
-   and inspect `GrafanaDashboard.spec.datasources`. The operator substitutes
-   the datasource **name**, so `{"uid": "${DS_LOKI}"}` becomes `{"uid": "Loki"}`
-   and fails when that name differs from the UID. Update both
+   and inspect `GrafanaDashboard.spec.datasources`. The operator performs literal
+   substitution of `datasourceName`: mapping to `Loki` makes `{"uid": "${DS_LOKI}"}`
+   become `{"uid": "Loki"}`, which fails when the name differs from the UID. UID-shaped
+   references must map the input to an explicitly provisioned or verified UID instead;
+   the SDK spike maps `DS_MIMIR` to `mimir`. Update both
    `panel.datasource` and each `target.datasource`; a target overrides its panel.
-   Candidate verification uses the Python source mappings for monitoring
-   dashboards and applies that same name substitution before creating its
-   temporary dashboard. It checks the resulting name against live Grafana
-   datasources; it does not repair a UID-shaped placeholder into a valid UID.
+   Candidate verification uses the Python source mappings for file-backed monitoring
+   dashboards and applies that same literal substitution before creating its
+   temporary dashboard. It checks the resulting name or UID against live Grafana
+   datasources; it does not repair a mismatched UID-shaped placeholder.
    For a dashboard owned by another generator, pass
    `--grafana-dashboard-manifest <generated-resource-file>`. After import, query
    and render the live dashboard: `DashboardSynchronized=True` does not prove
@@ -144,7 +155,7 @@ verification.
 
 ## Deployment check
 
-The generated `GrafanaDashboard` and its ConfigMap are applied by Flux. A
+The generated `GrafanaDashboard` and any file-backed ConfigMap are applied by Flux. A
 successful Bazel/Kustomize build proves wiring, not that Grafana imported the
 new dashboard. After merge, check the live resource and dashboard API, then run
 the live verifier:

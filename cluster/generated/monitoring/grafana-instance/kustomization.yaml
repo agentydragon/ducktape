@@ -11,22 +11,10 @@ configMapGenerator:
     namespace: monitoring
     files:
       - zot-cache-image-pulls.json
-  - name: cpap-gateway-disk-dashboard
-    namespace: monitoring
-    files:
-      - cpap-gateway-disk.json
-  - name: flux-cluster-dashboard
-    namespace: monitoring
-    files:
-      - flux-cluster.json
   - name: interface-flap-frequency-dashboard
     namespace: monitoring
     files:
       - interface-flap-frequency.json
-  - name: rugged-power-dashboard
-    namespace: monitoring
-    files:
-      - rugged-power.json
   - name: node-memory-dashboard
     namespace: monitoring
     files:
