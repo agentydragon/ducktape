@@ -16,7 +16,9 @@
 
 use analysis::analysis_inputs::CommutingStatementsRef;
 use analysis::graph::UnusedPremiseReason;
-use analysis::{CommutingStatementsDiagnostic, DependencyGraphReport, SequencedCause};
+use analysis::{
+    CommutingStatementsDiagnostic, DependencyGraphReport, EdgeRoleReport, SequencedCause,
+};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::{
     FixtureGraphExt, commuting_statements_diagnostics, source_unit_for_binding,
@@ -1377,38 +1379,40 @@ fn possible_getter_owner_batch_keeps_separate_effect_coverage_and_future_binding
             .0 as usize
     };
     let first_owner = owner_ordinal("first");
-    let second_owner = owner_ordinal("second");
 
     let future_declaration = source_unit_for_binding(&graph, "future");
-    let future_observation = graph.edges.iter().find_map(|edge| {
+    let future_ordering = graph.edges.iter().find_map(|edge| {
         let cause = serde_json::to_value(edge.sequenced_cause.as_ref()?).ok()?;
-        (cause["rule"] == "uninitialized_observation"
+        (cause["rule"] == "binding_timeline"
             && cause["binding"] == "future"
+            && cause["order"] == "writer_after_reader"
             && edge.source == future_declaration
             && edge.target == trigger)
             .then_some(cause)
     });
-    let future_observation = future_observation
-        .unwrap_or_else(|| panic!("future TDZ ordering cause missing; graph={graph:#?}"));
+    let future_ordering = future_ordering.expect("future binding-order cause missing");
     assert!(
-        possible_getter_owner(&future_observation["observation"], first_owner),
-        "the first owner must retain the possible-getter read provenance: {future_observation:#}"
+        future_ordering["source"]["kind"] == "observed"
+            && possible_getter_owner(&future_ordering["target"], first_owner),
+        "the first owner must retain the possible-getter read provenance: {future_ordering:#}"
     );
 
-    for (binding, expected_owner) in [("shared", second_owner), ("changed", first_owner)] {
-        let rebind_cause = graph.edges.iter().find_map(|edge| {
-            let cause = serde_json::to_value(edge.sequenced_cause.as_ref()?).ok()?;
-            (cause["rule"] == "binding_timeline"
-                && cause["binding"] == binding
-                && cause["order"] == "reader_after_writer"
-                && edge.target == trigger)
-                .then_some(cause)
-        });
-        let rebind_cause = rebind_cause
-            .unwrap_or_else(|| panic!("no later read ordered after getter rebind of `{binding}`"));
+    for (binding, owner_binding) in [("shared", "second"), ("changed", "first")] {
+        let expected_owner_id = source_unit_for_binding(&graph, owner_binding);
+        let binding_owner = source_unit_for_binding(&graph, binding);
         assert!(
-            possible_getter_owner(&rebind_cause["target"], expected_owner),
-            "the rebind category must retain its first contributing owner: {rebind_cause:#}"
+            graph.edges.iter().any(|edge| {
+                edge.source == trigger
+                    && edge.target == binding_owner
+                    && edge.binding.as_deref() == Some(binding)
+                    && edge.edge_kind == DepKind::EagerUse
+                    && matches!(
+                        edge.role.as_ref(),
+                        Some(EdgeRoleReport::PromotedAtInit { callee_source_unit })
+                            if callee_source_unit == expected_owner_id
+                    )
+            }),
+            "the possible-getter read at trigger must retain the {binding} effect from owner `{owner_binding}` ({expected_owner_id})"
         );
     }
 
