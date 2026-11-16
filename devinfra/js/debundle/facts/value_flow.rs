@@ -15,6 +15,10 @@ use std::sync::Arc;
 #[cfg(test)]
 use std::{cell::Cell, rc::Rc};
 
+use roaring::{
+    RoaringBitmap,
+    bitmap::{IntoIter as RoaringIntoIter, Iter as RoaringIter},
+};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -163,27 +167,18 @@ impl Default for OriginTable {
     }
 }
 
-/// A dense, ordered set of semantic origins. All sets in one flow analysis
-/// share its immutable origin table, so word positions have identical meaning.
+/// A set of semantic origins. All sets in one flow analysis share its immutable
+/// origin table, so Roaring ids have identical meaning.
 #[derive(Clone)]
 pub(crate) struct Values {
-    bitmap: Arc<ValueBitmap>,
+    bitmap: Arc<RoaringBitmap>,
     unknown: bool,
     origins: Arc<OriginTable>,
 }
 
-#[derive(Clone, Default)]
-struct ValueBitmap {
-    bits: Vec<u64>,
-    /// Nonzero word indices, in sorted order. `bits` stays dense so rank
-    /// lookup is constant-time, while unions touch only words that can add
-    /// origins instead of scanning long zero prefixes.
-    occupied_words: Vec<u32>,
-}
-
 impl PartialEq for Values {
     fn eq(&self, other: &Self) -> bool {
-        self.bitmap.bits == other.bitmap.bits
+        self.bitmap == other.bitmap
             && self.unknown == other.unknown
             && self.origins == other.origins
     }
@@ -200,7 +195,7 @@ impl std::fmt::Debug for Values {
 impl Values {
     pub(super) fn empty(origins: Arc<OriginTable>) -> Self {
         Self {
-            bitmap: Arc::new(ValueBitmap::default()),
+            bitmap: Arc::new(RoaringBitmap::new()),
             unknown: false,
             origins,
         }
@@ -213,24 +208,20 @@ impl Values {
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        // Insertions and unions only grow the vector through a set bit, so
-        // trailing zero words are never introduced.
-        self.bitmap.bits.is_empty() && !self.unknown
+        self.bitmap.is_empty() && !self.unknown
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.bitmap
-            .bits
-            .iter()
-            .map(|word| word.count_ones() as usize)
-            .sum::<usize>()
-            + usize::from(self.unknown)
+        self.bitmap.len() as usize + usize::from(self.unknown)
     }
 
     #[cfg(test)]
-    pub(super) fn occupied_word_indices(&self) -> &[u32] {
-        &self.bitmap.occupied_words
+    pub(super) fn bitmap_payload_bytes(&self) -> u64 {
+        let statistics = self.bitmap.statistics();
+        statistics.n_bytes_array_containers
+            + statistics.n_bytes_bitset_containers
+            + statistics.n_bytes_run_containers
     }
 
     #[cfg(test)]
@@ -246,12 +237,7 @@ impl Values {
         let Some(id) = self.origins.ids.get(value) else {
             return false;
         };
-        let word = id.0 as usize / u64::BITS as usize;
-        let bit = id.0 % u64::BITS;
-        self.bitmap
-            .bits
-            .get(word)
-            .is_some_and(|word| word & (1_u64 << bit) != 0)
+        self.bitmap.contains(id.0)
     }
 
     pub(super) fn insert(&mut self, value: Value) -> bool {
@@ -259,49 +245,24 @@ impl Values {
             return !std::mem::replace(&mut self.unknown, true);
         }
         let id = self.origins.id(value).0;
-        let word_index = id as usize / u64::BITS as usize;
-        let mask = 1_u64 << (id % u64::BITS);
-        if self
-            .bitmap
-            .bits
-            .get(word_index)
-            .is_some_and(|word| word & mask != 0)
-        {
-            return false;
-        }
-        let bitmap = Arc::make_mut(&mut self.bitmap);
-        if bitmap.bits.len() <= word_index {
-            bitmap.bits.resize(word_index + 1, 0);
-        }
-        let was_empty = bitmap.bits[word_index] == 0;
-        if was_empty {
-            bitmap.insert_occupied_word(
-                u32::try_from(word_index).expect("chunk origin word index exceeds u32"),
-            );
-        }
-        bitmap.bits[word_index] |= mask;
-        true
+        Arc::make_mut(&mut self.bitmap).insert(id)
     }
 
-    /// Ids of this set's origins whose bit is set in `mask` (indexed by
-    /// `OriginId`), without decoding the other origins.
-    fn ids_within<'a>(&'a self, mask: &'a [u64]) -> impl Iterator<Item = OriginId> + 'a {
+    /// Ids of this set's origins also present in `mask`, without decoding
+    /// origins that are not eligible for candidate reachability.
+    fn ids_within<'a>(&'a self, mask: &'a RoaringBitmap) -> impl Iterator<Item = OriginId> + 'a {
         let unknown = self.origins.id(Value::Top);
-        let unknown = (self.unknown && bits_contain_id(mask, unknown)).then_some(unknown);
-        BitIndices::new(
-            self.bitmap
-                .bits
-                .iter()
-                .zip(mask)
-                .map(|(word, mask)| word & mask),
-        )
-        .map(OriginId)
-        .chain(unknown)
+        let unknown = (self.unknown && mask.contains(unknown.0)).then_some(unknown);
+        self.bitmap
+            .iter()
+            .filter(move |id| mask.contains(*id))
+            .map(OriginId)
+            .chain(unknown)
     }
 
     pub(super) fn iter(&self) -> ValuesIter<'_> {
         ValuesIter {
-            bits: BitIndices::new(self.bitmap.bits.iter().copied()),
+            ids: self.bitmap.iter(),
             origins: &self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -311,95 +272,12 @@ impl Values {
     /// Merge another value set, returning whether it contributed new origins.
     pub(super) fn union_with(&mut self, other: &Self) -> bool {
         assert!(Arc::ptr_eq(&self.origins, &other.origins));
-        if self.bitmap.bits.is_empty() {
-            let changed = !other.bitmap.bits.is_empty() || (other.unknown && !self.unknown);
-            self.bitmap = other.bitmap.clone();
-            self.unknown |= other.unknown;
-            return changed;
-        }
-        if other.bitmap.bits.is_empty() || Arc::ptr_eq(&self.bitmap, &other.bitmap) {
-            let changed = other.unknown && !self.unknown;
-            self.unknown |= other.unknown;
-            return changed;
-        }
-        if Arc::strong_count(&self.bitmap) > 1 && self.bitmap.contains_all(&other.bitmap) {
-            let changed = other.unknown && !self.unknown;
-            self.unknown |= other.unknown;
-            return changed;
-        }
-        // Reuse an existing superset instead of materializing the same wide
-        // union separately for every object or property. Unknown is tracked
-        // independently: it never replaces known origins in the bitmap.
-        if other.bitmap.bits.len() >= self.bitmap.bits.len()
-            && other.bitmap.contains_all(&self.bitmap)
-        {
-            let changed = self.bitmap.bits != other.bitmap.bits || (other.unknown && !self.unknown);
-            self.bitmap = other.bitmap.clone();
-            self.unknown |= other.unknown;
-            return changed;
-        }
-        let mut changed = if let Some(changed) = self.union_dense_words(other) {
-            changed
-        } else {
-            self.union_occupied_words(other)
-        };
+        let mut changed = union_bitmap(&mut self.bitmap, &other.bitmap);
         if other.unknown && !self.unknown {
             self.unknown = true;
             changed = true;
         }
         changed
-    }
-
-    fn union_occupied_words(&mut self, other: &Self) -> bool {
-        let mut changed = false;
-        let bitmap = Arc::make_mut(&mut self.bitmap);
-        if bitmap.bits.len() < other.bitmap.bits.len() {
-            bitmap.bits.resize(other.bitmap.bits.len(), 0);
-        }
-        let mut added_words = Vec::new();
-        for word_index in &other.bitmap.occupied_words {
-            let index = *word_index as usize;
-            let into = bitmap.bits[index];
-            let from = other.bitmap.bits[index];
-            let merged = into | from;
-            changed |= merged != into;
-            if into == 0 {
-                added_words.push(*word_index);
-            }
-            bitmap.bits[index] = merged;
-        }
-        bitmap.merge_occupied_words(&added_words);
-        changed
-    }
-
-    /// Preserve the vectorized wordwise path when neither operand contains
-    /// zero words. Growing a dense destination adds the dense source's tail
-    /// ranks to the already sorted occupied-word index.
-    fn union_dense_words(&mut self, other: &Self) -> Option<bool> {
-        if self.bitmap.occupied_words.len() != self.bitmap.bits.len()
-            || other.bitmap.occupied_words.len() != other.bitmap.bits.len()
-        {
-            return None;
-        }
-
-        let bitmap = Arc::make_mut(&mut self.bitmap);
-        let old_len = bitmap.bits.len();
-        if old_len < other.bitmap.bits.len() {
-            bitmap.bits.resize(other.bitmap.bits.len(), 0);
-            bitmap.occupied_words.extend(
-                (old_len..other.bitmap.bits.len()).map(|index| {
-                    u32::try_from(index).expect("chunk origin word index exceeds u32")
-                }),
-            );
-        }
-
-        let mut changed = false;
-        for (into, from) in bitmap.bits.iter_mut().zip(&other.bitmap.bits) {
-            let merged = *into | *from;
-            changed |= merged != *into;
-            *into = merged;
-        }
-        Some(changed)
     }
 
     fn union(mut self, other: Self) -> Self {
@@ -408,53 +286,16 @@ impl Values {
     }
 }
 
-impl ValueBitmap {
-    fn contains_all(&self, other: &Self) -> bool {
-        other.occupied_words.iter().all(|word_index| {
-            let index = *word_index as usize;
-            self.bits.get(index).copied().unwrap_or(0) & other.bits[index] == other.bits[index]
-        })
+fn union_bitmap(into: &mut Arc<RoaringBitmap>, from: &Arc<RoaringBitmap>) -> bool {
+    if Arc::ptr_eq(into, from) || from.is_subset(into) {
+        return false;
     }
-
-    fn insert_occupied_word(&mut self, word: u32) {
-        let Err(index) = self.occupied_words.binary_search(&word) else {
-            unreachable!("an empty value word cannot already be marked occupied");
-        };
-        self.occupied_words.insert(index, word);
+    if into.is_subset(from) {
+        *into = from.clone();
+        return true;
     }
-
-    /// Merge a sorted, duplicate-free list of newly occupied words while
-    /// keeping iteration metadata ordered independently of insertion order.
-    fn merge_occupied_words(&mut self, added: &[u32]) {
-        if added.is_empty() {
-            return;
-        }
-        debug_assert!(added.windows(2).all(|pair| pair[0] < pair[1]));
-        let Some(&last_existing) = self.occupied_words.last() else {
-            self.occupied_words.extend_from_slice(added);
-            return;
-        };
-        if added[0] > last_existing {
-            self.occupied_words.extend_from_slice(added);
-            return;
-        }
-
-        let mut merged = Vec::with_capacity(self.occupied_words.len() + added.len());
-        let mut existing = self.occupied_words.iter().copied().peekable();
-        let mut additions = added.iter().copied().peekable();
-        while existing.peek().is_some() && additions.peek().is_some() {
-            if existing.peek() < additions.peek() {
-                merged.push(existing.next().expect("peeked existing word"));
-            } else if existing.peek() > additions.peek() {
-                merged.push(additions.next().expect("peeked added word"));
-            } else {
-                unreachable!("newly occupied words are disjoint from existing words");
-            }
-        }
-        merged.extend(existing);
-        merged.extend(additions);
-        self.occupied_words = merged;
-    }
+    *Arc::make_mut(into) |= from.as_ref();
+    true
 }
 
 impl Extend<Value> for Values {
@@ -465,40 +306,8 @@ impl Extend<Value> for Values {
     }
 }
 
-struct BitIndices<I> {
-    words: I,
-    word_index: usize,
-    remaining: u64,
-}
-
-impl<I: Iterator<Item = u64>> BitIndices<I> {
-    fn new(words: I) -> Self {
-        Self {
-            words,
-            word_index: 0,
-            remaining: 0,
-        }
-    }
-}
-
-impl<I: Iterator<Item = u64>> Iterator for BitIndices<I> {
-    type Item = u32;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            if self.remaining != 0 {
-                let bit = self.remaining.trailing_zeros();
-                self.remaining &= self.remaining - 1;
-                return Some(((self.word_index - 1) * u64::BITS as usize + bit as usize) as u32);
-            }
-            self.remaining = self.words.next()?;
-            self.word_index += 1;
-        }
-    }
-}
-
 pub(crate) struct ValuesIter<'a> {
-    bits: BitIndices<std::iter::Copied<std::slice::Iter<'a, u64>>>,
+    ids: RoaringIter<'a>,
     origins: &'a OriginTable,
     unknown: bool,
     yielded_unknown: bool,
@@ -508,7 +317,7 @@ impl Iterator for ValuesIter<'_> {
     type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(id) = self.bits.next() {
+        if let Some(id) = self.ids.next() {
             return Some(self.origins.origin(OriginId(id)));
         }
         if self.unknown && !self.yielded_unknown {
@@ -520,32 +329,17 @@ impl Iterator for ValuesIter<'_> {
 }
 
 pub(crate) struct ValuesIntoIter {
-    bits: BitIndices<ArcWords>,
+    ids: RoaringIntoIter,
     origins: Arc<OriginTable>,
     unknown: bool,
     yielded_unknown: bool,
-}
-
-struct ArcWords {
-    bitmap: Arc<ValueBitmap>,
-    next: usize,
-}
-
-impl Iterator for ArcWords {
-    type Item = u64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let word = self.bitmap.bits.get(self.next).copied()?;
-        self.next += 1;
-        Some(word)
-    }
 }
 
 impl Iterator for ValuesIntoIter {
     type Item = Value;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(id) = self.bits.next() {
+        if let Some(id) = self.ids.next() {
             return Some(self.origins.origin(OriginId(id)));
         }
         if self.unknown && !self.yielded_unknown {
@@ -562,10 +356,7 @@ impl IntoIterator for Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIntoIter {
-            bits: BitIndices::new(ArcWords {
-                bitmap: self.bitmap,
-                next: 0,
-            }),
+            ids: Arc::unwrap_or_clone(self.bitmap).into_iter(),
             origins: self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -579,7 +370,7 @@ impl<'a> IntoIterator for &'a Values {
 
     fn into_iter(self) -> Self::IntoIter {
         ValuesIter {
-            bits: BitIndices::new(self.bitmap.bits.iter().copied()),
+            ids: self.bitmap.iter(),
             origins: &self.origins,
             unknown: self.unknown,
             yielded_unknown: false,
@@ -656,21 +447,32 @@ impl ValuesBuilder {
 /// results to the roots requested by one consumer.
 pub(crate) struct CandidateObjectIndex<'a> {
     flow: &'a ChunkValueFlow,
-    /// The nonzero words of the requested-root mask, by word index: a lookup
-    /// costs the requested roots, not every candidate object in the chunk.
-    mask: Vec<(usize, u64)>,
+    /// Requested candidate positions, stored without a chunk-wide zero prefix.
+    mask: RoaringBitmap,
+}
+
+fn for_each_bitmap_intersection(
+    left: &RoaringBitmap,
+    right: &RoaringBitmap,
+    mut visit: impl FnMut(u32),
+) {
+    let (iterate, contains) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    for value in iterate.iter() {
+        if contains.contains(value) {
+            visit(value);
+        }
+    }
 }
 
 impl CandidateObjectIndex<'_> {
-    fn visit_bits(&self, bits: &[u64], mut visit: impl FnMut(Value)) {
-        for &(word_index, mask) in &self.mask {
-            let mut remaining = bits.get(word_index).copied().unwrap_or_default() & mask;
-            while remaining != 0 {
-                let bit = remaining.trailing_zeros() as usize;
-                visit(self.flow.candidate_objects[word_index * 64 + bit]);
-                remaining &= remaining - 1;
-            }
-        }
+    fn visit_bits(&self, bits: &RoaringBitmap, mut visit: impl FnMut(Value)) {
+        for_each_bitmap_intersection(bits, &self.mask, |index| {
+            visit(self.flow.candidate_objects[index as usize]);
+        });
     }
 
     pub(crate) fn for_binding(&self, id: &Id, visit: impl FnMut(Value)) {
@@ -682,45 +484,18 @@ impl CandidateObjectIndex<'_> {
     /// Visit the union of reachable requested roots, once per root. Expanding
     /// each origin separately repeats every shared descendant at the sink.
     pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
-        let mut reached = vec![0; self.mask.len()];
+        let mut reached = RoaringBitmap::new();
         for value in values {
             if let Some(bits) = self.flow.candidate_reachability.get(&value) {
-                for (reached, &(word_index, mask)) in reached.iter_mut().zip(&self.mask) {
-                    *reached |= bits.get(word_index).copied().unwrap_or_default() & mask;
-                }
+                for_each_bitmap_intersection(bits, &self.mask, |index| {
+                    reached.insert(index);
+                });
             }
         }
-        for (&(word_index, _), mut remaining) in self.mask.iter().zip(reached) {
-            while remaining != 0 {
-                let bit = remaining.trailing_zeros() as usize;
-                visit(self.flow.candidate_objects[word_index * 64 + bit]);
-                remaining &= remaining - 1;
-            }
+        for index in reached {
+            visit(self.flow.candidate_objects[index as usize]);
         }
     }
-}
-
-fn bits_contain_id(bits: &[u64], id: OriginId) -> bool {
-    bits.get(id.0 as usize / 64)
-        .is_some_and(|word| word & (1 << (id.0 % 64)) != 0)
-}
-
-fn bits_contain_all(into: &[u64], from: &[u64]) -> bool {
-    debug_assert_eq!(into.len(), from.len());
-    into.iter()
-        .zip(from)
-        .all(|(into, from)| into & from == *from)
-}
-
-fn union_bits(into: &mut [u64], from: &[u64]) -> bool {
-    debug_assert_eq!(into.len(), from.len());
-    let mut changed = false;
-    for (slot, bits) in into.iter_mut().zip(from) {
-        let merged = *slot | bits;
-        changed |= merged != *slot;
-        *slot = merged;
-    }
-    changed
 }
 
 #[derive(Debug, Clone, Default)]
@@ -737,8 +512,8 @@ pub(crate) struct ChunkValueFlow {
     /// Candidate roots and their transitive reachability are ordinary facts in
     /// the same store as bindings, properties, and returns.
     candidate_objects: Vec<Value>,
-    candidate_reachability: BTreeMap<Value, Arc<Vec<u64>>>,
-    candidate_bindings: BTreeMap<Id, Arc<Vec<u64>>>,
+    candidate_reachability: BTreeMap<Value, Arc<RoaringBitmap>>,
+    candidate_bindings: BTreeMap<Id, Arc<RoaringBitmap>>,
     /// Callable identity to its chunk-top declaration binding, if any.
     canonical: BTreeMap<Value, Id>,
     /// Structural successful-return shapes, kept separate from the
@@ -773,19 +548,14 @@ impl ChunkValueFlow {
         &self,
         candidates: &BTreeSet<Value>,
     ) -> CandidateObjectIndex<'_> {
-        let mut mask = vec![0; self.candidate_objects.len().div_ceil(64)];
+        let mut mask = RoaringBitmap::new();
         for candidate in candidates {
             let index = self
                 .candidate_objects
                 .binary_search(candidate)
                 .expect("candidate roots must be registered before value-flow solving");
-            mask[index / 64] |= 1 << (index % 64);
+            mask.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
         }
-        let mask = mask
-            .into_iter()
-            .enumerate()
-            .filter(|(_, word)| *word != 0)
-            .collect();
         CandidateObjectIndex { flow: self, mask }
     }
 
@@ -891,6 +661,24 @@ impl ChunkValueFlow {
             })
             .collect();
         (reachable, bindings)
+    }
+
+    #[cfg(test)]
+    pub(super) fn candidate_reachability_storage_for_test(&self) -> (usize, u64, u64) {
+        let mut cardinality = 0;
+        let mut payload_bytes = 0;
+        for bitmap in self.candidate_reachability.values() {
+            let statistics = bitmap.statistics();
+            cardinality += statistics.cardinality;
+            payload_bytes += statistics.n_bytes_array_containers
+                + statistics.n_bytes_bitset_containers
+                + statistics.n_bytes_run_containers;
+        }
+        (
+            self.candidate_reachability.len(),
+            cardinality,
+            payload_bytes,
+        )
     }
 
     pub(crate) fn analyze(body: &[TopLevelItemView<'_>]) -> Self {
@@ -1633,7 +1421,7 @@ enum FlowKey {
 enum FlowFact {
     ValueFlowActive,
     Values(Values),
-    CandidateReachability(Arc<Vec<u64>>),
+    CandidateReachability(Arc<RoaringBitmap>),
     Parameters(Vec<Option<BindingSlot>>),
     ReadyParameters(Vec<Option<BindingSlot>>),
 }
@@ -1741,10 +1529,9 @@ impl FlowProgram {
                 &candidate_objects,
             );
             let mut inference = IterativeInference::from_completed(rules, values);
-            let candidate_words = candidate_objects.len().div_ceil(64);
             for (index, object) in candidate_objects.iter().copied().enumerate() {
-                let mut bits = vec![0; candidate_words];
-                bits[index / 64] |= 1 << (index % 64);
+                let mut bits = RoaringBitmap::new();
+                bits.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
                 inference.seed(
                     FlowKey::CandidateReachable(origin_table.id(object)),
                     FlowFact::CandidateReachability(Arc::new(bits)),
@@ -2355,7 +2142,7 @@ struct CandidateRules {
     /// Bitmap over `OriginId` of the origins whose reachability can ever be
     /// present: seeded candidates and origins with a completed carrier fact.
     /// Every other origin's reachability key stays absent, so it is not read.
-    may_reach: Vec<u64>,
+    may_reach: RoaringBitmap,
 }
 
 impl CandidateRules {
@@ -2366,7 +2153,7 @@ impl CandidateRules {
         candidates: &[Value],
     ) -> Self {
         let mut rules = Self {
-            may_reach: vec![0; origin_table.origins.len().div_ceil(64)],
+            may_reach: RoaringBitmap::new(),
             origin_table,
             native_set_allocations,
         };
@@ -2377,7 +2164,7 @@ impl CandidateRules {
             .collect();
         for origin in origins {
             let id = rules.origin_table.id(origin).0;
-            rules.may_reach[id as usize / 64] |= 1 << (id % 64);
+            rules.may_reach.insert(id);
         }
         rules
     }
@@ -2416,7 +2203,7 @@ impl CandidateRules {
         target: FlowKey,
         keys: impl IntoIterator<Item = FlowKey>,
     ) {
-        let mut reachable: Option<Arc<Vec<u64>>> = None;
+        let mut reachable: Option<Arc<RoaringBitmap>> = None;
         for key in keys {
             let Some(fact) = context.read(key) else {
                 continue;
@@ -2427,9 +2214,7 @@ impl CandidateRules {
             match &mut reachable {
                 None => reachable = Some(bits.clone()),
                 Some(into) => {
-                    if !bits_contain_all(into.as_slice(), bits.as_slice()) {
-                        union_bits(Arc::make_mut(into).as_mut_slice(), bits.as_slice());
-                    }
+                    union_bitmap(into, bits);
                 }
             }
         }
@@ -2553,18 +2338,7 @@ fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact
             FlowKey::CandidateReachable(_) | FlowKey::CandidateBinding(_),
             FlowFact::CandidateReachability(current),
             FlowFact::CandidateReachability(contribution),
-        ) => {
-            if Arc::ptr_eq(current, &contribution)
-                || bits_contain_all(current.as_slice(), contribution.as_slice())
-            {
-                false
-            } else {
-                union_bits(
-                    Arc::make_mut(current).as_mut_slice(),
-                    contribution.as_slice(),
-                )
-            }
-        }
+        ) => union_bitmap(current, &contribution),
         (
             FlowKey::Binding(_)
             | FlowKey::Property(_, _)

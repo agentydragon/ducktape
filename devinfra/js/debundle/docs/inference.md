@@ -442,9 +442,14 @@ Binding, property, parameter and return flow shares a store with candidate-objec
 reachability. Return and property contributions propagate candidate identities
 through the same worklist; escape consumers get filtered read-only views.
 Candidate roots are registered before solving, including caller-supplied roots
-outside the source-origin table. Global escape taint, Set aliases, native and
-namespace aliases, capability rejection, primitive/fluent value classes, and
-read/rebind closure use the same typed transfer interface.
+outside the source-origin table. Each chunk keeps a deterministic ordered origin
+table, while value and candidate sets store only present IDs in Roaring bitmaps.
+Thus a singleton's payload does not grow with its origin rank, and seeding `C`
+candidate roots does not allocate `C` dense bitmaps of `C` bits each. Iteration
+still follows origin order; `Top` remains a separate value included after known
+origins. Global escape taint, Set aliases, native and namespace aliases,
+capability rejection, primitive/fluent value classes, and read/rebind closure use
+the same typed transfer interface.
 
 A family whose contribution is a join over its reads can set
 `EVALUATES_CHANGES`: a re-evaluated rule then receives the keys it read that
@@ -547,9 +552,9 @@ the fact store, watchers and schedule are hash maps that are looked up, never
 iterated in an order that matters, so every family's key and rule types
 implement `Hash`. `IterativeFacts::keys` is unordered; `into_values` returns
 ordered values. The queue schedules affected dependency edges rather than
-rescanning all rules. These are structural bounds, not a measured CPU or memory improvement.
-Use matched optimized CPU and heap profiles before changing the value arenas,
-bitmap representation or cross-module preparation caches.
+rescanning all rules. These are structural bounds, not a measured CPU or overall
+heap improvement. Use matched optimized CPU and heap profiles before claiming
+those wins or changing the bitmap representation again.
 
 `synchronous_execution.inference_uses` expands the rule names and captured-input
 references for certificates actually consumed by timing analysis, including
