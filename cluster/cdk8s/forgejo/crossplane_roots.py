@@ -121,12 +121,7 @@ def agentydragon_repos_chart(app: App) -> Chart:
         schema="forgejo_codex",
         secret_accesses=(
             ("forgejo-agentydragon-repos-forgejo-secrets", "forgejo", ("forgejo-admin-password",), ()),
-            (
-                "forgejo-agentydragon-repos-agents-infra-secrets",
-                "agents-infra",
-                (),
-                ("forgejo-token-mint-codex-pod",),
-            ),
+            ("forgejo-agentydragon-repos-agents-infra-secrets", "agents-infra", (), ("forgejo-token-mint-codex-pod",)),
         ),
     )
 
