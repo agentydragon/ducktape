@@ -659,26 +659,6 @@ pub struct Move {
     pub readable: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct ProposalBatch {
-    proposals: Vec<BatchProposal>,
-}
-
-#[derive(Debug, Deserialize)]
-struct BatchProposal {
-    proposed_module_id: String,
-    #[serde(default)]
-    binding_ids: Vec<String>,
-    #[serde(default)]
-    anonymous_statement_source_unit_ids: Vec<String>,
-    #[serde(default)]
-    landable_today: bool,
-    #[serde(default)]
-    extends_module_id: Option<String>,
-    #[serde(default)]
-    merge_into: Option<Vec<String>>,
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AssignOutcome {
     #[serde(flatten)]
@@ -718,100 +698,12 @@ pub fn parse_move_triple(s: &str) -> Result<Move> {
     })
 }
 
-/// Parse `--batch <file>` JSON.
-///
-/// Accepted shapes:
-///   * a top-level array of `{sym, module, readable?}` objects
-///   * `modules propose --strategy auto --format json` output, when every selected
-///     proposal is a binding-only fresh/extension proposal
-///   * a top-level array of those proposal objects, e.g. from a `jq`
-///     `.proposals[]` filter
+/// Parse `--batch <file>` JSON containing explicit `{sym, module, readable?}` moves.
 pub fn parse_batch_json(text: &str) -> Result<Vec<Move>> {
-    // Try the simple array shape first.
     if let Ok(moves) = serde_json::from_str::<Vec<Move>>(text) {
         return Ok(moves);
     }
-    if let Ok(batch) = serde_json::from_str::<ProposalBatch>(text) {
-        return proposal_batch_to_moves(batch.proposals);
-    }
-    if let Ok(proposals) = serde_json::from_str::<Vec<BatchProposal>>(text) {
-        return proposal_batch_to_moves(proposals);
-    }
-    bail!(
-        "--batch JSON must be a top-level array of {{sym, module, readable?}} objects, \
-         `modules propose --strategy auto --format json` output, or an array of proposal objects"
-    );
-}
-
-fn proposal_batch_to_moves(proposals: Vec<BatchProposal>) -> Result<Vec<Move>> {
-    let mut moves = Vec::new();
-    let mut rejected = Vec::new();
-
-    for proposal in proposals {
-        match proposal_to_moves(proposal) {
-            Ok(mut proposal_moves) => moves.append(&mut proposal_moves),
-            Err((id, reason)) => rejected.push(format!("{id}: {reason}")),
-        }
-    }
-
-    if !rejected.is_empty() {
-        bail!(
-            "--batch modules-propose JSON contains proposals that `bindings assign` cannot apply \
-             directly:\n  - {}\nSelect only landable binding-only fresh/extension proposals; handle \
-             `merge_into` / `anonymous_statement_source_unit_ids` rows with `modules merge` or manual YAML, \
-             and grow `blocked_residual_dependency` rows to a landable closure (or co-locate the \
-             referenced cells manually) first.",
-            rejected.join("\n  - ")
-        );
-    }
-    if moves.is_empty() {
-        bail!(
-            "--batch modules-propose JSON did not contain any binding moves; select proposals with \
-             non-empty `binding_ids`"
-        );
-    }
-    Ok(moves)
-}
-
-fn proposal_to_moves(proposal: BatchProposal) -> std::result::Result<Vec<Move>, (String, String)> {
-    let id = proposal.proposed_module_id.clone();
-    if !proposal.landable_today {
-        return Err((id, "`landable_today` is false".to_string()));
-    }
-    if let Some(merge_into) = &proposal.merge_into {
-        return Err((
-            id,
-            format!(
-                "`merge_into` proposals merge existing modules ({}) and are not member moves",
-                merge_into.join(", ")
-            ),
-        ));
-    }
-    if !proposal.anonymous_statement_source_unit_ids.is_empty() {
-        return Err((
-            id,
-            format!(
-                "contains anonymous statements ({}) but `bindings assign` only moves members",
-                proposal.anonymous_statement_source_unit_ids.join(", ")
-            ),
-        ));
-    }
-    if proposal.binding_ids.is_empty() {
-        return Err((id, "no `binding_ids` to move".to_string()));
-    }
-
-    let module = proposal
-        .extends_module_id
-        .unwrap_or(proposal.proposed_module_id);
-    Ok(proposal
-        .binding_ids
-        .into_iter()
-        .map(|sym| Move {
-            sym,
-            module: module.clone(),
-            readable: None,
-        })
-        .collect())
+    bail!("--batch JSON must be a top-level array of {{sym, module, readable?}} objects");
 }
 
 /// Plan a batch from one module snapshot, validate collisions + realizability +
@@ -874,7 +766,7 @@ pub fn run_bindings_assign(
     let mut by_identity: BTreeMap<(String, BindingLocation), PlannedMove> = BTreeMap::new();
     for m in moves {
         let hit = resolve_in_docs(modules_root, &docs, &m.sym).with_context(|| {
-            "bindings assign moves existing YAML claims; for a fresh residual proposal use `debundle modules apply`"
+            "bindings assign moves existing YAML claims; for residual source units use `debundle modules apply --assignments`"
         })?;
         let dest_module = canonical_module_path(&m.module)?;
         let planned = PlannedMove {
@@ -1544,13 +1436,6 @@ fn set_readable_name(doc: &mut LogicalModule, location: &BindingLocation, name: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use analysis::SourceUnitReport;
-    use analysis_model::DepKind;
-    use peel::propose::propose;
-    use report_fixtures::{
-        active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
-        residual_source_unit,
-    };
 
     #[test]
     fn parse_move_triple_rejects_one_field() {
@@ -1558,145 +1443,10 @@ mod tests {
     }
 
     #[test]
-    fn parse_batch_json_modules_propose_report_shape() {
-        let m = parse_batch_json(
-            r#"{
-                "proposals": [
-                    {
-                        "proposed_module_id": "auto_partition_0001",
-                        "binding_ids": ["a", "b"],
-                        "landable_today": true
-                    }
-                ],
-                "diagnostics": []
-            }"#,
+    fn parse_batch_json_rejects_advisory_proposal_output() {
+        assert!(parse_batch_json(
+            r#"{"proposals":[{"proposed_module_id":"auto_partition_0001","binding_ids":["a"]}]}"#
         )
-        .unwrap();
-        assert_eq!(m.len(), 2);
-        assert_eq!(m[0].sym, "a");
-        assert_eq!(m[0].module, "auto_partition_0001");
-        assert_eq!(m[1].sym, "b");
-        assert_eq!(m[1].module, "auto_partition_0001");
-    }
-
-    #[test]
-    fn parse_batch_json_proposal_array_uses_extend_destination() {
-        let m = parse_batch_json(
-            r#"[
-                {
-                    "proposed_module_id": "extend:runtime/plugins",
-                    "binding_ids": ["a"],
-                    "landable_today": true,
-                    "extends_module_id": "runtime/plugins"
-                }
-            ]"#,
-        )
-        .unwrap();
-        assert_eq!(m.len(), 1);
-        assert_eq!(m[0].sym, "a");
-        assert_eq!(m[0].module, "runtime/plugins");
-    }
-
-    #[test]
-    fn parse_batch_json_rejects_merge_proposal() {
-        parse_batch_json(
-            r#"[
-                {
-                    "proposed_module_id": "merge:domains/system/ids+domains/system/types",
-                    "binding_ids": ["a"],
-                    "landable_today": true,
-                    "merge_into": ["domains/system/ids", "domains/system/types"]
-                }
-            ]"#,
-        )
-        .unwrap_err();
-    }
-
-    #[test]
-    fn parse_batch_json_rejects_anonymous_statement_proposal() {
-        parse_batch_json(
-            r#"[
-                {
-                    "proposed_module_id": "auto_partition_0002",
-                    "binding_ids": ["a"],
-                    "anonymous_statement_source_unit_ids": ["unit:7"],
-                    "landable_today": true
-                }
-            ]"#,
-        )
-        .unwrap_err();
-    }
-
-    // `modules propose --strategy auto --format json` is documented `--batch` input (docs/cli.md). The row
-    // fields are read through `serde(default)`, so a renamed `ModuleProposal` field would parse
-    // as absent instead of failing: these pair the real proposer with `parse_batch_json`.
-    fn propose_as_batch(
-        from: SourceUnitReport,
-        to: SourceUnitReport,
-        active_claims: &BTreeMap<String, ModulePath>,
-    ) -> Result<Vec<Move>> {
-        let graph = graph_of(
-            vec![from.clone(), to.clone()],
-            vec![dependency_edge(
-                "edge:0",
-                &from.id,
-                &to.id,
-                DepKind::EagerUse,
-                true,
-            )],
-            vec![
-                atomic_group_for("atomic:0", &[&from]),
-                atomic_group_for("atomic:1", &[&to]),
-            ],
-            vec![atomic_edge("atomic_edge:0", "atomic:0", "atomic:1")],
-        );
-        let input = analysis::DependencyGraphInput::from_report(graph).unwrap();
-        let report = propose(&input, active_claims, 10_000).unwrap();
-        parse_batch_json(&serde_json::to_string(&report).unwrap())
-    }
-
-    fn sym_module_pairs(moves: &[Move]) -> Vec<(&str, &str)> {
-        moves
-            .iter()
-            .map(|m| (m.sym.as_str(), m.module.as_str()))
-            .collect()
-    }
-
-    #[test]
-    fn proposed_fresh_module_batch_moves_its_bindings_there() {
-        let moves = propose_as_batch(
-            residual_source_unit("unit:a", 1, &["BindingA"], 10),
-            residual_source_unit("unit:b", 2, &["BindingB"], 10),
-            &BTreeMap::new(),
-        )
-        .unwrap();
-        assert_eq!(
-            sym_module_pairs(&moves),
-            [
-                ("BindingA", "auto_partition_0000"),
-                ("BindingB", "auto_partition_0000")
-            ],
-        );
-    }
-
-    #[test]
-    fn proposed_extension_batch_moves_its_bindings_into_the_extended_module() {
-        let moves = propose_as_batch(
-            residual_source_unit("unit:b", 2, &["BindingB"], 5),
-            active_source_unit("unit:a", 1, &["BindingA"], 10, "ui/x"),
-            &claims(&[("BindingA", "ui/x")]),
-        )
-        .unwrap();
-        assert_eq!(sym_module_pairs(&moves), [("BindingB", "ui/x")]);
-    }
-
-    #[test]
-    fn proposed_batch_with_anonymous_statements_is_rejected() {
-        propose_as_batch(
-            residual_source_unit("unit:a", 1, &["BindingA"], 10),
-            residual_source_unit("unit:anon", 2, &[], 5),
-            &BTreeMap::new(),
-        )
-        .unwrap_err();
+        .is_err());
     }
 }

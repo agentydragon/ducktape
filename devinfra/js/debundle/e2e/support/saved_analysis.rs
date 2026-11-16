@@ -349,7 +349,7 @@ impl TreeStaged {
         let mut args = vec![
             "modules".to_string(),
             "apply".to_string(),
-            "--batch".to_string(),
+            "--assignments".to_string(),
             path(batch).to_string(),
             "--modules".to_string(),
             path(&self.modules).to_string(),
@@ -359,8 +359,6 @@ impl TreeStaged {
             path(&root.join("snapshot")).to_string(),
             "--tree-config".to_string(),
             path(&self.config).to_string(),
-            "--size-cap-lines".to_string(),
-            "1".to_string(),
             "--format".to_string(),
             "json".to_string(),
         ];

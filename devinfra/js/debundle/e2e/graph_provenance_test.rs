@@ -139,19 +139,18 @@ fn assert_graph_mismatch(output: &std::process::Output, expected: &str) {
 fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     let fixture = AliasGraphFixture::new();
 
-    // The authored source_match is resolved by coverage and proposal queries.
+    // The authored source_match is resolved by coverage and exact placement queries.
     for output in [
         fixture.command(&["coverage"], None, None),
         fixture.command(&["coverage"], Some(&fixture.source_root), None),
-        fixture.command(
-            &["modules", "propose", "--strategy", "auto"],
-            Some(&fixture.source_root),
-            None,
-        ),
     ] {
         let report = query_json(&output);
-        assert!(report["rows"].as_array().is_some() || report["proposals"].as_array().is_some());
+        assert!(report["rows"].as_array().is_some());
     }
+    let proposal =
+        query_json(&fixture.command(&["modules", "propose"], Some(&fixture.source_root), None));
+    assert_eq!(proposal["status"], "found", "{proposal}");
+    assert!(proposal["plan"].is_object(), "{proposal}");
     let coverage = query_json(&fixture.command(&["coverage"], None, None));
     assert_eq!(
         coverage["rows"][0]["requested_binding_ids"],

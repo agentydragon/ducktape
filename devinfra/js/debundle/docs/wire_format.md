@@ -478,8 +478,7 @@ this same value.
 `"<chunk_id>::"` (the in-process `PlannedModule.id` spelling minted in
 `lowering/plans.rs`), lowercases, and normalizes separators. Two
 spellings of one module therefore collapse to a single value, so `==`
-is an honest identity test — this is what makes the peel proposer's
-self-merge bug structurally impossible.
+is an honest identity test for module paths.
 
 The internal array handle `ModuleId(usize)` is a dense in-process index
 for O(1) lookups; it is distinct from `ModulePath` and is not the public

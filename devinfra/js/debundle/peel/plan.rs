@@ -9,10 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-use super::propose::{
-    DEFAULT_SIZE_CAP_LINES, ModuleProposal, ProposalDiagnostic, ProposalOptions, ProposalsReport,
-    propose_from_files, propose_from_graph,
-};
 use anonymous_resolution::{
     SourceClaimSet, resolve_source_claims, resolve_source_claims_of, resolve_source_file,
 };
@@ -47,11 +43,6 @@ pub struct PlanWorkArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
-    /// Use exact placement search (default); select auto for an advisory atomic-DAG inventory.
-    #[arg(long, value_enum, default_value = "complete")]
-    pub strategy: ProposalStrategy,
-    #[arg(long, value_enum)]
-    pub existing_assignments: Option<ExistingAssignments>,
     #[arg(long, value_enum)]
     pub destinations: Option<super::search::Destinations>,
     /// Restrict targets to these exact module destinations (repeatable).
@@ -73,39 +64,17 @@ pub struct PlanWorkArgs {
     #[arg(long)]
     pub time_budget_ms: Option<u64>,
 
+    /// Root used to validate relative source paths recorded in the graph.
+    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    pub source_root: Option<PathBuf>,
+
     /// Tree config for chunk-scoped module claims in a multi-chunk spec.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     pub tree_config: Option<PathBuf>,
 
-    /// Hard line ceiling per proposal in advisory `auto` mode.
-    #[arg(long = "size-cap-lines")]
-    pub size_cap_lines: Option<usize>,
-
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when annotating anonymous-statement proposal addressability.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
-
-    /// Maximum number of advisory `auto` proposals and diagnostics to emit. Zero means unlimited.
-    #[arg(long, default_value_t = 0)]
-    pub limit: usize,
-
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
     pub format: Option<OutputFormat>,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
-#[value(rename_all = "snake_case")]
-pub enum ProposalStrategy {
-    Auto,
-    Complete,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-#[value(rename_all = "snake_case")]
-pub enum ExistingAssignments {
-    Fixed,
 }
 
 #[derive(Debug, Clone, ClapArgs)]
@@ -143,11 +112,6 @@ pub struct PatchPlanArgs {
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
 
-    /// Also run the proposal proposer to populate matching proposal ids.
-    /// This is intentionally opt-in because it is expensive on large graphs.
-    #[arg(long = "include-proposals")]
-    pub include_proposals: bool,
-
     /// Root used to resolve relative `source_location.source_path`
     /// values when coverage checks anonymous statement selectors.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
@@ -163,23 +127,9 @@ pub struct GraphSummaryArgs {
     #[command(flatten)]
     pub common: CommonArgs,
 
-    /// Hard line ceiling per emitted proposal.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    pub size_cap_lines: usize,
-
     /// Maximum number of largest residual atomic groups to emit. Zero means unlimited.
     #[arg(long, default_value_t = 10)]
     pub limit: usize,
-
-    /// Also run the proposal proposer to include proposal/diagnostic counts.
-    /// This is intentionally opt-in because it is expensive on large graphs.
-    #[arg(long = "include-proposals")]
-    pub include_proposals: bool,
-
-    /// Root used to resolve relative `source_location.source_path`
-    /// values when annotating anonymous-statement proposal addressability.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    pub source_root: Option<PathBuf>,
 
     /// Output format. Default `text` on tty, `json` on pipe.
     #[arg(long, value_enum)]
@@ -195,10 +145,6 @@ pub struct ExplainArgs {
     pub direction: ExplainDirection,
     /// Keep edges whose typed reason matches any listed kind; empty means all.
     pub reasons: Vec<DepKind>,
-    /// Also run the proposal proposer to annotate matching proposals and
-    /// diagnostics. This is intentionally opt-in because it is expensive on
-    /// large graphs.
-    pub include_proposals: bool,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -215,8 +161,6 @@ pub const DEFAULT_DESCRIBE_LIMIT: usize = 20;
 pub struct SourceSelectionArgs {
     pub common: CommonArgs,
     pub selection: SelectionKind,
-    /// Hard line ceiling used when resolving a proposal selection.
-    pub size_cap_lines: usize,
     /// Root used to resolve relative `source_location.source_path` values.
     pub source_root: Option<PathBuf>,
 }
@@ -233,9 +177,7 @@ pub enum QueryKind {
     SourceUnit,
     Module,
     Binding,
-    Proposal,
     AtomicGroup,
-    Diagnostic,
 }
 
 /// What `describe` / `inspect-source --id` can resolve; each variant names its query kind.
@@ -249,12 +191,8 @@ pub enum SelectionKind {
     Module(String),
     /// The source unit that declares this input binding id.
     Binding(String),
-    /// A proposer proposal by `proposed_module_id`.
-    Proposal(String),
     /// One atomic group id from `dependency_graph.json.gz`.
     AtomicGroup(String),
-    /// One proposer diagnostic by `diagnostic_id`.
-    Diagnostic(String),
 }
 
 impl SelectionKind {
@@ -264,9 +202,7 @@ impl SelectionKind {
             | Self::ModulePath(v)
             | Self::Module(v)
             | Self::Binding(v)
-            | Self::Proposal(v)
-            | Self::AtomicGroup(v)
-            | Self::Diagnostic(v) => v,
+            | Self::AtomicGroup(v) => v,
         }
     }
 
@@ -276,9 +212,7 @@ impl SelectionKind {
             Self::ModulePath(_) => QueryKind::Module,
             Self::Module(_) => QueryKind::Module,
             Self::Binding(_) => QueryKind::Binding,
-            Self::Proposal(_) => QueryKind::Proposal,
             Self::AtomicGroup(_) => QueryKind::AtomicGroup,
-            Self::Diagnostic(_) => QueryKind::Diagnostic,
         }
     }
 }
@@ -294,14 +228,6 @@ pub struct AtomicGroupsReport {
 pub struct DestinationGroup {
     pub destination: String,
     pub atomic_group_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-pub struct PlanWorkReport {
-    #[serde(flatten)]
-    pub report: ProposalsReport,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limits: Option<LimitReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -326,10 +252,6 @@ pub struct ExplainReport {
     /// appear in the dependency graph. Always empty for other selections.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_binding_ids: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_proposals: Option<Vec<ModuleProposal>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub module_proposal_diagnostics: Option<Vec<ProposalDiagnostic>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limits: Option<LimitReport>,
 }
@@ -384,8 +306,6 @@ pub struct PatchPlanRow {
     pub missing_binding_ids: Vec<String>,
     pub missing_source_unit_ids: Vec<String>,
     pub missing_anonymous_source_unit_ids: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub matching_proposal_ids: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -405,10 +325,6 @@ pub struct GraphSummaryReport {
     pub atomic_edge_count: usize,
     pub module_count: usize,
     pub module_edge_count: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proposal_count: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub diagnostic_count: Option<usize>,
     pub largest_residual_atomic_groups: Vec<AtomicGroupSummary>,
 }
 
@@ -493,38 +409,6 @@ impl OutputFormat {
     }
 }
 
-pub fn run_plan_work_report(
-    args: &PlanWorkArgs,
-    source_context: Option<&VerifiedGraphSourceContext>,
-) -> Result<PlanWorkReport> {
-    let mut report = propose_from_files(&ProposalOptions {
-        dependency_graph_path: args.common.dependency_graph_path.clone(),
-        modules_root: args.common.modules_root.clone(),
-        tree_config: args.tree_config.clone(),
-        source_root: args.source_root.clone(),
-        source_context: source_context.cloned(),
-        size_cap_lines: args.size_cap_lines.unwrap_or(DEFAULT_SIZE_CAP_LINES),
-    })?;
-    let mut sections = BTreeMap::new();
-    sort_proposal_diagnostics(&mut report.diagnostics);
-    apply_limit_with_metadata(
-        &mut report.proposals,
-        args.limit,
-        &mut sections,
-        "proposals",
-    );
-    apply_limit_with_metadata(
-        &mut report.diagnostics,
-        args.limit,
-        &mut sections,
-        "diagnostics",
-    );
-    Ok(PlanWorkReport {
-        report,
-        limits: limit_report(args.limit, sections),
-    })
-}
-
 pub fn run_atomic_groups_report(args: &AtomicGroupsArgs) -> Result<AtomicGroupsReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
@@ -573,28 +457,12 @@ pub fn run_patch_plan_report(
 ) -> Result<PatchPlanReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
-    let propose = if args.include_proposals {
-        Some(propose_from_graph(
-            &input,
-            &ProposalOptions {
-                dependency_graph_path: args.common.dependency_graph_path.clone(),
-                modules_root: args.common.modules_root.clone(),
-                tree_config: None,
-                source_root: args.source_root.clone(),
-                source_context: source_context.cloned(),
-                size_cap_lines: DEFAULT_SIZE_CAP_LINES,
-            },
-        )?)
-    } else {
-        None
-    };
     let mut rows = patch_plan_rows(
         graph,
         &args.common.dependency_graph_path,
         &args.common.modules_root,
         args.source_root.as_deref(),
         source_context,
-        propose.as_ref(),
         diagnostics,
     )?;
     rows.sort_by_key(|row| (row.status, row.path.clone()));
@@ -621,25 +489,10 @@ pub fn run_patch_plan_report(
 
 pub fn run_graph_summary_report(
     args: &GraphSummaryArgs,
-    source_context: Option<&VerifiedGraphSourceContext>,
+    _source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<GraphSummaryReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
-    let propose = if args.include_proposals {
-        Some(propose_from_graph(
-            &input,
-            &ProposalOptions {
-                dependency_graph_path: args.common.dependency_graph_path.clone(),
-                modules_root: args.common.modules_root.clone(),
-                tree_config: None,
-                source_root: args.source_root.clone(),
-                source_context: source_context.cloned(),
-                size_cap_lines: args.size_cap_lines,
-            },
-        )?)
-    } else {
-        None
-    };
     let mut largest_residual_atomic_groups: Vec<AtomicGroupSummary> = graph
         .atomic_graph
         .nodes
@@ -681,8 +534,6 @@ pub fn run_graph_summary_report(
         atomic_edge_count: graph.atomic_graph.edges.len(),
         module_count: graph.quotient.nodes.len(),
         module_edge_count: graph.quotient.edges.len(),
-        proposal_count: propose.as_ref().map(|report| report.proposals.len()),
-        diagnostic_count: propose.as_ref().map(|report| report.diagnostics.len()),
         largest_residual_atomic_groups,
     })
 }
@@ -701,13 +552,10 @@ pub struct ExplainSession {
     graph: DependencyGraphInput,
     program_graph: ProgramGraphReport,
     common: CommonArgs,
-    tree_config: Option<PathBuf>,
     module_files: Vec<PathBuf>,
     source_root: Option<PathBuf>,
     source_context: Option<VerifiedGraphSourceContext>,
-    size_cap_lines: usize,
     binding_homes: Option<Vec<BindingHomeReport>>,
-    proposals: Option<ProposalsReport>,
 }
 
 #[derive(Clone, Copy)]
@@ -721,7 +569,6 @@ impl ExplainSession {
         mut common: CommonArgs,
         tree_config: Option<PathBuf>,
         source_root: Option<PathBuf>,
-        size_cap_lines: usize,
         source_context: Option<VerifiedGraphSourceContext>,
     ) -> Result<Self> {
         // `--modules` may name the exact sole chunk subtree, which graph
@@ -755,13 +602,10 @@ impl ExplainSession {
             program_graph: load_program_graph(&common.dependency_graph_path, report)?,
             graph,
             common,
-            tree_config,
             module_files,
             source_root,
             source_context,
-            size_cap_lines,
             binding_homes: None,
-            proposals: None,
         })
     }
 
@@ -787,41 +631,13 @@ impl ExplainSession {
                 &self.module_files,
             )?);
         }
-        let needs_proposals = args.include_proposals
-            || matches!(
-                args.selection,
-                SelectionKind::Proposal(_) | SelectionKind::Diagnostic(_)
-            );
-        if needs_proposals && self.proposals.is_none() {
-            self.proposals = Some(propose_from_graph(
-                &self.graph,
-                &ProposalOptions {
-                    dependency_graph_path: self.common.dependency_graph_path.clone(),
-                    modules_root: self.common.modules_root.clone(),
-                    tree_config: self.tree_config.clone(),
-                    source_root: self.source_root.clone(),
-                    source_context: self.source_context.clone(),
-                    size_cap_lines: self.size_cap_lines,
-                },
-            )?);
-        }
-        explain_from_graph(
-            self,
-            args,
-            if needs_proposals {
-                self.proposals.as_ref()
-            } else {
-                None
-            },
-            diagnostics,
-        )
+        explain_from_graph(self, args, diagnostics)
     }
 }
 
 fn explain_from_graph(
     session: &ExplainSession,
     args: &ExplainArgs,
-    propose: Option<&ProposalsReport>,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<ExplainReport> {
     let ExplainSession {
@@ -830,12 +646,10 @@ fn explain_from_graph(
         common,
         source_root,
         source_context,
-        size_cap_lines,
         binding_homes,
         ..
     } = session;
     let report = graph.report();
-    let size_cap_lines = *size_cap_lines;
     let source_lookup = SourceLookup {
         root: source_root.as_deref(),
         verified: source_context.as_ref(),
@@ -845,7 +659,6 @@ fn explain_from_graph(
         .expect("loaded by ExplainSession::explain");
     let selection = &args.selection;
     let query = query_report(selection);
-    let include_proposal_sections = propose.is_some();
     let ResolvedSelection {
         source_unit_ids,
         mut unknown_binding_ids,
@@ -854,11 +667,8 @@ fn explain_from_graph(
         graph,
         &ResolveSourceUnitContext {
             common,
-            size_cap_lines,
             source_root: source_lookup.root,
             source_context: source_lookup.verified,
-            propose,
-            tree_config: session.tree_config.as_deref(),
             module_files: &session.module_files,
         },
         diagnostics,
@@ -951,28 +761,6 @@ fn explain_from_graph(
         .cloned()
         .collect();
 
-    let (mut module_proposals, mut module_proposal_diagnostics): (
-        Vec<ModuleProposal>,
-        Vec<ProposalDiagnostic>,
-    ) = if let Some(propose) = propose {
-        (
-            propose
-                .proposals
-                .iter()
-                .filter(|proposal| overlaps(&proposal.source_unit_ids, &source_unit_set))
-                .cloned()
-                .collect(),
-            propose
-                .diagnostics
-                .iter()
-                .filter(|diagnostic| overlaps(&diagnostic.source_unit_ids, &source_unit_set))
-                .cloned()
-                .collect(),
-        )
-    } else {
-        (Vec::new(), Vec::new())
-    };
-
     let matches_reason = |kinds: &[DepKind]| {
         args.reasons.is_empty() || kinds.iter().any(|kind| args.reasons.contains(kind))
     };
@@ -1026,9 +814,6 @@ fn explain_from_graph(
     outgoing_atomic_edges.sort_by(|left, right| left.id.cmp(&right.id));
     quotient_edges.sort_by(|left, right| left.id.cmp(&right.id));
     unknown_binding_ids.sort_unstable();
-    module_proposals.sort_by(|left, right| left.proposed_module_id.cmp(&right.proposed_module_id));
-    module_proposal_diagnostics.sort_by(|left, right| left.diagnostic_id.cmp(&right.diagnostic_id));
-
     let mut preferred_source_unit_ids = BTreeSet::new();
     match selection {
         SelectionKind::SourceUnit(source_unit_id) => {
@@ -1060,28 +845,6 @@ fn explain_from_graph(
                 .find(|group| group.id == *atomic_group_id)
             {
                 preferred_source_unit_ids.extend(group.source_unit_ids.iter().cloned());
-            }
-        }
-        SelectionKind::Proposal(proposal_id) => {
-            move_to_front(&mut module_proposals, |proposal| {
-                proposal.proposed_module_id == *proposal_id
-            });
-            if let Some(proposal) = module_proposals
-                .iter()
-                .find(|proposal| proposal.proposed_module_id == *proposal_id)
-            {
-                preferred_source_unit_ids.extend(proposal.source_unit_ids.iter().cloned());
-            }
-        }
-        SelectionKind::Diagnostic(diagnostic_id) => {
-            move_to_front(&mut module_proposal_diagnostics, |diagnostic| {
-                diagnostic.diagnostic_id == *diagnostic_id
-            });
-            if let Some(diagnostic) = module_proposal_diagnostics
-                .iter()
-                .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
-            {
-                preferred_source_unit_ids.extend(diagnostic.source_unit_ids.iter().cloned());
             }
         }
         SelectionKind::ModulePath(_) | SelectionKind::Module(_) => {}
@@ -1163,8 +926,6 @@ fn explain_from_graph(
         (outgoing_atomic_edges, "outgoing_atomic_edges"),
         (quotient_edges, "quotient_edges"),
         (unknown_binding_ids, "unknown_binding_ids"),
-        (module_proposals, "module_proposals"),
-        (module_proposal_diagnostics, "module_proposal_diagnostics"),
     );
 
     Ok(ExplainReport {
@@ -1184,9 +945,6 @@ fn explain_from_graph(
         outgoing_atomic_edges,
         quotient_edges,
         unknown_binding_ids,
-        module_proposals: include_proposal_sections.then_some(module_proposals),
-        module_proposal_diagnostics: include_proposal_sections
-            .then_some(module_proposal_diagnostics),
         limits: Some(LimitReport {
             limit: args.limit,
             sections,
@@ -1235,11 +993,8 @@ pub fn run_source_selection_report(
         &input,
         &ResolveSourceUnitContext {
             common: &args.common,
-            size_cap_lines: args.size_cap_lines,
             source_root: args.source_root.as_deref(),
             source_context,
-            propose: None,
-            tree_config: None,
             module_files: &module_files,
         },
         diagnostics,
@@ -1340,20 +1095,6 @@ fn limit_report(
     (limit > 0).then_some(LimitReport { limit, sections })
 }
 
-fn sort_proposal_diagnostics(diagnostics: &mut [ProposalDiagnostic]) {
-    diagnostics.sort_by_key(|diagnostic| {
-        (
-            diagnostic.reason,
-            diagnostic
-                .source_line_range
-                .map(|range| range[0])
-                .unwrap_or(usize::MAX),
-            diagnostic.source_unit_ids.len(),
-            diagnostic.diagnostic_id.clone(),
-        )
-    });
-}
-
 fn group_atomic_groups_by_destination(
     graph: &DependencyGraphReport,
     atomic_groups: &[AtomicGroupReport],
@@ -1413,19 +1154,12 @@ fn atomic_group_ids_for_source_unit_set(
         .collect()
 }
 
-fn overlaps(source_unit_ids: &[String], selected: &BTreeSet<String>) -> bool {
-    source_unit_ids
-        .iter()
-        .any(|source_unit_id| selected.contains(source_unit_id))
-}
-
 fn patch_plan_rows(
     graph: &DependencyGraphReport,
     dependency_graph_path: &Path,
     modules_root: &Path,
     source_root: Option<&Path>,
     source_context: Option<&VerifiedGraphSourceContext>,
-    propose: Option<&ProposalsReport>,
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<Vec<PatchPlanRow>> {
     let binding_to_source_units = binding_to_source_units(graph);
@@ -1545,8 +1279,6 @@ fn patch_plan_rows(
             } else {
                 PatchPlanStatus::CompleteAtomicGroups
             };
-            let matching_proposal_ids =
-                propose.map(|propose| matching_proposal_ids(propose, &requested_source_unit_ids));
             Ok(PatchPlanRow {
                 path: patch_set.path,
                 file: patch_set.file.display().to_string(),
@@ -1561,7 +1293,6 @@ fn patch_plan_rows(
                 missing_anonymous_source_unit_ids: missing_anonymous_source_unit_ids
                     .into_iter()
                     .collect(),
-                matching_proposal_ids,
             })
         })
         .collect()
@@ -1623,25 +1354,6 @@ fn atomic_group_by_source_unit(graph: &DependencyGraphReport) -> BTreeMap<String
         }
     }
     out
-}
-
-fn matching_proposal_ids(
-    propose: &ProposalsReport,
-    requested_source_unit_ids: &BTreeSet<String>,
-) -> Vec<String> {
-    if requested_source_unit_ids.is_empty() {
-        return Vec::new();
-    }
-    propose
-        .proposals
-        .iter()
-        .filter(|proposal| {
-            let proposal_source_units: BTreeSet<String> =
-                proposal.source_unit_ids.iter().cloned().collect();
-            requested_source_unit_ids.is_subset(&proposal_source_units)
-        })
-        .map(|proposal| proposal.proposed_module_id.clone())
-        .collect()
 }
 
 fn query_report(selection: &SelectionKind) -> QueryReport {
@@ -1711,11 +1423,8 @@ pub struct SourceUnitNotFound {
 
 struct ResolveSourceUnitContext<'a> {
     common: &'a CommonArgs,
-    size_cap_lines: usize,
     source_root: Option<&'a Path>,
     source_context: Option<&'a VerifiedGraphSourceContext>,
-    propose: Option<&'a ProposalsReport>,
-    tree_config: Option<&'a Path>,
     module_files: &'a [PathBuf],
 }
 
@@ -1773,31 +1482,6 @@ fn resolve_source_unit_ids(
             .into_iter()
             .map(|node| node.id.clone())
             .collect(),
-        SelectionKind::Proposal(proposal_id) => {
-            let proposal_source_unit_ids = if let Some(propose) = context.propose {
-                source_unit_ids_for_proposal(propose, proposal_id)
-            } else {
-                let propose = propose_from_graph(
-                    input,
-                    &ProposalOptions {
-                        dependency_graph_path: context.common.dependency_graph_path.clone(),
-                        modules_root: context.common.modules_root.clone(),
-                        tree_config: context.tree_config.map(Path::to_path_buf),
-                        source_root: context.source_root.map(Path::to_path_buf),
-                        source_context: context.source_context.cloned(),
-                        size_cap_lines: context.size_cap_lines,
-                    },
-                )?;
-                source_unit_ids_for_proposal(&propose, proposal_id)
-            };
-            if let Some(source_unit_ids) = proposal_source_unit_ids {
-                source_unit_ids
-            } else {
-                bail!(
-                    "proposal id {proposal_id:?} not found in current module proposals; run `debundle modules propose --strategy auto` to list current proposal ids"
-                );
-            }
-        }
         SelectionKind::AtomicGroup(atomic_group_id) => graph
             .atomic_graph
             .nodes
@@ -1805,31 +1489,6 @@ fn resolve_source_unit_ids(
             .find(|atomic_group| atomic_group.id == *atomic_group_id)
             .map(|atomic_group| atomic_group.source_unit_ids.clone())
             .unwrap_or_default(),
-        SelectionKind::Diagnostic(diagnostic_id) => {
-            let diagnostic_source_unit_ids = if let Some(propose) = context.propose {
-                source_unit_ids_for_diagnostic(propose, diagnostic_id)
-            } else {
-                let propose = propose_from_graph(
-                    input,
-                    &ProposalOptions {
-                        dependency_graph_path: context.common.dependency_graph_path.clone(),
-                        modules_root: context.common.modules_root.clone(),
-                        tree_config: None,
-                        source_root: context.source_root.map(Path::to_path_buf),
-                        source_context: context.source_context.cloned(),
-                        size_cap_lines: context.size_cap_lines,
-                    },
-                )?;
-                source_unit_ids_for_diagnostic(&propose, diagnostic_id)
-            };
-            if let Some(source_unit_ids) = diagnostic_source_unit_ids {
-                source_unit_ids
-            } else {
-                bail!(
-                    "diagnostic id {diagnostic_id:?} not found in current module proposal diagnostics; run `debundle modules propose --strategy auto` to list current diagnostic ids"
-                );
-            }
-        }
     };
     source_unit_ids.sort();
     source_unit_ids.dedup();
@@ -1923,28 +1582,6 @@ fn resolve_module_path_source_unit_ids(
         );
     }
     Ok((source_unit_ids.into_iter().collect(), unknown_binding_ids))
-}
-
-fn source_unit_ids_for_proposal(
-    propose: &ProposalsReport,
-    proposal_id: &str,
-) -> Option<Vec<String>> {
-    propose
-        .proposals
-        .iter()
-        .find(|proposal| proposal.proposed_module_id == *proposal_id)
-        .map(|proposal| proposal.source_unit_ids.clone())
-}
-
-fn source_unit_ids_for_diagnostic(
-    propose: &ProposalsReport,
-    diagnostic_id: &str,
-) -> Option<Vec<String>> {
-    propose
-        .diagnostics
-        .iter()
-        .find(|diagnostic| diagnostic.diagnostic_id == *diagnostic_id)
-        .map(|diagnostic| diagnostic.source_unit_ids.clone())
 }
 
 fn binding_homes(modules_root: &Path, module_files: &[PathBuf]) -> Result<Vec<BindingHomeReport>> {

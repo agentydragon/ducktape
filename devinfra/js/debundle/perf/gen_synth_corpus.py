@@ -1,23 +1,17 @@
-"""Generate a synthetic debundle corpus at the gaffer-scale proposer shape.
+"""Generate a reproducible synthetic debundle input for large-graph profiling.
 
-The proposer perf baseline in `perf/proposer.md` was historically measured
-against a private downstream fixture that public CI cannot access. This
-generator produces a public stand-in with the same graph shape the perf doc
-describes: `|V| ~= 10^4` source units, `|E| = O(|V|)`, block-clustered eager
-references (so the greedy proposer finds mergeable communities), a lazy-edge
-minority, at-init calls (exercising promotion), a sprinkle of asymmetric
-I-cycles (lazy forward, eager back — the shape that drives the gate ladder
-to tier 2/3), and a sampled export surface.
+The corpus has `|V| ~= 10^4` source units, `|E| = O(|V|)`, block-clustered
+eager references, a lazy-edge minority, at-init calls, asymmetric I-cycles and
+a sampled export surface. It exercises graph analysis, assignment checks and
+exact placement without relying on a private downstream fixture.
 
 `--claim-blocks N` assigns the first N blocks to pre-existing spec modules
-(`auto_partition/block_<k>`), both in the run spec's `logical_modules` (so
-the emitted dependency graph carries non-residual destinations and the proposer
-seeds pre-existing-module classes) and as a spec-modules YAML tree for
-`modules propose --strategy auto`. Claiming a contiguous *prefix* keeps the spec
+(`synthetic/block_<k>`), both in the run spec's `logical_modules` and as a
+spec-modules YAML tree. The emitted dependency graph carries non-residual
+destinations for graph-backed assignment commands. Claiming a contiguous *prefix* keeps the spec
 realizable: claimed blocks only reference earlier (claimed) blocks, so all
 residual→claimed eager reads point at modules that evaluate first.
-`--claim-blocks 0` leaves the graph fully residual — every proposer merge
-is then a delta-free tier-0 query.
+`--claim-blocks 0` leaves the graph fully residual.
 
 Output layout under `--out`:
 
@@ -25,15 +19,12 @@ Output layout under `--out`:
     snapshot/static/app.js    the synthetic chunk
     extracted/js-files.txt    chunk list for `inputs.js_list_path`
     spec.json                 minimal `debundle run` spec (absolute paths)
-    modules/                  spec-modules tree for `modules propose --strategy auto`
+    modules/                  spec-modules tree for graph-backed commands
 
-Measurement recipe (see `perf/proposer.md` "How to run"):
+Generation is shared by analysis and placement profiling recipes.
 
     gen_synth_corpus --out /tmp/synth --statements 10000 --seed 1 --claim-blocks 62
     debundle run --spec /tmp/synth/spec.json
-    perf_wrapper.sh --output-dir /tmp/propose-profile -- debundle modules propose --strategy auto \\
-        --graph /tmp/synth/out/reports/tree/static/app/dependency_graph.json.gz \\
-        --modules /tmp/synth/modules --format json
 """
 
 import argparse
@@ -44,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Tuned so a 10k-statement corpus lands near the historical fixture shape:
-# blocks of 20-60 source units (proposal-sized communities), ~12% lazy function
+# blocks of 20-60 source units (module-sized communities), ~12% lazy function
 # source units, ~8% at-init calls, ~5% cross-block eager refs, ~10% exports.
 BLOCK_MIN = 20
 BLOCK_MAX = 60
@@ -111,7 +102,7 @@ def generate_chunk(n_statements: int, rng: random.Random) -> Chunk:
             exports.append(name)
     # Asymmetric I-cycles (lazy forward, eager back): each pair is a 2-source-unit
     # I-SCC with one constraining edge. The extra block-const references give
-    # the greedy a reason to pull the two source units into different block cells,
+    # the assignment search a reason to pull the two source units into different block cells,
     # turning the pair into a cross-module I-cycle the ladder must escalate
     # past tier 1 for.
     for pair in range(ASYMMETRIC_CYCLE_PAIRS):
@@ -148,11 +139,11 @@ def write_corpus(out_root: Path, n_statements: int, seed: int, claim_blocks: int
     claimed_blocks = [k for k in chunk.blocks if k <= claim_blocks]
     for k in claimed_blocks:
         members = chunk.blocks[k]
-        logical_modules[f"auto_partition/block_{k}"] = {"members": [member_entry(m) for m in members]}
+        logical_modules[f"synthetic/block_{k}"] = {"members": [member_entry(m) for m in members]}
         yaml_lines = ["members:"]
         for m in members:
             yaml_lines += [f"  - name: {m}", "    selector:", "      binding:", f"        name: {m}"]
-        module_yaml = modules_root / f"auto_partition/block_{k}.yaml"
+        module_yaml = modules_root / f"synthetic/block_{k}.yaml"
         module_yaml.parent.mkdir(parents=True, exist_ok=True)
         module_yaml.write_text("\n".join(yaml_lines) + "\n")
 

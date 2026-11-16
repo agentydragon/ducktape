@@ -9,48 +9,10 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
-fn residual_apply_request(
-    staged: &TreeStaged,
-    binding: &str,
-    destination: &str,
-    readable: &str,
-) -> Value {
-    let report = command(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--graph",
-        path(&staged.graph),
-        "--modules",
-        path(&staged.modules),
-        "--tree-config",
-        path(&staged.config),
-        "--source-root",
-        path(&staged.root().join("snapshot")),
-        "--size-cap-lines",
-        "1",
-        "--format",
-        "json",
-    ]);
-    assert_ok(&report, "modules propose for fresh residual claim");
-    let report: Value = serde_json::from_str(&report.stdout).unwrap();
-    let proposal = report["proposals"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| {
-            row["landable_today"] == true
-                && row["binding_ids"]
-                    .as_array()
-                    .is_some_and(|bindings| bindings.iter().any(|name| name == binding))
-        })
-        .unwrap_or_else(|| panic!("no landable residual proposal for {binding:?}: {report:#}"));
+fn residual_apply_assignment(staged: &TreeStaged, binding: &str, destination: &str) -> Value {
     json!({
-        "proposal_id": proposal["proposed_module_id"],
-        "source_unit_ids": proposal["source_unit_ids"],
+        "unit_id": source_unit_for_binding(staged, binding),
         "module": destination,
-        "readable_names": {(binding): readable},
     })
 }
 
@@ -73,11 +35,7 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
-    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
-    assert_eq!(
-        request["source_unit_ids"],
-        json!([source_unit_for_binding(&staged, "second")])
-    );
+    let request = residual_apply_assignment(&staged, "second", "a_earlier");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
 
@@ -126,7 +84,7 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
         )],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_request(&staged, "only", "new_module", "only");
+    let request = residual_apply_assignment(&staged, "only", "new_module");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
 
@@ -171,7 +129,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    let request = residual_apply_assignment(&staged, "second", "a_earlier");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let before = module_snapshot(&staged.modules);
@@ -222,8 +180,7 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let scoped_request =
-        residual_apply_request(&scoped, "second", "chunks/main/a_earlier", "second");
+    let scoped_request = residual_apply_assignment(&scoped, "second", "chunks/main/a_earlier");
     let scoped_batch = scoped.root().join("apply.json");
     fs::write(
         &scoped_batch,
@@ -260,7 +217,7 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
         &[("main", "function value() { return \"value\"; }\n")],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_request(&staged, "value", "new_module", "value");
+    let request = residual_apply_assignment(&staged, "value", "new_module");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
     let before = module_snapshot(&staged.modules);

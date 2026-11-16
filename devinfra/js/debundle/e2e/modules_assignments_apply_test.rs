@@ -257,3 +257,42 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
     );
     fixture.assert_runs("3\n");
 }
+
+#[test]
+fn retired_proposal_inputs_and_enrichment_flags_are_rejected_without_writes() {
+    let fixture = GraphFixture::new("const value = 1;\nconsole.log(value);\n", &[]);
+    let legacy_proposals = batch(
+        &fixture,
+        json!({
+            "proposals": [{
+                "proposed_module_id": "auto_partition_0001",
+                "binding_ids": ["value"]
+            }]
+        }),
+    );
+
+    // `modules apply` accepts only explicit assignment batches or saved plans;
+    // the former proposal-ID flag is a usage error and cannot edit the tree.
+    fixture.assert_rejected_unchanged(
+        &["modules", "apply", "--batch", &legacy_proposals],
+        &["unexpected argument", "--batch"],
+    );
+
+    // `bindings assign --batch` remains an explicit binding-move API, but it
+    // does not interpret the old proposer report as a batch of moves.
+    fixture.assert_rejected_unchanged(
+        &["bindings", "assign", "--batch", &legacy_proposals],
+        &["top-level array"],
+    );
+
+    for args in [
+        vec!["coverage", "--include-proposals"],
+        vec!["describe", "value", "--include-proposals"],
+        vec!["graph-summary", "--include-proposals"],
+    ] {
+        let output = fixture.command(&args);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(2), "{args:?}: {stderr}");
+        assert!(stderr.contains("unexpected argument"), "{args:?}: {stderr}");
+    }
+}

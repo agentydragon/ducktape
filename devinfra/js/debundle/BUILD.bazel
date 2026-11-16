@@ -1104,20 +1104,13 @@ rust_test(
     deps = ["@crates//:proptest"],
 )
 
-# `peel/gate_differential_test.rs` and `peel/quotient_integration_test.rs` are
-# `#[cfg(test)]` modules: rustc reads them only in `:peel_test`, where they
-# reach the test-only surface in `quotient::testing`.
 rust_library(
     name = "peel",
     srcs = [
         "peel/assignment.rs",
-        "peel/gate_differential_test.rs",
         "peel/mod.rs",
         "peel/placement.rs",
         "peel/plan.rs",
-        "peel/propose.rs",
-        "peel/quotient.rs",
-        "peel/quotient_integration_test.rs",
         "peel/search.rs",
     ],
     crate_root = "peel/mod.rs",

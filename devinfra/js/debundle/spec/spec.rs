@@ -1508,7 +1508,7 @@ pub struct LogicalModule {
     pub annotations: BTreeMap<String, BindingAnnotation>,
     /// Anonymous (empty-`declared_bindings`) top-level statements
     /// the materializer must co-move into this module's body.
-    /// Required when a peel proposal's closure includes side-effect
+    /// Required when a source-unit assignment includes side-effect
     /// statements that have no name to address as `members`
     /// (decorator applications, IIFE preludes, runtime init calls).
     /// Each entry is matched by AST shape against the chunk's

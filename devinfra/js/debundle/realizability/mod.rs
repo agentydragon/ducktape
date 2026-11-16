@@ -580,10 +580,7 @@ pub fn simulated_evaluation_post_order(
 ///
 /// The index does NOT hold a borrow of `DependencyGraph`. `apply` and every
 /// `*_after_moving_source_units*` verdict query take the graph as a
-/// parameter. Storing the borrow would force callers that also own the
-/// graph (e.g., the peel kernel's `QuotientGraph`) into a
-/// self-referential struct; passing the graph per call keeps that
-/// ownership flat.
+/// parameter. Passing it per call keeps the caller's ownership flat.
 #[derive(Debug, Clone)]
 pub struct RealizabilityIndex {
     assignment: ModuleAssignment,

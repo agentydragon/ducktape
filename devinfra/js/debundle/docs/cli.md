@@ -120,9 +120,8 @@ selector root, when supplied too, must contain the relocated input.
 
 Plain `graph-summary` reads the saved report without verifying the current
 engine, source, packages or YAML. Its success establishes report readability;
-supplying relocation flags does not turn it into a compatibility check.
-`graph-summary --include-proposals` does resolve current spec context and
-verify compatibility. For a bounded replay preflight, use
+supplying relocation flags does not turn it into a compatibility check. For a
+bounded replay preflight, use
 `inspect-source --id unit:N` with the matching graph and roots, or `describe`
 with the graph's module scope. Retain the command's actual successful exit
 status and source report before claiming source compatibility.
@@ -229,8 +228,7 @@ It preserves order and duplicates; a positional ID is mutually exclusive. Graph,
 modules, source root, bounds and edge filters apply to every item. With `--tree-config`,
 `--modules` may name the full app tree; IDs resolve against all roots for the graph's chunk.
 
-One invocation loads/verifies the graph once and reuses binding-home and requested
-proposal analysis. Module paths still resolve claims through the ordinary source-backed
+One invocation loads/verifies the graph once and reuses binding-home analysis. Module paths still resolve claims through the ordinary source-backed
 resolver. Keep inputs unchanged; no analysis is cached between commands.
 
 JSON wraps ordinary standalone reports in `{"results": [...]}`; NDJSON emits one
@@ -285,15 +283,10 @@ rejection object, including `mismatch.reason` and regeneration details. With
 not write an error report to stdout. Clap usage and argument-parsing failures
 remain Clap diagnostics because dispatch has not begun.
 
-Read-only inspection commands prefer fast graph/spec lookups. `modules
-propose` runs the exact placement search by default; add `--strategy auto` for
-the advisory atomic-DAG inventory. Other queries such as `describe`, `coverage`,
-and `graph-summary` omit proposal-derived fields unless the selection is a
-proposal/diagnostic id or `--include-proposals` is passed (the inventory is
-expensive on large graphs).
-
-Description proposal fields and residual dependency names are defined in
-<../SPEC.md#authoring-reports>; truncation metadata uses the same section names.
+Read-only inspection commands prefer direct graph/spec lookups. `modules
+propose` always runs the exact placement search and returns a snapshot-bound
+plan when it finds a placement. `describe`, `coverage`, and `graph-summary`
+report graph and ownership data without proposal-enrichment options.
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules apply`, `modules refine`, `modules merge`,
@@ -444,11 +437,10 @@ module-level `source_unit_ids` remains an aggregate and is not positionally
 aligned with the binding arrays. Use the report for the same source/spec/engine
 snapshot; it does not resolve later spec edits.
 
-`describe` and `inspect-source --id` take any ID kind and dispatch on shape:
+`describe` and `inspect-source --id` take IDs and dispatch on shape:
 bindings (minified or readable), module paths (`runtime/plugins`) or
 unambiguous module filenames, module ids (`logical:7`), source-unit IDs
-(`unit:42`), atom ids (`atomic:N`), proposal IDs (`extend:...` or
-`auto_partition_...`), and diagnostic IDs (`diagnostic:...`). An unknown
+(`unit:42`), and atom ids (`atomic:N`). An unknown
 identifier-like prefix such as `module:7` is rejected before graph loading or
 compatibility checks, with `logical:7` suggested for a module ID. An existing
 module path containing a colon is resolved as a path before this check.
@@ -458,8 +450,8 @@ module path containing a colon is resolved as a path before this check.
 every matching row; `--all` conflicts with `--limit`, and `--limit 0` directs
 you to use `--all`. Its `limits.sections` object records `total`, `emitted`,
 and `truncated` after filtering; `limits.limit` is the cap, or `0` with
-`--all`. The selected binding/source-unit/group/proposal/diagnostic row comes
-first in its matching section so it remains available under a small limit.
+`--all`. The selected binding/source-unit/group row comes first in its matching
+section so it remains available under a small limit.
 
 `--direction incoming|outgoing|both` selects edge direction relative to the
 query and defaults to `both`. It filters dependency, atomic-group, and
@@ -1222,29 +1214,6 @@ omitting `readable` preserves the current readable name):
 ]
 ```
 
-`--batch` also accepts `modules propose --strategy auto --format json` output, or a
-top-level array of proposal objects selected from `.proposals`, when every
-selected binding is already claimed in YAML and each row is a direct move:
-
-- `landable_today: true`
-- non-empty `binding_ids`
-- no `merge_into`
-- no `anonymous_statement_source_unit_ids`
-
-For fresh residual bindings, use `modules apply` below. Existing-claim proposal
-rows move each `binding_ids[]` entry to `proposed_module_id` or
-`extends_module_id`. Proposal rows carry no `readable`; rename with a move
-array. The rest are rejected:
-
-- `merge_into` rows combine existing source modules: use `modules merge` or
-  manual YAML.
-- Rows with `anonymous_statement_source_unit_ids` need `anonymous_statements:`
-  edits, which `bindings assign` does not perform.
-- Rows with `status: blocked_residual_dependency` (`landable_today: false`)
-  read other residual classes (`other_residual_classes_referenced`), so promoting
-  one alone would trip the realizability gate: assign it together with the
-  classes it references, or co-locate the source units manually first.
-
 ## Checking explicit destination batches (`modules check`)
 
 For a residual-peel decision, use the default exact
@@ -1256,9 +1225,8 @@ product of atom-to-destination choices. `--max-checks` and `--time-budget-ms`
 limit analyzed partition states and cooperative placement time after graph and
 baseline preparation. Deadline checks also run inside schedule derivation;
 individual graph operations can finish before the next check. Work counts
-summarize projections, schedule checkpoints, contractions, branch attempts and final certification. The
-explicit `--strategy auto` factorizer remains advisory and cannot establish
-that no peel exists.
+summarize projections, schedule checkpoints, contractions, branch attempts and
+final certification.
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,
@@ -1313,107 +1281,15 @@ existing units moved, synthesized claims and changed files. Graph/selector
 acceptance still requires normal materialization and relevant runtime checks.
 Refresh the graph after applying an edit.
 
-## Claiming fresh proposals (`modules apply --batch`)
+## Tree-config-scoped module assignments
 
-For an app-level spec with several chunks, pass the same `--tree-config`
-to `modules propose` and `modules apply`. The config's `module_roots` maps
-the graph's chunk ID to its authored YAML subtrees. `modules apply` checks
-only those subtrees against the chunk graph and preserves each configured
-root's exact filesystem spelling; it normalizes only the logical module
-suffix. A destination outside the mapped roots is rejected. Single-chunk
-specs can omit the flag when `--modules` already names that chunk's tree.
-
-`landable_today` means the proposed source-unit set has no outgoing residual-class
-dependency and its anonymous source units are addressable. It does not guarantee a
-structural selector can be synthesized or that the final edit passes the gate.
-Dependencies on size-capped classes still count in
-`edges_to_other_residual_classes` and block readiness. The referenced-proposal ID
-list includes only emitted target proposals; inspect size-cap diagnostics for
-prerequisites omitted from that list.
-Proposal rows also expose bounded `observed_consumers` metadata for incoming
-raw edges entering added source units. Read the `value_reads`, `writes`, and
-`scheduling_or_promoted_context` views as observed source-unit/module evidence,
-not as inferred semantic ownership. Each view reports its total and omitted
-source-unit, module, and edge counts; inspect the listed raw edges and source
-before choosing a destination. Consumers already in the resulting proposal
-class, including existing members of an extension or merge, are excluded.
-Promoted edges appear in their read/write view and in the context view.
-Rebind endpoints are co-located in the current quotient model, so `writes` can
-be empty even when the graph has a raw write edge from a source unit currently
-assigned elsewhere.
-`modules apply` claims reviewed residual bindings with proven `source_matches:`
-selectors. It requires `--graph`, `--modules`, and `--source-root` (or their
-environment variables), and accepts a JSON batch of this shape:
-
-Bindings from one multi-declarator statement are synthesized as one shared
-selector. References between selected declarators use their requested readable
-names in that selector.
-
-```json
-[
-  {
-    "proposal_id": "auto_partition_0007",
-    "source_unit_ids": ["unit-id-from-the-reviewed-row"],
-    "module": "services/provider",
-    "readable_names": { "a": "Provider" }
-  }
-]
-```
-
-Copy `proposal_id` from `proposed_module_id` and `source_unit_ids` from the same
-current `modules propose --strategy auto --format json` row. Choose the destination and a
-readable name for every residual binding in that row. For extension rows the
-destination must equal `extends_module_id`. Use the same `--size-cap-lines`
-value as `modules propose` if it was overridden. The command rejects stale
-source-unit sets, merges, anonymous-statement rows, unprovable or name-pinned selectors,
-and failed post-edit gates before writing any YAML. `--dry-run --format json`
-reports each selector in `selector_reviews`, including its source-match claim
-or relational selector, provenance, and rebuild-anchor review warning. It
-reports planned files without writing the spec. Uniqueness is proved against
-the current source snapshot; review the retained literals and property names
-before applying. Omit a proposal from the batch to leave it in residual.
-
-For a report-only relocation assessment of the exact post-claim candidate, add
-`--dry-run --analysis <staged-artifact>`, the existing `--tree-config`, and
-`--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
-`--modules` root also supplies the transform's `--tree-modules`. Use
-`--format json` to receive the structured assessment. The config must
-assign one full module root to the graph chunk, and the transform must
-materialize only that chunk. These auxiliary transform flags are explicit-only
-for `modules apply`: ambient `DEBUNDLE_TREE_SOURCE_ROOT` and `DEBUNDLE_OUT`
-values do not alter ordinary apply, and an explicitly supplied auxiliary flag
-without `--analysis` is rejected. After the existing expected-member and
-realizability gates pass, the command assesses the exact typed documents that
-would be written. A missing, stale, or mismatched context fails before YAML
-writes. The JSON `effect_relocation_assessment` contains the effect component
-and typed placement obligations for the same exact candidate. It does not
-change edit acceptance or prove replacement, privacy or singleton obligations.
-Scoped `--tree-config` behavior remains available without `--analysis`.
-
-Optional `selectors` entries choose a reviewed selector for a binding; bindings
-without an entry use synthesis. A `source_match` entry uses the normal
-`source_matches:` claim shape and must name exactly one binding. A `relational`
-entry uses the normal `members[].selector` shape (for example `cross_ref` or
-`reads_member`); name pins are rejected. Each chosen selector must resolve to
-the requested source binding, not merely to some unique declaration:
-
-```json
-{
-  "proposal_id": "auto_partition_0007",
-  "source_unit_ids": ["unit-id-from-the-reviewed-row"],
-  "module": "services/provider",
-  "readable_names": { "a": "Provider" },
-  "selectors": {
-    "a": {
-      "kind": "source_match",
-      "selector": {
-        "match": "const Provider = { value: 4 };",
-        "bindings": [{ "local": "Provider", "name": "Provider" }]
-      }
-    }
-  }
-}
-```
+For an app-level spec with several chunks, pass the same `--tree-config` to
+`modules propose` and `modules apply`. The config's `module_roots` maps the
+graph's chunk ID to authored YAML subtrees. `modules apply` checks only those
+subtrees against the chunk graph and preserves each configured root's exact
+filesystem spelling; it normalizes only the logical module suffix. A destination
+outside the mapped roots is rejected. Single-chunk specs can omit the flag when
+`--modules` already names that chunk's tree.
 
 ## Applying reviewed source-unit assignments (`modules refine`)
 
@@ -1733,13 +1609,11 @@ on the next `run` or `spec validate`. Runtime failures follow the typed
 
 ## Workflow: investigating a binding end-to-end
 
-When a binding's role is unclear or a proposal is suspicious:
+When a binding's role or destination is unclear:
 
-For bounded owner discovery, choose the first page for the question: use
-`graph-summary --limit N` to inspect the largest residual atomic groups, or
-`modules propose --strategy auto --limit N` to inspect a bounded advisory
-proposal page. Put the owners
-you want to investigate in a JSON array, then use
+For bounded owner discovery, use `graph-summary --limit N` to inspect the
+largest residual atomic groups. Put the owners you want to investigate in a
+JSON array, then use
 `describe --batch owners.json --direction incoming --limit N` (repeat
 `--reason KIND` when useful). Each report's `edge_census` counts raw incoming
 and outgoing edges by dependency kind and role after direction/reason filters;
@@ -1751,9 +1625,7 @@ those aggregate projections do not retain the raw edge role. This filtered
 inspection helps choose what to read next; it is not a gate verdict.
 
 1. **`debundle describe <sym>`** — graph + spec context: the binding's
-   source unit, home module, atom membership, and incoming/outgoing edges. Add
-   `--include-proposals` only when proposer proposal/diagnostic
-   annotations are needed.
+   source unit, home module, atom membership, and incoming/outgoing edges.
 2. **`debundle inspect-source --id <sym>`** — inspect the source unit's numbered
    source item. Use `--view raw` for original bytes and
    `--context-statements 1` for neighboring items.
@@ -1955,9 +1827,8 @@ both member and source-match bindings; module edits address the top-level
 
 ## See also
 
-- `design.md` — the realizability theorem the gate enforces; § "Layered
-  mental model" + § "Factor assembly inside `debundle run`" for the
-  advisory factorization algorithm behind `modules propose --strategy auto`.
+- `design.md` — the realizability theorem the gate enforces and the layered
+  mental model for materialization.
 - `wire_format.md` — JSON sidecar conventions readers of these commands
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing

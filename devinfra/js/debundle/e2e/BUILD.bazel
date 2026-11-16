@@ -1342,30 +1342,6 @@ debundle_e2e_test(
     ],
 )
 
-debundle_e2e_test(
-    name = "peel_factorize_landability_test",
-    size = "small",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:spec",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "peel_factorize_extend_anonymous_test",
-    size = "small",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:peel",
-        "//devinfra/js/debundle:spec",
-    ],
-)
-
 debundle_e2e_test(name = "reads_member_lowering_test")
 
 debundle_e2e_test(name = "member_of_module_lowering_test")
@@ -1412,26 +1388,6 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:analysis_model",
         "//devinfra/js/debundle:report_io",
-    ],
-)
-
-debundle_e2e_test(
-    name = "proposal_consumer_metadata_test",
-    deps = [
-        ":graph_support",
-        "//devinfra/js/debundle:analysis",
-        "//devinfra/js/debundle:analysis_model",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "modules_apply_cli_test",
-    deps = [
-        ":graph_support",
-        "@crates//:serde_json",
-        "@crates//:serde_yaml",
-        "@crates//:tempfile",
     ],
 )
 

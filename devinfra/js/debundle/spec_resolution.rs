@@ -127,7 +127,7 @@ impl MemberRequest {
     /// member form (logical-module member, chunk_renames member)
     /// propagate the same way — they are semantic trust assertions,
     /// not ownership claims; binding patches routed through
-    /// chunk_renames still do not force proposer grouping.
+    /// chunk_renames still do not force module co-location.
     pub fn collect_assumptions_for_binding(
         &self,
         assumptions: &mut AnalysisAssumptions,

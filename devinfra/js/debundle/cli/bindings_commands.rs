@@ -214,13 +214,11 @@ struct BindingsAssignArgs {
     /// `<readable>` may contain `:` — use `--batch` JSON for such edge cases.
     pub triples: Vec<String>,
     /// Read additional moves from a JSON file (or `-` for stdin).
-    /// Accepts explicit `{sym, module, readable?}` move arrays, plus
-    /// reviewed binding-only rows from `modules propose --strategy auto`.
+    /// Accepts explicit `{sym, module, readable?}` move arrays.
     ///
     /// Moves are deduplicated on resolved member identity (duplicates
     /// collapse with a stderr warning); contradictory destinations or
-    /// readable names for one member are rejected. Formats and the
-    /// propose-row admission rules: docs/cli.md § "Batch atomicity".
+    /// readable names for one member are rejected. See docs/cli.md § "Batch atomicity".
     #[arg(long)]
     pub batch: Option<String>,
 }

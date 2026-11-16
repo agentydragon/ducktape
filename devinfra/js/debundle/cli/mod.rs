@@ -417,8 +417,8 @@ enum DebundleCommand {
     /// residual-eligible bindings, …).
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
-    /// Dereference any identifier (binding, module path, proposal,
-    /// atomic group, source_unit, diagnostic) with full graph + spec context.
+    /// Dereference any identifier (binding, module path, atomic group, or
+    /// source unit) with full graph + spec context.
     Describe(DescribeArgs),
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
@@ -886,16 +886,6 @@ fn verify_mixed_graph_command(
             None,
         )
         .map(Some),
-        DebundleCommand::GraphSummary(args) if args.include_proposals => {
-            verify_graph_compatibility(
-                &args.common.dependency_graph_path,
-                &args.common.modules_root,
-                args.source_root.as_deref(),
-                roots,
-                None,
-            )
-            .map(Some)
-        }
         DebundleCommand::Describe(args) => verify_graph_compatibility(
             &args.common.dependency_graph_path,
             &args.common.modules_root,

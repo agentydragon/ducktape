@@ -31,10 +31,6 @@ fn finds_required_joint_peel_checks_and_applies_the_same_plan() {
     let result = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
-        "--existing-assignments",
-        "fixed",
         "--only-units",
         &only,
         "--require",
@@ -59,8 +55,6 @@ fn exhaustive_negative_and_explicit_budget_exhaustion_are_distinct() {
     let args = [
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--into",
         "chain",
         "--only-units",
@@ -153,8 +147,6 @@ fn entry_constraints_exhaust_a_large_required_scope_without_filtered_enumeration
     let mut args = vec![
         "modules".to_string(),
         "propose".to_string(),
-        "--strategy".to_string(),
-        "complete".to_string(),
         "--into".to_string(),
         "a_before".to_string(),
         "--only-units".to_string(),
@@ -182,8 +174,6 @@ fn existing_destination_is_checked_in_place_and_fixed_owners_stay_fixed() {
     let blocked = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "existing",
         "--into",
@@ -193,8 +183,6 @@ fn existing_destination_is_checked_in_place_and_fixed_owners_stay_fixed() {
     let accepted = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "existing",
         "--into",
@@ -221,14 +209,7 @@ fn baseline_three_unit_atom_is_preserved_and_cut_scope_is_an_error() {
         )],
     );
     let helper = fixture.source_unit_for_binding("helper");
-    let result = fixture.json(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "complete",
-        "--require",
-        &helper,
-    ]);
+    let result = fixture.json(&["modules", "propose", "--require", &helper]);
     assert_eq!(result["status"], "found", "{result}");
     for row in result["plan"]["changes"].as_array().unwrap() {
         assert_ne!(row["unit_id"], fixture.source_unit_for_binding("first"));
@@ -244,8 +225,6 @@ fn baseline_three_unit_atom_is_preserved_and_cut_scope_is_an_error() {
     let output = atom.command(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--only-units",
         &only,
         "--format",
@@ -262,7 +241,7 @@ fn baseline_three_unit_atom_is_preserved_and_cut_scope_is_an_error() {
 #[test]
 fn saved_plan_cannot_be_retargeted_to_a_refreshed_program_with_reused_ids() {
     let fixture = chain();
-    let result = fixture.json(&["modules", "propose", "--strategy", "complete"]);
+    let result = fixture.json(&["modules", "propose"]);
     let plan = save(&fixture, "plan.json", &result["plan"]);
     fs::write(fixture.source_path(), "const anchor = 1;\nconst dep = 3;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n").unwrap();
     fixture.refresh_graph();
@@ -286,7 +265,7 @@ fn plan_logical_destinations_work_with_a_configured_physical_tree_root() {
         "--tree-config",
         config.to_str().unwrap(),
     ];
-    let mut args = vec!["modules", "propose", "--strategy", "complete"];
+    let mut args = vec!["modules", "propose"];
     args.extend(scope);
     let result = fixture.json(&args);
     assert_eq!(result["status"], "found");
@@ -306,16 +285,9 @@ fn contradictory_or_unsupported_options_never_report_no_peel() {
     for tail in [
         vec!["--destinations", "existing", "--into", "absent"],
         vec!["--size-cap-lines", "1"],
-        vec!["--existing-assignments", "repartition"],
+        vec!["--strategy", "auto"],
     ] {
-        let mut args = vec![
-            "modules",
-            "propose",
-            "--strategy",
-            "complete",
-            "--format",
-            "json",
-        ];
+        let mut args = vec!["modules", "propose", "--format", "json"];
         args.extend(tail);
         let output = fixture.command(&args);
         assert!(matches!(output.status.code(), Some(1 | 2)));
@@ -333,8 +305,6 @@ fn empty_authored_owner_is_an_existing_destination() {
     let result = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "existing",
         "--into",

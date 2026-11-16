@@ -196,7 +196,7 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     let helper: Value = serde_json::from_slice(&helper.stdout).unwrap();
     assert_eq!(helper["source_unit_ids"], json!(["unit:0"]));
 
-    let callback = joint_scope_command(&run, &["describe", "callback", "--include-proposals"]);
+    let callback = joint_scope_command(&run, &["describe", "callback"]);
     assert!(
         callback.status.success(),
         "{}",
@@ -204,8 +204,8 @@ fn describe_scopes_joint_module_roots_from_tree_config() {
     );
     let callback: Value = serde_json::from_slice(&callback.stdout).unwrap();
     assert_eq!(callback["query"]["kind"], "binding");
-    assert!(callback.get("module_proposals").is_some());
-    assert!(callback.get("module_proposal_diagnostics").is_some());
+    assert!(callback.get("module_proposals").is_none());
+    assert!(callback.get("module_proposal_diagnostics").is_none());
 
     let batch_path = run.root().join("describe-ids.json");
     fs::write(
@@ -436,18 +436,6 @@ fn census_is_single_batch_equivalent_and_counts_internal_edge_incidence() {
 
     let owned = ["owners"];
     assert_equivalent(&internal, &owned, &["--limit", "1"]);
-}
-
-#[test]
-fn proposal_results_do_not_enable_proposals_for_later_plain_queries() {
-    let fixture = fixture();
-    let proposals = fixture.json(&["modules", "propose", "--strategy", "auto"]);
-    let proposal = proposals["proposals"][0]["proposed_module_id"]
-        .as_str()
-        .unwrap();
-    let ids = [proposal, "seed", proposal];
-    assert_equivalent(&fixture, &ids, &[]);
-    assert_equivalent(&fixture, &ids, &["--include-proposals"]);
 }
 
 #[test]

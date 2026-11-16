@@ -5,7 +5,6 @@ use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::plan::ExplainSession;
-use peel::propose::DEFAULT_SIZE_CAP_LINES;
 use peel::{
     AtomicGroupsArgs, CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainArgs,
     ExplainDirection, GraphSummaryArgs, OutputFormat, PatchPlanArgs, SelectionKind,
@@ -23,7 +22,7 @@ use std::path::PathBuf;
 /// Args for `debundle describe <id>`.
 ///
 /// `<id>` is dispatched on shape: `unit:NNN`, `atomic:NNN` (an atomic group),
-/// `diagnostic:...`, `auto_partition_NNNN`/`extend:...`, a module path
+/// a module path
 /// (resolves to `<modules>/<id>.yaml`), or otherwise a binding
 /// (minified or readable name).
 #[derive(Debug, ClapArgs)]
@@ -42,10 +41,6 @@ pub(super) struct DescribeArgs {
     /// Tree config for chunk-scoped queries over an app-level modules tree.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     pub tree_config: Option<PathBuf>,
-
-    /// Hard line ceiling used when resolving proposal-id references.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    pub size_cap_lines: usize,
 
     /// Maximum number of rows per report section (default 20; edge census counts stay complete).
     #[arg(
@@ -68,12 +63,6 @@ pub(super) struct DescribeArgs {
     #[arg(long = "reason", value_name = "REASON")]
     pub reasons: Vec<DepKind>,
 
-    /// Also run the module proposer to annotate matching proposals and
-    /// diagnostics. This is intentionally opt-in because it is expensive on
-    /// large graphs.
-    #[arg(long = "include-proposals")]
-    pub include_proposals: bool,
-
     /// Root used to resolve relative `source_location.source_path` values.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
@@ -90,7 +79,7 @@ pub(super) struct ValidatedDescribeQuery {
 /// Args for `debundle inspect-source`.
 #[derive(Debug, ClapArgs)]
 pub(super) struct InspectSourceArgs {
-    /// Resolve a binding, source unit, atom, proposal, diagnostic, or module ID.
+    /// Resolve a binding, source unit, atom, or module ID.
     #[arg(long, conflicts_with_all = ["source_file", "chunk", "statements", "around_binding", "declarator_binding"])]
     pub id: Option<String>,
 
@@ -101,10 +90,6 @@ pub(super) struct InspectSourceArgs {
     /// Module spec root for --id (or DEBUNDLE_MODULES).
     #[arg(long, env = "DEBUNDLE_MODULES")]
     pub modules: Option<PathBuf>,
-
-    /// Hard line ceiling used when resolving proposal IDs.
-    #[arg(long = "size-cap-lines", default_value_t = DEFAULT_SIZE_CAP_LINES)]
-    pub size_cap_lines: usize,
 
     /// Read this JavaScript source file directly.
     #[arg(long = "source-file", conflicts_with = "chunk")]
@@ -205,23 +190,9 @@ struct InspectedStatement {
     omitted_source_bytes: usize,
 }
 
-pub(super) const ACCEPTED_IDENTIFIER_PREFIXES: &[&str] = &[
-    "unit:",
-    "logical:",
-    "atomic:",
-    "diagnostic:",
-    "extend:",
-    "auto_partition_",
-];
+pub(super) const ACCEPTED_IDENTIFIER_PREFIXES: &[&str] = &["unit:", "logical:", "atomic:"];
 
-pub(super) const ACCEPTED_IDENTIFIER_EXAMPLES: &[&str] = &[
-    "unit:42",
-    "logical:7",
-    "atomic:3",
-    "diagnostic:example",
-    "extend:example",
-    "auto_partition_0007",
-];
+pub(super) const ACCEPTED_IDENTIFIER_EXAMPLES: &[&str] = &["unit:42", "logical:7", "atomic:3"];
 
 #[derive(Debug, thiserror::Error)]
 #[error(
@@ -252,18 +223,12 @@ fn dispatch_id_selection(id: &str, module_paths: &mut ModulePathIndex) -> Result
     if id.starts_with("atomic:") {
         return Ok(SelectionKind::AtomicGroup(id.to_string()));
     }
-    if id.starts_with("diagnostic:") {
-        return Ok(SelectionKind::Diagnostic(id.to_string()));
-    }
     // Module-path detection: try resolving `<modules>/<id>.yaml`.
     // Spec authors sometimes have flat module paths (no `/`); the
     // existence check is the only reliable disambiguator vs. binding
     // names that happen to spell a module-like word.
     if let Some(module_path) = module_paths.resolve_id(id)? {
         return Ok(SelectionKind::ModulePath(module_path));
-    }
-    if id.starts_with("auto_partition_") || id.starts_with("extend:") {
-        return Ok(SelectionKind::Proposal(id.to_string()));
     }
     if let Some((prefix, suffix)) = unsupported_typed_prefix(id) {
         return Err(UnsupportedIdentifierPrefix {
@@ -400,7 +365,6 @@ pub(super) fn run_describe(
         args.common.clone(),
         args.tree_config.clone(),
         args.source_root.clone(),
-        args.size_cap_lines,
         source_context,
     )?;
     let mut module_paths = ModulePathIndex::from_paths(session.module_paths());
@@ -429,7 +393,6 @@ pub(super) fn run_describe(
                         },
                         direction: args.direction,
                         reasons: args.reasons.clone(),
-                        include_proposals: args.include_proposals,
                     },
                     diagnostics,
                 )
@@ -499,7 +462,6 @@ pub(super) fn run_inspect_source(
                         modules_root: modules,
                     },
                     selection,
-                    size_cap_lines: args.size_cap_lines,
                     source_root: args.source_root.clone(),
                 },
                 source_context,
@@ -912,22 +874,12 @@ fn render_patch_plan_text(report: &peel::PatchPlanReport, out: &mut String) {
 }
 
 fn render_graph_summary_text(report: &peel::GraphSummaryReport, out: &mut String) {
-    let proposal_count = report
-        .proposal_count
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "skipped".to_string());
-    let diagnostic_count = report
-        .diagnostic_count
-        .map(|count| count.to_string())
-        .unwrap_or_else(|| "skipped".to_string());
     out.push_str(&format!(
-        "source_units={} edges={} atomic_groups={} residual_atomic_groups={} proposals={} diagnostics={}\n",
+        "source_units={} edges={} atomic_groups={} residual_atomic_groups={}\n",
         report.source_unit_count,
         report.dependency_edge_count,
         report.atomic_group_count,
         report.residual_atomic_group_count,
-        proposal_count,
-        diagnostic_count,
     ));
 }
 

@@ -167,8 +167,6 @@ fn check_family(family: Family) {
             let mut args = vec![
                 "modules".to_string(),
                 "propose".to_string(),
-                "--strategy".to_string(),
-                "complete".to_string(),
                 "--only-units".to_string(),
                 only_path.to_string_lossy().into_owned(),
             ];

@@ -29,17 +29,7 @@ def peel_more(snapshot: Snapshot, module_subdir: Path, evidence: Path, max_check
     command = [*graph_command(snapshot), "modules"]
     report = json.loads(
         recorded_run(
-            [
-                *command,
-                "propose",
-                "--strategy",
-                "complete",
-                "--max-checks",
-                str(max_checks),
-                *common,
-                "--format",
-                "json",
-            ],
+            [*command, "propose", "--max-checks", str(max_checks), *common, "--format", "json"],
             cwd,
             evidence / "propose",
         )

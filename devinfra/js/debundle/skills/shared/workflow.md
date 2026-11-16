@@ -17,7 +17,7 @@ commands, conventions, and gates.
 ## Roles
 
 - `debundle_plan_work`: read-only source/graph planning.
-- `debundle_intake`: grounds residual proposals and names seed destinations.
+- `debundle_intake`: grounds an exact residual-placement plan and names its module destinations.
 - `debundle_lane_worker`: implements one scoped assignment.
 - `debundle_integrator`: combines worker results in isolated integration state.
 - `debundle_orchestrator`: owns adapter inputs, dispatch, and progress tracking.
@@ -95,8 +95,7 @@ partition states; the report's work counts show projections, contractions,
 branch attempts and final certifications. Budget exhaustion is `incomplete`,
 not a no-peel proof. Review ownership and synthesized selectors,
 and retain separate adapter behavioral evidence. The complete search produces
-a graph placement witness. Only an explicit `--strategy auto` selects the
-advisory factorizer.
+a graph placement witness.
 These shared Python recipes import sibling helpers. Include their `examples`
 directory on `PYTHONPATH` when using an isolated interpreter that omits the
 script directory from its import path; the archive test supplies that scaffold.
