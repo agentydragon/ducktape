@@ -9,71 +9,89 @@ const machines: Machine[] = [
   { id: "rugged", display_name: "Rugged" },
 ];
 
+function createMachineImportProgress(
+  machineId: string,
+  displayName: string,
+  overrides: Partial<Omit<MachineImportProgress, "machine_id" | "display_name">> = {}
+): MachineImportProgress {
+  return {
+    machine_id: machineId,
+    display_name: displayName,
+    known_snapshot_count: 0,
+    completed_snapshot_count: 0,
+    failed_snapshot_count: 0,
+    codex_metadata_pending_snapshot_count: 0,
+    codex_metadata_failed_snapshot_count: 0,
+    codex_metadata_partial_snapshot_count: 0,
+    oldest_unfinished_snapshot_at: null,
+    oldest_unfinished_snapshot_state: null,
+    processed_file_count: 0,
+    pending_file_count: 0,
+    failed_file_count: 0,
+    ...overrides,
+  };
+}
+
 const importProgress: MachineImportProgress[] = [
-  {
-    machine_id: "thinkpad",
-    display_name: "ThinkPad",
+  createMachineImportProgress("thinkpad", "ThinkPad", {
     known_snapshot_count: 5,
     completed_snapshot_count: 3,
-    failed_snapshot_count: 0,
     codex_metadata_pending_snapshot_count: 1,
-    codex_metadata_failed_snapshot_count: 0,
     codex_metadata_partial_snapshot_count: 1,
     oldest_unfinished_snapshot_at: "2026-10-28T16:30:00Z",
     oldest_unfinished_snapshot_state: "codex_metadata_pending",
     processed_file_count: 27,
     pending_file_count: 4,
-    failed_file_count: 0,
-  },
-  {
-    machine_id: "atlas",
-    display_name: "Atlas",
+  }),
+  createMachineImportProgress("atlas", "Atlas", {
     known_snapshot_count: 2,
     completed_snapshot_count: 1,
     failed_snapshot_count: 1,
-    codex_metadata_pending_snapshot_count: 0,
     codex_metadata_failed_snapshot_count: 1,
     codex_metadata_partial_snapshot_count: 1,
     oldest_unfinished_snapshot_at: "2026-10-27T18:00:00Z",
     oldest_unfinished_snapshot_state: "codex_metadata_failed",
     processed_file_count: 11,
-    pending_file_count: 0,
     failed_file_count: 1,
-  },
-  {
-    machine_id: "rugged",
-    display_name: "Rugged",
+  }),
+  createMachineImportProgress("rugged", "Rugged", {
     known_snapshot_count: 198,
     completed_snapshot_count: 126,
-    failed_snapshot_count: 0,
     codex_metadata_pending_snapshot_count: 69,
-    codex_metadata_failed_snapshot_count: 0,
-    codex_metadata_partial_snapshot_count: 0,
     oldest_unfinished_snapshot_at: "2026-10-28T17:00:00Z",
     oldest_unfinished_snapshot_state: "codex_metadata_pending",
     processed_file_count: 5574,
-    pending_file_count: 0,
-    failed_file_count: 0,
-  },
-  {
-    machine_id: "completed-fixture",
-    display_name: "Complete fixture machine",
+  }),
+  createMachineImportProgress("completed-fixture", "Complete fixture machine", {
     known_snapshot_count: 2,
     completed_snapshot_count: 2,
-    failed_snapshot_count: 0,
-    codex_metadata_pending_snapshot_count: 0,
-    codex_metadata_failed_snapshot_count: 0,
     codex_metadata_partial_snapshot_count: 1,
-    oldest_unfinished_snapshot_at: null,
-    oldest_unfinished_snapshot_state: null,
     processed_file_count: 16,
-    pending_file_count: 0,
-    failed_file_count: 0,
-  },
+  }),
 ];
 
+type SessionSummaryFixture = Pick<SessionSummary, "id" | "machine_id" | "harness" | "session_kind" | "title"> &
+  Partial<Omit<SessionSummary, "id" | "machine_id" | "harness" | "session_kind" | "title">>;
+
+function createSessionSummary(overrides: SessionSummaryFixture): SessionSummary {
+  return {
+    cwd: null,
+    started_at: null,
+    last_activity_at: null,
+    latest_version_id: null,
+    version_count: 0,
+    latest_version_record_count: null,
+    transcript_status: "unavailable",
+    parent_session_id: null,
+    parent_link_kind: null,
+    parent_native_session_id: null,
+    identity_inferred: false,
+    ...overrides,
+  };
+}
+
 const sessions: SessionSummary[] = [
-  {
+  createSessionSummary({
     id: "codex-thread-1",
     machine_id: "thinkpad",
     harness: "codex",
@@ -86,12 +104,8 @@ const sessions: SessionSummary[] = [
     version_count: 2,
     latest_version_record_count: 4,
     transcript_status: "captured",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "claude-session-1",
     machine_id: "atlas",
     harness: "claude",
@@ -106,46 +120,27 @@ const sessions: SessionSummary[] = [
     transcript_status: "captured",
     parent_session_id: "inferred-claude-parent",
     parent_link_kind: "claude_path_inferred",
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "guardian-session",
     machine_id: "thinkpad",
     harness: "codex",
     session_kind: "guardian",
     title: "Guardian automation fixture",
-    cwd: null,
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
     parent_session_id: "codex-thread-1",
     parent_link_kind: "codex_parent_thread_id",
     parent_native_session_id: "thread-one",
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "inferred-claude-parent",
     machine_id: "atlas",
     harness: "claude",
     session_kind: "main",
     title: "Inferred Claude parent · session 12ab",
     cwd: "/home/example/another-project",
-    started_at: null,
-    last_activity_at: null,
-    latest_version_id: null,
-    version_count: 0,
-    latest_version_record_count: null,
-    transcript_status: "unavailable",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
     identity_inferred: true,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "mixed-transcript-fixture",
     machine_id: "thinkpad",
     harness: "codex",
@@ -158,12 +153,8 @@ const sessions: SessionSummary[] = [
     version_count: 1,
     latest_version_record_count: 9,
     transcript_status: "captured",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "codex-work-fixture",
     machine_id: "thinkpad",
     harness: "codex",
@@ -176,12 +167,8 @@ const sessions: SessionSummary[] = [
     version_count: 1,
     latest_version_record_count: codexWorkRecords.length,
     transcript_status: "captured",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "claude-attachments-fixture",
     machine_id: "atlas",
     harness: "claude",
@@ -194,12 +181,8 @@ const sessions: SessionSummary[] = [
     version_count: 1,
     latest_version_record_count: 4,
     transcript_status: "captured",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
-  {
+  }),
+  createSessionSummary({
     id: "claude-work-fixture",
     machine_id: "atlas",
     harness: "claude",
@@ -212,11 +195,7 @@ const sessions: SessionSummary[] = [
     version_count: 1,
     latest_version_record_count: claudeWorkRecords.length,
     transcript_status: "captured",
-    parent_session_id: null,
-    parent_link_kind: null,
-    parent_native_session_id: null,
-    identity_inferred: false,
-  },
+  }),
 ];
 
 const versions: Record<string, SessionVersion[]> = {
@@ -547,24 +526,20 @@ export const sessionFixtureApi: SessionBrowserApi = {
   },
 };
 
-const longRelatedChildren: SessionSummary[] = Array.from({ length: 63 }, (_unused, index) => ({
-  id: `claude-child-${String(index + 1).padStart(2, "0")}`,
-  machine_id: "atlas",
-  harness: "claude",
-  session_kind: "subagent",
-  title: `Inspect module ${String(index + 1).padStart(2, "0")}`,
-  cwd: "/home/example/another-project",
-  started_at: "2026-10-27T18:00:00Z",
-  last_activity_at: "2026-10-27T18:45:00Z",
-  latest_version_id: null,
-  version_count: 0,
-  latest_version_record_count: null,
-  transcript_status: "unavailable",
-  parent_session_id: "claude-session-1",
-  parent_link_kind: "claude_path_inferred",
-  parent_native_session_id: null,
-  identity_inferred: false,
-}));
+const longRelatedChildren: SessionSummary[] = Array.from({ length: 63 }, (_unused, index) =>
+  createSessionSummary({
+    id: `claude-child-${String(index + 1).padStart(2, "0")}`,
+    machine_id: "atlas",
+    harness: "claude",
+    session_kind: "subagent",
+    title: `Inspect module ${String(index + 1).padStart(2, "0")}`,
+    cwd: "/home/example/another-project",
+    started_at: "2026-10-27T18:00:00Z",
+    last_activity_at: "2026-10-27T18:45:00Z",
+    parent_session_id: "claude-session-1",
+    parent_link_kind: "claude_path_inferred",
+  })
+);
 
 export const longRelatedSessionFixtureApi: SessionBrowserApi = {
   ...sessionFixtureApi,
