@@ -5,7 +5,7 @@ use super::IntrinsicRoots;
 use crate::analysis_inputs::NativeIntrinsic;
 use crate::reports::schema::NativePropertyKey;
 use std::collections::{BTreeMap, BTreeSet};
-use swc_ecma_ast::{AssignOp, BinaryOp, Callee, Expr, Id, Lit, MemberProp};
+use swc_ecma_ast::{AssignOp, BinaryOp, Callee, Expr, Id, Lit};
 
 /// Property-key facts affect only the native write census. They make no claim
 /// about evaluating the key, calling a factory, or consuming its return value.
