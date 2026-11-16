@@ -31,7 +31,7 @@ import {
   suspendEnvironment,
 } from "./client";
 import { ActionPolicyWatch } from "../actions/policy";
-import { EgressLog } from "./egress";
+import { EgressLog } from "../egress/egress";
 import { EnvironmentIdentity } from "./identity";
 import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { MarkGlyph } from "../mark_glyph";

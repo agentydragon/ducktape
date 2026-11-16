@@ -83,7 +83,7 @@ ts_library(
         "//agentplane/app/frontend:mark_glyph",
         "//agentplane/app/frontend:status_mark",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/app/frontend/bindings:credential_watch",
+        "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/api/v1alpha1:policy_types_pb",
         "//agentplane/policy/v1:policy_service_pb",
