@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 func Decode[T any](raw []byte) (T, error) {
@@ -33,6 +36,30 @@ func (a *Invocation) Show(items []json.RawMessage, line func(json.RawMessage) (s
 		}
 		out.WriteByte('\n')
 	}
+	return a.write(&out)
+}
+
+func ShowProto[T proto.Message](a *Invocation, messages []T, line func(T) (string, error), options protojson.MarshalOptions) error {
+	if a.asJSON {
+		items, err := ProtoJSONListWithOptions(messages, options)
+		if err != nil {
+			return err
+		}
+		return a.Show(items, nil)
+	}
+	var out bytes.Buffer
+	for _, message := range messages {
+		text, err := line(message)
+		if err != nil {
+			return err
+		}
+		out.WriteString(strings.TrimRight(text, "\n"))
+		out.WriteByte('\n')
+	}
+	return a.write(&out)
+}
+
+func (a *Invocation) write(out *bytes.Buffer) error {
 	if _, err := a.stdout.Write(out.Bytes()); err != nil {
 		return ClientFailure(ExitRefused, "INTERNAL", "write stdout: %v", err)
 	}
