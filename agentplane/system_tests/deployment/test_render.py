@@ -297,8 +297,7 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert proxy_certificate["secretName"] == "agentplane-egress-proxy-tls"
     assert proxy_certificate["issuerRef"] == {"name": "agentplane-workload", "kind": "ClusterIssuer"}
     assert any(mount["name"] == "svid" for mount in proxy["volumeMounts"])
-    assert egress_config["admin_grpc_audience"] == "agentplane-egress-admin"
-    assert egress_config["admin_grpc_callers"] == [f"{NAMESPACE}/app"]
+    assert not {"admin_grpc_audience", "admin_grpc_callers"} & egress_config.keys()
     assert egress_config["admin_grpc_service_callers"] == ["spiffe://agentplane/app"]
     proxy_env = {entry["name"]: entry for entry in proxy["env"]}
     assert proxy_env["PGSSLMODE"]["value"] == "disable"
