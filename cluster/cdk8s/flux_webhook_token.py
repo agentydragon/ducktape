@@ -14,24 +14,12 @@ KUBERNETES_IDENTITY = f"opentofu-{NAME}"
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
-    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
-    opentofu.secret_access(
-        chart,
-        "flux-system-secrets",
-        identity=identity,
-        namespace="flux-system",
-        read=["github-secrets-sync-pat"],
-        write=["github-webhook-token"],
-    )
-    opentofu.gitops_workspace(
-        chart,
-        "workspace",
-        name=NAME,
-        provider_config_name=WORKSPACE_NAME,
+    return opentofu.gitops_workspace_chart(
+        app,
+        module_name=NAME,
+        identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(NAME),
-        directory=f"tf/gitops/{NAME}",
-        management_policies=["Observe", "Create", "Update"],
-        kubernetes_identity=KUBERNETES_IDENTITY,
+        secret_accesses=(
+            ("flux-system-secrets", "flux-system", ("github-secrets-sync-pat",), ("github-webhook-token",)),
+        ),
     )
-    return chart

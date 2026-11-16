@@ -12,24 +12,17 @@ KUBERNETES_IDENTITY = "opentofu-forgejo-claude"
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
-    opentofu.secret_access(
-        chart,
-        "forgejo-secrets",
-        identity=identity,
-        namespace="forgejo",
-        read=["forgejo-admin-password"],
-        write=["claude-forgejo-credentials", "forgejo-token-mint-claude"],
-    )
-    opentofu.gitops_workspace(
-        chart,
-        "workspace",
-        name=TF_MODULE_NAME,
-        provider_config_name=NAME,
+    return opentofu.gitops_workspace_chart(
+        app,
+        module_name=TF_MODULE_NAME,
+        identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(TF_MODULE_NAME),
-        directory=f"tf/gitops/{TF_MODULE_NAME}",
-        management_policies=["Observe", "Create", "Update"],
-        kubernetes_identity=KUBERNETES_IDENTITY,
+        secret_accesses=(
+            (
+                "forgejo-secrets",
+                "forgejo",
+                ("forgejo-admin-password",),
+                ("claude-forgejo-credentials", "forgejo-token-mint-claude"),
+            ),
+        ),
     )
-    return chart

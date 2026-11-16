@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from cdk8s import ApiObjectMetadata, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ApiResource, Role, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import (
@@ -166,6 +166,37 @@ def secret_access(
         ],
     )
     role.bind(identity)
+
+
+def gitops_workspace_chart(
+    app: App,
+    *,
+    module_name: str,
+    identity_name: str,
+    schema: str,
+    secret_accesses: Sequence[tuple[str, str, Sequence[str], Sequence[str]]],
+) -> Chart:
+    """Build the standard crossplane-prefixed chart for a managed GitOps Workspace.
+
+    The module name supplies the chart and ProviderConfig names and the `tf/gitops/` path.
+    The Workspace uses Observe/Create/Update; callers provide its schema, identity and exact Secret grants.
+    """
+    chart_name = f"crossplane-{module_name}"
+    chart = Chart(app, chart_name, disable_resource_name_hashes=True)
+    identity = kubernetes_service_account(chart, identity_name)
+    for access_id, namespace, reads, writes in secret_accesses:
+        secret_access(chart, access_id, identity=identity, namespace=namespace, read=reads, write=writes)
+    gitops_workspace(
+        chart,
+        "workspace",
+        name=module_name,
+        provider_config_name=chart_name,
+        schema=schema,
+        directory=f"tf/gitops/{module_name}",
+        management_policies=["Observe", "Create", "Update"],
+        kubernetes_identity=identity_name,
+    )
+    return chart
 
 
 def workspace_kustomization(

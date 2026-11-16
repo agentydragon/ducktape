@@ -12,69 +12,46 @@ KUBERNETES_IDENTITY = "opentofu-sso-providers"
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
-    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
-    opentofu.secret_access(
-        chart,
-        "authentik-secrets",
-        identity=identity,
-        namespace="authentik",
-        read=[
-            # keep-sorted start
-            "authentik-auragon-google-email",
-            "authentik-bootstrap",
-            "authentik-google-oauth",
-            "authentik-user-password",
-            # keep-sorted end
-        ],
-        write=[
-            # keep-sorted start
-            "agentplane-mcp-oauth",
-            "agentplane-oidc",
-            "ai-session-archive-oidc",
-            "airlock-oidc-config",
-            "claude-session-sync-oidc",
-            "cli-proxy-api-admin-oidc",
-            "forgejo-oauth-client-secret",
-            "gitlab-spike-oidc",
-            "grafana-oidc-config",
-            "headlamp-oidc-secret",
-            "langfuse-oidc-config",
-            "matrix-oidc-config",
-            "paperless-sso-providers",
-            "plaid-link-oidc-config",
-            "plaid-spend-web-oidc-config",
-            "props-oidc-config",
-            # keep-sorted end
-        ],
-    )
-    opentofu.secret_access(
-        chart, "study-casino-secrets", identity=identity, namespace="study-casino", read=[], write=["study-casino-oidc"]
-    )
-    opentofu.secret_access(
-        chart,
-        "quest-diagnostics-secrets",
-        identity=identity,
-        namespace="quest-diagnostics",
-        read=[],
-        write=["quest-diagnostics-oidc"],
-    )
-    opentofu.secret_access(
-        chart,
-        "platform-sessions-secrets",
-        identity=identity,
-        namespace="platform-sessions",
-        read=[],
-        write=["platform-sessions-oidc"],
-    )
-    opentofu.gitops_workspace(
-        chart,
-        "workspace",
-        name=NAME,
-        provider_config_name=WORKSPACE_NAME,
+    return opentofu.gitops_workspace_chart(
+        app,
+        module_name=NAME,
+        identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(NAME),
-        directory=f"tf/gitops/{NAME}",
-        management_policies=["Observe", "Create", "Update"],
-        kubernetes_identity=KUBERNETES_IDENTITY,
+        secret_accesses=(
+            (
+                "authentik-secrets",
+                "authentik",
+                (
+                    # keep-sorted start
+                    "authentik-auragon-google-email",
+                    "authentik-bootstrap",
+                    "authentik-google-oauth",
+                    "authentik-user-password",
+                    # keep-sorted end
+                ),
+                (
+                    # keep-sorted start
+                    "agentplane-mcp-oauth",
+                    "agentplane-oidc",
+                    "ai-session-archive-oidc",
+                    "airlock-oidc-config",
+                    "claude-session-sync-oidc",
+                    "cli-proxy-api-admin-oidc",
+                    "forgejo-oauth-client-secret",
+                    "gitlab-spike-oidc",
+                    "grafana-oidc-config",
+                    "headlamp-oidc-secret",
+                    "langfuse-oidc-config",
+                    "matrix-oidc-config",
+                    "paperless-sso-providers",
+                    "plaid-link-oidc-config",
+                    "plaid-spend-web-oidc-config",
+                    "props-oidc-config",
+                    # keep-sorted end
+                ),
+            ),
+            ("study-casino-secrets", "study-casino", (), ("study-casino-oidc",)),
+            ("quest-diagnostics-secrets", "quest-diagnostics", (), ("quest-diagnostics-oidc",)),
+            ("platform-sessions-secrets", "platform-sessions", (), ("platform-sessions-oidc",)),
+        ),
     )
-    return chart
