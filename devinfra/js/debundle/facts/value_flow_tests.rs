@@ -160,6 +160,7 @@ fn candidate_value_union_visits_each_requested_root_once() {
     for index in 0..129 {
         source.push_str(&format!("const array{index} = [];\n"));
     }
+    source.push_str("const unused = [];\n");
     for (name, range) in [("left", 0..97), ("right", 32..129)] {
         source.push_str(&format!("const {name} = {{"));
         for index in range {
@@ -172,17 +173,27 @@ fn candidate_value_union_visits_each_requested_root_once() {
     let body = top_level_item_views(&module.body);
     let initial = ChunkValueFlow::analyze(&body);
     let candidates: BTreeSet<_> = (0..129)
-        .flat_map(|index| initial.values_of_binding(&id(&format!("array{index}"))))
+        .map(|index| format!("array{index}"))
+        .chain(std::iter::once("unused".to_owned()))
+        .flat_map(|name| initial.values_of_binding(&id(&name)))
         .collect();
     let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
     let values = flow.values_of_binding(&id("escaped"));
     assert_eq!(values.iter().count(), 2);
-    // Include a sparse requested mask spanning multiple bitmap words.
-    for requested in [
+
+    // Exercise dense, sparse, disjoint, and empty masks against the independent
+    // ordered-map oracle. The sparse mask spans multiple bitmap words.
+    let requested_masks = [
         candidates.clone(),
         candidates.iter().step_by(3).copied().collect(),
+        BTreeSet::from([initial
+            .values_of_binding(&id("unused"))
+            .iter()
+            .next()
+            .unwrap()]),
         BTreeSet::new(),
-    ] {
+    ];
+    for requested in requested_masks {
         let reference = flow.candidate_object_index_reference_for_test(&requested).0;
         let expected: BTreeSet<_> = values
             .iter()
@@ -193,6 +204,29 @@ fn candidate_value_union_visits_each_requested_root_once() {
             .for_values(&values, |root| visited.push(root));
         assert_eq!(visited, expected.into_iter().collect::<Vec<_>>());
     }
+
+    // A mask reached completely by the first value saturates immediately; the
+    // result must still match the map oracle exactly.
+    let left_values = flow.values_of_binding(&id("left"));
+    let all_roots = flow
+        .candidate_object_index_reference_for_test(&candidates)
+        .0;
+    let saturated_mask: BTreeSet<_> = left_values
+        .iter()
+        .flat_map(|value| all_roots.get(&value).into_iter().flatten().copied())
+        .collect();
+    assert!(!saturated_mask.is_empty());
+    let reference = flow
+        .candidate_object_index_reference_for_test(&saturated_mask)
+        .0;
+    let expected: BTreeSet<_> = left_values
+        .iter()
+        .flat_map(|value| reference.get(&value).into_iter().flatten().copied())
+        .collect();
+    let mut visited = Vec::new();
+    flow.candidate_object_index(&saturated_mask)
+        .for_values(&left_values, |root| visited.push(root));
+    assert_eq!(visited, expected.into_iter().collect::<Vec<_>>());
 }
 
 #[test]

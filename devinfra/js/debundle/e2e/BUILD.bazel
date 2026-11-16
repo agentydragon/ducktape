@@ -1672,6 +1672,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "opaque_receiver_callbacks_test")
 
+debundle_e2e_test(name = "candidate_object_escape_test")
+
 debundle_e2e_test(
     name = "opaque_callback_publication_test",
     deps = [":graph_support"],
