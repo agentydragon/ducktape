@@ -48,10 +48,16 @@ fn assert_early_iteration_rejected_with_executor(
         "static/peer",
         "export function consumeCallbacks(array) { return array[0](); }\n",
     )];
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_extra_chunks(&peers));
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&peers),
+    );
     assert_preserved_entry_output(&fixture, "0\n");
     expect_atomic_conflict_rejection(
-        FixtureOpts::new(&source, split).with_extra_chunks(&peers),
+        FixtureOpts::new(&source, split)
+            .with_import_order(&["registry", "values/later", "residual"])
+            .with_extra_chunks(&peers),
         &["registry", "values/later"],
         &[],
     );
@@ -80,17 +86,20 @@ fn assert_iteration_split_accepted_after(
     if !trailing.is_empty() {
         steps.push(trailing);
     }
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[Member::new("entries"), Member::new("result")],
-                &steps,
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("entries"), Member::new("result")],
+                    &steps,
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["registry", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, expected);
 }
 
@@ -415,13 +424,16 @@ fn mapped_results_retain_callbacks_for_invocation_and_publication() {
 #[test]
 fn empty_builtin_iteration_never_invokes_its_callback() {
     let source = "let later = 0;\nconst entries = [];\nconst result = entries.map(() => later);\nlater = 42;\nconsole.log(result.length);\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("registry", &[Member::new("entries"), Member::new("result")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("registry", &[Member::new("entries"), Member::new("result")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["registry", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "0\n");
 }
 
@@ -434,7 +446,8 @@ fn object_spread_getters_run_during_map_even_without_a_result_consumer() {
         let source = format!(
             "let later = 0;\nlet observed = -1;\n{declarations}\nfunction copy(value) {{ return {{ ...value }}; }}\nconst result = entries.map(entry => copy(entry.payload));\nlater = 42;\nconsole.log(observed);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, "0\n");
         expect_atomic_conflict_rejection(
             FixtureOpts::new(
@@ -456,7 +469,8 @@ fn object_spread_getters_run_during_map_even_without_a_result_consumer() {
                         &["later = 42;"],
                     ),
                 ],
-            ),
+            )
+            .with_import_order(&["registry", "values/later", "residual"]),
             &["registry", "values/later"],
             &[],
         );
@@ -466,7 +480,7 @@ fn object_spread_getters_run_during_map_even_without_a_result_consumer() {
 #[test]
 fn ordinary_spread_copy_fields_retain_referenced_callback_identity() {
     let source = "let later = 0;\nconst entries = [{ run: () => later }];\nconst result = entries.map(entry => ({ ...entry }));\nconst observed = result[0].run();\nlater = 42;\nconsole.log(observed);\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "0\n");
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
@@ -482,7 +496,8 @@ fn ordinary_spread_copy_fields_retain_referenced_callback_identity() {
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        ),
+        )
+        .with_import_order(&["registry", "values/later", "residual"]),
         &["registry", "values/later"],
         &[],
     );
@@ -491,13 +506,16 @@ fn ordinary_spread_copy_fields_retain_referenced_callback_identity() {
 #[test]
 fn iterating_function_values_stores_them_without_invoking_them() {
     let source = "let later = 0;\nconst entries = [() => later];\nconst result = entries.map(callback => callback);\nlater = 42;\nconsole.log(result[0]());\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("registry", &[Member::new("entries"), Member::new("result")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("registry", &[Member::new("entries"), Member::new("result")]),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["registry", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
@@ -505,7 +523,11 @@ fn iterating_function_values_stores_them_without_invoking_them() {
 fn prior_unknown_call_does_not_make_fresh_primitive_cache_writes_run_unrelated_getters() {
     let source = "import { prepare } from './peer.js';\nlet later = 0;\nconst ids = { tool: 'tool-id' };\nconst entries = [{ id: ids.tool, name: 'tool', run: () => later }];\nconst lookup = {};\nconst latent = { get value() { return later; } };\nprepare();\nentries.forEach(entry => { lookup[entry.id] = entry.name; });\nlater = 42;\nconsole.log(lookup['tool-id'], entries[0].run());\n";
     let peers = [("static/peer", "export function prepare() { return 0; }\n")];
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peers));
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&peers),
+    );
     assert_preserved_entry_output(&fixture, "tool 42\n");
     let fixture = run_fixture(
         FixtureOpts::new(
@@ -527,6 +549,7 @@ fn prior_unknown_call_does_not_make_fresh_primitive_cache_writes_run_unrelated_g
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["registry", "values/later", "residual"])
         .with_extra_chunks(&peers),
     );
     assert_preserved_entry_output(&fixture, "tool 42\n");
@@ -665,6 +688,7 @@ fn default_instanceof_does_not_execute_unused_constructor_methods() {
                     ),
                 ],
             )
+            .with_import_order(&["registry", "values/later", "residual"])
             .with_extra_chunks(&peers),
         );
         assert_preserved_entry_output(&fixture, "false\n");
@@ -704,7 +728,8 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
         let source = format!(
             "let later = 0;\nconst entries = {entries};\nconst copies = entries.map(entry => ({{ ...entry }}));\nfunction consume(value = () => later) {{ return value(); }}\nconst observed = consume(copies[{index}].run);\nlater = 42;\nconsole.log(observed);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, "0\n");
         let split = vec![
             logical_module(
@@ -719,7 +744,11 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ];
         expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, split),
+            FixtureOpts::new(&source, split).with_import_order(&[
+                "registry",
+                "values/later",
+                "residual",
+            ]),
             &["registry", "values/later"],
             &[],
         );
@@ -729,22 +758,25 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
 #[test]
 fn getter_triggered_async_work_keeps_future_reads_after_await() {
     let source = "let later = 0;\nclass Reader { static async read() { await 0; console.log(later); } }\nconst holder = { get value() { Reader.read(); return 0; } };\nconst observed = holder.value;\nlater = 42;\nconsole.log(observed);\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "0\n42\n");
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "registry",
-                &[
-                    Member::new("Reader"),
-                    Member::new("holder"),
-                    Member::new("observed"),
-                ],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "registry",
+                    &[
+                        Member::new("Reader"),
+                        Member::new("holder"),
+                        Member::new("observed"),
+                    ],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["registry", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "0\n42\n");
 }
 
@@ -755,7 +787,11 @@ fn installed_getters_can_invoke_returned_escaped_callbacks() {
         "static/peer",
         "let factory; export function retain(value) { if (typeof value === 'function') factory = value; else Object.defineProperty(value, 'missing', { get() { return factory()(); } }); }\n",
     )];
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peers));
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&peers),
+    );
     assert_preserved_entry_output(&fixture, "0\n");
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
@@ -773,6 +809,7 @@ fn installed_getters_can_invoke_returned_escaped_callbacks() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["registry", "values/later", "residual"])
         .with_extra_chunks(&peers),
         &["registry", "values/later"],
         &[],
