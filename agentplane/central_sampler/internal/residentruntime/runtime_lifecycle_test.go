@@ -16,6 +16,7 @@ import (
 	runtimepkg "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -800,6 +801,15 @@ func TestDrainDiagnosticsRetainBindingAndDatabaseAfterDriverRelease(t *testing.T
 	outputs := t.TempDir()
 	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", outputs)
 	logs := captureDrainRuntimeLogs(t)
+	// Keep the failed binding available for inspection instead of starting a successor driver.
+	var claimed atomic.Bool
+	claim := f.runtime.claimLease
+	f.runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (sessionstore.Owner, error) {
+		if !claimed.CompareAndSwap(false, true) {
+			return sessionstore.Owner{}, context.Canceled
+		}
+		return claim(ctx, conversationID, lease)
+	}
 	releaseCompleted := make(chan struct{})
 	release := f.runtime.releaseLease
 	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
