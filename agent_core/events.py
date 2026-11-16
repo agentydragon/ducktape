@@ -1,15 +1,4 @@
-"""Agent event types.
-
-TODO: Separate "append-only event log" from "current context window items".
-Currently these event types serve both purposes:
-1. Append-only immutable log (for persistence, replay, analysis)
-2. Limited-size context window sent to OpenAI (which gets compacted/cleared)
-
-These are conceptually different: compaction clears the agent's _transcript list
-but doesn't "un-happen" the events. Consider splitting into:
-- ImmutableEvent types (never deleted, append-only)
-- ContextItem types (current working set, can be compacted/pruned)
-"""
+"""Agent event types."""
 
 from __future__ import annotations
 

@@ -17,8 +17,7 @@ from pydantic import BaseModel
 
 from agent_core.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
 from agent_core.events import ToolCall, ToolCallOutput
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
+from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
@@ -27,7 +26,7 @@ from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from openai_utils.testing.openai_mock import NoopOpenAIClient, make_mock
+from openai_utils.testing.openai_mock import make_mock
 
 
 def test_agent_tool_boundary_validates_nested_union() -> None:
@@ -160,32 +159,21 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
 # --- Parallel tool call tests ---
 
 
-class OneShotSyntheticHandler(BaseHandler):
-    """Handler that injects synthetic output once, then aborts."""
-
-    def __init__(self, outputs: list[Any]):
-        self._done = False
-        self._outputs = outputs
-
-    def on_before_sample(self):
-        if not self._done:
-            self._done = True
-            return InjectItems(items=tuple(self._outputs))
-        return Abort()
-
-
 async def test_parallel_tool_calls_run_concurrently(rendezvous_server, recording_handler, responses_factory):
     tc1 = responses_factory.tool_call("rendezvous", {}, call_id="call_1")
     tc2 = responses_factory.tool_call("rendezvous", {}, call_id="call_2")
 
-    handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
+    async def handle_request(req: ResponsesRequest) -> ResponsesResult:
+        if len(req.input) == 1:
+            return responses_factory.make(tc1, tc2)
+        return responses_factory.make_assistant_message("done")
 
     async with Client(rendezvous_server) as client:
         agent = Agent(
             tool_provider=MCPToolProvider(client),
-            client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
+            client=make_mock(handle_request),
             parallel_tool_calls=True,
-            handlers=[handler, recording_handler],
+            handlers=[FinishOnTextMessageHandler(), recording_handler],
             tool_policy=RequireAnyTool(),
         )
         agent.process_message(UserMessage.text("go"))
