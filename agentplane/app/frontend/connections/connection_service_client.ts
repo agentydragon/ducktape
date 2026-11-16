@@ -21,6 +21,7 @@ import {
   UpdateConnectionResponseSchema,
   WatchConnectionsResponseSchema,
   type Connection,
+  type WatchConnectionsResponse,
   type DecideConnectionEnrollmentResponse,
   type PreviewConnectionEnrollmentResponse,
 } from "../../../mcp_edge/api/connection/connection_service_pb";
@@ -48,12 +49,6 @@ export type ConsentDecision =
       identity: Identity;
       connection: ConsentConnectionChoice;
     };
-
-export type ConnectionWatchEvent =
-  | { kind: "snapshot"; connections: Connection[] }
-  | { kind: "snapshot_complete" }
-  | { kind: "upsert"; connection: Connection }
-  | { kind: "reconnect_required" };
 
 type FacadeMethod = "GET" | "POST" | "PATCH";
 
@@ -117,20 +112,19 @@ function responseConnection(connection: Connection | undefined): Connection {
   return validateConnection(required(connection, "Connection"));
 }
 
-export function readConnectionWatchFrame(value: JsonValue): ConnectionWatchEvent {
+export function readConnectionWatchFrame(value: JsonValue): WatchConnectionsResponse {
   const frame = fromJson(WatchConnectionsResponseSchema, value);
   switch (frame.frame.case) {
     case "snapshot":
-      return { kind: "snapshot", connections: validateConnections(frame.frame.value.connections) };
+      frame.frame.value.connections.forEach(validateConnection);
+      break;
     case "upsert":
-      return { kind: "upsert", connection: validateConnection(frame.frame.value) };
-    case "snapshotComplete":
-      return { kind: "snapshot_complete" };
-    case "reconnectRequired":
-      return { kind: "reconnect_required" };
+      validateConnection(frame.frame.value);
+      break;
     case undefined:
       throw new Error("ConnectionService watch sent an empty frame");
   }
+  return frame;
 }
 
 export async function listConnections(): Promise<Connection[]> {

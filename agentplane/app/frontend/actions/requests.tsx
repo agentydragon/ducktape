@@ -170,12 +170,13 @@ export function useActionRequests(enabled = true): {
       onOpen: () => {
         snapshot = [];
       },
-      onFrame: (frame) => {
-        switch (frame.kind) {
+      onFrame: (message) => {
+        const frame = message.frame;
+        switch (frame.case) {
           case "snapshot":
-            snapshot.push(...frame.requests);
+            snapshot.push(...frame.value.actionRequests);
             break;
-          case "snapshot_complete":
+          case "snapshotComplete":
             storePendingSnapshot(snapshot);
             snapshot = [];
             setError(null);
@@ -183,27 +184,27 @@ export function useActionRequests(enabled = true): {
             break;
           case "upsert": {
             const current = requestsRef.current;
-            const exists = current.some((item) => item.id === frame.request.id);
+            const exists = current.some((item) => item.id === frame.value.id);
             const next =
-              frame.request.state === ActionState.DECISION_PENDING
+              frame.value.state === ActionState.DECISION_PENDING
                 ? exists
                   ? current.map((item) =>
-                      item.id === frame.request.id && frame.request.version >= item.version ? frame.request : item
+                      item.id === frame.value.id && frame.value.version >= item.version ? frame.value : item
                     )
-                  : [...current, frame.request].sort(
+                  : [...current, frame.value].sort(
                       (left, right) =>
                         Date.parse(timestampText(right.createdAt) ?? "") -
                         Date.parse(timestampText(left.createdAt) ?? "")
                     )
-                : current.filter((item) => item.id !== frame.request.id);
+                : current.filter((item) => item.id !== frame.value.id);
             requestsRef.current = next;
             setRequests(next);
-            rememberRequests([frame.request]);
+            rememberRequests([frame.value]);
             setError(null);
             setLoading(false);
             break;
           }
-          case "reconnect_required":
+          case "reconnectRequired":
             break;
         }
       },

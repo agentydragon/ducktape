@@ -19,6 +19,8 @@ import {
   ListActionRequestsResponseSchema,
   WatchActionGroupsResponseSchema,
   WatchActionRequestsResponseSchema,
+  type WatchActionGroupsResponse,
+  type WatchActionRequestsResponse,
   type ActionGroup,
   type ActionRequest,
   type Decision,
@@ -246,21 +248,9 @@ export async function decideActionById(
   return validateActionRequest(required(response.actionRequest, "decided request"));
 }
 
-export type ActionRequestWatchFrame =
-  | { kind: "snapshot"; requests: ActionRequest[] }
-  | { kind: "snapshot_complete" }
-  | { kind: "upsert"; request: ActionRequest }
-  | { kind: "reconnect_required" };
-
-export type ActionGroupWatchFrame =
-  | { kind: "snapshot"; groups: ActionGroup[] }
-  | { kind: "snapshot_complete" }
-  | { kind: "upsert"; group: ActionGroup }
-  | { kind: "reconnect_required" };
-
 export function followActionRequests(handlers: {
   onOpen: () => void;
-  onFrame: (frame: ActionRequestWatchFrame) => void;
+  onFrame: (frame: WatchActionRequestsResponse) => void;
   onConnection: (connection: StreamConnection) => void;
 }): () => void {
   const query = new URLSearchParams({ state: actionStateJson(ActionState.DECISION_PENDING) });
@@ -270,30 +260,22 @@ export function followActionRequests(handlers: {
       const message = fromJson(WatchActionRequestsResponseSchema, result);
       switch (message.frame.case) {
         case "snapshot":
-          handlers.onFrame({
-            kind: "snapshot",
-            requests: message.frame.value.actionRequests.map(validateActionRequest),
-          });
-          break;
-        case "snapshotComplete":
-          handlers.onFrame({ kind: "snapshot_complete" });
+          message.frame.value.actionRequests.forEach(validateActionRequest);
           break;
         case "upsert":
-          handlers.onFrame({ kind: "upsert", request: validateActionRequest(message.frame.value) });
-          break;
-        case "reconnectRequired":
-          handlers.onFrame({ kind: "reconnect_required" });
+          validateActionRequest(message.frame.value);
           break;
         case undefined:
           throw new Error("The Action Service returned an empty request watch frame.");
       }
+      handlers.onFrame(message);
     },
   });
 }
 
 export function followActionGroups(handlers: {
   onOpen: () => void;
-  onFrame: (frame: ActionGroupWatchFrame) => void;
+  onFrame: (frame: WatchActionGroupsResponse) => void;
   onConnection: (connection: StreamConnection) => void;
 }): () => void {
   return followWatch(`${ACTIONS_PATH}/v1/action-groups:watch`, {
@@ -302,20 +284,15 @@ export function followActionGroups(handlers: {
       const message = fromJson(WatchActionGroupsResponseSchema, result);
       switch (message.frame.case) {
         case "snapshot":
-          handlers.onFrame({ kind: "snapshot", groups: message.frame.value.actionGroups.map(validateActionGroup) });
-          break;
-        case "snapshotComplete":
-          handlers.onFrame({ kind: "snapshot_complete" });
+          message.frame.value.actionGroups.forEach(validateActionGroup);
           break;
         case "upsert":
-          handlers.onFrame({ kind: "upsert", group: validateActionGroup(message.frame.value) });
-          break;
-        case "reconnectRequired":
-          handlers.onFrame({ kind: "reconnect_required" });
+          validateActionGroup(message.frame.value);
           break;
         case undefined:
           throw new Error("The Action Service returned an empty group watch frame.");
       }
+      handlers.onFrame(message);
     },
   });
 }

@@ -2,22 +2,19 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { StreamConnection } from "./stream_reader";
-import {
-  disconnectMcpLinkage,
-  followMcpLinkages,
-  startMcpLinkage,
-  type McpLinkageWatchFrame,
-} from "./mcp_linkage_client";
+import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_linkage_client";
 import { type ServedWatch, stubWatchFetch } from "./testing/watch";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
+  WatchMcpServersResponseSchema,
+  type WatchMcpServersResponse,
 } from "../../action_service/api/contracts/operator_action_service_pb";
-import { create } from "@bufbuild/protobuf";
+import { create, toJson } from "@bufbuild/protobuf";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
-let frames: McpLinkageWatchFrame[];
+let frames: WatchMcpServersResponse[];
 let connections: StreamConnection[];
 let stop: () => void = () => undefined;
 
@@ -143,37 +140,34 @@ it("replays generated linkage snapshots and upserts", async () => {
   });
   await settle();
 
-  expect(frames).toEqual([
+  expect(frames.map((frame) => toJson(WatchMcpServersResponseSchema, frame))).toEqual([
     {
-      kind: "snapshot",
-      linkages: [
-        create(McpServerLinkageSchema, {
-          serverId: "example",
-          serverUrl: "https://mcp.example.test",
-          status: McpLinkageStatus.LINKED,
-          scopes: ["openid"],
-        }),
-      ],
+      snapshot: {
+        linkages: [
+          {
+            serverId: "example",
+            serverUrl: "https://mcp.example.test",
+            status: "MCP_LINKAGE_STATUS_LINKED",
+            scopes: ["openid"],
+          },
+        ],
+      },
     },
     {
-      kind: "snapshot",
-      linkages: [
-        create(McpServerLinkageSchema, {
-          serverId: "second",
-          serverUrl: "https://second.example.test",
-          status: McpLinkageStatus.UNLINKED,
-        }),
-      ],
+      snapshot: {
+        linkages: [
+          { serverId: "second", serverUrl: "https://second.example.test", status: "MCP_LINKAGE_STATUS_UNLINKED" },
+        ],
+      },
     },
-    { kind: "snapshot_complete" },
+    { snapshotComplete: {} },
     {
-      kind: "upsert",
-      linkage: create(McpServerLinkageSchema, {
+      upsert: {
         serverId: "example",
         serverUrl: "https://mcp.example.test",
-        status: McpLinkageStatus.EXPIRED,
+        status: "MCP_LINKAGE_STATUS_EXPIRED",
         scopes: ["openid"],
-      }),
+      },
     },
   ]);
   expect(opens).toBe(1);
