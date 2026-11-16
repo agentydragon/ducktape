@@ -503,10 +503,7 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
         [bindings, list] if bindings == "bindings" && list == "list" => {
             InvocationMode::ReadOnlyAnalysis
         }
-        [modules, verb]
-            if modules == "modules"
-                && ["list", "propose", "decompose"].contains(&verb.as_str()) =>
-        {
+        [modules, verb] if modules == "modules" && ["list", "propose"].contains(&verb.as_str()) => {
             InvocationMode::ReadOnlyAnalysis
         }
         [spec, verb]

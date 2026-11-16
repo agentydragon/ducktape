@@ -70,14 +70,11 @@ first query over a high-fanout family.
 
 ## Workflow: reorganizing existing modules
 
-Use `modules decompose --atomic` to plan a complete assignment of existing
-source units. Review semantic destinations, selector anchors, and the full
-candidate verdict; optional coarsening and original-home rejoining are
-described in [the decomposition guide](cli.md#refining-existing-modules-modules-decompose).
-
-Apply a reviewed `{unit_id, module}` map of already-claimed non-residual
-source units with `modules refine --dry-run`, then `modules refine`. Both resolve
-the full scoped spec and validate the requested assignment before any write.
+Inspect the source units and choose semantic destinations for the complete
+assignment. Use `modules check --batch` to validate a reviewed `{unit_id, module}`
+map of already-claimed non-residual source units, then apply it with
+`modules refine --dry-run` and `modules refine`. Both commands resolve the full
+scoped spec and validate the requested assignment before any write.
 The [source-unit assignment guide](cli.md#applying-reviewed-source-unit-assignments-modules-refine)
 defines batch fields, multi-chunk paths, and excluded source-unit kinds. Residual
 extraction uses the proposal workflow below; focused binding moves use
@@ -334,13 +331,9 @@ the two source units are order-independent during initialization.
 
 ## Workflow: applying a reviewed source-unit assignment
 
-When `modules decompose` reports a useful source-unit assignment, replace its
-temporary part labels with semantic module names and apply the complete
-assignment through `modules refine`. For specs using local
-`intrinsic_alias.referenced_by` anchors, pass
-`--preserve-selector-anchors --source-root <source-root>` when decomposing so
-the candidate keeps each alias with its resolved local anchor. For each source unit
-that changes destination, include one row in a JSON batch:
+After reviewing source units and deciding semantic destinations, apply the
+complete assignment through `modules refine`. For each source unit that changes
+destination, include one row in a JSON batch:
 
 ```json
 [
@@ -413,7 +406,7 @@ edges they carry already point at the class).
 
 If source units at consecutive statement ordinals `N` and `N+1` are each
 the other's only edge target/source, they were lines next to each
-other in the source and the decomposer assigned them to
+other in the source and their current homes put them in
 sibling shells. Merge the two `auto_partition_*` modules into one.
 Detectable via `cluster(A).out == [B] && cluster(B).in == [A]` plus
 `|N+1 - N| == 1`.

@@ -23,8 +23,7 @@ notes plus worker-ready proposals, and route pure symbol naming to the
 for seam and layer criteria and the [shared workflow](references/skills/shared/workflow.md)
 when coordinating a round.
 
-Use planning's
-[atomic decomposition and coarsening reports](references/docs/cli.md#refining-existing-modules-modules-decompose)
-to understand which proposed seams the current gate accepts. Small generated
+Use planning's atomic-group inventory and `modules check` to understand which
+authored seams the current gate accepts. Small generated
 fragments need not be good modules; large atomic or coarsened groups may reflect
 conservative analysis. Ground semantic homes in source behavior and callers.

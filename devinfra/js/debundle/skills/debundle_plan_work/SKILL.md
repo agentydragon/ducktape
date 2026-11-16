@@ -1,6 +1,6 @@
 ---
 name: debundle_plan_work
-description: Plan debundle extraction and reorganization with read-only graph/source queries. Use for atomic residual splits, gate-driven SCC coarsening, passing residual baselines and divide-and-conquer probes, residual proposals, selector anchors, and reviewed source-unit handoffs. Explains what the current analysis permits separating; does not edit the spec.
+description: Plan debundle extraction and reorganization with read-only graph/source queries. Use for atomic-group inventories, passing residual baselines and divide-and-conquer probes, residual proposals, selector anchors, and reviewed source-unit handoffs. Explains what the current analysis permits separating; does not edit the spec.
 ---
 
 # Debundle Plan Work
@@ -11,7 +11,7 @@ than mutating YAML or applying a batch.
 
 Read [plan an assignment](references/docs/planning.md#plan-an-assignment), then
 use the [task chooser](references/README.md#choose-a-task) for the relevant
-inspection, residual, decomposition, or selector recipe. The planning guide owns
+inspection, residual, assignment, or selector recipe. The planning guide owns
 query selection, atomic coverage, selector anchors, and the distinction between
 heuristic proposals and source-backed facts.
 
@@ -31,13 +31,10 @@ limited to the recorded owner and destination scope. Budget exhaustion is
 incomplete, and empty advisory output is not a negative decision. Recheck a plan
 after editing its destinations or combining it with another batch.
 
-For a structural inventory, compare
-[atomic decomposition including residuals](references/docs/cli.md#refining-existing-modules-modules-decompose)
-(`modules decompose --atomic --include-residual`) with a candidate using
-`--coarsen-blocking-sccs`. Review structural atoms, gate-reported merges, and the
-complete candidate verdict. These describe the current model and assumptions,
-not inherently indivisible JavaScript or semantic module boundaries. For an
-emitted-output probe, hand a worker the
+For a structural inventory, inspect the atomic groups in the graph report. Use
+`modules check --batch` to validate an authored assignment; structural groups
+describe graph constraints, not semantic module boundaries. For an emitted-output
+probe, hand a worker the
 [`per_atomic_group` or `coarse_atomic_groups` residual policy](references/SPEC.md#unassigned-source);
 authored claims remain and the normal gate still applies.
 

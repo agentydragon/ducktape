@@ -15,11 +15,6 @@ use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
-use peel::decompose::{
-    ModuleDecompositionCoarseningMode, ModuleDecompositionOptions, ModuleDecompositionReport,
-    ModuleDecompositionStrategy, decompose_modules_from_files_with_options,
-};
-use peel::propose::{DEFAULT_SIZE_CAP_LINES, ProposalOptions};
 use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
 use std::path::PathBuf;
 use std::{fs, io::Read};
@@ -56,7 +51,6 @@ impl ModulesNs {
             ModulesNsCommand::Check(args) => args.format,
             ModulesNsCommand::Apply(args) => args.format,
             ModulesNsCommand::Refine(args) => args.format,
-            ModulesNsCommand::Decompose(args) => args.format,
             _ => None,
         }
     }
@@ -95,14 +89,6 @@ impl ModulesNs {
                 &args.graph,
                 &args.modules_root,
                 Some(&args.source_root),
-                roots,
-                args.tree_config.as_deref(),
-            )
-            .map(Some),
-            ModulesNsCommand::Decompose(args) => crate::verify_graph_compatibility(
-                &args.common.dependency_graph_path,
-                &args.common.modules_root,
-                args.source_root.as_deref(),
                 roots,
                 args.tree_config.as_deref(),
             )
@@ -201,21 +187,6 @@ enum ModulesNsCommand {
     /// statement-order commutation for the exact candidate; it requires the full
     /// tree transform context and does not change the gate verdict.
     Refine(ModulesRefineArgs),
-    /// Report a read-only, gate-checked refinement of existing module groups.
-    ///
-    /// The planner keeps each current module separate from the others and
-    /// groups its source units by the gated atomic/same-module seed classes. It
-    /// validates the complete candidate against the structural atoms and
-    /// shared realizability gate. `--atomic` skips same-module seed contraction
-    /// for a faster, more fragmented structural baseline. Suggested paths are
-    /// review aids; the command does not edit the spec. Pair `--atomic` with
-    /// `--include-residual` to split residual body atoms while keeping top-level
-    /// imports and exports in the entry module. `--preserve-selector-anchors`
-    /// resolves current claims using `--source-root` and keeps local
-    /// intrinsic aliases and source_match member references together.
-    /// `--include-unchanged` adds one-fragment rows for current named modules
-    /// that the selected strategy leaves intact.
-    Decompose(ModuleDecomposeArgs),
     /// List all modules in the spec with summary stats.
     ///
     /// Per-row: `member_count`, `anonymous_statement_count`, `residual`
@@ -392,67 +363,6 @@ fn run_complete_proposals(args: &PlanWorkArgs, output: &mut dyn std::io::Write) 
 }
 
 #[derive(Debug, ClapArgs)]
-struct ModuleDecomposeArgs {
-    #[command(flatten)]
-    common: CommonArgs,
-
-    /// Tree config for chunk-scoped module claims in a multi-chunk spec.
-    #[arg(long = "tree-config")]
-    tree_config: Option<PathBuf>,
-
-    /// Output format. Default `text` on tty, `json` on pipe.
-    #[arg(long, value_enum)]
-    format: Option<OutputFormat>,
-
-    /// Use structural atomic groups only, skipping same-module seed contractions.
-    #[arg(long)]
-    atomic: bool,
-
-    /// With `--atomic`, also split residual body atoms into proposed modules.
-    /// Top-level import and export declarations stay in the entry module.
-    #[arg(long, requires = "atomic")]
-    include_residual: bool,
-
-    /// With `--atomic`, merge only module groups named by blocking SCCs from
-    /// the shared gate, revalidating the complete candidate after each round.
-    #[arg(long, requires = "atomic")]
-    coarsen_blocking_sccs: bool,
-
-    /// First co-locate whole candidate groups joined by reported structural
-    /// atomic groups, then run the normal blocking-SCC coarsening.
-    #[arg(long, requires = "coarsen_blocking_sccs")]
-    coarsen_atomic_conflicts: bool,
-
-    /// Rejoin accepted atomic fragments from the same original module when
-    /// each incremental contraction still passes the shared gate.
-    #[arg(long, requires = "coarsen_blocking_sccs")]
-    rejoin_original_modules: bool,
-
-    /// Limit speculative pair checks per original home across all rejoining
-    /// passes. Whole-home checks remain available; zero skips pair fallback.
-    #[arg(long, requires = "rejoin_original_modules")]
-    rejoin_pair_attempt_limit: Option<usize>,
-
-    /// Limit complete stable-order passes over original homes during rejoining.
-    /// Zero skips rejoining; the final complete candidate is still gate-checked.
-    #[arg(long, requires = "rejoin_original_modules")]
-    rejoin_home_pass_limit: Option<usize>,
-
-    /// Source root used to resolve existing source-backed and relational claims.
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
-    source_root: Option<PathBuf>,
-
-    /// Keep local intrinsic_alias members and source_match captures with their
-    /// resolved in-module referenced members.
-    #[arg(long, requires = "source_root")]
-    preserve_selector_anchors: bool,
-
-    /// Include unchanged current named modules as one-fragment report rows.
-    #[arg(long)]
-    include_unchanged: bool,
-}
-
-#[derive(Debug, ClapArgs)]
 struct ModulesRefineArgs {
     /// JSON array of reviewed source-unit IDs and extensionless destination module IDs; `-` reads stdin.
     #[arg(long)]
@@ -619,211 +529,6 @@ fn render_modules_list_text(report: &ModulesListReport, out: &mut String, with_a
     }
 }
 
-fn render_module_decomposition_text(report: &ModuleDecompositionReport, out: &mut String) {
-    out.push_str(&format!(
-        "strategy: {}
-",
-        report.strategy
-    ));
-    if report.preserve_selector_anchors {
-        let relation_count = report
-            .selector_anchor_relations
-            .as_ref()
-            .map_or(0, Vec::len);
-        out.push_str(&format!(
-            "selector anchor cohesion: enabled ({relation_count} local selector-anchor relation(s))\n"
-        ));
-    }
-    out.push_str(if report.candidate_is_realizable {
-        "candidate is realizable\n"
-    } else {
-        "candidate is not realizable\n"
-    });
-    out.push_str(&format!(
-        "coverage: {}/{} source units; unchanged modules={}\n",
-        report.assigned_source_unit_count, report.source_unit_count, report.unchanged_module_count
-    ));
-    for module in &report.modules {
-        out.push_str(&format!(
-            "{} → {} part(s)\n",
-            module.module_id,
-            module.fragments.len()
-        ));
-        for fragment in &module.fragments {
-            out.push_str(&format!(
-                "  {}  source_units={} bindings={}\n",
-                fragment.suggested_module_path,
-                fragment.source_unit_ids.join(", "),
-                fragment.binding_ids.join(", "),
-            ));
-        }
-    }
-    for conflict in &report.atomic_group_conflicts {
-        out.push_str(&format!(
-            "atomic group {} spans candidate modules: {}\n",
-            conflict.atomic_group_id,
-            conflict
-                .candidate_modules
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(", "),
-        ));
-    }
-    if !report.cycles.is_empty() {
-        out.push_str(&format!("gate cycles: {}\n", report.cycles.len()));
-    }
-    if !report.cross_rebinds.is_empty() {
-        out.push_str(&format!(
-            "cross-module rebinds: {}\n",
-            report.cross_rebinds.len()
-        ));
-    }
-    if let Some(coarsening) = &report.coarsening {
-        out.push_str(&format!(
-            "SCC coarsening stopped: {:?}; rounds={}\n",
-            coarsening.stop_reason,
-            coarsening.rounds.len()
-        ));
-        for merge in &coarsening.atomic_conflict_merges {
-            out.push_str(&format!(
-                "  atomic groups {}: merged {} into {}\n",
-                merge.atomic_group_ids.join(", "),
-                merge
-                    .merged_candidate_paths
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                merge.suggested_module_path,
-            ));
-        }
-        for (round_idx, round) in coarsening.rounds.iter().enumerate() {
-            out.push_str(&format!(
-                "  round {}: merged {} blocking SCC(s) into {}\n",
-                round_idx + 1,
-                round.blocking_sccs.len(),
-                round
-                    .suggested_merge_paths
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            ));
-        }
-        for group in &coarsening.groups {
-            out.push_str(&format!(
-                "  final {}  origins={} source_units={} bindings={}\n",
-                group.suggested_module_path,
-                group
-                    .origin_module_paths
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                group.source_unit_ids.join(", "),
-                group.binding_ids.join(", "),
-            ));
-        }
-        if let Some(collisions) = &coarsening.naming_collisions {
-            for collision in collisions {
-                out.push_str(&format!(
-                    "  name collision {} in {}: {}\n",
-                    collision.readable_name,
-                    collision.suggested_module_path,
-                    collision
-                        .claims
-                        .iter()
-                        .map(|claim| format!(
-                            "{}:{} (source units {})",
-                            claim.original_module_path,
-                            claim.binding_id,
-                            claim.source_unit_ids.join(", ")
-                        ))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                ));
-            }
-        }
-        if let Some(rejoining) = &coarsening.original_home_rejoining {
-            let whole_home_pass_limit = rejoining
-                .whole_home_pass_limit
-                .map_or_else(|| "unlimited".to_owned(), |limit| limit.to_string());
-            out.push_str(&format!(
-                "original-home rejoining stopped: {:?}; restored={}/{} groups={} largest_group_source_units={} largest_group_origins={} contractions={}/{} whole_home_passes={}/{} budget_limited_homes={}\n",
-                rejoining.stop_reason,
-                rejoining.fully_restored_module_count,
-                rejoining.original_module_count,
-                rejoining.final_group_count,
-                rejoining.largest_group_source_unit_count,
-                rejoining.largest_group_origin_module_count,
-                rejoining.accepted_contractions,
-                rejoining.attempted_contractions,
-                rejoining.whole_home_pass_count,
-                whole_home_pass_limit,
-                rejoining.budget_limited_home_count,
-            ));
-        }
-    }
-}
-
-fn run_module_decompose(
-    stderr: &mut (dyn std::io::Write + Send),
-    args: ModuleDecomposeArgs,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    output: &mut dyn std::io::Write,
-) -> Result<()> {
-    anyhow::ensure!(
-        !args.include_residual || args.atomic,
-        "--include-residual requires --atomic"
-    );
-    let report = command_diagnostics::run(stderr, |diagnostics| {
-        decompose_modules_from_files_with_options(
-            &ProposalOptions {
-                dependency_graph_path: args.common.dependency_graph_path,
-                modules_root: args.common.modules_root,
-                tree_config: args.tree_config,
-                source_root: args.source_root,
-                source_context: source_context.cloned(),
-                size_cap_lines: DEFAULT_SIZE_CAP_LINES,
-            },
-            ModuleDecompositionOptions {
-                strategy: if args.atomic {
-                    if args.include_residual {
-                        ModuleDecompositionStrategy::AtomicIncludingResidual
-                    } else {
-                        ModuleDecompositionStrategy::Atomic
-                    }
-                } else {
-                    ModuleDecompositionStrategy::Seed
-                },
-                coarsening: if args.coarsen_blocking_sccs {
-                    ModuleDecompositionCoarseningMode::MergeBlockingSccs
-                } else {
-                    ModuleDecompositionCoarseningMode::None
-                },
-                preserve_selector_anchors: args.preserve_selector_anchors,
-                include_unchanged: args.include_unchanged,
-                coarsen_atomic_conflicts: args.coarsen_atomic_conflicts,
-                rejoin_original_modules: args.rejoin_original_modules,
-                rejoin_pair_attempt_limit: args.rejoin_pair_attempt_limit,
-                whole_home_pass_limit: args.rejoin_home_pass_limit,
-            },
-            diagnostics,
-        )
-    })?;
-    emit_report(
-        output,
-        args.format,
-        &report,
-        |report, out| {
-            render_module_decomposition_text(report, out);
-            Ok(())
-        },
-        "writing module decomposition output",
-    )
-}
-
 fn run_modules_refine(
     output: &mut dyn std::io::Write,
     stderr: &mut (dyn std::io::Write + Send),
@@ -983,9 +688,6 @@ pub(super) fn run(
             )
         }
         ModulesNsCommand::Check(args) => run_modules_check(args, output),
-        ModulesNsCommand::Decompose(args) => {
-            run_module_decompose(stderr, args, source_context, output)
-        }
         ModulesNsCommand::Apply(args) => {
             run_modules_apply(output, stderr, args, source_context, analysis_engine_sha256)
         }

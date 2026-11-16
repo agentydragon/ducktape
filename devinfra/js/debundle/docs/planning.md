@@ -51,12 +51,10 @@ propose` strategy. Review the complete mapping and destinations, check the plan,
   impossibility.
   Send the exact accepted plan and source evidence to intake; changing its
   destinations needs another complete check.
-- For existing claims, follow [decompose and refine](spec_editing.md#workflow-reorganizing-existing-modules).
-  Preserve selector anchors when needed, inspect the complete candidate's coverage,
-  verdict, conflicts, and resolved names, and choose semantic destinations rather
-  than accepting suggested paths mechanically. Hand the reviewed source-unit map
-  directly to a worker. Residual groups from `--include-residual` cannot be applied
-  through `modules refine`.
+- For existing claims, review the source units and choose semantic destinations,
+  then use `modules check --batch` to validate the complete assignment before
+  applying it with `modules refine`. Hand the reviewed source-unit map directly to
+  a worker.
 - For selector work, follow the [bulk conversion loop](selectors.md#bulk-conversion-loop).
   Give workers explicit items or coherent module scopes. Record repeated synthesis
   gaps as tooling work instead of assigning exact-body transcription.
@@ -68,10 +66,11 @@ CLI recipe defines that format.
 
 ## Prepare seeds
 
-Intake consumes residual proposals, not existing-module decomposition reports.
-Use short source slices to infer purpose from implementations, callers, stable
-strings/properties, and source proximity. If choosing a destination requires
-broad architectural discovery, mark low confidence and route to the architect.
+Intake consumes residual proposals. Reviewed maps for already-claimed source
+units go directly to workers. Use short source slices to infer purpose from
+implementations, callers, stable strings/properties, and source proximity. If
+choosing a destination requires broad architectural discovery, mark low confidence
+and route to the architect.
 
 An exact-placement result has one snapshot-bound `plan`, rather than a queue of
 independent `proposals[]` rows. Preserve that whole plan as one worker packet,

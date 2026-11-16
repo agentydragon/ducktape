@@ -1,6 +1,6 @@
 ---
 name: debundle_orchestrator
-description: Drive debundle specs toward readable, runnable output and improve the engine. Choose among passing-baseline extraction, atomic residual decomposition, gate-driven coarsening, targeted spec/tool repair, general inference, sound recognizers or audited annotations. Use for prioritizing blockers, coordinating authorized workers, and verifying downstream progress.
+description: Drive debundle specs toward readable, runnable output and improve the engine. Choose among exact residual placement, passing-baseline extraction, targeted spec/tool repair, general inference, sound recognizers or audited annotations. Use for prioritizing blockers, coordinating authorized workers, and verifying downstream progress.
 ---
 
 # Debundle Orchestrator
@@ -36,9 +36,8 @@ establish impossibility. Explicit `modules propose --strategy auto` remains an
 advisory factorizer for source inventory. A graph witness still needs selector realization, normal
 materialization and runtime evidence.
 
-For structural inventory, ask planning for
-[atomic residual decomposition and gate-driven coarsening](references/docs/cli.md#refining-existing-modules-modules-decompose),
-or a worker for an isolated
+For structural inventory, inspect the atomic groups in the graph report and use
+`modules check` to validate an authored assignment, or ask a worker for an isolated
 [`per_atomic_group` emission probe](references/SPEC.md#unassigned-source).
 Use the resulting constraints to choose work; generated fragments are not a
 semantic architecture proposal or proof that rejected splits are impossible.

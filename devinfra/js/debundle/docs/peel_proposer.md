@@ -90,7 +90,6 @@ be split from its target.
 ## Where To Look
 
 - `peel/propose.rs`: report assembly and proposal rendering.
-- `peel/decompose.rs`: `modules decompose` over existing modules.
 - `peel/quotient.rs`: quotient kernel, seed contraction, greedy driver.
 - `peel/quotient_integration_test.rs`: seed, greedy, merge-output, and
   lazy-PQ equivalence coverage.

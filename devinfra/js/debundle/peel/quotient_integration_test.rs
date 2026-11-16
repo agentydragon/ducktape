@@ -5,10 +5,10 @@
 use analysis_model::DepKind;
 use std::collections::BTreeMap;
 
-use analysis::{DependencyGraphInput, DependencyGraphReport, ModuleId};
+use analysis::{DependencyGraphInput, DependencyGraphReport};
 use report_fixtures::{
     active_source_unit, atomic_edge, atomic_group_for, claims, dependency_edge, graph_of,
-    promoted_dependency_edge, residual_source_unit, singleton_graph,
+    residual_source_unit, singleton_graph,
 };
 use spec::ModulePath;
 
@@ -44,21 +44,6 @@ fn quotient_with_partition(
     QuotientGraph::from_graph_with_partition(&input, cap_lines, groups)
 }
 
-fn quotient_with_assignment(
-    report: &DependencyGraphReport,
-    cap_lines: usize,
-    source_unit_modules: &[ModuleId],
-    residual_module: ModuleId,
-) -> anyhow::Result<QuotientGraph> {
-    let input = graph_input(report);
-    QuotientGraph::from_graph_with_realizable_assignment(
-        &input,
-        cap_lines,
-        source_unit_modules,
-        residual_module,
-    )
-}
-
 fn propose_report(
     report: &DependencyGraphReport,
     active_claims: &BTreeMap<String, ModulePath>,
@@ -76,124 +61,6 @@ fn spec_module(module_id: &str, source_units: &[&str]) -> SpecModuleGroup {
 }
 
 // ---------- Tests. ----------
-
-/// A contraction changes preferred import order in a separate I-SCC.
-/// Constructing another concrete schedule must preserve its valid placement.
-#[test]
-fn original_home_merge_constructs_a_schedule_for_the_remote_cycle() {
-    let report = singleton_graph(
-        vec![
-            active_source_unit("unit:0", 1, &["B0"], 5, "ui/m5"),
-            active_source_unit("unit:1", 2, &["B1"], 5, "ui/m5"),
-            residual_source_unit("unit:2", 3, &["B2"], 5),
-            residual_source_unit("unit:3", 4, &["B3"], 5),
-            active_source_unit("unit:4", 5, &["B4"], 5, "ui/m6"),
-            active_source_unit("unit:5", 6, &["B5"], 5, "ui/m4"),
-            residual_source_unit("unit:6", 7, &["B6"], 5),
-            active_source_unit("unit:7", 8, &["B7"], 5, "ui/m0"),
-        ],
-        vec![
-            dependency_edge("edge:0", "unit:0", "unit:1", DepKind::Sequenced, true),
-            dependency_edge("edge:1", "unit:0", "unit:4", DepKind::LazyUse, false),
-            dependency_edge("edge:2", "unit:1", "unit:0", DepKind::LazyUse, false),
-            dependency_edge("edge:3", "unit:1", "unit:4", DepKind::LazyUse, false),
-            promoted_dependency_edge(
-                "edge:4",
-                "unit:1",
-                "unit:5",
-                DepKind::EagerUse,
-                true,
-                "unit:4",
-            ),
-            dependency_edge("edge:5", "unit:2", "unit:3", DepKind::LazyUse, false),
-            dependency_edge("edge:6", "unit:3", "unit:1", DepKind::EagerUse, true),
-            dependency_edge("edge:7", "unit:3", "unit:2", DepKind::LazyUse, false),
-            dependency_edge("edge:8", "unit:4", "unit:1", DepKind::EagerUse, true),
-            dependency_edge("edge:9", "unit:6", "unit:1", DepKind::LazyUse, false),
-            dependency_edge("edge:10", "unit:6", "unit:5", DepKind::Sequenced, true),
-            dependency_edge("edge:11", "unit:7", "unit:0", DepKind::EagerUse, true),
-        ],
-    );
-    let spec = [
-        spec_module("ui/m0", &["unit:7"]),
-        spec_module("ui/m4", &["unit:5"]),
-        spec_module("ui/m5", &["unit:0", "unit:1"]),
-        spec_module("ui/m6", &["unit:4"]),
-    ];
-    let (mut q, _) =
-        build_seed_quotient_from_report(&report, &report.atomic_graph.nodes, &spec, 10_000);
-    assert!(q.realizability_verdict().is_realizable());
-    let left = q.class_of(q.source_unit_index_of("unit:3").unwrap());
-    let right = q.class_of(q.source_unit_index_of("unit:7").unwrap());
-    assert!(q.merge_preserves_invariants(left, right));
-    let mut post = q.realizability_assignment().clone();
-    let target = post.of(source_identity::SourceUnitId(7));
-    post.set(source_identity::SourceUnitId(3), target);
-    let post_verdict = gate::check_realizability(q.dependency_graph(), &post);
-    let index = gate::RealizabilityIndex::from_assignment(
-        q.dependency_graph(),
-        q.realizability_assignment().clone(),
-    );
-    assert_eq!(
-        index.verdict_after_moving_source_units(
-            q.dependency_graph(),
-            &[source_identity::SourceUnitId(3)],
-            target
-        ),
-        post_verdict,
-    );
-    assert!(post_verdict.is_realizable(), "{post_verdict:?}");
-    assert!(q.contract_if_preserving(left, right));
-    assert!(q.realizability_verdict().is_realizable());
-}
-
-#[test]
-fn group_contraction_commits_one_final_entry_assignment_and_honors_cap() {
-    let report = singleton_graph(
-        vec![
-            active_source_unit("unit:a", 1, &["A"], 5, "home"),
-            active_source_unit("unit:b", 2, &["B"], 5, "home"),
-            residual_source_unit("unit:entry", 3, &["Entry"], 5),
-            active_source_unit("unit:outside", 4, &["Outside"], 5, "outside"),
-        ],
-        vec![],
-    );
-    let assignments = [ModuleId(1), ModuleId(2), ModuleId(0), ModuleId(3)];
-    let mut q = quotient_with_assignment(&report, 9, &assignments, ModuleId(0)).unwrap();
-    assert!(!q.contract_if_preserving(ClassId(0), ClassId(0)));
-    assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
-    assert_eq!(q.class_of(SourceUnitIndex(1)), ClassId(1));
-
-    let mut q = quotient_with_assignment(&report, 14, &assignments, ModuleId(0)).unwrap();
-    let classes = [ClassId(0), ClassId(1), ClassId(2)];
-    assert!(!q.contract_group_if_preserving(&classes));
-    assert_eq!(
-        q.realizability_assignment()
-            .of(source_identity::SourceUnitId(0)),
-        assignments[0]
-    );
-    assert_eq!(q.class_of(SourceUnitIndex(0)), ClassId(0));
-
-    let mut q = quotient_with_assignment(&report, 15, &assignments, ModuleId(0)).unwrap();
-    assert!(q.contract_group_if_preserving(&classes));
-    for source_unit in 0..3 {
-        assert_eq!(q.class_of(SourceUnitIndex(source_unit)), ClassId(0));
-        assert_eq!(
-            q.realizability_assignment()
-                .of(source_identity::SourceUnitId(source_unit)),
-            ModuleId(0)
-        );
-    }
-    assert_eq!(q.class_of(SourceUnitIndex(3)), ClassId(3));
-    assert_eq!(
-        q.realizability_assignment()
-            .of(source_identity::SourceUnitId(3)),
-        assignments[3]
-    );
-    assert!(q.realizability_verdict().is_realizable());
-    assert!(!q.contract_if_preserving(ClassId(0), ClassId(1)));
-    assert!(!q.contract_group_if_preserving(&classes));
-}
 
 #[test]
 fn seed_skips_unrealizable_spec_module_contraction_and_reports() {

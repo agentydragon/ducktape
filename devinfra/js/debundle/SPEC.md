@@ -1504,41 +1504,6 @@ these totals. If the full pipeline stops before all configured chunks report,
 
 Warnings never stop a run.
 
-## Read-only decomposition candidates
-
-Opt-in atomic-conflict coarsening joins whole candidate groups connected by
-native reported structural atomic groups. It preserves the residual entry path
-when a joined group contains that entry, then validates the complete assignment
-through the shared gate before blocking-SCC coarsening. Without the opt-in,
-structural conflicts stop coarsening and remain reported.
-
-Opt-in original-home rejoining starts only from a complete atomic/SCC candidate
-accepted by the shared realizability gate. It contracts whole candidate groups
-only when every source unit in both groups has the same original module home; an
-existing mixed-home coarsened group is never split or joined to a pure group.
-Each proposed contraction passes the full shared realizability gate on its
-hypothetical complete assignment, and the final assignment passes that gate again.
-The command reports a proposal and does not edit the spec. An optional per-home
-pair-attempt limit bounds partial fallback checks across all passes while
-preserving whole-home checks; the report identifies homes left with untried
-pairs. An optional whole-home pass limit bounds complete stable-order passes
-across original homes; zero skips rejoining and one permits at most one pass.
-If the limit stops a productive pass while pure homes remain split, the report
-says `whole_home_pass_limit_reached` and includes the actual
-`whole_home_pass_count`. The default remains exhaustive;
-limits never bypass either gate check.
-
-With `--preserve-selector-anchors --source-root`, decomposition resolves
-authored selectors against their source chunks through the joint selector
-resolver. It reports local `intrinsic_alias` and module-neutral ambiguous
-source-match references in `selector_anchor_relations`, including named-member
-and anonymous-statement sources. Each relation carries a tagged `source`, the
-referenced member, and both source-unit-ID sets. Anonymous sources use their authored
-`anonymous_statements[]` index; the resolver maps that selector to its stable
-source unit before coalescing the candidate groups. A module-neutral unique reference
-does not force co-location. The option is read-only and the complete candidate
-still passes the shared structural and realizability gates.
-
 ## Readable names and the chunk public surface
 
 `name:` on a member and the name assigned to `source_matches[].bindings[]`
