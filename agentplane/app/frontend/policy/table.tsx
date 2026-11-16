@@ -11,7 +11,7 @@ import { CodeBlock } from "../../../../util/frontend/code_block";
 import { MarkGlyph } from "../mark_glyph";
 import { BINDING_STATE_MARKS } from "../status_mark";
 import { TimeAgo } from "../time_ago";
-import { useCredentialMetadata } from "../bindings/credential_watch";
+import { useCredentialMetadata } from "../egress/credential_watch";
 import { bindingState } from "./state";
 
 export const BINDING_GRANT_HELP =

@@ -16,7 +16,7 @@ import { EnvironmentIdentity } from "./environment_identity";
 
 const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn() }));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
-vi.mock("../bindings/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
+vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let root: ReturnType<typeof createRoot>;
