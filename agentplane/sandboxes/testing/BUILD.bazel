@@ -6,15 +6,21 @@ package(
 )
 
 py_library(
+    name = "identity",
+    srcs = ["identity.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "kubernetes",
     testonly = True,
     srcs = ["kubernetes.py"],
     deps = [
+        ":identity",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:identity_pb2",
-        "//agentplane/sandboxes:launch",
         "//agentplane/testing:kubernetes",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",

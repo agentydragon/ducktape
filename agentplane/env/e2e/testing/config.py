@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentplane.sandboxes.launch import SandboxIdentity
+from agentplane.sandboxes.testing.identity import SandboxIdentity
 
 
 @dataclass(frozen=True)

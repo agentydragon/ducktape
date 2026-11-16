@@ -1,14 +1,1 @@
-load("//devinfra/python:defs.bzl", "py_library")
-
 package(default_visibility = ["//agentplane:__subpackages__"])
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-)
-
-py_library(
-    name = "launch",
-    srcs = ["launch.py"],
-    deps = ["@pypi//pydantic"],
-)
