@@ -41,6 +41,10 @@ type ServiceDelegator struct {
 	ConnectionProvenance bool   `mapstructure:"connection_provenance" yaml:"connection_provenance" json:"connection_provenance"`
 }
 
+type delegatorGrant struct {
+	connectionProvenance bool
+}
+
 type serviceDelegationPolicy struct {
 	actors     map[string]delegatorGrant
 	identities IdentityUIDReader
@@ -85,7 +89,7 @@ func (r Rule) AllowServiceCallers(callers []string) (Rule, error) {
 }
 
 // AllowServiceDelegationFrom grants only service actors, independently of direct
-// callers and legacy token actors. The effective caller always remains an Identity.
+// callers. The effective caller always remains an Identity.
 func (r Rule) AllowServiceDelegationFrom(actors []ServiceDelegator, identities IdentityUIDReader) (Rule, error) {
 	if (!r.admitsIdentityCallers() && r.kind != ruleServices) || identities == nil || len(actors) == 0 {
 		return Rule{}, fmt.Errorf("service delegation requires a service or Identity-admitting rule, Identity reader and actors")

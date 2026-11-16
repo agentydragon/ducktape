@@ -9,8 +9,8 @@ contracts; Kubernetes API credentials authenticate only to Kubernetes.
 configuration. `spiffe` requires TLS and an absolute trust-root path. Unsupported modes, empty
 lists, duplicates and unknown fields fail configuration loading. Native RPC listeners may admit
 unauthenticated public health methods. Listener authentication does not grant method authorization.
-The legacy `kubernetes_bearer` decoder remains while obsolete manifest settings roll out; decoding
-an ignored setting grants no receiver access.
+The legacy `kubernetes_bearer` decoder remains for shared tests pending retirement; decoding it
+grants no receiver access.
 
 ## Workload Identity proof
 
@@ -84,9 +84,8 @@ certificate never selects bearer proof.
 
 [`auth.go`](auth.go) still contains the TokenReview resolver and account admission APIs for shared
 test consumers pending retirement. `Accounts`, `SVIDOrAccounts`, `ReviewedServiceAccount`,
-`ReviewedServiceAccountOrIdentity` and token-backed `AllowDelegationFrom` are not the production
-receiver pattern. The separately retained token client mode and audience constants likewise do not
-establish an active first-party bearer caller. Remove these implementations after their final
+`ReviewedServiceAccountOrIdentity` are not the production receiver pattern. The remaining token
+client mode and audience constants do not establish an active first-party bearer caller. Remove these implementations after their final
 consumers and configuration rollout gates; TokenReview RBAC removal comes last. Preserve
 Kubernetes API clients and retained account-attributed records.
 

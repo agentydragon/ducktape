@@ -258,30 +258,8 @@ func (s *Service) caller(ctx context.Context) (Caller, error) {
 		return caller, nil
 	case auth.IdentityAdmission:
 		return identityCaller(identity.Caller)
-	case auth.DelegatedIdentityAdmission:
-		return delegatedIdentityCaller(identity)
 	}
 	return s.serviceAccountCaller(ctx)
-}
-
-// delegatedIdentityCaller is a trusted platform component acting for an Identity. It is authorized
-// exactly as that Identity's own workload would be, and records the component that named it.
-func delegatedIdentityCaller(admission auth.DelegatedIdentityAdmission) (IdentityCaller, error) {
-	actor := admission.Actor
-	caller := IdentityCaller{
-		Identity: &identitypb.Identity{Name: admission.EffectiveCaller.Name, Uid: admission.EffectiveCaller.UID},
-		Proof: IdentityDelegation{
-			Actor:    serviceAccountIdentityFor(actor.Account, actor.ServiceAccountUID),
-			ActorPod: PodIdentity{Name: actor.PodName, UID: actor.PodUID},
-			Action: ActionCorrelation{
-				RequestID: admission.Provenance.GetAction().GetRequestId(), ExecutionID: admission.Provenance.GetAction().GetExecutionId(),
-			},
-		},
-	}
-	if err := validateCaller(caller, nil); err != nil {
-		return IdentityCaller{}, status.Error(codes.Unauthenticated, "delegated Identity caller is incomplete")
-	}
-	return caller, nil
 }
 
 func identityCaller(principal auth.IdentityPrincipal) (IdentityCaller, error) {
