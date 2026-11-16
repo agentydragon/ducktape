@@ -20,12 +20,12 @@ const (
 	ConditionReady                       = "Ready"
 	ConditionQuiesced                    = "Quiesced"
 
-	RunnerProxySandboxMetadataKey               = "x-agentplane-sandbox"
-	RunnerProxySandboxNamespaceMetadataKey      = "x-agentplane-sandbox-namespace"
-	RunnerProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
-	RunnerProxySandboxOwnerNamespaceMetadataKey = "x-agentplane-sandbox-owner-namespace"
-	RunnerProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
-	RunnerProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
+	RuntimeProxySandboxMetadataKey               = "x-agentplane-sandbox"
+	RuntimeProxySandboxNamespaceMetadataKey      = "x-agentplane-sandbox-namespace"
+	RuntimeProxySandboxUIDMetadataKey            = "x-agentplane-sandbox-uid"
+	RuntimeProxySandboxOwnerNamespaceMetadataKey = "x-agentplane-sandbox-owner-namespace"
+	RuntimeProxySandboxOwnerNameMetadataKey      = "x-agentplane-sandbox-owner-name"
+	RuntimeProxyIncarnationUIDMetadataKey        = "x-agentplane-incarnation-uid"
 
 	RuntimeProxyServicePort = 8082
 	RuntimeProxyService     = "sandbox-controller"

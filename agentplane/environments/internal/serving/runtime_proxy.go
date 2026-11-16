@@ -20,9 +20,9 @@ import (
 // runtimeProxy owns a replica-local inventory and callable Runtime connections. It never
 // uses the manager's leader-scoped cache or the Controller's observe-only binding watch.
 type runtimeProxy struct {
-	gateway *runtimeproxy.Gateway
-	cache   cache.Cache
-	health  *watchhealth.Health
+	server *runtimeproxy.Server
+	cache  cache.Cache
+	health *watchhealth.Health
 }
 
 func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Config, scheme *runtime.Scheme) (*runtimeProxy, error) {
@@ -49,7 +49,7 @@ func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Con
 	}
 	// No bearer accounts or workload SVID resolver are installed on the proxy's methods.
 	// Only the four exact service allowlists confer authority; delegation stays absent.
-	gateway, err := runtimeproxy.New(runtimeproxy.Config{
+	server, err := runtimeproxy.New(runtimeproxy.Config{
 		Namespace: namespace, RunnerSecurity: c.RunnerSecurity,
 		RuntimeReaders: c.Readers, SessionServices: c.SessionCallers,
 		ControllerServices: c.ControllerCallers, ExecutorServices: c.ExecutorCallers,
@@ -62,11 +62,11 @@ func newRuntimeProxy(c RuntimeProxyConfig, namespace string, apiConfig *rest.Con
 		if err != nil {
 			return nil, err
 		}
-		if _, err := informer.AddEventHandler(gateway.RunnerDiscoveryHandler()); err != nil {
+		if _, err := informer.AddEventHandler(server.RuntimeDiscoveryHandler()); err != nil {
 			return nil, err
 		}
 	}
-	return &runtimeProxy{gateway: gateway, cache: inventory, health: health}, nil
+	return &runtimeProxy{server: server, cache: inventory, health: health}, nil
 }
 
 func (p *runtimeProxy) run(ctx context.Context) error {
@@ -77,7 +77,7 @@ func (p *runtimeProxy) run(ctx context.Context) error {
 			return fmt.Errorf("Runtime proxy inventory did not synchronize: %w", ctx.Err())
 		}
 		p.health.MarkSynced()
-		return p.gateway.RunRunnerObservers(ctx)
+		return p.server.RunRuntimeObservers(ctx)
 	})
 	defer p.health.MarkDraining()
 	return workers.Wait()

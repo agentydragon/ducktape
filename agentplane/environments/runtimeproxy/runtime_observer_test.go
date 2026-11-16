@@ -40,7 +40,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type observedRunner struct {
+type observedRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	sandboxUID     string
 	incarnationUID string
@@ -50,7 +50,7 @@ type observedRunner struct {
 	quiesceCalls   atomic.Int32
 }
 
-func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+func (r *observedRuntime) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
 		request.GetObserveOnly() {
 		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
@@ -66,7 +66,7 @@ func (r *observedRunner) WatchState(request *environmentruntimepb.WatchStateRequ
 	return stream.Context().Err()
 }
 
-func (r *observedRunner) validateFence(ctx context.Context) error {
+func (r *observedRuntime) validateFence(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	for key, want := range map[string]string{
 		"agentplane-sandbox-uid":                 r.sandboxUID,
@@ -84,7 +84,7 @@ func (r *observedRunner) validateFence(ctx context.Context) error {
 	return nil
 }
 
-func (r *observedRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (r *observedRuntime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if err := r.validateFence(ctx); err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (r *observedRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRe
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
-func (r *observedRunner) Quiesce(ctx context.Context, _ *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
+func (r *observedRuntime) Quiesce(ctx context.Context, _ *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
 	if err := r.validateFence(ctx); err != nil {
 		return nil, err
 	}
@@ -100,15 +100,15 @@ func (r *observedRunner) Quiesce(ctx context.Context, _ *sessionpb.QuiesceReques
 	return &sessionpb.QuiesceResponse{Stage: sessionpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}, nil
 }
 
-func TestRunnerObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
+func TestRuntimeObserverPublishesIdentityAndFencesRPCs(t *testing.T) {
 	for _, mode := range []peertls.SecurityMode{peertls.MutualTLS, peertls.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
-			testRunnerObserver(t, mode)
+			testRuntimeObserver(t, mode)
 		})
 	}
 }
 
-func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
+func TestAnyServerReplicaObservesAndCallsOneRuntime(t *testing.T) {
 	for _, uri := range []string{peertls.RuntimeProxyURI} {
 		t.Run(uri, func(t *testing.T) { testAnyReplicaObservesAndCallsOneRuntime(t, uri) })
 	}
@@ -116,52 +116,52 @@ func TestAnyGatewayReplicaObservesAndCallsOneRuntime(t *testing.T) {
 
 func testAnyReplicaObservesAndCallsOneRuntime(t *testing.T, uri string) {
 	f := newSandboxFixture(t)
-	f.gatewayTLS = f.ca.Issue(t, uri)
-	gatewayA := f.newGateway(t)
-	gatewayB := f.newGateway(t)
-	destinationA, backend := startProductionRuntime(t, f, gatewayA)
-	destinationB, err := gatewayB.runnerDestination(t.Context(), f.sandbox)
+	f.serverTLS = f.ca.Issue(t, uri)
+	serverA := f.newServer(t)
+	serverB := f.newServer(t)
+	destinationA, backend := startProductionRuntime(t, f, serverA)
+	destinationB, err := serverB.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
 	destinationB.target = destinationA.target
 
-	cancelA, doneA, _ := runObserver(t, gatewayA, destinationA)
-	cancelB, doneB, resultB := runObserver(t, gatewayB, destinationB)
+	cancelA, doneA, _ := runObserver(t, serverA, destinationA)
+	cancelB, doneB, resultB := runObserver(t, serverB, destinationB)
 	defer cancelB()
-	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
-	connectionB := awaitConnection(t, gatewayB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
-	clientA := startProxyClient(t, gatewayA)
-	clientB := startProxyClient(t, gatewayB)
+	awaitConnection(t, serverA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
+	connectionB := awaitConnection(t, serverB, string(f.sandbox.UID), "shared-runtime-boot", doneB)
+	clientA := startProxyClient(t, serverA)
+	clientB := startProxyClient(t, serverB)
 	if _, err := clientA.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway A did not call the shared Runtime: %v", err)
+		t.Fatalf("Server A did not call the shared Runtime: %v", err)
 	}
 	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway B did not call the shared Runtime: %v", err)
+		t.Fatalf("Server B did not call the shared Runtime: %v", err)
 	}
 	if got := backend.calls.Load(); got != 2 {
-		t.Fatalf("shared Runtime received %d calls, want one from each Gateway", got)
+		t.Fatalf("shared Runtime received %d calls, want one from each Server", got)
 	}
 
 	cancelA()
 	waitObserver(t, doneA)
 	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway B stopped serving after observer A closed: %v", err)
+		t.Fatalf("Server B stopped serving after observer A closed: %v", err)
 	}
-	cancelA, doneA, _ = runObserver(t, gatewayA, destinationA)
+	cancelA, doneA, _ = runObserver(t, serverA, destinationA)
 	defer cancelA()
-	awaitConnection(t, gatewayA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
+	awaitConnection(t, serverA, string(f.sandbox.UID), "shared-runtime-boot", doneA)
 	if _, err := clientB.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("Gateway B stopped serving after observer A restarted: %v", err)
+		t.Fatalf("Server B stopped serving after observer A restarted: %v", err)
 	}
-	if current, err := gatewayB.connections.holder(string(f.sandbox.UID)); err != nil || current != connectionB {
-		t.Fatalf("Gateway A changed Gateway B's local connection: %v, %+v", err, current)
+	if current, err := serverB.connections.holder(string(f.sandbox.UID)); err != nil || current != connectionB {
+		t.Fatalf("Server A changed Server B's local connection: %v, %+v", err, current)
 	}
 	if got := backend.calls.Load(); got != 4 {
 		t.Fatalf("shared Runtime received %d calls after observer restart, want 4", got)
 	}
 
-	credentials, err := f.gatewayTLS.ClientCredentials(destinationA.peerURI)
+	credentials, err := f.serverTLS.ClientCredentials(destinationA.peerURI)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func testAnyReplicaObservesAndCallsOneRuntime(t *testing.T, uri string) {
 	}
 	select {
 	case err := <-resultB:
-		t.Fatalf("Gateway B observer stopped while Gateway A restarted: %v", err)
+		t.Fatalf("Server B observer stopped while Server A restarted: %v", err)
 	default:
 	}
 }
@@ -218,13 +218,13 @@ func (r *statusOnlyRuntime) GetStatus(context.Context, *sessionpb.GetStatusReque
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
-func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runnerDestination, *statusOnlyRuntime) {
+func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Server) (runtimeDestination, *statusOnlyRuntime) {
 	t.Helper()
-	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	destination, err := g.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opened, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &f.runnerTLS}).Open(t.Context())
+	opened, err := (peertls.Security{Mode: peertls.MutualTLS, TLS: &f.runtimeTLS}).Open(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,13 +277,13 @@ func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Gateway) (runner
 	return destination, backend
 }
 
-func runObserver(t *testing.T, g *Gateway, destination runnerDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
+func runObserver(t *testing.T, g *Server, destination runtimeDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	result := make(chan error, 1)
 	go func() {
-		result <- g.observeRunner(ctx, destination)
+		result <- g.observeRuntime(ctx, destination)
 		close(done)
 	}()
 	t.Cleanup(func() {
@@ -298,11 +298,11 @@ func waitObserver(t *testing.T, done <-chan struct{}) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("Runner observer did not stop")
+		t.Fatal("Runtime observer did not stop")
 	}
 }
 
-func awaitConnection(t *testing.T, g *Gateway, sandboxUID, bootID string, done <-chan struct{}) *runnerConnection {
+func awaitConnection(t *testing.T, g *Server, sandboxUID, bootID string, done <-chan struct{}) *runtimeConnection {
 	t.Helper()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
@@ -314,30 +314,30 @@ func awaitConnection(t *testing.T, g *Gateway, sandboxUID, bootID string, done <
 		}
 		select {
 		case <-done:
-			t.Fatal("Runner observer stopped before becoming callable")
+			t.Fatal("Runtime observer stopped before becoming callable")
 		case <-deadline.C:
-			t.Fatal("Runner observer did not become callable")
+			t.Fatal("Runtime observer did not become callable")
 		case <-poll.C:
 		}
 	}
 }
 
-func startProxyClient(t *testing.T, g *Gateway) environmentruntimepb.EnvironmentRuntimeClient {
+func startProxyClient(t *testing.T, g *Server) environmentruntimepb.EnvironmentRuntimeClient {
 	t.Helper()
-	return environmentruntimepb.NewEnvironmentRuntimeClient(serveGateway(t, g, g.RegisterProxy))
+	return environmentruntimepb.NewEnvironmentRuntimeClient(serveServer(t, g, g.RegisterProxy))
 }
 
-func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
+func testRuntimeObserver(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, peertls.CentralSamplerURI)
+	g := f.newServer(t, peertls.CentralSamplerURI)
 	g.config.RunnerSecurity = peertls.Security{Mode: mode}
-	runnerSecurity := peertls.Security{Mode: mode}
+	runtimeSecurity := peertls.Security{Mode: mode}
 	if mode == peertls.MutualTLS {
-		g.config.RunnerSecurity.TLS = &f.gatewayTLS
-		runnerSecurity.TLS = &f.runnerTLS
+		g.config.RunnerSecurity.TLS = &f.serverTLS
+		runtimeSecurity.TLS = &f.runtimeTLS
 	}
-	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	destination, err := g.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,12 +345,12 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	creds, err := runnerSecurity.ServerCredentials(peertls.RuntimeProxyURI)
+	creds, err := runtimeSecurity.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer(grpc.Creds(creds))
-	runner := &observedRunner{
+	runtime := &observedRuntime{
 		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "test-runner-boot",
 		facts: &environmentruntimestatepb.EnvironmentRuntimeFacts{
 			Bootstrap:     environmentruntimestatepb.EnvironmentRuntimeFacts_BOOTSTRAP_SUCCEEDED,
@@ -358,20 +358,20 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 			SetupsRunning: true,
 		},
 	}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
 	executorpb.RegisterExecutorServer(server, &echoForwardExecutor{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	destination.target = listener.Addr().String()
 	cancel, done, _ := runObserver(t, g, destination)
 	connection := awaitConnection(t, g, string(f.sandbox.UID), "test-runner-boot", done)
-	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {
+	if _, err := connection.runtime.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatal(err)
 	}
-	if runner.calls.Load() != 1 {
-		t.Fatal("Runner call did not reach server")
+	if runtime.calls.Load() != 1 {
+		t.Fatal("Runtime call did not reach server")
 	}
-	publicConn := serveGateway(t, g, g.RegisterExecutor)
+	publicConn := serveServer(t, g, g.RegisterExecutor)
 	execCtx, stopExec := context.WithTimeout(context.WithValue(t.Context(), serviceConnectionKey{}, peertls.CentralSamplerURI), 5*time.Second)
 	defer stopExec()
 	exec, err := executorpb.NewExecutorClient(publicConn).OpenSession(execCtx, &executorpb.OpenSessionRequest{
@@ -388,10 +388,10 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	}
 	opened, err := exec.Recv()
 	if err != nil || opened.GetStatus().GetOutcome() != executorpb.ExecutionStatus_OUTCOME_COMPLETED || opened.GetExecutionSessionId() != "forwarded-session" {
-		t.Fatalf("Runner execution session was not forwarded: %v %v", opened, err)
+		t.Fatalf("Runtime execution session was not forwarded: %v %v", opened, err)
 	}
 	if len(opened.GetNativeFrames()) != 1 || string(opened.GetNativeFrames()[0].GetPayload()) != `{"id":"1","result":{}}` {
-		t.Fatalf("Gateway changed execution evidence: %v", opened.GetNativeFrames())
+		t.Fatalf("Server changed execution evidence: %v", opened.GetNativeFrames())
 	}
 	quiescing := f.sandbox.DeepCopy()
 	quiescing.Status.OperatingMode = sandboxapi.OperatingModeSuspended
@@ -415,14 +415,14 @@ func testRunnerObserver(t *testing.T, mode peertls.SecurityMode) {
 	cancel()
 	waitObserver(t, done)
 	if _, err := g.connections.holder(string(f.sandbox.UID)); status.Code(err) != codes.Unavailable {
-		t.Fatalf("closed Runner connection remained callable: %v", err)
+		t.Fatalf("closed Runtime connection remained callable: %v", err)
 	}
 }
 
 func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, peertls.CentralSamplerURI)
-	server := &executorServer{gateway: g}
+	g := f.newServer(t, peertls.CentralSamplerURI)
+	server := &executorServer{server: g}
 	scope := &executorpb.ExecutionScope{
 		Destination: &identitypb.SandboxDestination{
 			Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
@@ -430,7 +430,7 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 		ExpectedIncarnationUid: "previous-incarnation", SessionId: "sampler-session",
 	}
 	setConnection := func(podUID string) {
-		g.connections.accept(&runnerConnection{
+		g.connections.accept(&runtimeConnection{
 			identity: &sandboxreader.Identity{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)},
 			podUID:   podUID, ended: make(chan struct{}),
 		})
@@ -443,7 +443,7 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 	}
 	for _, detail := range status.Convert(err).Details() {
 		if _, ok := detail.(*executorpb.SandboxIncarnationChanged); ok {
-			t.Fatalf("stale Gateway holder carried a rebind detail: %v", detail)
+			t.Fatalf("stale Server holder carried a rebind detail: %v", detail)
 		}
 	}
 	setConnection(string(f.pod.UID))
@@ -508,8 +508,8 @@ func TestExecutionConnectionOnlySignalsVerifiedIncarnationChanges(t *testing.T) 
 func TestRemovingOldConnectionKeepsItsSuccessor(t *testing.T) {
 	identity := &sandboxreader.Identity{Namespace: "test", Name: "box", Uid: "sandbox-uid"}
 	connections := newConnections()
-	old := &runnerConnection{identity: identity, ended: make(chan struct{})}
-	successor := &runnerConnection{identity: identity, ended: make(chan struct{})}
+	old := &runtimeConnection{identity: identity, ended: make(chan struct{})}
+	successor := &runtimeConnection{identity: identity, ended: make(chan struct{})}
 	connections.accept(old)
 	connections.accept(successor)
 	connections.remove(old, errSupersededConnection)
@@ -573,8 +573,8 @@ func TestExecutionConnectionReportsVerifiedEnvironmentFailures(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			g := f.newGateway(t, peertls.CentralSamplerURI)
-			server := &executorServer{gateway: g}
+			g := f.newServer(t, peertls.CentralSamplerURI)
+			server := &executorServer{server: g}
 			scope := &executorpb.ExecutionScope{
 				Destination: &identitypb.SandboxDestination{
 					Target: &identitypb.EnvironmentTarget{Namespace: f.namespace, Name: f.sandbox.Name, Uid: string(f.sandbox.UID)}, Owner: &identitypb.ServiceAccount{Namespace: f.namespace, Name: f.sandbox.Name},
@@ -634,14 +634,14 @@ func (*echoForwardExecutor) StartProcess(ctx context.Context, request *executorp
 	}, nil
 }
 
-func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
+func TestRuntimeCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t)
-	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	g := f.newServer(t)
+	destination, err := g.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := g.validateRunnerDestination(t.Context(), destination); err != nil {
+	if err := g.validateRuntimeDestination(t.Context(), destination); err != nil {
 		t.Fatal(err)
 	}
 	pod := f.pod.DeepCopy()
@@ -649,7 +649,7 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).Update(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := g.validateRunnerDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
+	if err := g.validateRuntimeDestination(t.Context(), destination); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old certificate followed replacement: %v", err)
 	}
 	newURI, err := workloadid.ID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: "test-replacement-credential"}.URI()
@@ -657,13 +657,13 @@ func TestRunnerCertificateCannotFollowReplacementCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	destination.peerURI = newURI
-	if err := g.validateRunnerDestination(t.Context(), destination); err != nil {
+	if err := g.validateRuntimeDestination(t.Context(), destination); err != nil {
 		t.Fatalf("current credential was rejected: %v", err)
 	}
 }
 
-// reconnectingRunner replaces its boot after the first observation ends without changing Pod identity.
-type reconnectingRunner struct {
+// reconnectingRuntime replaces its boot after the first observation ends without changing Pod identity.
+type reconnectingRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	sandboxUID     string
 	incarnationUID string
@@ -671,7 +671,7 @@ type reconnectingRunner struct {
 	disconnect     chan struct{}
 }
 
-func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+func (r *reconnectingRuntime) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetSandboxUid() != r.sandboxUID || request.GetIncarnationUid() != r.incarnationUID ||
 		request.GetObserveOnly() {
 		return status.Error(codes.FailedPrecondition, "invalid Runtime observation fence")
@@ -687,7 +687,7 @@ func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchState
 	if observation == 1 {
 		select {
 		case <-r.disconnect:
-			return status.Error(codes.Unavailable, "runner restarted")
+			return status.Error(codes.Unavailable, "runtime restarted")
 		case <-stream.Context().Done():
 			return stream.Context().Err()
 		}
@@ -696,7 +696,7 @@ func (r *reconnectingRunner) WatchState(request *environmentruntimepb.WatchState
 	return stream.Context().Err()
 }
 
-func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (r *reconnectingRuntime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if got := md.Get("agentplane-sandbox-uid"); len(got) != 1 || got[0] != r.sandboxUID {
 		return nil, status.Error(codes.FailedPrecondition, "stale Runtime Sandbox")
@@ -710,37 +710,37 @@ func (r *reconnectingRunner) GetStatus(ctx context.Context, _ *sessionpb.GetStat
 	return &sessionpb.EnvironmentRuntimeStatus{}, nil
 }
 
-func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.T) {
+func TestRuntimeObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.T) {
 	f := newSandboxFixture(t)
 	pod := f.pod.DeepCopy()
 	pod.Status.PodIP = "127.0.0.1"
 	if _, err := api.Clientset.CoreV1().Pods(f.namespace).UpdateStatus(t.Context(), pod, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	g := f.newGateway(t)
+	g := f.newServer(t)
 	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	// The Sandbox's only event: transport loss must trigger its own retry.
-	g.RunnerDiscoveryHandler().OnAdd(f.sandbox, true)
+	g.RuntimeDiscoveryHandler().OnAdd(f.sandbox, true)
 	listener, err := net.Listen("tcp", "127.0.0.1:9090")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runner := &reconnectingRunner{
+	runtime := &reconnectingRuntime{
 		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), disconnect: make(chan struct{}),
 	}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	finished := make(chan error, 1)
-	go func() { finished <- g.RunRunnerObservers(ctx) }()
+	go func() { finished <- g.RunRuntimeObservers(ctx) }()
 	defer func() {
 		cancel()
 		<-finished
 	}()
-	awaitBoot := func(bootID string) *runnerConnection {
+	awaitBoot := func(bootID string) *runtimeConnection {
 		t.Helper()
 		poll := time.NewTicker(time.Millisecond)
 		defer poll.Stop()
@@ -751,31 +751,31 @@ func TestRunnerObserverReconnectsBeforeNextDiscoveryAndFencesOldBoot(t *testing.
 			}
 			select {
 			case <-ctx.Done():
-				t.Fatalf("Runner did not publish %s before the next discovery: %v", bootID, ctx.Err())
+				t.Fatalf("Runtime did not publish %s before the next discovery: %v", bootID, ctx.Err())
 			case <-poll.C:
 			}
 		}
 	}
 	first := awaitBoot("boot-1")
-	close(runner.disconnect)
+	close(runtime.disconnect)
 	second := awaitBoot("boot-2")
 	if second.podUID != first.podUID {
 		t.Fatalf("reconnect changed incarnation: first=%+v second=%+v", first, second)
 	}
 	g.connections.remove(first, errSupersededConnection)
-	if _, err := second.runner.GetStatus(ctx, &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("replacement Runner did not serve calls: %v", err)
+	if _, err := second.runtime.GetStatus(ctx, &sessionpb.GetStatusRequest{}); err != nil {
+		t.Fatalf("replacement Runtime did not serve calls: %v", err)
 	}
-	stale := &fencedRunnerConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
+	stale := &fencedRuntimeConn{conn: second.direct.conn, identity: first.direct.identity, connection: first}
 	if _, err := environmentruntimepb.NewEnvironmentRuntimeClient(stale).GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("old boot remained usable after reconnect: %v", err)
 	}
 }
 
-func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
+func TestRuntimeObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t)
-	destination, err := g.runnerDestination(t.Context(), f.sandbox)
+	g := f.newServer(t)
+	destination, err := g.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +788,7 @@ func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
 	}
 	oldDone := make(chan struct{})
 	cancelled := false
-	active := map[string]runnerObserver{
+	active := map[string]runtimeObserver{
 		f.sandbox.Name: {destination: destination, cancel: func() { cancelled = true }, done: oldDone},
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -799,14 +799,14 @@ func TestRunnerObserverKeepsUnchangedDestinationOnSandboxUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cancelled || active[f.sandbox.Name].done != oldDone {
-		t.Fatal("an unchanged destination replaced the live runner observer")
+		t.Fatal("an unchanged destination replaced the live runtime observer")
 	}
 }
 
 func TestReconcileWaitsForCanceledObserverBeforeStartingSuccessor(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t)
-	oldDestination, err := g.runnerDestination(t.Context(), f.sandbox)
+	g := f.newServer(t)
+	oldDestination, err := g.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -817,7 +817,7 @@ func TestReconcileWaitsForCanceledObserverBeforeStartingSuccessor(t *testing.T) 
 	}
 	cancelRequested := make(chan struct{})
 	oldDone := make(chan struct{})
-	active := map[string]runnerObserver{
+	active := map[string]runtimeObserver{
 		f.sandbox.Name: {
 			destination: oldDestination,
 			cancel:      func() { close(cancelRequested) },
@@ -855,14 +855,14 @@ func TestReconcileWaitsForCanceledObserverBeforeStartingSuccessor(t *testing.T) 
 		t.Fatal("reconcile did not start a successor after the old observer stopped")
 	}
 	if active[f.sandbox.Name].destination.target == oldDestination.target {
-		t.Fatal("successor kept the old Runner destination")
+		t.Fatal("successor kept the old Runtime destination")
 	}
 }
 
-func TestRunnerDiscoveryEnqueuesTheSandboxAnEventConcerns(t *testing.T) {
-	g := &Gateway{observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())}
+func TestRuntimeDiscoveryEnqueuesTheSandboxAnEventConcerns(t *testing.T) {
+	g := &Server{observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())}
 	defer g.observerQueue.ShutDown()
-	handler := g.RunnerDiscoveryHandler()
+	handler := g.RuntimeDiscoveryHandler()
 	labelled := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-runner-pod", Labels: map[string]string{sandboxapi.SandboxLabel: "test-pod-box"}}}
 	handler.OnUpdate(labelled, labelled)
 	handler.OnAdd(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "test-unlabelled-pod"}}, false)
@@ -878,13 +878,13 @@ func TestRunnerDiscoveryEnqueuesTheSandboxAnEventConcerns(t *testing.T) {
 	}
 }
 
-// heartbeatingRunner reports its state every few milliseconds, far faster than any production runner.
-type heartbeatingRunner struct {
+// heartbeatingRuntime reports its state every few milliseconds, far faster than any production runtime.
+type heartbeatingRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	heartbeats atomic.Int32
 }
 
-func (r *heartbeatingRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+func (r *heartbeatingRuntime) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -914,7 +914,7 @@ func (t countingTransport) RoundTrip(request *http.Request) (*http.Response, err
 	return t.next.RoundTrip(request)
 }
 
-func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
+func TestRuntimeHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	f := newSandboxFixture(t)
 	pod := f.pod.DeepCopy()
 	pod.Status.PodIP = "127.0.0.1"
@@ -937,14 +937,14 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	health := watchhealth.New()
-	g := f.newGatewayReading(t, inventory, health)
+	g := f.newServerReading(t, inventory, health)
 	g.config.RunnerSecurity = peertls.Security{Mode: peertls.Insecure}
 	for _, watched := range []client.Object{&sandboxapi.Sandbox{}, &corev1.Pod{}} {
 		informer, err := inventory.GetInformer(t.Context(), watched)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := informer.AddEventHandler(g.RunnerDiscoveryHandler()); err != nil {
+		if _, err := informer.AddEventHandler(g.RuntimeDiscoveryHandler()); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -961,12 +961,12 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	runner := &heartbeatingRunner{}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runner)
+	runtime := &heartbeatingRuntime{}
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, runtime)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	finished := make(chan error, 1)
-	go func() { finished <- g.RunRunnerObservers(ctx) }()
+	go func() { finished <- g.RunRuntimeObservers(ctx) }()
 	defer func() {
 		cancel()
 		<-finished
@@ -976,10 +976,10 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 	defer poll.Stop()
 	awaitHeartbeats := func(count int32) {
 		t.Helper()
-		for runner.heartbeats.Load() < count {
+		for runtime.heartbeats.Load() < count {
 			select {
 			case <-ctx.Done():
-				t.Fatalf("runner sent %d of %d heartbeats: %v", runner.heartbeats.Load(), count, ctx.Err())
+				t.Fatalf("runtime sent %d of %d heartbeats: %v", runtime.heartbeats.Load(), count, ctx.Err())
 			case <-poll.C:
 			}
 		}
@@ -990,14 +990,14 @@ func TestRunnerHeartbeatsReadNoSandboxOrPodFromTheAPIServer(t *testing.T) {
 		}
 		select {
 		case <-ctx.Done():
-			t.Fatalf("Runner never became callable: %v", ctx.Err())
+			t.Fatalf("Runtime never became callable: %v", ctx.Err())
 		case <-poll.C:
 		}
 	}
 	baseline := requests.Load()
-	awaitHeartbeats(runner.heartbeats.Load() + 50)
+	awaitHeartbeats(runtime.heartbeats.Load() + 50)
 	if added := requests.Load() - baseline; added != 0 {
-		t.Fatalf("50 runner heartbeats made %d Sandbox or Pod API requests", added)
+		t.Fatalf("50 runtime heartbeats made %d Sandbox or Pod API requests", added)
 	}
 }
 
@@ -1009,14 +1009,14 @@ func TestCallOnEndedConnectionReportsTheEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection := &runnerConnection{ended: make(chan struct{})}
-	connection.direct = &fencedRunnerConn{conn: conn, identity: metadata.MD{}, connection: connection}
-	connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
+	connection := &runtimeConnection{ended: make(chan struct{})}
+	connection.direct = &fencedRuntimeConn{conn: conn, identity: metadata.MD{}, connection: connection}
+	connection.runtime = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
 	connection.end(errSupersededConnection)
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := connection.runner.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
+	if _, err := connection.runtime.GetStatus(t.Context(), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("call on an ended connection = %v, want the connection's end (Aborted)", err)
 	}
 }

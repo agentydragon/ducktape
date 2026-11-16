@@ -3,8 +3,9 @@
 Every Environments replica serves the EnvironmentRuntime proxy and Executor on
 `sandbox-controller:8082`, pinning `spiffe://agentplane/sandbox-controller`. The outbound Runtime peer
 is `spiffe://agentplane/runtime-proxy`, separate from the leader's incarnation-binding observer.
-`environments/runtimeproxy` is the final package home. Runner Gateway registers no proxy or Executor
-receiver and makes no direct Runtime connection.
+The Environments binary owns `environments/runtimeproxy`. The Sessions binary at
+`agentplane/session_dispatcher/` has no Runtime proxy or Executor receiver and makes no direct Runtime
+connection.
 
 Admission uses shared service-only rules without a TokenReview resolver or proxy bearer audience.
 Bearer metadata is refused even alongside an admitted service SVID. Workload Identity SVIDs and
@@ -27,14 +28,13 @@ process boot before admitting work. Loss of one replica's observation closes tha
 connection; it does not revoke another replica's connection or cancel Runtime-owned admitted work.
 An uncertain mutation is never replayed after reconnect or failover.
 
-Callers connect through the stable `sandbox-controller:8082` Service. The per-Sandbox `<sandbox>-control`
-EndpointSlice and Gateway-owned connection Lease are not part of the route. Dispatcher delivery
+Callers connect through the stable `sandbox-controller:8082` Service. The route does not use a
+per-Sandbox `<sandbox>-control` EndpointSlice, connection Lease or proxy epoch. Dispatcher delivery
 Leases continue to coordinate queue delivery independently.
 
-The Runtime protocol carries no Gateway connection epoch. Runtime call authorization uses the
-Controller-bound Sandbox UID, workload UID and Runtime boot ID, independently of proxy observer
-lifetime. Losing one replica's observation does not revoke another replica's calls or cancel
-Runtime-owned admitted work.
+Runtime call authorization uses the Controller-bound Sandbox UID, workload UID and Runtime boot ID,
+independently of proxy observer lifetime. Losing one replica's observation does not revoke another
+replica's calls or cancel Runtime-owned admitted work.
 
 ## Environment Runtime proxy authorization
 

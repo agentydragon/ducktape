@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Own Sandbox creation, templates, management mutations, discovery and observation in the existing
-Runner Gateway process. List/get/watch return facts needed to choose a target and prepare a Session
+Own Sandbox creation, templates, management mutations, discovery and observation in the Environments
+binary. List/get/watch return facts needed to choose a target and prepare a Session
 request. All read and watch methods return the same `EnvironmentDescriptor` contract. `ResumeEnvironment`
 delegates guarded mutation to the lifecycle manager. Creation and policy mutations use private
 Kubernetes access; no method attaches a Session or grants authorization.
@@ -35,7 +35,7 @@ diagnostics while suspended.
   performs no TokenReview. Typed Actions service delegation is opted into by exact full method name;
   its effective Identity never inherits the actor's direct roles.
 - Identity inventory is limited to Sandboxes whose `spec.identity.name` names that Identity.
-  Read permission grants no Dispatcher write or Gateway proxy access; explicit resume requires
+  Read permission grants no Dispatcher write or Runtime proxy access; explicit resume requires
   its separate lifecycle grant.
 - Identity access follows the Sandbox's name-based `spec.identity` binding: the current live
   same-name Identity may act, while a credential naming an older UID is rejected at admission.
@@ -162,7 +162,7 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
   the observed Sandbox UID and generation. The token is not authority; the manager rechecks current
   identity, policy and state at mutation time.
 - Runtime choices and workspace guidance are labeled `DEPLOYMENT_CONFIG` and apply only to an exact
-  template included in the Gateway's published runtime catalog.
+  template included in EnvironmentService's published runtime catalog.
 - Workspace guidance reports whether the configured root is enforced as a cwd boundary for that
   template. Discovery does not add a cwd restriction.
 - Unknown custom templates keep workspace and runtime choices `UNAVAILABLE`; known templates with

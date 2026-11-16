@@ -38,7 +38,7 @@ type sandboxView struct {
 	incarnation *sandboxapi.Incarnation
 }
 
-// sandboxResolver names the Sandbox and runner Pod a request is for, and admits it only while the Pod serves it.
+// sandboxResolver names the Sandbox and Environment Runtime Pod a request is for, and admits it only while the Pod serves it.
 // It reads objects, the informer cache in production, and admits nothing while health says the cache may
 // not be acted on.
 type sandboxResolver struct {
@@ -70,7 +70,7 @@ func unavailable(err error) error {
 	if rpcStatus, ok := status.FromError(err); ok && rpcStatus.Code() != codes.Unknown {
 		return err
 	}
-	return status.Error(codes.Unavailable, "Sandbox or runner routing is unavailable")
+	return status.Error(codes.Unavailable, "Sandbox or Environment Runtime routing is unavailable")
 }
 
 type executionEnvironmentUnavailableError struct {
@@ -95,11 +95,11 @@ func environmentUnavailable(state executorpb.ExecutionEnvironmentFailure_State) 
 		}
 	case executorpb.ExecutionEnvironmentFailure_STATE_QUIESCING:
 		return &executionEnvironmentUnavailableError{
-			state: state, code: codes.FailedPrecondition, msg: "runner or sandbox state refused the request",
+			state: state, code: codes.FailedPrecondition, msg: "Environment Runtime or Sandbox state refused the request",
 		}
 	case executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE:
 		return &executionEnvironmentUnavailableError{
-			state: state, code: codes.Unavailable, msg: "Sandbox runner control route is unavailable",
+			state: state, code: codes.Unavailable, msg: "Sandbox Environment Runtime control route is unavailable",
 		}
 	default:
 		return nil
@@ -177,7 +177,7 @@ func (r *sandboxResolver) destination(ctx context.Context, destination *identity
 		return sandboxView{}, environmentUnavailable(executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	if err != nil {
-		return sandboxView{}, fmt.Errorf("read Sandbox runner Pod: %w", err)
+		return sandboxView{}, fmt.Errorf("read Sandbox Environment Runtime Pod: %w", err)
 	}
 	podReady := podIsReadyForSandbox(&pod, view)
 	span.SetAttributes(attribute.Bool("runtime.proxy.pod_ready", podReady))

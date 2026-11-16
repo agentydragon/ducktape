@@ -139,9 +139,9 @@ def issue_workload_leaf(
 ) -> tuple[Path, Path]:
     """Issue an mTLS leaf with one URI identity and the supplied test DNS name.
 
-    Runner Gateway test servers need both SANs: Python clients verify the DNS
-    name as part of TLS, while the Go Gateway authenticates Runner identities
-    from the URI SAN. Both clientAuth and serverAuth EKUs permit either
+    Sessions and Environments test servers need both SANs: Python clients verify
+    the DNS name as part of TLS, while the Go Environments proxy authenticates
+    Environment Runtime identities from the URI SAN. Both clientAuth and serverAuth EKUs permit either
     transport direction in the same fixture. `valid_for` makes expiry checks
     deterministic in tests that keep a connection open across NotAfter.
     """

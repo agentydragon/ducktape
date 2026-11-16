@@ -86,12 +86,12 @@ func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
 			t.Errorf("authorization = %q, want %q", got, want)
 		}
 		for key, want := range map[string]string{
-			sandboxapi.RunnerProxySandboxMetadataKey:               "test-sandbox",
-			sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "test-namespace",
-			sandboxapi.RunnerProxySandboxUIDMetadataKey:            "test-sandbox-uid",
-			sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
-			sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "test-sandbox",
-			sandboxapi.RunnerProxyIncarnationUIDMetadataKey:        "test-incarnation-uid",
+			sandboxapi.RuntimeProxySandboxMetadataKey:               "test-sandbox",
+			sandboxapi.RuntimeProxySandboxNamespaceMetadataKey:      "test-namespace",
+			sandboxapi.RuntimeProxySandboxUIDMetadataKey:            "test-sandbox-uid",
+			sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
+			sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey:      "test-sandbox",
+			sandboxapi.RuntimeProxyIncarnationUIDMetadataKey:        "test-incarnation-uid",
 		} {
 			if got := single(t, received, key); got != want {
 				t.Errorf("%s = %q, want %q", key, got, want)
@@ -117,7 +117,7 @@ func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
 		if got := single(t, received, "authorization"); got != "Bearer test-token" {
 			t.Errorf("authorization = %q", got)
 		}
-		if values := received.Get(sandboxapi.RunnerProxyIncarnationUIDMetadataKey); len(values) != 0 {
+		if values := received.Get(sandboxapi.RuntimeProxyIncarnationUIDMetadataKey); len(values) != 0 {
 			t.Errorf("optional incarnation UID metadata = %q, want omitted", values)
 		}
 	}

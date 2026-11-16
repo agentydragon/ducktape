@@ -80,7 +80,7 @@ func TestGatewayQuiescerRetriesUnavailableForPinnedIncarnation(t *testing.T) {
 	}
 	for range 2 {
 		call := <-observed
-		if got := call.metadata.Get(sandboxapi.RunnerProxyIncarnationUIDMetadataKey); !slices.Equal(got, []string{"test-pod-uid"}) {
+		if got := call.metadata.Get(sandboxapi.RuntimeProxyIncarnationUIDMetadataKey); !slices.Equal(got, []string{"test-pod-uid"}) {
 			t.Fatalf("Quiesce incarnation headers = %v, want the original Pod UID", got)
 		}
 		if got := call.metadata.Get("authorization"); !slices.Equal(got, []string{"Bearer test-controller-token"}) {

@@ -14,15 +14,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestVMRunnerRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.T) {
+func TestVMRuntimeRequiresCurrentLauncherVMIAndSandboxOwnerChain(t *testing.T) {
 	for _, mode := range []peertls.SecurityMode{peertls.MutualTLS, peertls.Insecure} {
 		t.Run(string(mode), func(t *testing.T) {
-			testVMRunnerOwnership(t, mode)
+			testVMRuntimeOwnership(t, mode)
 		})
 	}
 }
 
-func testVMRunnerOwnership(t *testing.T, mode peertls.SecurityMode) {
+func testVMRuntimeOwnership(t *testing.T, mode peertls.SecurityMode) {
 	t.Helper()
 	for name, change := range map[string]func(*sandboxapi.Sandbox, *corev1.Pod, *kubevirtv1.VirtualMachineInstance, *kubevirtv1.VirtualMachine){
 		"current": func(*sandboxapi.Sandbox, *corev1.Pod, *kubevirtv1.VirtualMachineInstance, *kubevirtv1.VirtualMachine) {
@@ -80,7 +80,7 @@ func testVMRunnerOwnership(t *testing.T, mode peertls.SecurityMode) {
 				}
 			}
 			objects := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sandbox, vmi, vm, pod).Build()
-			g := &Gateway{
+			g := &Server{
 				config: Config{Namespace: sandbox.Namespace, RunnerSecurity: peertls.Security{Mode: mode}}, objects: objects,
 			}
 			uri, err := workloadid.ID{Namespace: sandbox.Namespace, Name: sandbox.Name, CredentialID: "current-credential"}.URI()
@@ -90,7 +90,7 @@ func testVMRunnerOwnership(t *testing.T, mode peertls.SecurityMode) {
 			if mode == peertls.Insecure {
 				uri = ""
 			}
-			err = g.validateRunnerDestination(t.Context(), runnerDestination{
+			err = g.validateRuntimeDestination(t.Context(), runtimeDestination{
 				identity: &sandboxreader.Identity{Namespace: sandbox.Namespace, Name: sandbox.Name, Uid: string(sandbox.UID)},
 				podUID:   "launcher-uid", peerURI: uri,
 			})

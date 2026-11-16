@@ -21,8 +21,8 @@ request types alone are not network callers. This is a source/configuration audi
 staging traffic or a count of live clients.
 
 The [Runtime protocol](../env/runtime/control/environment_runtime.proto) and
-[Executor protocol](../env/runtime/execution/executor.proto) are distinct services on the Gateway's
-shared listener. [The method gate](../session_dispatcher/internal/gateway/gateway.go#L118) admits no
+[Executor protocol](../env/runtime/execution/executor.proto) are distinct services on Environments'
+shared listener. [The method gate](../environments/runtimeproxy/server.go#L89) admits no
 public `WatchState` method and rejects delegation on proxy and Executor calls. Its four service
 roles are independent. The [deployed composition](../../cluster/cdk8s/agentplane/session_dispatcher_workload.py#L330)
 sets:
@@ -166,7 +166,7 @@ Only two production owners construct direct Runtime control connections:
   `WatchState(observe_only=true)` to the accepted workload. It binds the incarnation and feeds the
   leader's in-memory facts for readiness, bootstrap, idle and quiesce decisions. Retain this private
   infrastructure channel; EnvironmentService RPC readiness never waits for leadership or a Runtime.
-- [Each Gateway replica's observer](../session_dispatcher/internal/gateway/runner_observer.go) sends
+- [Each Environments replica's observer](../environments/runtimeproxy/runtime_observer.go) sends
   `WatchState` and holds the direct connection used by proxy/Executor forwarding. Move this owner
   into Environments with the proxy. Do not reintroduce Runtime-dials-Gateway, connection ownership
   Leases or epochs. Watch loss closes that replica's local route, not another replica's authority

@@ -52,20 +52,34 @@ func (queueWake) RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeC
 	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_NEEDED}, nil
 }
 
-type queuedRunnerRequest struct {
+type queueLease struct{ store *dispatcher.Store }
+
+func (l queueLease) Acquire(ctx context.Context, _, uid string) (*dispatcher.Owner, error) {
+	generation, err := l.store.OwnershipGeneration(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return l.store.ClaimSandboxOwner(ctx, uid, "queue-test-lease", 1, "queue-test-replica", generation)
+}
+
+func (l queueLease) StillOwns(ctx context.Context, owner dispatcher.Owner) (bool, error) {
+	return l.store.IsCurrentOwner(ctx, owner)
+}
+
+type queuedRuntimeRequest struct {
 	request  *environmentruntimepb.SubmitInputRequest
 	metadata metadata.MD
 }
 
-type queueRunner struct {
+type queueRuntime struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
 	bootID    string
-	submitted chan queuedRunnerRequest
+	submitted chan queuedRuntimeRequest
 }
 
-func (r *queueRunner) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
+func (r *queueRuntime) WatchState(request *environmentruntimepb.WatchStateRequest, stream grpc.ServerStreamingServer[environmentruntimepb.WatchStateResponse]) error {
 	if request.GetObserveOnly() {
-		return status.Error(codes.FailedPrecondition, "Gateway request must use an independent observation")
+		return status.Error(codes.FailedPrecondition, "Server request must use an independent observation")
 	}
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -85,15 +99,15 @@ func (r *queueRunner) WatchState(request *environmentruntimepb.WatchStateRequest
 	}
 }
 
-func (r *queueRunner) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
+func (r *queueRuntime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	r.submitted <- queuedRunnerRequest{request: request, metadata: md}
+	r.submitted <- queuedRuntimeRequest{request: request, metadata: md}
 	return &environmentruntimepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
 }
 
-// This test starts with a committed queue row and ends with the Runner's durable admission returned
-// through a direct mTLS Gateway-to-Runner RPC, without bypassing the Dispatcher worker.
-func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
+// This test starts with a committed queue row and ends with the Runtime's durable admission returned
+// through a direct mTLS Server-to-Runtime RPC, without bypassing the Dispatcher worker.
+func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	db, err := sql.Open("postgres", integrationDatabase.URL)
@@ -134,48 +148,48 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		t.Fatalf("queue receipt: %+v %v", queued, err)
 	}
 
-	gateway := f.newGateway(t)
-	runnerDestination, err := gateway.runnerDestination(ctx, f.sandbox)
+	server := f.newServer(t)
+	runtimeDestination, err := server.runtimeDestination(ctx, f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	runtimeListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerCredentials, err := f.runnerTLS.ServerCredentials(peertls.RuntimeProxyURI)
+	runtimeCredentials, err := f.runtimeTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerServer := grpc.NewServer(grpc.Creds(runnerCredentials))
-	runner := &queueRunner{bootID: "queue-runner-boot", submitted: make(chan queuedRunnerRequest, 1)}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(runnerServer, runner)
-	go func() { _ = runnerServer.Serve(runnerListener) }()
-	defer runnerServer.Stop()
-	runnerDestination.target = runnerListener.Addr().String()
+	runtimeServer := grpc.NewServer(grpc.Creds(runtimeCredentials))
+	runtime := &queueRuntime{bootID: "queue-runner-boot", submitted: make(chan queuedRuntimeRequest, 1)}
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
+	go func() { _ = runtimeServer.Serve(runtimeListener) }()
+	defer runtimeServer.Stop()
+	runtimeDestination.target = runtimeListener.Addr().String()
 
 	observerCtx, stopObserver := context.WithCancel(ctx)
 	observerDone := make(chan error, 1)
-	go func() { observerDone <- gateway.observeRunner(observerCtx, runnerDestination) }()
+	go func() { observerDone <- server.observeRuntime(observerCtx, runtimeDestination) }()
 	select {
 	case err := <-observerDone:
-		t.Fatalf("Runner observer stopped: %v", err)
+		t.Fatalf("Runtime observer stopped: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("Runner observer did not become callable")
-	case <-waitForRunnerConnection(ctx, gateway, sandboxUID):
+		t.Fatal("Runtime observer did not become callable")
+	case <-waitForRuntimeConnection(ctx, server, sandboxUID):
 	}
 	defer func() {
 		stopObserver()
 		select {
 		case <-observerDone:
 		case <-time.After(time.Second):
-			t.Error("Runner observer did not stop")
+			t.Error("Runtime observer did not stop")
 		}
 	}()
 
-	proxy := serveGateway(t, gateway, gateway.RegisterProxy)
+	proxy := serveServer(t, server, server.RegisterProxy)
 	sessionsCertificate := proxy.ca.Issue(t, peertls.SessionsURI)
-	gatewayTLS := &peertls.ClientTLS{
+	serverTLS := &peertls.ClientTLS{
 		CAFile: proxy.ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
 		CertFile: sessionsCertificate.CertFile, KeyFile: sessionsCertificate.KeyFile, ClientURI: peertls.SessionsURI,
 	}
@@ -191,9 +205,9 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
 			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
-		}}, Wake: queueWake{},
+		}}, Wake: queueWake{}, Leases: queueLease{store: store},
 		Delivery: &dispatcher.RuntimeProxyClient{
-			Namespace: f.namespace, GatewayTLS: gatewayTLS, Timeout: 5 * time.Second,
+			Namespace: f.namespace, GatewayTLS: serverTLS, Timeout: 5 * time.Second,
 			TargetTemplate: proxy.target,
 		},
 		Hub: hub, Ready: make(chan struct{}),
@@ -207,22 +221,22 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	}
 
 	select {
-	case received := <-runner.submitted:
+	case received := <-runtime.submitted:
 		request := received.request
 		if request.GetCommandId() != command.GetCommandId() || request.GetSessionId() != "session-queue" || request.GetText() != "persisted input" {
-			t.Fatalf("queued request changed before Runner admission: %v", request)
+			t.Fatalf("queued request changed before Runtime admission: %v", request)
 		}
 		if got := received.metadata.Get("agentplane-sandbox-uid"); len(got) != 1 || got[0] != sandboxUID {
-			t.Fatalf("Gateway omitted the Sandbox UID fence: %v", received.metadata)
+			t.Fatalf("Server omitted the Sandbox UID fence: %v", received.metadata)
 		}
 		if got := received.metadata.Get("agentplane-incarnation-uid"); len(got) != 1 || got[0] != string(f.pod.UID) {
-			t.Fatalf("Gateway omitted the incarnation fence: %v", received.metadata)
+			t.Fatalf("Server omitted the incarnation fence: %v", received.metadata)
 		}
-		if got := received.metadata.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != runner.bootID {
-			t.Fatalf("Gateway omitted the Runner boot fence: %v", received.metadata)
+		if got := received.metadata.Get("agentplane-environment-runtime-boot-id"); len(got) != 1 || got[0] != runtime.bootID {
+			t.Fatalf("Server omitted the Runtime boot fence: %v", received.metadata)
 		}
 	case <-ctx.Done():
-		t.Fatal("queued command did not reach Runner")
+		t.Fatal("queued command did not reach Runtime")
 	}
 	for {
 		row, err := store.GetDispatch(ctx, command.GetCommandId())
@@ -231,7 +245,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		}
 		if row.State == dispatcher.AdmittedState {
 			if row.Admission.GetCursor() != 81 {
-				t.Fatalf("wrong stored Runner admission: %+v", row)
+				t.Fatalf("wrong stored Runtime admission: %+v", row)
 			}
 			break
 		}
@@ -253,13 +267,13 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	}
 }
 
-func waitForRunnerConnection(ctx context.Context, gateway *Gateway, sandboxUID string) <-chan struct{} {
+func waitForRuntimeConnection(ctx context.Context, server *Server, sandboxUID string) <-chan struct{} {
 	ready := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(time.Millisecond)
 		defer ticker.Stop()
 		for {
-			if _, err := gateway.connections.holder(sandboxUID); err == nil {
+			if _, err := server.connections.holder(sandboxUID); err == nil {
 				close(ready)
 				return
 			}
@@ -273,4 +287,4 @@ func waitForRunnerConnection(ctx context.Context, gateway *Gateway, sandboxUID s
 	return ready
 }
 
-var _ environmentruntimepb.EnvironmentRuntimeServer = (*queueRunner)(nil)
+var _ environmentruntimepb.EnvironmentRuntimeServer = (*queueRuntime)(nil)

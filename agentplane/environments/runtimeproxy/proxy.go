@@ -18,29 +18,29 @@ import (
 )
 
 var identityMetadataKeys = []string{
-	sandboxapi.RunnerProxySandboxNamespaceMetadataKey,
-	sandboxapi.RunnerProxySandboxUIDMetadataKey,
-	sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey,
-	sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
+	sandboxapi.RuntimeProxySandboxNamespaceMetadataKey,
+	sandboxapi.RuntimeProxySandboxUIDMetadataKey,
+	sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey,
+	sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey,
 }
 
 type environmentRuntimeProxy struct {
 	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	gateway *Gateway
+	server *Server
 }
 
-// connection is this replica's authenticated Runtime connection for the Sandbox the call names. Gateway.Methods
+// connection is this replica's authenticated Runtime connection for the Sandbox the call names. Server.Methods
 // admitted the caller.
-func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowSuspending bool) (*runnerConnection, error) {
-	g := p.gateway
+func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowSuspending bool) (*runtimeConnection, error) {
+	g := p.server
 	metadata, _ := metadata.FromIncomingContext(ctx)
-	names := metadata.Get(sandboxapi.RunnerProxySandboxMetadataKey)
+	names := metadata.Get(sandboxapi.RuntimeProxySandboxMetadataKey)
 	if len(names) != 1 || names[0] == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "exactly one %s header is required", sandboxapi.RunnerProxySandboxMetadataKey)
+		return nil, status.Errorf(codes.InvalidArgument, "exactly one %s header is required", sandboxapi.RuntimeProxySandboxMetadataKey)
 	}
-	expectedIncarnationUIDs := metadata.Get(sandboxapi.RunnerProxyIncarnationUIDMetadataKey)
+	expectedIncarnationUIDs := metadata.Get(sandboxapi.RuntimeProxyIncarnationUIDMetadataKey)
 	if len(expectedIncarnationUIDs) > 1 || len(expectedIncarnationUIDs) == 1 && expectedIncarnationUIDs[0] == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "%s header must be non-empty and appear at most once", sandboxapi.RunnerProxyIncarnationUIDMetadataKey)
+		return nil, status.Errorf(codes.InvalidArgument, "%s header must be non-empty and appear at most once", sandboxapi.RuntimeProxyIncarnationUIDMetadataKey)
 	}
 	values := make(map[string][]string, len(identityMetadataKeys))
 	for _, key := range identityMetadataKeys {
@@ -53,12 +53,12 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	}
 	view, err := g.sandboxes.destination(ctx, &identitypb.SandboxDestination{
 		Target: &identitypb.EnvironmentTarget{
-			Namespace: values[sandboxapi.RunnerProxySandboxNamespaceMetadataKey][0],
-			Name:      names[0], Uid: values[sandboxapi.RunnerProxySandboxUIDMetadataKey][0],
+			Namespace: values[sandboxapi.RuntimeProxySandboxNamespaceMetadataKey][0],
+			Name:      names[0], Uid: values[sandboxapi.RuntimeProxySandboxUIDMetadataKey][0],
 		},
 		Owner: &identitypb.ServiceAccount{
-			Namespace: values[sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey][0],
-			Name:      values[sandboxapi.RunnerProxySandboxOwnerNameMetadataKey][0],
+			Namespace: values[sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey][0],
+			Name:      values[sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey][0],
 		},
 	}, writes, allowSuspending)
 	if err != nil {
@@ -67,7 +67,7 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	}
 	if len(expectedIncarnationUIDs) == 1 && expectedIncarnationUIDs[0] != view.incarnation.UID {
 		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "expected_incarnation_mismatch"))
-		return nil, status.Error(codes.Aborted, "Sandbox runner incarnation changed")
+		return nil, status.Error(codes.Aborted, "Sandbox Environment Runtime incarnation changed")
 	}
 	connection, err := g.connections.holder(view.identity.Uid)
 	if err != nil {
@@ -76,7 +76,7 @@ func (p *environmentRuntimeProxy) connection(ctx context.Context, writes, allowS
 	}
 	if view.incarnation == nil || !proto.Equal(connection.identity, view.identity) || connection.podUID != view.incarnation.UID {
 		trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "incarnation_mismatch"))
-		return nil, status.Error(codes.Unavailable, "runner connection belongs to another incarnation")
+		return nil, status.Error(codes.Unavailable, "Environment Runtime connection belongs to another incarnation")
 	}
 	trace.SpanFromContext(ctx).SetAttributes(attribute.String("runtime.proxy.route", "forwarded"))
 	return connection, nil
@@ -87,7 +87,7 @@ func (p *environmentRuntimeProxy) ListSessions(ctx context.Context, request *ses
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.ListSessions(ctx, request)
+	return connection.runtime.ListSessions(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
@@ -95,7 +95,7 @@ func (p *environmentRuntimeProxy) GetStatus(ctx context.Context, request *sessio
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.GetStatus(ctx, request)
+	return connection.runtime.GetStatus(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
@@ -103,17 +103,17 @@ func (p *environmentRuntimeProxy) CreateSession(ctx context.Context, request *en
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.CreateSession(ctx, request)
+	return connection.runtime.CreateSession(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) Quiesce(ctx context.Context, request *sessionpb.QuiesceRequest) (*sessionpb.QuiesceResponse, error) {
-	// The controller may have published Quiescing while this Gateway still caches the preceding
+	// The controller may have published Quiescing while this Server still caches the preceding
 	// SuspendPending phase. Only this controller-authorized control call can use that phase.
 	connection, err := p.connection(ctx, false, true)
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.Quiesce(ctx, request)
+	return connection.runtime.Quiesce(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) PrepareSuspend(ctx context.Context, request *environmentruntimepb.PrepareSuspendRequest) (*emptypb.Empty, error) {
@@ -121,7 +121,7 @@ func (p *environmentRuntimeProxy) PrepareSuspend(ctx context.Context, request *e
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.PrepareSuspend(ctx, request)
+	return connection.runtime.PrepareSuspend(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) ResumeAdmission(ctx context.Context, request *environmentruntimepb.ResumeAdmissionRequest) (*emptypb.Empty, error) {
@@ -129,7 +129,7 @@ func (p *environmentRuntimeProxy) ResumeAdmission(ctx context.Context, request *
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.ResumeAdmission(ctx, request)
+	return connection.runtime.ResumeAdmission(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
@@ -137,7 +137,7 @@ func (p *environmentRuntimeProxy) SubmitInput(ctx context.Context, request *envi
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.SubmitInput(ctx, request)
+	return connection.runtime.SubmitInput(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
@@ -145,7 +145,7 @@ func (p *environmentRuntimeProxy) ChangeModel(ctx context.Context, request *envi
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.ChangeModel(ctx, request)
+	return connection.runtime.ChangeModel(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, request *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
@@ -153,7 +153,7 @@ func (p *environmentRuntimeProxy) ChangeReasoningEffort(ctx context.Context, req
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.ChangeReasoningEffort(ctx, request)
+	return connection.runtime.ChangeReasoningEffort(ctx, request)
 }
 
 func (p *environmentRuntimeProxy) InterruptTurn(ctx context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
@@ -161,7 +161,7 @@ func (p *environmentRuntimeProxy) InterruptTurn(ctx context.Context, request *en
 	if err != nil {
 		return nil, err
 	}
-	return connection.runner.InterruptTurn(ctx, request)
+	return connection.runtime.InterruptTurn(ctx, request)
 }
 
 var _ environmentruntimepb.EnvironmentRuntimeServer = (*environmentRuntimeProxy)(nil)

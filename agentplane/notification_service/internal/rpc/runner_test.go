@@ -50,12 +50,12 @@ func TestProxyRunnerListsTheSessionsOfTheSandboxItNames(t *testing.T) {
 	// The proxy admits the call by the bearer and routes it by the Sandbox's identity.
 	received := <-runner.Received
 	want := map[string]string{
-		"authorization":                                        "Bearer test-proxy-token",
-		sandboxapi.RunnerProxySandboxMetadataKey:               "test-sandbox",
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "test-namespace",
-		sandboxapi.RunnerProxySandboxUIDMetadataKey:            "test-sandbox-uid",
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "test-sandbox",
+		"authorization": "Bearer test-proxy-token",
+		sandboxapi.RuntimeProxySandboxMetadataKey:               "test-sandbox",
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey:      "test-namespace",
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey:            "test-sandbox-uid",
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey: "test-namespace",
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey:      "test-sandbox",
 	}
 	for key, value := range want {
 		if got := received.Get(key); !slices.Equal(got, []string{value}) {

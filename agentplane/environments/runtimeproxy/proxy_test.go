@@ -18,83 +18,83 @@ import (
 	kubeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
+func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	f := newSandboxFixture(t)
-	gateway := f.newGateway(t)
-	destination, err := gateway.runnerDestination(t.Context(), f.sandbox)
+	server := f.newServer(t)
+	destination, err := server.runtimeDestination(t.Context(), f.sandbox)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerListener, err := net.Listen("tcp", "127.0.0.1:0")
+	runtimeListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	credentials, err := f.runnerTLS.ServerCredentials(peertls.RuntimeProxyURI)
+	credentials, err := f.runtimeTLS.ServerCredentials(peertls.RuntimeProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	runnerServer := grpc.NewServer(grpc.Creds(credentials))
-	runner := &observedRunner{
+	runtimeServer := grpc.NewServer(grpc.Creds(credentials))
+	runtime := &observedRuntime{
 		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "proxy-test-boot",
 	}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(runnerServer, runner)
-	go func() { _ = runnerServer.Serve(runnerListener) }()
-	t.Cleanup(runnerServer.Stop)
-	destination.target = runnerListener.Addr().String()
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
+	go func() { _ = runtimeServer.Serve(runtimeListener) }()
+	t.Cleanup(runtimeServer.Stop)
+	destination.target = runtimeListener.Addr().String()
 
 	observerContext, stopObserver := context.WithCancel(t.Context())
 	t.Cleanup(stopObserver)
 	observerDone := make(chan error, 1)
-	go func() { observerDone <- gateway.observeRunner(observerContext, destination) }()
+	go func() { observerDone <- server.observeRuntime(observerContext, destination) }()
 	deadline := time.NewTimer(5 * time.Second)
 	defer deadline.Stop()
 	poll := time.NewTicker(time.Millisecond)
 	defer poll.Stop()
 	for {
-		if _, err := gateway.connections.holder(string(f.sandbox.UID)); err == nil {
+		if _, err := server.connections.holder(string(f.sandbox.UID)); err == nil {
 			break
 		}
 		select {
 		case err := <-observerDone:
-			t.Fatalf("Runner observer stopped before connecting: %v", err)
+			t.Fatalf("Runtime observer stopped before connecting: %v", err)
 		case <-deadline.C:
-			t.Fatal("Runner observer did not become callable")
+			t.Fatal("Runtime observer did not become callable")
 		case <-poll.C:
 		}
 	}
 
-	proxy := serveGateway(t, gateway, gateway.RegisterProxy)
+	proxy := serveServer(t, server, server.RegisterProxy)
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(proxy)
 	if _, err := client.GetStatus(f.callerContext(peertls.AppURI), &sessionpb.GetStatusRequest{}); err != nil {
-		t.Fatalf("authorized app call did not reach Runner: %v", err)
+		t.Fatalf("authorized app call did not reach Runtime: %v", err)
 	}
-	if runner.calls.Load() != 1 {
-		t.Fatal("authorized app call did not reach the direct Runner server")
+	if runtime.calls.Load() != 1 {
+		t.Fatal("authorized app call did not reach the direct Runtime server")
 	}
 	matchingIncarnationContext := metadata.AppendToOutgoingContext(
-		f.callerContext(peertls.AppURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, string(f.pod.UID),
+		f.callerContext(peertls.AppURI), sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, string(f.pod.UID),
 	)
 	if _, err := client.GetStatus(matchingIncarnationContext, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("proxy rejected the expected current incarnation: %v", err)
 	}
-	if runner.calls.Load() != 2 {
-		t.Fatalf("matching incarnation reached Runner %d times, want 2", runner.calls.Load())
+	if runtime.calls.Load() != 2 {
+		t.Fatalf("matching incarnation reached Runtime %d times, want 2", runtime.calls.Load())
 	}
 
 	wrongIncarnationContext := metadata.AppendToOutgoingContext(
-		f.callerContext(peertls.AppURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+		f.callerContext(peertls.AppURI), sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
 	)
 	if _, err := client.GetStatus(wrongIncarnationContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("proxy accepted a different expected incarnation: %v", err)
 	}
 	wrongSealContext := metadata.AppendToOutgoingContext(
-		f.callerContext(peertls.SandboxControllerURI), sandboxapi.RunnerProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+		f.callerContext(peertls.SandboxControllerURI), sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
 	)
 	if _, err := client.Quiesce(wrongSealContext, &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Aborted {
 		t.Fatalf("controller Quiesce accepted a different incarnation: %v", err)
 	}
-	if got := runner.quiesceCalls.Load(); got != 0 {
-		t.Fatalf("stale incarnation sent %d Quiesce calls to Runner", got)
+	if got := runtime.quiesceCalls.Load(); got != 0 {
+		t.Fatalf("stale incarnation sent %d Quiesce calls to Runtime", got)
 	}
 	for _, test := range []struct {
 		name   string
@@ -106,7 +106,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Run(test.name+" incarnation header", func(t *testing.T) {
 			pairs := make([]string, 0, 2*len(test.values))
 			for _, value := range test.values {
-				pairs = append(pairs, sandboxapi.RunnerProxyIncarnationUIDMetadataKey, value)
+				pairs = append(pairs, sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, value)
 			}
 			ctx := metadata.AppendToOutgoingContext(f.callerContext(peertls.AppURI), pairs...)
 			if _, err := client.GetStatus(ctx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.InvalidArgument {
@@ -114,19 +114,19 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 			}
 		})
 	}
-	if runner.calls.Load() != 2 {
-		t.Fatalf("rejected incarnation headers reached Runner %d times, want 2", runner.calls.Load())
+	if runtime.calls.Load() != 2 {
+		t.Fatalf("rejected incarnation headers reached Runtime %d times, want 2", runtime.calls.Load())
 	}
 	if _, err := client.GetStatus(f.callerContext(peertls.CentralSamplerURI), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("caller outside the Runner proxy allowlist was accepted: %v", err)
+		t.Fatalf("caller outside the Runtime proxy allowlist was accepted: %v", err)
 	}
 
 	staleContext := metadata.NewOutgoingContext(context.WithValue(t.Context(), serviceConnectionKey{}, peertls.AppURI), metadata.Pairs(
-		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, "replaced-sandbox-uid",
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
+		sandboxapi.RuntimeProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, f.namespace,
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey, "replaced-sandbox-uid",
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, f.namespace,
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 	if _, err := client.GetStatus(staleContext, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.NotFound {
 		t.Fatalf("proxy accepted a stale Sandbox UID: %v", err)
@@ -164,8 +164,8 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		}
 	}
 
-	// The controller can still seal a live Runner while a held suspend is visible in the
-	// Gateway's cache. Other proxy methods remain unavailable in that phase.
+	// The controller can still seal a live Runtime while a held suspend is visible in the
+	// Server's cache. Other proxy methods remain unavailable in that phase.
 	f.sandbox.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	f.sandbox.Status.StopStage = ""
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
@@ -178,10 +178,10 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Fatalf("SubmitInput in held suspend = %v, want Unavailable", err)
 	}
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {
-		t.Fatalf("controller Quiesce in held suspend did not reach Runner: %v", err)
+		t.Fatalf("controller Quiesce in held suspend did not reach Runtime: %v", err)
 	}
-	if got := runner.quiesceCalls.Load(); got != 1 {
-		t.Fatalf("Runner received %d Quiesce calls, want 1", got)
+	if got := runtime.quiesceCalls.Load(); got != 1 {
+		t.Fatalf("Runtime received %d Quiesce calls, want 1", got)
 	}
 	if _, err := client.PrepareSuspend(f.callerContext(peertls.SandboxControllerURI), &environmentruntimepb.PrepareSuspendRequest{Generation: 1}); status.Code(err) != codes.Unimplemented {
 		t.Fatalf("controller PrepareSuspend in held suspend = %v, want forwarded", err)
@@ -200,7 +200,7 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("Quiesce for a replaced Runner = %v, want Unavailable", err)
+		t.Fatalf("Quiesce for a replaced Runtime = %v, want Unavailable", err)
 	}
 	f.sandbox.Status.Incarnation.UID = string(f.pod.UID)
 	if err := f.objects.Status().Update(t.Context(), f.sandbox); err != nil {
@@ -213,8 +213,8 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Quiesce with an unready Pod = %v, want Unavailable", err)
 	}
-	if got := runner.quiesceCalls.Load(); got != 1 {
-		t.Fatalf("unready Pod sent a second Quiesce to Runner: %d", got)
+	if got := runtime.quiesceCalls.Load(); got != 1 {
+		t.Fatalf("unready Pod sent a second Quiesce to Runtime: %d", got)
 	}
 
 	f.pod.Status.Conditions[0].Status = corev1.ConditionTrue
@@ -253,6 +253,6 @@ func TestRunnerProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	select {
 	case <-observerDone:
 	case <-time.After(time.Second):
-		t.Fatal("Runner observer did not stop")
+		t.Fatal("Runtime observer did not stop")
 	}
 }

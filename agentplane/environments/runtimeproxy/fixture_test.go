@@ -44,7 +44,7 @@ var (
 	controllerAccount = auth.Account{Namespace: "test-system", Name: "test-sandbox-controller"}
 )
 
-func gatewayMethods(t *testing.T, g *Gateway) auth.Methods {
+func serverMethods(t *testing.T, g *Server) auth.Methods {
 	t.Helper()
 	methods, err := g.Methods()
 	if err != nil {
@@ -58,17 +58,17 @@ func useAPIServer(server *kubeapiserver.Server) error {
 	return nil
 }
 
-// sandboxFixture is a Running Sandbox whose runner Pod is Ready, in a namespace of the test's own, with
+// sandboxFixture is a Running Sandbox whose runtime Pod is Ready, in a namespace of the test's own, with
 // valid legacy tokens used to verify that bearer callers are rejected.
 type sandboxFixture struct {
-	namespace                                             string
-	sandbox                                               *sandboxapi.Sandbox
-	pod                                                   *corev1.Pod
-	objects                                               client.Client
-	runnerToken, appToken, executorToken, controllerToken string
-	dispatcherToken, unboundDispatcherToken               string
-	ca                                                    *tlstest.CA
-	gatewayTLS, runnerTLS                                 peertls.Config
+	namespace                                              string
+	sandbox                                                *sandboxapi.Sandbox
+	pod                                                    *corev1.Pod
+	objects                                                client.Client
+	runtimeToken, appToken, executorToken, controllerToken string
+	dispatcherToken, unboundDispatcherToken                string
+	ca                                                     *tlstest.CA
+	serverTLS, runtimeTLS                                  peertls.Config
 }
 
 func newSandboxFixture(t *testing.T) *sandboxFixture {
@@ -132,7 +132,7 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	if err := f.objects.Status().Update(ctx, f.sandbox); err != nil {
 		t.Fatal(err)
 	}
-	if f.runnerToken, err = api.PodToken(ctx, f.pod, testAudience); err != nil {
+	if f.runtimeToken, err = api.PodToken(ctx, f.pod, testAudience); err != nil {
 		t.Fatal(err)
 	}
 	if f.dispatcherToken, err = api.WorkloadToken(ctx, dispatcherAccount, testAudience); err != nil {
@@ -151,28 +151,28 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 		t.Fatal(err)
 	}
 	f.ca = tlstest.NewCA(t)
-	f.gatewayTLS = f.ca.Issue(t, peertls.RuntimeProxyURI)
+	f.serverTLS = f.ca.Issue(t, peertls.RuntimeProxyURI)
 	uri, err := workloadid.ID{Namespace: f.namespace, Name: f.sandbox.Name, CredentialID: f.pod.Labels[sandboxapi.EnvironmentRuntimeCredentialMetadataKey]}.URI()
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.runnerTLS = f.ca.Issue(t, uri)
+	f.runtimeTLS = f.ca.Issue(t, uri)
 	return f
 }
 
-// newGateway is a Gateway replica serving the fixture's namespace. It reads the API server directly.
-func (f *sandboxFixture) newGateway(t *testing.T, executorCallers ...string) *Gateway {
+// newServer is a Server replica serving the fixture's namespace. It reads the API server directly.
+func (f *sandboxFixture) newServer(t *testing.T, executorCallers ...string) *Server {
 	t.Helper()
 	health := watchhealth.New()
 	health.MarkSynced()
-	return f.newGatewayReading(t, f.objects, health, executorCallers...)
+	return f.newServerReading(t, f.objects, health, executorCallers...)
 }
 
-func (f *sandboxFixture) newGatewayReading(t *testing.T, objects client.Reader, health *watchhealth.Health, executorCallers ...string) *Gateway {
+func (f *sandboxFixture) newServerReading(t *testing.T, objects client.Reader, health *watchhealth.Health, executorCallers ...string) *Server {
 	t.Helper()
-	gateway, err := New(Config{
+	server, err := New(Config{
 		Namespace:      f.namespace,
-		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &f.gatewayTLS},
+		RunnerSecurity: peertls.Security{Mode: peertls.MutualTLS, TLS: &f.serverTLS},
 		RuntimeReaders: []string{peertls.AppURI}, SessionServices: []string{peertls.SessionsURI},
 		ExecutorServices: executorCallers, ControllerServices: []string{peertls.SandboxControllerURI},
 		ControlTiming: ControlTiming{LivenessTimeout: 10 * time.Second},
@@ -180,16 +180,16 @@ func (f *sandboxFixture) newGatewayReading(t *testing.T, objects client.Reader, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	return gateway
+	return server
 }
 
 func (f *sandboxFixture) callerContext(service string) context.Context {
 	return metadata.NewOutgoingContext(context.WithValue(context.Background(), serviceConnectionKey{}, service), metadata.Pairs(
-		sandboxapi.RunnerProxySandboxMetadataKey, testSandbox,
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, f.namespace,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, string(f.sandbox.UID),
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, f.namespace,
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, testSandbox,
+		sandboxapi.RuntimeProxySandboxMetadataKey, testSandbox,
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, f.namespace,
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey, string(f.sandbox.UID),
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, f.namespace,
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, testSandbox,
 	))
 }
 
@@ -232,7 +232,7 @@ func (c *serviceConnections) NewStream(ctx context.Context, desc *grpc.StreamDes
 	return conn.NewStream(ctx, desc, method, opts...)
 }
 
-func serveGateway(t *testing.T, g *Gateway, register func(*grpc.Server)) *serviceConnections {
+func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceConnections {
 	t.Helper()
 	ca := tlstest.NewCA(t)
 	tlsConfig, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
@@ -243,7 +243,7 @@ func serveGateway(t *testing.T, g *Gateway, register func(*grpc.Server)) *servic
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(append(gatewayMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(tlsConfig)))...)
+	server := grpc.NewServer(append(serverMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(tlsConfig)))...)
 	register(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)

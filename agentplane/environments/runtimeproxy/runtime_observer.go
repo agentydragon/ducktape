@@ -23,15 +23,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type fencedRunnerConn struct {
+type fencedRuntimeConn struct {
 	conn       *grpc.ClientConn
 	identity   metadata.MD
-	connection *runnerConnection
+	connection *runtimeConnection
 }
 
 // Invoke reports a call its connection's end cancelled (conn closing under a call that held it, or
 // the executor's end-of-connection cancel) as that end, which callers retry, rather than Canceled.
-func (c *fencedRunnerConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
+func (c *fencedRuntimeConn) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
 	err := c.conn.Invoke(metadata.NewOutgoingContext(ctx, c.identity.Copy()), method, args, reply, opts...)
 	if status.Code(err) == codes.Canceled {
 		select {
@@ -43,23 +43,23 @@ func (c *fencedRunnerConn) Invoke(ctx context.Context, method string, args, repl
 	return err
 }
 
-func (c *fencedRunnerConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+func (c *fencedRuntimeConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	return c.conn.NewStream(metadata.NewOutgoingContext(ctx, c.identity.Copy()), desc, method, opts...)
 }
 
-// runnerObserver is one Sandbox's observer worker; done closes when the worker stops on its own.
-type runnerObserver struct {
-	destination runnerDestination
+// runtimeObserver is one Sandbox's observer worker; done closes when the worker stops on its own.
+type runtimeObserver struct {
+	destination runtimeDestination
 	cancel      context.CancelFunc
 	done        chan struct{}
 }
 
-// RunRunnerObservers keeps one observer per reachable Runner, reconciling each Sandbox that
-// RunnerDiscoveryHandler enqueues against the Gateway's reader (the informer cache in production), so
+// RunRuntimeObservers keeps one observer per reachable Environment Runtime, reconciling each Sandbox that
+// RuntimeDiscoveryHandler enqueues against the Server's reader (the informer cache in production), so
 // no Kubernetes read repeats on a timer. Every replica observes independently; connection
 // availability never chooses command queue ownership.
-func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
-	active := make(map[string]runnerObserver)
+func (g *Server) RunRuntimeObservers(ctx context.Context) error {
+	active := make(map[string]runtimeObserver)
 	var workers sync.WaitGroup
 	defer func() {
 		for _, observer := range active {
@@ -77,7 +77,7 @@ func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 			return ctx.Err()
 		}
 		if err := g.reconcileObserver(ctx, name, active, &workers); err != nil {
-			slog.Warn("runner observer reconcile failed", "sandbox", name, "error", err)
+			slog.Warn("Environment Runtime observer reconcile failed", "sandbox", name, "error", err)
 			g.observerQueue.AddRateLimited(name)
 		} else {
 			g.observerQueue.Forget(name)
@@ -86,14 +86,14 @@ func (g *Gateway) RunRunnerObservers(ctx context.Context) error {
 	}
 }
 
-// reconcileObserver starts, replaces or stops the named Sandbox's observer to match its current runner.
-// A verdict that the Sandbox has no reachable runner stops the observer until the Sandbox's next event;
+// reconcileObserver starts, replaces or stops the named Sandbox's observer to match its current Environment Runtime.
+// A verdict that the Sandbox has no reachable Environment Runtime stops the observer until the Sandbox's next event;
 // a failed read is retried with backoff.
-func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map[string]runnerObserver, workers *sync.WaitGroup) error {
+func (g *Server) reconcileObserver(ctx context.Context, name string, active map[string]runtimeObserver, workers *sync.WaitGroup) error {
 	// A KubeVirt informer starts on its first read and blocks it until synced, so reads are bounded.
 	readCtx, release := context.WithTimeout(ctx, g.config.ControlTiming.LivenessTimeout)
 	defer release()
-	var wanted *runnerDestination
+	var wanted *runtimeDestination
 	var sandbox sandboxapi.Sandbox
 	err := g.objects.Get(readCtx, client.ObjectKey{Namespace: g.config.Namespace, Name: name}, &sandbox)
 	switch {
@@ -101,7 +101,7 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 	case err != nil:
 		return fmt.Errorf("read Sandbox: %w", err)
 	default:
-		destination, err := g.runnerDestination(readCtx, &sandbox)
+		destination, err := g.runtimeDestination(readCtx, &sandbox)
 		if _, verdict := status.FromError(err); !verdict {
 			return err
 		}
@@ -133,29 +133,29 @@ func (g *Gateway) reconcileObserver(ctx context.Context, name string, active map
 	destination := *wanted
 	workerCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	active[name] = runnerObserver{destination, cancel, done}
+	active[name] = runtimeObserver{destination, cancel, done}
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
 		defer close(done)
 		defer cancel()
 		_ = retry.Do(workerCtx, retry.NewConstant(time.Second), func(ctx context.Context) error {
-			err := g.observeRunner(ctx, destination)
+			err := g.observeRuntime(ctx, destination)
 			if err == nil || ctx.Err() != nil {
 				return err
 			}
 			// Transport recovery does not wait for a Sandbox or Pod event.
 			// Each attempt validates the current workload and learns its boot ID.
-			slog.Warn("runner observer reconnecting", "sandbox", destination.identity.Name, "error", err)
+			slog.Warn("Environment Runtime observer reconnecting", "sandbox", destination.identity.Name, "error", err)
 			return retry.RetryableError(err)
 		})
 	}()
 	return nil
 }
 
-// RunnerDiscoveryHandler enqueues the Sandbox an event concerns for RunRunnerObservers: the Sandbox
-// itself, or the Sandbox a runner Pod is labelled with.
-func (g *Gateway) RunnerDiscoveryHandler() toolscache.ResourceEventHandler {
+// RuntimeDiscoveryHandler enqueues the Sandbox an event concerns for RunRuntimeObservers: the Sandbox
+// itself, or the Sandbox an Environment Runtime Pod is labelled with.
+func (g *Server) RuntimeDiscoveryHandler() toolscache.ResourceEventHandler {
 	enqueue := func(obj any) {
 		if name, ok := observedSandbox(obj); ok {
 			g.observerQueue.Add(name)
@@ -168,7 +168,7 @@ func (g *Gateway) RunnerDiscoveryHandler() toolscache.ResourceEventHandler {
 	}
 }
 
-// observedSandbox names the Sandbox whose runner obj can change; a Pod without the Sandbox label
+// observedSandbox names the Sandbox whose Environment Runtime workload can change; a Pod without the Sandbox label
 // concerns none.
 func observedSandbox(obj any) (string, bool) {
 	if tombstone, ok := obj.(toolscache.DeletedFinalStateUnknown); ok {
@@ -189,7 +189,7 @@ type observedState struct {
 	err      error
 }
 
-func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestination) error {
+func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestination) error {
 	timing := g.config.ControlTiming
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -202,10 +202,10 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 	if err != nil {
 		return err
 	}
-	var connection *runnerConnection
+	var connection *runtimeConnection
 	defer func() {
 		if connection != nil {
-			g.connections.remove(connection, status.Error(codes.Unavailable, "runner observation ended"))
+			g.connections.remove(connection, status.Error(codes.Unavailable, "Environment Runtime observation ended"))
 		}
 		cancel()
 		_ = conn.Close()
@@ -242,34 +242,34 @@ func (g *Gateway) observeRunner(ctx context.Context, destination runnerDestinati
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-liveness.C:
-			return status.Error(codes.Unavailable, "runner state timed out")
+			return status.Error(codes.Unavailable, "Environment Runtime state timed out")
 		case received := <-responses:
 			if received.err != nil {
 				return received.err
 			}
 			response := received.response
 			if err := g.config.RunnerSecurity.AuthorizePeer(watch.Context(), destination.peerURI); err != nil {
-				return status.Error(codes.Unauthenticated, "runner certificate is no longer valid")
+				return status.Error(codes.Unauthenticated, "Environment Runtime certificate is no longer valid")
 			}
 			if response.GetEnvironmentRuntimeBootId() == "" || response.GetSandboxUid() != destination.identity.Uid || response.GetIncarnationUid() != destination.podUID {
-				return status.Error(codes.InvalidArgument, "runner state has invalid identity")
+				return status.Error(codes.InvalidArgument, "Environment Runtime state has invalid identity")
 			}
 			if connection != nil && connection.bootID != response.EnvironmentRuntimeBootId {
-				return status.Error(codes.Aborted, "runner boot changed")
+				return status.Error(codes.Aborted, "Environment Runtime boot changed")
 			}
 			validateCtx, release := context.WithTimeout(ctx, timing.LivenessTimeout)
-			err = g.validateRunnerDestination(validateCtx, destination)
+			err = g.validateRuntimeDestination(validateCtx, destination)
 			if err == nil && connection == nil {
-				connection = &runnerConnection{
+				connection = &runtimeConnection{
 					identity: destination.identity, podUID: destination.podUID,
 					bootID: response.EnvironmentRuntimeBootId, ended: make(chan struct{}), closeDirect: cancel,
 				}
-				connection.direct = &fencedRunnerConn{conn: conn, connection: connection, identity: metadata.Pairs(
+				connection.direct = &fencedRuntimeConn{conn: conn, connection: connection, identity: metadata.Pairs(
 					"agentplane-sandbox-uid", destination.identity.Uid,
 					"agentplane-incarnation-uid", destination.podUID,
 					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
 				)}
-				connection.runner = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
+				connection.runtime = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
 				// Publish the callable connection only after validating the workload and boot.
 				g.connections.accept(connection)
 				span.AddEvent("runner.control.ready", trace.WithAttributes(
