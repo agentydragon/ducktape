@@ -8,6 +8,7 @@ import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
+from devinfra.ci import nix_images
 from devinfra.ci.nix_images import BUILD_JOB, Image, changed_images, load_images, marker_path
 
 
@@ -77,6 +78,41 @@ def test_changed_images_matches_globs(repo: Path, path: str, expected: list[str]
 
 def test_no_base_selects_every_image() -> None:
     assert changed_images(IMAGES, None, "HEAD") == ["shared-image", "site-image"]
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "FATA[0000] Error listing repository tags: fetching tags list: name unknown: "
+        "Repository name not known to registry",
+        "FATA[0000] listing repository tags: fetching tags list: name unknown: Repository name not known to registry",
+        'time="2026-11-10T00:00:00Z" level=fatal msg="listing repository tags: fetching tags list: name unknown: "',
+    ],
+)
+def test_already_published_treats_unknown_repository_as_unpublished(
+    monkeypatch: pytest.MonkeyPatch, stderr: str
+) -> None:
+    def missing_repository(*args: str) -> dict[str, object]:
+        raise subprocess.CalledProcessError(1, ["skopeo", "list-tags", *args], stderr=stderr)
+
+    monkeypatch.setattr(nix_images, "_skopeo_json", missing_repository)
+    assert nix_images.already_published((None, "sha256:local"), "registry.invalid/new-image") is False
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "FATA[0000] Error listing repository tags: Requesting bearer token: invalid status code 401 (Unauthorized)",
+        "FATA[0000] Error listing repository tags: pinging registry: dial tcp: connection refused",
+    ],
+)
+def test_already_published_propagates_auth_and_network_errors(monkeypatch: pytest.MonkeyPatch, stderr: str) -> None:
+    def listing_failed(*args: str) -> dict[str, object]:
+        raise subprocess.CalledProcessError(1, ["skopeo", "list-tags", *args], stderr=stderr)
+
+    monkeypatch.setattr(nix_images, "_skopeo_json", listing_failed)
+    with pytest.raises(subprocess.CalledProcessError):
+        nix_images.already_published((None, "sha256:local"), "registry.invalid/new-image")
 
 
 if __name__ == "__main__":
