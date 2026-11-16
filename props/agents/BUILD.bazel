@@ -20,10 +20,10 @@ py_library(
     visibility = ["//props:__subpackages__"],
     deps = [
         ":schema",
-        "//mako_utils:preprocessor",
         "//props/db:database",
         "//props/db:models",
         "//props/db:snapshot_io",
+        "//props/mako_utils:preprocessor",
         "@pypi//mako",
         "@pypi//sqlalchemy",
     ],

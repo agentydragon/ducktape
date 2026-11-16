@@ -13,6 +13,7 @@ py_test(
     deps = [
         ":preprocessor",
         "//:conftest",
+        "//props:conftest",
         "@pypi//mako",
         "@pypi//pytest_bazel",
     ],
