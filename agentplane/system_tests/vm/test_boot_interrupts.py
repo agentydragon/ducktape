@@ -1,7 +1,12 @@
-"""Boot diagnostics survive missing events and preserve a temporal APIC record."""
+"""Boot diagnostics retain SDT transitions and survive unavailable kernel probes."""
 
 import json
+import os
+import struct
 import threading
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,73 +28,138 @@ def test_changed_pod_uid_prevents_monitor_command() -> None:
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("events_available", [True, False])
-@pytest.mark.parametrize("lost_enable_reply", [True, False])
-def test_missing_events_still_sample_and_uncertain_activation_is_disabled(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, events_available: bool, lost_enable_reply: bool
-) -> None:
-    process = tmp_path / "proc" / "42"
-    (process / "root" / "tmp").mkdir(parents=True)
-    (process / "cmdline").write_bytes(b"qemu\0-accel\0tcg\0")
-    monkeypatch.setattr(
-        boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
-    )
-    monkeypatch.setattr(boot_interrupts, "MAX_SAMPLES", 2)
-    monkeypatch.setattr(boot_interrupts, "SAMPLE_SECONDS", 0)
-    monkeypatch.setattr(boot_interrupts, "MAX_BYTES", 40)
-    calls: list[dict[str, Any]] = []
-
-    def qmp(*args: Any) -> Any:
-        command = args[-1]
-        calls.append(command)
-        match command["execute"]:
-            case "query-status":
-                return {"running": True}
-            case "trace-event-get-state":
-                return [{"name": "apic_local_deliver", "state": "disabled"}] if events_available else []
-            case "trace-event-set-state":
-                if lost_enable_reply and command["arguments"]["enable"]:
-                    raise RuntimeError("activation reply lost")
-                return {}
-            case "human-monitor-command":
-                hmp = command["arguments"]["command-line"]
-                if hmp.startswith("logfile /tmp/"):
-                    (process / "root" / hmp.removeprefix("logfile /")).write_bytes(
-                        b"Servicing hardware INT=0xec\n" * 10
-                    )
-                if hmp.startswith("info "):
-                    return f"APIC sample {len(calls)}"
-                return ""
-        raise AssertionError(command)
-
-    monkeypatch.setattr(boot_interrupts, "_qmp", qmp)
-    target = {"pod_name": "launcher", "pod_uid": "uid", "vmi_name": "guest"}
-    boot_interrupts._trace_one(
-        lambda *_args: "", "scope", target, tmp_path, threading.Event(), proc_root=tmp_path / "proc"
-    )
-    output = tmp_path / "boot-interrupts" / "uid"
-    summary = json.loads((output / "summary.json").read_text())
-    samples = [json.loads(line) for line in (output / "timeline.jsonl").read_text().splitlines()]
-    assert len(samples) == 2
-    assert samples[0]["started_at"] <= samples[1]["started_at"]
-    for sample in samples:
-        assert [(p["command"], p["cpu"]) for p in sample["probes"]] == [
-            ("info lapic", 0),
-            ("info lapic", 1),
-            ("info pic", None),
-        ]
-    assert samples[0]["probes"] != samples[1]["probes"]
-    assert summary["accepted_events"] == (["apic_local_deliver"] if events_available and not lost_enable_reply else [])
-    assert summary["log_int_accepted"]
-    assert (output / "interrupts.log").stat().st_size == 40
-    assert "logging_stopped_at_byte_limit" in summary
-    disabled = [
-        c["arguments"]["name"]
-        for c in calls
-        if c["execute"] == "trace-event-set-state" and not c["arguments"]["enable"]
+def test_sdt_notes_map_virtual_addresses_and_keep_duplicate_sites(tmp_path: Path) -> None:
+    # ELF64 SDT wire format: stripped executables keep SHT_NOTE. Include a
+    # zero-argument unrelated site, which must not break APIC discovery.
+    notes = bytearray()
+    for provider, event, location, arguments in (
+        ("qemu", "unrelated", 0x401010, ""),
+        ("qemu", "apic_register_write", 0x401020, "4@%edi 8@%rsi"),
+        ("qemu", "apic_register_write", 0x401030, "4@%ebx 8@%r12"),
+        ("other", "apic_register_write", 0x401040, "4@%edi"),
+    ):
+        desc = struct.pack("<QQQ", location, 0x401000, 0x401060)
+        desc += f"{provider}\0{event}\0{arguments}\0".encode()
+        notes += struct.pack("<III", 8, len(desc), 3) + b"stapsdt\0"
+        notes += desc + b"\0" * (-len(desc) % 4)
+    elf = bytearray(512)
+    elf[:6] = b"\x7fELF\x02\x01"
+    struct.pack_into("<H", elf, 18, 62)
+    struct.pack_into("<QQ", elf, 32, 64, 128)
+    struct.pack_into("<HHHH", elf, 54, 56, 1, 64, 3)
+    struct.pack_into("<IIQQQQQQ", elf, 64, 1, 5, 256, 0x401000, 0, 256, 256, 4096)
+    struct.pack_into("<IIQQQQIIQQ", elf, 128, 0, 7, 0, 0, 512, len(notes), 0, 0, 4, 0)
+    symbol = struct.pack("<IBBHQQ", 1, 0x12, 0, 1, 0x401040, 16)
+    strings = b"\0apic_get_interrupt\0"
+    struct.pack_into("<IIQQQQIIQQ", elf, 192, 0, 11, 0, 0, 512 + len(notes), 24, 2, 0, 8, 24)
+    struct.pack_into("<IIQQQQIIQQ", elf, 256, 0, 3, 0, 0, 512 + len(notes) + 24, len(strings), 0, 0, 1, 0)
+    executable = tmp_path / "test-qemu"
+    executable.write_bytes(elf + notes + symbol + strings)
+    assert boot_interrupts._apic_probes(executable) == [
+        boot_interrupts._Probe("apic_register_write", 288, 352, "4@%edi 8@%rsi"),
+        boot_interrupts._Probe("apic_register_write", 304, 352, "4@%ebx 8@%r12"),
+        boot_interrupts._Probe("apic_get_interrupt", 320, 0, "", "r"),
     ]
-    assert disabled == (["apic_local_deliver"] if events_available else [])
-    assert calls[-1]["arguments"]["command-line"] == "logfile /proc/self/fd/2"
+
+
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        ("4@%edi 8@%rsi", "arg1=%di:u32 arg2=%si:u64"),
+        ("-4@%r12d 8@-8(%rbp)", "arg1=%r12:s32 arg2=-8(%bp):u64"),
+        ("1@%eax 8@(%rsp)", "arg1=%ax:u8 arg2=+0(%sp):u64"),
+        ("4@$7", "arg1=\\7:u32"),
+        # The pinned launcher's apic_register_write SDT site (QEMU 10.1.0).
+        ("1@15(%rsp) 8@208(%rsp)", "arg1=+15(%sp):u8 arg2=+208(%sp):u64"),
+    ],
+)
+def test_sdt_operands_translate_to_kernel_fetchargs(arguments: str, expected: str) -> None:
+    assert boot_interrupts._fetch_arguments(arguments) == expected
+
+
+@pytest.mark.parametrize("arguments", ["4@%xmm0", "4@(%rax,%rdx,4)", "16@%rax"])
+def test_unrepresentable_sdt_arguments_fail_explicitly(arguments: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported SDT"):
+        boot_interrupts._fetch_arguments(arguments)
+
+
+def test_trace_pipe_retention_stops_at_byte_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(boot_interrupts, "MAX_BYTES", 40)
+    instance = tmp_path / "instance"
+    instance.mkdir()
+    (instance / "tracing_on").touch()
+    (instance / "events").mkdir()
+    (instance / "events" / "enable").touch()
+    os.mkfifo(instance / "trace_pipe")
+    record: dict[str, Any] = {}
+
+    def produce() -> None:
+        with (instance / "trace_pipe").open("wb", buffering=0) as stream:
+            stream.write(b"test APIC delivery and EOI\n" * 4)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        producing = executor.submit(produce)
+        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", threading.Event(), record)
+        producing.result()
+    assert (tmp_path / "interrupts.log").stat().st_size == 40
+    assert (instance / "tracing_on").read_text().strip() == "0"
+    assert (instance / "events" / "enable").read_text().strip() == "0"
+    assert record["bytes_retained"] == 40
+    assert "logging_stopped_at_byte_limit" in record
+
+
+def test_tracefs_control_write_neither_appends_nor_truncates(tmp_path: Path) -> None:
+    # O_TRUNC removes unrelated kernel probes; O_APPEND is rejected by tracefs.
+    control = tmp_path / "test-uprobe-events"
+    control.write_text("123456")
+    boot_interrupts._write_trace(control, "0")
+    assert control.read_text() == "0\n3456"
+
+
+@pytest.mark.parametrize("fail_enable", [False, True])
+def test_apic_probes_are_scoped_and_removed_on_setup_or_scenario_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_enable: bool
+) -> None:
+    trace = tmp_path / "tracefs"
+    (trace / "instances").mkdir(parents=True)
+    (trace / "uprobe_events").touch()
+    (trace / "uprobe_profile").write_text("unrelated-test-process 0\n")
+    process = tmp_path / "proc" / "42"
+    for tid in ("42", "43"):
+        (process / "task" / tid).mkdir(parents=True)
+    probes = [
+        boot_interrupts._Probe("apic_register_write", 128, 256, "1@15(%rsp) 8@208(%rsp)"),
+        boot_interrupts._Probe("apic_get_interrupt", 512, 0, "", "r"),
+    ]
+    monkeypatch.setattr(boot_interrupts, "_apic_probes", lambda _exe: probes)
+    monkeypatch.setattr(boot_interrupts, "_drain_trace", lambda *_args: None)
+    writes = []
+
+    def write(path: Path, value: str) -> None:
+        writes.append((path.relative_to(trace), value))
+        if fail_enable and path.name == "enable" and value == "1":
+            raise OSError("test activation failure")
+
+    monkeypatch.setattr(boot_interrupts, "_write_trace", write)
+    record: dict[str, Any] = {"target": {"pod_uid": "test-uid"}, "errors": []}
+    with (
+        pytest.raises(RuntimeError, match="test scenario failure"),
+        boot_interrupts._capture_apic(process, tmp_path, record, trace_root=trace),
+    ):
+        raise RuntimeError("test scenario failure")
+    assert not list((trace / "instances").iterdir())
+    commands = [value for path, value in writes if path == Path("uprobe_events")]
+    assert len(commands) == 4
+    assert all(
+        command.startswith(("p:agentplane_boot_testuid/", "r:agentplane_boot_testuid/")) for command in commands[:2]
+    )
+    assert {command.removeprefix("-:") for command in commands[2:]} == {
+        command.split()[0][2:] for command in commands[:2]
+    }
+    assert set(next(value for path, value in writes if path.name == "set_event_pid").split()) == {"42", "43"}
+    assert any(path.name == "event-fork" and value == "1" for path, value in writes)
+    assert any(path.name == "enable" and value == "0" for path, value in writes)
+    assert bool(record["errors"]) == fail_enable
 
 
 def test_userspace_detection_keeps_early_console(tmp_path: Path) -> None:
@@ -103,41 +173,72 @@ def test_userspace_detection_keeps_early_console(tmp_path: Path) -> None:
     assert console.read_bytes().startswith(b"[0.0] Linux version\n")
 
 
-def test_host_pid_disappearance_does_not_discard_monitor_timeline(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_missing_executable_preserves_monitor_timeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
     )
     monkeypatch.setattr(boot_interrupts, "MAX_SAMPLES", 2)
     monkeypatch.setattr(boot_interrupts, "SAMPLE_SECONDS", 0)
-    calls: list[dict[str, Any]] = []
 
     def qmp(*args: Any) -> Any:
         command = args[-1]
-        calls.append(command)
         if command["execute"] == "query-status":
             return {"running": True}
-        if command["execute"] == "trace-event-get-state":
-            return []
         assert command["execute"] == "human-monitor-command"
         assert command["arguments"]["command-line"].startswith("info ")
         return "read-only monitor sample"
 
     monkeypatch.setattr(boot_interrupts, "_qmp", qmp)
-    target = {"pod_name": "launcher", "pod_uid": "uid", "vmi_name": "guest"}
+    target = {"pod_name": "test-launcher", "pod_uid": "test-uid", "vmi_name": "test-guest"}
     boot_interrupts._trace_one(
-        lambda *_args: "", "scope", target, tmp_path, threading.Event(), proc_root=tmp_path / "gone-proc"
+        lambda *_args: "", "test-scope", target, tmp_path, threading.Event(), proc_root=tmp_path / "gone-proc"
     )
-    output = tmp_path / "boot-interrupts" / "uid"
+    output = tmp_path / "boot-interrupts" / "test-uid"
     summary = json.loads((output / "summary.json").read_text())
     samples = [json.loads(line) for line in (output / "timeline.jsonl").read_text().splitlines()]
     assert len(samples) == 2
-    assert all(len(sample["probes"]) == 3 for sample in samples)
+    assert all(
+        [(p["command"], p["cpu"]) for p in sample["probes"]]
+        == [("info lapic", 0), ("info lapic", 1), ("info pic", None)]
+        for sample in samples
+    )
     assert summary["stop_reason"] == "sample-limit"
-    assert "Host process unavailable" in summary["logging_skipped"]
-    assert summary["errors"] == []
-    assert "log_int_accepted" not in summary
+    assert summary["accepted_events"] == []
+    assert len(summary["errors"]) == 1
+
+
+def test_apic_capture_precedes_monitor_and_finishes_at_userspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
+    )
+    monkeypatch.setattr(boot_interrupts, "_userspace", lambda _launcher: True)
+    order = []
+
+    @contextmanager
+    def apic(process: Path, output: Path, record: dict[str, Any]) -> Iterator[None]:
+        order.append("attach")
+        try:
+            yield
+        finally:
+            order.append("detach")
+            record["trace_stats"] = {"cpu0": "overrun: 0"}
+
+    def qmp(*args: Any) -> Any:
+        order.append(args[-1]["execute"])
+        return {"running": True} if args[-1]["execute"] == "query-status" else "test sample"
+
+    monkeypatch.setattr(boot_interrupts, "_capture_apic", apic)
+    monkeypatch.setattr(boot_interrupts, "_qmp", qmp)
+    target = {"pod_name": "test-launcher", "pod_uid": "test-uid", "vmi_name": "test-guest"}
+    boot_interrupts._trace_one(lambda *_args: "", "test-scope", target, tmp_path, threading.Event())
+    summary = json.loads((tmp_path / "boot-interrupts" / "test-uid" / "summary.json").read_text())
+    assert order[0:2] == ["attach", "query-status"]
+    assert order[-1] == "detach"
+    assert summary["stop_reason"] == "userspace"
+    assert summary["samples"] == 1
+    assert summary["trace_stats"] == {"cpu0": "overrun: 0"}
 
 
 if __name__ == "__main__":

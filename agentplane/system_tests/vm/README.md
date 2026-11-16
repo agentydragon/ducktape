@@ -54,27 +54,44 @@ ContainerPath daemons are excluded. The sanitized observation is retained at
 `vm-artifacts/launcher-topology/<launcher-pod-uid>.json` on both pass and failure; API or
 incarnation convergence failures are reported separately from an admitted-topology violation.
 
-Boot capture also writes `vm-artifacts/boot-interrupts/<launcher-pod-uid>/` through
-`undeclared_outputs_dir()`. It starts when the exact launcher QEMU is Running and
-samples `info lapic` for CPUs 0 and 1 and `info pic` repeatedly until the serial
-console reaches `systemd[1]`, capture ends, or its 300-second/150-sample budget
-expires. Samples include command start/end timestamps and individual errors;
-the two-second interval starts after a sample completes. These read-only monitor
-commands may perturb emulator timing. They do not change readiness assertions.
+Boot capture writes `vm-artifacts/boot-interrupts/<launcher-pod-uid>/` through
+`undeclared_outputs_dir()`. It attaches as soon as the exact launcher's QEMU
+process is found, before the first QMP round trip. It stops when the serial
+console reaches `systemd[1]`, capture ends, or its existing 300-second/150-sample
+budget expires. The observer never pauses or resumes the guest. Discovery can
+miss early boot: activation timestamps, the serial log and initial APIC register
+writes determine which part of boot is covered.
 
-`summary.json` records the emulator's available APIC events and the exact events
-it accepted, rather than assuming upstream trace definitions are compiled in.
-`interrupts.log` retains supported APIC delivery/IOAPIC EOI events together with
-QEMU's `log int` delivery/register history. Unsupported events do not prevent
-monitor sampling. Existing QEMU logging is left alone; otherwise diagnostic
-logging is disabled and stderr restored on exit, including uncertain activation.
-Retained interrupt output is capped at 16 MiB per launcher. At the next sample
-after that threshold, logging stops; the emulator file can overshoot between
-samples. The APIC timeline continues. The summary records this coverage gap.
-Snapshots show pending/in-service/priority transitions but cannot prove every
-intervening delivery or EOI. The serial directory retains the early console
-independently, including failures before userspace. No diagnostic is printed to
-stdout, and collection errors never replace the scenario's failure.
+The pinned launcher's APIC trace sites use DTrace/SystemTap and are unavailable
+through QMP's trace API. The collector reads SDT notes from the running executable
+and attaches kernel uprobes with their argument operands and semaphore offsets.
+An exported `apic_get_interrupt` return probe records the vector accepted by a
+vCPU (`-1` means none). `apic_register_write` records register index and value;
+index `0x0b` is EOI. `apic_local_deliver` records the LVT **index** and delivery
+mode, not the interrupt vector or destination CPU. Other APIC/IOAPIC sites retain
+routing and level-triggered EOI transitions. `summary.json` maps each numbered
+site to its name, arguments and file offset. Trace lines include monotonic host
+time, thread name and TID; the host snapshot maps TIDs to vCPUs.
+
+Each launcher owns a private tracefs instance, filtered to its current QEMU
+threads and their descendants. Its ring uses 128 KiB per host CPU and is drained
+continuously into `interrupts.log`, capped at 16 MiB. Logging stops at that cap;
+`summary.json` retains the cut-off time, actual enabled sites, setup/cleanup
+errors and per-CPU overrun/drop counters. Only this collector's events and
+instance are removed at exit. Existing emulator logging is untouched. The
+collector also samples `info lapic` for CPUs 0 and 1 and `info pic`, retaining
+command times and individual errors in `timeline.jsonl`; the two-second interval
+starts after each sample completes. Missing probe support leaves this monitor
+timeline available.
+
+Compare accepted vectors, EOI writes and subsequent in-service/priority state.
+An absent acknowledgement is meaningful only for a covered interval with the
+required probes and no reported loss; it must also account for any paravirtual
+acknowledgement path. Late attachment, missing sites, loss or truncation leave
+that conclusion unproven. Both uprobes and monitor queries perturb timing and
+are diagnostics, never readiness predicates. Early serial output is retained
+independently. No diagnostic is printed to stdout, and collector errors never
+replace a scenario failure.
 
 ### QEMU IOTLB assertion capture
 
