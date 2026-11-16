@@ -40,6 +40,6 @@ tf_module(
     providers_versions = ":providers",
     tflint_config = "//cluster:.tflint.hcl",
     deps = [
-        "//terraform/modules/nixos-image",
+        "//tf/modules/nixos-image",
     ],
 )
