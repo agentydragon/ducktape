@@ -360,6 +360,19 @@ mod tests {
     }
 
     #[test]
+    fn supplied_priority_is_used_even_when_another_priority_would_satisfy_constraints() {
+        let (a, b, entry) = (ModuleId(0), ModuleId(1), ModuleId(2));
+        let nodes = BTreeSet::from([a, b, entry]);
+        let successors = BTreeMap::from([(a, BTreeSet::from([b])), (b, BTreeSet::from([a]))]);
+        let pairs = BTreeSet::from([(a, b)]);
+        let failed = EsmImportSchedule::from_priority(entry, &successors, &nodes, &[b, a]).unwrap();
+        assert_eq!(failed.tdz_pairs(&pairs).collect::<Vec<_>>(), vec![(a, b)]);
+        let accepted =
+            EsmImportSchedule::from_priority(entry, &successors, &nodes, &[a, b]).unwrap();
+        assert!(accepted.tdz_pairs(&pairs).next().is_none());
+    }
+
+    #[test]
     fn every_three_module_import_graph_and_import_permutation_matches_raw_dfs() {
         let entry = ModuleId(2);
         let nodes = BTreeSet::from([ModuleId(0), ModuleId(1), entry]);
@@ -439,6 +452,28 @@ mod tests {
                             .map(|(n, &module)| (module, n))
                             .collect();
                         assert_eq!(schedule.post_order(), &expected, "graph mask {mask}");
+                        let captured = EsmImportSchedule::from_priority(
+                            entry,
+                            &successors,
+                            &nodes,
+                            &schedule.discovery_order(),
+                        )
+                        .unwrap();
+                        let mut original_trace = Vec::new();
+                        let mut captured_trace = Vec::new();
+                        oracle_trace(
+                            entry,
+                            &schedule.imports,
+                            &mut BTreeSet::new(),
+                            &mut original_trace,
+                        );
+                        oracle_trace(
+                            entry,
+                            &captured.imports,
+                            &mut BTreeSet::new(),
+                            &mut captured_trace,
+                        );
+                        assert_eq!(captured_trace, original_trace, "graph mask {mask}");
                         let all_pairs = edges.iter().copied().collect();
                         let rejected: BTreeSet<_> = schedule.tdz_pairs(&all_pairs).collect();
                         for &(from, to) in &edges {

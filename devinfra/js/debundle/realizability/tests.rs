@@ -186,6 +186,89 @@ fn supplied_priority_verification_does_not_repair_a_failed_witness() {
     }
 }
 
+/// The exact import-order problem includes directed Hamiltonian path even with
+/// an acyclic C star. Check the reduction against real source analysis, not a
+/// separately invented graph model. An accepted all-entry baseline does not
+/// make checking an arbitrary later batch assignment easier in general.
+#[test]
+fn source_hub_reduction_matches_directed_hamiltonian_path() {
+    let vertices = [ModuleId(2), ModuleId(3), ModuleId(4)];
+    let hub = ModuleId(1);
+    let possible: Vec<_> = (0..3)
+        .flat_map(|from| {
+            (0..3)
+                .filter(move |&to| from != to)
+                .map(move |to| (from, to))
+        })
+        .collect();
+    let permutations = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    for mask in 0..(1 << possible.len()) {
+        let h: BTreeSet<_> = possible
+            .iter()
+            .enumerate()
+            .filter_map(|(bit, &edge)| (mask & (1 << bit) != 0).then_some(edge))
+            .collect();
+        let mut source = String::from("const z = () => [a0, a1, a2];\n");
+        for from in 0..3 {
+            let targets = h
+                .iter()
+                .filter(|&&(node, _)| node == from)
+                .map(|&(_, to)| format!("a{to}"))
+                .collect::<Vec<_>>()
+                .join(",");
+            source.push_str(&format!(
+                "const a{from} = {{ dependency: z, lazy: () => [{targets}] }};\n"
+            ));
+        }
+        let graph = parse_and_build(&source);
+        let atoms = analysis::compute_atomic_groups(&graph);
+        assert_eq!(atoms.len(), 4, "H mask {mask}: {source}");
+        assert!(
+            atoms.iter().all(|atom| atom.members.len() == 1),
+            "the distinct-owner map must not split a structural atom: {atoms:?}"
+        );
+        let mut assignment = ModuleAssignment::new(
+            &graph,
+            analysis::EntryDestination::from_module_id(ModuleId(0)),
+        );
+        assert!(check_realizability(&graph, &assignment).is_realizable());
+        for source_unit in 0..4 {
+            assignment.set(SourceUnitId(source_unit), ModuleId(source_unit + 1));
+        }
+        let (canonical, rebinds) = canonical_assignment_constraints(&graph, &assignment);
+        assert!(rebinds.is_empty());
+        let c: BTreeSet<_> = vertices.iter().map(|&vertex| (vertex, hub)).collect();
+        assert_eq!(canonical.pairs().collect::<BTreeSet<_>>(), c);
+        let expected_i: BTreeSet<_> = c
+            .iter()
+            .copied()
+            .chain(vertices.iter().map(|&vertex| (hub, vertex)))
+            .chain(h.iter().map(|&(from, to)| (vertices[from], vertices[to])))
+            .collect();
+        let actual_i: BTreeSet<_> = canonical
+            .i_successors
+            .iter()
+            .flat_map(|(&from, row)| row.iter().map(move |&to| (from, to)))
+            .collect();
+        assert_eq!(actual_i, expected_i, "H mask {mask}: {source}");
+        let has_path = permutations
+            .iter()
+            .any(|path| path.windows(2).all(|edge| h.contains(&(edge[0], edge[1]))));
+        assert_eq!(
+            check_realizability(&graph, &assignment).is_realizable(),
+            has_path,
+            "H mask {mask}: {source}"
+        );
+    }
+}
+
 /// The hypothetical full gate must reproduce the pure canonical projection
 /// and complete verdict, including diagnoses in I-SCCs remote from the moved
 /// source units. Every graph here is a typed dependency-graph report fixture; no source
