@@ -25,6 +25,40 @@ package(
 )
 
 py_library(
+    name = "iotlb_layout",
+    srcs = ["iotlb_layout.py"],
+    deps = [
+        ":iotlb_profile",
+        ":qemu_elf",
+        "@pypi//pydantic",
+        "@pypi//zstandard",
+    ],
+)
+
+py_binary(
+    name = "iotlb_layout_bin",
+    main_module = "agentplane.system_tests.vm.iotlb_layout",
+    deps = [":iotlb_layout"],
+)
+
+genrule(
+    name = "qemu_iotlb_debug",
+    srcs = [
+        "iotlb-probes.json",
+        "@kubevirt_virt_launcher_linux_amd64",
+        "@vm_qemu_debuginfo_rpm//file",
+        "@vm_qemu_shared_debuginfo_rpm//file",
+    ],
+    outs = [
+        "verified-iotlb-layout.json",
+        "usr/libexec/qemu-kvm.debug",
+        ".dwz/qemu-kvm-10.1.0-10.el9.x86_64",
+    ],
+    cmd = "$(execpath :iotlb_layout_bin) $(location @vm_qemu_debuginfo_rpm//file) $(location usr/libexec/qemu-kvm.debug) $(location @vm_qemu_shared_debuginfo_rpm//file) $(location .dwz/qemu-kvm-10.1.0-10.el9.x86_64) $(location @kubevirt_virt_launcher_linux_amd64) $(location iotlb-probes.json) $(location verified-iotlb-layout.json)",
+    tools = [":iotlb_layout_bin"],
+)
+
+py_library(
     name = "configuration",
     srcs = ["configuration.py"],
     deps = ["//agentplane/env:config"],
@@ -149,7 +183,10 @@ py_test(
 py_library(
     name = "host_qemu",
     srcs = ["host_qemu.py"],
-    deps = [":guest_logs"],
+    deps = [
+        ":guest_logs",
+        ":iotlb_capture",
+    ],
 )
 
 py_test(
@@ -656,4 +693,67 @@ py_test(
 py_library(
     name = "env_flags",
     srcs = ["env_flags.py"],
+)
+
+py_library(
+    name = "iotlb_capture",
+    srcs = ["iotlb_capture.py"],
+    data = ["verified-iotlb-layout.json"],
+    deps = [
+        ":iotlb_profile",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "iotlb_profile",
+    srcs = ["iotlb_profile.py"],
+    deps = [
+        ":qemu_elf",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "qemu_elf",
+    srcs = ["qemu_elf.py"],
+)
+
+py_test(
+    name = "test_iotlb_capture",
+    srcs = ["test_iotlb_capture.py"],
+    deps = [
+        ":iotlb_capture",
+        ":iotlb_profile",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_iotlb_layout",
+    srcs = ["test_iotlb_layout.py"],
+    deps = [
+        ":iotlb_layout",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//zstandard",
+    ],
+)
+
+py_test(
+    name = "test_iotlb_profile",
+    srcs = ["test_iotlb_profile.py"],
+    deps = [
+        ":iotlb_profile",
+        ":qemu_elf",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )

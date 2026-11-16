@@ -75,3 +75,70 @@ Snapshots show pending/in-service/priority transitions but cannot prove every
 intervening delivery or EOI. The serial directory retains the early console
 independently, including failures before userspace. No diagnostic is printed to
 stdout, and collection errors never replace the scenario's failure.
+
+### QEMU IOTLB assertion capture
+
+`host_qemu.capture` starts an IOTLB observer at exact-domain discovery, except in
+explicitly passive virtiofsd mode. It matches both `-name guest=<namespace>_<vmi>`
+and the launcher Pod UID in the host cgroup. It verifies the executable GNU
+build-id, SHA-256, ELF file offsets and instruction bytes before attaching.
+`qemu_iotlb_debug` fetches the core and supplementary DWZ debuginfo through Bazel,
+checks their build-ids and `.gnu_debugaltlink`, and verifies the recipes against
+the pinned amd64 launcher image. Runtime needs only the generated manifest;
+there are no runtime downloads or symbol guesses.
+
+The recipes in `iotlb-probes.json` are specific to `qemu-kvm-10.1.0-10.el9`,
+build-id `3bdb548b9f6ed0a112c7ef0b9afc123c4a8bdf86`. Their register/stack locations
+and structure offsets come from that exact build's DWARF and disassembly:
+
+| Probe                                          | ELF address                                    | Records                                                                                                                                                   |
+| ---------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fill_io`                                      | `0x70685f`                                     | I/O/ROMD fill preparation: CPU, MMU index, virtual/physical page, attributes, translated offset, section, owning FlatView and dispatch, CPU AddressSpaces |
+| `iommu_target`                                 | `0x5f522d`                                     | IOMMU region, source dispatch and replacement target AddressSpace/FlatView/dispatch                                                                       |
+| `access_0`–`access_3`                          | `0x7107e9`, `0x710f2f`, `0x71164d`, `0x711ed8` | MMIO callers before `iotlb_to_section`: packed TLB value, full-entry pointer, physical address, attributes, virtual address and MMU index                 |
+| `check`, `failure`                             | `0x5f5565`, `0x5f5599`                         | Masked section index, selected dispatch, section count/base and CPU AddressSpaces, before register destruction                                            |
+| `publish`                                      | `0x5ea15e`                                     | AddressSpace, old/new FlatViews and dispatches at `current_map` publication                                                                               |
+| `commit_queued`, `commit_direct`, `commit_cpu` | `0x5f5972`, `0x5f5980`, `0x603bf4`             | TCG listener's queued/direct flush and CPU callback, including AddressSpace identity                                                                      |
+| `flush_begin`, `flush_done`                    | `0x704e40`, `0x705029`                         | CPU and requested/completed MMU flush masks                                                                                                               |
+
+Each launcher has private trace instances with explicit `common_pid` filters for
+at most 64 QEMU threads. Thread discovery refreshes every collector turn (at
+most a 100 ms idle wait); the interval before a new thread's filter is installed
+is a recorded coverage gap. Linux 5.15's uprobe `traceoff` trigger affects the
+top-level array and its snapshot trigger rejects private instances, so neither
+is used. A separate failure-only ring protects the assertion record from normal
+traffic. The collector stops both instances after reading that record; the
+failure-to-stop interval can lose history and is recorded. Only this observer's
+instances and probe definitions are removed on teardown.
+
+Artifacts are under the test's undeclared-output root at
+`vm-artifacts/host-qemu/<launcher>/iotlb/`: `rolling.log` (1 MiB), `failure.log`
+(256 KiB, assertion record plus recent complete records), and `metadata.json`
+(64 KiB). Per-launcher output is below the 1.5 MiB ceiling; at most four launchers
+plus the bounded `iotlb-observer.json` fit the 6 MiB total cap. Kernel rings total
+at most 2 MiB per launcher. Discovery lasts at most 600 seconds and each attached
+capture lasts at most 300 seconds or until process exit, assertion or teardown.
+No new QMP or Kubernetes API traffic is added. Uprobes perturb execution; a pass
+cannot establish that the underlying race has been fixed.
+
+Use trace `mono` timestamps and host TIDs to correlate events: sequence numbers
+are collector read order across the two rings, not execution order. The section
+stride is 64 bytes, `CPUTLBEntryFull.xlat_section` is at offset 0, `phys_addr` at 8,
+and attributes at 16. Compare the failed access's packed index/attributes with a
+retained candidate fill's section/dispatch and the intervening map/flush history.
+An IOMMU target change to a different AddressSpace followed by a lookup in the
+wrong dispatch supports the upstream AddressSpace candidate. A map replacement
+without the required TCG flush supports stale-map invalidation instead. Neither
+is established by the assertion alone. `fill_io` precedes the final TLB store;
+victim TLB copies and multiple candidate fills can make exact provenance
+ambiguous. RAM fills, individual-page invalidations and arbitrary TLB writes are
+not traced, so this is not a complete TLB journal.
+
+Metadata records attachment/end times, stop reason, overwritten history, kernel
+overruns/drops, malformed/foreign records, invalid required pointer/count values,
+thread changes, setup/cleanup errors and discovery caps. Scalar tracefs fetches
+can return zero on a memory-read fault; zero or otherwise ambiguous values are
+unusable evidence, not proof of a zero map. Read `as1`/`fv1` only when `num_ases`
+permits them; null old maps during initial publication are expected. Missing
+fills, overwritten history, pre-attachment activity, new-thread gaps or fetch
+faults can leave the recurrence undecidable and must accompany any conclusion.
