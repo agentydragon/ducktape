@@ -127,6 +127,7 @@ spend_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//util/presentation_vectors:currency_policy_vectors",
     ],
 )
 

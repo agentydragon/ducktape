@@ -1,0 +1,12 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+
+js_library(
+    name = "currency_policy_vectors",
+    srcs = ["currency_policy_vectors.json"],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(
+    ["currency_policy_vectors.json"],
+    visibility = ["//visibility:public"],
+)

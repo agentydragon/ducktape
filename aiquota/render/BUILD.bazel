@@ -73,6 +73,7 @@ py_test(
     data = [
         "__snapshots__/test_human.ambr",
         "//aiquota/testing:fixtures",
+        "//util/presentation_vectors:currency_policy_vectors.json",
     ],
     uses_syrupy = True,
     deps = [
