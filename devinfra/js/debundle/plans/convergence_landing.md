@@ -61,27 +61,18 @@ into reasonable modules (<target_architecture.md> § Contract).
    remaining unknown value source. Each gets an independent review and a
    private canonical check after merge. The gaffer-private pin does not move
    past a `devel` with a known unsound acceptance.
-2. **Two measurements, in parallel:**
-   - the summary-based producer prototype against the real specs and the
-     stress assignment (<target_architecture.md> § Open decision);
-   - for the current engine, which missing rules block module boundaries that
-     real specs draw, on the public canonical corpus, with the share that
-     traces to the callback-pool mechanism.
-3. **Decide the stage 2 producer** by the rule in
-   <target_architecture.md> § Open decision.
-   - _Summary-based adopted:_ the remaining Wave 3 rows are dropped, not
-     landed. The producer is built behind the existing effect-set interface,
-     validated by the e2e suite and the canonical check, and the flip (Wave 4)
-     switches the authoritative verdict to effect validation over its sets;
-     the kernel lanes and the legacy gate are deleted in that order.
-   - _Execution-based kept:_ Wave 3 resumes with rows ranked by the second
-     measurement, and the monotone-delta pool fix is the performance path.
-4. **Until the decision:** the seam between the two evaluators is frozen.
-   Soundness fixes only; no new Wave 3 coverage rows (row 13 landed; the
-   early-exit rows were reverted and are parked); no performance
-   implementation on the execution-based engine. Its measured ceiling is
-   about 3–5× from a sound delta, and the changes that would go further loosen
-   verdicts (<analysis_performance.md>).
+2. **Analysis structure and cost:** follow <analysis_consolidation.md>, whose
+   baseline is devel and whose keep/extend/delete inventory includes the existing
+   worklist, value flow, program-wide purity/effect closure and ordered kernel.
+   That plan owns the domain, dependencies, semantic records and cost proof.
+   Neither #16762 nor #14552 is a prerequisite; evaluate candidate code by its
+   devel gap and the decisions it replaces. Do not dispatch another solver or
+   the superseded pool-memo/prototype-comparison alternatives.
+3. **Coverage and authority:** keep the current gate until new transfer/refinement
+   and comparator contracts are proved with causal CLI controls. Rank additional
+   coverage rows by boundaries they unblock on real specs; they must use the
+   shared semantics and finite domain. The effect-gate flip remains Wave 4 with
+   its independent placement, loader and discrepancy obligations.
 
 Every kernel slice gets a second, independent review before it is marked
 ready: the author's suite and audit share the author's model of the engine.
@@ -113,7 +104,7 @@ Every PR in this plan:
    typed refusal, and fails with "capability landed, convert to a positive"
    once the assertion passes. A test asserting that the debundler lacks a
    capability does not land. Exact `emitted_order` arrays, example-row ranking
-   and receipt span pins are change detectors (<../../../STYLE.md> § Testing)
+   and receipt span pins are change detectors (<../../../../STYLE.md> § Testing)
    and do not land either.
 4. Has no `#[cfg(test)]` hooks or forced-target overrides in production modules
    (`AGENTS.md` § Testing forbids stage mocking). Test needs are met by fixtures.
@@ -411,9 +402,9 @@ touching the rule.
 |    13 | **Landed**: field reads on element records inside a callback, as reads of prefix-tracked receivers (`entries.reduce((t, e) => t + e.size, 0)` seals; a store through another name rewinds)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |          11 | row 2, row 9 read rule |
 |    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots (<kernel_design.md> § Root admission)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |  unmeasured | row 2                  |
 
-**Order from here.** See § Replan: no new row is dispatched until the stage 2
-producer is decided; if the execution-based producer is kept, rows are ranked
-by the module boundaries they unblock on real specs.
+**Order from here.** After resumption, use <analysis_consolidation.md> for analysis
+structure and rank coverage rows by the module boundaries they unblock. Each row
+must fit the bounded domain and shared transfer/refinement contracts.
 
 Canonical checks so far are recorded with the private corpus, not here. Two
 things they showed that shape this plan: a coverage slice can move emitted
@@ -589,10 +580,9 @@ claims recovered acceptance adds one such witness for its family.
 
 ## Exit gates
 
-The refactor is done when all of these hold on `devel`. The first gate is
-written for the execution-based producer; if the summary-based producer is
-adopted (§ Replan) it reads "one producer: no kernel lanes, no flat callable
-lane, one builtin table".
+The refactor is done when all of these hold on `devel`. The shared operation
+semantics supplies bounded may-analysis and optional ordered proof refinement;
+this does not require deleting a useful ordered interpreter.
 
 - One kernel: no `evaluate_legacy_compat`, no flat callable lane, one native
   plan/commit path, one `World::join`, one ESM loader model, one coverage ledger.
@@ -614,7 +604,7 @@ lane, one builtin table".
   reviews every diff for the deleted path and the restored tests, and runs the
   oracle on the result.
 - Wave 1 and Wave 3 slices are bounded and verifiable: default worker tier
-  (Luna `xhigh` in Codex terms; <../../../docs/agent_delegation/README.md>).
+  (Luna `xhigh` in Codex terms; <../../../../docs/agent_delegation/README.md>).
   Each dispatch names the immutable `devel` base, the #14552 source files, the
   path to delete, the test targets, the oracle check and the stop condition
   ("stop if the deletion needs a second evaluator; report instead").

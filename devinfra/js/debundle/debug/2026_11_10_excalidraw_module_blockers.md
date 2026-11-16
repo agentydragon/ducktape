@@ -1,7 +1,7 @@
 # Excalidraw: what blocks module boundaries under the effect verdict (2026-11-10)
 
 The current engine's side of the stage 2 producer comparison
-(<../plans/target_architecture.md> § Open decision): which statements and
+(producer structure: <../plans/target_architecture.md#stage-2-producer>): which statements and
 which missing rules leave swapped pairs unproven on the public corpus, for the
 committed spec and for a decompose-style stress assignment.
 
@@ -133,8 +133,7 @@ Stress assignment, havoc statements by where their loss originates:
 
 **Counterfactual: no pool-inherited havoc.** Treating the possible-setter
 stores as covered (the only class that exists because
-`reachability.unknown_call_seen` is sticky,
-<../plans/analysis_performance.md> § Monotone delta):
+`reachability.unknown_call_seen` is sticky):
 
 | Chunk    | Havoc statements left | Unproven pairs left | Modules in a pair | Components |
 | -------- | --------------------- | ------------------- | ----------------: | ---------- |

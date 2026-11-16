@@ -21,6 +21,9 @@ plans and evidence live here:
 - <plans/convergence_landing.md> — how the semantic-convergence refactor
   (reference implementation: draft #14552) lands on `devel` in slices: debt
   inventory, target code shape, dependency waves, exit gates.
+- <plans/analysis_consolidation.md> — devel-based keep/extend/delete decisions
+  for existing analyses; shared dataflow/effects, bounded cross-chunk propagation,
+  ordered proof refinement and polynomial cost obligations. No dependency on #16762.
 - <plans/abstract_interpreter.md> — migrate the bespoke semantic certificates
   onto one abstract interpreter, domain and builtin summary table.
 - <plans/synchronous_execution_fallback.md> — make modeled effects authoritative
@@ -121,8 +124,10 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   written, and has no descriptor or prototype change. With that proof, a later
   read of the same index must remain an ordinary own-data read without the
   possible-getter/callback fallback; if any proof obligation is incomplete,
-  keep the current conservative taint and fallback. Follow
-  <plans/abstract_interpreter.md> and <plans/synchronous_execution_fallback.md>.
+  keep the current conservative taint and fallback. The algorithm and bounded
+  summary structure are owned by <plans/analysis_consolidation.md>; capability and
+  effect-authority work also follows <plans/abstract_interpreter.md> and
+  <plans/synchronous_execution_fallback.md>.
   Close with a neutral positive CLI case for that shape and adversarial negatives
   for receiver escape, receiver writes, changed descriptors or prototype,
   replaced callback-producing methods, getters or proxies, recursion, dynamic
