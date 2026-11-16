@@ -95,20 +95,7 @@ func fixtureExecutionIdentity() *identitypb.Identity {
 
 func openStoreSession(t *testing.T, store *Store, request *samplerpb.CreateSessionRequest, ownerKey string, api protocol.APIStyle) (*Session, error) {
 	t.Helper()
-	if request.GetExecutionIdentity() == nil {
-		request.ExecutionIdentity = fixtureExecutionIdentity()
-	}
-	if request.GetExecutor() == nil {
-		request.Executor = &identitypb.SandboxDestination{
-			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
-			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
-		}
-	}
-	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
-		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
-			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
-		}}}
-	}
+	testsupport.FillCreateSessionRequestDefaults(request)
 	platformInstructions := fixturePlatformInstructions
 	return store.CreateSession(t.Context(), request, ownerKey, api, &platformInstructions)
 }
