@@ -294,7 +294,6 @@ def app_props(
             session_dispatcher_target=(
                 f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
             ),
-            runner_gateway_control_target=environment_service.control_target(NAMESPACE),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
