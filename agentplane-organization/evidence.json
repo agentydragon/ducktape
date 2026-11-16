@@ -1,40 +1,24 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
-  "observed_at_utc": "2026-11-16T00:15:00Z",
+  "source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
+  "observed_at_utc": "2026-11-16T03:05:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
-    "checked_at_utc": "2026-11-16T00:15:00+00:00",
-    "previous_pin": "aeb5e12acd53f06a6e6099c6b55e3f3f2b013b5a",
-    "go_or_proto_delta": "Since aeb5e12acd, #16785 moved every `runner_gateway/` Go file and proto to `session_dispatcher/` (paths only; proto packages unchanged), splitting the root package into `cmd/` and `internal/app/` and renaming `runner_client.go` to `runtime_client.go` and `central_runner*.go` to `central_delivery*.go`. Also: `identity/operator/testissuer` replaced an operator test file, `central_sampler/internal/testsupport` was added, and History's `ingress/sandbox_uid` files and an Action Service `rpc` issuer test were deleted.",
-    "landed": [
-      {
-        "track": "runner-gateway-connections-proxy",
-        "pr": 16782,
-        "result": "Callers moved (#16723), then the Gateway's receivers, credentials, grants and settings decoders retired (#16760, #16768, #16775, #16782); nothing in the Gateway's code calls a Runtime."
-      },
-      {
-        "track": "runner-gateway-command",
-        "pr": 16785,
-        "result": "The rest of `runner_gateway/` is the Sessions binary at `session_dispatcher/`; deployed and wire names unchanged."
-      },
-      {
-        "track": "runner-gateway-app",
-        "pr": 16785,
-        "result": "`session_dispatcher/cmd` holds `main`; configuration and server composition are in `internal/app`."
-      }
-    ],
-    "interpretation": "Landed work items are removed, not listed as done. Stage 2 returns with one track, the Gateway-era names the moves left; stage numbers stay."
+    "checked_origin_devel": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
+    "checked_at_utc": "2026-11-16T03:05:00+00:00",
+    "previous_pin": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
+    "go_or_proto_delta": "Since db6664d6ad, #16819 added EnvironmentService's App-only Runtime diagnostics (`environments/internal/service/diagnostics.go`, `environments/runtimeproxy/diagnostics.go`) and #16825 replaced the app's `sessionclient/environment_runtime.go` with `runtime_diagnostics.go`. Stage 5 authentication changes (#16807, #16808, #16810, #16811, #16812) edited code only.",
+    "landed": [],
+    "interpretation": "No track landed. The operator released gateway-era-names and the per-Session Postgres lease (gateway-replica-ownership) on 2026-11-16 at 02:57 UTC."
   },
   "inventory": {
-    "source_sha": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
+    "source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
     "counts": {
-      "files": 1338,
+      "files": 1343,
       "directories": 249,
-      "production": 741,
-      "tests": 597
+      "production": 743,
+      "tests": 600
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
