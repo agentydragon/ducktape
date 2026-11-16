@@ -638,6 +638,8 @@ consumers cannot use a foreign identity as an exact local callable or allocation
 proof. Querying before projection preserves cross-chunk property/return paths.
 The store is transient source analysis; existing saved chunk facts and graph
 outputs remain its persistence boundary, tested through fresh/saved CLI parity.
+The analyzer retires the shared flow after all parallel chunk consumers join,
+before artifact encoding allocates its output buffers.
 
 **Bounds.** Let `n` count explicit source/selected-input bytes, `A` origins, `B`
 binding slots, `P` static property names, `C` candidate roots, `R` source/import

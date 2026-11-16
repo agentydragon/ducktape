@@ -269,7 +269,7 @@ pub fn analyze_program(
         Some(&program_summary_chunk_closure),
         diagnostics,
     );
-    let program_summary = program_summary::collect_program_summary(
+    let mut program_summary = program_summary::collect_program_summary(
         &artifact,
         &artifact_indexes,
         &projection,
@@ -317,6 +317,9 @@ pub fn analyze_program(
         })
         .into_iter()
         .collect::<Result<BTreeMap<_, _>>>()?;
+    // All chunk consumers have joined. Only their derived facts are persisted;
+    // retire the transient shared flow before allocating the encoded artifact.
+    program_summary.structural_flows = Default::default();
     let header = AnalysisArtifactHeader {
         analysis_engine_sha256: analysis_engine_sha256.to_string(),
         projection: spec.encode()?,
