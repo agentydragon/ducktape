@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "a8fc73e4f5e4627b77a878ad7460aa96ddc93652",
-  "observed_at_utc": "2026-11-16T06:19:00Z",
+  "source_sha": "7dba44674e2617d7e11fe9f0a4dba5752dcc7976",
+  "observed_at_utc": "2026-11-16T09:10:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1345,
-    "directories": 249,
-    "production": 744,
-    "tests": 601
+    "files": 1356,
+    "directories": 250,
+    "production": 748,
+    "tests": 608
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -8287,8 +8287,8 @@
       "id": "session_dispatcher",
       "path": "agentplane/session_dispatcher",
       "counts": {
-        "files": 44,
-        "directories": 9
+        "files": 55,
+        "directories": 10
       },
       "directories": [
         {
@@ -8299,13 +8299,14 @@
         },
         {
           "path": "agentplane/session_dispatcher/dispatcher",
-          "production": 12,
-          "tests": 16,
+          "production": 15,
+          "tests": 21,
           "files": [
             "agentplane/session_dispatcher/dispatcher/api.go",
             "agentplane/session_dispatcher/dispatcher/authorization_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery.go",
             "agentplane/session_dispatcher/dispatcher/central_delivery_test.go",
+            "agentplane/session_dispatcher/dispatcher/claim_retry_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/delegated_identity_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/delivery.go",
             "agentplane/session_dispatcher/dispatcher/delivery_wake.go",
@@ -8315,21 +8316,28 @@
             "agentplane/session_dispatcher/dispatcher/methods_test.go",
             "agentplane/session_dispatcher/dispatcher/placement_contract_test.go",
             "agentplane/session_dispatcher/dispatcher/placement_test.go",
+            "agentplane/session_dispatcher/dispatcher/retention.go",
             "agentplane/session_dispatcher/dispatcher/runtime_client.go",
             "agentplane/session_dispatcher/dispatcher/service_admission_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/service_attribution.go",
             "agentplane/session_dispatcher/dispatcher/session_lease.go",
             "agentplane/session_dispatcher/dispatcher/session_lease_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch_facade_integration_test.go",
+            "agentplane/session_dispatcher/dispatcher/session_watch_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/snapshots.go",
             "agentplane/session_dispatcher/dispatcher/store.go",
             "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/store_integration_testmain_test.go",
             "agentplane/session_dispatcher/dispatcher/svid_auth_test.go",
             "agentplane/session_dispatcher/dispatcher/terminal.go",
+            "agentplane/session_dispatcher/dispatcher/versions_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/wake.go",
             "agentplane/session_dispatcher/dispatcher/wake_integration_test.go",
             "agentplane/session_dispatcher/dispatcher/watch.go",
-            "agentplane/session_dispatcher/dispatcher/watch_test.go"
+            "agentplane/session_dispatcher/dispatcher/watch_filter_test.go",
+            "agentplane/session_dispatcher/dispatcher/watch_store.go",
+            "agentplane/session_dispatcher/dispatcher/watch_versions_integration_test.go"
           ]
         },
         {
@@ -8348,6 +8356,15 @@
           "files": [
             "agentplane/session_dispatcher/dispatcher/internal/placement/placement.go",
             "agentplane/session_dispatcher/dispatcher/internal/placement/placement_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go",
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token_test.go"
           ]
         },
         {
@@ -8380,8 +8397,9 @@
         {
           "path": "agentplane/session_dispatcher/internal/sandboxinventory",
           "production": 1,
-          "tests": 1,
+          "tests": 2,
           "files": [
+            "agentplane/session_dispatcher/internal/sandboxinventory/delivery_integration_test.go",
             "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes.go",
             "agentplane/session_dispatcher/internal/sandboxinventory/sandbox_kubernetes_test.go"
           ]
@@ -8406,11 +8424,11 @@
         "settings-single-source",
         "protobuf-alignment"
       ],
-      "goal_note": "Sessions binary (deployed as `runner-gateway`) configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. The Sessions binary of the agreed two-binary shape, at `agentplane/session_dispatcher/` since #16785 with deployed and wire names unchanged; EnvironmentService (#16613) and the Runtime proxy (#16656; Gateway registration retired by #16782) left for `environments/`.",
+      "goal_note": "Sessions binary (deployed as `runner-gateway`) configuration, service startup and process assembly.; Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement. The Sessions binary of the agreed two-binary shape, at `agentplane/session_dispatcher/` since #16785 with deployed and wire names unchanged; EnvironmentService (#16613) and the Runtime proxy (#16656; Gateway registration retired by #16782) left for `environments/`.",
       "decision": {
         "state": "REWORK",
         "role": "The Sessions binary: Session dispatch authority",
-        "goal_summary": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.",
+        "goal_summary": "Sessions binary (deployed as `runner-gateway`) deployment configuration, service startup and process assembly.; Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
           "agentplane/session_dispatcher/internal/app/config.go",
@@ -8426,6 +8444,7 @@
           "agentplane/session_dispatcher/dispatcher",
           "agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
           "agentplane/session_dispatcher/dispatcher/internal/placement",
+          "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
           "agentplane/session_dispatcher/dispatcher/internal/terminalnotice",
           "agentplane/session_dispatcher/dispatcher/wake",
           "agentplane/session_dispatcher/internal/app",
@@ -8451,13 +8470,13 @@
         },
         {
           "path": "agentplane/session_dispatcher/dispatcher",
-          "role": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement.",
+          "role": "Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement.",
           "decision": "design",
           "target_paths": [
             "agentplane/session_dispatcher/dispatcher",
             "agentplane/session_dispatcher/dispatcher/internal/store"
           ],
-          "reason": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. Ownership is settled: the per-Session lease fences delivery since #16858. Keep the package intact until the Store owner design (runner-gateway-dispatcher-store) assigns files; no new destination is selected. Moved unchanged by #16785.",
+          "reason": "Durable Session dispatch API, Store, per-Session delivery leases, keyed delivery, versioned dispatch and Session watches, wake, and terminal settlement. Ownership is settled: the per-Session lease fences delivery since #16858. Keep the package intact until the Store owner design (runner-gateway-dispatcher-store) assigns files; no new destination is selected. Moved unchanged by #16785.",
           "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage.",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
@@ -8468,8 +8487,8 @@
           "declared_packages": ["dispatcher"],
           "pending_tracks": ["runner-gateway-dispatcher-store"],
           "counts": {
-            "non_test": 12,
-            "tests": 16
+            "non_test": 15,
+            "tests": 21
           }
         },
         {
@@ -8502,6 +8521,23 @@
           ],
           "declared_packages": ["placement", "placement_test"],
           "pending_tracks": ["runner-gateway-dispatcher-store"],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+          "role": "Encodes watch resume tokens bound to a canonical filter digest.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #16906 (`DISPATCHER_SESSION_WATCH`) for the resumable `WatchSessions` stream; private to the Dispatcher.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/session_dispatcher/dispatcher/internal/resumetoken/token.go"
+          ],
+          "declared_packages": ["resumetoken"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -8576,7 +8612,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
-            "tests": 1
+            "tests": 2
           }
         },
         {
@@ -9898,13 +9934,13 @@
         "agentplane/session_dispatcher/dispatcher",
         "agentplane/session_dispatcher/dispatcher/internal/store"
       ],
-      "summary": "Keep the 12-file/4,821-line dispatcher package intact. Its 3,191-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
+      "summary": "Keep the 15-file/5,152-line dispatcher package intact. Its 3,190-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
       "how": [
         "Before any future internal/store package, specify transaction, terminal-state, wake and storage API ownership.",
         "Keep integration tests spanning caller-visible outcomes.",
         "Do not move shared receiver methods wholesale."
       ],
-      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858). Design after the released `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` (released 2026-11-16 06:40 UTC) land, since both change this package. Not released.",
+      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858). Design after the Dispatcher idiom work released on 2026-11-16 lands, since it changes this package: keyed delivery landed (`DISPATCHER_KEYED_DELIVERY`, #16929); the versioned dispatch watch (`DISPATCHER_WATCH_VERSIONS`, #16894, #16916) and the resumable Session watch (`DISPATCHER_SESSION_WATCH`, released 07:17 UTC; #16906, with the App's Session lists next) are in progress. Not released.",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:methods_test",
@@ -10663,12 +10699,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 249,
-    "go_files": 1345,
+    "go_packages": 250,
+    "go_files": 1356,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "a8fc73e4f5e4627b77a878ad7460aa96ddc93652",
+    "review_source_sha": "7dba44674e2617d7e11fe9f0a4dba5752dcc7976",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10835,8 +10871,8 @@
       {
         "slice": "session_dispatcher",
         "components": ["session_dispatcher"],
-        "packages": 9,
-        "go_files": 44
+        "packages": 10,
+        "go_files": 55
       },
       {
         "slice": "sandboxes",
