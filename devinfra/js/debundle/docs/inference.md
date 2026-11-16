@@ -669,7 +669,15 @@ Total projection time is bounded by `O(K(A+1)(C+1) log(n+2))`, retained projecte
 facts by `O(K(A+C+1))`. A later expression query of size `q` costs at most
 `O(q(A+1)^2 + (A+1)(C+1)log(n+2))`, without restarting inference. These bounds
 cover this preparation/flow/projection phase, not selector solving, ordered
-callback execution or general ESM placement search. The stated time bounds
+callback execution or general ESM placement search. Projection preserves the
+completed store's structural sharing: translate an immutable bitmap node
+(including its opaque bit) at its first consumer in a source view, then retain
+that translation for exactly the view's lifetime. Only nodes held alive by the
+completed store enter this table; transient query results do not. Thus wide sets
+shared by many property cells are translated once per consuming source, rather
+than once per cell. There is no eviction policy or mutation invalidation.
+The stated projection bound is conservative; repeated references require only a
+lookup and an Arc clone. The stated time bounds
 assume ordinary hash-table operations. Even adversarial collisions add at most
 `O(K+R+n)` work per lookup, a further polynomial factor; no bound relies on a
 hash collision being impossible.

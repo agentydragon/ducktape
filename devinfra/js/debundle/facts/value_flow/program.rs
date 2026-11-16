@@ -61,6 +61,18 @@ struct ProgramFlowFacts {
     declared: Vec<bool>,
 }
 
+/// Identity of an immutable completed value-set node, including its separate
+/// opaque alternative. The shared completed store keeps every keyed bitmap
+/// alive; transient query results are never inserted into this translation map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct CompletedSet(usize, bool);
+
+impl CompletedSet {
+    fn of(values: &Values) -> Self {
+        Self(Arc::as_ptr(&values.bitmap) as usize, values.unknown)
+    }
+}
+
 /// A source's view retains the shared completed store for expression queries.
 /// Foreign values become Top at the local API boundary, with any reachable
 /// local candidate roots retained. They never masquerade as local byte offsets.
@@ -72,6 +84,7 @@ pub(super) struct ChunkProgramFlow {
     bindings: HashMap<Id, BindingSlot>,
     sites: BTreeMap<u32, u32>,
     candidates: BTreeMap<u32, u32>,
+    projected: HashMap<CompletedSet, Values>,
 }
 
 impl ChunkProgramFlow {
@@ -89,6 +102,26 @@ impl ChunkProgramFlow {
     }
 
     fn project(&self, values: &Values, flow: &ChunkValueFlow) -> Values {
+        self.projected
+            .get(&CompletedSet::of(values))
+            .cloned()
+            .unwrap_or_else(|| self.translate(values, flow))
+    }
+
+    /// Each completed set is translated on its first local fact consumer, once
+    /// per source view. Retain that translation exactly as long as the view;
+    /// later expression queries can reuse the same immutable node.
+    fn prepare_projection(&mut self, values: &Values, flow: &ChunkValueFlow) -> Values {
+        let key = CompletedSet::of(values);
+        if let Some(projected) = self.projected.get(&key) {
+            return projected.clone();
+        }
+        let projected = self.translate(values, flow);
+        self.projected.insert(key, projected.clone());
+        projected
+    }
+
+    fn translate(&self, values: &Values, flow: &ChunkValueFlow) -> Values {
         let mut result = Values::empty(flow.origin_table.clone());
         for value in values {
             match value {
@@ -424,7 +457,8 @@ pub(crate) fn program_value_flows<'a>(
     });
     let mut outputs = BTreeMap::new();
     for (module, program) in programs.into_iter().enumerate() {
-        let view = ChunkProgramFlow {
+        let mut view = ChunkProgramFlow {
+            projected: HashMap::new(),
             shared: shared.clone(),
             module,
             bindings: program
@@ -451,7 +485,7 @@ pub(crate) fn program_value_flows<'a>(
             let global = global.expect("prepared source binding");
             if let Some(values) = shared.values.get(&FlowKey::Binding(global)) {
                 flow.bindings
-                    .insert(local.clone(), view.project(values, &flow));
+                    .insert(local.clone(), view.prepare_projection(values, &flow));
             }
             if let Some(FlowFact::CandidateReachability(bits)) =
                 facts.get(&FlowKey::CandidateBinding(global))
@@ -460,28 +494,32 @@ pub(crate) fn program_value_flows<'a>(
                     .insert(local.clone(), Arc::new(view.candidate_bits(bits)));
             }
         }
-        let inverse: BTreeMap<_, _> = view.bindings.iter().map(|(id, slot)| (*slot, id)).collect();
-        for (offset, site) in &view.sites {
+        let inverse: BTreeMap<_, _> = view
+            .bindings
+            .iter()
+            .map(|(id, slot)| (*slot, id.clone()))
+            .collect();
+        let local_sites = view.sites.clone();
+        for (offset, site) in &local_sites {
             if let Some(values) = shared.values.get(&FlowKey::Properties(*site)) {
                 flow.property_unions
-                    .insert(*offset, view.project(values, &flow));
+                    .insert(*offset, view.prepare_projection(values, &flow));
             }
             if let Some(values) = shared.values.get(&FlowKey::Return(*site)) {
-                flow.returns.insert(*offset, view.project(values, &flow));
+                flow.returns
+                    .insert(*offset, view.prepare_projection(values, &flow));
             }
             if let Some(FlowFact::Parameters(params)) = facts.get(&FlowKey::Parameters(*site)) {
                 flow.params.insert(
                     *offset,
                     params
                         .iter()
-                        .map(|param| {
-                            param.and_then(|param| inverse.get(&param).map(|id| (*id).clone()))
-                        })
+                        .map(|param| param.and_then(|param| inverse.get(&param).cloned()))
                         .collect(),
                 );
             }
         }
-        for (offset, site) in &view.sites {
+        for (offset, site) in &local_sites {
             // Ordered range lookup projects existing property facts only;
             // there is no source-count x program-fact scan or sites x names table.
             for (key, values) in shared.values.range(
@@ -491,7 +529,7 @@ pub(crate) fn program_value_flows<'a>(
                 let FlowKey::Property(_, property) = key else {
                     unreachable!("property range");
                 };
-                let projected = view.project(values, &flow);
+                let projected = view.prepare_projection(values, &flow);
                 flow.properties.entry(*offset).or_default().insert(
                     shared.property_names[property.0 as usize].clone(),
                     projected,
@@ -513,3 +551,7 @@ pub(crate) fn program_value_flows<'a>(
     }
     ProgramValueFlows { flows: outputs }
 }
+
+#[cfg(test)]
+#[path = "program_tests.rs"]
+mod tests;
