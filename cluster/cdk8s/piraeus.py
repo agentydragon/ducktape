@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
@@ -122,6 +124,77 @@ _NIXOS_SATELLITE_POD_TEMPLATE = {
         "volumes": [{"name": "lib-modules", "$patch": "delete"}, {"name": "usr-src", "$patch": "delete"}],
     }
 }
+
+
+def _storage_pool(name: str, volume_group: str, data_device: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "lvmThinPool": {
+            "volumeGroup": volume_group,
+            "thinPool": _FIRST_NODE_THIN_POOL,
+            "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
+        },
+        "source": {"hostDevices": [data_device]},
+    }
+
+
+def _satellite_configuration(
+    name: str,
+    node_selector: dict[str, str],
+    pod_template: dict[str, Any],
+    storage_pools: list[dict[str, Any]],
+    *,
+    deletion_policy: str,
+    properties: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    configuration: dict[str, Any] = {"name": name, "nodeSelector": node_selector}
+    if properties is not None:
+        configuration["properties"] = properties
+    configuration.update(
+        {
+            "patches": _SATELLITE_PATCHES,
+            "podTemplate": pod_template,
+            "deletionPolicy": deletion_policy,
+            "storagePools": storage_pools,
+        }
+    )
+    return configuration
+
+
+def _local_storage_class(name: str, pool: str, reclaim_policy: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "reclaimPolicy": reclaim_policy,
+        "volumeBindingMode": "WaitForFirstConsumer",
+        "allowVolumeExpansion": True,
+        "parameters": {
+            **_DISCARD_MOUNT_OPTS,
+            "linstor.csi.linbit.com/storagePool": pool,
+            "linstor.csi.linbit.com/placementCount": "1",
+            "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
+        },
+    }
+
+
+def _auto_diskful_storage_class(name: str, pool: str, reclaim_policy: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "reclaimPolicy": reclaim_policy,
+        "volumeBindingMode": "WaitForFirstConsumer",
+        "allowVolumeExpansion": True,
+        "parameters": {
+            **_DISCARD_MOUNT_OPTS,
+            "linstor.csi.linbit.com/storagePool": pool,
+            "linstor.csi.linbit.com/placementCount": "2",
+            "linstor.csi.linbit.com/replicasOnSame": f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}",
+            "linstor.csi.linbit.com/allowRemoteVolumeAccess": f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n",
+            # Plain `DrbdOptions/...` keys, as proven on the auto-diskful canary
+            # (cluster/debug/drbd_canary/auto_diskful/).
+            "DrbdOptions/auto-quorum": "suspend-io",
+            "DrbdOptions/auto-diskful": "1",
+            "DrbdOptions/auto-diskful-allow-cleanup": "true",
+        },
+    }
 
 
 def operator_chart(app: App) -> Chart:
@@ -437,293 +510,115 @@ def cluster_chart(app: App) -> Chart:
                 "nfsServer": {"enabled": False},
             },
             "linstorSatelliteConfigurations": [
-                {
-                    "name": "ssd-first-node",
-                    "nodeSelector": _FIRST_NODE_SELECTOR,
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    # This selector becomes eligible only after the target rebuild config
-                    # adds piraeus-ready=true following data evacuation and disk wipe.
-                    # source.hostDevices lets Piraeus initialize the entire data device.
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_FIRST_NODE_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "ssd-ovh-ns104952",
-                    # Keep both the hostname and readiness label in the native selector.
-                    # The source device is initialized only after a later cutover adds the label.
-                    "nodeSelector": _NEXT_NODE_SELECTOR,
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_NEXT_NODE_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "ssd-ovh-ns104963",
-                    # Keep both the hostname and readiness label in the native selector.
-                    # The source device is initialized only after a later cutover adds the label.
-                    "nodeSelector": _THIRD_NODE_SELECTOR,
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_THIRD_NODE_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "ssd-optiplex",
+                # This selector becomes eligible only after the target rebuild config
+                # adds piraeus-ready=true following data evacuation and disk wipe.
+                # source.hostDevices lets Piraeus initialize the entire data device.
+                _satellite_configuration(
+                    "ssd-first-node",
+                    _FIRST_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _FIRST_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                ),
+                # Keep both the hostname and readiness label in the native selector.
+                # The source device is initialized only after a later cutover adds the label.
+                _satellite_configuration(
+                    "ssd-ovh-ns104952",
+                    _NEXT_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _NEXT_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                ),
+                # Keep both the hostname and readiness label in the native selector.
+                # The source device is initialized only after a later cutover adds the label.
+                _satellite_configuration(
+                    "ssd-ovh-ns104963",
+                    _THIRD_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _THIRD_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                ),
+                _satellite_configuration(
+                    "ssd-optiplex",
                     # The raw partition is Talos-owned. This selector remains inert
                     # until its parent disk and 112GiB size are verified after reimage.
-                    "nodeSelector": _OPTIPLEX_SELECTOR,
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_OPTIPLEX_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "hdd-ovh-ns103656",
+                    _OPTIPLEX_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _OPTIPLEX_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                ),
+                # Keep the longer external-command wait scoped to this HDD satellite.
+                _satellite_configuration(
+                    "hdd-ovh-ns103656",
                     # This remains inert until the operator enables piraeus-ready after
                     # the worker's HDD has been wiped and its physical acceptance is complete.
-                    "nodeSelector": _HDD_FIRST_NODE_SELECTOR,
-                    # Keep the longer external-command wait scoped to this HDD satellite.
-                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "hdd",
-                            "lvmThinPool": {
-                                "volumeGroup": _HDD_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_HDD_FIRST_NODE_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "hdd-ovh-ns103711",
+                    _HDD_FIRST_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_FIRST_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                ),
+                _satellite_configuration(
+                    "hdd-ovh-ns103711",
                     # This remains inert until the old HDD is wiped and its physical
                     # layout is accepted; piraeus-ready is enabled only afterward.
-                    "nodeSelector": _HDD_NEXT_NODE_SELECTOR,
-                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "hdd",
-                            "lvmThinPool": {
-                                "volumeGroup": _HDD_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_HDD_NEXT_NODE_DATA_DEVICE]},
-                        }
-                    ],
-                },
-                {
-                    "name": "hdd-ovh-ns102453",
+                    _HDD_NEXT_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_NEXT_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                ),
+                _satellite_configuration(
+                    "hdd-ovh-ns102453",
                     # This remains inert until the old HDD is wiped and its physical
                     # layout is accepted; piraeus-ready is enabled only afterward.
-                    "nodeSelector": _HDD_LAST_NODE_SELECTOR,
-                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _TALOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "hdd",
-                            "lvmThinPool": {
-                                "volumeGroup": _HDD_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_HDD_LAST_NODE_DATA_DEVICE]},
-                        }
+                    _HDD_LAST_NODE_SELECTOR,
+                    _TALOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("hdd", _HDD_VOLUME_GROUP, _HDD_LAST_NODE_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                ),
+                # Both pools sit on thin Atlas zvols whose free space LINSTOR cannot see.
+                # The HDD pool's external commands get the same longer wait as OVH HDDs.
+                _satellite_configuration(
+                    "wyrm2",
+                    _WYRM2_SELECTOR,
+                    _NIXOS_SATELLITE_POD_TEMPLATE,
+                    [
+                        _storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _WYRM2_SSD_DATA_DEVICE),
+                        _storage_pool("hdd", _HDD_VOLUME_GROUP, _WYRM2_HDD_DATA_DEVICE),
                     ],
-                },
-                {
-                    "name": "wyrm2",
-                    # Both pools sit on thin Atlas zvols whose free space LINSTOR cannot see.
-                    "nodeSelector": _WYRM2_SELECTOR,
-                    # The HDD pool's external commands get the same longer wait as OVH HDDs.
-                    "properties": [{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _NIXOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_WYRM2_SSD_DATA_DEVICE]},
-                        },
-                        {
-                            "name": "hdd",
-                            "lvmThinPool": {
-                                "volumeGroup": _HDD_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_WYRM2_HDD_DATA_DEVICE]},
-                        },
-                    ],
-                },
-                {
-                    "name": "rugged",
-                    # A roaming laptop: only strict-local `piraeus-ssd-local` claims land here (the
-                    # replicated class keeps copies in hil-ovh), and they go offline with the laptop.
-                    "nodeSelector": _RUGGED_SELECTOR,
-                    "patches": _SATELLITE_PATCHES,
-                    "podTemplate": _NIXOS_SATELLITE_POD_TEMPLATE,
-                    "deletionPolicy": "Retain",
-                    "storagePools": [
-                        {
-                            "name": "ssd",
-                            "lvmThinPool": {
-                                "volumeGroup": _FIRST_NODE_VOLUME_GROUP,
-                                "thinPool": _FIRST_NODE_THIN_POOL,
-                                "logicalVolumeCreateArguments": ["--poolmetadatasize", "4G", "--chunksize", "64K"],
-                            },
-                            "source": {"hostDevices": [_RUGGED_DATA_DEVICE]},
-                        }
-                    ],
-                },
+                    deletion_policy="Retain",
+                    properties=[{"name": "ExtCmd/WaitTimeout", "value": "180000"}],
+                ),
+                # A roaming laptop: only strict-local `piraeus-ssd-local` claims land here (the
+                # replicated class keeps copies in hil-ovh), and they go offline with the laptop.
+                _satellite_configuration(
+                    "rugged",
+                    _RUGGED_SELECTOR,
+                    _NIXOS_SATELLITE_POD_TEMPLATE,
+                    [_storage_pool("ssd", _FIRST_NODE_VOLUME_GROUP, _RUGGED_DATA_DEVICE)],
+                    deletion_policy="Retain",
+                ),
             ],
             "storageClasses": [
-                {
-                    "name": _SSD_LOCAL,
-                    "reclaimPolicy": "Retain",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        **_DISCARD_MOUNT_OPTS,
-                        "linstor.csi.linbit.com/storagePool": "ssd",
-                        "linstor.csi.linbit.com/placementCount": "1",
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-                    },
-                },
-                {
-                    # BuildBuddy executor work disks only contain rebuildable cache data.
-                    # Delete the local LINSTOR volume with its PVC so scale-down frees SSD.
-                    "name": SSD_LOCAL_DELETE,
-                    "reclaimPolicy": "Delete",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        **_DISCARD_MOUNT_OPTS,
-                        "linstor.csi.linbit.com/storagePool": "ssd",
-                        "linstor.csi.linbit.com/placementCount": "1",
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-                    },
-                },
-                {
-                    "name": _HDD_LOCAL,
-                    "reclaimPolicy": "Retain",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        **_DISCARD_MOUNT_OPTS,
-                        "linstor.csi.linbit.com/storagePool": "hdd",
-                        "linstor.csi.linbit.com/placementCount": "1",
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": "false",
-                    },
-                },
-                {
-                    # Two synchronous copies (DRBD's default protocol C) on distinct OVH SSD nodes,
-                    # attachable disklessly from any OVH node, so a single-writer app keeps Seaweed's
-                    # two-copy, run-anywhere behavior. Copies and attachments stay in hil-ovh, never
-                    # replicating over the home/OVH link (optiplex also has an `ssd` pool). LINSTOR
-                    # adds a diskless tiebreaker on a third node; losing quorum suspends I/O rather
-                    # than letting a partitioned copy diverge. Auto-diskful gives the consuming node its
-                    # own copy after a minute of diskless use (where that node has an `ssd` pool), and
-                    # cleanup then drops the surplus copy. Meant for small volumes, where that resync
-                    # is trivial.
-                    "name": "piraeus-ssd-2-autodiskful",
-                    "reclaimPolicy": "Retain",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        **_DISCARD_MOUNT_OPTS,
-                        "linstor.csi.linbit.com/storagePool": "ssd",
-                        "linstor.csi.linbit.com/placementCount": "2",
-                        "linstor.csi.linbit.com/replicasOnSame": (
-                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
-                        ),
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
-                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
-                        ),
-                        # Plain `DrbdOptions/...` keys, as proven on the auto-diskful canary
-                        # (cluster/debug/drbd_canary/auto_diskful/).
-                        "DrbdOptions/auto-quorum": "suspend-io",
-                        "DrbdOptions/auto-diskful": "1",
-                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
-                    },
-                },
-                {
-                    # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
-                    "name": "piraeus-hdd-2",
-                    "reclaimPolicy": "Retain",
-                    "volumeBindingMode": "WaitForFirstConsumer",
-                    "allowVolumeExpansion": True,
-                    "parameters": {
-                        **_DISCARD_MOUNT_OPTS,
-                        "linstor.csi.linbit.com/storagePool": "hdd",
-                        "linstor.csi.linbit.com/placementCount": "2",
-                        "linstor.csi.linbit.com/replicasOnSame": (
-                            f"{node_scheduling.ZONE_LABEL}={node_scheduling.HIL_OVH_ZONE}"
-                        ),
-                        "linstor.csi.linbit.com/allowRemoteVolumeAccess": (
-                            f"- fromSame:\n  - {node_scheduling.ZONE_LABEL}\n"
-                        ),
-                        "DrbdOptions/auto-quorum": "suspend-io",
-                        "DrbdOptions/auto-diskful": "1",
-                        "DrbdOptions/auto-diskful-allow-cleanup": "true",
-                    },
-                },
+                _local_storage_class(_SSD_LOCAL, "ssd", "Retain"),
+                # BuildBuddy executor work disks only contain rebuildable cache data.
+                # Delete the local LINSTOR volume with its PVC so scale-down frees SSD.
+                _local_storage_class(SSD_LOCAL_DELETE, "ssd", "Delete"),
+                _local_storage_class(_HDD_LOCAL, "hdd", "Retain"),
+                # Two synchronous copies (DRBD's default protocol C) on distinct OVH SSD nodes,
+                # attachable disklessly from any OVH node, so a single-writer app keeps Seaweed's
+                # two-copy, run-anywhere behavior. Copies and attachments stay in hil-ovh, never
+                # replicating over the home/OVH link (optiplex also has an `ssd` pool). LINSTOR
+                # adds a diskless tiebreaker on a third node; losing quorum suspends I/O rather
+                # than letting a partitioned copy diverge. Auto-diskful gives the consuming node its
+                # own copy after a minute of diskless use (where that node has an `ssd` pool), and
+                # cleanup then drops the surplus copy. Meant for small volumes, where that resync
+                # is trivial.
+                _auto_diskful_storage_class("piraeus-ssd-2-autodiskful", "ssd", "Retain"),
+                # Auto-diskful moves a replica to the consumer after it stays on an HDD node.
+                _auto_diskful_storage_class("piraeus-hdd-2", "hdd", "Retain"),
             ],
         },
         post_renderers=[
