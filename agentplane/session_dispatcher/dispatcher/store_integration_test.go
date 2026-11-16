@@ -1253,7 +1253,10 @@ func (c testCatalog) ListSandboxes(context.Context) ([]SandboxSnapshot, error) {
 func (c testCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
 	return map[string]struct{}{c.sandbox.UID: {}}, nil
 }
-func (testCatalog) Changes() <-chan struct{}        { return nil }
+func (testCatalog) WatchSandboxes(func(SandboxKey)) (func(), error) { return func() {}, nil }
+func (c testCatalog) SandboxExists(_ context.Context, key SandboxKey) (bool, error) {
+	return c.sandbox.UID == key.UID, nil
+}
 func (testCatalog) WaitSynced(context.Context) bool { return true }
 
 type growingCatalog struct{ sandboxes []SandboxSnapshot }
@@ -1282,7 +1285,15 @@ func (c *growingCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{
 	}
 	return result, nil
 }
-func (*growingCatalog) Changes() <-chan struct{}        { return nil }
+func (*growingCatalog) WatchSandboxes(func(SandboxKey)) (func(), error) { return func() {}, nil }
+func (c *growingCatalog) SandboxExists(_ context.Context, key SandboxKey) (bool, error) {
+	for _, s := range c.sandboxes {
+		if s.UID == key.UID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (*growingCatalog) WaitSynced(context.Context) bool { return true }
 
 type testWake struct{}

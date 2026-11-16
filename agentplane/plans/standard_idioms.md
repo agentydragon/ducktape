@@ -10,22 +10,6 @@ validation, the Policy Controller and gRPC health.
 
 File references are to `devel` at the time of the audit; re-check before starting.
 
-## Work queues
-
-Hand-rolled full-scan loops where a keyed, rate-limited work queue (client-go `workqueue`, or a
-controller-runtime Reconciler) or a PostgreSQL dirty-row queue claimed with `SKIP LOCKED` is the
-standard shape.
-
-### `DISPATCHER_KEYED_DELIVERY`
-
-In flight; released by the operator 2026-11-16 06:40 UTC.
-Dispatcher already runs delivery through a rate-limited queue keyed by Session ID. Its reconciliation
-still turns Sandbox and database changes into unkeyed signals and, on each signal and every 10 s,
-lists the Sandbox inventory and pending work (`session_dispatcher/dispatcher/delivery.go`), detecting
-deletions by diffing UIDs. Replace those full scans with appropriately keyed notifications and
-reconciliation under the reviewed ownership and recovery contract; retain safe recovery after missed
-notifications and Sandbox deletion.
-
 ## PostgreSQL
 
 ### `DISPATCHER_WATCH_VERSIONS`

@@ -559,8 +559,8 @@ func transaction(ctx context.Context, db *sql.DB, f func(*sql.Tx) error) error {
 	return postgres.Transaction(ctx, db, sql.TxOptions{}, f)
 }
 
-func notify(ctx context.Context, tx *sql.Tx) error {
-	return postgres.Notify(ctx, tx, NotifyChannel, "")
+func notify(ctx context.Context, tx *sql.Tx, sessionID string) error {
+	return postgres.Notify(ctx, tx, NotifyChannel, sessionID)
 }
 
 func sessionLock(ctx context.Context, tx *sql.Tx, sessionID string) error {
@@ -880,7 +880,7 @@ func (s *Store) enqueue(ctx context.Context, sessionID, sandboxName, sandboxUID 
 		if err != nil {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, sessionID)
 	})
 	return result, err
 }
@@ -986,7 +986,7 @@ func (s *Store) cancel(ctx context.Context, id string, caller Caller) (*Dispatch
 		if err != nil {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, result.SessionID)
 	})
 	if err != nil {
 		return nil, err
@@ -1300,7 +1300,7 @@ func (s *Store) openSession(ctx context.Context, sessionID, sandboxName, sandbox
 		if err != nil {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, sessionID)
 	})
 	return result, err
 }
@@ -1457,7 +1457,7 @@ func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from 
 			return err
 		}
 		if result != nil {
-			return notify(ctx, tx)
+			return notify(ctx, tx, owner.SessionID)
 		}
 		return nil
 	})
@@ -1505,7 +1505,7 @@ func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner
 				return err
 			}
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, owner.SessionID)
 	})
 	return result, err
 }
@@ -1538,7 +1538,7 @@ func (s *Store) RecoverSession(ctx context.Context, owner SessionOwner) (bool, e
 		if err != nil || dispatchCount+sessionCount == 0 {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, owner.SessionID)
 	})
 	return current, err
 }
@@ -1561,7 +1561,7 @@ func (s *Store) NoteWaiting(ctx context.Context, id string, owner SessionOwner, 
 			return err
 		}
 		if n > 0 {
-			return notify(ctx, tx)
+			return notify(ctx, tx, owner.SessionID)
 		}
 		return nil
 	})
@@ -1584,7 +1584,7 @@ func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner Session
 			return err
 		}
 		if n > 0 {
-			return notify(ctx, tx)
+			return notify(ctx, tx, owner.SessionID)
 		}
 		return nil
 	})
@@ -1630,6 +1630,24 @@ func (s *Store) SetDeliveryAssessment(
 		if err != nil || changed == 0 {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, owner.SessionID)
 	})
+}
+
+// SandboxSessions limits a catalog invalidation to the affected incarnation.
+func (s *Store) SandboxSessions(ctx context.Context, sandboxUID string) ([]string, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT session_id FROM session WHERE sandbox_uid=$1 AND environment_deleted_at IS NULL`, sandboxUID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

@@ -170,7 +170,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := waitForListener(ctx, hub, failed); err != nil {
 		return err
 	}
-	sessionHub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.SessionNotifyChannel)
+	sessionHub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.SessionNotifyChannel, dispatcher.NotifyChannel)
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: wakeManager,
-		Delivery: runtime, Hub: hub, Ready: ready,
+		Delivery: runtime, Hub: sessionHub, Ready: ready,
 	}
 	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()
 	select {

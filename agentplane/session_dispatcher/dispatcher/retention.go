@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"log/slog"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const (
@@ -17,6 +19,7 @@ const (
 // in the same transaction. Concurrent replica pruners claim disjoint rows.
 func (s *Store) PruneDispatchTombstones(ctx context.Context) (int64, error) {
 	var count int64
+	var sessions []string
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if err := tx.QueryRowContext(ctx, `WITH expired AS (
 			SELECT command_id,version FROM dispatch_tombstone
@@ -24,18 +27,20 @@ func (s *Store) PruneDispatchTombstones(ctx context.Context) (int64, error) {
 			ORDER BY deleted_at,version LIMIT $2 FOR UPDATE SKIP LOCKED
 		), removed AS (
 			DELETE FROM dispatch_tombstone t USING expired e
-			WHERE t.command_id=e.command_id AND t.version=e.version RETURNING t.version
+			WHERE t.command_id=e.command_id AND t.version=e.version RETURNING t.version,t.session_id
 		), coverage AS (
 			UPDATE dispatch_watch_retention
 			SET pruned_through=GREATEST(pruned_through,COALESCE((SELECT max(version) FROM removed),0))
 			WHERE singleton RETURNING pruned_through
 		)
-		SELECT (SELECT count(*) FROM removed) FROM coverage`,
-			DispatchTombstoneRetention.Seconds(), tombstonePruneBatch).Scan(&count); err != nil {
+		SELECT (SELECT count(*) FROM removed),ARRAY(SELECT DISTINCT session_id FROM removed) FROM coverage`,
+			DispatchTombstoneRetention.Seconds(), tombstonePruneBatch).Scan(&count, pq.Array(&sessions)); err != nil {
 			return err
 		}
-		if count > 0 {
-			return notify(ctx, tx)
+		for _, id := range sessions {
+			if err := notify(ctx, tx, id); err != nil {
+				return err
+			}
 		}
 		return nil
 	})

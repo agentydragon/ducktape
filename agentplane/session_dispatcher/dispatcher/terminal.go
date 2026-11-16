@@ -121,7 +121,30 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 			return err
 		}
 		if count > 0 {
-			return notify(ctx, tx)
+			rows, err := tx.QueryContext(ctx, "SELECT session_id FROM session WHERE sandbox_uid=$1", sandboxUID)
+			if err != nil {
+				return err
+			}
+			var ids []string
+			for rows.Next() {
+				var id string
+				if err := rows.Scan(&id); err != nil {
+					rows.Close()
+					return err
+				}
+				ids = append(ids, id)
+			}
+			err = rows.Err()
+			rows.Close()
+			if err != nil {
+				return err
+			}
+			for _, id := range ids {
+				if err := notify(ctx, tx, id); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		return nil
 	})

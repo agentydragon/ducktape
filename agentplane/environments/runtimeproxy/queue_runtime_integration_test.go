@@ -10,6 +10,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -43,7 +44,14 @@ func (c queueCatalog) ListSandboxes(context.Context) ([]dispatcher.SandboxSnapsh
 func (c queueCatalog) CurrentSandboxUIDs(context.Context) (map[string]struct{}, error) {
 	return map[string]struct{}{c.sandbox.UID: {}}, nil
 }
-func (queueCatalog) Changes() <-chan struct{}        { return nil }
+
+func (queueCatalog) WatchSandboxes(func(dispatcher.SandboxKey)) (func(), error) {
+	return func() {}, nil
+}
+
+func (c queueCatalog) SandboxExists(_ context.Context, key dispatcher.SandboxKey) (bool, error) {
+	return c.sandbox.UID == key.UID, nil
+}
 func (queueCatalog) WaitSynced(context.Context) bool { return true }
 
 type queueWake struct{}
@@ -188,6 +196,11 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	deliveryHub, err := wakeups.Listen(ctx, integrationDatabase.URL, dispatcher.NotifyChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer deliveryHub.Close()
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
 			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
@@ -196,7 +209,7 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 			Namespace: f.namespace, GatewayTLS: serverTLS, Timeout: 5 * time.Second,
 			TargetTemplate: proxy.target,
 		},
-		Hub: hub, Ready: make(chan struct{}),
+		Hub: deliveryHub, Ready: make(chan struct{}),
 	}
 	workerDone := make(chan error, 1)
 	go func() { workerDone <- worker.Run(ctx) }()
