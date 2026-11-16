@@ -48,8 +48,8 @@ ownership decisions and rejected approaches behind them.
 
 The "session controller" bundles three jobs: workload and runner-aware lifecycle (wake, quiesce, suspend, delete),
 idle policy, and delivery (a durable queue of messages and Session creations). Lifecycle and idle policy need the Sandbox CR,
-the runner's connection facts and leader election, with no database; delivery needs a database, the sender's identity and
-the Kubernetes API. So lifecycle and idle policy stay in the Sandbox Controller, where idle is declarative
+the runner's connection facts and leader election, with no database; delivery needs a database, the sender's identity,
+the Runtime proxy and the Kubernetes API. So lifecycle and idle policy stay in the Sandbox Controller, where idle is declarative
 (`spec.idleSuspendAfter`) and decided by the leader-elected reconciler that already drives quiesce, and a new service
 holds only the queue. Rejected:
 
