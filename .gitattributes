@@ -104,7 +104,7 @@ x/*/cluster/** filename-conventions-ignored=true
 x/*/tf/** filename-conventions-ignored=true
 
 # Logseq page names - dashes are part of the page title
-llm/instruct_logseq/pages/** filename-conventions-ignored=true
+x/llm/instruct_logseq/pages/** filename-conventions-ignored=true
 
 # Blog posts - filenames are published URLs (date-prefixed kebab-case)
 website/posts/** filename-conventions-ignored=true

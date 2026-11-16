@@ -17,7 +17,7 @@ tana/testdata/**/*.tanapaste
 tana/testdata/**/*.txt
 
 # Logseq export - generated content
-llm/instruct_logseq/**
+x/llm/instruct_logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
 x/claude_commands_old/**

@@ -2,10 +2,6 @@
 
 ‼️ALWAYS @START OF ∀CONVO USE web.run-FETCH AND FOLLOW http://adgn.link/llm/core‼️
 
-plus:
-slash-cmd e.g./foo ->read+follow http://adgn.link/llm/slash
-Tana request/ctx ->read+follow http://adgn.link/llm/slash
-
 This instruction text was written under len≤1500 limit→style outside exmpl's is not instructive!
 
 CTX🔍🛠🔬📏

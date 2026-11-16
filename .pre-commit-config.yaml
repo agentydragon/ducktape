@@ -19,7 +19,7 @@ exclude: |
     att_gateway/testdata/.*|
 
     # Generated content
-    llm/instruct_logseq/.*|
+    x/llm/instruct_logseq/.*|
 
     # Vendored upstream source; validate the chart with Helm instead.
     cluster/charts/browsertrix/.*|

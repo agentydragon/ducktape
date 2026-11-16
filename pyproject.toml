@@ -157,7 +157,7 @@ dependencies = [
     # unidiff
     "unidiff>=0.7.5",
 
-    # llm/html
+    # skills/testing
     "markdown-it-py>=4.2.0",
 
     # habitify
