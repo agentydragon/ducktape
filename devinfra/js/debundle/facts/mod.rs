@@ -45,6 +45,69 @@ pub(crate) use crate::purity::{
     detect_redundant_pure_member_hints, detect_redundant_purity_hints,
 };
 
+macro_rules! impl_lazy_callable_visits {
+    () => {
+        fn visit_function(&mut self, node: &Function) {
+            lazy_visit_function(self, node);
+        }
+        fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
+            lazy_visit_arrow_expr(self, node);
+        }
+        fn visit_method_prop(&mut self, node: &MethodProp) {
+            lazy_visit_method_prop(self, node);
+        }
+        fn visit_getter_prop(&mut self, node: &GetterProp) {
+            lazy_visit_getter_prop(self, node);
+        }
+        fn visit_setter_prop(&mut self, node: &SetterProp) {
+            lazy_visit_setter_prop(self, node);
+        }
+    };
+}
+
+macro_rules! impl_lazy_class_visits {
+    () => {
+        fn visit_class(&mut self, node: &Class) {
+            lazy_visit_class(self, node);
+        }
+        fn visit_class_member(&mut self, member: &ClassMember) {
+            lazy_visit_class_member(self, member);
+        }
+    };
+}
+
+macro_rules! impl_lazy_optional_path_visits {
+    () => {
+        fn visit_if_stmt(&mut self, node: &IfStmt) {
+            lazy_visit_if_stmt(self, node);
+        }
+        fn visit_cond_expr(&mut self, node: &CondExpr) {
+            lazy_visit_cond_expr(self, node);
+        }
+        fn visit_bin_expr(&mut self, node: &BinExpr) {
+            lazy_visit_bin_expr(self, node);
+        }
+        fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
+            lazy_visit_may_skip(self, node);
+        }
+        fn visit_while_stmt(&mut self, node: &WhileStmt) {
+            lazy_visit_may_skip(self, node);
+        }
+        fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
+            lazy_visit_may_skip(self, node);
+        }
+        fn visit_for_stmt(&mut self, node: &ForStmt) {
+            lazy_visit_may_skip(self, node);
+        }
+        fn visit_try_stmt(&mut self, node: &TryStmt) {
+            lazy_visit_may_skip(self, node);
+        }
+        fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
+            lazy_visit_may_skip(self, node);
+        }
+    };
+}
+
 pub mod abstract_domain;
 mod analyze;
 mod array_spreads;

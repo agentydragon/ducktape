@@ -2861,9 +2861,8 @@ impl FlowCallCollector<'_> {
 }
 
 impl Visit for FlowCallCollector<'_> {
-    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-        lazy_visit_may_skip(self, node);
-    }
+    impl_lazy_optional_path_visits!();
+
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
         if matches!(
             node.op,
@@ -2874,37 +2873,12 @@ impl Visit for FlowCallCollector<'_> {
             node.visit_children_with(self);
         }
     }
-    fn visit_if_stmt(&mut self, node: &IfStmt) {
-        lazy_visit_if_stmt(self, node);
-    }
-    fn visit_cond_expr(&mut self, node: &CondExpr) {
-        lazy_visit_cond_expr(self, node);
-    }
-    fn visit_bin_expr(&mut self, node: &BinExpr) {
-        lazy_visit_bin_expr(self, node);
-    }
-    fn visit_while_stmt(&mut self, node: &WhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_for_stmt(&mut self, node: &ForStmt) {
-        lazy_visit_may_skip(self, node);
-    }
     fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
         lazy_visit_may_skip(self, node);
     }
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
         lazy_visit_may_skip(self, node);
     }
-    fn visit_try_stmt(&mut self, node: &TryStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee {
             self.record(callee);
@@ -2917,33 +2891,8 @@ impl Visit for FlowCallCollector<'_> {
         node.visit_children_with(self);
     }
 
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
-
-    fn visit_class(&mut self, node: &Class) {
-        lazy_visit_class(self, node);
-    }
-
-    fn visit_class_member(&mut self, node: &ClassMember) {
-        lazy_visit_class_member(self, node);
-    }
+    impl_lazy_callable_visits!();
+    impl_lazy_class_visits!();
 
     fn visit_await_expr(&mut self, node: &AwaitExpr) {
         node.arg.visit_with(self);
