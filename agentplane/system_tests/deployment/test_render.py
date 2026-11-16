@@ -361,7 +361,6 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     app_config = yaml.safe_load(_resource(docs, "ConfigMap", "app-config")["data"]["config.yaml"])
     assert app_config["session_dispatcher_target"] == endpoint
     assert app_config["session_dispatcher_tls"]["server_uri"] == SESSION_DISPATCHER_URI
-    assert app_config["runner_gateway_control_target"] == "sandbox-controller.{namespace}.svc:8082"
     assert app_config["runner_gateway_tls"]["server_uri"] == SANDBOX_CONTROLLER_URI
     assert gateway_config["runner_control_target_template"] == "sandbox-controller.{namespace}.svc:8082"
     app_container = _resource(docs, "Deployment", "app")["spec"]["template"]["spec"]["containers"][0]
@@ -901,10 +900,8 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     assert certificate["uris"] == ["spiffe://agentplane/app"]
     assert any(volume.get("secret", {}).get("secretName") == certificate["secretName"] for volume in pod["volumes"])
     gateway = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
-    caller = f"{NAMESPACE}/{native}"
     assert "operator_callers" not in gateway
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
-    assert controller["environment_service"]["operators"] == [caller]
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
     assert set(certificate["uris"]) <= set(controller["environment_service"]["service_readers"])
     proxy_readers = set(controller["environment_service"]["runtime_proxy"]["readers"])

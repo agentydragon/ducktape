@@ -294,7 +294,6 @@ def app_props(
             session_dispatcher_target=(
                 f"{session_dispatcher.service(NAMESPACE).fqdn}:{session_dispatcher.service(NAMESPACE).port.number}"
             ),
-            runner_gateway_control_target=environment_service.control_target(NAMESPACE),
             policy_service_target=policy_controller.tls_target(NAMESPACE),
             policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
             history_service_target=(
@@ -705,14 +704,11 @@ def add_backend_services(
         chart,
         "sandbox-controller",
         env,
-        gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=control_target,
         authority=sandbox_controller.environment_service_authority(
             env,
-            operator_callers=platform_callers,
             launchers=orchestration_caller,
             operator_service_callers=sandbox_controller.OPERATOR_SERVICE_CALLERS,
-            wake_callers=env.wake_caller_accounts | orchestration_caller.keys(),
             wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS,
             delegation_actor=environment_service_delegation_actor,
             extra_delegated_methods=environment_service_delegated_methods,
