@@ -31,4 +31,4 @@ LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
 % if os.environ.get("AWS_ENDPOINT_URL") == "https://s3.allegedly.works":
 S3 access (SeaweedFS via `s3.allegedly.works`): `AWS_*` are set to the scoped `claude-reader` identity with Read+List on `attic`, `drivefs-artifacts`, `wayback-archive`, and `loom-gym`; it can also Write+Tag in `loom-gym`. `aws s3 ls s3://attic/` and boto3 work with no flags. This overrides AWS creds session-wide — unset/override `AWS_*` if you need real AWS.
 % endif
-Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.
+Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//skills/info_gathering/evals/agent_runtime/...`, then `//props/...`) rather than one large `//...`.

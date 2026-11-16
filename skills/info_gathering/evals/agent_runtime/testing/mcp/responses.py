@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 from openai_utils.testing.responses import DecoratorMock, tool_roundtrip
+from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput, EchoOutput
 
 
 class EchoMock(DecoratorMock):

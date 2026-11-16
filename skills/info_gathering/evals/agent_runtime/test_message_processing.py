@@ -6,12 +6,6 @@ import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that, has_item, has_properties, instance_of, not_
 
-from agent_core.agent import Agent
-from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.handlers import TextCaptureHandler, run_until_text
-from agent_core.testing.matchers import assert_items_include_instances
-from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
-from agent_core.testing.mcp.responses import EchoMock
 from openai_utils.model import (
     AssistantMessage,
     FunctionCallItem,
@@ -22,6 +16,12 @@ from openai_utils.model import (
 )
 from openai_utils.testing.openai_mock import NoopOpenAIClient
 from openai_utils.testing.responses import DecoratorMock
+from skills.info_gathering.evals.agent_runtime.agent import Agent
+from skills.info_gathering.evals.agent_runtime.loop_control import AllowAnyToolOrTextMessage
+from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
+from skills.info_gathering.evals.agent_runtime.testing.matchers import assert_items_include_instances
+from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
+from skills.info_gathering.evals.agent_runtime.testing.mcp.responses import EchoMock
 
 
 @pytest.fixture

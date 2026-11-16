@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from agent_core.agent import Agent
-from agent_core.events import ToolCallOutput
-from agent_core.loop_control import RequireAnyTool
-from agent_core.testing.handlers import TextCaptureHandler, run_until_text
-from agent_core.testing.mcp.responses import EchoMock
 from openai_utils.model import SystemMessage, UserMessage
+from skills.info_gathering.evals.agent_runtime.agent import Agent
+from skills.info_gathering.evals.agent_runtime.events import ToolCallOutput
+from skills.info_gathering.evals.agent_runtime.loop_control import RequireAnyTool
+from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
+from skills.info_gathering.evals.agent_runtime.testing.mcp.responses import EchoMock
 
 
 @pytest.mark.parametrize(

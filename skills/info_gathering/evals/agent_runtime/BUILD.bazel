@@ -1,0 +1,154 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+# gazelle:exclude test_ollama_reasoning.py
+
+py_library(
+    name = "tool_provider",
+    srcs = ["tool_provider.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "loop_control",
+    srcs = ["loop_control.py"],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "events",
+    srcs = ["events.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":tool_provider",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "handler",
+    srcs = ["handler.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [":events"],
+)
+
+py_library(
+    name = "agent",
+    srcs = ["agent.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":events",
+        ":handler",
+        ":loop_control",
+        ":tool_provider",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//pydantic_core",
+    ],
+)
+
+py_library(
+    name = "mcp_provider",
+    srcs = ["mcp_provider.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tool_provider",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//skills/info_gathering/evals/agent_runtime:__subpackages__"],
+    deps = [
+        "//openai_utils/testing:fixtures",
+        "//openai_utils/testing:responses",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:fixtures",
+    ],
+)
+
+py_test(
+    name = "test_mcp_integration",
+    srcs = ["test_mcp_integration.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":events",
+        ":loop_control",
+        "//:conftest",
+        "//openai_utils:model",
+        "//skills/info_gathering/evals/agent_runtime/testing:handlers",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:responses",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tool_execution",
+    srcs = ["test_tool_execution.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":events",
+        ":loop_control",
+        ":mcp_provider",
+        ":tool_provider",
+        "//:conftest",
+        "//openai_utils:model",
+        "//openai_utils:pydantic_strict_mode",
+        "//openai_utils/testing:openai_mock",
+        "//openai_utils/testing:responses",
+        "//skills/info_gathering/evals/agent_runtime/testing:handlers",
+        "//skills/info_gathering/evals/agent_runtime/testing:matchers",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:echo_server",
+        "@pypi//fastmcp_slim",
+        "@pypi//more_itertools",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_message_processing",
+    srcs = ["test_message_processing.py"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":loop_control",
+        "//:conftest",
+        "//openai_utils:model",
+        "//openai_utils/testing:openai_mock",
+        "//openai_utils/testing:responses",
+        "//skills/info_gathering/evals/agent_runtime/testing:handlers",
+        "//skills/info_gathering/evals/agent_runtime/testing:matchers",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:echo_server",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:responses",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
+    name = "test_ollama_reasoning",
+    srcs = ["test_ollama_reasoning.py"],
+    tags = ["ollama"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":loop_control",
+        "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
+        "//openai_utils:model",
+        "//openai_utils/testing:fixtures",
+        "//skills/info_gathering/evals/agent_runtime/testing:handlers",
+        "//skills/info_gathering/evals/agent_runtime/testing/mcp:responses",
+        "@pypi//pytest_bazel",
+    ],
+)

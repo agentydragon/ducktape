@@ -1,7 +1,7 @@
 """MCP-dependent pytest fixtures for agent tests.
 
 Register in downstream packages via conftest.py:
-    from agent_core.testing.mcp.fixtures import *  # noqa: F403
+    from skills.info_gathering.evals.agent_runtime.testing.mcp.fixtures import *  # noqa: F403
 """
 
 from __future__ import annotations
@@ -12,9 +12,9 @@ import pytest
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
-from agent_core.mcp_provider import MCPToolProvider
-from agent_core.testing.mcp.echo_server import make_echo_server
-from agent_core.tool_provider import ToolProvider
+from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
+from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import make_echo_server
+from skills.info_gathering.evals.agent_runtime.tool_provider import ToolProvider
 
 # ---- MCP fixtures ----
 

@@ -9,8 +9,8 @@ from hamcrest import assert_that, has_item, has_items, has_properties, instance_
 from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 
-from agent_core.events import ToolCall, ToolCallOutput
-from agent_core.tool_provider import TextContent, ToolResult
+from skills.info_gathering.evals.agent_runtime.events import ToolCall, ToolCallOutput
+from skills.info_gathering.evals.agent_runtime.tool_provider import TextContent, ToolResult
 
 # ------------------------
 # Tool result matchers

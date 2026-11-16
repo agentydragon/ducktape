@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from agent_core.tool_provider import ToolResult
+from skills.info_gathering.evals.agent_runtime.tool_provider import ToolResult
 
 
 class AssistantText(BaseModel):

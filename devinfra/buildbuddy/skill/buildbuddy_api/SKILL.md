@@ -226,7 +226,7 @@ bb view <invocation-id>
 # 3. Download the test.log for a specific failed target
 #    Works with both workflow and child invocation IDs (auto-resolves)
 bbapi target log <invocation-id> <target-substring>
-#    Example: bbapi target log 870a5be1-c296-4792-8c8a-77def20b2dcc test_message_processings
+#    Example: bbapi target log 870a5be1-c296-4792-8c8a-77def20b2dcc test_message_processing
 ```
 
 ### Watching a running GitHub Actions Bazel job
@@ -306,9 +306,9 @@ attempts before estimating rates.
 
 `bbapi artifact {cat,download}` and `bbapi target log` match against `"label/name"`:
 
-- `"test_message_processing"` matches `//agent_core:test_message_processing/test.log`
+- `"test_message_processing"` matches `//skills/info_gathering/evals/agent_runtime:test_message_processing/test.log`
 - `"test_message_processing/test.xml"` matches the XML output specifically
-- `"agent_core/test_message_processing"` matches `//agent_core:test_message_processing/test.log`
+- `"agent_runtime/test_message_processing"` matches `//skills/info_gathering/evals/agent_runtime:test_message_processing/test.log`
 
 When no match is found, the CLI prints available labels as hints, and the names that would
 match if `-` and `_` were alike. Names are what the test wrote, not what you would derive from

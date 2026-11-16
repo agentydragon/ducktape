@@ -17,12 +17,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from agent_core.agent import Agent
-from agent_core.events import AssistantText, ToolCall
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
-from agent_core.tool_provider import ToolProvider
 from openai_utils.model import Model, SystemMessage, UserMessage
+from skills.info_gathering.evals.agent_runtime.agent import Agent
+from skills.info_gathering.evals.agent_runtime.events import AssistantText, ToolCall
+from skills.info_gathering.evals.agent_runtime.handler import BaseHandler
+from skills.info_gathering.evals.agent_runtime.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
+from skills.info_gathering.evals.agent_runtime.tool_provider import ToolProvider
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from skills.info_gathering.evals.harness import (
     add_common_args,
