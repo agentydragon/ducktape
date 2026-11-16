@@ -289,25 +289,7 @@ impl Visit for GlobalAliasUses<'_> {
         unary.visit_children_with(self);
     }
 
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
+    impl_lazy_callable_visits!();
 
     fn visit_class_member(&mut self, member: &ClassMember) {
         lazy_visit_class_member(self, member);

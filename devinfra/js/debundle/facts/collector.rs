@@ -547,33 +547,7 @@ impl LazyBoundary for SyncInlineEffectCollector {
 }
 
 impl Visit for SyncInlineEffectCollector {
-    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_if_stmt(&mut self, node: &IfStmt) {
-        lazy_visit_if_stmt(self, node);
-    }
-    fn visit_cond_expr(&mut self, node: &CondExpr) {
-        lazy_visit_cond_expr(self, node);
-    }
-    fn visit_bin_expr(&mut self, node: &BinExpr) {
-        lazy_visit_bin_expr(self, node);
-    }
-    fn visit_while_stmt(&mut self, node: &WhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_for_stmt(&mut self, node: &ForStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_try_stmt(&mut self, node: &TryStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
-        lazy_visit_may_skip(self, node);
-    }
+    impl_lazy_optional_path_visits!();
 
     fn visit_ident(&mut self, node: &Ident) {
         self.record_read(&node.to_id());
@@ -724,33 +698,7 @@ impl TargetAccessRecorder for StatementFactsCollector {
 }
 
 impl Visit for StatementFactsCollector {
-    fn visit_opt_chain_expr(&mut self, node: &OptChainExpr) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_if_stmt(&mut self, node: &IfStmt) {
-        lazy_visit_if_stmt(self, node);
-    }
-    fn visit_cond_expr(&mut self, node: &CondExpr) {
-        lazy_visit_cond_expr(self, node);
-    }
-    fn visit_bin_expr(&mut self, node: &BinExpr) {
-        lazy_visit_bin_expr(self, node);
-    }
-    fn visit_while_stmt(&mut self, node: &WhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_do_while_stmt(&mut self, node: &DoWhileStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_for_stmt(&mut self, node: &ForStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_try_stmt(&mut self, node: &TryStmt) {
-        lazy_visit_may_skip(self, node);
-    }
-    fn visit_switch_stmt(&mut self, node: &SwitchStmt) {
-        lazy_visit_may_skip(self, node);
-    }
+    impl_lazy_optional_path_visits!();
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
         if node.kind == VarDeclKind::Var {
@@ -1166,21 +1114,7 @@ impl Visit for StatementFactsCollector {
         node.function.visit_with(self);
     }
 
-    fn visit_function(&mut self, node: &Function) {
-        lazy_visit_function(self, node);
-    }
-    fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        lazy_visit_arrow_expr(self, node);
-    }
-    fn visit_method_prop(&mut self, node: &MethodProp) {
-        lazy_visit_method_prop(self, node);
-    }
-    fn visit_getter_prop(&mut self, node: &GetterProp) {
-        lazy_visit_getter_prop(self, node);
-    }
-    fn visit_setter_prop(&mut self, node: &SetterProp) {
-        lazy_visit_setter_prop(self, node);
-    }
+    impl_lazy_callable_visits!();
     fn visit_class_decl(&mut self, node: &ClassDecl) {
         // The declaration name binds the class; evaluating its definition
         // does not read that binding. Heritage, computed keys, static fields,
@@ -1191,12 +1125,7 @@ impl Visit for StatementFactsCollector {
         // A named class expression has a local binding with the same rule.
         node.class.visit_with(self);
     }
-    fn visit_class(&mut self, node: &Class) {
-        lazy_visit_class(self, node);
-    }
-    fn visit_class_member(&mut self, member: &ClassMember) {
-        lazy_visit_class_member(self, member);
-    }
+    impl_lazy_class_visits!();
 }
 
 /// `true` if a destructuring assignment target contains a member
