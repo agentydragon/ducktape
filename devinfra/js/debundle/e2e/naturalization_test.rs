@@ -25,8 +25,9 @@ export { a };
 
 #[test]
 fn keeps_outer_aliases_when_nested_readable_candidates_reuse_the_same_target() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function z() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function z() {
   return "z";
 }
 var b = ({
@@ -49,8 +50,10 @@ var b = ({
 console.log(g.r() + h.r() + z());
 export { z, b, f };
 "#,
-        vec![logical_module("z", &[Member::new("z")])],
-    ));
+            vec![logical_module("z", &[Member::new("z")])],
+        )
+        .with_import_order(&["z", "residual"]),
+    );
     assert_entry_output(&fixture, "ppz\n");
 }
 

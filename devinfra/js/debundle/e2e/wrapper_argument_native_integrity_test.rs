@@ -120,6 +120,6 @@ fn callback_mutated_loader_return_still_invokes_its_accessor() {
     let fixture = run_fixture(FixtureOpts::new(
         "import { wrap } from './wrapper.js';\nconst load = wrap(function(output, container) { Object.defineProperty(container, 'value', { get() { console.log('getter'); return 'ready'; } }); });\nconsole.log(load());\n",
         vec![],
-    ).with_extra_chunks(&[("static/wrapper", WRAPPER)]));
+    ).with_import_order(&["residual"]).with_extra_chunks(&[("static/wrapper", WRAPPER)]));
     assert_preserved_entry_output(&fixture, "getter\nready\n");
 }

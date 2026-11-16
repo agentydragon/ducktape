@@ -5,8 +5,9 @@ use debundle_e2e_support::*;
 
 #[test]
 fn from_entries_map_does_not_run_stored_callback_during_construction() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let invocations = 0;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"let invocations = 0;
 let later = 0;
 const read = () => { invocations++; return later; };
 globalThis.saved = read;
@@ -18,28 +19,30 @@ const result = registry.read.run();
 console.log(duringConstruction, invocations, result);
 export { entries, registry, duringConstruction, later, result };
 "#,
-        vec![
-            logical_module_with_anon(
-                "values/registry",
-                &[
-                    Member::new("entries"),
-                    Member::new("registry"),
-                    Member::new("duringConstruction"),
-                    Member::new("invocations"),
-                    Member::new("read"),
-                ],
-                &["globalThis.saved = read;"],
-            ),
-            logical_module_with_anon(
-                "values/later",
-                &[Member::new("later"), Member::new("result")],
-                &[
-                    "later = 42;",
-                    "console.log(duringConstruction, invocations, result);",
-                ],
-            ),
-        ],
-    ));
+            vec![
+                logical_module_with_anon(
+                    "values/registry",
+                    &[
+                        Member::new("entries"),
+                        Member::new("registry"),
+                        Member::new("duringConstruction"),
+                        Member::new("invocations"),
+                        Member::new("read"),
+                    ],
+                    &["globalThis.saved = read;"],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later"), Member::new("result")],
+                    &[
+                        "later = 42;",
+                        "console.log(duringConstruction, invocations, result);",
+                    ],
+                ),
+            ],
+        )
+        .with_import_order(&["values/later", "values/registry"]),
+    );
     assert_preserved_entry_output(&fixture, "0 1 42\n");
     assert_all_emitted_js_checks(&fixture);
 }

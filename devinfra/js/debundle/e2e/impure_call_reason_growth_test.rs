@@ -50,10 +50,13 @@ function foo() { e(); e(); return 0; }
 fn local_impure_call_reports_its_own_site_once() {
     let source =
         format!("{FUNCTIONS}const result = foo();\nconsole.log(result);\nexport {{ result }};\n");
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        &source,
-        vec![logical_module("result_module", &[Member::new("result")])],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module("result_module", &[Member::new("result")])],
+        )
+        .with_import_order(&["result_module", "residual"]),
+    );
 
     let graph = fixture.dependency_graph();
     let source_unit = node_declaring(&graph, "result");

@@ -78,6 +78,7 @@ export { factory, command, list, readList };
             logical_module("list", &[Member::new("list")]),
         ],
     )
+    .with_import_order(&["list", "command", "factory"])
 }
 
 fn hoisted_factory_fixture() -> Fixture {
@@ -231,23 +232,26 @@ fn flat_fixture_without_graph_export_keeps_output_and_gate_verdict() {
 
 #[test]
 fn hoisted_function_value_retains_runtime_evaluation_topology() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function factory() { return 1; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function factory() { return 1; }
 const command = { run: factory };
 const list = [command.run()];
 function readList() { return list; }
 console.log(list[0]);
 export { factory, command, list, readList };
 "#,
-        vec![
-            logical_module(
-                "factory",
-                &[Member::new("factory"), Member::new("readList")],
-            ),
-            logical_module("command", &[Member::new("command")]),
-            logical_module("list", &[Member::new("list")]),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "factory",
+                    &[Member::new("factory"), Member::new("readList")],
+                ),
+                logical_module("command", &[Member::new("command")]),
+                logical_module("list", &[Member::new("list")]),
+            ],
+        )
+        .with_import_order(&["list", "command", "factory"]),
+    );
     assert_entry_output(&fixture, "1\n");
 }
 
@@ -300,19 +304,22 @@ fn at_init_through_deep_residual_chain_executes_under_node() {
     //
     // Matches the upstream chain: an entry-side bootstrap
     // statement → an outer helper → an inner helper → reads T.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let T = "ready";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"let T = "ready";
 function startTracking() { return T; }
 function bootstrap() { return startTracking(); }
 const init = bootstrap();
 console.log(init);
 export { T, bootstrap, startTracking, init };
 "#,
-        vec![
-            logical_module("mod_logger", &[Member::new("T")]),
-            logical_module("mod_init", &[Member::new("init")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_logger", &[Member::new("T")]),
+                logical_module("mod_init", &[Member::new("init")]),
+            ],
+        )
+        .with_import_order(&["mod_logger", "mod_init", "residual"]),
+    );
     assert_entry_output(&fixture, "ready\n");
 }
 
@@ -366,6 +373,7 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
         ],
     );
     opts.unassigned_mode = unassigned_mode_inline();
+    opts = opts.with_import_order(&["mod_init", "mod_logger", "mod_middle", "mod_early"]);
     let fixture = run_fixture(opts);
     assert_entry_output(&fixture, "ready\n");
 }

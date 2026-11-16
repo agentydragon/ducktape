@@ -51,18 +51,21 @@ fn callable_branches_join_into_one_receipt_across_an_independent_inversion() {
         let source = format!(
             "const verbose = true;\nconst missing = null;\nfunction pick() {{ {body} }}\nconst independent = 7;\nvar result = pick();\nconsole.log(independent, JSON.stringify(result));\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "pick",
-                &[
-                    Member::new("verbose"),
-                    Member::new("missing"),
-                    Member::new("pick"),
-                    Member::new("result"),
-                ],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "pick",
+                    &[
+                        Member::new("verbose"),
+                        Member::new("missing"),
+                        Member::new("pick"),
+                        Member::new("result"),
+                    ],
+                )],
+            )
+            .with_import_order(&["pick", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
         assert_commuting_relocation(&fixture, body);
@@ -81,18 +84,21 @@ fn an_object_operand_decides_the_test_without_running_the_other_operand() {
         let source = format!(
             "const settings = {{ name: 'configured' }};\nfunction fallback() {{ return {{ name: later }}; }}\nfunction choose() {{ {body} }}\nconst independent = 7;\nconst chosen = choose();\nconst later = 'late';\nconsole.log(independent, chosen.name, later);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "chosen",
-                &[
-                    Member::new("settings"),
-                    Member::new("fallback"),
-                    Member::new("choose"),
-                    Member::new("chosen"),
-                ],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "chosen",
+                    &[
+                        Member::new("settings"),
+                        Member::new("fallback"),
+                        Member::new("choose"),
+                        Member::new("chosen"),
+                    ],
+                )],
+            )
+            .with_import_order(&["chosen", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, "7 configured late\n");
         assert_inline_operation_receipt(&fixture, "chosen", 1, body);
         assert_commuting_relocation(&fixture, body);
@@ -125,13 +131,16 @@ fn a_read_on_either_arm_keeps_the_split_from_its_later_value_rejected() {
         let source = format!(
             "function pick(flag) {{ {body} }}\nconst seen = [pick(true), pick(false)].join(' ');\nvar later = 'set';\nconsole.log(seen);\nexport {{ seen, pick, later }};\n"
         );
-        let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-            &source,
-            vec![
-                logical_module("reader", &[Member::new("seen")]),
-                logical_module("values", &[Member::new("later")]),
-            ],
-        ));
+        let rejected = run_emit_on_rejection_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("reader", &[Member::new("seen")]),
+                    logical_module("values", &[Member::new("later")]),
+                ],
+            )
+            .with_import_order(&["reader", "values", "residual"]),
+        );
         let report = rejected.translation_validation();
         assert_eq!(report["gate_accepts"], false, "{body}: {report:#}");
         assert_eq!(report["accepts"], false, "{body}: {report:#}");

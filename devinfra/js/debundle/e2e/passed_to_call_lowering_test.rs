@@ -53,7 +53,7 @@ export { registry, FooService, BarPlugin };
                 )],
             ),
         ],
-    ));
+    ).with_import_order(&["registry", "services", "residual"]));
 
     // The empty class resolved to the minified binding `FooService` (the `source
     // bindings` provenance comment proves it) and lives in the `services` module
@@ -81,8 +81,9 @@ export { registry, FooService, BarPlugin };
 /// to `@viewRegistry.register`.
 #[test]
 fn passed_to_call_constrains_by_object() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const viewRegistry = { register(x) { (this.v ||= []).push(x); } };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const viewRegistry = { register(x) { (this.v ||= []).push(x); } };
 const commandRegistry = { register(x) { (this.c ||= []).push(x); } };
 class TableView {}
 class DeleteCommand {}
@@ -91,23 +92,25 @@ commandRegistry.register(DeleteCommand);
 console.log(new TableView().constructor.name, new DeleteCommand().constructor.name);
 export { viewRegistry, commandRegistry, TableView, DeleteCommand };
 "#,
-        vec![
-            logical_module(
-                "registries",
-                &[Member::new("viewRegistry"), Member::new("commandRegistry")],
-            ),
-            logical_module(
-                "views",
-                &[Member::passed_to_call(
-                    "TableViewComponent",
-                    "register",
-                    Some("viewRegistry"),
-                    None,
-                    None,
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "registries",
+                    &[Member::new("viewRegistry"), Member::new("commandRegistry")],
+                ),
+                logical_module(
+                    "views",
+                    &[Member::passed_to_call(
+                        "TableViewComponent",
+                        "register",
+                        Some("viewRegistry"),
+                        None,
+                        None,
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["registries", "views", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -142,7 +145,7 @@ export { host, Widget, Mixin };
                 None,
             )],
         )],
-    ));
+    ).with_import_order(&["widgets", "residual"]));
 
     assert_module_source(
         &fixture.out_root,

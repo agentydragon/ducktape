@@ -79,14 +79,17 @@ fn extracted_module_imports_unowned_helper_from_residual() {
     // Spec claims only `b`. Its helper `a` is unclaimed, so `a`
     // stays in residual; mod_x imports it (no implicit closure
     // pull).
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = x => "h:" + x;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const a = x => "h:" + x;
 const b = x => a(x);
 console.log(b("y"));
 export { b };
 "#,
-        vec![logical_module("x", &[Member::new("b")])],
-    ));
+            vec![logical_module("x", &[Member::new("b")])],
+        )
+        .with_import_order(&["x", "residual"]),
+    );
     assert_module_exports(&fixture.out_root, "static/app/modules/x.js", &["b"], &[]);
     assert_module_source(
         &fixture.out_root,
@@ -168,18 +171,32 @@ fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() 
     // Claiming only the mutable binding leaves its writer to the residual
     // policy. The ordinary gate rejects the split as a cross-destination
     // rebind; the emitted writer would assign through a read-only import.
-    for mode in [
-        unassigned_mode_inline(),
-        unassigned_mode_catchall_file(None),
-        unassigned_mode_per_atomic_group(),
-        unassigned_mode_coarse_atomic_groups(),
+    for (mode, priority) in [
+        (unassigned_mode_inline(), vec!["state"]),
+        (
+            unassigned_mode_catchall_file(None),
+            vec!["state", "residual"],
+        ),
+        (
+            unassigned_mode_per_atomic_group(),
+            vec![
+                "state",
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+            ],
+        ),
+        (
+            unassigned_mode_coarse_atomic_groups(),
+            vec!["state", "__auto/residual_groups/0000"],
+        ),
     ] {
         let rejected = run_emit_on_rejection_fixture_with_graphs(
             FixtureOpts::new(
                 UNCLAIMED_WRITER_SOURCE,
                 vec![logical_module("state", &[Member::new("mutable")])],
             )
-            .with_unassigned_mode(mode.clone()),
+            .with_unassigned_mode(mode.clone())
+            .with_import_order(&priority),
         );
 
         let conflicts = rejected.atomic_group_conflicts();
@@ -216,23 +233,32 @@ fn partial_rebind_claim_does_not_pull_an_unclaimed_writer_into_a_named_module() 
 
 #[test]
 fn wholly_unclaimed_rebind_group_keeps_its_configured_fallback_and_runtime() {
-    for (mode, module_path) in [
-        (unassigned_mode_inline(), None),
+    for (mode, module_path, priority) in [
+        (unassigned_mode_inline(), None, vec![]),
         (
             unassigned_mode_catchall_file(None),
             Some("static/app/modules/residual/unhandled.js"),
+            vec!["residual"],
         ),
         (
             unassigned_mode_per_atomic_group(),
             Some("static/app/modules/__auto/atomic_groups/0000.js"),
+            vec![
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+            ],
         ),
         (
             unassigned_mode_coarse_atomic_groups(),
             Some("static/app/modules/__auto/residual_groups/0000.js"),
+            vec!["__auto/residual_groups/0000"],
         ),
     ] {
         let fixture = run_fixture(
-            FixtureOpts::new(UNCLAIMED_WRITER_SOURCE, vec![]).with_unassigned_mode(mode),
+            FixtureOpts::new(UNCLAIMED_WRITER_SOURCE, vec![])
+                .with_unassigned_mode(mode)
+                .with_import_order(&priority),
         );
         assert_preserved_entry_output(&fixture, "1\n");
         if let Some(module_path) = module_path {
@@ -388,19 +414,22 @@ export { Text };
 fn explicit_modules_share_a_residual_helper_via_imports() {
     // Helper `r` is unclaimed; both `inner` (owns `s`) and
     // `outer` (owns `t`) import it from residual.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const q = "a";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const q = "a";
 function r() { return q; }
 function s() { return "b" + r(); }
 function t() { return s() + r(); }
 console.log(t());
 export { t, s };
 "#,
-        vec![
-            logical_module("inner", &[Member::new("s")]),
-            logical_module("outer", &[Member::new("t")]),
-        ],
-    ));
+            vec![
+                logical_module("inner", &[Member::new("s")]),
+                logical_module("outer", &[Member::new("t")]),
+            ],
+        )
+        .with_import_order(&["inner", "outer", "residual"]),
+    );
     assert_module_exports(
         &fixture.out_root,
         "static/app/modules/inner.js",
@@ -777,19 +806,22 @@ export { aH };
 
 #[test]
 fn readable_import_avoids_nested_collision() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const aH = 1;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const aH = 1;
 function bC(readableA) {
   return aH + readableA;
 }
 console.log(bC(2));
 export { aH, bC };
 "#,
-        vec![logical_module(
-            "mod_a",
-            &[Member::renamed("readableA", "aH")],
-        )],
-    ));
+            vec![logical_module(
+                "mod_a",
+                &[Member::renamed("readableA", "aH")],
+            )],
+        )
+        .with_import_order(&["mod_a", "residual"]),
+    );
     let residual = fs::read_to_string(
         fixture
             .out_root
@@ -1185,20 +1217,23 @@ export { composed };
 // `linker_position(mod_p1) < linker_position(mod_p2)`.
 #[test]
 fn phantom_side_effect_import_interleaves_with_binding_imports_by_linker_position() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const p1_v = "x";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const p1_v = "x";
 const p2_v = p1_v + "y";
 function read_helper() { return p2_v; }
 const m_v = p1_v + read_helper();
 console.log(m_v);
 export { p1_v, p2_v, m_v };
 "#,
-        vec![
-            logical_module("mod_p1", &[Member::new("p1_v")]),
-            logical_module("mod_p2", &[Member::new("p2_v")]),
-            logical_module("mod_m", &[Member::new("m_v")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_p1", &[Member::new("p1_v")]),
+                logical_module("mod_p2", &[Member::new("p2_v")]),
+                logical_module("mod_m", &[Member::new("m_v")]),
+            ],
+        )
+        .with_import_order(&["mod_p1", "mod_p2", "mod_m", "residual"]),
+    );
 
     let m_src = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_m.js"))
         .expect("read mod_m.js");

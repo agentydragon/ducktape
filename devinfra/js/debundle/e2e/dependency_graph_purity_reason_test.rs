@@ -37,14 +37,17 @@ fn unknown_call_init_reports_unknown_call_reason() {
     // user `[Symbol.toPrimitive]` / `valueOf` / `toString` —
     // and has no builtin summary row. The classifier
     // returns NotPure with rule = unknown_call.
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const x = "1";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const x = "1";
 const a = Number(x);
 console.log(a);
 export { a };
 "#,
-        vec![logical_module("a_module", &[Member::new("a")])],
-    ));
+            vec![logical_module("a_module", &[Member::new("a")])],
+        )
+        .with_import_order(&["a_module", "residual"]),
+    );
     assert_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
@@ -89,14 +92,17 @@ fn nested_unknown_in_new_reports_both_outer_and_inner_reasons() {
     // The classifier emits both the inner reason (unknown_call on
     // Number) and the outer umbrella (unknown_new on the Set
     // constructor) in source order.
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const x = "1";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const x = "1";
 const a = new Set([Number(x)]);
 console.log(a.size);
 export { a };
 "#,
-        vec![logical_module("a_module", &[Member::new("a")])],
-    ));
+            vec![logical_module("a_module", &[Member::new("a")])],
+        )
+        .with_import_order(&["a_module", "residual"]),
+    );
     assert_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
@@ -124,14 +130,17 @@ fn delete_operator_reports_delete_rule() {
     // `delete o.x` is unambiguously side-effecting — rule
     // delete_operator. Wrapping in a sequence makes the value
     // computable at init time without changing the verdict.
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const o = { x: 1 };
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const o = { x: 1 };
 const a = (delete o.x, 0);
 console.log(a);
 export { a };
 "#,
-        vec![logical_module("a_module", &[Member::new("a")])],
-    ));
+            vec![logical_module("a_module", &[Member::new("a")])],
+        )
+        .with_import_order(&["a_module", "residual"]),
+    );
     assert_entry_output(&fixture, "0\n");
 
     let graph = fixture.dependency_graph();
@@ -153,14 +162,17 @@ export { a };
 fn multiple_offenders_concatenate_reasons_in_source_order() {
     // `f() + g()` with both calls unknown — both reasons are
     // emitted on the source_unit's purity, not just the first.
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const x = 1;
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const x = 1;
 const a = Number(x) + Number(x);
 console.log(a);
 export { a };
 "#,
-        vec![logical_module("a_module", &[Member::new("a")])],
-    ));
+            vec![logical_module("a_module", &[Member::new("a")])],
+        )
+        .with_import_order(&["a_module", "residual"]),
+    );
     assert_entry_output(&fixture, "2\n");
 
     let graph = fixture.dependency_graph();

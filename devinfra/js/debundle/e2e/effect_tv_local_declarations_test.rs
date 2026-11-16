@@ -170,13 +170,16 @@ fn primitive_leaves_close_scalar_callable_receipts_for_actual_inversions() {
         let source = format!(
             "function compute() {{ return {expression}; }}\nconst independent = 7;\nvar result = compute();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "compute",
-                &[Member::new("compute"), Member::new("result")],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "compute",
+                    &[Member::new("compute"), Member::new("result")],
+                )],
+            )
+            .with_import_order(&["compute", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, expression);
         let report = fixture.effect_translation_validation();
@@ -259,7 +262,7 @@ fn scalar_call_receipt_accepts_independent_statement_inversion() {
                 Member::new("result"),
             ],
         )],
-    ));
+    ).with_import_order(&["scalar", "residual"]));
     assert_preserved_entry_output(&fixture, "7 false\n");
     assert_inline_operation_receipt(&fixture, "result", 1, "scalar inversion");
     let report = fixture.effect_translation_validation();
@@ -284,13 +287,16 @@ fn numeric_local_updates_keep_receipts_across_an_independent_inversion() {
         let source = format!(
             "function bump() {{ {body} }}\nconst independent = 7;\nvar result = bump();\nconsole.log(independent, result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "update",
-                &[Member::new("bump"), Member::new("result")],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "update",
+                    &[Member::new("bump"), Member::new("result")],
+                )],
+            )
+            .with_import_order(&["update", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_inline_operation_receipt(&fixture, "result", 1, body);
         let report = fixture.effect_translation_validation();
@@ -318,7 +324,7 @@ fn numeric_parameter_update_store_keeps_receipt_across_an_independent_inversion(
                 Member::new("result"),
             ],
         )],
-    ));
+    ).with_import_order(&["update", "residual"]));
     assert_preserved_entry_output(&fixture, "7 2\n");
     assert_inline_operation_receipt(&fixture, "result", 2, "parameter update");
     let report = fixture.effect_translation_validation();

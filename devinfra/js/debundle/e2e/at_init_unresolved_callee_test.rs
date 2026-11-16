@@ -102,8 +102,9 @@ export { VALUE, get, indirect, r };
 
 #[test]
 fn plain_array_collection_methods_do_not_promote_element_function_bodies() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const tools = [{ name: "tool", systemNodeId: "tool-id", run: () => later }];
 const toolCopies = tools.map((tool) => ({ ...tool }));
 const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool]));
 const ids = [...tools.filter((tool) => tool.systemNodeId).map((tool) => tool.systemNodeId)];
@@ -112,20 +113,22 @@ const later = byName.tool.name + "-ready";
 console.log(byName.tool.name, ids[0], copiedIds[0], tools[0].run(), toolCopies[0].run());
 export { later, tools, toolCopies, byName, ids, copiedIds };
 "#,
-        vec![
-            logical_module(
-                "collections",
-                &[
-                    Member::new("tools"),
-                    Member::new("toolCopies"),
-                    Member::new("byName"),
-                    Member::new("ids"),
-                    Member::new("copiedIds"),
-                ],
-            ),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "collections",
+                    &[
+                        Member::new("tools"),
+                        Member::new("toolCopies"),
+                        Member::new("byName"),
+                        Member::new("ids"),
+                        Member::new("copiedIds"),
+                    ],
+                ),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["values/later", "collections"]),
+    );
 
     assert_preserved_entry_output(&fixture, "tool tool-id tool-id tool-ready tool-ready\n");
     assert_generated_module_after_entry_script(
@@ -143,8 +146,9 @@ console.log(JSON.stringify({
 
 #[test]
 fn plain_array_callback_mutation_preserves_runtime_behavior() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const later = "ready";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const later = "ready";
 const tools = [{ name: "tool", id: "tool-id", run: () => later }];
 const byId = {};
 tools.forEach((tool) => {
@@ -153,8 +157,10 @@ tools.forEach((tool) => {
 console.log(byId["tool-id"], tools[0].run());
 export { later, tools, byId };
 "#,
-        vec![logical_module("collections", &[Member::new("byId")])],
-    ));
+            vec![logical_module("collections", &[Member::new("byId")])],
+        )
+        .with_import_order(&["collections", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "tool ready\n");
 }
 
@@ -187,21 +193,24 @@ export { lookup };
     ));
     assert_preserved_entry_output(&colocated, "tool 42\n");
 
-    let split = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[
-                    Member::new("nodeIds"),
-                    Member::new("descriptors"),
-                    Member::new("lookup"),
-                ],
-                &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let split = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[
+                        Member::new("nodeIds"),
+                        Member::new("descriptors"),
+                        Member::new("lookup"),
+                    ],
+                    &["descriptors.forEach((data) => { lookup[data.id] = data.name; });"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["values/later", "registry"]),
+    );
     assert_preserved_entry_output(&split, "tool 42\n");
     assert_module_exports(
         &split.out_root,
@@ -244,17 +253,20 @@ export { ids };
     ));
     assert_preserved_entry_output(&colocated, "tool-id 42\n");
 
-    let split = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[Member::new("descriptors"), Member::new("ids")],
-                &["globalThis.savedExecutor = descriptors[0].executor;"],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
+    let split = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("descriptors"), Member::new("ids")],
+                    &["globalThis.savedExecutor = descriptors[0].executor;"],
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        )
+        .with_import_order(&["values/later", "registry"]),
+    );
     assert_preserved_entry_output(&split, "tool-id 42\n");
     assert_module_exports(
         &split.out_root,
@@ -307,8 +319,9 @@ export { later };
 
 #[test]
 fn dom_event_listener_callback_is_not_promoted_as_at_init() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const later = "ready";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const later = "ready";
 const document = {
   querySelector: () => ({ addEventListener() {} }),
 };
@@ -318,8 +331,10 @@ button?.addEventListener("click", () => {
 });
 export { later, document, button };
 "#,
-        vec![logical_module("later_mod", &[Member::new("later")])],
-    ));
+            vec![logical_module("later_mod", &[Member::new("later")])],
+        )
+        .with_import_order(&["later_mod", "residual"]),
+    );
 
     // This keeps the documented callback-timing graph contract explicit:
     // the builtin member row treats addEventListener as non-invoking at call
