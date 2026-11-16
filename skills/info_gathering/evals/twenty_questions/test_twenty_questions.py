@@ -87,6 +87,14 @@ async def test_success_on_turn_2(tmp_path):
     assert summary.turns == 2
     assert mock_model.calls == 4
 
+    calls_path = next(tmp_path.glob("test_success_*_calls.jsonl"))
+    calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
+    assert [call["player"] for call in calls] == ["guesser", "simulator", "guesser", "simulator"]
+    assert all(call["model"] == "fake-model" for call in calls)
+    assert calls[0]["content"] == "Is it a US state?"
+    assert calls[1]["tool_calls"][0]["name"] == "answer"
+    assert calls[3]["tool_calls"][0]["name"] == "correct_answer"
+
 
 async def test_success_on_turn_1(tmp_path):
     """Agent guesses correctly on turn 1 -> Correct(turns=1)."""

@@ -11,7 +11,7 @@ from fastmcp.client import Client
 from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.testing.handlers import FinishOnTextMessageHandler
+from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from openai_utils.model import UserMessage
 from openai_utils.testing.responses import DecoratorMock, tool_roundtrip
 from util.exec.models import BaseExecResult, Exited
@@ -33,17 +33,17 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server) -> None:
         yield m.assistant_text("hello")
 
     async with Client(docker_exec_server) as mcp_client:
+        capture = TextCaptureHandler()
         agent = Agent(
             tool_provider=MCPToolProvider(mcp_client),
             client=client,
-            # Simple echo roundtrip shouldn't need more than ~3 turns; 10 is a generous safety margin.
-            handlers=[FinishOnTextMessageHandler()],
+            handlers=[capture],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
         agent.process_message(
             UserMessage.text(f"Call the exec tool with cmd={ECHO_CMD!r} and return exactly the stdout.")
         )
-        res = await agent.run()
+        res = await run_until_text(agent, capture)
         assert "hello" in res
 
 

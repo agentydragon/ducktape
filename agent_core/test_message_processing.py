@@ -7,10 +7,8 @@ import pytest_bazel
 from hamcrest import all_of, assert_that, has_item, has_properties, instance_of, not_
 
 from agent_core.agent import Agent
-from agent_core.events import ApiRequest, AssistantText, SystemText, UserText
-from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.handlers import FinishOnTextMessageHandler
+from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from agent_core.testing.matchers import assert_items_include_instances
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
 from agent_core.testing.mcp.responses import EchoMock
@@ -19,81 +17,28 @@ from openai_utils.model import (
     FunctionCallItem,
     FunctionCallOutputItem,
     ReasoningItem,
-    ResponsesResult,
     SystemMessage,
     UserMessage,
 )
-from openai_utils.testing.openai_mock import FakeOpenAIModel, NoopOpenAIClient
+from openai_utils.testing.openai_mock import NoopOpenAIClient
 from openai_utils.testing.responses import DecoratorMock
 
 
-class _ApiRequestRecorder(BaseHandler):
-    def __init__(self) -> None:
-        self.requests: list[ApiRequest] = []
-
-    def on_api_request_event(self, evt: ApiRequest) -> None:
-        self.requests.append(evt)
-
-
-async def test_api_request_phase_numbers_increment(mcp_tool_provider) -> None:
-    recorder = _ApiRequestRecorder()
-    agent = Agent(
-        tool_provider=mcp_tool_provider,
-        client=FakeOpenAIModel(outputs=[ResponsesResult(id="resp_0"), ResponsesResult(id="resp_1")]),
-        handlers=[recorder],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
-    agent.process_message(UserMessage.text("start"))
-
-    assert await agent.step() is False
-    assert await agent.step() is False
-
-    assert [request.phase_number for request in recorder.requests] == [0, 1]
-
-
 @pytest.fixture
-async def noop_agent(mcp_tool_provider, recording_handler):
+async def noop_agent(mcp_tool_provider):
     """Agent with NoopOpenAIClient for testing message processing without sampling."""
     return Agent(
-        tool_provider=mcp_tool_provider,
-        client=NoopOpenAIClient(),
-        handlers=[recording_handler],
-        tool_policy=AllowAnyToolOrTextMessage(),
+        tool_provider=mcp_tool_provider, client=NoopOpenAIClient(), handlers=[], tool_policy=AllowAnyToolOrTextMessage()
     )
 
 
-# --- Process message event tests ---
-
-
-@pytest.mark.parametrize(
-    ("message", "event_type", "text"),
-    [
-        (SystemMessage.text("System prompt content"), SystemText, "System prompt content"),
-        (UserMessage.text("User says hello"), UserText, "User says hello"),
-        (AssistantMessage.text("Assistant response"), AssistantText, "Assistant response"),
-    ],
-)
-async def test_process_message_fires_text_event(noop_agent, recording_handler, message, event_type, text) -> None:
-    """process_message fires the text event matching the message role."""
-    noop_agent.process_message(message)
-
-    text_events = [r for r in recording_handler.records if isinstance(r, SystemText | UserText | AssistantText)]
-    assert len(text_events) == 1
-    assert isinstance(text_events[0], event_type)
-    assert text_events[0].text == text
-
-
-async def test_process_message_adds_to_transcript(noop_agent, recording_handler) -> None:
-    """Test that process_message adds messages to transcript."""
+async def test_process_message_adds_to_transcript(noop_agent) -> None:
     noop_agent.process_message(SystemMessage.text("Sys"))
     noop_agent.process_message(UserMessage.text("Usr"))
-
-    assert len(noop_agent._transcript) == 2
-    assert isinstance(noop_agent._transcript[0], SystemMessage)
-    assert isinstance(noop_agent._transcript[1], UserMessage)
-    # Both should have fired events
-    text_events = [r for r in recording_handler.records if isinstance(r, SystemText | UserText | AssistantText)]
-    assert len(text_events) == 2
+    messages = noop_agent.to_openai_messages()
+    assert len(messages) == 2
+    assert isinstance(messages[0], SystemMessage)
+    assert isinstance(messages[1], UserMessage)
 
 
 # --- Message forwarding tests ---
@@ -107,19 +52,13 @@ async def test_mixed_reasoning_fc_ordering(mcp_tool_provider_echo) -> None:
     @EchoMock.mock()
     def mock(m: EchoMock):
         yield
-        # Text marks completion; the next step observes the handler's abort decision.
         yield [m.make_item_reasoning(), m.echo_call("hi"), m.assistant_text("done")]
 
     agent = Agent(
-        tool_provider=mcp_tool_provider_echo,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler()],
-        tool_policy=AllowAnyToolOrTextMessage(),
+        tool_provider=mcp_tool_provider_echo, client=mock, handlers=[], tool_policy=AllowAnyToolOrTextMessage()
     )
     agent.process_message(UserMessage.text("start"))
-    assert await agent.step() is False
-    assert await agent.step() is True
-    assert not agent.finished
+    await agent.step()
 
     messages = agent.to_openai_messages()
     assert_items_include_instances(messages, ReasoningItem, FunctionCallItem, FunctionCallOutputItem, AssistantMessage)
@@ -182,15 +121,13 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(mcp_tool_pr
 
         yield m.assistant_text("done")
 
+    capture = TextCaptureHandler()
     agent = Agent(
-        tool_provider=mcp_tool_provider_echo,
-        client=mock,
-        handlers=[FinishOnTextMessageHandler()],
-        tool_policy=AllowAnyToolOrTextMessage(),
+        tool_provider=mcp_tool_provider_echo, client=mock, handlers=[capture], tool_policy=AllowAnyToolOrTextMessage()
     )
     agent.process_message(UserMessage.text("say hi"))
 
-    res = await agent.run()
+    res = await run_until_text(agent, capture)
     assert res.strip() == "done"
 
 

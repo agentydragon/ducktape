@@ -18,7 +18,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.agent import Agent
-from agent_core.events import AssistantText, Response, ToolCall
+from agent_core.events import AssistantText, ToolCall
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
 from agent_core.tool_provider import ToolProvider
@@ -112,12 +112,12 @@ class _TurnLogHandler(BaseHandler):
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._tool_calls.append(evt)
 
-    def on_response(self, evt: Response) -> None:
+    def on_response(self, model: str) -> None:
         self._write_entry(
             LogEntry(
                 timestamp=datetime.now(UTC),
                 player=self._player,
-                model=evt.model,
+                model=model,
                 content=self._text,
                 tool_calls=[{"name": tc.name, "args": tc.args_json, "call_id": tc.call_id} for tc in self._tool_calls],
             )
@@ -181,19 +181,12 @@ class _TwentyQuestionsRunner:
         agent = Agent(
             tool_provider=self._agent_tool_provider,
             client=self.model,
-            parallel_tool_calls=False,
             handlers=[agent_log, text_capture],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
         agent.process_message(SystemMessage.text(self._agent_system))
 
-        sim = Agent(
-            tool_provider=sim_provider,
-            client=self.model,
-            parallel_tool_calls=False,
-            handlers=[sim_log],
-            tool_policy=RequireAnyTool(),
-        )
+        sim = Agent(tool_provider=sim_provider, client=self.model, handlers=[sim_log], tool_policy=RequireAnyTool())
         sim.process_message(SystemMessage.text(self._sim_system))
 
         async def agent_turn() -> str | None:

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.handlers import FinishOnTextMessageHandler
+from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from openai_utils.model import UserMessage
 from openai_utils.testing.responses import DecoratorMock
 from skills.info_gathering.evals.twenty_questions.direct_provider import DirectToolProvider
@@ -22,7 +22,7 @@ class CapitalInput(BaseModel):
     country: str
 
 
-async def test_text_completion(mock_or_live, recording_handler) -> None:
+async def test_text_completion(mock_or_live) -> None:
     """Agent produces a text response to a simple question."""
     provider = DirectToolProvider()
 
@@ -31,21 +31,17 @@ async def test_text_completion(mock_or_live, recording_handler) -> None:
         yield
         yield m.assistant_text("The capital of France is Paris.")
 
-    agent = Agent(
-        tool_provider=provider,
-        client=client,
-        handlers=[FinishOnTextMessageHandler(), recording_handler],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
+    capture = TextCaptureHandler()
+    agent = Agent(tool_provider=provider, client=client, handlers=[capture], tool_policy=AllowAnyToolOrTextMessage())
     agent.process_message(UserMessage.text("What is the capital of France?"))
 
-    res = await agent.run()
+    res = await run_until_text(agent, capture)
 
     assert res, "Agent produced no text response"
     print(f"Response: {res}")
 
 
-async def test_tool_calling(mock_or_live, recording_handler) -> None:
+async def test_tool_calling(mock_or_live) -> None:
     """Agent calls a tool and uses the result in its response."""
     provider = DirectToolProvider()
 
@@ -61,15 +57,11 @@ async def test_tool_calling(mock_or_live, recording_handler) -> None:
         yield m.tool_call("lookup_capital", {"country": "France"})
         yield m.assistant_text("The capital of France is Paris.")
 
-    agent = Agent(
-        tool_provider=provider,
-        client=client,
-        handlers=[FinishOnTextMessageHandler(), recording_handler],
-        tool_policy=AllowAnyToolOrTextMessage(),
-    )
+    capture = TextCaptureHandler()
+    agent = Agent(tool_provider=provider, client=client, handlers=[capture], tool_policy=AllowAnyToolOrTextMessage())
     agent.process_message(UserMessage.text("Use the lookup_capital tool to find the capital of France."))
 
-    res = await agent.run()
+    res = await run_until_text(agent, capture)
 
     assert res, "Agent produced no text response"
     print(f"Response: {res}")
