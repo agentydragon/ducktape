@@ -34,6 +34,13 @@ keep contracts and proofs in maintained docs:
    operations and stop when its mask saturates; preserve an independent
    small-set oracle and CLI behavior checks for overlapping reachability.
    A synthetic improvement is not proof that the configured consumer completes.
+   The combined storage repairs still exceed a 4 GiB/no-swap cap. Plain-speed
+   pre-OOM stacks locate the remaining growth in program-wide value-flow fact
+   insertion and dependency subscriptions; the short allocation trace ends in
+   earlier provider preparation. Measure fact-row and subscription-edge counts
+   on a representative completed neutral case before changing their storage.
+   Preserve the full relation and dependency wakeups; prior watcher-vector and
+   fact-boxing experiments did not lower the completed matrix's peak RSS.
    Resume one bounded real analysis after measured improvement; require a normal
    completed artifact and report cold time and peak memory separately from
    prepared placement queries. Publish independently validated improvements as

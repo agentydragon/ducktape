@@ -57,9 +57,11 @@ may add constraints but never drop callback reads or rebinds. Scale fixtures:
   projections and synchronous interpreter property state. A smaller transient
   solver record did not shrink those live tables.
 - A truncated, resource-capped profile locates allocations in its captured
-  prefix; it cannot identify the eventual whole-command peak. Keep profiler
-  overhead distinct from uninstrumented RSS and do not treat an interrupted
-  analysis as a completed artifact.
+  prefix; it cannot identify the eventual whole-command peak. A short allocation
+  trace can still be in provider preparation while a plain-speed run has reached
+  value-flow fact and subscription insertion. Confirm the relevant phase before
+  choosing a target. Keep profiler overhead distinct from uninstrumented RSS and
+  do not treat an interrupted analysis as a completed artifact.
 - Reparsed provider ASTs stayed live through parallel per-chunk analysis only
   because context ordinals were built at the end. Build `ContextOrdinals`
   (IDs only) right after cross-module analysis, then drop the ASTs.
