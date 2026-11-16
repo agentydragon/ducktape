@@ -9,8 +9,11 @@
 //! of call effects, initialization availability or normal completion.
 
 mod call_effects;
+mod initialization;
 mod program;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
+pub(crate) use initialization::CallableDeclaration;
+use initialization::{InitializationCensus, InitializationSites};
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
 
@@ -517,6 +520,7 @@ pub(crate) struct ChunkValueFlow {
     property_unions: BTreeMap<u32, Values>,
     returns: BTreeMap<u32, Values>,
     params: BTreeMap<u32, Vec<Option<Id>>>,
+    initializations: BTreeMap<Id, InitializationSites>,
     /// Candidate roots and their transitive reachability are ordinary facts in
     /// the same store as bindings, properties, and returns.
     candidate_objects: Vec<Value>,
@@ -535,6 +539,18 @@ pub(crate) struct ChunkValueFlow {
 }
 
 impl ChunkValueFlow {
+    pub(crate) fn lexical_read_guards(&self) -> impl Iterator<Item = (&Id, SourceUnitOrdinal)> {
+        self.initializations
+            .iter()
+            .filter_map(|(binding, sites)| sites.lexical_read_guard().map(|owner| (binding, owner)))
+    }
+
+    pub(crate) fn callable_declarations(&self) -> impl Iterator<Item = (&Id, CallableDeclaration)> {
+        self.initializations
+            .iter()
+            .flat_map(|(binding, sites)| sites.callables().map(move |callable| (binding, callable)))
+    }
+
     #[cfg(test)]
     pub(super) fn evaluate_value_expr_for_test(&self, expr: &Expr) -> (Values, usize) {
         let mut symbols = FlowSymbols::default();
@@ -738,8 +754,19 @@ impl ChunkValueFlow {
     #[cfg(test)]
     pub(crate) fn analyze_reference(body: &[TopLevelItemView<'_>]) -> Self {
         let program = FlowProgram::collect(body, &BTreeSet::new());
+        let initializations = program
+            .events
+            .iter()
+            .filter_map(|event| {
+                let FlowEvent::Initialization { id, sites } = event else {
+                    return None;
+                };
+                Some((program.symbols.id(*id).clone(), sites.clone()))
+            })
+            .collect();
         let mut flow = Self {
             origin_table: program.origin_table,
+            initializations,
             ..Self::default()
         };
         let mut declarations = DeclaredBindingCollector::default();
@@ -969,7 +996,8 @@ impl ChunkValueFlow {
             | FlowKey::ReadyParameters(_)
             | FlowKey::InvokedCells(_)
             | FlowKey::RetainedCells(_)
-            | FlowKey::SourceCells(_) => None,
+            | FlowKey::SourceCells(_)
+            | FlowKey::Initialization(_) => None,
         }
     }
 
@@ -1357,6 +1385,10 @@ impl FlowValueExpr {
 
 #[derive(Debug, Clone)]
 enum FlowEvent {
+    Initialization {
+        id: BindingSlot,
+        sites: InitializationSites,
+    },
     FunctionDeclaration {
         id: BindingSlot,
         origin: Value,
@@ -1423,6 +1455,7 @@ enum FlowKey {
     InvokedCells(u32),
     RetainedCells(u32),
     SourceCells(u32),
+    Initialization(BindingSlot),
 }
 
 #[derive(Clone)]
@@ -1433,6 +1466,7 @@ enum FlowFact {
     Parameters(Vec<Option<BindingSlot>>),
     ReadyParameters(Vec<Option<BindingSlot>>),
     Cells(KnownCellAccesses),
+    Initialization(InitializationSites),
 }
 
 /// Candidate reachability is a second stratum over the completed value facts:
@@ -1500,8 +1534,16 @@ impl FlowProgram {
         };
         let mut module_bindings = BTreeMap::new();
         let mut imports = Vec::new();
+        let mut initialization = InitializationCensus::default();
         for (ordinal, item) in body.iter().enumerate() {
-            for id in super::item_views::collect_declared_names(item.as_module_item()) {
+            let declared = super::item_views::collect_declared_names(item.as_module_item());
+            initialization.record(
+                item.as_module_item(),
+                &declared,
+                SourceUnitOrdinal(ordinal),
+                &mut collector.symbols,
+            );
+            for id in declared {
                 module_bindings.insert(id.0.to_string(), collector.symbols.binding(id));
             }
             if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
@@ -1515,6 +1557,9 @@ impl FlowProgram {
             collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
+        collector
+            .events
+            .extend(initialization.finish(&mut collector.symbols));
         collector.origins.extend(candidate_objects.iter().copied());
         collector.origins.extend(
             native_set_allocations
@@ -1586,6 +1631,9 @@ impl FlowProgram {
                 }
                 (FlowKey::Binding(slot), FlowFact::Values(values)) => {
                     flow.bindings.insert(symbols.id(slot).clone(), values);
+                }
+                (FlowKey::Initialization(slot), FlowFact::Initialization(sites)) => {
+                    flow.initializations.insert(symbols.id(slot).clone(), sites);
                 }
                 (FlowKey::Property(object, property), FlowFact::Values(values)) => {
                     flow.properties
@@ -2169,6 +2217,12 @@ impl IterativeRules for FlowRules {
         self.event_executions.set(self.event_executions.get() + 1);
         let event = &self.events[*index];
         match event {
+            FlowEvent::Initialization { id, sites } => {
+                context.propose(
+                    FlowKey::Initialization(*id),
+                    FlowFact::Initialization(sites.clone()),
+                );
+            }
             FlowEvent::FunctionDeclaration { id, origin }
             | FlowEvent::ClassDeclaration { id, origin } => {
                 let values = self.singleton_value(*origin);
@@ -2477,6 +2531,11 @@ impl IterativeRules for CandidateRules {
 
 fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
     match (key, current, contribution) {
+        (
+            FlowKey::Initialization(_),
+            FlowFact::Initialization(current),
+            FlowFact::Initialization(contribution),
+        ) => current.union_with(contribution),
         (
             FlowKey::InvokedCells(_) | FlowKey::RetainedCells(_) | FlowKey::SourceCells(_),
             FlowFact::Cells(current),

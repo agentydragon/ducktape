@@ -1017,29 +1017,10 @@ pub(crate) fn annotate_synchronous_calls(
         fact.synchronous_prefix_effects =
             effects.map(|effects| (effects.reads.clone(), effects.rebinds.clone()));
     }
-    let mut declaration_counts = BTreeMap::<Id, usize>::new();
-    for binding in facts.iter().flat_map(|fact| &fact.declared) {
-        *declaration_counts.entry(binding.clone()).or_default() += 1;
+    let mut deferred_read_binding = vec![None; facts.len()];
+    for (binding, owner) in flow.lexical_read_guards() {
+        deferred_read_binding[owner.0] = Some(binding.clone());
     }
-    let deferred_read_binding = index
-        .single_top_lexical_binding
-        .iter()
-        .enumerate()
-        .map(|(ordinal, binding)| {
-            binding
-                .as_ref()
-                .filter(|binding| {
-                    declaration_counts.get(*binding) == Some(&1)
-                        && facts[ordinal].declared.len() == 1
-                        && facts[ordinal].declared.contains(*binding)
-                        && index.top_definite_initializers[ordinal].contains(*binding)
-                        && !index.imported_bindings.contains(*binding)
-                        && !index.hoisted_bindings.contains_key(*binding)
-                        && !facts[ordinal].var_declared.contains(*binding)
-                })
-                .cloned()
-        })
-        .collect();
     let (reentry_bindings, reentry_default) = match export_reentry_policy {
         ExportReentryPolicy::Conservative => (index.exported_bindings.clone(), true),
         ExportReentryPolicy::NoStaticImporterReentry => (BTreeSet::new(), false),
