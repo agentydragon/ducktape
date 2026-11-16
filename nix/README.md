@@ -15,6 +15,7 @@ nix/
 │   ├── modules/   # Shared Home Manager modules
 │   ├── programs/  # Reusable Home Manager program modules
 │   └── skills.nix # Shared AI-tool skill deployment helper
+├── docs/          # Maintained Nix notes
 ├── droid/         # Android (phone) configurations — see droid/README.md
 ├── flake/         # Flake output composition
 │   ├── devtools.nix
@@ -23,6 +24,11 @@ nix/
 ├── lib/           # Shared Nix helpers
 └── TODO.md        # Future improvements
 ```
+
+## Maintained Nix Notes
+
+- [Telegram Desktop poll timer crash](docs/telegram_poll_timer.md): historical
+  crash evidence and the current locked source status.
 
 ## Usage
 
