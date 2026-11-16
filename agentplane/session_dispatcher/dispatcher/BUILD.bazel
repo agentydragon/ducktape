@@ -18,6 +18,7 @@ go_library(
         "terminal.go",
         "wake.go",
         "watch.go",
+        "watch_store.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher",
     visibility = [
@@ -133,6 +134,7 @@ go_test(
         "store_integration_testmain_test.go",
         "versions_integration_test.go",
         "wake_integration_test.go",
+        "watch_versions_integration_test.go",
     ],
     embed = [":dispatcher"],
     tags = ["requires_docker"],
@@ -233,9 +235,13 @@ go_test(
 
 go_test(
     name = "watch_test",
-    srcs = ["watch_test.go"],
+    srcs = ["watch_filter_test.go"],
     embed = [":dispatcher"],
-    deps = ["//agentplane/session_dispatcher/dispatcher/internal/terminalnotice"],
+    deps = [
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
 )
 
 py_test(

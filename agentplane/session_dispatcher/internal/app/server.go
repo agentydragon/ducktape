@@ -53,21 +53,6 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	return kubeConfig, nil
 }
 
-func waitForListener(ctx context.Context, hub *dispatcher.WatchHub, failed <-chan error) error {
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for !hub.Connected() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case err := <-failed:
-			return fmt.Errorf("PostgreSQL listener failed before startup: %w", err)
-		case <-ticker.C:
-		}
-	}
-	return nil
-}
-
 func reportUnexpected(ctx context.Context, failed chan<- error, role string, err error) {
 	if ctx.Err() != nil {
 		return
@@ -165,16 +150,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return errors.New("Sandbox inventory did not synchronize")
 	}
 	inventoryHealth.MarkSynced()
-	hub := dispatcher.NewWatchHub(c.DispatcherDatabaseURL)
-	go func() { reportUnexpected(ctx, failed, "PostgreSQL listener", hub.Run(ctx)) }()
-	if err := waitForListener(ctx, hub, failed); err != nil {
-		return err
-	}
-	sessionHub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.SessionNotifyChannel, dispatcher.NotifyChannel)
+	hub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.NotifyChannel, dispatcher.SessionNotifyChannel)
 	if err != nil {
-		return err
+		return fmt.Errorf("Dispatcher PostgreSQL listener: %w", err)
 	}
-	defer sessionHub.Close()
+	defer hub.Close()
 	nativeRuntime := &dispatcher.RuntimeProxyClient{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		GatewayTLS:     c.GatewayTLS,
@@ -185,7 +165,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: wakeManager,
-		Delivery: runtime, Hub: sessionHub, Ready: ready,
+		Delivery: runtime, Hub: hub, Ready: ready,
 	}
 	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()
 	select {
@@ -214,7 +194,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		Store: store, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
 		Sandboxes:        catalog,
 		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
-		CentralTarget: c.CentralSampler, Hub: hub, SessionHub: sessionHub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
+		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	dispatcherRule, err := auth.AnySubject(dispatcherSVIDs).AllowServiceCallers(c.DispatcherServiceCallers)
 	if err != nil {

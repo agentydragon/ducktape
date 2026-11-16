@@ -2,179 +2,130 @@ package dispatcher
 
 import (
 	"context"
-	"errors"
-	"sync"
-	"time"
+	"slices"
 
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
-	"github.com/lib/pq"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
-type watchSubscription struct {
-	changed chan struct{}
-	// Nil for a subscriber that only needs invalidations. A bounded terminal buffer nobody drains
-	// would overflow and fail the subscriber after its capacity of terminal events.
-	terminal chan terminalnotice.Event
-	failure  chan string
-}
-
-// WatchHub transports committed PostgreSQL invalidations and terminal
-// snapshots to every live stream. The DB rows remain authoritative; a change
-// notification only causes another read.
-type WatchHub struct {
-	listener    *pq.Listener
-	mu          sync.Mutex
-	subscribers map[*watchSubscription]struct{}
-	pending     terminalnotice.Assembler
-	connected   bool
-	subscribed  bool
-}
-
-func NewWatchHub(dsn string) *WatchHub {
-	hub := &WatchHub{
-		subscribers: map[*watchSubscription]struct{}{},
+// subscribeWatch registers before the initial read, closing the subscribe/snapshot race.
+// The same Hub and helper serve dispatch and Session watches. Reconnects coalesce into a
+// wakeup, so the next version read covers commits made while LISTEN was disconnected.
+func subscribeWatch(hub *wakeups.Hub, channels ...string) (<-chan struct{}, func(), error) {
+	if hub == nil {
+		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
 	}
-	hub.listener = pq.NewListener(dsn, time.Second, 30*time.Second, hub.connectionEvent)
-	return hub
-}
-
-func (h *WatchHub) connectionEvent(event pq.ListenerEventType, err error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	switch event {
-	case pq.ListenerEventConnected:
-		h.connected = true
-	case pq.ListenerEventReconnected:
-		h.connected = true
-		h.failAllLocked("terminal event listener generation changed; reconnect this WatchDispatches stream")
-	case pq.ListenerEventDisconnected, pq.ListenerEventConnectionAttemptFailed:
-		h.connected = false
-		h.failAllLocked("terminal event listener disconnected; reconnect this WatchDispatches stream")
+	changed, unsubscribe, err := hub.Subscribe(channels...)
+	if err != nil {
+		return nil, nil, status.Error(codes.Unavailable, "dispatcher watch subscription unavailable")
 	}
-	_ = err // Listener reconnects itself; stream failure is the observable contract.
+	return changed, unsubscribe, nil
 }
 
-// subscribe is a WatchDispatches stream's subscription: invalidations and terminal snapshots.
-func (h *WatchHub) subscribe() (*watchSubscription, func(), error) {
-	return h.add(&watchSubscription{make(chan struct{}, 1), make(chan terminalnotice.Event, 32), make(chan string, 1)})
-}
-
-// subscribeChanges receives invalidations and listener failures but no terminal snapshots.
-func (h *WatchHub) subscribeChanges() (*watchSubscription, func(), error) {
-	return h.add(&watchSubscription{changed: make(chan struct{}, 1), failure: make(chan string, 1)})
-}
-
-func (h *WatchHub) add(sub *watchSubscription) (*watchSubscription, func(), error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if !h.connected {
-		return nil, nil, errors.New("PostgreSQL watch listener is disconnected")
+func dispatchWatchFilter(filter *dispatcherpb.DispatchFilter) (*dispatcherpb.DispatchFilter, error) {
+	if filter == nil || len(filter.GetCommandIds()) > maxFilterCommands {
+		return nil, status.Error(codes.InvalidArgument, "dispatch filter is required and must name at most 1000 commands")
 	}
-	h.subscribers[sub] = struct{}{}
-	return sub, func() { h.mu.Lock(); delete(h.subscribers, sub); h.mu.Unlock() }, nil
-}
-
-// Connected reports whether the PostgreSQL listener has established its
-// current generation. The composition root waits for this before serving.
-func (h *WatchHub) Connected() bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.connected && h.subscribed
-}
-
-func (h *WatchHub) failAllLocked(message string) {
-	h.pending.Reset()
-	for sub := range h.subscribers {
-		select {
-		case sub.failure <- message:
-		default:
+	switch scope := filter.GetScope().(type) {
+	case *dispatcherpb.DispatchFilter_SessionId:
+		if scope.SessionId == "" {
+			return nil, status.Error(codes.InvalidArgument, "session_id is required")
 		}
+	case *dispatcherpb.DispatchFilter_Sandbox:
+		if scope.Sandbox == "" {
+			return nil, status.Error(codes.InvalidArgument, "sandbox is required")
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "dispatch filter scope is required")
 	}
+	canonical := proto.Clone(filter).(*dispatcherpb.DispatchFilter)
+	slices.Sort(canonical.CommandIds)
+	canonical.CommandIds = slices.Compact(canonical.CommandIds)
+	return canonical, nil
 }
 
-func (h *WatchHub) notifyChanged() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for sub := range h.subscribers {
-		select {
-		case sub.changed <- struct{}{}:
-		default:
-		}
-	}
-}
-
-func (h *WatchHub) notifyTerminal(event terminalnotice.Event) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for sub := range h.subscribers {
-		if sub.terminal == nil {
-			continue
-		}
-		select {
-		case sub.terminal <- event:
-		default:
-			select {
-			case sub.failure <- "terminal event subscription overflowed; reconnect this WatchDispatches stream":
-			default:
-			}
-		}
-	}
-}
-
-// Run owns the listener for the service lifetime. A reconnect ends active
-// streams rather than silently losing a terminal event during the gap.
-func (h *WatchHub) Run(ctx context.Context) error {
-	defer h.listener.Close()
-	if err := h.listener.Listen(NotifyChannel); err != nil {
-		return err
-	}
-	if err := h.listener.Listen(TerminalChannel); err != nil {
-		return err
-	}
-	h.mu.Lock()
-	h.subscribed = true
-	h.mu.Unlock()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case item, ok := <-h.listener.Notify:
-			if !ok {
-				return errors.New("PostgreSQL listener closed")
-			}
-			if item == nil {
-				h.notifyChanged()
-				continue
-			}
-			switch item.Channel {
-			case NotifyChannel:
-				h.notifyChanged()
-			case TerminalChannel:
-				if err := h.terminalPart(item.Extra); err != nil {
-					h.mu.Lock()
-					h.failAllLocked("terminal event notification was malformed; reconnect this WatchDispatches stream")
-					h.mu.Unlock()
-				}
-			}
-		case now := <-ticker.C:
-			if h.pending.HasExpired(now, 10*time.Second) {
-				h.mu.Lock()
-				h.failAllLocked("terminal event parts were incomplete; reconnect this WatchDispatches stream")
-				h.mu.Unlock()
-			}
-		}
-	}
-}
-
-func (h *WatchHub) terminalPart(payload string) error {
-	event, err := h.pending.Add(payload)
+func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse]) error {
+	ctx := stream.Context()
+	caller, err := s.caller(ctx)
 	if err != nil {
 		return err
 	}
-	if event != nil {
-		h.notifyTerminal(*event)
+	filter, err := dispatchWatchFilter(request.GetFilter())
+	if err != nil {
+		return err
 	}
-	return nil
+	filterBytes, err := wire(filter)
+	if err != nil {
+		return status.Error(codes.Internal, "cannot encode watch filter")
+	}
+	digest := resumetoken.Digest(append([]byte("dispatches\x00"), filterBytes...))
+	var last int64
+	resuming := request.GetResumeToken() != ""
+	if resuming {
+		last, err = resumetoken.Decode(request.GetResumeToken(), digest)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	changed, unsubscribe, err := subscribeWatch(s.Hub, NotifyChannel)
+	if err != nil {
+		return err
+	}
+	defer unsubscribe()
+	if s.WatchLease <= 0 {
+		return status.Error(codes.Internal, "watch lease must be positive")
+	}
+	leaseCtx, endLease := context.WithTimeout(ctx, s.WatchLease)
+	defer endLease()
+	first := true
+	for {
+		generation := s.Hub.Generation()
+		batch, err := s.Store.readDispatchChanges(leaseCtx, filter, caller, last, resuming)
+		if err != nil {
+			if leaseCtx.Err() != nil && ctx.Err() == nil {
+				return nil
+			}
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return apiError(err)
+		}
+		for _, change := range batch.changes {
+			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+				Frame:       &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: change.dispatch},
+				ResumeToken: resumetoken.Encode(change.version, digest),
+			})
+			if ended || err != nil {
+				return err
+			}
+		}
+		if first || batch.through > last {
+			ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
+				Frame:       &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
+				ResumeToken: resumetoken.Encode(batch.through, digest),
+			})
+			if ended || err != nil {
+				return err
+			}
+		}
+		last, first, resuming = batch.through, false, true
+		// Unlike Session snapshots, deletion coverage cannot be recovered by resetting
+		// to zero. Keep the durable cursor on reconnect and validate its retention floor.
+		if s.Hub.Generation() != generation {
+			continue
+		}
+		select {
+		case <-leaseCtx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return nil
+		case <-changed:
+		}
+	}
 }

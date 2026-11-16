@@ -85,7 +85,7 @@ func serveIdentitySVIDsWithPolicy(
 	}
 	serverTLS.NextProtos = []string{"h2"}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	hub := testWatchHub(t, store)
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, EnvironmentRules: rules, PolicyReady: policyReady, Hub: hub, WatchLease: 10 * time.Second,
@@ -120,7 +120,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 	named := &identitypb.Identity{Name: "named-identity", Uid: "00000000-0000-4000-8000-0000000090a1"}
 	snapshot := SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: identitySandboxUID}
 	inventory := &authorityInventory{sandbox: snapshot, identity: named}
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	hub := testWatchHub(t, store)
 	client := authorityClients(t, store, inventory, hub).component
 	open := func() string {
 		sessionID := uuid.NewString()
