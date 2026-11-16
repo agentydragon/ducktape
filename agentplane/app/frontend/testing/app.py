@@ -44,6 +44,7 @@ class Flag(StrEnum):
     NOTIFICATION_EXTRA_ENTRY = "notificationExtraEntry"
     PUSH_BROWSER_ADDED = "pushBrowserAdded"
     CONNECTION_RENAMED = "connectionRenamed"
+    UNKNOWN_MCP_STATUS = "unknownMcpStatus"
     MCP_LINKAGE_CHANGED = "mcpLinkageChanged"
     MCP_HEALTH_CHANGED = "mcpHealthChanged"
     IDENTITY_WATCH_UNAVAILABLE = "identityWatchUnavailable"

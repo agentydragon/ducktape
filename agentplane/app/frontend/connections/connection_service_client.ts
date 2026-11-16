@@ -1,5 +1,5 @@
 /** Browser adapters for ConnectionService's generated HTTP/JSON facade. */
-import { create, fromJson, fromJsonString, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, fromJsonString, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { fetchText } from "../client";
 import {
@@ -57,13 +57,6 @@ function required<T>(value: T | undefined, field: string): T {
   return value;
 }
 
-function readJsonObject(value: JsonValue, label: string): JsonObject {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`Invalid ${label}`);
-  }
-  return value;
-}
-
 async function callFacade(method: FacadeMethod, path: string, body?: JsonValue): Promise<string> {
   const headers = new Headers({ Accept: "application/json" });
   const init: RequestInit = { method, headers };
@@ -72,12 +65,6 @@ async function callFacade(method: FacadeMethod, path: string, body?: JsonValue):
     init.body = JSON.stringify(body);
   }
   return fetchText(path, init);
-}
-
-function withoutPathField(body: JsonObject, field: string): JsonObject {
-  const result = { ...body };
-  delete result[field];
-  return result;
 }
 
 function expectedVersion(value: bigint): bigint {
@@ -142,14 +129,10 @@ export async function connectionIdentities(): Promise<Identity[]> {
 
 export async function renameConnection(connection: Connection, displayName: string): Promise<Connection> {
   const request = create(UpdateConnectionRequestSchema, {
-    connectionId: connection.id,
     expectedVersion: expectedVersion(connection.version),
     displayName,
   });
-  const body = withoutPathField(
-    readJsonObject(toJson(UpdateConnectionRequestSchema, request), "update request"),
-    "connectionId"
-  );
+  const body = toJson(UpdateConnectionRequestSchema, request);
   const response = fromJsonString(
     UpdateConnectionResponseSchema,
     await callFacade("PATCH", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}`, body)
@@ -159,14 +142,10 @@ export async function renameConnection(connection: Connection, displayName: stri
 
 export async function rebindConnection(connection: Connection, identity: Identity): Promise<Connection> {
   const request = create(RebindConnectionRequestSchema, {
-    connectionId: connection.id,
     expectedVersion: expectedVersion(connection.version),
     identity,
   });
-  const body = withoutPathField(
-    readJsonObject(toJson(RebindConnectionRequestSchema, request), "rebind request"),
-    "connectionId"
-  );
+  const body = toJson(RebindConnectionRequestSchema, request);
   const response = fromJsonString(
     RebindConnectionResponseSchema,
     await callFacade("POST", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}/rebind`, body)
@@ -176,13 +155,9 @@ export async function rebindConnection(connection: Connection, identity: Identit
 
 export async function unbindConnection(connection: Connection): Promise<Connection> {
   const request = create(UnbindConnectionRequestSchema, {
-    connectionId: connection.id,
     expectedVersion: expectedVersion(connection.version),
   });
-  const body = withoutPathField(
-    readJsonObject(toJson(UnbindConnectionRequestSchema, request), "unbind request"),
-    "connectionId"
-  );
+  const body = toJson(UnbindConnectionRequestSchema, request);
   const response = fromJsonString(
     UnbindConnectionResponseSchema,
     await callFacade("POST", `${OPERATOR}/connections/${encodeURIComponent(connection.id)}/unbind`, body)
@@ -191,11 +166,8 @@ export async function unbindConnection(connection: Connection): Promise<Connecti
 }
 
 export async function previewConsent(handle: string): Promise<ConsentPreview> {
-  const request = create(PreviewConnectionEnrollmentRequestSchema, { handle });
-  const body = withoutPathField(
-    readJsonObject(toJson(PreviewConnectionEnrollmentRequestSchema, request), "preview request"),
-    "handle"
-  );
+  const request = create(PreviewConnectionEnrollmentRequestSchema);
+  const body = toJson(PreviewConnectionEnrollmentRequestSchema, request);
   const [previewValue, identitiesValue, connectionsValue] = await Promise.all([
     callFacade("POST", `${OPERATOR}/connection-enrollments/${encodeURIComponent(handle)}/preview`, body),
     callFacade("GET", `${OPERATOR}/connection-identities`),
@@ -219,12 +191,10 @@ export async function decideConsent(
   const request =
     decision.verdict === "deny"
       ? create(DecideConnectionEnrollmentRequestSchema, {
-          handle,
           expectedVersion: expectedVersion(decision.expectedVersion),
           decision: { case: "deny", value: {} },
         })
       : create(DecideConnectionEnrollmentRequestSchema, {
-          handle,
           expectedVersion: expectedVersion(decision.expectedVersion),
           decision: {
             case: "allow",
@@ -247,10 +217,7 @@ export async function decideConsent(
             }),
           },
         });
-  const body = withoutPathField(
-    readJsonObject(toJson(DecideConnectionEnrollmentRequestSchema, request), "decision request"),
-    "handle"
-  );
+  const body = toJson(DecideConnectionEnrollmentRequestSchema, request);
   const response = fromJsonString(
     DecideConnectionEnrollmentResponseSchema,
     await callFacade("POST", `${OPERATOR}/connection-enrollments/${encodeURIComponent(handle)}/decision`, body)

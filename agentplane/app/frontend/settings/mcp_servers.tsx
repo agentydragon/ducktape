@@ -209,7 +209,7 @@ function linkageStatus(status: McpLinkageStatus): { label: string; color: "green
     case McpLinkageStatus.EXPIRED:
       return { label: "expired", color: "orange" };
     default:
-      throw new Error(`Unknown MCP linkage status (${status}).`);
+      return { label: `unknown (${status})`, color: "orange" };
   }
 }
 
@@ -228,8 +228,10 @@ function RefreshFailure({ linkage }: { linkage: McpServerLinkage }): JSX.Element
   if (failure === undefined) return null;
   const retryAt = retryAtIso(failure.retryAt);
   const next =
-    failure.action !== McpRefreshAction.RETRYING ? (
+    failure.action === McpRefreshAction.RECONNECT ? (
       "link the account again"
+    ) : failure.action !== McpRefreshAction.RETRYING ? (
+      `unknown refresh action (${failure.action})`
     ) : retryAt != null ? (
       <>
         retrying <TimeAgo value={retryAt} />

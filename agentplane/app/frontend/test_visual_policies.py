@@ -1081,6 +1081,27 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await view.capture(target=view.page.locator("#app"))
 
 
+async def test_mcp_servers_unknown_linkage_status(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_flag(Flag.UNKNOWN_MCP_STATUS)
+    await app.mount_app("/mcp-servers")
+    page = view.page
+    row = page.locator('[data-mcp-server="linkage:example_future"]')
+    await expect(row.get_by_text("OAuth link", exact=True)).to_be_visible()
+    await expect(row.get_by_text("Connection", exact=True)).to_be_visible()
+    await expect(row.get_by_text("unknown (91)", exact=True)).to_have_count(2)
+    await expect(row.get_by_text("unknown refresh action (91)", exact=False)).to_be_visible()
+    await view.check(context="unknown MCP linkage and health are rendered")
+    await row.scroll_into_view_if_needed()
+    await _in_viewport(row)
+    await view.capture(name="mcp_unknown_linkage_and_health", target=row)
+
+    reason_row = page.locator('[data-mcp-server="group:example_future_reason"]')
+    await expect(reason_row.get_by_text("unknown (92)", exact=True)).to_be_visible()
+    await reason_row.scroll_into_view_if_needed()
+    await _in_viewport(reason_row)
+    await view.capture(name="mcp_unknown_health_reason", target=reason_row)
+
+
 async def test_mcp_servers_linkage_and_health_update_while_open(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/mcp-servers")
     page = view.page
