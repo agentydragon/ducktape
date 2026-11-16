@@ -242,5 +242,33 @@ def test_apic_capture_precedes_monitor_and_finishes_at_userspace(
     assert summary["trace_stats"] == {"cpu0": "overrun: 0"}
 
 
+def test_pending_launcher_does_not_spend_observer_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    checking = threading.Event()
+    qemu_ready = threading.Event()
+    tracing = threading.Event()
+    target = {"pod_name": "test-launcher", "pod_uid": "test-uid", "vmi_name": "test-guest"}
+    monkeypatch.setattr(boot_interrupts.boot_rcu, "_namespace_launchers", lambda *_args: ([target], []))
+
+    def hosts(_root: Path, uids: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
+        checking.set()
+        return {uid: {"matching_qemu_processes": int(qemu_ready.is_set())} for uid in uids}, {}
+
+    def trace(*_args: Any) -> None:
+        assert qemu_ready.is_set()
+        tracing.set()
+
+    monkeypatch.setattr(boot_interrupts.boot_rcu, "_sample_qemus", hosts)
+    monkeypatch.setattr(boot_interrupts, "_trace_one", trace)
+    with boot_interrupts.capture(lambda *_args: "", "test-scope", tmp_path):
+        assert checking.wait(5)
+        assert not tracing.is_set()
+        qemu_ready.set()
+        assert tracing.wait(5)
+    assert json.loads((tmp_path / "boot-interrupts" / "observer.json").read_text()) == {
+        "pod_uids": ["test-uid"],
+        "errors": [],
+    }
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

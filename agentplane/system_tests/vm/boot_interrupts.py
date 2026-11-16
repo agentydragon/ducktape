@@ -439,8 +439,16 @@ def capture(kubectl: host_qemu.Kubectl, namespace: str, root: Path) -> Iterator[
                 while not stop.is_set() and time.monotonic() < deadline and len(seen) < MAX_LAUNCHERS:
                     try:
                         targets, _ = boot_rcu._namespace_launchers(kubectl, namespace)
-                        for target in targets:
-                            if target["pod_uid"] not in seen and len(seen) < MAX_LAUNCHERS:
+                        pending = [target for target in targets if target["pod_uid"] not in seen]
+                        # Pod admission/image setup can outlast the monitor startup
+                        # budget. Discover QEMU within the existing discovery window;
+                        # do not spend a launcher's observer budget on a Pending Pod.
+                        hosts, _ = boot_rcu._sample_qemus(Path("/proc"), [target["pod_uid"] for target in pending])
+                        for target in pending:
+                            if (
+                                hosts.get(target["pod_uid"], {}).get("matching_qemu_processes") == 1
+                                and len(seen) < MAX_LAUNCHERS
+                            ):
                                 seen.add(target["pod_uid"])
                                 tasks.append(workers.submit(_trace_one, kubectl, namespace, target, root, stop))
                     except Exception as error:
