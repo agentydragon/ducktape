@@ -1,8 +1,8 @@
 import { fromJsonString } from "@bufbuild/protobuf";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
 
-import { GetSystemStatusResponseSchema, SystemComponentState, type SystemComponentStatus } from "../app_service_pb";
-import { createAppServiceClient } from "./app_service_client";
+import { GetSystemStatusResponseSchema, SystemComponentState, type SystemComponentStatus } from "../../app_service_pb";
+import { createAppServiceClient } from "../app_service_client";
 
 /** A component status whose state is known and whose check time is present. */
 export type CheckedComponentStatus = SystemComponentStatus & { checkedAt: Timestamp };

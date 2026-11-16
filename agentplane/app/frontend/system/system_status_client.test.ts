@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 
-import { SystemComponentState } from "../app_service_pb";
+import { SystemComponentState } from "../../app_service_pb";
 import { getSystemStatus } from "./system_status_client";
 
 afterEach(() => {
