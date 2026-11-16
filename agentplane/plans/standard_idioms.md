@@ -20,7 +20,9 @@ This step implements versioned `WatchDispatches` reads through payload-free
 `postgres/wakeups.Hub` notifications. A fresh snapshot includes current Dispatches and retained deletion
 receipts in version order; resumed reads return versions after the cursor. Checkpoints use brief
 PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone` to account for allocation/commit
-reordering, and no transaction or lock spans stream sends.
+reordering; that transaction reads only the indexed frontier and retention floor. Read the bounded batch
+outside the lock in a read-only MVCC snapshot that rechecks retention coverage. No transaction spans
+stream sends.
 
 Requests and responses carry an opaque, versioned resume token with the last version and a digest of the
 filter, but no principal binding. Every request is authorized normally. A filter mismatch returns

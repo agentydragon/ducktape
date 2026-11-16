@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/lib/pq"
@@ -23,29 +24,61 @@ type dispatchChanges struct {
 	through int64
 }
 
-// readDispatchChanges returns a stable batch, completing its transaction before the caller
-// sends any frames. Sequence allocation is not commit order: SHARE locks drain writers that
-// may have allocated lower versions, and block new versions until the checkpoint is read.
+// readDispatchChanges fences sequence allocation briefly, then reads the bounded batch
+// without blocking writers. Later updates may coalesce a row into the next batch.
 func (s *Store) readDispatchChanges(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after int64, resuming bool) (dispatchChanges, error) {
-	var batch dispatchChanges
+	through, err := s.dispatchWatchFrontier(ctx, after, resuming)
+	if err != nil {
+		return dispatchChanges{}, err
+	}
+	return s.readDispatchChangesThrough(ctx, filter, caller, after, through, resuming)
+}
+
+// dispatchWatchFrontier drains writers that could have allocated lower versions before
+// checkpointing. Only indexed maxima and the singleton retention floor are read under SHARE;
+// the transaction commits before the receipt query or any stream send begins.
+func (s *Store) dispatchWatchFrontier(ctx context.Context, after int64, resuming bool) (int64, error) {
+	var through int64
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "LOCK TABLE dispatch, dispatch_tombstone IN SHARE MODE"); err != nil {
 			return err
 		}
-		var pruned int64
-		if err := tx.QueryRowContext(ctx, `SELECT pruned_through FROM dispatch_watch_retention WHERE singleton`).Scan(&pruned); err != nil {
+		if err := validateDispatchCoverage(ctx, tx, after, resuming); err != nil {
 			return err
-		}
-		if resuming && after < pruned {
-			return status.Error(codes.OutOfRange, "dispatch deletion coverage expired; resync with a fresh snapshot by clearing resume_token")
 		}
 		if err := tx.QueryRowContext(ctx, `SELECT GREATEST(
 			COALESCE((SELECT max(version) FROM dispatch),0),
-			COALESCE((SELECT max(version) FROM dispatch_tombstone),0),$1::bigint)`, pruned).Scan(&batch.through); err != nil {
+			COALESCE((SELECT max(version) FROM dispatch_tombstone),0),
+			(SELECT pruned_through FROM dispatch_watch_retention WHERE singleton))`).Scan(&through); err != nil {
 			return err
 		}
-		if after > batch.through {
+		if after > through {
 			return status.Error(codes.InvalidArgument, "resume_token is ahead of the dispatch checkpoint")
+		}
+		return nil
+	})
+	return through, err
+}
+
+func validateDispatchCoverage(ctx context.Context, tx *sql.Tx, after int64, resuming bool) error {
+	var pruned int64
+	if err := tx.QueryRowContext(ctx, `SELECT pruned_through FROM dispatch_watch_retention WHERE singleton`).Scan(&pruned); err != nil {
+		return err
+	}
+	if resuming && after < pruned {
+		return status.Error(codes.OutOfRange, "dispatch deletion coverage expired; resync with a fresh snapshot by clearing resume_token")
+	}
+	return nil
+}
+
+func (s *Store) readDispatchChangesThrough(ctx context.Context, filter *dispatcherpb.DispatchFilter, caller Caller, after, through int64, resuming bool) (dispatchChanges, error) {
+	batch := dispatchChanges{through: through}
+	// Pruning can commit after the frontier lock is released. Check coverage and read
+	// receipts in one MVCC snapshot, so a concurrent prune cannot silently erase a
+	// deletion from this batch. ACCESS SHARE permits ordinary dispatch writes/pruning.
+	err := postgres.ReadTransaction(ctx, s.DB, sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, func(tx *sql.Tx) error {
+		if err := validateDispatchCoverage(ctx, tx, after, resuming); err != nil {
+			return err
 		}
 		// Retained Sessions supply the same immutable owner and scope for both sources.
 		// Tombstones deliberately store and return no Sandbox address. Get/List still read
@@ -54,22 +87,22 @@ func (s *Store) readDispatchChanges(ctx context.Context, filter *dispatcherpb.Di
 		if filter.GetSandbox() != "" {
 			scopeColumn, scopeValue = "o.sandbox_name", filter.GetSandbox()
 		}
-		args := []any{after, scopeValue}
-		predicate := scopeColumn + "=$2"
+		args := []any{after, through, scopeValue}
+		predicate := scopeColumn + "=$3"
 		if len(filter.GetCommandIds()) > 0 {
 			args = append(args, pq.Array(filter.GetCommandIds()))
-			predicate += " AND c.command_id=ANY($3)"
+			predicate += " AND c.command_id=ANY($4)"
 		}
 		owner, ownerArgs := ownerScope(caller, "o.", len(args)+1)
 		args = append(args, ownerArgs...)
 		rows, err := tx.QueryContext(ctx, `WITH changes AS (
 			SELECT version,command_id,session_id,sandbox_name,sandbox_uid::text,operation,state,reason,
 				admission,delivery_blocker,wake_assessment,created_at,updated_at,false AS deleted
-			FROM dispatch WHERE version>$1
+			FROM dispatch WHERE version>$1 AND version<=$2
 			UNION ALL
 			SELECT version,command_id,session_id,''::varchar,''::text,operation,state,reason,
 				admission,delivery_blocker,wake_assessment,created_at,updated_at,true AS deleted
-			FROM dispatch_tombstone WHERE version>$1
+			FROM dispatch_tombstone WHERE version>$1 AND version<=$2
 		)
 		SELECT c.version,c.command_id,c.session_id,c.sandbox_name,c.sandbox_uid,c.operation,c.state,c.reason,
 			c.admission,c.delivery_blocker,c.wake_assessment,c.created_at,c.updated_at
