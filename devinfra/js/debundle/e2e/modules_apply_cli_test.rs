@@ -7,6 +7,7 @@ use debundle_e2e_support::{
 };
 use serde_json::json;
 use std::fs;
+use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
@@ -187,38 +188,13 @@ fn apply_ignores_modules_owned_by_other_chunks() {
     let fixture = GraphFixture::from_tree_run(run, "modules");
     let config = fixture.root().join("spec_config.yaml");
     let config = config.to_str().unwrap();
-    let report = fixture.json(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--tree-config",
+    let batch_path = proposed_apply_batch(
+        &fixture,
         config,
-        "--size-cap-lines",
-        "1",
-    ]);
-    let proposal = report["proposals"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| {
-            row["binding_ids"]
-                .as_array()
-                .is_some_and(|ids| ids.contains(&json!("a")))
-        })
-        .expect("main binding is proposed");
-    let batch_path = fixture.root().join("apply.json");
-    fs::write(
-        &batch_path,
-        serde_json::to_vec(&json!([{
-            "proposal_id": proposal["proposed_module_id"],
-            "source_unit_ids": proposal["source_unit_ids"],
-            "module": "chunks/main/foo",
-            "readable_names": {"a": "foo"}
-        }]))
-        .unwrap(),
-    )
-    .unwrap();
+        "a",
+        "chunks/main/foo",
+        json!({"a": "foo"}),
+    );
     let batch = batch_path.to_str().unwrap();
     fixture.assert_success(&[
         "modules",
@@ -247,38 +223,13 @@ fn apply_preserves_case_sensitive_chunk_root() {
     let fixture = GraphFixture::from_tree_run(run, "modules");
     let config = fixture.root().join("spec_config.yaml");
     let config = config.to_str().unwrap();
-    let report = fixture.json(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--tree-config",
+    let batch_path = proposed_apply_batch(
+        &fixture,
         config,
-        "--size-cap-lines",
-        "1",
-    ]);
-    let proposal = report["proposals"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| {
-            row["binding_ids"]
-                .as_array()
-                .is_some_and(|ids| ids.contains(&json!("a")))
-        })
-        .expect("binding is proposed");
-    let batch_path = fixture.root().join("apply.json");
-    fs::write(
-        &batch_path,
-        serde_json::to_vec(&json!([{
-            "proposal_id": proposal["proposed_module_id"],
-            "source_unit_ids": proposal["source_unit_ids"],
-            "module": "chunks/Main/services/foo",
-            "readable_names": {"a": "foo"}
-        }]))
-        .unwrap(),
-    )
-    .unwrap();
+        "a",
+        "chunks/Main/services/foo",
+        json!({"a": "foo"}),
+    );
     let batch = batch_path.to_str().unwrap();
     fixture.assert_success(&[
         "modules",
@@ -305,6 +256,48 @@ fn apply_preserves_case_sensitive_chunk_root() {
     let emitted = fixture.rerun();
     assert_module_exports(emitted.path(), "app/main/services/foo.js", &["foo"], &[]);
     assert_node_output(&emitted.path().join("app/main/entry.js"), "4\n", "");
+}
+
+fn proposed_apply_batch(
+    fixture: &GraphFixture,
+    config: &str,
+    binding: &str,
+    module: &str,
+    readable_names: serde_json::Value,
+) -> PathBuf {
+    let report = fixture.json(&[
+        "modules",
+        "propose",
+        "--strategy",
+        "auto",
+        "--tree-config",
+        config,
+        "--size-cap-lines",
+        "1",
+    ]);
+    let proposal = report["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| {
+            row["binding_ids"]
+                .as_array()
+                .is_some_and(|ids| ids.contains(&json!(binding)))
+        })
+        .expect("binding is proposed");
+    let batch_path = fixture.root().join("apply.json");
+    fs::write(
+        &batch_path,
+        serde_json::to_vec(&json!([{
+            "proposal_id": proposal["proposed_module_id"],
+            "source_unit_ids": proposal["source_unit_ids"],
+            "module": module,
+            "readable_names": readable_names
+        }]))
+        .unwrap(),
+    )
+    .unwrap();
+    batch_path
 }
 
 fn provider_fixture() -> (GraphFixture, serde_json::Value) {
