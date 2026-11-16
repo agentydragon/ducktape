@@ -110,7 +110,7 @@ separate per-message send grant. See
 When a notification is delivered, the service submits a command to Dispatcher. Dispatcher checks
 its caller account, resolves the Sandbox and stores its UID with the opening or command; its worker
 checks that the watched Sandbox still has that UID and that it owns the Sandbox's delivery Lease
-before continuing. The Go `ProxyRunner` sends the Sandbox name and UID to the proxy with
+before continuing. The Go `RuntimeProxyClient` sends the Sandbox name and UID to the proxy with
 expected-identity metadata. The proxy authenticates its caller and requires exact Sandbox UID and
 owner metadata, then resolves and checks the live Sandbox and ready Pod.
 The stable `runner-gateway` Service may route to any replica. Each replica can serve only with its

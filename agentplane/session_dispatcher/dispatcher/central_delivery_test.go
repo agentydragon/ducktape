@@ -99,7 +99,7 @@ func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
 	execution := SessionExecution{
 		Identity: &identitypb.Identity{Name: "executor-identity", Uid: "00000000-0000-4000-8000-00000000a008"},
 	}
-	runtime := &RoutingRunner{Native: native, Store: openingFixture{&Session{
+	runtime := &SessionDeliveryRouter{Native: native, Store: openingFixture{&Session{
 		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity,
 	}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
 	setup := "printf 'executor setup\\n'"
@@ -173,7 +173,7 @@ func TestCentralSamplerClientVerifiesServerTLSAndKeepsBearerAuthentication(t *te
 	if err := os.WriteFile(tokenFile, []byte("projected\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	runtime := &RoutingRunner{
+	runtime := &SessionDeliveryRouter{
 		Target: &CentralTarget{
 			Target: listener.Addr().String(), TokenFile: tokenFile,
 			TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI},
@@ -210,7 +210,7 @@ func TestCentralSamplerClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T)
 	t.Cleanup(server.Stop)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
-	runtime := &RoutingRunner{
+	runtime := &SessionDeliveryRouter{
 		Target: &CentralTarget{
 			Target: listener.Addr().String(),
 			TLS: &peertls.ClientTLS{
@@ -267,7 +267,7 @@ func firstMetadataValue(md metadata.MD, key string) string {
 	return values[0]
 }
 
-func TestProxyRunnerUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
+func TestRuntimeProxyClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	serverCertificate := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	serverTLS, err := serverCertificate.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
@@ -285,7 +285,7 @@ func TestProxyRunnerUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	t.Cleanup(server.Stop)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
-	runtime := &ProxyRunner{
+	runtime := &RuntimeProxyClient{
 		Namespace: "agentplane", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
 		GatewayTLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,

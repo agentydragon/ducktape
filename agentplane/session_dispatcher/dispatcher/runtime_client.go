@@ -14,9 +14,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 )
 
-// ProxyRunner dials the stable Environments Service for each call. Any replica can
-// serve the call, and command IDs reconcile uncertain replies at the runner journal.
-type ProxyRunner struct {
+// RuntimeProxyClient calls the Environments Runtime proxy for each operation. Any replica can
+// serve the call, and command IDs reconcile uncertain replies at the Runtime journal.
+type RuntimeProxyClient struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
@@ -27,7 +27,7 @@ type ProxyRunner struct {
 	TargetTemplate string
 }
 
-func (r *ProxyRunner) target(sandbox string) string {
+func (r *RuntimeProxyClient) target(sandbox string) string {
 	template := r.TargetTemplate
 	if template == "" {
 		template = sandboxapi.RuntimeProxyTargetTemplate()
@@ -35,12 +35,12 @@ func (r *ProxyRunner) target(sandbox string) string {
 	return environmentruntimeclient.ExpandTarget(template, sandbox, r.Namespace)
 }
 
-func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
+func (r *RuntimeProxyClient) withClient(ctx context.Context, sandbox SandboxSnapshot, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
 	if r.Timeout <= 0 {
-		return errors.New("runner request timeout must be positive")
+		return errors.New("Runtime proxy request timeout must be positive")
 	}
 	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace == "" || sandbox.Namespace != r.Namespace {
-		return errors.New("complete in-namespace Sandbox identity is required for runner proxy")
+		return errors.New("complete in-namespace Sandbox identity is required for Runtime proxy")
 	}
 	return environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
 		TLS: r.GatewayTLS, Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
@@ -49,7 +49,7 @@ func (r *ProxyRunner) withClient(ctx context.Context, sandbox SandboxSnapshot, c
 	}, call)
 }
 
-func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution SessionExecution) error {
+func (r *RuntimeProxyClient) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution SessionExecution) error {
 	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript,
@@ -59,7 +59,7 @@ func (r *ProxyRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot
 	})
 }
 
-func (r *ProxyRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapshot, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
 	var admission *eventlogpb.EventEntry
 	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
 		switch payload := command.GetOperation().(type) {

@@ -38,11 +38,11 @@ type sessionReader interface {
 	GetSession(context.Context, string) (*Session, error)
 }
 
-// RoutingRunner keeps native execution local and routes centrally persisted
-// conversations directly to their sampler. The execution Sandbox is a binding,
+// SessionDeliveryRouter keeps Environment-hosted execution local and routes centrally persisted
+// Sessions directly to their sampler. The execution Sandbox is a binding,
 // not the authority for the central conversation's lifetime.
-type RoutingRunner struct {
-	Native  DeliveryRunner
+type SessionDeliveryRouter struct {
+	Native  SessionDelivery
 	Store   sessionReader
 	Target  *CentralTarget
 	Timeout time.Duration
@@ -68,7 +68,7 @@ func ValidateRuntime(sessionPlacement placement.SessionPlacement, setup *string,
 	return nil
 }
 
-func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Context, samplerpb.SamplerClient) error) error {
+func (r *SessionDeliveryRouter) withClient(ctx context.Context, call func(context.Context, samplerpb.SamplerClient) error) error {
 	target := r.Target
 	if target == nil {
 		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
@@ -87,7 +87,7 @@ func (r *RoutingRunner) withClient(ctx context.Context, call func(context.Contex
 	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
 }
 
-func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution SessionExecution) error {
+func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution SessionExecution) error {
 	if execution.Identity == nil || execution.Identity.GetName() == "" || execution.Identity.GetUid() == "" {
 		return status.Error(codes.FailedPrecondition, "central Session requires a complete execution Identity")
 	}
@@ -117,7 +117,7 @@ func (r *RoutingRunner) CreateSession(ctx context.Context, sandbox SandboxSnapsh
 	})
 }
 
-func (r *RoutingRunner) Deliver(ctx context.Context, sandbox SandboxSnapshot, id string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+func (r *SessionDeliveryRouter) Deliver(ctx context.Context, sandbox SandboxSnapshot, id string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
 	session, err := r.Store.GetSession(ctx, id)
 	if err != nil {
 		return nil, err

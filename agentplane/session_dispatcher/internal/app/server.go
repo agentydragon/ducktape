@@ -174,18 +174,18 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := waitForListener(ctx, hub, failed); err != nil {
 		return err
 	}
-	nativeRuntime := &dispatcher.ProxyRunner{
+	nativeRuntime := &dispatcher.RuntimeProxyClient{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		GatewayTLS:     c.GatewayTLS,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
-	runtime := &dispatcher.RoutingRunner{Native: nativeRuntime, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: store, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: wakeManager,
-		Leases: dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
-		Runner: runtime, Hub: hub, Ready: ready,
+		Leases:   dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
+		Delivery: runtime, Hub: hub, Ready: ready,
 	}
 	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()
 	select {

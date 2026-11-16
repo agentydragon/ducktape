@@ -206,7 +206,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
 			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
 		}}, Wake: queueWake{}, Leases: queueLease{store: store},
-		Runner: &dispatcher.ProxyRunner{
+		Delivery: &dispatcher.RuntimeProxyClient{
 			Namespace: f.namespace, GatewayTLS: gatewayTLS, Timeout: 5 * time.Second,
 			TargetTemplate: proxy.target,
 		},

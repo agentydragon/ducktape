@@ -49,8 +49,8 @@ type WakeRequester interface {
 	RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeCaller) (*environmentpb.WakeAssessment, error)
 }
 
-type DeliveryRunner interface {
-	RunnerCommands
+type SessionDelivery interface {
+	SessionCommandDelivery
 	CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, SessionExecution) error
 }
 
@@ -60,13 +60,13 @@ type LeaseOwner interface {
 }
 
 type DeliveryWorker struct {
-	Store   *Store
-	Catalog SandboxCatalog
-	Wake    WakeRequester
-	Leases  LeaseOwner
-	Runner  DeliveryRunner
-	Hub     *WatchHub
-	Logger  *slog.Logger
+	Store    *Store
+	Catalog  SandboxCatalog
+	Wake     WakeRequester
+	Leases   LeaseOwner
+	Delivery SessionDelivery
+	Hub      *WatchHub
+	Logger   *slog.Logger
 	// Ready closes after the first successful, complete reconciliation. Serving
 	// must wait for this so admission never precedes queue recovery.
 	Ready chan struct{}
@@ -93,7 +93,7 @@ func (w *DeliveryWorker) init() {
 }
 
 func (w *DeliveryWorker) Run(ctx context.Context) error {
-	if w.Store == nil || w.Catalog == nil || w.Wake == nil || w.Leases == nil || w.Runner == nil || w.Hub == nil {
+	if w.Store == nil || w.Catalog == nil || w.Wake == nil || w.Leases == nil || w.Delivery == nil || w.Hub == nil {
 		return errors.New("dispatcher delivery dependencies are required")
 	}
 	w.init()
@@ -626,7 +626,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if !marked || ctx.Err() != nil {
 		return false
 	}
-	admission, callErr := w.Runner.Deliver(ctx, sandbox, head.SessionID, head.Command)
+	admission, callErr := w.Delivery.Deliver(ctx, sandbox, head.SessionID, head.Command)
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner delivery failed")
 	}
@@ -685,7 +685,7 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 		w.clearRetry(session.SessionID)
 		return true
 	}
-	callErr := w.Runner.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.execution())
+	callErr := w.Delivery.CreateSession(ctx, sandbox, session.SessionID, session.Spec, session.SetupScript, session.execution())
 	if callErr != nil {
 		span.SetStatus(otelcodes.Error, "runner Session failed")
 	}
