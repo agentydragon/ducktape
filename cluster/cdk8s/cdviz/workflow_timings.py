@@ -246,6 +246,7 @@ def build_dashboard() -> dashboard.Dashboard:
                             },
                         ),
                         field_override("URL", {"custom.hidden": True}),
+                        field_override("PR", {"unit": "none"}),
                         field_override("Runtime", {"unit": "s", "decimals": 0}),
                         field_override("Queue to start", {"unit": "s", "decimals": 0, "custom.width": 110}),
                         field_override("Started", {"unit": "dateTimeAsIso", "custom.width": 170}),
