@@ -1364,6 +1364,9 @@ pub fn resolve_imported_callable_summaries(
             }),
         );
         if bundle_globals != BundleGlobalNames::default() {
+            // The first census has supplied its global-name result. Retire
+            // its complete source indexes before constructing their replacements.
+            drop(prepared);
             (
                 prepared,
                 resolved_value_inputs,
