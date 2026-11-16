@@ -9,6 +9,7 @@ import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.app.testing.client import Client
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.proto import session_pb2
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
@@ -49,6 +50,14 @@ async def test_history_openings_do_not_create_app_thread_metadata(
             summary = await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")
             assert summary.status_code == 200, summary.text
             assert summary.json()["sandbox"]["name"] == SANDBOX
+    assert (await http.get(f"/upstream/app/v1/threads/{session_id}")).status_code == 404
+    client = Client(http)
+    view = await client.wait_for_thread_projection(session_id, timeout_s=10)
+    assert view.id == session_id
+    assert view.name is None
+    assert not view.archived
+    assert session_id in {thread.id async for thread in client.threads(sandbox_uid=sandbox.destination.target.uid)}
+    # Client-side defaults must not create an App metadata row.
     assert (await http.get(f"/upstream/app/v1/threads/{session_id}")).status_code == 404
 
 

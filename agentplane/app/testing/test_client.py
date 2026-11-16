@@ -68,6 +68,102 @@ def test_thread_view_preserves_typed_or_historical_harness(
     assert view.harness == want
 
 
+@pytest.mark.parametrize("has_metadata", [False, True])
+async def test_thread_projection_uses_dispatcher_membership_with_optional_metadata(has_metadata: bool) -> None:
+    session_id = uuid4()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        match request.url.path:
+            case path if path == f"/upstream/dispatcher/v1/sessions/{session_id}":
+                return httpx.Response(
+                    200, json={"session": {"sessionId": str(session_id), "createdAt": "2026-11-01T00:00:00Z"}}
+                )
+            case path if path == f"/upstream/history/v1/sessions/{session_id}/summary":
+                return httpx.Response(200, json={"sessionId": str(session_id), "foldedThrough": "7"})
+            case path if path == f"/upstream/app/v1/threads/{session_id}":
+                return httpx.Response(
+                    200 if has_metadata else 404,
+                    json={
+                        "threadId": str(session_id),
+                        "createdAt": "2026-11-02T00:00:00Z",
+                        "name": "Test title",
+                        "archived": True,
+                    }
+                    if has_metadata
+                    else {},
+                )
+            case _:
+                raise AssertionError(f"unexpected request {request.url}")
+
+    async with httpx.AsyncClient(base_url="https://app.test", transport=httpx.MockTransport(respond)) as http:
+        view = await Client(http).wait_for_thread_projection(session_id, timeout_s=1)
+    assert view.id == session_id
+    assert view.created_at.isoformat() == "2026-11-01T00:00:00+00:00"
+    assert view.last_cursor == 7
+    assert view.name == ("Test title" if has_metadata else None)
+    assert view.archived is has_metadata
+
+
+async def test_thread_projection_propagates_metadata_authorization_failure() -> None:
+    session_id = uuid4()
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"/upstream/dispatcher/v1/sessions/{session_id}":
+            return httpx.Response(200, json={"session": {"sessionId": str(session_id)}})
+        if request.url.path == f"/upstream/history/v1/sessions/{session_id}/summary":
+            return httpx.Response(200, json={})
+        return httpx.Response(403, json={"message": "denied"})
+
+    async with httpx.AsyncClient(base_url="https://app.test", transport=httpx.MockTransport(respond)) as http:
+        with pytest.raises(httpx.HTTPStatusError) as caught:
+            await Client(http).thread(session_id)
+    assert caught.value.response.status_code == 403
+
+
+async def test_artifact_inventory_pages_dispatcher_sessions_without_app_metadata() -> None:
+    first, second, pending, other = (str(uuid4()) for _ in range(4))
+    observed: list[httpx.Request] = []
+
+    def session(session_id: str, uid: str, *, central: bool = False) -> dict[str, object]:
+        placement = (
+            {"centralSamplerV1": {"executorEnvironment": {"name": "test-box", "uid": uid}}}
+            if central
+            else {"environmentHosted": {"environment": {"name": "test-box", "uid": uid}}}
+        )
+        return {"sessionId": session_id, "createdAt": "2026-11-01T00:00:00Z", "placement": placement}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        observed.append(request)
+        if request.url.path == "/upstream/dispatcher/v1/sessions":
+            assert request.url.params["limit"] == "100"
+            if request.url.params.get("page_token") == "next":
+                return httpx.Response(200, json={"sessions": [session(second, "test-uid", central=True)]})
+            return httpx.Response(
+                200,
+                json={
+                    "sessions": [session(first, "test-uid"), session(pending, "test-uid"), session(other, "other-uid")],
+                    "nextPageToken": "next",
+                },
+            )
+        if request.url.path in {
+            f"/upstream/history/v1/sessions/{first}/summary",
+            f"/upstream/history/v1/sessions/{second}/summary",
+        }:
+            return httpx.Response(200, json={})
+        if request.url.path in {
+            f"/upstream/app/v1/threads/{first}",
+            f"/upstream/app/v1/threads/{second}",
+            f"/upstream/history/v1/sessions/{pending}/summary",
+        }:
+            return httpx.Response(404, json={})
+        raise AssertionError(f"unexpected request {request.url}")
+
+    async with httpx.AsyncClient(base_url="https://app.test", transport=httpx.MockTransport(respond)) as http:
+        views = [view async for view in Client(http).threads(sandbox_uid="test-uid")]
+    assert [str(view.id) for view in views] == [first, second]
+    assert not any(request.url.path == "/upstream/app/v1/threads" for request in observed)
+
+
 async def _respond(
     writer: asyncio.StreamWriter, status: str, body: bytes = b"", content_type: str = "application/json"
 ) -> None:
@@ -451,11 +547,11 @@ async def test_history_reader_resets_outage_budget_after_a_healthy_response(
         responses = [_unavailable_error(), missing, _unavailable_error(), healthy]
         advances = [9.0, 0.0, 0.5, 0.0]
 
-        async def metadata(_thread_id: object) -> object:
+        async def session(_thread_id: object) -> object:
             elapsed[0] += 100
             return object()
 
-        client.thread_metadata.side_effect = metadata
+        client.session.side_effect = session
 
     async def read(_thread_id: object, *, after_cursor: int, limit: int) -> object:
         del after_cursor, limit
@@ -537,20 +633,20 @@ async def test_history_reader_treats_only_initial_history_404_as_pending_attachm
         await reader.read_page()
 
     assert caught.value is missing
-    client.thread_metadata.assert_not_awaited()
+    client.session.assert_not_awaited()
 
 
-async def test_history_reader_waits_for_history_attachment_when_thread_metadata_exists() -> None:
+async def test_history_reader_waits_for_history_attachment_when_dispatcher_session_exists() -> None:
     client = create_autospec(Client, instance=True)
     request = httpx.Request("GET", "https://app.test.invalid/history")
     missing = httpx.HTTPStatusError("missing", request=request, response=httpx.Response(404, request=request))
     client.read_session_events.side_effect = missing
-    client.thread_metadata.return_value = object()
+    client.session.return_value = object()
     reader = SessionEventReader(client, uuid4())
 
     assert await reader.read_page() == []
     assert reader.pending_attachment
-    assert client.thread_metadata.await_count == 1
+    assert client.session.await_count == 1
 
 
 async def test_history_reader_propagates_unknown_initial_session() -> None:
@@ -558,7 +654,7 @@ async def test_history_reader_propagates_unknown_initial_session() -> None:
     request = httpx.Request("GET", "https://app.test.invalid/history")
     missing = httpx.HTTPStatusError("missing", request=request, response=httpx.Response(404, request=request))
     client.read_session_events.side_effect = missing
-    client.thread_metadata.side_effect = missing
+    client.session.side_effect = missing
 
     with pytest.raises(httpx.HTTPStatusError) as caught:
         await SessionEventReader(client, uuid4()).read_page()

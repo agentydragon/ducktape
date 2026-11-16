@@ -724,6 +724,7 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/app:integration_fixtures",
+        "//agentplane/app/testing:client",
         "//agentplane/app/testing:runtime_fixtures",
         "//agentplane/env/e2e/testing:process",
         "//agentplane/proto:session_pb2",

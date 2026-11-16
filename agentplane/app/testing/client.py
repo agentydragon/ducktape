@@ -55,7 +55,7 @@ def _no_app_answered(response: httpx.Response) -> bool:
 
 
 def _thread_not_found(error: BaseException) -> bool:
-    """The App metadata or History summary needed for the Thread view is not available yet."""
+    """The Dispatcher Session or History summary is not available yet."""
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND
 
 
@@ -327,7 +327,7 @@ class Client:
         return thread
 
     async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
-        """Wait for the App metadata and History summary needed for a Thread view; only 404 is retried."""
+        """Wait for Dispatcher membership and a History summary; App metadata is optional."""
         return await AsyncRetrying(
             stop=stop_after_delay(timeout_s),
             wait=wait_fixed(0.2),
@@ -341,30 +341,54 @@ class Client:
         return ThreadMetadata.model_validate(data)
 
     async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
-        """Compose App metadata with History summaries for this Sandbox incarnation, including archived Threads."""
-        params = {"include_archived": "true", "limit": "200"}
+        """Enumerate Dispatcher Sessions for artifact capture, including those without App metadata."""
+        params = {"limit": "100"}
         while True:
-            page = await self._json("GET", "/upstream/app/v1/threads", params=params)
-            for row in page.get("threads", []):
-                metadata = ThreadMetadata.model_validate(row)
+            page = ParseDict(
+                await self._json("GET", "/upstream/dispatcher/v1/sessions", params=params),
+                session_dispatcher_pb2.ListSessionsResponse(),
+            )
+            for session in page.sessions:
+                placement = session.placement
+                environment = (
+                    placement.environment_hosted.environment
+                    if placement.WhichOneof("kind") == "environment_hosted"
+                    else placement.central_sampler_v1.executor_environment
+                )
+                if environment.uid != sandbox_uid:
+                    continue
                 try:
-                    summary = await self._json("GET", f"/upstream/history/v1/sessions/{metadata.thread_id}/summary")
+                    yield await self._thread(session)
                 except httpx.HTTPStatusError as error:
                     if error.response.status_code == HTTPStatus.NOT_FOUND:
                         continue
                     raise
-                history_sandbox = summary.get("sandbox") or {}
-                if history_sandbox.get("uid") == sandbox_uid:
-                    yield thread_view_from_proto_json(row, summary)
-            page_token = page.get("nextPageToken")
-            if not page_token:
+            if not page.next_page_token:
                 return
-            params["page_token"] = page_token
+            params["page_token"] = page.next_page_token
+
+    async def session(self, session_id: UUID) -> session_dispatcher_pb2.Session:
+        """Read membership through the Dispatcher's generated HTTP facade."""
+        response = ParseDict(
+            await self._json("GET", f"/upstream/dispatcher/v1/sessions/{session_id}"),
+            session_dispatcher_pb2.GetSessionResponse(),
+        )
+        return response.session
 
     async def thread(self, thread_id: UUID) -> ThreadView:
-        """Compose App-owned metadata and the History summary for a Session's public ID."""
-        metadata = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
+        """Compose Dispatcher membership, optional App metadata and History in this client."""
+        return await self._thread(await self.session(thread_id))
+
+    async def _thread(self, session: session_dispatcher_pb2.Session) -> ThreadView:
+        thread_id = session.session_id
         summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
+        try:
+            metadata = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code != HTTPStatus.NOT_FOUND:
+                raise
+            metadata = {"threadId": thread_id}
+        metadata["createdAt"] = session.created_at.ToJsonString()
         return thread_view_from_proto_json(metadata, summary)
 
     async def read_session_events(
