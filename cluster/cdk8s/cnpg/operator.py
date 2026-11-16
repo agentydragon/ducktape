@@ -6,7 +6,7 @@ Namespace, the shared HelmRepository and both HelmReleases, which install their 
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
     HelmReleaseSpecInstallCrds,
@@ -15,11 +15,13 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecUpgradeCrds,
     HelmReleaseSpecUpgradeRemediation,
 )
+from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 
 NAME = "cnpg"
 NAMESPACE = "cnpg-system"
@@ -73,5 +75,16 @@ def chart(app: App) -> Chart:
         ),
         values=_CRITICAL_VALUES,
         description="CloudNativePG Barman Cloud plugin for physical backups and WAL archiving.",
+    )
+    PodMonitor(
+        chart,
+        "operator-metrics",
+        metadata=ApiObjectMetadata(name="cnpg-operator", namespace=NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(
+                match_labels={"app.kubernetes.io/instance": NAME, "app.kubernetes.io/name": "cloudnative-pg"}
+            ),
+            pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
+        ),
     )
     return chart
