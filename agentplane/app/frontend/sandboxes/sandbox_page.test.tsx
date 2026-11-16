@@ -30,6 +30,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import * as sandboxClient from "./client";
+import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type { Live } from "../transport/live";
@@ -179,9 +180,9 @@ async function render(
   threadActions: (request: Request) => Promise<Response> = async () => new Response(null, { status: 204 }),
   claudePaused = false,
   routeNavigation = false,
-  runnerStatus: () => Promise<Response> = async () =>
+  runnerStatus: (target: EnvironmentTarget) => Promise<Response> = async (target) =>
     Response.json(
-      runnerStatusFixture({
+      runnerStatusFixture(target, {
         environmentRuntimeBootId: "boot-visual-001",
         processes: [
           {
@@ -263,7 +264,17 @@ async function render(
       });
       return Promise.resolve(Response.json(testSandboxPresetsProtoJSON([preset])));
     }
-    if (/^\/sandboxes\/(startup-test|other-test)\/runner-status$/.test(path)) return runnerStatus();
+    const diagnostics = path.match(
+      /^\/upstream\/environments\/v1\/environments\/([^/]+)\/([^/]+):runtime-diagnostics$/
+    );
+    if (diagnostics)
+      return runnerStatus(
+        create(EnvironmentTargetSchema, {
+          namespace: decodeURIComponent(diagnostics[1]),
+          name: decodeURIComponent(diagnostics[2]),
+          uid: new URL(request.url).searchParams.get("target.uid") ?? "",
+        })
+      );
     if (/^\/upstream\/environments\/v1\/environments\/[^/]+\/[^/]+:identity-record$/.test(path)) {
       return Promise.resolve(Response.json({}));
     }
@@ -486,7 +497,7 @@ it("opens the Kubernetes status items that have an unmet condition and no others
 });
 
 it("refreshes the runner snapshot and replaces old process and Session details", async () => {
-  let status: object = runnerStatusFixture({
+  let status: object = runnerStatusFixture(readySandbox.target!, {
     environmentRuntimeBootId: "boot-before-refresh",
     lifecycle: acknowledgedQuiescingLifecycleFixture({
       generation: 7n,
@@ -527,7 +538,7 @@ it("refreshes the runner snapshot and replaces old process and Session details",
   expect(container.textContent).toContain("Blocked at History acknowledgement");
   expect(container.textContent).toContain("Acknowledged cursor · 11 of 12 · sealed yes");
 
-  status = runnerStatusFixture({
+  status = runnerStatusFixture(readySandbox.target!, {
     environmentRuntimeBootId: "boot-after-refresh",
     lifecycle: {
       desiredMode: EnvironmentRuntimeLifecycleMode.CLOSING,
@@ -583,7 +594,10 @@ it("reports suspended Runtime diagnostics without a read or wake request", async
     const request = requestFromFetchInput(input, init);
     return [request.method, new URL(request.url).pathname];
   });
-  expect(paths).not.toContainEqual(["GET", "/sandboxes/startup-test/runner-status"]);
+  expect(paths).not.toContainEqual([
+    "GET",
+    `/upstream/environments/v1/environments/${readySandbox.target!.namespace}/startup-test:runtime-diagnostics`,
+  ]);
   expect(paths).not.toContainEqual(["POST", "/sandboxes/startup-test/resume"]);
 });
 

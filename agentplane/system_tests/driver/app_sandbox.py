@@ -379,7 +379,14 @@ async def _write_sandbox_diagnostics(
         ),
         None,
     )
-    state_operations = [app_state("runner_status", lambda: client.runner_status(name, uid))]
+    state_operations = [
+        app_state(
+            "runner_status",
+            lambda: client.runner_status(
+                identity_pb2.EnvironmentTarget(namespace=cluster.namespace, name=name, uid=uid)
+            ),
+        )
+    ]
     if observed is not None:
         state_operations.append(app_state("app_sandbox", lambda: client.get_environment(observed.target)))
     await asyncio.gather(*state_operations)

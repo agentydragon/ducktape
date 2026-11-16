@@ -159,7 +159,8 @@ values and the Sandbox's own state, and reads as unconfirmed whenever the Thread
 Thread-update listener (`updates_connected` in the Thread snapshot) is not current. The Status tab shows the
 Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
 does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
-`GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
+`GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`
+through the generated EnvironmentService facade for current runner process and Session diagnostics; it does not
 wake a suspended Sandbox. A missing or unavailable runner is
 shown as unavailable, while suspended Sandboxes show that diagnostics are unavailable until resumed.
 Idle Sessions can be archived while their harness process remains live. The UI disables archive for
@@ -167,8 +168,11 @@ observable active turns, setup, or a pending local launch; the server checks whe
 unfinished before accepting the archive request.
 The app's protobuf-defined `AppService` serves generated HTTP routes at
 `POST /sandboxes/{name}/sessions`, `GET /sandboxes/{name}/runner-status`, and
-`GET /upstream/app/v1/system/status`. The Runner status route returns the existing
-`EnvironmentRuntimeStatus` message and reads the current Runner over native gRPC. System status
+`GET /upstream/app/v1/system/status`. The Runner status route remains available for cached clients;
+current browser and test clients use the EnvironmentService diagnostics facade, validate its exact
+target, incarnation, observation time and Runtime boot ID, and display its `EnvironmentRuntimeStatus`.
+The accepting app image must deploy before those clients; the app's existing SVID and generated
+gateway carry the read to EnvironmentService. System status
 returns a `components` list using the generated component-state enum, optional error detail, and
 ProtoJSON `checkedAt` timestamp. It uses the same authenticated caller boundary and refreshes every
 15 seconds in the browser.

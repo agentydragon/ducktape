@@ -57,6 +57,10 @@ within a minute, the composer combines them while keeping the exact idle timesta
 
 ## Runtime diagnostics
 
+The Status tab reads the generated EnvironmentService diagnostics facade through the authenticated
+app. It requires matching namespace/name/UID, a workload incarnation, an observation timestamp and
+a Runtime boot ID before displaying a snapshot. Missing or mismatched evidence is unavailable.
+
 The Status tab shows the Runtime's desired lifecycle mode and generation alongside the aggregate
 controller's published stage. When progress belongs to the desired generation, it also shows the
 controller's first unmet barrier and its resource/process identity, available admission count,
