@@ -164,6 +164,7 @@ py_library(
         ":record_json",
         ":record_payloads",
         ":restic",
+        ":session_identity",
         ":session_kind_projection",
         ":snapshot_inventory",
         ":source_paths",
@@ -918,6 +919,17 @@ py_library(
         ":record_interpretation",
         ":record_json",
         ":version_lineage",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_identity",
+    srcs = ["session_identity.py"],
+    deps = [
+        ":database",
+        ":models",
+        ":source_paths",
         "@pypi//sqlalchemy",
     ],
 )

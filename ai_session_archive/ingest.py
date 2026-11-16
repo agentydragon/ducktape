@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, BinaryIO, cast
-from uuid import NAMESPACE_URL, UUID, uuid5
+from uuid import UUID, uuid5
 
 from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -35,6 +35,7 @@ from ai_session_archive.record_interpretation import extract_session_metadata
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticRepository, ResticSnapshot
+from ai_session_archive.session_identity import SourceSessionIdentity
 from ai_session_archive.session_kind_projection import project_missing_session_kinds
 from ai_session_archive.snapshot_inventory import (
     KNOWN_DIFF_MODIFIERS,
@@ -90,12 +91,13 @@ class SnapshotIngestor:
         self._session_factory = session_factory
         self._staging = FileStaging(session_factory)
         self._source = source
+        self._identity = SourceSessionIdentity(source.machine_id, source.roots)
         self._inventory = SnapshotInventory(
             session_factory=session_factory,
             machine_id=source.machine_id,
             restic=source.restic,
             roots=source.roots,
-            ensure_session=self._ensure_session,
+            ensure_session=self._identity.ensure,
         )
 
     def ingest(self) -> IngestReport:
@@ -155,54 +157,6 @@ class SnapshotIngestor:
                     ),
                 )
             )
-
-    def _ensure_session(self, db: DbSession, location: SourceLocation, inferred: bool = False) -> SessionRow:
-        # Inventories for distinct snapshots can discover the same physical session concurrently.
-        db.get(MachineRow, self._source.machine_id, with_for_update=True)
-        session_id = _session_id(self._source.machine_id, location.harness, location.source_path)
-        row = db.get(SessionRow, session_id)
-        if row is not None:
-            if not inferred and row.identity_inferred:
-                row.identity_inferred = False
-                row.source_relative_path = location.relative_path.as_posix()
-                if row.native_session_id_inferred:
-                    row.native_session_id = location.native_session_id
-                if location.parent_source_path is not None:
-                    row.parent_session_id = _session_id(
-                        self._source.machine_id, location.harness, location.parent_source_path
-                    )
-                    row.parent_link_kind = "claude_path_inferred"
-            return row
-        parent_id = None
-        parent_link_kind = None
-        if not inferred and location.parent_source_path is not None:
-            parent_id = _session_id(self._source.machine_id, location.harness, location.parent_source_path)
-            parent_link_kind = "claude_path_inferred"
-            parent_location = classify_source_path(location.parent_source_path, self._inventory.roots)
-            if parent_location is not None:
-                self._ensure_session(db, parent_location, inferred=True)
-        row = SessionRow(
-            id=session_id,
-            machine_id=self._source.machine_id,
-            harness=location.harness.value,
-            source_path=location.source_path,
-            source_relative_path=location.relative_path.as_posix(),
-            native_session_id=location.native_session_id,
-            native_session_id_inferred=True,
-            parent_session_id=parent_id,
-            parent_link_kind=parent_link_kind,
-            identity_inferred=inferred,
-            session_kind=(
-                SessionKind.SUBAGENT.value
-                if location.harness == Harness.CLAUDE and location.parent_source_path is not None
-                else SessionKind.MAIN.value
-                if location.harness == Harness.CLAUDE and inferred
-                else SessionKind.UNKNOWN.value
-            ),
-        )
-        db.add(row)
-        db.flush()
-        return row
 
     def _process_snapshot(self, snapshot: ResticSnapshot) -> None:
         with self._session_factory() as db:
@@ -453,7 +407,7 @@ class SnapshotIngestor:
                         # for the next pass, which will capture the new comparison-parent decision.
                         return
                     session_row = (
-                        db.get(SessionRow, row.session_id) if row.session_id else self._ensure_session(db, location)
+                        db.get(SessionRow, row.session_id) if row.session_id else self._identity.ensure(db, location)
                     )
                     if session_row is None:
                         raise RuntimeError(f"missing session row for {path}")
@@ -615,10 +569,6 @@ class SnapshotIngestor:
             files_unclassified=sum(row.status == SnapshotFileStatus.UNCLASSIFIED for row in files),
             codex_metadata_partial=sum(row.codex_metadata_status == CodexMetadataStatus.PARTIAL for row in snapshots),
         )
-
-
-def _session_id(machine_id: str, harness: Harness, source_path: str) -> UUID:
-    return uuid5(NAMESPACE_URL, f"ai-session:{machine_id}:{harness.value}:{source_path}")
 
 
 def _fingerprint_file(source: BinaryIO) -> tuple[str, int, int]:
