@@ -265,9 +265,9 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="stat",
                 id_val=6,
-                targets=[mimir_query("resets(att_gateway_uptime_seconds[7d])", legend="").build()],
+                targets=[mimir_query("resets((max(att_gateway_uptime_seconds))[7d:1m])", legend="").instant().build()],
                 title="Gateway reboots (7d)",
-                description="Times the gateway's uptime went back to zero in the last 7 days.",
+                description="Observed decreases in the gateway's uptime in the last 7 days, sampled each minute. Gaps can hide reboots.",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=16, y=1),
                 options=stat_options(common.BigValueColorMode.BACKGROUND),
