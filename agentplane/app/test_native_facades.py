@@ -38,11 +38,33 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.cancelled = asyncio.Event()
         self.reject_watch = False
         self.clean_eof = False
+        self.inventory_requests: list[session_dispatcher_pb2.WatchSessionsRequest] = []
+        self.inventory_updates: asyncio.Queue[session_dispatcher_pb2.Session] = asyncio.Queue()
+        self.inventory_cancelled = asyncio.Event()
 
     def record_authorization(self, context: grpc.aio.ServicerContext) -> None:
         self.authorization.extend(
             str(value) for key, value in (context.invocation_metadata() or ()) if key == "authorization"
         )
+
+    @override
+    async def WatchSessions(self, request, context):
+        self.inventory_requests.append(request)
+        session = session_dispatcher_pb2.Session(
+            session_id="10000000-0000-4000-8000-000000000031",
+            status=session_dispatcher_pb2.SessionStatus(
+                materialization=session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_WAITING
+            ),
+        )
+        session.created_at.FromSeconds(1_700_000_000)
+        try:
+            yield session_dispatcher_pb2.WatchSessionsResponse(session=session, resume_token="test-snapshot-token")
+            yield session_dispatcher_pb2.WatchSessionsResponse(caught_up={}, resume_token="test-snapshot-token")
+            while True:
+                updated = await self.inventory_updates.get()
+                yield session_dispatcher_pb2.WatchSessionsResponse(session=updated, resume_token="test-update-token")
+        finally:
+            self.inventory_cancelled.set()
 
     @override
     async def ListDispatches(self, request, context):
@@ -219,6 +241,66 @@ async def test_unknown_facade_paths_are_not_forwarded(http: httpx.AsyncClient, p
     assert (await http.get("/upstream/dispatcher/v2/dispatches")).status_code == 404
     assert (await http.get("/upstream/dispatcher/v1/not-a-route")).status_code == 404
     assert not peer.service.requests
+
+
+async def test_session_watch_flushes_snapshot_and_updates_through_dispatcher_facade(
+    http: httpx.AsyncClient, peer: Peer
+) -> None:
+    path = "/upstream/dispatcher/v1/sessions:watch"
+    async with http.stream("GET", path, params={"resumeToken": "test-resume-token"}) as response:
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-accel-buffering"] == "no"
+        lines = response.aiter_lines()
+        async with asyncio.timeout(5):
+            initial = json.loads(await anext(lines))["result"]
+            caught_up = json.loads(await anext(lines))["result"]
+        session_id = "10000000-0000-4000-8000-000000000031"
+        assert initial["session"]["sessionId"] == session_id
+        assert initial["resumeToken"] == "test-snapshot-token"
+        assert "caughtUp" in caught_up
+        assert peer.service.inventory_requests[0].resume_token == "test-resume-token"
+        # The snapshot must reach the browser while the upstream is waiting for the next write.
+        peer.service.inventory_updates.put_nowait(
+            session_dispatcher_pb2.Session(
+                session_id=session_id,
+                status=session_dispatcher_pb2.SessionStatus(
+                    materialization=session_dispatcher_pb2.SessionStatus.SESSION_MATERIALIZATION_FAILED
+                ),
+            )
+        )
+        async with asyncio.timeout(5):
+            updated = json.loads(await anext(lines))["result"]
+        assert updated["session"]["status"]["materialization"] == "SESSION_MATERIALIZATION_FAILED"
+        assert updated["resumeToken"] == "test-update-token"
+        assert (await http.post("/auth/logout")).status_code == 303
+        async with asyncio.timeout(5):
+            assert all([json.loads(line)["error"]["code"] == 1 async for line in lines])
+    async with asyncio.timeout(5):
+        await peer.service.inventory_cancelled.wait()
+
+
+@pytest.mark.parametrize("first", ["rename", "archive", "unarchive"])
+async def test_metadata_first_write_without_history(http: httpx.AsyncClient, first: str) -> None:
+    session_id = "10000000-0000-4000-8000-000000000032"
+    path = f"/upstream/app/v1/threads/{session_id}"
+    assert (await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")).status_code == 404
+    assert (await http.get(path)).status_code == 404
+    if first == "rename":
+        response = await http.patch(path, json={"name": "Test unrecorded Session"})
+    else:
+        response = await http.post(f"{path}/{first}")
+    assert response.status_code == 200, response.text
+    assert (await http.patch(path, json={"name": "Test unrecorded Session"})).status_code == 200
+    archived = await http.post(f"{path}/archive")
+    assert archived.status_code == 200, archived.text
+    metadata = (await http.get(path)).json()
+    assert metadata["name"] == "Test unrecorded Session"
+    assert metadata["archived"]
+    assert (await http.post(f"{path}/unarchive")).status_code == 200
+    metadata = (await http.get(path)).json()
+    assert metadata["name"] == "Test unrecorded Session"
+    assert not metadata.get("archived", False)
 
 
 if __name__ == "__main__":

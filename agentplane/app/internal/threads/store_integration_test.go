@@ -2,7 +2,6 @@ package threads
 
 import (
 	"database/sql"
-	"errors"
 	"os"
 	"testing"
 	"time"
@@ -108,9 +107,49 @@ func TestOpenRenameArchiveAndNotifications(t *testing.T) {
 	if unarchived.Archived {
 		t.Fatalf("Unarchive returned %+v", unarchived)
 	}
+}
 
-	if _, err := store.Rename(t.Context(), uuid.New(), nil); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Rename of a missing thread = %v, want ErrNotFound", err)
+func TestFirstWriteCreatesMetadataAndPreservesOtherFields(t *testing.T) {
+	for _, first := range []string{"rename", "archive", "unarchive"} {
+		t.Run(first, func(t *testing.T) {
+			store, _, _ := openStore(t)
+			createdAt := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+			store.now = func() time.Time { return createdAt }
+			id := uuid.New()
+			name := "Test unrecorded Session"
+			var row Thread
+			var err error
+			switch first {
+			case "rename":
+				row, err = store.Rename(t.Context(), id, &name)
+			case "archive":
+				row, err = store.Archive(t.Context(), id)
+			case "unarchive":
+				row, err = store.Unarchive(t.Context(), id)
+			}
+			if err != nil || row.ID != id || !row.CreatedAt.Equal(createdAt) || row.Archived != (first == "archive") {
+				t.Fatalf("first write = %+v, %v", row, err)
+			}
+			store.now = func() time.Time { return createdAt.Add(time.Hour) }
+			if _, err := store.Rename(t.Context(), id, &name); err != nil {
+				t.Fatal(err)
+			}
+			row, err = store.Archive(t.Context(), id)
+			if err != nil || row.Name == nil || *row.Name != name || !row.CreatedAt.Equal(createdAt) {
+				t.Fatalf("archive overwrote metadata: %+v, %v", row, err)
+			}
+			row, err = store.Rename(t.Context(), id, nil)
+			if err != nil || !row.Archived || row.Name != nil {
+				t.Fatalf("rename overwrote archive: %+v, %v", row, err)
+			}
+			if err := store.OpenThread(t.Context(), id); err != nil {
+				t.Fatal(err)
+			}
+			row, err = store.Unarchive(t.Context(), id)
+			if err != nil || row.Archived || !row.CreatedAt.Equal(createdAt) {
+				t.Fatalf("reopening overwrote metadata: %+v, %v", row, err)
+			}
+		})
 	}
 }
 

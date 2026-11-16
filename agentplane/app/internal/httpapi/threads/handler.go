@@ -166,13 +166,6 @@ func (h *Handler) RenameThread(ctx context.Context, request *apppb.RenameThreadR
 			name = &trimmed
 		}
 	}
-	summary, err := h.history.GetSummary(ctx, id)
-	if err != nil {
-		return nil, threadMutationRPCError(err)
-	}
-	if summary == nil {
-		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
-	}
 	thread, err := h.store.Rename(ctx, id, name)
 	if err != nil {
 		return nil, threadMutationRPCError(err)
@@ -185,22 +178,14 @@ func (h *Handler) ArchiveThread(ctx context.Context, request *apppb.ThreadMetada
 	if err != nil {
 		return nil, err
 	}
-	thread, err := h.store.GetThread(ctx, id)
-	if err != nil {
-		return nil, threadMutationRPCError(err)
-	}
-	if thread == nil {
-		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
-	}
 	summary, err := h.history.GetSummary(ctx, id)
 	if err != nil {
 		return nil, threadMutationRPCError(err)
 	}
-	if summary == nil {
-		return nil, status.Errorf(codes.NotFound, "no thread %s", id)
-	}
-	if err := ensureThreadArchivable(ctx, h.sandboxNamespace, *thread, summary, h.environments, h.environmentRuntime); err != nil {
-		return nil, threadMutationRPCError(err)
+	if summary != nil {
+		if err := ensureThreadArchivable(ctx, h.sandboxNamespace, threadstore.Thread{ID: id}, summary, h.environments, h.environmentRuntime); err != nil {
+			return nil, threadMutationRPCError(err)
+		}
 	}
 	if _, err := h.store.Archive(ctx, id); err != nil {
 		return nil, threadMutationRPCError(err)
@@ -539,8 +524,6 @@ func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {
 
 func threadMutationRPCError(err error) error {
 	switch {
-	case errors.Is(err, threadstore.ErrNotFound):
-		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, errThreadEnvironmentRuntimeUnready), errors.Is(err, errThreadBusy):
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
