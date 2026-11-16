@@ -5,6 +5,8 @@ from grafana_foundation_sdk.models import common, dashboard, stat
 from cluster.cdk8s.monitoring.dashboards.foundation import last_value, mimir, mimir_query, series_options
 
 
+# During a deployment, old and new exporter pods may overlap. Prefer the more
+# conservative quota observation while retaining the account/resource identity.
 def build_dashboard() -> dashboard.Dashboard:
     return dashboard.Dashboard(
         uid="github-api-quotas",
@@ -21,7 +23,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=1,
                 targets=[
                     mimir_query(
-                        "100 * github_graphql_rate_remaining / on (github_account) github_graphql_rate_limit",
+                        "min by (github_account) (100 * github_graphql_rate_remaining / github_graphql_rate_limit)",
                         legend="{{github_account}}",
                     ).build()
                 ],
@@ -48,8 +50,14 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=2,
                 targets=[
-                    mimir_query("github_graphql_rate_remaining", legend="{{github_account}} remaining").build(),
-                    mimir_query("github_graphql_rate_limit", legend="{{github_account}} limit", ref_id="B").build(),
+                    mimir_query(
+                        "min by (github_account) (github_graphql_rate_remaining)", legend="{{github_account}} remaining"
+                    ).build(),
+                    mimir_query(
+                        "min by (github_account) (github_graphql_rate_limit)",
+                        legend="{{github_account}} limit",
+                        ref_id="B",
+                    ).build(),
                 ],
                 title="GraphQL quota history",
                 datasource=mimir(),
@@ -69,7 +77,8 @@ def build_dashboard() -> dashboard.Dashboard:
                 id_val=3,
                 targets=[
                     mimir_query(
-                        'github_rate_remaining{resource!="graphql"}', legend="{{github_account}} / {{resource}}"
+                        'min by (github_account, resource) (github_rate_remaining{resource!="graphql"})',
+                        legend="{{github_account}} / {{resource}}",
                     ).build()
                 ],
                 title="Remaining quota by REST API resource",
@@ -90,8 +99,14 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=4,
                 targets=[
-                    mimir_query("github_graphql_rate_used", legend="{{github_account}} used").build(),
-                    mimir_query("github_graphql_rate_limit", legend="{{github_account}} limit", ref_id="B").build(),
+                    mimir_query(
+                        "max by (github_account) (github_graphql_rate_used)", legend="{{github_account}} used"
+                    ).build(),
+                    mimir_query(
+                        "min by (github_account) (github_graphql_rate_limit)",
+                        legend="{{github_account}} limit",
+                        ref_id="B",
+                    ).build(),
                 ],
                 title="GraphQL points used this window",
                 description="GraphQL points consumed in the current window. This can exceed the limit: GitHub keeps counting requests it is already rejecting.",
