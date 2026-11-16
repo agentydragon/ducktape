@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -80,7 +81,9 @@ func (f *threadReadStoreFake) Rename(_ context.Context, id uuid.UUID, name *stri
 			return f.rows[index], nil
 		}
 	}
-	return threads.Thread{}, threads.ErrNotFound
+	row := threads.Thread{ID: id, CreatedAt: time.Now(), Name: name}
+	f.rows = append(f.rows, row)
+	return row, nil
 }
 
 func (f *threadReadStoreFake) Archive(_ context.Context, id uuid.UUID) (threads.Thread, error) {
@@ -90,7 +93,9 @@ func (f *threadReadStoreFake) Archive(_ context.Context, id uuid.UUID) (threads.
 			return f.rows[index], nil
 		}
 	}
-	return threads.Thread{}, threads.ErrNotFound
+	row := threads.Thread{ID: id, CreatedAt: time.Now(), Archived: true}
+	f.rows = append(f.rows, row)
+	return row, nil
 }
 
 func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (threads.Thread, error) {
@@ -100,7 +105,9 @@ func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (thread
 			return f.rows[index], nil
 		}
 	}
-	return threads.Thread{}, threads.ErrNotFound
+	row := threads.Thread{ID: id, CreatedAt: time.Now()}
+	f.rows = append(f.rows, row)
+	return row, nil
 }
 
 type threadReadHistoryFake struct {
@@ -315,21 +322,53 @@ func (f *threadReadHistoryFake) FindSessions(_ context.Context, _, _, sandboxUID
 	return result, nil
 }
 
-func TestRenameThreadReturnsNotFoundWhenHistorySessionIsMissing(t *testing.T) {
-	id := uuid.New()
-	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
-	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})
-	name := "renamed"
-	_, err := handler.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: &name})
-	if status.Code(err) != codes.NotFound {
-		t.Fatalf("RenameThread: %v, want NotFound", err)
-	}
-	if store.rows[0].Name != nil {
-		t.Fatal("renamed without a History session")
+func TestThreadMutationsWithoutHistorySession(t *testing.T) {
+	for _, operation := range []string{"rename", "archive", "unarchive"} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%t", operation, existing), func(t *testing.T) {
+				id := uuid.New()
+				name := "test-title"
+				createdAt := time.Unix(100, 0)
+				store := &threadReadStoreFake{}
+				if existing {
+					store.rows = []threads.Thread{{ID: id, CreatedAt: createdAt, Name: &name, Archived: true}}
+				}
+				handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{}})
+				var err error
+				switch operation {
+				case "rename":
+					_, err = handler.RenameThread(context.Background(), &apppb.RenameThreadRequest{ThreadId: id.String(), Name: proto.String("test-renamed")})
+				case "archive":
+					_, err = handler.ArchiveThread(context.Background(), &apppb.ThreadMetadataTarget{ThreadId: id.String()})
+				case "unarchive":
+					_, err = handler.UnarchiveThread(context.Background(), &apppb.ThreadMetadataTarget{ThreadId: id.String()})
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				metadata, err := handler.GetThreadMetadata(context.Background(), &apppb.ThreadMetadataTarget{ThreadId: id.String()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				wantName := ""
+				if operation == "rename" {
+					wantName = "test-renamed"
+				} else if existing {
+					wantName = name
+				}
+				wantArchived := operation == "archive" || (existing && operation == "rename")
+				if metadata.GetThreadId() != id.String() || metadata.GetName() != wantName || metadata.GetArchived() != wantArchived {
+					t.Fatalf("metadata = %v, want name %q, archived %t", metadata, wantName, wantArchived)
+				}
+				if existing && !metadata.GetCreatedAt().AsTime().Equal(createdAt) {
+					t.Fatalf("mutation changed creation time: %v", metadata.GetCreatedAt())
+				}
+			})
+		}
 	}
 }
 
-func TestRenameThreadRequiresHistorySessionButNotSandboxIdentity(t *testing.T) {
+func TestRenameThreadWithHistorySessionWithoutSandboxIdentity(t *testing.T) {
 	id := uuid.New()
 	store := &threadReadStoreFake{rows: []threads.Thread{{ID: id}}}
 	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: &threadReadHistoryFake{
