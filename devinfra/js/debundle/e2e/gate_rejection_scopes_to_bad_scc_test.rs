@@ -65,6 +65,7 @@ export { ok_dep, ok_cross, ok_lazy_reader, bad_seed, bad_lazy_back };
     // file (the assignment's residual) so the broken pair's eager
     // read targets the DFS root.
     .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(&["mod_ok_dependent", "mod_ok_dep", "mod_bad_dependent"])
 }
 
 #[test]

@@ -27,7 +27,10 @@ fn opts(modules: Vec<LogicalModuleEntry>) -> FixtureOpts<'static> {
 
 #[test]
 fn eager_initializer_stays_with_its_value_or_split_is_rejected() {
-    assert_entry_output(&run_fixture(opts(vec![])), "ok\n");
+    assert_entry_output(
+        &run_fixture(opts(vec![]).with_import_order(&["residual"])),
+        "ok\n",
+    );
 
     // Inline residual mode leaves `a` in the entry while `b` moves to a
     // dependency. The dependency evaluates first, before the entry initializes

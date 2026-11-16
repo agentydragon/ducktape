@@ -71,6 +71,7 @@ export {{ a, b, c }};
             &self.source,
             vec![logical_module("b_module", &[Member::new("b")])],
         )
+        .with_import_order(&["b_module", "residual"])
         .with_chunk_renames(self.pure_members.clone())
         .with_extra_files(VENDOR_FILE)
     }
@@ -158,6 +159,7 @@ export { component, later };
                 &[Member::new("component")],
             )],
         )
+        .with_import_order(&["component_module", "residual"])
         .with_chunk_renames(pure_members)
         .with_extra_files(VENDOR_FILE),
     );

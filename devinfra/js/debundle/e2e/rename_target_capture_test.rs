@@ -167,7 +167,7 @@ function read(source_value) {
 console.log(read("local"));
 export { source_value, read };
 "#;
-    let baseline = run_fixture(FixtureOpts::new(SOURCE, vec![]));
+    let baseline = run_fixture(FixtureOpts::new(SOURCE, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&baseline, "undefined\n");
 
     let opts = FixtureOpts::new(
@@ -179,7 +179,8 @@ export { source_value, read };
                 Member::new("read"),
             ],
         )],
-    );
+    )
+    .with_import_order(&["values"]);
     expect_rename_refusal_with_candidate_output(
         opts,
         "undefined\n",

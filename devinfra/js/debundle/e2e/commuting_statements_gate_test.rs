@@ -51,6 +51,7 @@ fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static>
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(&["probes/inner", "probes/outer"])
     .with_commuting_statements("static/app", pairs)
 }
 
@@ -1214,7 +1215,9 @@ fn global_object_callback_candidates_are_assumed_and_known_calls_stay_observed()
 
 #[test]
 fn known_callback_control_provenance_baseline() {
-    let controls = run_fixture_with_graphs(FixtureOpts::new(KNOWN_CALLBACK_CONTROL_SOURCE, vec![]));
+    let controls = run_fixture_with_graphs(
+        FixtureOpts::new(KNOWN_CALLBACK_CONTROL_SOURCE, vec![]).with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&controls, "0 0 0 0 1\n");
     let graph = controls.dependency_graph();
     for binding in ["directRead", "getterRead", "methodRead", "mixedRead"] {

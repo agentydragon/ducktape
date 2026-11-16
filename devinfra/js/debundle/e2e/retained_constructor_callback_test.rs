@@ -266,6 +266,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             )
             .with_extra_chunks(&[("static/peer", &provider)])
             .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
+            .with_chunk_import_order("static/peer", &["provider", "residual"])
             .with_chunk_export_purity(&[contract().build()]),
         );
         assert_preserved_entry_output(
@@ -306,6 +307,7 @@ fn extraction_invocation_and_opaque_publication_promote_all_retained_callbacks()
             )
             .with_extra_chunks(&[("static/peer", &provider)])
             .with_extra_chunk_logical_modules(&[("static/peer", constructor_module())])
+            .with_chunk_import_order("static/peer", &["provider", "residual"])
             .with_chunk_export_purity(&[contract().build()]),
             &["callbacks/wrapped", "values/later"],
             &[],

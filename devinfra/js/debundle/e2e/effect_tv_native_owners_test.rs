@@ -519,7 +519,8 @@ fn text_encoder_initializer_requires_identity_zero_arguments_and_root_shape() {
             1,
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, "");
         let report = fixture.effect_translation_validation();
         assert_eq!(
@@ -545,7 +546,9 @@ const transient = (() => new TextEncoder())();\n";
         NativeOperationKind::TextEncoderEmpty,
     );
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_native_operation_inputs("static/app", vec![input]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_native_operation_inputs("static/app", vec![input]),
     );
     assert_preserved_entry_output(&fixture, "");
     let report = fixture.effect_translation_validation();

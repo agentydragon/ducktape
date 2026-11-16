@@ -40,6 +40,7 @@ export { wrapper, A, B, C };
             ("static/runtime.js", RUNTIME),
             ("static/app/runtime.js", RUNTIME),
         ])
+        .with_import_order(&["values/outer", "values/middle", "residual"])
     };
     let selection = subset(
         r#"[{"chunk":"static/app","module":"values/outer"},{"chunk":"static/app","module":"values/middle"}]"#,
@@ -114,7 +115,8 @@ export { wrapped, later };
         .with_extra_files(&[
             ("static/runtime.js", RUNTIME),
             ("static/app/runtime.js", RUNTIME),
-        ]);
+        ])
+        .with_import_order(&["values/later", "callbacks/wrapped"]);
         if assert_retention {
             options.with_chunk_export_purity(&contracts)
         } else {

@@ -720,7 +720,9 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
             "42\n",
         ),
     ] {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, output);
         assert_no_non_assumed_index_read(&fixture.dependency_graph(), "read");
     }

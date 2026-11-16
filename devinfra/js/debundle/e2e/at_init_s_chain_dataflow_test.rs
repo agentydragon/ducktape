@@ -170,6 +170,7 @@ export { Holder1, Holder2, instA, instB };
                 logical_module("mod_b", &[Member::new("Holder2"), Member::new("instB")]),
             ],
         )
+        .with_import_order(&["mod_a", "mod_b", "residual"])
         .with_dataflow_aware_s_chain(),
     );
     assert_split_behavior(
