@@ -183,14 +183,14 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
-reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:05 UTC.
+reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:30 UTC.
 
-| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                                                          |
-| -------------------------- | ---------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService (#16819, #16825) and that App image rolled; the App raw-proxy grant removal is in flight. The other dispositions await operator review |
-| Keyed Dispatcher delivery  | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                                                      |
-| Versioned dispatch watch   | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                                                          |
-| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                                                  |
+| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                              |
+| -------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
+| Keyed Dispatcher delivery  | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                          |
+| Versioned dispatch watch   | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                              |
+| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
@@ -2449,7 +2449,7 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: immediate-or-fail send]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
-    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: live Session status ownership]
+    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: Session existence and status ownership]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment Identity binding and Session creation order]
@@ -2529,7 +2529,7 @@ See the [Session/environment model](session_environment_model.md#where-should-li
 Topology ([section 17](#17-two-binaries-and-the-go-layout)) and
 [delivery ownership](../docs/adr_session_delivery_lease.md) are decided and built.
 
-### `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` — decide ownership of current Session status
+### `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` — decide who owns Session existence and current status
 
 **Candidate design decision; operator request, 2026-11-15 UTC.** A shared Codex app-server can
 host several Session threads. History can retain one Session's last `HarnessExited` projection after
@@ -2556,6 +2556,25 @@ for retained events and conversation history. The Runtime remains the source of 
 attachment observations, and a Dispatcher view must distinguish stale or unavailable evidence from
 a confirmed stopped host or Session. **Question for review:** should the Dispatcher persist that
 current view or route a fresh read to Runtime, and which state belongs only to History?
+
+**Operator direction, 2026-11-16 07:12 UTC (tentative; no release):** the Session Dispatcher should
+probably be the authority on which Sessions exist and what state they are in (running, not running);
+archived state stays in the App for now as the conservative choice, and its long-term home is open.
+Where these facts live on devel today:
+
+- **Existence:** the Dispatcher holds the Session records (`CreateSession`, `GetSession`,
+  `ListSessions`, including waiting and failed materialization), but the App lists Sessions and
+  Threads from History Thread summaries, which name a Session only once History records it, and
+  never calls `ListSessions`.
+- **Running state:** the Dispatcher knows only materialization and whether the required Environment
+  exists. Running, idle and active-turn marks come from History's last-observed lifecycle projection
+  and the Sandbox's state; live evidence comes from `EnvironmentService.GetRuntimeDiagnostics`, which
+  the App's busy-Thread archive guard reads.
+- **Archived:** the App's `thread` table (`archived`), keyed by Session ID, with the Thread name.
+
+Following the direction moves App Session lists onto the Dispatcher, which needs a Session watch for
+event-driven lists (it has only paged `ListSessions`). The Dispatcher gains the current-status view
+recommended above, for central sampler Sessions too, and the archive guard reads it.
 
 Coordinate with `SESSION_DATA_OWNERSHIP_DESIGN`: this task settles current-status semantics and the
 read/update contract; the broader node inventories other Session-keyed facts and service/database
@@ -3795,12 +3814,12 @@ evidence and line-level steps for every track below; its stages are ordered by c
 (pre-cutover leftovers) is done and left the plan; stage 2 (layout fixes) finished with the
 Gateway-era Go names (#16846, #16847). The other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                         |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                                                            |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                           |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
-| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                        |
+| Plan stage                      | DAG node                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                     |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                    |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
+| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                 |
 
 EnvironmentService serves from every Environments replica
 ([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
