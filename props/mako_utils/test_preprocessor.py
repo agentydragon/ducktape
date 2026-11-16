@@ -1,7 +1,7 @@
 import pytest_bazel
 from mako.template import Template
 
-from mako_utils.preprocessor import markdown_heading_preprocessor
+from props.mako_utils.preprocessor import markdown_heading_preprocessor
 
 
 def test_mako_expressions_still_work():

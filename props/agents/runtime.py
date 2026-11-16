@@ -12,11 +12,11 @@ from mako.template import Template
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from mako_utils.preprocessor import markdown_heading_preprocessor
 from props.agents.schema import describe_table
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.db.snapshot_io import fetch_snapshot_to_path
+from props.mako_utils.preprocessor import markdown_heading_preprocessor
 
 logger = logging.getLogger(__name__)
 
