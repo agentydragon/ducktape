@@ -384,8 +384,8 @@ fn union_handles_different_rank_lengths_and_reports_new_values() {
 
 #[test]
 fn sparse_high_rank_sets_compose_reuse_and_union_in_any_order() {
-    // This table gives Function(12_416) semantic rank 12_416, matching a
-    // sparse source whose only occupied word is index 194 in a u64 wordset.
+    // The high value's id is far beyond the start of the origin table. A
+    // singleton must retain storage based on its one value, not that prefix.
     const HIGH_RANK: u32 = 12_416;
     const INTERMEDIATE_RANK: u32 = 6_400;
 
@@ -403,9 +403,15 @@ fn sparse_high_rank_sets_compose_reuse_and_union_in_any_order() {
     let source_value = Value::Alloc(Kind::Function, HIGH_RANK);
     let source = values_from(&origins, [source_value]);
     assert_eq!(source.iter().collect::<Vec<_>>(), [source_value]);
+    let low_source = values_from(&origins, [Value::Alloc(Kind::Function, 0)]);
+    assert_eq!(
+        source.bitmap_payload_bytes(),
+        low_source.bitmap_payload_bytes()
+    );
+    assert!(source.bitmap_payload_bytes() <= 16);
 
     let sparse_source = values_from(&origins, [Value::Alloc(Kind::Function, 0), source_value]);
-    assert_eq!(sparse_source.occupied_word_indices(), &[0, 194]);
+    assert!(sparse_source.bitmap_payload_bytes() <= 32);
 
     let low = [
         Value::Alloc(Kind::Function, 0),

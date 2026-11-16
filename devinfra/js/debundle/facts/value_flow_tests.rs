@@ -130,6 +130,31 @@ const rooted = return_cycle();
 }
 
 #[test]
+fn independent_candidate_seeds_use_storage_proportional_to_reached_roots() {
+    const CANDIDATE_COUNT: usize = 512;
+    let mut source = String::new();
+    for index in 0..CANDIDATE_COUNT {
+        source.push_str(&format!("const array{index} = [];\n"));
+    }
+    let module = raw_js_test_support::parse(&source);
+    let body = top_level_item_views(&module.body);
+    let initial = ChunkValueFlow::analyze(&body);
+    let candidates: BTreeSet<_> = (0..CANDIDATE_COUNT)
+        .flat_map(|index| initial.values_of_binding(&id(&format!("array{index}"))))
+        .collect();
+    assert_eq!(candidates.len(), CANDIDATE_COUNT);
+
+    let flow = ChunkValueFlow::analyze_with_candidates(&body, &candidates);
+    let (set_count, cardinality, payload_bytes) = flow.candidate_reachability_storage_for_test();
+    assert_eq!(set_count, CANDIDATE_COUNT);
+    assert_eq!(cardinality, CANDIDATE_COUNT as u64);
+    assert!(
+        payload_bytes <= (CANDIDATE_COUNT * 16) as u64,
+        "one-root seeds should use bounded payload per reached root: {payload_bytes} bytes"
+    );
+}
+
+#[test]
 fn candidate_value_union_visits_each_requested_root_once() {
     let mut source = String::new();
     for index in 0..129 {
