@@ -569,3 +569,107 @@ rules, cycles, separate contexts and incomplete producers. Real CLI fixtures
 exercise the source-to-certificate path, gate decisions and original/emitted
 Node behavior. Source mutations that defeat individual premises must keep
 rejecting; a successful corpus run alone is insufficient evidence for a rule.
+
+## Program value flow
+
+`facts/value_flow/program.rs` prepares a source-qualified instance of the existing
+`FlowRules` and `CandidateRules`. `cross_module_purity` builds it after the raw
+native census and inferred Set roots have closed, then hands its chunk views to
+callback-capability inference and structural/purity preparation. The transient
+`ProgramValueFlows` also travels through `ProgramSummary` to final chunk-fact
+computation, replacing its second local solve. Saved summaries restore derived
+chunk facts and never silently substitute a local solve for missing flow. Standalone chunk analysis uses
+the same collector, native-root preparation and two-stratum solver.
+
+Preparation collects each module once with `FlowProgramCollector`. Bindings use
+separate integer slots per source module and SWC binding ID; allocation sites
+intern `(module ordinal, source offset)` before solving. Static property names
+are shared, but property cells still include the qualified allocation site.
+Coordinate conversion changes no event's transfer. `ProgramBindings` supplies
+named/default import-to-provider-cell copy constraints, including local
+re-export chains and cycles; ordinary local copies retain separate slots.
+Unresolved exports, source re-exports and namespace routing gain no new linkage.
+All imports also receive a durable opaque alternative. Known origins supplement
+that alternative; discovering a provider function is not a certificate that
+calling it is effect-free, synchronous or ready during initialization.
+
+One growing value stratum closes assignments, static properties, call arguments
+and returns, with watched reads including absent keys. One candidate stratum
+then closes containment over the immutable value facts. Candidate propagation
+uses the existing changed-key rules; it never wakes source events. There is no
+source replay, fresh solver-iteration identity, second points-to transfer or
+placement-dependent analysis.
+
+The completed store is shared by chunk views. Existing consumers still receive
+chunk-local `Value`s: owned allocations recover their original offset, while a
+foreign allocation projects to `Top` and any local candidate roots reachable
+through it. Thus publication through a foreign carrier cannot erase local
+object reach. Expression queries lower with the existing `FlowValueExpr` and
+read the shared store **before** projecting: `foreignRecord.box.run()` can find
+a caller-owned callback through both property cells. Projecting the receiver
+first would lose this information. Chunk-local callables alone receive canonical
+local bindings. A foreign or opaque alternative keeps the target set incomplete
+and preserves the syntactic fallback. May-identity facts do not establish
+initialization availability, normal completion, absence of effects, or exact
+heap contents. Those remain separate analyses and later migration slices.
+
+**Preservation and closure.** Source qualification is injective on each original
+module's cells and allocations and disjoint between modules. Shared property
+names do not identify receivers. For every original event, rekeying commutes
+with its binding/property/argument/return transfer. The linked rule set contains
+all rekeyed local constraints plus import copies and opaque import seeds; these
+only add may-origins. Source metadata has one immutable definition per qualified
+function. Import cycles require no recursive graph traversal: copies grow in
+the same finite store. Both joins are set union; every possible key is fixed by
+source slots, sites and property names. Complete watched reads revisit an event
+when a consumed set grows, including a producer discovered after an empty read.
+The existing fair worklist therefore terminates at a closed solution of these
+constraints. This extends the existing may-origin abstraction; it is not a
+whole-JavaScript operational soundness proof. Unsupported operations and foreign
+execution retain their prior opaque treatment.
+
+Projection preserves every owned origin and every requested local candidate
+reachable through an erased foreign origin. It adds `Top` for that erasure;
+consumers cannot use a foreign identity as an exact local callable or allocation
+proof. Querying before projection preserves cross-chunk property/return paths.
+The store is transient source analysis; existing saved chunk facts and graph
+outputs remain its persistence boundary, tested through fresh/saved CLI parity.
+
+**Bounds.** Let `n` count explicit source/selected-input bytes, `A` origins, `B`
+binding slots, `P` static property names, `C` candidate roots, `R` source/import
+constraints and `S` their total expression/parameter bytes. Each is `O(n)`;
+none depends on the number of concrete calls, paths, environments or schedules.
+There are `K = O(B + AP + A + 1)` value/metadata keys and at most `K(A+1)`
+strict value insertions. Parameter/readiness metadata is immutable and changes
+at most once per site. There are `O(A+B)` candidate keys and at most
+`O((A+B)C)` candidate insertions. One source rule can watch at most `K` keys,
+so value-rule evaluations are bounded by `O(R(1+K(A+1)))`; candidate rules
+watch only their completed carriers' origin edges, with at most `O((A+B)A)`
+dependencies and `O((A+B)(1+AC))` evaluations.
+
+For an expression of size `s`, traversal reads at most `O(s(A+1))` sets; each
+set operation costs at most `O(A+1)`. An invocation visits at most `A` targets,
+source-bounded parameter/argument vectors, and invalidates only its evaluation's
+argument results when a formal grows. Charging all argument syntax to `S` gives
+a deliberately loose `O(n^4 log(n+2))` bound per source-rule evaluation, including
+ordered lookup/merge work. The preceding evaluation bounds therefore give a
+polynomial total (a loose `O(n^8 log(n+2))`), rather than claiming that arbitrary
+dense points-to instances are linear. Retained value facts and source watchers
+use `O(KA + RK)` space; candidate facts/watchers use `O((A+B)(A+C))`. These are
+`O(n^3)` overall. Sparse Roaring sets avoid allocating a universe-sized zero
+prefix per singleton.
+
+Linkage and coordinate conversion cost at most `O(n^2 log(n+2))`, including
+copied/compared source names; the existing source-census preparation remains
+shared with standalone analysis. Projection uses
+owner/site indexes and property-key ranges, not a module-count scan of every
+program fact. For a projected set it visits its present origins and, for each
+erased foreign carrier, at most that consumer's `C` local candidate roots.
+Total projection time is bounded by `O(K(A+1)(C+1) log(n+2))`, retained projected
+facts by `O(K(A+C+1))`. A later expression query of size `q` costs at most
+`O(q(A+1)^2 + (A+1)(C+1)log(n+2))`, without restarting inference. These bounds
+cover this preparation/flow/projection phase, not selector solving, ordered
+callback execution or general ESM placement search. The stated time bounds
+assume ordinary hash-table operations. Even adversarial collisions add at most
+`O(K+R+n)` work per lookup, a further polynomial factor; no bound relies on a
+hash collision being impossible.

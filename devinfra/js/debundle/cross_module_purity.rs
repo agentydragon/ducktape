@@ -32,7 +32,6 @@
 
 use crate::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract, progress};
 use analysis_model::PrimKinds;
-use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
@@ -848,7 +847,7 @@ pub fn resolve_imported_purities(
                 key,
                 facts,
                 inputs,
-                callable_summaries.structural_flows.remove(key),
+                callable_summaries.structural_flows.get(key).cloned(),
                 imported_array_write_fact_chunks.contains(key),
             )
         })
@@ -1072,7 +1071,7 @@ pub struct ResolvedCallableSummaries {
     /// Structural value flows already solved while deriving summaries, which
     /// the purity oracle's census of the same body takes instead of solving
     /// again.
-    pub(crate) structural_flows: BTreeMap<SourceModuleKey, ChunkValueFlow>,
+    pub structural_flows: crate::facts::ProgramValueFlows,
     /// Negative facts from the already prepared original provider callables.
     /// Missing entries are unknown, not proof that a provider is effect free.
     known_original_external_writes: BTreeMap<SourceModuleKey, BTreeMap<String, String>>,
@@ -1508,31 +1507,36 @@ pub fn resolve_imported_callable_summaries(
         })
         .collect();
 
-    // At most one structural flow per module, solved on first need and kept
-    // for the purity oracle (`ModulePurityFacts::prepare`).
-    let structural_flows: BTreeMap<&SourceModuleKey, OnceCell<ChunkValueFlow>> = modules
-        .keys()
-        .map(|module| (module, OnceCell::new()))
+    // All source identities are qualified once, then the existing flow rules
+    // close imports, calls and object carriers in one program-wide store.
+    // These are possible values, not imported execution/availability proofs.
+    let flow_views: BTreeMap<_, _> = modules
+        .iter()
+        .map(|(module, facts)| (module, top_level_item_views(facts.body)))
         .collect();
-    let structural_flow = |module: &SourceModuleKey, views: &[TopLevelItemView<'_>]| {
-        structural_flows[module].get_or_init(|| {
-            crate::facts::structural_value_flow(
-                views,
-                resolved_native_operation_inputs
-                    .get(module)
+    let empty_sets = BTreeMap::new();
+    let structural_flows = crate::facts::program_value_flows(
+        bindings,
+        flow_views
+            .iter()
+            .map(|(module, views)| crate::facts::ProgramFlowModule {
+                module,
+                body: views,
+                native_operation_inputs: resolved_native_operation_inputs
+                    .get(*module)
                     .map_or(&[][..], Vec::as_slice),
-                inferred_set_constructions
-                    .get(module)
-                    .unwrap_or(&BTreeMap::new()),
-            )
-        })
-    };
+                inferred_sets: inferred_set_constructions
+                    .get(*module)
+                    .unwrap_or(&empty_sets),
+            }),
+    );
     // Argument/entry coverage is structural and independent of the native
     // integrity that it can refine. Author timing assertions cannot supply it.
     for (module, facts) in modules {
-        let views = top_level_item_views(facts.body);
-        let arguments =
-            prepared[module].callback_object_arguments(&views, || structural_flow(module, &views));
+        let views = &flow_views[module];
+        let arguments = prepared[module].callback_object_arguments(views, || {
+            structural_flows.get(module).expect("prepared program flow")
+        });
         for (export, local) in &facts.exports {
             let Some((start, objects)) = arguments.get(local) else {
                 continue;
@@ -1668,7 +1672,7 @@ pub fn resolve_imported_callable_summaries(
     let inferred: BTreeMap<_, _> = prepared
         .into_iter()
         .map(|(module, prepared)| {
-            let views = top_level_item_views(modules[module].body);
+            let views = &flow_views[module];
             let required_stable_providers = descriptor_copy_asserted
                 .get(module)
                 .into_iter()
@@ -1679,7 +1683,7 @@ pub fn resolve_imported_callable_summaries(
             (
                 module,
                 crate::facts::sync_effects::execution_index::infer_callable_capabilities(
-                    &views,
+                    views,
                     prepared,
                     &native_integrity,
                     &required_stable_providers,
@@ -1690,7 +1694,7 @@ pub fn resolve_imported_callable_summaries(
                                 .expect("prepared callable export"),
                         )
                     }),
-                    || structural_flow(module, &views),
+                    || structural_flows.get(module).expect("prepared program flow"),
                 ),
             )
         })
@@ -1874,10 +1878,6 @@ pub fn resolve_imported_callable_summaries(
         }
     }
     let imported_callables = solve_callable_import_projections(bindings, export_summaries);
-    let structural_flows = structural_flows
-        .into_iter()
-        .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
-        .collect();
     Ok(ResolvedCallableSummaries {
         bundle_globals,
         imported_callables,

@@ -319,19 +319,16 @@ pub fn compute_logical_chunk_facts(
             (facts, redundant)
         }
         ChunkFacts::Compute(structural_analysis) => {
-            let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
-                structural_analysis,
-                program_summary
-                    .native_operation_inputs
-                    .get(chunk_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-                program_summary
-                    .inferred_set_constructions
-                    .get(chunk_id)
-                    .unwrap_or(&BTreeMap::new()),
-                &analysis_inputs.assumptions.argument_inputs,
-            );
+            let structural_analysis = program_summary
+                .structural_flows
+                .complete_chunk(
+                    chunk_id,
+                    structural_analysis,
+                    &analysis_inputs.assumptions.argument_inputs,
+                )
+                .with_context(|| {
+                    format!("missing prepared program value flow for chunk {chunk_id}")
+                })?;
             compute_chunk_facts(
                 chunk_id,
                 diagnostics,
