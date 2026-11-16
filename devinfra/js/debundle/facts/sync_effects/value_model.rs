@@ -14,6 +14,9 @@ use std::sync::{Arc, Weak};
 use swc_common::{BytePos, Span};
 use swc_ecma_ast::*;
 
+pub(super) type RuntimeValue = Value<RuntimeAllocationId>;
+pub(super) use crate::program_execution::{RuntimeAllocationId, RuntimeSourceScope};
+
 pub(super) fn static_prop(property: &MemberProp) -> Option<String> {
     static_string_prop(property).or_else(|| match property {
         MemberProp::Computed(computed) => match computed.expr.unwrap_parens() {
@@ -131,6 +134,27 @@ impl Values {
 
     pub(super) fn is_disjoint(&self, other: &Self) -> bool {
         self.iter().all(|value| !other.contains(value))
+    }
+
+    /// Union shared sets without cloning values that the union will discard.
+    pub(super) fn union_borrowed<'values>(values: impl IntoIterator<Item = &'values Self>) -> Self {
+        let mut values = values.into_iter().filter(|values| !values.is_empty());
+        let Some(first) = values.next() else {
+            return Self::new();
+        };
+        let Some(second) = values.next() else {
+            return first.clone();
+        };
+
+        let mut borrowed = Vec::with_capacity(first.len() + second.len());
+        borrowed.extend(first.iter());
+        borrowed.extend(second.iter());
+        for values in values {
+            borrowed.extend(values.iter());
+        }
+        borrowed.sort_unstable();
+        borrowed.dedup();
+        Self(Some(Arc::new(borrowed.into_iter().cloned().collect())))
     }
 }
 
@@ -263,6 +287,52 @@ pub(super) type Context = OrdMap<Id, Values>;
 pub(super) struct CallSite {
     start: u32,
     end: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(super) struct RuntimeCallSite {
+    pub(super) source: RuntimeSourceScope,
+    site: CallSite,
+    activation: Option<crate::program_execution::RuntimeActivationId>,
+}
+
+impl CallSite {
+    pub(super) fn in_source(self, source: RuntimeSourceScope) -> RuntimeCallSite {
+        RuntimeCallSite {
+            source,
+            site: self,
+            activation: None,
+        }
+    }
+}
+
+impl RuntimeCallSite {
+    pub(super) fn source_span(self) -> Span {
+        self.site.source_span()
+    }
+
+    pub(super) fn with_allocation(self, allocation: RuntimeAllocationId) -> Option<Self> {
+        (self.source.local_origin(allocation) == Some(self.site.allocation_id())).then_some(Self {
+            activation: allocation.activation(),
+            ..self
+        })
+    }
+    pub(super) fn map_allocation(
+        self,
+        map: impl FnOnce(RuntimeAllocationId) -> RuntimeAllocationId,
+    ) -> Self {
+        let mapped = map(self.allocation());
+        Self {
+            source: mapped.source,
+            activation: mapped.activation(),
+            ..self
+        }
+    }
+    pub(super) fn allocation(self) -> RuntimeAllocationId {
+        let site = self.source.allocation(self.site.allocation_id());
+        self.activation
+            .map_or(site, |activation| site.instantiated(activation))
+    }
 }
 
 impl From<Span> for CallSite {
@@ -399,7 +469,7 @@ pub(super) struct LexicalCaptures {
     pub(super) snapshots: Context,
     pub(super) cells: OrdMap<Id, LexicalCellId>,
     /// Source containment only, never a trusted receiver or instance identity.
-    pub(super) home_object: Option<u32>,
+    pub(super) home_object: Option<RuntimeAllocationId>,
 }
 
 impl Hash for LexicalCaptures {
@@ -487,7 +557,7 @@ pub(super) struct SymbolicInputId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct HeapAddress {
     pub(super) scope: WorldScope,
-    pub(super) callable: u32,
+    pub(super) callable: RuntimeAllocationId,
 }
 
 /// Provenance of a local class capability; neither variant proves allocation identity.
@@ -501,21 +571,25 @@ pub(super) enum InstanceOrigin {
 /// callable and heap summaries the lattice does not express yet.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum AbstractValue {
-    Value(Value),
+    Value(RuntimeValue),
     /// Unknown kind/capabilities; only forwarding, storing and returning this
     /// query-local input is covered. It proves no shape or native identity.
     SymbolicInput(SymbolicInputId),
+    /// The module namespace exotic object. Its identity exists at
+    /// instantiation; each property still reads the current export cell.
+    /// It is neither an ordinary writable record nor a frozen value snapshot.
+    ModuleNamespace(RuntimeSourceScope),
     /// A function object: its callable's address in the creating world and
     /// the lexical captures it retains.
     Closure(HeapAddress, CapturedContext),
     /// A class's static or prototype surface can expose its deferred methods.
     /// Merely creating the class does not execute those methods.
-    ClassMembers(u32),
+    ClassMembers(RuntimeAllocationId),
     /// A constructed local class instance, or an opaque value read from one,
     /// retains its class methods and constructor argument capabilities. Only
     /// Constructed proves the value itself has the class's instance kind.
     /// Neither origin identifies a unique runtime allocation.
-    Instance(u32, Captured<Values>, InstanceOrigin),
+    Instance(RuntimeAllocationId, Captured<Values>, InstanceOrigin),
     CallbackFactory,
     InlineCallbackFactory,
     /// An opaque returned capability retaining live input values. Its capture
@@ -531,7 +605,7 @@ pub(super) enum AbstractValue {
     /// object at a native call site. The executor may apply the certificate
     /// through the paired defineProperties call; all other uses keep the
     /// carrier opaque.
-    OwnDescriptorMap(CallSite),
+    OwnDescriptorMap(RuntimeCallSite),
     /// A foreign source factory's deferred object graph. Provider captures are
     /// retained in its imported summary; using this token activates the full
     /// conservative importer binding/callback pool, never foreign SWC IDs.
@@ -573,7 +647,10 @@ pub(super) struct DenseArray {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum DenseArrayIterationTransfer {
     Refused,
-    Yielded { source: u32, slots: Vec<Values> },
+    Yielded {
+        source: RuntimeAllocationId,
+        slots: Vec<Values>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -1991,6 +2068,7 @@ mod tests {
     use std::sync::Arc;
 
     fn universe() -> Vec<AbstractValue> {
+        let source = crate::program_execution::RuntimeSourceScope::fresh();
         let mut contexts = CaptureInterner::<LexicalCaptures>::default();
         let context = contexts.intern(LexicalCaptures::default());
         assert_eq!(context, contexts.intern(LexicalCaptures::default()));
@@ -2008,13 +2086,13 @@ mod tests {
             AbstractValue::Closure(
                 HeapAddress {
                     scope: WorldScope::Application,
-                    callable: 1,
+                    callable: source.allocation(1),
                 },
                 context,
             ),
             AbstractValue::DeferredCallbacks(first.clone()),
             AbstractValue::DeferredCallbacks(second),
-            AbstractValue::Instance(1, first, InstanceOrigin::Constructed),
+            AbstractValue::Instance(source.allocation(1), first, InstanceOrigin::Constructed),
         ]
     }
 
@@ -2127,5 +2205,30 @@ mod tests {
         assert!(iter.next_back().is_none());
         drop(retained);
         assert_eq!(Arc::strong_count(&captured.values), owners);
+    }
+
+    #[test]
+    fn borrowed_union_matches_ordered_set_union_and_shares_empty_and_single_inputs() {
+        let universe = universe();
+        let empty = Values::new();
+        let left = Values::from([
+            universe[3].clone(),
+            universe[0].clone(),
+            universe[3].clone(),
+        ]);
+        let right = Values::from([
+            universe[3].clone(),
+            universe[2].clone(),
+            universe[1].clone(),
+        ]);
+
+        let empty_union = Values::union_borrowed([&empty, &Values::new()]);
+        assert!(empty_union.ptr_eq(&empty));
+        let single_union = Values::union_borrowed([&empty, &left, &empty]);
+        assert!(single_union.ptr_eq(&left));
+
+        let union = Values::union_borrowed([&empty, &left, &right, &empty]);
+        let expected: OrdSet<_> = left.iter().chain(right.iter()).cloned().collect();
+        assert_contents(&union, &expected);
     }
 }

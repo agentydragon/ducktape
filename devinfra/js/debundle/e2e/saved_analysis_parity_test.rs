@@ -195,6 +195,126 @@ export { first, second };
     );
 }
 
+#[test]
+fn co_located_mutable_provider_capture_matches_direct_and_saved_analysis() {
+    let provider = "let count = 0;\n\
+                    export function reader() { return () => count; }\n\
+                    export function advance() { return ++count; }\n";
+    let consumer = "import { reader, advance } from './peer.js';\n\
+                    const read = reader();\n\
+                    const before = read();\n\
+                    const advanced = advance();\n\
+                    const after = read();\n\
+                    console.log(before, advanced, after);\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(consumer, vec![])
+            .with_extra_chunks(&[("static/peer", provider)])
+            .with_extra_chunk_logical_modules(&[(
+                "static/peer",
+                vec![logical_module(
+                    "provider",
+                    &[
+                        Member::new("count"),
+                        Member::new("reader"),
+                        Member::new("advance"),
+                    ],
+                )],
+            )]),
+    );
+
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct co-located mutable provider run");
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&saved.result, "saved co-located mutable provider run");
+    assert_same_invocation_trees(&direct, &saved);
+
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 1 1\n", "");
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "0 1 1\n",
+            "",
+        );
+    }
+}
+
+#[test]
+fn reexported_eager_observer_refusal_matches_saved_analysis_and_tracks_peer_source() {
+    let provider = "let count = 0;\n\
+                    export function next() { return ++count; }\n\
+                    export function observe() { return count; }\n";
+    let relay = "export { observe } from './peer.js';\n";
+    let source = "import { next } from './peer.js';\n\
+                  import { observe } from './relay.js';\n\
+                  const snapshot = observe();\n\
+                  const changed = next();\n\
+                  const after = observe();\n\
+                  console.log(snapshot, changed, after);\n";
+    let chunks = [("static/peer", provider), ("static/relay", relay)];
+    let chunk_modules = [
+        (
+            "static/peer",
+            vec![logical_module(
+                "provider",
+                &[
+                    Member::new("count"),
+                    Member::new("next"),
+                    Member::new("observe"),
+                ],
+            )],
+        ),
+        ("static/relay", vec![]),
+    ];
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("moved", &[Member::new("changed")])],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_extra_chunks(&chunks)
+        .with_extra_chunk_logical_modules(&chunk_modules),
+    );
+
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 1 1\n", "");
+    let direct = staged.run(&["--emit-on-rejection"]);
+    assert_eq!(
+        direct.result.status.code(),
+        Some(3),
+        "{}",
+        direct.result.stderr
+    );
+    let saved = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
+    assert_eq!(
+        saved.result.status.code(),
+        Some(3),
+        "{}",
+        saved.result.stderr
+    );
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "1 1 1\n",
+            "",
+        );
+    }
+
+    let peer_source = staged.root().join("snapshot/static/peer.js");
+    let mut changed_provider = fs::read_to_string(&peer_source).unwrap();
+    changed_provider.push_str("// changed provider input after analysis\n");
+    fs::write(&peer_source, changed_provider).unwrap();
+    let stale = staged.run(&["--analysis", path(&staged.artifact), "--emit-on-rejection"]);
+    assert!(
+        !stale.result.status.success(),
+        "saved analysis accepted changed imported provider source"
+    );
+    assert!(
+        stale.result.stderr.contains("other parser inputs"),
+        "changed provider input should invalidate the artifact:\n{}",
+        stale.result.stderr
+    );
+}
+
 fn assert_lexical_authority_staged_parity(
     source: &'static str,
     members: &[Member],
@@ -304,7 +424,7 @@ fn lexical_effect_authority_and_fallback_survive_staged_artifact_round_trip() {
             Member::new("alias"),
             Member::new("result"),
         ],
-        "ordered_root_initializer_uncovered",
+        "operation_receipt",
     );
 }
 
@@ -441,7 +561,7 @@ fn named_and_star_reexports_keep_provider_inputs_in_saved_analysis() {
     }
 }
 
-fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
+fn assert_reexported_primitive_matches_saved(provider: &str, accepted: bool) {
     let source = "import { limit as bytes } from './bridge.js';\n\
          let later = 0;\nconst callback = () => later;\n\
          globalThis.saved = callback;\nconst computed = 4 * bytes + 256;\n\
@@ -449,14 +569,15 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
     let (staged, _fixture) = staged(
         FixtureOpts::new(
             source,
-            vec![
-                logical_module_with_anon(
-                    "compute",
-                    &[Member::new("callback"), Member::new("computed")],
-                    &["globalThis.saved = callback;"],
-                ),
-                logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
-            ],
+            vec![logical_module_with_anon(
+                "compute",
+                &[
+                    Member::new("callback"),
+                    Member::new("computed"),
+                    Member::new("later"),
+                ],
+                &["globalThis.saved = callback;", "later = 42;"],
+            )],
         )
         .with_extra_chunks(&[
             ("static/bridge", "export { limit } from './provider.js';\n"),
@@ -467,6 +588,21 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
     let direct = staged.run(&[]);
     let saved = staged.run(&["--analysis", path(&staged.artifact)]);
 
+    if accepted {
+        assert_ok(&direct.result, "direct cyclic reexport read");
+        assert_ok(&saved.result, "saved cyclic reexport read");
+        for entry in [
+            staged.root().join("snapshot/static/app.js"),
+            direct.output_root().join("app/static/app/entry.js"),
+            saved.output_root().join("app/static/app/entry.js"),
+        ] {
+            assert_node_output(&entry, "264 42\n", "");
+        }
+        assert_same_invocation_trees(&direct, &saved);
+        assert_eq!(fs::read(&staged.artifact).unwrap(), artifact);
+        return;
+    }
+
     for (invocation, label) in [(&direct, "direct"), (&saved, "saved")] {
         assert_eq!(
             invocation.result.status.code(),
@@ -474,35 +610,25 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
             "the {label} run must refuse a re-exported primitive without an imported-read proof:\n{}",
             invocation.result.stderr
         );
-        let report_root = invocation.output_root().join("reports/tree/static/app");
-        for report in [
-            "dependency_graph.json.gz",
-            "atomic_group_conflicts.json",
-            "effect_translation_validation.json",
-            "candidate_relocation_assessment.json",
-        ] {
-            assert!(
-                report_root.join(report).is_file(),
-                "the {label} refusal must preserve {report}"
-            );
-        }
-        let conflicts: Vec<Value> = serde_json::from_slice(
-            &fs::read(report_root.join("atomic_group_conflicts.json")).unwrap(),
-        )
-        .unwrap();
+        let report: Value = read_json(
+            &invocation
+                .output_root()
+                .join("reports/tree/evaluation_schedule.json"),
+        );
+        assert_eq!(report["kind"], "evaluation_schedule_refused");
+        assert_eq!(report["rejection"]["source_entry"], "static/app");
         assert!(
-            conflicts.iter().any(|conflict| {
-                let claims = conflict["claims"].as_array().expect("conflict claims");
-                let causes = conflict["causes"].as_array().expect("conflict causes");
-                ["compute", "later"].iter().all(|module| {
-                    claims
-                        .iter()
-                        .any(|claim| claim["module"].as_str() == Some(module))
-                }) && causes
-                    .iter()
-                    .any(|cause| cause.as_str() == Some("eager_use"))
-            }),
-            "the {label} refusal must preserve the source ownership conflict: {conflicts:#?}"
+            report["rejection"]["reason"]
+                .as_str()
+                .unwrap()
+                .contains("evaluation_schedule_missing"),
+            "{report}"
+        );
+        assert!(
+            !invocation
+                .output_root()
+                .join("app/static/app/entry.js")
+                .exists()
         );
     }
     assert_same_invocation_trees(&direct, &saved);
@@ -510,12 +636,39 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
 }
 
 #[test]
-fn cyclic_and_unresolved_reexported_primitive_reads_refuse_with_saved_analysis() {
-    for provider in [
+fn cyclic_reexported_primitive_read_matches_direct_and_saved_execution() {
+    assert_reexported_primitive_matches_saved(
         "import './app.js';\nexport const limit = 2;\n",
+        true,
+    );
+}
+
+#[test]
+fn unresolved_reexported_primitive_read_remains_a_structured_refusal_with_saved_analysis() {
+    assert_reexported_primitive_matches_saved(
         "import './missing.js';\nexport const limit = 2;\n",
+        false,
+    );
+}
+
+#[test]
+fn anonymous_default_cell_and_returned_capture_match_saved_analysis() {
+    let source = "import make, { node } from './peer.js';\nconst record = make(() => later);\nconst read = record.read;\nconst icon = node('svg');\nconst later = () => icon;\nconsole.log(read()());\n";
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(source, vec![logical_module("icons", &[Member::new("icon")])])
+            .with_extra_chunks(&[("static/peer", "export default function(callback) { return { read() { return callback(); } }; }\nexport const node = tag => tag;\n")]),
+    );
+    let direct = staged.run(&[]);
+    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&direct.result, "direct default-cell execution");
+    assert_ok(&saved.result, "saved default-cell execution");
+    assert_same_invocation_trees(&direct, &saved);
+    for entry in [
+        staged.root().join("snapshot/static/app.js"),
+        direct.output_root().join("app/static/app/entry.js"),
+        saved.output_root().join("app/static/app/entry.js"),
     ] {
-        assert_unproved_reexported_primitive_refusal_matches_saved(provider);
+        assert_node_output(&entry, "svg\n", "");
     }
 }
 
@@ -803,4 +956,29 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
             .any(|proof| proof["conclusion"] == "primitive_set_iteration"),
         "{execution:#}"
     );
+}
+
+#[test]
+fn program_effects_with_repeated_binding_names_survive_saved_analysis() {
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            "import { read as readProvider } from './provider.js';\nconst held = { value: 1 }; function read() { return held.value; }\nglobalThis.inspect = read; const result = readProvider() + read(); console.log(result);\n",
+            vec![logical_module("local", &[Member::new("held"), Member::new("read")])],
+        ).with_extra_chunks(&[("static/provider", "const held = { value: 2 }; export function read() { return held.value; }\n")]),
+    );
+    let direct = staged.run(&[]);
+    assert_ok(&direct.result, "direct program effects run");
+    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    assert_ok(&loaded.result, "saved program effects run");
+    assert_same_invocation_trees(&direct, &loaded);
+    for invocation in [&direct, &loaded] {
+        let output = invocation.output_root();
+        assert_node_output(&output.join("app/static/app/entry.js"), "3\n", "");
+        assert_module_exports(
+            &output.join("app"),
+            "static/app/modules/local.js",
+            &["read"],
+            &["held", "readProvider"],
+        );
+    }
 }

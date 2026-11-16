@@ -1812,10 +1812,9 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     // the original artifact graph has been indexed. Vendor swapping still
     // needs to recognize those generated relative paths and route them to the
     // bundled facade instead of leaving the residual vendor chunk imported.
-    // The import source intentionally resolves to `vendor/entry.js` after
-    // normalization while the chunk table records the target as
-    // `static/vendor`, matching selected-module helpers emitted under a shared
-    // browser asset prefix.
+    // The source directive names the real source provider. The lowerer
+    // rebases its synthesized import from the nested helper's output path;
+    // the vendor plan must route that exact emitted request to the facade.
     // TODO: add a browser/importmap load probe alongside this Node check once
     // the e2e harness has a browser runner.
     const VENDOR_PATH: &str = "static/vendor.js";
@@ -1836,7 +1835,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
             ),
             (
                 APP_PATH,
-                "import { o as observe } from \"../../vendor/entry.js\";\n\
+                "import { o as observe } from \"./vendor.js\";\n\
                  const observed = observe(\"ok\");\n\
                  export { observed };\n",
             ),
@@ -1930,7 +1929,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
             ),
             (
                 APP_PATH,
-                "import { m as toolkitMap, k as toolkitMake } from \"../../vendor/entry.js\";\n\
+                "import { m as toolkitMap, k as toolkitMake } from \"./vendor.js\";\n\
                  const direct = toolkitMap(\"top\");\n\
                  const shadowed = ((toolkitMap) => toolkitMap(\"shadow\"))(value => `local:${value}`);\n\
                  const made = toolkitMake({ label: \"top\" });\n\

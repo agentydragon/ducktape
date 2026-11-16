@@ -5,7 +5,7 @@ use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::execution_index::Call;
 use super::interpreter::{
-    ExecutionInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
+    ExecutionProgramInputs, ExecutionState, Executor, Observations, Outcome, OwnPropertyQuery,
 };
 use super::kernel::frame::{CallableSelection, EvaluatedCallee};
 use super::noninvoking_initialization::{EvaluatedInitializer, OriginalInitializer};
@@ -23,6 +23,7 @@ use crate::facts::{
     PreparedPurity,
 };
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::program_execution::{RuntimeSourceScope, RuntimeSourceUnitId};
 use crate::reports::schema::{NativeProgramPointKind, NativeProgramPointStep};
 use source_identity::SourceUnitOrdinal;
 use std::cell::{Cell, RefCell};
@@ -30,12 +31,12 @@ use swc_common::Span;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeKey {
-    Prefix(SourceUnitOrdinal),
+    Prefix(usize),
     /// Current-owner preparatory classifier obligations at this prefix.
-    PreparedPurity(SourceUnitOrdinal),
+    PreparedPurity(SourceOwner),
     /// Final verdict published only after every owner finalization step.
-    CompletedPurity(SourceUnitOrdinal),
-    Effects(SourceUnitOrdinal),
+    CompletedPurity(SourceOwner),
+    Effects(SourceOwner),
     Request(ProgramPoint),
     Result(ProgramPoint),
     OwnPropertyRequest(ProgramPoint),
@@ -45,7 +46,7 @@ enum RuntimeKey {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum RuntimeRule {
-    ExecuteOwner(SourceUnitOrdinal),
+    ExecuteOwner(usize),
     Transfer(ProgramPoint),
     OwnProperty(ProgramPoint),
 }
@@ -59,14 +60,16 @@ enum RuntimeFact {
     Result(Box<RuntimeResult>),
     OwnPropertyRequest(Box<OwnPropertyQuery>),
     OwnPropertyResult(Option<Box<OwnPropertyProof>>),
-    InvocationMemo(Box<Outcome>),
+    InvocationMemo(Box<super::interpreter::invocation_replay::InvocationMemo>),
 }
 
 /// The path identifies an occurrence within its parent's transfer, rather than
 /// conflating repeated evaluation of the same expression in different contexts.
+type SourceOwner = RuntimeSourceUnitId;
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) struct ProgramPoint {
-    owner: SourceUnitOrdinal,
+    owner: SourceOwner,
     path: Vec<(NativeProgramPointKind, usize)>,
 }
 
@@ -120,11 +123,12 @@ pub(super) enum RuntimeOperation {
         captures: Context,
     },
     Invoke {
-        callable: u32,
+        callable: crate::program_execution::RuntimeAllocationId,
         arguments: Vec<Values>,
         argument_selections: Vec<Option<CallableSelection>>,
         captured: Option<CapturedContext>,
         fresh_checked_constructor: bool,
+        callsite: Option<runtime_callbacks::InvocationSite>,
     },
     Call {
         call: Call,
@@ -176,10 +180,18 @@ pub(super) struct RuntimeResult {
 /// context, then retire their single-consumer payloads. Growing fact families
 /// continue to use the dependency worklist. This avoids replaying a parent or
 /// retaining every heap snapshot for a long, flat sequence of source calls.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct RuntimeQueryCursor {
+    next_child: usize,
+    next_allocation: usize,
+}
+
 pub(super) struct RuntimeQueries<'source, 'query> {
-    inputs: &'query ExecutionInputs<'source>,
+    inputs: &'query ExecutionProgramInputs<'source>,
     point: ProgramPoint,
+    active_source: Cell<RuntimeSourceScope>,
     next_child: Cell<usize>,
+    next_allocation: Cell<usize>,
     // CLEANUP(added 2026-11-09): the last interior-mutable observation ledger.
     //   Remove once query results return their dependencies and the adopter
     //   composes them; until then `HeapContext::current_prerequisites` reads
@@ -189,6 +201,72 @@ pub(super) struct RuntimeQueries<'source, 'query> {
 }
 
 impl RuntimeQueries<'_, '_> {
+    fn prepare_owner(&self, owner: SourceUnitOrdinal, effects: crate::purity::Effects) {
+        self.context.borrow_mut().propose(
+            RuntimeKey::PreparedPurity(self.source_owner(owner)),
+            RuntimeFact::PreparedPurity(Box::new(PreparedPurity::new(effects))),
+        );
+    }
+
+    pub(super) fn exchange_source(&self, source: RuntimeSourceScope) -> RuntimeSourceScope {
+        self.active_source.replace(source)
+    }
+
+    pub(super) fn cursor(&self) -> RuntimeQueryCursor {
+        RuntimeQueryCursor {
+            next_child: self.next_child.get(),
+            next_allocation: self.next_allocation.get(),
+        }
+    }
+
+    pub(super) fn restore_replayed_cursor(&self, cursor: RuntimeQueryCursor) {
+        self.next_child.set(cursor.next_child);
+        self.next_allocation.set(cursor.next_allocation);
+    }
+
+    fn source_owner(&self, ordinal: SourceUnitOrdinal) -> SourceOwner {
+        SourceOwner {
+            source: self.active_source.get(),
+            ordinal,
+        }
+    }
+
+    pub(super) fn allocation_prefix(
+        &self,
+    ) -> Option<crate::program_execution::effects::ProgramAllocationEvent> {
+        let source = self.inputs.source_for_scope(self.point.owner.source)?;
+        Some(crate::program_execution::effects::ProgramAllocationEvent {
+            owner: crate::program_execution::effects::ProgramSourceUnitId {
+                module: source.module_id?.to_owned(),
+                ordinal: self.point.owner.ordinal,
+            },
+            path: self.point.path.clone(),
+            occurrence: 0,
+        })
+    }
+
+    /// One actual kernel allocation, separate from metadata/source projections.
+    pub(super) fn allocation_event(
+        &self,
+    ) -> Option<crate::program_execution::effects::ProgramAllocationEvent> {
+        let occurrence = self.next_allocation.get();
+        self.next_allocation.set(
+            occurrence
+                .checked_add(1)
+                .expect("allocation occurrence exhausted"),
+        );
+        let source = self.inputs.source_for_scope(self.point.owner.source)?;
+        let module = source.module_id?;
+        Some(crate::program_execution::effects::ProgramAllocationEvent {
+            owner: crate::program_execution::effects::ProgramSourceUnitId {
+                module: module.to_owned(),
+                ordinal: self.point.owner.ordinal,
+            },
+            path: self.point.path.clone(),
+            occurrence,
+        })
+    }
+
     pub(super) fn point_path(&self) -> Vec<NativeProgramPointStep> {
         self.point
             .path
@@ -199,7 +277,10 @@ impl RuntimeQueries<'_, '_> {
             })
             .collect()
     }
-    pub(super) fn invocation_memo(&self, point: &ProgramPoint) -> Outcome {
+    pub(super) fn invocation_memo(
+        &self,
+        point: &ProgramPoint,
+    ) -> super::interpreter::invocation_replay::InvocationMemo {
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::InvocationMemo(outcome)) =
             context.read_final(RuntimeKey::InvocationMemo(point.clone()))
@@ -209,7 +290,10 @@ impl RuntimeQueries<'_, '_> {
         outcome.as_ref().clone()
     }
 
-    pub(super) fn publish_invocation_memo(&self, outcome: &Outcome) -> ProgramPoint {
+    pub(super) fn publish_invocation_memo(
+        &self,
+        outcome: &super::interpreter::invocation_replay::InvocationMemo,
+    ) -> ProgramPoint {
         self.context.borrow_mut().propose(
             RuntimeKey::InvocationMemo(self.point.clone()),
             RuntimeFact::InvocationMemo(Box::new(outcome.clone())),
@@ -229,13 +313,14 @@ impl RuntimeQueries<'_, '_> {
     /// Current-owner proof preparation always consumes the unchanged classifier.
     pub(super) fn prepared_statement_is_pure(&self, owner: SourceUnitOrdinal) -> bool {
         assert_eq!(
-            owner, self.point.owner,
+            self.source_owner(owner),
+            self.point.owner,
             "prepared purity is current-owner only"
         );
         match self
             .context
             .borrow_mut()
-            .read_final(RuntimeKey::PreparedPurity(owner))
+            .read_final(RuntimeKey::PreparedPurity(self.source_owner(owner)))
         {
             Some(RuntimeFact::PreparedPurity(purity)) => {
                 self.dependencies
@@ -250,11 +335,12 @@ impl RuntimeQueries<'_, '_> {
     /// Earlier owners, and the finalized current owner's frontier, consume
     /// only the verdict published after all evaluation/certificate work.
     pub(super) fn completed_statement_is_pure(&self, owner: SourceUnitOrdinal) -> bool {
-        assert!(owner <= self.point.owner);
+        // A provider may have completed before the caller, or be suspended in
+        // a cycle. Only a completed fact grants a purity capability.
         match self
             .context
             .borrow_mut()
-            .read_final(RuntimeKey::CompletedPurity(owner))
+            .read_final(RuntimeKey::CompletedPurity(self.source_owner(owner)))
         {
             Some(RuntimeFact::CompletedPurity(purity)) => {
                 self.dependencies
@@ -262,7 +348,7 @@ impl RuntimeQueries<'_, '_> {
                     .extend(purity.proof_dependencies());
                 purity.is_pure()
             }
-            _ => unreachable!("completed purity requires a finalized owner"),
+            _ => false,
         }
     }
 
@@ -273,10 +359,10 @@ impl RuntimeQueries<'_, '_> {
         private_own_field_reads: &[Span],
         read_dependencies: &ProofDependencies,
     ) -> Option<crate::reports::schema::PurityCompletionDisagreement> {
-        assert_eq!(owner, self.point.owner);
+        assert!(self.source_owner(owner) == self.point.owner);
         let mut context = self.context.borrow_mut();
         let Some(RuntimeFact::PreparedPurity(prepared)) =
-            context.take_final(RuntimeKey::PreparedPurity(owner))
+            context.take_final(RuntimeKey::PreparedPurity(self.source_owner(owner)))
         else {
             unreachable!("owner finalization consumes its prepared obligations once");
         };
@@ -284,7 +370,7 @@ impl RuntimeQueries<'_, '_> {
             prepared.complete(certificate, private_own_field_reads, read_dependencies);
         context.assume(completed.proof_dependencies());
         context.propose(
-            RuntimeKey::CompletedPurity(owner),
+            RuntimeKey::CompletedPurity(self.source_owner(owner)),
             RuntimeFact::CompletedPurity(Box::new(completed)),
         );
         disagreement
@@ -366,8 +452,9 @@ impl RuntimeQueries<'_, '_> {
 }
 
 struct RuntimeRules<'source, 'inputs> {
-    inputs: &'inputs ExecutionInputs<'source>,
-    owner_count: usize,
+    inputs: &'inputs ExecutionProgramInputs<'source>,
+    schedule: Vec<SourceOwner>,
+    stop_at_abrupt: bool,
 }
 
 impl IterativeRules for RuntimeRules<'_, '_> {
@@ -377,8 +464,8 @@ impl IterativeRules for RuntimeRules<'_, '_> {
 
     fn producers_for(&self, key: &RuntimeKey, _: &RuntimeFact) -> Vec<RuntimeRule> {
         match key {
-            RuntimeKey::Prefix(owner) if owner.0 < self.owner_count => {
-                vec![RuntimeRule::ExecuteOwner(*owner)]
+            RuntimeKey::Prefix(position) if *position < self.schedule.len() => {
+                vec![RuntimeRule::ExecuteOwner(*position)]
             }
             RuntimeKey::Request(point) => vec![RuntimeRule::Transfer(point.clone())],
             RuntimeKey::OwnPropertyRequest(point) => vec![RuntimeRule::OwnProperty(point.clone())],
@@ -398,7 +485,7 @@ impl IterativeRules for RuntimeRules<'_, '_> {
         context: &mut impl FactContext<RuntimeKey, RuntimeFact>,
     ) {
         match rule {
-            RuntimeRule::ExecuteOwner(owner) => self.execute_owner(*owner, context),
+            RuntimeRule::ExecuteOwner(position) => self.execute_owner(*position, context),
             RuntimeRule::Transfer(point) => Self::transfer(self.inputs, point, context),
             RuntimeRule::OwnProperty(point) => {
                 Self::project_own_property(self.inputs, point, context)
@@ -455,7 +542,7 @@ impl IterativeRules for RuntimeRules<'_, '_> {
 
 impl RuntimeRules<'_, '_> {
     fn project_own_property(
-        inputs: &ExecutionInputs<'_>,
+        inputs: &ExecutionProgramInputs<'_>,
         point: &ProgramPoint,
         context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
@@ -464,7 +551,9 @@ impl RuntimeRules<'_, '_> {
         else {
             return;
         };
-        let proof = inputs.project_own_property(*query);
+        let proof = inputs
+            .source_for_scope(query.source_object.source)
+            .and_then(|source| source.project_own_property(*query));
         if let Some(proof) = &proof {
             context.assume(&proof.dependencies);
         }
@@ -476,50 +565,71 @@ impl RuntimeRules<'_, '_> {
 
     fn execute_owner(
         &self,
-        owner: SourceUnitOrdinal,
+        position: usize,
         context: &mut impl FactContext<RuntimeKey, RuntimeFact>,
     ) {
-        let Some(RuntimeFact::Prefix(state)) = context.take_final(RuntimeKey::Prefix(owner)) else {
+        let Some(RuntimeFact::Prefix(state)) = context.take_final(RuntimeKey::Prefix(position))
+        else {
             return;
         };
-        // Preparatory classifier obligations remain exactly the current
-        // source/prefix transfer. Finalization publishes a separate verdict.
-        context.propose(
-            RuntimeKey::PreparedPurity(owner),
-            RuntimeFact::PreparedPurity(Box::new(PreparedPurity::new(
-                self.inputs.statement_effects(owner, &state),
-            ))),
-        );
+        let selected = self.schedule[position];
+        let owner = selected.ordinal;
         let queries = RuntimeQueries {
             inputs: self.inputs,
             point: ProgramPoint {
-                owner,
+                owner: selected,
                 path: Vec::new(),
             },
+            active_source: Cell::new(self.inputs.root.index.source_scope()),
             next_child: Cell::new(0),
+            next_allocation: Cell::new(0),
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
         let mut executor = Executor::new(self.inputs, state, Observations::default(), queries);
-        let effects = executor.execute_owner(owner);
+        executor.validate_evaluation = self.stop_at_abrupt;
+        executor.state.effect_owner = Some(selected);
+        let effects = executor
+            .in_source(selected.source, |executor| {
+                use super::world::program_modules::ModuleEvaluationPhase;
+                executor.state.world_mut().module_phase =
+                    ModuleEvaluationPhase::Evaluating { next_owner: owner };
+                let prepared = executor
+                    .source_inputs()
+                    .statement_effects(owner, &executor.state);
+                executor.queries.prepare_owner(owner, prepared);
+                let effects = executor.execute_owner(owner);
+                executor.state.world_mut().module_phase =
+                    if owner.0 + 1 == executor.source_inputs().facts.len() {
+                        ModuleEvaluationPhase::Evaluated
+                    } else {
+                        ModuleEvaluationPhase::Evaluating {
+                            next_owner: SourceUnitOrdinal(owner.0 + 1),
+                        }
+                    };
+                effects
+            })
+            .expect("every scheduled source has instantiated module cells");
         executor.mark_allocation_opaque();
         let (mut state, _, _, _) = executor.into_transfer();
         // Requests/results are taken at their single-consumer sites, and
         // owner finalization retires invocation memos. No active transfer
         // frame can hold a cell reference outside this settled prefix now.
-        state.reclaim_lexical_cells(owner.0 + 1 == self.owner_count);
+        state.reclaim_lexical_cells(position + 1 == self.schedule.len());
+        let effects_completion = effects.completion;
         context.propose(
-            RuntimeKey::Effects(owner),
+            RuntimeKey::Effects(selected),
             RuntimeFact::Effects(Box::new(effects)),
         );
-        context.propose(
-            RuntimeKey::Prefix(SourceUnitOrdinal(owner.0 + 1)),
-            RuntimeFact::Prefix(state),
-        );
+        if !self.stop_at_abrupt
+            || effects_completion != crate::program_execution::schedule::OwnerCompletion::Abrupt
+        {
+            context.propose(RuntimeKey::Prefix(position + 1), RuntimeFact::Prefix(state));
+        }
     }
 
     fn transfer(
-        inputs: &ExecutionInputs<'_>,
+        inputs: &ExecutionProgramInputs<'_>,
         point: &ProgramPoint,
         context: &mut dyn FactContext<RuntimeKey, RuntimeFact>,
     ) {
@@ -536,7 +646,14 @@ impl RuntimeRules<'_, '_> {
         let queries = RuntimeQueries {
             inputs,
             point: point.clone(),
+            active_source: Cell::new(
+                inputs
+                    .active_source(state.current_source)
+                    .index
+                    .source_scope(),
+            ),
             next_child: Cell::new(0),
+            next_allocation: Cell::new(0),
             dependencies: RefCell::default(),
             context: RefCell::new(context),
         };
@@ -578,7 +695,13 @@ impl RuntimeRules<'_, '_> {
                 let evaluated = if operation_source {
                     None
                 } else {
-                    source.evaluated(&expression, &values, &judgment, native_constructor_transfer)
+                    source.evaluated(
+                        executor.source_index().source_scope(),
+                        &expression,
+                        &values,
+                        &judgment,
+                        native_constructor_transfer,
+                    )
                 };
                 let covered_operation = operation_source
                     && !values.is_empty()
@@ -606,12 +729,14 @@ impl RuntimeRules<'_, '_> {
                 argument_selections,
                 captured,
                 fresh_checked_constructor,
+                callsite,
             } => RuntimeValue::Outcome(Box::new(executor.invoke_transfer(
                 callable,
                 arguments,
                 argument_selections,
                 captured,
                 fresh_checked_constructor,
+                callsite,
             ))),
             RuntimeOperation::Call {
                 call,
@@ -658,30 +783,88 @@ impl RuntimeRules<'_, '_> {
 }
 
 pub(super) fn infer_synchronous_execution(
-    inputs: &ExecutionInputs<'_>,
+    inputs: &ExecutionProgramInputs<'_>,
     initial: ExecutionState,
     owner_count: usize,
 ) -> Vec<(SynchronousCalls, CompletedPurity)> {
+    let root_scope = inputs.root.index.source_scope();
+    let schedule = match (
+        inputs.root.executables,
+        inputs.root.module_id,
+        inputs.program_sources,
+    ) {
+        (Some(program), Some(entry), Some(_)) => match program.source_evaluation_order(entry) {
+            source_identity::ProgramLinkResolution::Resolved(order) => order
+                .into_iter()
+                .flat_map(|module| {
+                    let source = inputs
+                        .source_for_module(&module)
+                        .expect("linked modules have prepared source views");
+                    (0..source.facts.len()).map(move |ordinal| SourceOwner {
+                        source: source.index.source_scope(),
+                        ordinal: SourceUnitOrdinal(ordinal),
+                    })
+                })
+                .collect(),
+            _ => (0..owner_count)
+                .map(|ordinal| SourceOwner {
+                    source: root_scope,
+                    ordinal: SourceUnitOrdinal(ordinal),
+                })
+                .collect(),
+        },
+        _ => (0..owner_count)
+            .map(|ordinal| SourceOwner {
+                source: root_scope,
+                ordinal: SourceUnitOrdinal(ordinal),
+            })
+            .collect(),
+    };
+    let mut facts = infer_scheduled_execution(inputs, initial, schedule, false);
+    (0..owner_count)
+        .map(|ordinal| {
+            let owner = SourceOwner {
+                source: root_scope,
+                ordinal: SourceUnitOrdinal(ordinal),
+            };
+            facts
+                .remove(&owner)
+                .expect("every source owner has a completed execution and purity result")
+        })
+        .collect()
+}
+
+/// Execute exactly the requested owner rows in one instantiated program world.
+/// No later owner is submitted after a definite uncaught abrupt completion.
+pub(crate) fn infer_scheduled_execution(
+    inputs: &ExecutionProgramInputs<'_>,
+    initial: ExecutionState,
+    schedule: Vec<SourceOwner>,
+    stop_at_abrupt: bool,
+) -> std::collections::BTreeMap<SourceOwner, (SynchronousCalls, CompletedPurity)> {
+    let owners = schedule.clone();
     let mut inference = IterativeInference::new(RuntimeRules {
         inputs,
-        owner_count,
+        schedule,
+        stop_at_abrupt,
     });
     inference.seed(
-        RuntimeKey::Prefix(SourceUnitOrdinal(0)),
+        RuntimeKey::Prefix(0),
         RuntimeFact::Prefix(Box::new(initial)),
     );
     let mut facts = inference.solve([]).into_values();
-    (0..owner_count)
-        .map(|ordinal| {
-            let owner = SourceUnitOrdinal(ordinal);
+    owners
+        .into_iter()
+        .filter_map(|owner| {
             match (
                 facts.remove(&RuntimeKey::Effects(owner)),
                 facts.remove(&RuntimeKey::CompletedPurity(owner)),
             ) {
                 (Some(RuntimeFact::Effects(calls)), Some(RuntimeFact::CompletedPurity(purity))) => {
-                    (*calls, *purity)
+                    Some((owner, (*calls, *purity)))
                 }
-                _ => unreachable!("every source owner has a completed execution and purity result"),
+                (None, None) if stop_at_abrupt => None,
+                _ => unreachable!("an executed owner has both effects and finalized purity"),
             }
         })
         .collect()

@@ -22,21 +22,19 @@ export { entries, registry, duringConstruction, later, result };
             logical_module_with_anon(
                 "values/registry",
                 &[
+                    Member::new("invocations"),
+                    Member::new("later"),
+                    Member::new("read"),
                     Member::new("entries"),
                     Member::new("registry"),
                     Member::new("duringConstruction"),
-                    Member::new("invocations"),
-                    Member::new("read"),
                 ],
-                &["globalThis.saved = read;"],
+                &["globalThis.saved = read;", "later = 42;"],
             ),
             logical_module_with_anon(
-                "values/later",
-                &[Member::new("later"), Member::new("result")],
-                &[
-                    "later = 42;",
-                    "console.log(duringConstruction, invocations, result);",
-                ],
+                "values/result",
+                &[Member::new("result")],
+                &["console.log(duringConstruction, invocations, result);"],
             ),
         ],
     ));

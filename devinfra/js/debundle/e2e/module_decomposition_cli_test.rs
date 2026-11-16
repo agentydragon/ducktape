@@ -1012,8 +1012,9 @@ fn coarsening_atomic_conflicts_keeps_residual_import_and_export_declarations() {
 
 #[test]
 fn atomic_residual_mode_moves_body_atoms_but_keeps_entry_imports_and_exports() {
-    let fixture = GraphFixture::new(
+    let fixture = GraphFixture::with_dependency(
         "import './dependency.js';\nconst ready = 1;\nexport { ready };\nconsole.log(ready);\n",
+        "export {};\n",
         &[],
     );
     let report = fixture.json(&[

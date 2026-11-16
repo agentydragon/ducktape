@@ -704,6 +704,7 @@ pub fn logical_module_with_anon_comment(
     )
 }
 
+#[derive(Clone)]
 pub struct FixtureOpts<'a> {
     pub host_behavior: spec::HostBehavior,
     pub program_premises: spec::ProgramPremises,

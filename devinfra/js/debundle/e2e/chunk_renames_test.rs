@@ -84,20 +84,20 @@ export { x };
     )
     .with_chunk_renames(chunk_rename("payload", "x"))
     .with_unassigned_mode(unassigned_mode_inline())
-    .with_extra_files(&[(
-        "static/vendor/entry.js",
+    .with_extra_chunks(&[(
+        "vendor/entry",
         r#"export const x = "dep-x";
 export const y = "dep-y";
 "#,
     )]);
     let fixture = run_fixture(opts);
 
-    assert_entry_output(&fixture, "local dep-x dep-y\n");
+    assert_preserved_entry_output(&fixture, "local dep-x dep-y\n");
     assert_module_source(
         &fixture.out_root,
         "static/app/entry.js",
         &[
-            r#"import { x as importedThing, y } from "../vendor/entry.js";"#,
+            r#"import { x as importedThing, y } from "../../vendor/entry/entry.js";"#,
             "let payload =",
             "console.log(payload, importedThing, y)",
             "export { payload as x }",

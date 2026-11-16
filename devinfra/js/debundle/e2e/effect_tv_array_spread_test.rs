@@ -133,11 +133,10 @@ fn spread_of_a_pushed_array_is_pending_a_primitive_contents_receipt() {
     );
 }
 
-/// An imported array without the authored lifetime premise may carry any
-/// iterator; the kernel refuses the spread with its typed reason instead of
-/// guessing, and the legacy gate stays authoritative for the layout.
+/// The initialized provider's ordinary array uses the same guarded spread
+/// transfer as a local array, without an additional author premise.
 #[test]
-fn spread_of_an_imported_array_without_a_premise_refuses_with_a_typed_reason() {
+fn spread_of_an_initialized_imported_array_has_an_operation_receipt() {
     let source = "import { left } from './provider.js';\nconst independent = 7;\nconst merged = [...left, 'c'];\nconsole.log(independent, merged.join(','));\n";
     let peers = [("static/provider", "export const left = ['a', 'b'];\n")];
     let fixture = run_fixture_with_graphs(
@@ -150,11 +149,11 @@ fn spread_of_an_imported_array_without_a_premise_refuses_with_a_typed_reason() {
     assert_preserved_entry_output(&fixture, "7 a,b,c\n");
     let execution = binding_execution_report(&fixture, "merged");
     assert_eq!(
-        execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
+        execution["binding_effect_authority"]["authority"], "operation_receipt",
         "{execution:#}"
     );
     assert!(
-        execution["precision_losses"]
+        !execution["precision_losses"]
             .as_array()
             .expect("precision losses")
             .iter()

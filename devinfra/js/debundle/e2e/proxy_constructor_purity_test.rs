@@ -1,25 +1,52 @@
 //! Native `Proxy` construction stores handlers without invoking their traps.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_entry_output, expect_cycle_rejection, logical_module, run_fixture,
+    FixtureOpts, Member, assert_entry_output, assert_node_output, assert_preserved_entry_output,
+    expect_cycle_rejection, logical_module, read_json, run_emit_on_rejection_fixture, run_fixture,
 };
 
 #[test]
-fn fresh_proxy_constructor_args_do_not_create_an_s_cycle() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = new Proxy({ value: 1 }, {});
+fn fresh_proxy_constructor_args_have_no_graph_cycle_but_keep_unknown_completion() {
+    let source = r#"const a = new Proxy({ value: 1 }, {});
 const b = new Proxy({ value: 2 }, {});
 const c = new Proxy({ value: 3 }, {});
 console.log(a.value, b.value, c.value);
 export { a, b, c };
-"#,
+"#;
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+        source,
         vec![
             logical_module("mod_a", &[Member::new("a"), Member::new("c")]),
             logical_module("mod_b", &[Member::new("b")]),
         ],
     ));
 
-    assert_entry_output(&fixture, "1 2 3\n");
+    // The graph's native timing proof does not grant an ordered Proxy
+    // construction receipt. Keep that separate completion limit explicit.
+    let report: serde_json::Value =
+        read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused");
+    assert!(
+        report["rejection"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("evaluation_schedule_unknown_reordered")
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    assert!(rejected.gate_rejected_marker().exists());
+    assert_node_output(&rejected.source_root.join("static/app.js"), "1 2 3\n", "");
+    assert_node_output(&rejected.entry_path(), "1 2 3\n", "");
+    let colocated = run_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "proxies",
+            &[Member::new("a"), Member::new("b"), Member::new("c")],
+        )],
+    ));
+    assert_preserved_entry_output(&colocated, "1 2 3\n");
 }
 
 #[test]

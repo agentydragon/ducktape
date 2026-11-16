@@ -1,7 +1,7 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
@@ -47,17 +47,82 @@ fn declarations(factory: &str) -> String {
     )
 }
 
+fn assert_fresh_destructuring_proof(rejected: &RejectedFixture) {
+    let graph = rejected.dependency_graph();
+    let first_id = source_unit_for_binding(&graph, "first");
+    let first = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == first_id)
+        .expect("first source unit");
+    if let analysis::Purity::NotPure { reasons } = &first.purity {
+        assert!(
+            !reasons
+                .iter()
+                .any(|reason| reason.rule == analysis::PurityRule::DestructuringPattern),
+            "the graph should retain its own-data destructuring proof: {first:#?}"
+        );
+    }
+}
+
+fn assert_destructuring_completion_refusal(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) -> RejectedFixture {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected the ordered-IR completion boundary to refuse this split:\n{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+    assert_fresh_destructuring_proof(&rejected);
+    rejected
+}
+
 #[test]
-fn fresh_factory_returned_record_can_split() {
+fn fresh_factory_returned_record_split_reports_destructuring_completion_limit() {
     let source = declarations(
         "function factory() { const entries = new Set(); return { selected: value => entries.add(value) }; }",
     );
-    let fixture = run_fixture(split(&source));
+    let rejected =
+        assert_destructuring_completion_refusal(split(&source), "function function function\n");
+    assert_module_exports(
+        &rejected.app_root(),
+        "static/app/modules/outer.js",
+        &["first", "last"],
+        &["middle"],
+    );
+    assert_module_exports(
+        &rejected.app_root(),
+        "static/app/modules/inner.js",
+        &["middle"],
+        &["first", "last"],
+    );
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        &source,
+        vec![logical_module(
+            "records/all",
+            &[
+                Member::new("factory"),
+                Member::new("first"),
+                Member::new("middle"),
+                Member::new("last"),
+            ],
+        )],
+    ));
     assert_preserved_entry_output(&fixture, "function function function\n");
 }
 
 #[test]
-fn fresh_factory_keeps_eager_binding_dependency() {
+fn fresh_factory_eager_binding_split_reports_destructuring_completion_limit() {
     let source = r#"const seed = 'ready';
 function factory() { return { selected: seed }; }
 const { selected: first } = factory();
@@ -66,41 +131,82 @@ const { selected: last } = factory();
 console.log(first, middle, last);
 export { first, middle, last };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
+    let split = FixtureOpts::new(
         source,
         vec![
             logical_module("outer", &[Member::new("first"), Member::new("last")]),
             logical_module("inner", &[Member::new("seed"), Member::new("middle")]),
         ],
-    ));
-    assert_preserved_entry_output(&fixture, "ready ready ready\n");
+    );
+    let rejected = assert_destructuring_completion_refusal(split, "ready ready ready\n");
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/outer.js",
         &["first", "last"],
         &["seed", "middle"],
     );
     assert_module_exports(
-        &fixture.out_root,
+        &rejected.app_root(),
         "static/app/modules/inner.js",
         &["seed", "middle"],
         &["first", "last"],
     );
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "records/all",
+            &[
+                Member::new("seed"),
+                Member::new("factory"),
+                Member::new("first"),
+                Member::new("middle"),
+                Member::new("last"),
+            ],
+        )],
+    ));
+    assert_preserved_entry_output(&fixture, "ready ready ready\n");
 }
 
 #[test]
-fn fresh_literal_reads_can_split() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const { selected: first } = { selected: () => 1 };
+fn fresh_literal_split_reports_destructuring_completion_limit() {
+    let source = r#"const { selected: first } = { selected: () => 1 };
 const { selected: middle } = { selected: () => 2 };
 const { selected: last } = { selected: () => 3 };
 console.log(first(), middle(), last());
 export { first, middle, last };
-"#,
-        vec![
-            logical_module("outer", &[Member::new("first"), Member::new("last")]),
-            logical_module("inner", &[Member::new("middle")]),
-        ],
+"#;
+    let rejected = assert_destructuring_completion_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("outer", &[Member::new("first"), Member::new("last")]),
+                logical_module("inner", &[Member::new("middle")]),
+            ],
+        ),
+        "1 2 3\n",
+    );
+    assert_module_exports(
+        &rejected.app_root(),
+        "static/app/modules/outer.js",
+        &["first", "last"],
+        &["middle"],
+    );
+    assert_module_exports(
+        &rejected.app_root(),
+        "static/app/modules/inner.js",
+        &["middle"],
+        &["first", "last"],
+    );
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+        source,
+        vec![logical_module(
+            "records/all",
+            &[
+                Member::new("first"),
+                Member::new("middle"),
+                Member::new("last"),
+            ],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "1 2 3\n");
 }

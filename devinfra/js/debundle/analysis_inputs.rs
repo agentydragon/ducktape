@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 use source_identity::SourceUnitOrdinal;
@@ -940,6 +940,13 @@ pub enum ProvenSetAllocation {
     Inferred(Box<InferredSetConstruction>),
 }
 
+/// A cached histogram tied to the immutable mutation vector it describes.
+#[derive(Debug)]
+pub(crate) struct NativePrototypeMutationCensusCache {
+    source: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
+    census: Arc<crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus>,
+}
+
 /// Resolved whole-program native integrity, derived from source facts and any
 /// explicitly recorded author input dependencies. This is never a serialized
 /// spec assertion.
@@ -947,6 +954,8 @@ pub enum ProvenSetAllocation {
 pub struct NativeIntegrity {
     pub mutated: BTreeSet<NativeIntrinsic>,
     pub prototype_mutations: Arc<Vec<crate::reports::schema::NativePrototypeMutation>>,
+    #[serde(skip)]
+    pub(crate) prototype_mutation_census: Arc<OnceLock<NativePrototypeMutationCensusCache>>,
     pub witnesses: Arc<Vec<crate::reports::schema::NativeMutationWitness>>,
     /// Validated inputs by stable reference. Consumers report a dependency only
     /// when a receiver refinement was actually used.
@@ -959,6 +968,34 @@ pub struct NativeIntegrity {
     pub never_written: BTreeSet<NativeIntrinsic>,
     /// The witnesses that premise overrides: the author's audit list.
     pub never_written_overrides: Vec<crate::reports::schema::NeverWrittenOverride>,
+}
+
+impl NativeIntegrity {
+    pub(crate) fn prototype_mutation_census(
+        &self,
+    ) -> Arc<crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus> {
+        let cached = self.prototype_mutation_census.get_or_init(|| {
+            NativePrototypeMutationCensusCache {
+                source: Arc::clone(&self.prototype_mutations),
+                census: Arc::new(
+                    crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus::from_mutations(
+                        &self.prototype_mutations,
+                    ),
+                ),
+            }
+        });
+        if Arc::ptr_eq(&cached.source, &self.prototype_mutations) {
+            Arc::clone(&cached.census)
+        } else {
+            // The public vector can be replaced after first use. Keep that
+            // caller correct without invalidating clones' immutable snapshot.
+            Arc::new(
+                crate::facts::abstract_domain::integrity::NativePrototypeMutationCensus::from_mutations(
+                    &self.prototype_mutations,
+                ),
+            )
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1077,6 +1114,7 @@ impl AnalysisAssumptions {
 /// call summaries and the caller-selected local-effect policy.
 #[derive(Debug, Clone, Default)]
 pub struct AnalysisInputs {
+    pub executables: Option<Arc<crate::program_execution::ProgramExecutables>>,
     pub native_integrity: Option<NativeIntegrity>,
     pub inferred_set_constructions: BTreeMap<u32, InferredSetConstruction>,
     /// Identity of this chunk within a supplied whole-program native census.
@@ -1105,6 +1143,14 @@ pub struct AnalysisInputs {
     /// established each one. These may depend on defining-chunk author
     /// contracts; they are never local author assumptions.
     pub imported_callables: BTreeMap<String, CallableSummary>,
+    /// Local export cells read by lazy source in another statically reachable
+    /// chunk. Opaque execution may run these observers even when the current
+    /// cell value is not callable or has not been initialized yet.
+    pub foreign_observer_cell_reads: BTreeSet<String>,
+    /// Primitive kinds of normally completing reads of stable source exports.
+    /// These constrain coercions only: they do not prove that GetValue completes,
+    /// initialize a provider cell, or grant operation/effect authority.
+    pub imported_primitive_result_kinds: BTreeMap<String, analysis_model::PrimKinds>,
     /// Source-proved imported primitive values admitted to ordinary candidate
     /// execution, keyed by local binding name. The program-summary adapter
     /// supplies one only alongside a matching `imported_primitive_reads`

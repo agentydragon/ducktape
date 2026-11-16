@@ -20,10 +20,18 @@ const later = 42;
 console.log(collection instanceof {constructor}, later);
 "#
     );
-    let fixture = run_fixture(collection_opts(
+    // Only construction crosses initialization; publication stays with the
+    // captured cell so a host setter observes the original phase.
+    let fixture = run_fixture(FixtureOpts::new(
         &source,
-        &[Member::new("collection")],
-        &["globalThis.saved = () => later;"],
+        vec![
+            logical_module("values/collection", &[Member::new("collection")]),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["globalThis.saved = () => later;"],
+            ),
+        ],
     ));
     assert_preserved_entry_output(&fixture, "true 42\n");
     assert_all_emitted_js_checks(&fixture);

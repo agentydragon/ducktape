@@ -1,13 +1,33 @@
 //! Initializer-scoped purity must address the initializer expression only,
 //! while unresolved callback reads remain eager dependencies.
 
+use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const OPAQUE_FACTORY: &str = "globalThis.factory = callback => callback();\nexport {};\n";
-const OPAQUE_FACTORY_FILES: &[(&str, &str)] = &[
-    ("static/factory.js", OPAQUE_FACTORY),
-    ("static/app/factory.js", OPAQUE_FACTORY),
-];
+const OPAQUE_FACTORY_CHUNKS: &[(&str, &str)] = &[("static/factory", OPAQUE_FACTORY)];
+const OPAQUE_FACTORY_RUNTIME_FILES: &[(&str, &str)] = &[("static/app/factory.js", OPAQUE_FACTORY)];
+
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) {
+    let rejected = run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+}
 
 fn opaque_factory_source() -> &'static str {
     r#"import './factory.js';
@@ -47,29 +67,77 @@ fn factory_modules(with_initializer_purity: bool) -> Vec<LogicalModuleEntry> {
 fn opaque_callback_factory_without_initializer_override_has_s_cycle() {
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(opaque_factory_source(), factory_modules(false))
-            .with_extra_files(OPAQUE_FACTORY_FILES),
+            .with_extra_chunks(OPAQUE_FACTORY_CHUNKS)
+            .with_extra_files(OPAQUE_FACTORY_RUNTIME_FILES),
         &["mod_a", "mod_b"],
     );
 }
 
 #[test]
 fn initializer_override_keeps_callback_read_dependency() {
-    let fixture = run_fixture_with_graphs(
+    assert_schedule_refusal_preserves_source_and_candidate(
         FixtureOpts::new(opaque_factory_source(), factory_modules(true))
-            .with_extra_files(OPAQUE_FACTORY_FILES),
+            .with_extra_chunks(OPAQUE_FACTORY_CHUNKS)
+            .with_extra_files(OPAQUE_FACTORY_RUNTIME_FILES),
+        "readya readyb readyc\n",
     );
 
-    assert_preserved_entry_output(&fixture, "readya readyb readyc\n");
+    let member = |name, declaration| {
+        Member::source_alpha_target(name, name, declaration).with_initializer_purity()
+    };
+    let colocated = run_fixture_with_graphs(
+        FixtureOpts::new(
+            opaque_factory_source(),
+            vec![logical_module(
+                "factory_values",
+                &[
+                    Member::new("seed"),
+                    member("A", "const A = globalThis.factory(() => seed + \"a\");"),
+                    member("B", "const B = globalThis.factory(() => seed + \"b\");"),
+                    member("C", "const C = globalThis.factory(() => seed + \"c\");"),
+                ],
+            )],
+        )
+        .with_extra_chunks(OPAQUE_FACTORY_CHUNKS)
+        .with_extra_files(OPAQUE_FACTORY_RUNTIME_FILES),
+    );
+    assert_preserved_entry_output(&colocated, "readya readyb readyc\n");
+    assert_module_source(
+        &colocated.out_root,
+        "static/app/modules/factory_values.js",
+        &["const seed", "const A", "const B", "const C"],
+        &[],
+    );
     assert_generated_module_after_entry_script(
-        &fixture,
-        r#"const mod_a = await import("./static/app/modules/mod_a.js");
-const mod_b = await import("./static/app/modules/mod_b.js");
-console.log(JSON.stringify({
-  mod_a: Object.keys(mod_a).sort(),
-  mod_b: Object.keys(mod_b).sort(),
-}));
+        &colocated,
+        r#"const values = await import("./static/app/modules/factory_values.js");
+console.log(JSON.stringify(Object.keys(values).sort()));
 "#,
-        "{\"mod_a\":[\"A\",\"C\"],\"mod_b\":[\"B\",\"seed\"]}\n",
+        "[\"A\",\"B\",\"C\",\"seed\"]\n",
+    );
+
+    let graph = colocated.dependency_graph();
+    let caller_source_unit = source_unit_for_binding(&graph, "A");
+    let seed_source_unit = source_unit_for_binding(&graph, "seed");
+    let promoted_seed_edges: Vec<_> = graph
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.source == caller_source_unit
+                && edge.target == seed_source_unit
+                && edge.edge_kind == analysis_model::DepKind::EagerUse
+                && edge.binding.as_deref() == Some("seed")
+                && matches!(
+                    edge.role,
+                    Some(analysis::EdgeRoleReport::PromotedAtInit { .. })
+                )
+        })
+        .collect();
+    assert!(
+        !promoted_seed_edges.is_empty(),
+        "the initializer annotation must retain callback-body read ordering; \
+         expected a promoted eager edge from the factory source_unit to `seed`, got \
+         {promoted_seed_edges:#?}\n\nFull dependency graph: {graph:#?}",
     );
 }
 
@@ -98,7 +166,8 @@ export { store, selected };
         )
         .with_chunk_renames(renames)
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_extra_files(OPAQUE_FACTORY_FILES)
+        .with_extra_chunks(OPAQUE_FACTORY_CHUNKS)
+        .with_extra_files(OPAQUE_FACTORY_RUNTIME_FILES)
     };
     let mut unannotated = options();
     unannotated
@@ -114,23 +183,25 @@ export { store, selected };
         rejected.stderr
     );
 
-    let fixture = run_fixture(options());
+    assert_schedule_refusal_preserves_source_and_candidate(
+        options(),
+        "side\nreadystore readyselected\n",
+    );
+
+    let mut original_phase = options();
+    original_phase.logical_modules.clear();
+    let fixture = run_fixture_with_graphs(original_phase);
     assert_preserved_entry_output(&fixture, "side\nreadystore readyselected\n");
     assert_module_source(
         &fixture.out_root,
         "static/app/entry.js",
         &[
             "const readableStore",
+            "const seed",
+            "const selected",
             "const side",
-            "console.log(readableStore, selected)",
         ],
-        &["const store", "const seed", "const selected"],
-    );
-    assert_module_source(
-        &fixture.out_root,
-        "static/app/modules/selected.js",
-        &["const seed", "const selected"],
-        &["readableStore", "const side"],
+        &[],
     );
 }
 
@@ -154,7 +225,8 @@ export { store, side, selected, last };
         )
         .with_chunk_renames(renames)
         .with_unassigned_mode(unassigned_mode_inline())
-        .with_extra_files(OPAQUE_FACTORY_FILES),
+        .with_extra_chunks(OPAQUE_FACTORY_CHUNKS)
+        .with_extra_files(OPAQUE_FACTORY_RUNTIME_FILES),
     );
     assert!(
         rejected.stderr.contains("unrealizable"),

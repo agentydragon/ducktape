@@ -42,22 +42,21 @@ export const sB = "b";
 
 #[test]
 fn peeled_function_returning_object_literal_keeps_value_position_imports() {
-    let mut opts = FixtureOpts::new(
+    let opts = FixtureOpts::new(
         CHUNK_SOURCE,
         vec![logical_module(
             "target_module",
             &[Member::new("makeConfig")],
         )],
-    );
-    opts.extra_files = &[("static/app/provider_module.js", PROVIDER_SOURCE)];
+    )
+    .with_extra_chunks(&[("static/provider_module", PROVIDER_SOURCE)]);
     let fixture = run_fixture(opts);
 
-    // The canonical path-rebase fix from PR #1630 must hold — we want
-    // `"../provider_module.js"`, not `".././provider_module.js"`.
+    // The provider entry path is canonical, with no redundant `./` segment.
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/target_module.js",
-        &[r#"from "../provider_module.js""#],
+        &[r#"from "../../provider_module/entry.js""#],
         &[],
     );
 
@@ -68,5 +67,5 @@ fn peeled_function_returning_object_literal_keeps_value_position_imports() {
     // not defined` at module-load time, taking the whole entry chunk
     // down. `assert_entry_output` runs the emitted bundle through
     // Node and surfaces the ReferenceError as a failed assertion.
-    assert_entry_output(&fixture, "a:b\n");
+    assert_preserved_entry_output(&fixture, "a:b\n");
 }

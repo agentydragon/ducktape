@@ -51,7 +51,6 @@ def test_callback_contract_recipe_and_conservative_controls(tmp_path: Path) -> N
     for name in ("fresh_factory", "retained_constructor", "persistent_registry"):
         assert (shared / "out" / name / "app/main/entry.js").is_file()
     expected_conflicts = {
-        "fresh_factory": {"callbacks/wrapped", "values/later"},
         "retained_constructor": {"callbacks/wrapped", "values/later"},
         "persistent_registry": {"callbacks/registration", "values/later"},
     }
@@ -59,6 +58,12 @@ def test_callback_contract_recipe_and_conservative_controls(tmp_path: Path) -> N
         report = shared / "out/controls" / name / "reports/tree/main/atomic_group_conflicts.json"
         conflicts = json.loads(report.read_text())
         assert any(modules <= {claim["module"] for claim in conflict["claims"]} for conflict in conflicts)
+
+    cycle_report = shared / "out/controls/fresh_factory/reports/tree/main/cycles.json"
+    cycles = json.loads(cycle_report.read_text())
+    assert any(
+        {"callbacks/wrapped", "anon_residual_sentinel"} <= set(cycle["modules"]) and cycle["cut"] for cycle in cycles
+    )
 
 
 if __name__ == "__main__":

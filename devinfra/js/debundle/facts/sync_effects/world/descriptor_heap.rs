@@ -5,12 +5,14 @@
 //! the defining operation completed normally; those obligations stay with the
 //! planning transfer (`native::operation`) and the realizability gate.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::super::allocation_transfer::LiteralHeap;
 use super::super::own_data_transfer::OwnDataContext;
 use super::super::property_inference::{
     CapturedPropertyDescriptor, OwnPropertyDescriptorProjection,
 };
-use super::super::value_model::{AbstractValue, CallSite, DenseArray, Values};
+use super::super::value_model::{AbstractValue, DenseArray, RuntimeCallSite, Values};
 use super::object_surface::ObjectSurfaceStore;
 use crate::analysis_inputs::ProofDependencies;
 use crate::facts::abstract_domain::value::{Kind, Value};
@@ -19,7 +21,7 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::facts::sync_effects) struct OwnDescriptorMapState {
-    pub(in crate::facts::sync_effects) source_object: u32,
+    pub(in crate::facts::sync_effects) source_object: RuntimeAllocationId,
     /// A pooled site that captured a different source or shape, or whose
     /// map escaped to unmodeled code, keeps only its retained values.
     pub(in crate::facts::sync_effects) valid: bool,
@@ -32,16 +34,16 @@ pub(in crate::facts::sync_effects) struct OwnDescriptorMapState {
 pub(in crate::facts::sync_effects) trait DescriptorContext:
     OwnDataContext
 {
-    fn descriptor_map(&self, site: CallSite) -> Option<&OwnDescriptorMapState>;
+    fn descriptor_map(&self, site: RuntimeCallSite) -> Option<&OwnDescriptorMapState>;
     fn object_surface(&self) -> &ObjectSurfaceStore;
     /// A fresh plain-data literal: its own descriptors are the literal's, so
     /// `[[DefineOwnProperty]]` on it runs no user code.
-    fn plain_data_object(&self, object: u32) -> bool;
+    fn plain_data_object(&self, object: RuntimeAllocationId) -> bool;
     /// `ToPropertyDescriptor` reads inherited fields of every descriptor record.
     fn descriptor_conversion_is_ordinary(&mut self) -> bool;
     /// An object literal whose source lies in the executing top-level
     /// statement: no other statement holds it before this one completes.
-    fn statement_literal(&self, object: u32) -> bool;
+    fn statement_literal(&self, object: RuntimeAllocationId) -> bool;
 }
 
 /// A checked `Object.defineProperty(target, key, descriptor)` whose key is a
@@ -50,7 +52,7 @@ pub(in crate::facts::sync_effects) trait DescriptorContext:
 /// refuses from then on, and drops the target's literal writability witness.
 #[derive(Debug, Clone)]
 pub(in crate::facts::sync_effects) struct DynamicKeyDefinition {
-    target: u32,
+    target: RuntimeAllocationId,
     value: Values,
 }
 
@@ -120,14 +122,14 @@ pub(in crate::facts::sync_effects) fn dynamic_key_definition(
 /// copied in, so commit cannot fail after the prefix starts changing.
 #[derive(Debug, Clone)]
 pub(in crate::facts::sync_effects) struct DescriptorApplication {
-    pub(in crate::facts::sync_effects) target: u32,
+    pub(in crate::facts::sync_effects) target: RuntimeAllocationId,
     definitions: Vec<(String, CapturedPropertyDescriptor)>,
 }
 
 impl DescriptorApplication {
     /// Every property of a still-valid map, in creation order.
     pub(in crate::facts::sync_effects) fn from_map(
-        target: u32,
+        target: RuntimeAllocationId,
         map: &OwnDescriptorMapState,
     ) -> Option<Self> {
         if !map.valid {
@@ -179,10 +181,11 @@ pub(in crate::facts::sync_effects) fn application(
 /// and completion proofs; these updates grant neither ordinary-property shape
 /// nor effect coverage.
 pub(in crate::facts::sync_effects) struct DescriptorHeap<'a> {
-    pub(in crate::facts::sync_effects) maps: &'a mut OrdMap<CallSite, OwnDescriptorMapState>,
+    pub(in crate::facts::sync_effects) maps: &'a mut OrdMap<RuntimeCallSite, OwnDescriptorMapState>,
     pub(in crate::facts::sync_effects) surface: &'a mut ObjectSurfaceStore,
-    pub(in crate::facts::sync_effects) arrays: &'a mut OrdMap<u32, DenseArray>,
-    pub(in crate::facts::sync_effects) primitive_arrays: &'a mut OrdMap<u32, ProofDependencies>,
+    pub(in crate::facts::sync_effects) arrays: &'a mut OrdMap<RuntimeAllocationId, DenseArray>,
+    pub(in crate::facts::sync_effects) primitive_arrays:
+        &'a mut OrdMap<RuntimeAllocationId, ProofDependencies>,
     pub(in crate::facts::sync_effects) revision: &'a mut u64,
     pub(in crate::facts::sync_effects) track_writable_prefix: bool,
 }
@@ -214,7 +217,7 @@ impl<'a> DescriptorHeap<'a> {
     /// retain.
     pub(in crate::facts::sync_effects) fn capture(
         &mut self,
-        site: CallSite,
+        site: RuntimeCallSite,
         projection: OwnPropertyDescriptorProjection,
     ) -> AbstractValue {
         let OwnPropertyDescriptorProjection {
@@ -258,13 +261,16 @@ impl<'a> DescriptorHeap<'a> {
         AbstractValue::OwnDescriptorMap(site)
     }
 
-    pub(in crate::facts::sync_effects) fn invalidate_writable(&mut self, object: u32) {
+    pub(in crate::facts::sync_effects) fn invalidate_writable(
+        &mut self,
+        object: RuntimeAllocationId,
+    ) {
         self.literal().invalidate_writable(object);
     }
 
     pub(in crate::facts::sync_effects) fn dense_array(
         &mut self,
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         slots: Vec<Values>,
     ) {
         self.literal().dense_array(allocation, slots);
@@ -278,7 +284,7 @@ impl<'a> DescriptorHeap<'a> {
     /// dense or primitive snapshot or a source record shape all refuse it.
     pub(in crate::facts::sync_effects) fn contents_array(
         &mut self,
-        allocation: u32,
+        allocation: RuntimeAllocationId,
         contents: Values,
     ) {
         let mut literal = self.literal();
@@ -303,7 +309,7 @@ impl<'a> DescriptorHeap<'a> {
     }
 
     /// A map that reached unmodeled code may be mutated there.
-    pub(in crate::facts::sync_effects) fn invalidate(&mut self, site: CallSite) {
+    pub(in crate::facts::sync_effects) fn invalidate(&mut self, site: RuntimeCallSite) {
         if let Some(map) = self.maps.get_mut(&site)
             && map.valid
         {

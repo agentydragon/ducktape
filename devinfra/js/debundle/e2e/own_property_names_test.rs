@@ -109,6 +109,7 @@ fn own_name_projection_reports_its_documented_inference_receipt() {
 #[test]
 fn own_name_inspection_keeps_eager_argument_effects_and_throws() {
     let source = r#"
+const later = 42;
 let argumentCalls = 0;
 let getterCalls = 0;
 function makeValue() { argumentCalls++; return 1; }
@@ -124,7 +125,6 @@ const argumentThrew = (() => {
     return error === "argument";
   }
 })();
-const later = 42;
 console.log(names[0], names[1], argumentCalls, getterCalls, argumentThrew);
 "#;
     let fixture = run_fixture(FixtureOpts::new(

@@ -15,6 +15,36 @@ use debundle_e2e_support::*;
 const SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst marker = Symbol('marker');\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst made = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(marker.description, made.name, globalThis.unrelatedKey);\nexport { marker, factory, LaterError, reflect };\n";
 const BASELINE_CONFLICT_MODULES: &[&str] = &["marker", "later"];
 
+/// A native premise describes only its selected call. Keep publication and
+/// class initialization together so a preinstalled host setter still sees the
+/// source TDZ. The old separated layout remains the no-premise graph control.
+fn preserve_published_class_phase<'a>(
+    mut opts: FixtureOpts<'a>,
+    destination: &str,
+) -> FixtureOpts<'a> {
+    let later = opts
+        .logical_modules
+        .iter()
+        .position(|(name, _)| name == "later")
+        .unwrap();
+    let (_, later) = opts.logical_modules.remove(later);
+    let (_, target) = opts
+        .logical_modules
+        .iter_mut()
+        .find(|(name, _)| name == destination)
+        .unwrap();
+    target.members.extend(later.members);
+    target.source_matches.extend(later.source_matches);
+    target.annotations.extend(later.annotations);
+    if target.anonymous_statements.is_empty() {
+        target.anonymous_statements =
+            logical_module_with_anon(destination, &[], &["globalThis.saved = () => factory();"])
+                .1
+                .anonymous_statements;
+    }
+    opts
+}
+
 fn input_for(source: &str, declaration: &str) -> NativeOperationInputContract {
     NativeOperationInputContract {
         selector: SourceUnitSelector::SourceMatch(source_match_selector(
@@ -86,7 +116,7 @@ fn resolved_member_native_input(
 }
 
 #[test]
-fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
+fn certified_fresh_sets_preserve_unrelated_constructor_phase() {
     const DECLARATION: &str =
         "var seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);";
     const SOURCE: &str = "import { Box } from './box.js';\nconst prior = ['p'];\nconst memo = new Box(() => 1);\nvar seed = new Set(['a']), sibling = new Set(['b']), merged = new Set([...seed, 'c']);\nexport { prior, memo, seed, sibling, merged };\nconsole.log(prior.length, merged.size);\n";
@@ -96,6 +126,8 @@ fn certified_fresh_sets_split_after_unrelated_constructor_heap_barrier() {
             vec![logical_module(
                 "sets",
                 &[
+                    Member::new("prior"),
+                    Member::new("memo"),
                     Member::new("seed"),
                     Member::new("sibling"),
                     Member::new("merged"),
@@ -307,8 +339,10 @@ fn inferred_set_spread_preserves_factory_callback_composition() {
             ],
         )
     };
-    let fixture =
-        run_fixture_with_graphs(opts().with_native_operation_inputs("static/app", inputs()));
+    let fixture = run_fixture_with_graphs(
+        preserve_published_class_phase(opts(), "sets")
+            .with_native_operation_inputs("static/app", inputs()),
+    );
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     assert!(
@@ -326,7 +360,7 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
     const DECLARATION: &str = "var seed = new Set(['a']);";
     const SOURCE: &str =
         "var seed;\nvar seed = new Set(['a']);\nconsole.log(seed.size);\nexport { seed };\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("seed")])])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(
@@ -423,7 +457,8 @@ fn selected_primitive_set_construction_removes_its_opaque_frontier() {
         "unproved Set construction still has a call frontier: {control_graph}"
     );
     let fixture = run_fixture_with_graphs(
-        opts().with_native_operation_inputs("static/app", vec![primitive_set_input(SOURCE)]),
+        preserve_published_class_phase(opts(), "made")
+            .with_native_operation_inputs("static/app", vec![primitive_set_input(SOURCE)]),
     );
     assert_preserved_entry_output(&fixture, "2 LaterError\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -538,7 +573,10 @@ fn resolved_members_emit_only_the_selected_set_and_empty_map_sites() {
         );
     }
 
-    let fixture = run_fixture_with_graphs(make_opts(vec![set_input, map_input]));
+    let fixture = run_fixture_with_graphs(preserve_published_class_phase(
+        make_opts(vec![set_input, map_input]),
+        "collections",
+    ));
     assert_preserved_entry_output(&fixture, "2 0 LaterError LaterError\n");
     assert_module_exports(
         &fixture.out_root,
@@ -576,7 +614,7 @@ fn resolved_members_emit_only_the_selected_set_and_empty_map_sites() {
 #[test]
 fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
     const SOURCE: &str = "const emptyMap = new Map();\nconst made = new Set(['alpha', 'beta']);\nconsole.log(made.size, emptyMap.size);\n";
-    let fixture = run_fixture(
+    let fixture = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, vec![logical_module("sets", &[Member::new("made")])])
             .with_unassigned_mode(unassigned_mode_inline())
             .with_native_operation_inputs(
@@ -936,7 +974,10 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
         "without the input, the selected initializer retains its unknown-call precision loss: {control_graph}"
     );
 
-    let fixture = run_fixture_with_graphs(split_opts(Some(marker_input(SOURCE))));
+    let fixture = run_fixture_with_graphs(preserve_published_class_phase(
+        split_opts(Some(marker_input(SOURCE))),
+        "marker",
+    ));
     assert_preserved_entry_output(&fixture, "marker LaterError safe\n");
     assert_generated_module_after_entry_script(
         &fixture,
@@ -981,22 +1022,55 @@ fn selected_symbol_call_removes_only_its_synthetic_reentry_barrier() {
 }
 
 #[test]
-fn selected_literal_symbol_breaks_order_cycle_with_live_array_contents() {
-    let source = "const values = [];\nconsole.log('before', values.length);\nconst marker = Symbol('fixture.key');\nvalues.push('after');\nconsole.log('after', values.length);\nexport { values, marker };\n";
+fn inferred_and_selected_literal_symbols_preserve_live_binding_updates() {
+    // Private lexical stores complete normally without inherited property or
+    // host callbacks. Keep the native-only outer/inner/outer inversion; leave
+    // console in entry so host observation follows both emitted modules.
+    let source = "let count = 0;\ncount = 1;\nconst marker = Symbol('fixture.key');\ncount = 2;\nconsole.log('after', count);\nexport { marker };\n";
     let modules = || {
         vec![
             logical_module_with_anon(
                 "outer",
-                &[Member::new("values")],
-                &[
-                    "console.log('before', values.length);",
-                    "values.push('after');",
-                    "console.log('after', values.length);",
-                ],
+                &[Member::new("count")],
+                &["count = 1;", "count = 2;"],
             ),
             logical_module("inner", &[Member::new("marker")]),
         ]
     };
+    let baseline = run_fixture_with_graphs(FixtureOpts::new(source, modules()));
+    assert_preserved_entry_output(&baseline, "after 2\n");
+    let baseline_graph = serde_json::to_value(baseline.dependency_graph()).unwrap();
+    assert_eq!(
+        json_node_declaring(&baseline_graph, "marker")["purity"]["kind"],
+        "pure"
+    );
+    assert!(
+        json_execution_rows(&baseline_graph, "native_operation_input_uses").is_empty(),
+        "the direct primitive Symbol call is inferred without an authored input"
+    );
+
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(source, modules())
+            .with_native_operation_inputs("static/app", vec![marker_input(source)]),
+    );
+    assert_preserved_entry_output(&fixture, "after 2\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\nconsole.log(entry.marker.description, typeof entry.marker === 'symbol');\n",
+        "fixture.key true\n",
+    );
+    let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
+    let marker = json_node_declaring(&graph, "marker");
+    assert_eq!(marker["purity"]["kind"], "pure");
+    assert_eq!(
+        marker["purity"]["dependencies"]["native_operation_inputs"][0]["input_index"],
+        0
+    );
+    assert_eq!(
+        json_execution_rows(&graph, "native_operation_input_uses").len(),
+        1
+    );
+
     for (call, description) in [
         ("Symbol()", "undefined"),
         ("Symbol('fixture.key')", "fixture.key"),
@@ -1006,11 +1080,11 @@ fn selected_literal_symbol_breaks_order_cycle_with_live_array_contents() {
             FixtureOpts::new(&source, modules())
                 .with_native_operation_inputs("static/app", vec![marker_input(&source)]),
         );
-        assert_preserved_entry_output(&fixture, "before 0\nafter 1\n");
+        assert_preserved_entry_output(&fixture, "after 2\n");
         assert_generated_module_after_entry_script(
             &fixture,
-            "const entry = await import('./static/app/entry.js');\nconsole.log(typeof entry.marker, entry.marker.description, entry.values.join(','));\n",
-            &format!("symbol {description} after\n"),
+            "const entry = await import('./static/app/entry.js');\nconsole.log(typeof entry.marker, entry.marker.description);\n",
+            &format!("symbol {description}\n"),
         );
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
         let marker = json_node_declaring(&graph, "marker");
@@ -1419,7 +1493,8 @@ fn exact_encoder_input_removes_only_selected_reentry_constraint() {
             .is_empty()
     );
     let fixture = run_fixture_with_graphs(
-        opts().with_native_operation_inputs("static/app", vec![encoder_input(source)]),
+        preserve_published_class_phase(opts(), "encoder")
+            .with_native_operation_inputs("static/app", vec![encoder_input(source)]),
     );
     assert_preserved_entry_output(&fixture, "utf-8 LaterError\n");
 }
@@ -1723,5 +1798,38 @@ fn encoder_input_selects_one_comma_declarator_without_parentheses() {
     assert_eq!(
         json_node_declaring(&graph, "encoder")["purity"]["kind"],
         "pure"
+    );
+}
+
+#[test]
+fn a_selected_native_call_does_not_authorize_a_changed_host_setter_phase() {
+    let opts = || split_opts(Some(marker_input(SOURCE)));
+    let refused = run_rejection_fixture_with_graphs(opts());
+    let report: serde_json::Value =
+        read_json(&refused.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused");
+    assert!(!refused.entry_path().exists());
+    let diagnostic = run_emit_on_rejection_fixture_with_graphs(opts());
+    assert!(diagnostic.gate_rejected_marker().is_file());
+    let setup = "Object.defineProperty(globalThis, 'saved', { set(callback) { try { console.log('setter', callback().name); } catch (error) { console.log('setter', error.name); } }, configurable: true });\n";
+    let source_driver = diagnostic.source_root.join("host-setter.mjs");
+    write_text_file(
+        &source_driver,
+        &format!("{setup}await import('./static/app.js');\n"),
+    );
+    assert_node_output(
+        &source_driver,
+        "setter ReferenceError\nmarker LaterError safe\n",
+        "",
+    );
+    let emitted_driver = diagnostic.app_root().join("host-setter.mjs");
+    write_text_file(
+        &emitted_driver,
+        &format!("{setup}await import('./static/app/entry.js');\n"),
+    );
+    assert_node_output(
+        &emitted_driver,
+        "setter LaterError\nmarker LaterError safe\n",
+        "",
     );
 }

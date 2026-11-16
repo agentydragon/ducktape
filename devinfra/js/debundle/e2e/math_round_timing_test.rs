@@ -20,10 +20,21 @@ const rounded = Math.round(seconds / 86400);
 const later = 42;
 console.log(rounded, later);
 "#;
-    let fixture = run_fixture(round_opts(
+    // Publication and its captured cell keep their original relative phase.
+    // Only the primitive arithmetic and native call move across initialization.
+    let fixture = run_fixture(FixtureOpts::new(
         source,
-        &[Member::new("seconds"), Member::new("rounded")],
-        &["globalThis.saved = () => later;"],
+        vec![
+            logical_module(
+                "values/rounded",
+                &[Member::new("seconds"), Member::new("rounded")],
+            ),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["globalThis.saved = () => later;"],
+            ),
+        ],
     ));
     assert_preserved_entry_output(&fixture, "2 42\n");
     assert_all_emitted_js_checks(&fixture);

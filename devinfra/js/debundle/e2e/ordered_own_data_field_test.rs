@@ -5,6 +5,10 @@ use analysis_model::DepKind;
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
+fn is_app_heap_cell(cell: &serde_json::Value, kind: &str) -> bool {
+    cell["kind"] == format!("program_{kind}") && cell["module"] == "static/app"
+}
+
 fn assert_property_frontier(
     graph: &DependencyGraphReport,
     later: usize,
@@ -28,7 +32,7 @@ fn assert_property_frontier(
                     .as_array()
                     .is_some_and(|conflicts| {
                         conflicts.iter().any(|conflict| {
-                            conflict["cell"]["kind"] == "own_property"
+                            is_app_heap_cell(&conflict["cell"], "own_property")
                                 && conflict["cell"]["property"] == property
                         })
                     })
@@ -206,16 +210,17 @@ fn assert_push_preserves_root_length_read(
                     .is_some_and(|conflicts| {
                         let has_array_content_read = conflicts.iter().any(|conflict| {
                             conflict["kind"] == "write_after_read"
-                                && conflict["cell"]["kind"] == "array_contents"
+                                && is_app_heap_cell(&conflict["cell"], "array_contents")
                                 && conflict["cell"]["origin"] == read_origin
                         });
-                        let has_length_frontier = conflicts.iter().any(|conflict| {
-                            conflict["kind"] == "frontier_after_cell"
-                                && conflict["cell"]["kind"] == "own_property"
+                        let has_length_conflict = conflicts.iter().any(|conflict| {
+                            (conflict["kind"] == "write_after_read"
+                                || conflict["kind"] == "frontier_after_cell")
+                                && is_app_heap_cell(&conflict["cell"], "own_property")
                                 && conflict["cell"]["property"] == "length"
                                 && conflict["cell"]["origin"] == read_origin
                         });
-                        has_array_content_read && has_length_frontier
+                        has_array_content_read && has_length_conflict
                     })
         }),
         "push {later_binding} must preserve root length read {earlier_binding}: {:#?}",
@@ -326,13 +331,13 @@ fn compound_owner_keeps_the_value_read_before_its_later_mutation() {
             .edges
             .iter()
             .filter(|edge| &edge.source == compound || &edge.target == compound)
-            .all(|edge| {
-                !serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
+            .any(|edge| {
+                serde_json::to_value(&edge.sequenced_cause).unwrap()["conflicts"]
                     .as_array()
                     .is_some_and(|conflicts| {
                         conflicts
                             .iter()
-                            .any(|conflict| conflict["cell"]["kind"] == "own_property")
+                            .any(|conflict| is_app_heap_cell(&conflict["cell"], "own_property"))
                     })
             })
     );
@@ -683,11 +688,11 @@ fn push_conflicts_with_a_prior_exact_array_index_read() {
                     .is_some_and(|conflicts| {
                         conflicts.iter().any(|conflict| {
                             conflict["kind"] == "write_after_read"
-                                && conflict["cell"]["kind"] == "array_contents"
+                                && is_app_heap_cell(&conflict["cell"], "array_contents")
                                 && conflict["overlap"]["law"] == "array_contents_index_or_length"
-                                && conflict["overlap"]["left"]["kind"] == "own_property"
+                                && is_app_heap_cell(&conflict["overlap"]["left"], "own_property")
                                 && conflict["overlap"]["left"]["property"] == "0"
-                                && conflict["overlap"]["right"]["kind"] == "array_contents"
+                                && is_app_heap_cell(&conflict["overlap"]["right"], "array_contents")
                         })
                     })
         }),
@@ -722,10 +727,6 @@ fn root_array_index_read_refuses_absent_or_unsettled_slots() {
         (
             "const values = [7];\nconst read = values[1];\nconsole.log(read);\n",
             "undefined\n",
-        ),
-        (
-            "function make() { return [7]; }\nconst first = make();\nconst values = make();\nconst read = values[0];\nconsole.log(read);\n",
-            "7\n",
         ),
         (
             "const values = [7];\nvalues[0] = 42;\nconst read = values[0];\nconsole.log(read);\n",
@@ -838,8 +839,18 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
     ));
     assert_preserved_entry_output(&holey, "2 3\n");
     assert_no_non_assumed_length_read(&holey.dependency_graph(), "gamma", "holey array");
+}
 
-    let pooled = run_fixture_with_graphs(FixtureOpts::new(
+#[test]
+fn repeated_array_factory_calls_preserve_exact_reads_of_distinct_instances() {
+    let index = run_fixture_with_graphs(FixtureOpts::new(
+        "function make() { return [7]; }\nconst first = make();\nconst values = make();\nconst read = values[0];\nconsole.log(first === values, read);\n",
+        vec![],
+    ));
+    assert_preserved_entry_output(&index, "false 7\n");
+    assert_non_assumed_index_read(&index.dependency_graph(), "read");
+
+    let length = run_fixture_with_graphs(FixtureOpts::new(
         "function make() { return []; }\nconst store = make();\nconst spare = make();\nconst gamma = store.length;\nconst alpha = store.push(1);\nconsole.log(gamma, alpha);\n",
         vec![logical_module(
             "all",
@@ -852,10 +863,122 @@ fn unsupported_root_length_reads_keep_fallback_and_runtime_behavior() {
             ],
         )],
     ));
-    assert_preserved_entry_output(&pooled, "0 1\n");
-    assert_no_non_assumed_length_read(
-        &pooled.dependency_graph(),
-        "gamma",
-        "pooled array literal site",
+    assert_preserved_entry_output(&length, "0 1\n");
+    assert_non_assumed_length_read(&length.dependency_graph(), "gamma");
+}
+
+#[test]
+fn repeated_factory_calls_keep_distinct_objects_and_identical_capture_closures() {
+    for (factory, observe, expected) in [
+        (
+            "function make() { return { value: 1 }; }",
+            "console.log(pair[0] === pair[1], pair[0].value, pair[1].value);",
+            "false 1 1\n",
+        ),
+        (
+            "function make() { return () => 1; }",
+            "console.log(pair[0] === pair[1], pair[0](), pair[1]());",
+            "false 1 1\n",
+        ),
+    ] {
+        let source = format!("{factory}\nconst pair = [make(), make()];\n{observe}\n");
+        let fixture = run_fixture(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("factory", &[Member::new("make")]),
+                logical_module_with_anon("instances", &[Member::new("pair")], &[observe]),
+            ],
+        ));
+        assert_preserved_entry_output(&fixture, expected);
+    }
+}
+
+#[test]
+fn captured_mutable_cell_second_call_keeps_the_new_callback_read() {
+    let source = "function make() { let held = () => 1; return (next) => { const previous = held; held = next; return previous(); }; }\nconst run = make();\nconst result = [run(() => typeof later), run(() => 1)];\nvar later = 1;\nconsole.log(result.join(','));\n";
+    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+        source,
+        vec![logical_module("later", &[Member::new("later")])],
+    ));
+    assert_node_output(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        "1,undefined\n",
+        "",
     );
+    assert_gate_rejected_banner(
+        &rejected.entry_path(),
+        &rejected.report_path("atomic_group_conflicts.json"),
+    );
+    assert_node_output(&rejected.entry_path(), "1,undefined\n", "");
+}
+
+#[test]
+fn changed_argument_descriptor_and_native_identity_keep_second_call_observers() {
+    for (source, expected) in [
+        (
+            "function read(record) { return record.value(); }\nconst record = { value: () => 1 };\nconst first = read(record);\nrecord.value = () => typeof later;\nconst second = read(record);\nvar later = 1;\nconsole.log(first, second);\n",
+            "1 undefined\n",
+        ),
+        (
+            "function read(record) { return record.value; }\nconst record = { value: 1 };\nconst first = read(record);\nObject.defineProperty(record, 'value', { get() { return typeof later; } });\nconst second = read(record);\nvar later = 1;\nconsole.log(first, second);\n",
+            "1 undefined\n",
+        ),
+        (
+            "function read(record) { return Object.keys(record); }\nconst record = { value: 1 };\nconst first = read(record);\nObject.keys = () => typeof later;\nconst second = read(record);\nvar later = 1;\nconsole.log(first.length, second);\n",
+            "1 undefined\n",
+        ),
+    ] {
+        let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
+            source,
+            vec![logical_module("later", &[Member::new("later")])],
+        ));
+        assert_node_output(
+            &rejected
+                .source_root
+                .join(format!("{}.js", rejected.chunk_id)),
+            expected,
+            "",
+        );
+        assert_gate_rejected_banner(
+            &rejected.entry_path(),
+            &rejected.report_path("atomic_group_conflicts.json"),
+        );
+        assert_node_output(&rejected.entry_path(), expected, "");
+    }
+}
+
+#[test]
+fn source_array_census_keeps_runtime_mutation_order() {
+    const PROVIDER: &str = "function make() { return []; }\nexport const values = make();\nexport function read() { const unused = globalThis; return values.length; }\n";
+    for imported in [false, true] {
+        for expression in ["read()", "read() + 0", "[read()][0]"] {
+            let prefix = if imported {
+                "import { values, read } from './provider.js';\n"
+            } else {
+                "function make() { return []; }\nconst values = make();\nfunction read() { const unused = globalThis; return values.length; }\n"
+            };
+            let source = format!(
+                "{prefix}const first = {expression};\nconst written = values.push(1);\nconsole.log(first, written);\n"
+            );
+            let mut moved = vec![Member::new("written")];
+            if !imported {
+                moved.extend([Member::new("make"), Member::new("values")]);
+            }
+            let mut options = FixtureOpts::new(&source, vec![logical_module("mutation", &moved)])
+                .with_dataflow_aware_s_chain()
+                .with_unassigned_mode(unassigned_mode_inline());
+            if imported {
+                options = options.with_extra_chunks(&[("static/provider", PROVIDER)]);
+            }
+            let rejected = run_emit_on_rejection_fixture(options);
+            assert_node_output(&rejected.source_root.join("static/app.js"), "0 1\n", "");
+            assert_gate_rejected_banner(
+                &rejected.entry_path(),
+                &rejected.report_path("cycles.json"),
+            );
+            assert_node_output(&rejected.entry_path(), "1 1\n", "");
+        }
+    }
 }

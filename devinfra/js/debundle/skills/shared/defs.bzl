@@ -14,7 +14,7 @@ def _contract_example_mappings(scenario):
         "retained_constructor": "unlisted_arity.js",
         "persistent_registry": "early_emit.js",
     }[scenario]
-    return [
+    mappings = [
         skill_mapping(
             srcs = [
                 root + "/js-files.txt",
@@ -47,6 +47,16 @@ def _contract_example_mappings(scenario):
             prefix = prefix + "/source/controls",
         ),
     ]
+    accepted_module = {
+        "retained_constructor": "wrapped",
+        "persistent_registry": "registration",
+    }.get(scenario)
+    if accepted_module != None:
+        mappings.append(skill_mapping(
+            srcs = [root + "/accepted_modules/main/callbacks/" + accepted_module + ".yaml"],
+            prefix = prefix + "/accepted_modules/main/callbacks",
+        ))
+    return mappings
 
 _CONTRACT_EXAMPLE_MAPPINGS = [
     mapping

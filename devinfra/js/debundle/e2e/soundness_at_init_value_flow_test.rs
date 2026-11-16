@@ -5,6 +5,24 @@
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
+fn assert_at_init_schedule_refusal(
+    opts: FixtureOpts<'_>,
+    reason: &str,
+    expected_stdout: &str,
+) -> RejectedFixture {
+    let rejected = assert_conservative_schedule_refusal(opts.clone(), reason, expected_stdout);
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true,
+        "the independent at-init graph proof must survive the completion limit"
+    );
+    let mut colocated = opts;
+    colocated.logical_modules.clear();
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, expected_stdout);
+    rejected
+}
+
 #[test]
 fn local_constructor_stores_callback_until_called() {
     let fixture = run_fixture(
@@ -353,16 +371,19 @@ export { Checker, Command, create, command, later };
 "#,
             vec![
                 logical_module_with_anon(
-                    "command",
+                    "callbacks/factory",
                     &[
                         Member::new("Checker"),
                         Member::new("Command"),
                         Member::new("create"),
-                        Member::new("command"),
                     ],
                     &["globalThis.savedChecker = Checker;"],
                 ),
-                logical_module("value", &[Member::new("later")]),
+                logical_module_with_anon(
+                    "value/command",
+                    &[Member::new("command"), Member::new("later")],
+                    &["console.log(command.execute());"],
+                ),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -372,7 +393,7 @@ export { Checker, Command, create, command, later };
 
 #[test]
 fn escaped_constructorless_class_allocation_does_not_reenter_global_callback() {
-    let fixture = run_fixture(
+    assert_at_init_schedule_refusal(
         FixtureOpts::new(
             r#"const saved = () => later;
 globalThis.saved = saved;
@@ -407,8 +428,9 @@ export { saved, Checker, Command, create, command, later };
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
+        "evaluation_schedule_unknown_reordered",
+        "7\n",
     );
-    assert_preserved_entry_output(&fixture, "7\n");
 }
 
 #[test]
@@ -1525,7 +1547,7 @@ const later = 7;
 console.log(box.value, later);
 export { box, later };
 "#;
-    let fixture = run_fixture(
+    assert_at_init_schedule_refusal(
         FixtureOpts::new(
             source,
             vec![
@@ -1542,8 +1564,9 @@ export { box, later };
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
+        "evaluation_schedule_unknown_reordered",
+        "1 7\n",
     );
-    assert_preserved_entry_output(&fixture, "1 7\n");
 }
 
 fn expect_property_write_reentry_conflict(source: &str, setup: &[&str]) {
@@ -1696,15 +1719,16 @@ console.log(later);
 export { box, later };
 "#,
             vec![
+                logical_module("value/box", &[Member::new("box")]),
                 logical_module_with_anon(
-                    "value/box",
-                    &[Member::new("box")],
+                    "value/later",
+                    &[Member::new("later")],
                     &[
                         "Object.defineProperty(box, \"value\", { set: async function setter() { await 0; return later; } });",
                         "box.value = 1;",
+                        "console.log(later);",
                     ],
                 ),
-                logical_module("value/later", &[Member::new("later")]),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1791,17 +1815,18 @@ console.log(later);
 export { box, later };
 "#,
             vec![
+                logical_module("value/box", &[Member::new("box")]),
                 logical_module_with_anon(
-                    "value/box",
-                    &[Member::new("box"), Member::new("install")],
+                    "value/later",
+                    &[Member::new("install"), Member::new("later")],
                     &[
                         "install();",
                         "globalThis.hostCall = () => {};",
                         "globalThis.hostCall();",
                         "box.value = 1;",
+                        "console.log(later);",
                     ],
                 ),
-                logical_module("value/later", &[Member::new("later")]),
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -1850,18 +1875,31 @@ fn opaque_class_member_opts(source: &'static str, assign_later: bool) -> Fixture
 }
 
 #[test]
-fn opaque_class_member_skips_post_await_read() {
-    let fixture = run_fixture(opaque_class_member_opts(
-        r#"import { inspect } from "./peer.js";
+fn opaque_class_member_keeps_post_await_proof_but_refuses_split_completion() {
+    let source = r#"import { inspect } from "./peer.js";
 class Reader { async read() { await 0; return later; } }
 const result = inspect(Reader);
 const later = 7;
 console.log(result, later);
 export { Reader, result, later };
-"#,
-        false,
-    ));
-    assert_preserved_entry_output(&fixture, "ok 7\n");
+"#;
+    assert_at_init_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "value/reader",
+                    &[Member::new("Reader"), Member::new("later")],
+                ),
+                logical_module("value/result", &[Member::new("result")]),
+            ],
+        )
+        .with_chunk_id("static/provider")
+        .with_extra_chunks(CLASS_MEMBER_PEER_CHUNKS)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        "evaluation_schedule_unknown_reordered",
+        "ok 7\n",
+    );
 }
 
 #[test]
@@ -1952,11 +1990,12 @@ const later = 42;
 console.log(later);
 "#,
         vec![
-            logical_module(
-                "callbacks/pending",
-                &[Member::new("load"), Member::new("pending")],
+            logical_module("callbacks/pending", &[Member::new("load")]),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("pending"), Member::new("later")],
+                &["console.log(later);"],
             ),
-            logical_module("values/later", &[Member::new("later")]),
         ],
     ));
     assert_preserved_entry_output(&fixture, "42\n");
@@ -1991,7 +2030,7 @@ console.log(globalThis.seen, later);
 
 #[test]
 fn bounded_unknown_callback_fallback_ignores_post_await_read() {
-    let fixture = run_fixture(
+    assert_at_init_schedule_refusal(
         FixtureOpts::new(
             r#"const anchor = {};
 function bounce(n) { if (n) return bounce(n - 1); }
@@ -2023,8 +2062,9 @@ export { anchor, bounce, deferred, later };
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
+        "evaluation_schedule_unknown_reordered",
+        "7\n",
     );
-    assert_preserved_entry_output(&fixture, "7\n");
 }
 
 #[test]
@@ -2097,13 +2137,16 @@ export { bounce, publish, later };
 }
 
 #[test]
-fn bounded_callback_fallback_excludes_post_await_binding_write() {
+fn bounded_callback_fallback_excludes_post_await_write_but_refuses_split_completion() {
     let source = bounded_callback_write_source("await 0; state = 1;");
-    let fixture = run_fixture_with_args(
-        bounded_callback_write_split(&source),
-        &["--effect-conflicts-jsonl"],
+    let opts = bounded_callback_write_split(&source);
+    assert_at_init_schedule_refusal(
+        opts.clone(),
+        "evaluation_schedule_unknown_reordered",
+        "326 0\n",
     );
-    assert_preserved_entry_output(&fixture, "326 0\n");
+    let fixture =
+        run_rejection_fixture_with_graphs_and_args(opts, &["--effect-conflicts-jsonl"], 1);
     let rows = read_jsonl(
         &fixture
             .report_root
@@ -2177,7 +2220,7 @@ fn bounded_callback_fallback_retains_synchronous_and_uncovered_writes() {
 }
 
 #[test]
-fn bounded_callback_fallback_keeps_deferred_writes_runnable() {
+fn bounded_callback_fallback_keeps_deferred_write_control_and_refuses_split_completion() {
     for body in [
         "await 0; state = 1;",
         "await 0; state++;",
@@ -2190,8 +2233,11 @@ fn bounded_callback_fallback_keeps_deferred_writes_runnable() {
             "{}deferred().then(() => console.log(state));\n",
             bounded_callback_write_source(body)
         );
-        let fixture = run_fixture(bounded_callback_write_split(&source));
-        assert_preserved_entry_output(&fixture, "326 0\n1\n");
+        assert_at_init_schedule_refusal(
+            bounded_callback_write_split(&source),
+            "evaluation_schedule_unknown_reordered",
+            "326 0\n1\n",
+        );
     }
 }
 

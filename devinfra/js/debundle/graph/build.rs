@@ -31,8 +31,11 @@ use super::edge::{
 };
 use crate::execution_evidence::AssumedEffectReason;
 use crate::facts::DataflowOpacityCause;
+use crate::program_execution::effects::{ProgramAllocationId, ProgramBindingId};
 
 const HEAP_CELL_SAMPLE_LIMIT: usize = 8;
+
+type ProgramEffectCell = EffectCell<ProgramAllocationId, ProgramBindingId>;
 
 fn report_heap_frontier(
     own_at_init: &HeapContentCells,
@@ -333,6 +336,27 @@ pub fn build_dependency_graph_with(
     options: GraphOptions,
     commuting_statements: &[ResolvedCommutingStatements],
 ) -> Result<(DependencyGraph, Vec<CommutingStatementsUnused>), DependencyGraphBuildError> {
+    build_dependency_graph_for_source(None, facts, options, commuting_statements)
+}
+
+/// Build a graph with the canonical module coordinate for portable effects.
+/// The source-free public entry point remains available for isolated analysis
+/// that has no program identity.
+pub(crate) fn build_dependency_graph_for_module(
+    module: &str,
+    facts: &[StatementFacts],
+    options: GraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
+) -> Result<(DependencyGraph, Vec<CommutingStatementsUnused>), DependencyGraphBuildError> {
+    build_dependency_graph_for_source(Some(module), facts, options, commuting_statements)
+}
+
+fn build_dependency_graph_for_source(
+    module: Option<&str>,
+    facts: &[StatementFacts],
+    options: GraphOptions,
+    commuting_statements: &[ResolvedCommutingStatements],
+) -> Result<(DependencyGraph, Vec<CommutingStatementsUnused>), DependencyGraphBuildError> {
     let mut declaration_sites = BTreeMap::<Id, Vec<SourceUnitId>>::new();
     let mut nodes = Vec::<SourceUnit>::with_capacity(facts.len());
     for stmt in facts {
@@ -604,6 +628,9 @@ pub fn build_dependency_graph_with(
         &stmt_by_source_unit,
         &mut raw_edges,
     );
+    if let Some(module) = module {
+        emit_program_binding_timelines(module, facts, &mut raw_edges);
+    }
 
     // Initializers and eager observations of shared var cells must retain their
     // order even when the expressions are pure. Include promoted reads from
@@ -660,8 +687,12 @@ pub fn build_dependency_graph_with(
         }
     }
 
-    emit_s_chain(facts, options, &mut raw_edges);
-    emit_heap_content_order(facts, &mut raw_edges);
+    emit_s_chain(module, facts, options, &mut raw_edges);
+    if let Some(module) = module {
+        emit_program_heap_content_order(module, facts, &mut raw_edges);
+    } else {
+        emit_heap_content_order(facts, &mut raw_edges);
+    }
 
     // Sort + assign stable `DependencyEdgeId` indices, then build CSR
     // adjacency in one pass.
@@ -685,18 +716,7 @@ pub fn build_dependency_graph_with(
         .collect();
     let premise_effects: HashMap<_, _> = stmt_by_source_unit
         .iter()
-        .map(|(id, stmt)| {
-            let mut effects = stmt.effects();
-            if let Some(calls) = &stmt.synchronous_calls {
-                effects
-                    .reads
-                    .extend(calls.non_assumed_heap_accesses.reads.iter().cloned());
-                effects
-                    .writes
-                    .extend(calls.non_assumed_heap_accesses.writes.iter().cloned());
-            }
-            (*id, effects)
-        })
+        .map(|(id, stmt)| (*id, premise_effects_for_statement(module, stmt)))
         .collect();
     retain_premise_verdicts(&mut edges, &stmt_by_source_unit, &premise_effects);
     let analyzed_edge_count = edges.len();
@@ -763,10 +783,197 @@ pub enum PremiseVerdict {
 /// The premise cell view also includes source-known callee heap accesses on
 /// non-assumed invocation paths. Assumed callback and fallback cells remain
 /// conservative ordering barriers, not contradictions to author assertions.
+enum PremiseStatementEffects {
+    Local(StatementEffectSummary),
+    Program(StatementEffectSummary<ProgramAllocationId, ProgramBindingId>),
+}
+
+fn premise_effects_for_statement(
+    module: Option<&str>,
+    stmt: &StatementFacts,
+) -> PremiseStatementEffects {
+    let Some(module) = module else {
+        let mut effects = stmt.effects();
+        if let Some(calls) = &stmt.synchronous_calls {
+            effects
+                .reads
+                .extend(calls.non_assumed_heap_accesses.reads.iter().cloned());
+            effects
+                .writes
+                .extend(calls.non_assumed_heap_accesses.writes.iter().cloned());
+        }
+        return PremiseStatementEffects::Local(effects);
+    };
+
+    let syntax = program_syntax_effects(stmt);
+    let mut effects = StatementEffectSummary {
+        reads: syntax
+            .reads
+            .iter()
+            .map(|cell| program_cell_from_local(module, cell))
+            .collect(),
+        writes: syntax
+            .writes
+            .iter()
+            .map(|cell| program_cell_from_local(module, cell))
+            .collect(),
+    };
+    if let Some(calls) = &stmt.synchronous_calls {
+        if calls.program_effects.heap_lane_available() {
+            union_effects(
+                &mut effects,
+                &heap_content_cells(
+                    &calls.program_effects.observed_heap_accesses.reads,
+                    &calls.program_effects.observed_heap_accesses.writes,
+                ),
+            );
+        } else {
+            union_effects(
+                &mut effects,
+                &map_local_summary_to_program(
+                    module,
+                    &heap_content_cells(
+                        &calls.non_assumed_heap_accesses.reads,
+                        &calls.non_assumed_heap_accesses.writes,
+                    ),
+                ),
+            );
+        }
+    }
+    PremiseStatementEffects::Program(effects)
+}
+
+/// An exact completed operation replaces the pooled syntax heap estimate.
+/// In particular, a checked `map` reads its receiver; the syntax census's
+/// possible receiver write must not survive as a contradictory second proof.
+fn exact_program_heap_effects(
+    stmt: &StatementFacts,
+) -> Option<&crate::program_execution::effects::ProgramExecutionEffects> {
+    let calls = stmt.synchronous_calls.as_ref()?;
+    (stmt.has_complete_operation_effects() && calls.program_effects.heap_lane_available())
+        .then_some(&calls.program_effects)
+}
+
+fn program_syntax_effects(stmt: &StatementFacts) -> StatementEffectSummary {
+    let mut syntax = stmt.effects();
+    if exact_program_heap_effects(stmt).is_some() {
+        let binding_or_global =
+            |cell: &EffectCell| matches!(cell, EffectCell::Binding(_) | EffectCell::GlobalProp(_));
+        syntax.reads.retain(binding_or_global);
+        syntax.writes.retain(binding_or_global);
+    }
+    syntax
+}
+
+fn program_statement_effects(
+    module: &str,
+    stmt: &StatementFacts,
+) -> StatementEffectSummary<ProgramAllocationId, ProgramBindingId> {
+    let mut effects = map_local_summary_to_program(module, &program_syntax_effects(stmt));
+    if let Some(calls) = &stmt.synchronous_calls {
+        let canonical = &calls.program_effects;
+        if canonical.binding_lane_available() {
+            effects
+                .reads
+                .extend(canonical.reads.keys().cloned().map(EffectCell::Binding));
+            effects
+                .writes
+                .extend(canonical.rebinds.keys().cloned().map(EffectCell::Binding));
+        }
+        if canonical.heap_lane_available() {
+            union_effects(
+                &mut effects,
+                &heap_content_cells(
+                    &canonical.heap_contents.reads,
+                    &canonical.heap_contents.writes,
+                ),
+            );
+        }
+        // Positive may-access evidence adds constraints; it supplies no
+        // completeness or absence claim of its own.
+        for site in calls.evaluation_effects.global_accesses.keys() {
+            let cells = match site.access {
+                crate::facts::GlobalAccessKind::Read => &mut effects.reads,
+                crate::facts::GlobalAccessKind::Write => &mut effects.writes,
+            };
+            cells.insert(EffectCell::GlobalProp(site.property.clone()));
+        }
+    }
+    effects
+}
+
+fn map_local_summary_to_program(
+    module: &str,
+    summary: &StatementEffectSummary,
+) -> StatementEffectSummary<ProgramAllocationId, ProgramBindingId> {
+    StatementEffectSummary {
+        reads: summary
+            .reads
+            .iter()
+            .map(|cell| program_cell_from_local(module, cell))
+            .collect(),
+        writes: summary
+            .writes
+            .iter()
+            .map(|cell| program_cell_from_local(module, cell))
+            .collect(),
+    }
+}
+
+fn program_cell_from_local(module: &str, cell: &EffectCell) -> ProgramEffectCell {
+    match cell {
+        EffectCell::Binding(binding) => EffectCell::Binding(ProgramBindingId {
+            module: module.to_owned(),
+            binding: binding.clone(),
+        }),
+        EffectCell::GlobalProp(key) => EffectCell::GlobalProp(key.clone()),
+        EffectCell::ArrayContents(origin) => EffectCell::ArrayContents(ProgramAllocationId {
+            module: module.to_owned(),
+            origin: *origin,
+            event: None,
+        }),
+        EffectCell::SetContents(origin) => EffectCell::SetContents(ProgramAllocationId {
+            module: module.to_owned(),
+            origin: *origin,
+            event: None,
+        }),
+        EffectCell::ObjectShape(origin) => EffectCell::ObjectShape(ProgramAllocationId {
+            module: module.to_owned(),
+            origin: *origin,
+            event: None,
+        }),
+        EffectCell::OwnProperty { origin, property } => EffectCell::OwnProperty {
+            origin: ProgramAllocationId {
+                module: module.to_owned(),
+                origin: *origin,
+                event: None,
+            },
+            property: property.clone(),
+        },
+    }
+}
+
+fn conflicting_premise_cell(
+    a: &PremiseStatementEffects,
+    b: &PremiseStatementEffects,
+) -> Option<(EffectCellReport, CellOverlapReport)> {
+    match (a, b) {
+        (PremiseStatementEffects::Local(a), PremiseStatementEffects::Local(b)) => {
+            let overlap = conflicting_cell(a, b)?;
+            Some((EffectCellReport::from(overlap.right()), (&overlap).into()))
+        }
+        (PremiseStatementEffects::Program(a), PremiseStatementEffects::Program(b)) => {
+            let overlap = conflicting_cell(a, b)?;
+            Some((EffectCellReport::from(overlap.right()), (&overlap).into()))
+        }
+        _ => None,
+    }
+}
+
 fn premise_verdict(
     edge: &DependencyEdge,
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
+    premise_effects: &HashMap<SourceUnitId, PremiseStatementEffects>,
 ) -> Option<PremiseVerdict> {
     let from = stmt_by_source_unit[&edge.from];
     let to = stmt_by_source_unit[&edge.to];
@@ -785,6 +992,7 @@ fn premise_verdict(
             Some(
                 cause @ (SequencedCause::SharedVarAccess { .. }
                 | SequencedCause::BindingTimeline { .. }
+                | SequencedCause::ProgramBindingTimeline { .. }
                 | SequencedCause::UninitializedObservation { .. }),
             ) => {
                 if binding_effects_observed(cause) {
@@ -792,6 +1000,9 @@ fn premise_verdict(
                 } else {
                     PremiseVerdict::Inertable
                 }
+            }
+            Some(SequencedCause::ProgramBindingIdentityUnavailable { .. }) => {
+                known(KnownConflict::Unclassified)
             }
             Some(cause @ SequencedCause::CellOrder { conflicts, .. }) => {
                 let explicit = conflicts.iter().any(|conflict| {
@@ -826,15 +1037,10 @@ fn premise_verdict(
     // Recorded cells are facts even on an unsummarizable statement (its
     // unknown effects come on top), so a shared written cell wins.
     Some(
-        conflicting_cell(&premise_effects[&edge.from], &premise_effects[&edge.to]).map_or(
-            verdict,
-            |overlap| {
-                known(KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
-                })
-            },
-        ),
+        conflicting_premise_cell(&premise_effects[&edge.from], &premise_effects[&edge.to])
+            .map_or(verdict, |(cell, overlap)| {
+                known(KnownConflict::SharedCell { cell, overlap })
+            }),
     )
 }
 
@@ -844,7 +1050,7 @@ fn premise_verdict(
 fn retain_premise_verdicts(
     edges: &mut [DependencyEdge],
     stmt_by_source_unit: &HashMap<SourceUnitId, &StatementFacts>,
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
+    premise_effects: &HashMap<SourceUnitId, PremiseStatementEffects>,
 ) {
     for edge in edges.iter_mut() {
         edge.reason.premise_verdict =
@@ -854,9 +1060,12 @@ fn retain_premise_verdicts(
 
 /// An overlapping cell footprint where one summary writes and the other reads
 /// or writes, if any.
-fn conflicting_cell(a: &StatementEffectSummary, b: &StatementEffectSummary) -> Option<CellOverlap> {
-    let mut b_reads = CellOverlapIndex::<()>::default();
-    let mut b_writes = CellOverlapIndex::<()>::default();
+fn conflicting_cell<A: Ord + Clone, B: Ord + Clone>(
+    a: &StatementEffectSummary<A, B>,
+    b: &StatementEffectSummary<A, B>,
+) -> Option<CellOverlap<A, B>> {
+    let mut b_reads = CellOverlapIndex::<(), A, B>::default();
+    let mut b_writes = CellOverlapIndex::<(), A, B>::default();
     for cell in &b.reads {
         b_reads.get_or_default(cell.clone());
     }
@@ -897,7 +1106,7 @@ fn apply_commuting_statements(
     nodes: &[SourceUnit],
     edges: &mut Vec<DependencyEdge>,
     commuting_statements: &[ResolvedCommutingStatements],
-    premise_effects: &HashMap<SourceUnitId, StatementEffectSummary>,
+    premise_effects: &HashMap<SourceUnitId, PremiseStatementEffects>,
 ) -> Result<(Vec<AppliedCommutingPremise>, Vec<CommutingStatementsUnused>), DependencyGraphBuildError>
 {
     let mut applied = Vec::with_capacity(commuting_statements.len());
@@ -926,15 +1135,13 @@ fn apply_commuting_statements(
         // A pair may first acquire a direct edge during order preservation.
         // Its explicit cells still contradict commutation even before then.
         if conflicts.is_empty()
-            && let Some(overlap) = conflicting_cell(&premise_effects[&a], &premise_effects[&b])
+            && let Some((cell, overlap)) =
+                conflicting_premise_cell(&premise_effects[&a], &premise_effects[&b])
         {
             conflicts.push(ContradictingEdge {
                 from: premise.a.source_unit,
                 to: premise.b.source_unit,
-                conflict: KnownConflict::SharedCell {
-                    cell: EffectCellReport::from(overlap.right()),
-                    overlap: CellOverlapReport::from(&overlap),
-                },
+                conflict: KnownConflict::SharedCell { cell, overlap },
             });
         }
         if !conflicts.is_empty() {
@@ -1212,14 +1419,292 @@ fn emit_heap_content_order(
         events,
         raw_edges,
         &mut sequence_pairs,
+        Some(&unique_eager_allocations.0),
+    );
+}
+
+fn emit_program_heap_content_order(
+    module: &str,
+    facts: &[StatementFacts],
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
+    let mut unique_eager_allocations = OneShotEagerAllocations::from_facts(facts)
+        .0
+        .iter()
+        .map(|cell| program_cell_from_local(module, cell))
+        .collect::<BTreeSet<_>>();
+    let mut has_live_heap_contents = facts.iter().any(|stmt| {
+        stmt.synchronous_calls
+            .as_ref()
+            .is_some_and(|calls| calls.initializer_binding_effects.is_some())
+            || stmt.heap_contents.observes_external_heap
+            || stmt.synchronous_calls.as_ref().is_some_and(|calls| {
+                calls.program_effects.heap_lane_available()
+                    && (calls.program_effects.heap_contents.observes_external_heap
+                        || calls
+                            .program_effects
+                            .heap_contents
+                            .reads
+                            .iter()
+                            .chain(&calls.program_effects.heap_contents.writes)
+                            .any(program_heap_cell_has_property_effect))
+            })
+            || !stmt.deferred_heap_allocations.is_empty()
+            || stmt
+                .synchronous_calls
+                .iter()
+                .flat_map(|calls| {
+                    calls
+                        .heap_contents
+                        .reads
+                        .iter()
+                        .chain(&calls.heap_contents.writes)
+                })
+                .any(|cell| {
+                    matches!(
+                        cell,
+                        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
+                    )
+                })
+    });
+    let mut events = Vec::new();
+    for stmt in facts {
+        let empty = HeapContentCells::default();
+        let exact = exact_program_heap_effects(stmt).is_some();
+        let own = if exact { &empty } else { &stmt.heap_contents };
+        let own_opaque = !exact && stmt.own_heap_content_summary().opaque;
+        let mut allocations = own
+            .allocations
+            .iter()
+            .map(|cell| program_cell_from_local(module, cell))
+            .collect::<BTreeSet<_>>();
+        let mut effects = heap_content_cells(
+            &own.reads
+                .iter()
+                .map(|cell| program_cell_from_local(module, cell))
+                .collect(),
+            &own.writes
+                .iter()
+                .map(|cell| program_cell_from_local(module, cell))
+                .collect(),
+        );
+        let mut opaque_causes = BTreeSet::new();
+        if own_opaque {
+            opaque_causes.insert(HeapBarrierCause::ArrayContentEffects);
+        }
+        if !stmt.dataflow_summarizable() && !stmt.purity.is_pure() {
+            opaque_causes.insert(HeapBarrierCause::NonSummarizableImpure);
+        }
+        if let Some(calls) = &stmt.synchronous_calls {
+            let canonical = &calls.program_effects;
+            if canonical.heap_lane_available() {
+                for cell in &canonical.heap_contents.allocations {
+                    if runtime_birth_has_one_shot_source(
+                        cell,
+                        module,
+                        stmt.ordinal,
+                        &unique_eager_allocations,
+                    ) {
+                        unique_eager_allocations.insert(cell.clone());
+                    }
+                }
+                allocations.extend(canonical.heap_contents.allocations.iter().cloned());
+                union_effects(
+                    &mut effects,
+                    &heap_content_cells(
+                        &canonical.heap_contents.reads,
+                        &canonical.heap_contents.writes,
+                    ),
+                );
+                if canonical.heap_contents.opaque || canonical.heap_contents.observes_external_heap
+                {
+                    opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
+                }
+            } else {
+                // Keep any known local projection while retaining an explicit
+                // frontier for effects whose canonical source mapping was
+                // unavailable. Never guess that a foreign cell is local.
+                allocations.extend(
+                    calls
+                        .heap_contents
+                        .allocations
+                        .iter()
+                        .map(|cell| program_cell_from_local(module, cell)),
+                );
+                union_effects(
+                    &mut effects,
+                    &heap_content_cells(
+                        &calls
+                            .heap_contents
+                            .reads
+                            .iter()
+                            .map(|cell| program_cell_from_local(module, cell))
+                            .collect(),
+                        &calls
+                            .heap_contents
+                            .writes
+                            .iter()
+                            .map(|cell| program_cell_from_local(module, cell))
+                            .collect(),
+                    ),
+                );
+                if calls.heap_contents.opaque || calls.heap_contents.observes_external_heap {
+                    opaque_causes.insert(HeapBarrierCause::ProgramEffectIdentityUnavailable);
+                }
+            }
+            if !canonical.heap_lane_available()
+                && (calls.heap_contents.opaque || calls.heap_contents.observes_external_heap)
+            {
+                opaque_causes.insert(HeapBarrierCause::CalleeHeapEffects);
+            }
+        }
+        if !stmt
+            .synchronous_calls
+            .as_ref()
+            .is_some_and(|calls| calls.complete)
+        {
+            opaque_causes.insert(HeapBarrierCause::IncompleteSynchronousExecution);
+        }
+        if let Some(calls) = &stmt.synchronous_calls
+            && calls
+                .initializer_external_effects
+                .as_ref()
+                .is_some_and(|effect_use| {
+                    matches!(
+                        effect_use.effects,
+                        spec::InitializerExternalEffects::Isolated
+                            | spec::InitializerExternalEffects::PrivateMetadata
+                    )
+                })
+        {
+            effects = heap_content_cells(
+                &own.reads
+                    .iter()
+                    .map(|cell| program_cell_from_local(module, cell))
+                    .collect(),
+                &own.writes
+                    .iter()
+                    .map(|cell| program_cell_from_local(module, cell))
+                    .collect(),
+            );
+            if calls.program_effects.heap_lane_available() {
+                union_effects(
+                    &mut effects,
+                    &heap_content_cells(
+                        &calls.program_effects.observed_heap_accesses.reads,
+                        &calls.program_effects.observed_heap_accesses.writes,
+                    ),
+                );
+            } else {
+                union_effects(
+                    &mut effects,
+                    &heap_content_cells(
+                        &calls
+                            .non_assumed_heap_accesses
+                            .reads
+                            .iter()
+                            .map(|cell| program_cell_from_local(module, cell))
+                            .collect(),
+                        &calls
+                            .non_assumed_heap_accesses
+                            .writes
+                            .iter()
+                            .map(|cell| program_cell_from_local(module, cell))
+                            .collect(),
+                    ),
+                );
+            }
+            opaque_causes.remove(&HeapBarrierCause::ArrayContentEffects);
+            opaque_causes.remove(&HeapBarrierCause::CalleeHeapEffects);
+            opaque_causes.remove(&HeapBarrierCause::IncompleteSynchronousExecution);
+        }
+        let opaque = !opaque_causes.is_empty();
+        has_live_heap_contents |=
+            !allocations.is_empty() || !effects.reads.is_empty() || !effects.writes.is_empty();
+        if !allocations.is_empty() {
+            events.push((
+                SourceUnitId(stmt.ordinal.0),
+                stmt.ordinal,
+                StatementEffectSummary {
+                    reads: BTreeSet::new(),
+                    writes: allocations,
+                },
+                CellOrderBarrier::HeapAllocation,
+            ));
+        }
+        if has_live_heap_contents
+            && (!effects.reads.is_empty() || !effects.writes.is_empty() || opaque)
+        {
+            events.push((
+                SourceUnitId(stmt.ordinal.0),
+                stmt.ordinal,
+                effects,
+                if opaque {
+                    CellOrderBarrier::HeapFrontier {
+                        causes: opaque_causes,
+                    }
+                } else {
+                    CellOrderBarrier::None
+                },
+            ));
+        }
+    }
+    let mut sequence_pairs: BTreeSet<_> = raw_edges
+        .iter()
+        .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
+        .map(|(from, to, _)| (*from, *to))
+        .collect();
+    emit_cell_order_events(
+        events,
+        raw_edges,
+        &mut sequence_pairs,
         Some(&unique_eager_allocations),
     );
 }
 
-fn heap_content_cells(
-    reads: &BTreeSet<EffectCell>,
-    writes: &BTreeSet<EffectCell>,
-) -> crate::StatementEffectSummary {
+/// Lift a proved source birth only to the actual allocation recorded at that
+/// same owner. Unrecorded activations and foreign owners get no exemption.
+fn runtime_birth_has_one_shot_source(
+    cell: &ProgramEffectCell,
+    module: &str,
+    owner: SourceUnitOrdinal,
+    source_births: &BTreeSet<ProgramEffectCell>,
+) -> bool {
+    let allocation = match cell {
+        EffectCell::ArrayContents(origin)
+        | EffectCell::SetContents(origin)
+        | EffectCell::ObjectShape(origin)
+        | EffectCell::OwnProperty { origin, .. } => origin,
+        EffectCell::Binding(_) | EffectCell::GlobalProp(_) => return false,
+    };
+    let Some(event) = &allocation.event else {
+        return false;
+    };
+    if allocation.module != module || event.owner.module != module || event.owner.ordinal != owner {
+        return false;
+    }
+    let mut source = cell.clone();
+    match &mut source {
+        EffectCell::ArrayContents(origin)
+        | EffectCell::SetContents(origin)
+        | EffectCell::ObjectShape(origin)
+        | EffectCell::OwnProperty { origin, .. } => origin.event = None,
+        EffectCell::Binding(_) | EffectCell::GlobalProp(_) => return false,
+    }
+    source_births.contains(&source)
+}
+
+fn program_heap_cell_has_property_effect(cell: &ProgramEffectCell) -> bool {
+    matches!(
+        cell,
+        EffectCell::OwnProperty { .. } | EffectCell::ObjectShape(_)
+    )
+}
+
+fn heap_content_cells<A: Ord + Clone, B: Ord + Clone>(
+    reads: &BTreeSet<EffectCell<A, B>>,
+    writes: &BTreeSet<EffectCell<A, B>>,
+) -> crate::StatementEffectSummary<A, B> {
     crate::StatementEffectSummary {
         reads: reads
             .iter()
@@ -1275,10 +1760,6 @@ impl OneShotEagerAllocations {
                 .collect(),
         )
     }
-
-    fn contains(&self, cell: &EffectCell) -> bool {
-        self.0.contains(cell)
-    }
 }
 
 /// Resolve only chunk bindings initialized directly to a function/class
@@ -1299,9 +1780,9 @@ fn resolve_direct_function_source_unit(
         .filter(|_| !rebound.contains(binding) && !shared_vars.contains(binding))
 }
 
-fn union_effects(
-    into: &mut crate::StatementEffectSummary,
-    from: &crate::StatementEffectSummary,
+fn union_effects<A: Ord + Clone, B: Ord + Clone>(
+    into: &mut crate::StatementEffectSummary<A, B>,
+    from: &crate::StatementEffectSummary<A, B>,
 ) -> bool {
     let old_reads = into.reads.len();
     let old_writes = into.writes.len();
@@ -1382,6 +1863,7 @@ impl CellOrderBarrier {
 /// would be dense enough to reject realistic specs for trivially pure
 /// const sequences.
 fn emit_s_chain(
+    module: Option<&str>,
     facts: &[StatementFacts],
     options: GraphOptions,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
@@ -1423,6 +1905,25 @@ fn emit_s_chain(
         .filter(|(_, _, reason)| reason.kind == DepKind::Sequenced)
         .map(|(from, to, _)| (*from, *to))
         .collect();
+    if let Some(module) = module {
+        emit_cell_order_events(
+            facts
+                .iter()
+                .filter(|stmt| !stmt.purity.is_pure())
+                .map(|stmt| {
+                    (
+                        SourceUnitId(stmt.ordinal.0),
+                        stmt.ordinal,
+                        program_statement_effects(module, stmt),
+                        CellOrderBarrier::from_opacity(&stmt.dataflow_opacity()),
+                    )
+                }),
+            raw_edges,
+            &mut sequence_pairs,
+            None,
+        );
+        return;
+    }
     emit_cell_order_events(
         facts
             .iter()
@@ -1444,24 +1945,27 @@ fn emit_s_chain(
 /// Shared last-writer / reader-since-write timeline for binding, global, and
 /// heap-content cells. Write-after-read dependencies preserve the value that
 /// an earlier pure observer sees before a later mutation.
-fn emit_cell_order_events(
+fn emit_cell_order_events<A: Ord + Clone, B: Ord + Clone>(
     events: impl IntoIterator<
         Item = (
             SourceUnitId,
             SourceUnitOrdinal,
-            crate::StatementEffectSummary,
+            crate::StatementEffectSummary<A, B>,
             CellOrderBarrier,
         ),
     >,
     raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
     sequence_pairs: &mut BTreeSet<(SourceUnitId, SourceUnitId)>,
-    unique_eager_allocations: Option<&OneShotEagerAllocations>,
-) {
-    let mut last_writer = CellOverlapIndex::<SourceUnitId>::default();
-    let mut readers_since_last_write = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
+    unique_eager_allocations: Option<&BTreeSet<EffectCell<A, B>>>,
+) where
+    for<'a> EffectCellReport: From<&'a EffectCell<A, B>>,
+    for<'a> CellOverlapReport: From<&'a CellOverlap<A, B>>,
+{
+    let mut last_writer = CellOverlapIndex::<SourceUnitId, A, B>::default();
+    let mut readers_since_last_write = CellOverlapIndex::<BTreeSet<SourceUnitId>, A, B>::default();
     let mut prior_source_units: Vec<SourceUnitId> = Vec::new();
     let mut opaque_barrier: Option<SourceUnitId> = None;
-    let mut pending_allocations = CellOverlapIndex::<BTreeSet<SourceUnitId>>::default();
+    let mut pending_allocations = CellOverlapIndex::<BTreeSet<SourceUnitId>, A, B>::default();
     let mut born_after_barrier = BTreeSet::new();
     // Classification of every source unit seen so far, for the `to` side
     // of retained causes. A source unit's content event (summarized or
@@ -1549,10 +2053,10 @@ fn emit_cell_order_events(
                             && !matches!(cell,
                                     EffectCell::OwnProperty { origin, .. }
                                         if born_after_barrier.contains(
-                                            &EffectCell::ArrayContents(*origin))
+                                            &EffectCell::ArrayContents(origin.clone()))
                                             && may_overlap(
                                                 cell,
-                                                &EffectCell::ArrayContents(*origin),
+                                                &EffectCell::ArrayContents(origin.clone()),
                                             ).is_some())
                     }))
             {
@@ -1666,7 +2170,8 @@ impl BindingOrderEdges {
 fn binding_effects_observed(cause: &SequencedCause) -> bool {
     match cause {
         SequencedCause::SharedVarAccess { source, target, .. }
-        | SequencedCause::BindingTimeline { source, target, .. } => {
+        | SequencedCause::BindingTimeline { source, target, .. }
+        | SequencedCause::ProgramBindingTimeline { source, target, .. } => {
             *source == EffectProvenance::Observed && *target == EffectProvenance::Observed
         }
         SequencedCause::UninitializedObservation { observation, .. } => {
@@ -1674,6 +2179,7 @@ fn binding_effects_observed(cause: &SequencedCause) -> bool {
         }
         SequencedCause::StrictChain
         | SequencedCause::PreservedOrder { .. }
+        | SequencedCause::ProgramBindingIdentityUnavailable { .. }
         | SequencedCause::CellOrder { .. } => false,
     }
 }
@@ -1761,6 +2267,243 @@ fn offer_binding_timeline(
                 write,
                 read,
             );
+        }
+    }
+}
+
+fn offer_program_binding_timeline(
+    binding: &ProgramBindingId,
+    writers: &BTreeMap<SourceUnitId, EffectProvenance>,
+    readers: &BTreeMap<SourceUnitId, EffectProvenance>,
+    existing_order_pairs: &BTreeSet<(SourceUnitId, SourceUnitId)>,
+    edges: &mut BindingOrderEdges,
+) {
+    let mut offer = |from: SourceUnitId,
+                     to: SourceUnitId,
+                     order: BindingTimelineOrder,
+                     source: &EffectProvenance,
+                     target: &EffectProvenance| {
+        if !existing_order_pairs.contains(&(from, to)) {
+            edges.offer(
+                from,
+                to,
+                SequencedCause::ProgramBindingTimeline {
+                    module: binding.module.clone(),
+                    binding: binding.binding.0.clone(),
+                    order,
+                    source: source.clone(),
+                    target: target.clone(),
+                },
+            );
+        }
+    };
+    let writer_events: Vec<_> = writers.iter().collect();
+    for pair in writer_events.windows(2) {
+        let (&earlier, earlier_provenance) = pair[0];
+        let (&later, later_provenance) = pair[1];
+        offer(
+            later,
+            earlier,
+            BindingTimelineOrder::WriterAfterWriter,
+            later_provenance,
+            earlier_provenance,
+        );
+    }
+    for (&reader, read) in readers {
+        if let Some((&previous_writer, write)) = writers.range(..reader).next_back() {
+            offer(
+                reader,
+                previous_writer,
+                BindingTimelineOrder::ReaderAfterWriter,
+                read,
+                write,
+            );
+        }
+        if let Some((&next_writer, write)) = writers
+            .range((
+                std::ops::Bound::Excluded(reader),
+                std::ops::Bound::Unbounded,
+            ))
+            .next()
+        {
+            offer(
+                next_writer,
+                reader,
+                BindingTimelineOrder::WriterAfterReader,
+                write,
+                read,
+            );
+        }
+    }
+}
+
+/// Preserve source order between lazy foreign-binding reads and rebinds
+/// observed by at-init calls in this module. The canonical binding identity
+/// remains chunk-qualified all the way through the edge cause.
+fn emit_program_binding_timelines(
+    module: &str,
+    facts: &[StatementFacts],
+    raw_edges: &mut Vec<(SourceUnitId, SourceUnitId, EdgeReason)>,
+) {
+    type Accesses = BTreeMap<ProgramBindingId, BTreeMap<SourceUnitId, EffectProvenance>>;
+    let mut writers = Accesses::new();
+    let mut readers = Accesses::new();
+    for stmt in facts {
+        let Some(calls) = &stmt.synchronous_calls else {
+            continue;
+        };
+        let effects = &calls.program_effects;
+        for (binding, owners) in &effects.reads {
+            if binding.module == module {
+                continue;
+            }
+            let provenance =
+                EffectProvenance::from_fallback(effects.fallback_only.reads.get(binding));
+            for owner in owners.iter().filter(|owner| owner.module == module) {
+                readers
+                    .entry(binding.clone())
+                    .or_default()
+                    .entry(SourceUnitId(owner.ordinal.0))
+                    .and_modify(|old| old.join(&provenance))
+                    .or_insert_with(|| provenance.clone());
+            }
+        }
+        for (binding, owners) in &effects.rebinds {
+            if binding.module == module {
+                continue;
+            }
+            let provenance =
+                EffectProvenance::from_fallback(effects.fallback_only.rebinds.get(binding));
+            for owner in owners.iter().filter(|owner| owner.module == module) {
+                writers
+                    .entry(binding.clone())
+                    .or_default()
+                    .entry(SourceUnitId(owner.ordinal.0))
+                    .and_modify(|old| old.join(&provenance))
+                    .or_insert_with(|| provenance.clone());
+            }
+        }
+    }
+
+    let existing_order_pairs: BTreeSet<_> = raw_edges
+        .iter()
+        .filter(|(_, _, reason)| reason.constrains_init_order())
+        .map(|(from, to, _)| (*from, *to))
+        .collect();
+    let mut ordered = BindingOrderEdges::default();
+    let no_readers = BTreeMap::new();
+    for (binding, binding_writers) in &writers {
+        let binding_readers = readers.get(binding).unwrap_or(&no_readers);
+        if binding_readers.is_empty() {
+            continue;
+        }
+        offer_program_binding_timeline(
+            binding,
+            binding_writers,
+            binding_readers,
+            &existing_order_pairs,
+            &mut ordered,
+        );
+        let observed = |accesses: &BTreeMap<SourceUnitId, EffectProvenance>| {
+            accesses
+                .iter()
+                .filter(|(_, provenance)| **provenance == EffectProvenance::Observed)
+                .map(|(source, provenance)| (*source, provenance.clone()))
+                .collect::<BTreeMap<_, _>>()
+        };
+        let (observed_writers, observed_readers) =
+            (observed(binding_writers), observed(binding_readers));
+        if observed_writers.len() != binding_writers.len()
+            || observed_readers.len() != binding_readers.len()
+        {
+            offer_program_binding_timeline(
+                binding,
+                &observed_writers,
+                &observed_readers,
+                &existing_order_pairs,
+                &mut ordered,
+            );
+        }
+    }
+    for ((from, to), cause) in ordered.0 {
+        raw_edges.push((
+            from,
+            to,
+            EdgeReason::sequenced(SourceUnitOrdinal(from.0), cause),
+        ));
+    }
+
+    // A mapped subset of the binding ledger is still useful above, but it is
+    // not an exact-empty summary when a runtime binding or statement-owner
+    // coordinate was lost. Fence that execution point against other source
+    // units that can access bindings. This lane remains separate from heap
+    // identity completeness, so the uncertainty cannot turn into a universal
+    // heap barrier.
+    let unavailable_at = facts
+        .iter()
+        .filter_map(|stmt| {
+            stmt.synchronous_calls
+                .as_ref()
+                .filter(|calls| !calls.program_effects.binding_lane_available())
+                .map(|_| SourceUnitId(stmt.ordinal.0))
+        })
+        .collect::<BTreeSet<_>>();
+    if unavailable_at.is_empty() {
+        return;
+    }
+    let mut binding_access_units = BTreeSet::new();
+    for stmt in facts {
+        let syntactic_binding_access = !stmt.declared.is_empty()
+            || !stmt.var_initializers.is_empty()
+            || !stmt.reads.eager.is_empty()
+            || !stmt.reads.lazy.is_empty()
+            || !stmt.rebinds.eager.is_empty()
+            || !stmt.rebinds.lazy.is_empty()
+            || !stmt.local_effects.is_empty();
+        let summarized_binding_access = stmt.synchronous_calls.as_ref().is_some_and(|calls| {
+            !calls.reads.is_empty()
+                || !calls.rebinds.is_empty()
+                || !calls.program_effects.reads.is_empty()
+                || !calls.program_effects.rebinds.is_empty()
+                || calls
+                    .program_effects
+                    .reads
+                    .values()
+                    .any(|owners| owners.iter().any(|owner| owner.module == module))
+                || calls
+                    .program_effects
+                    .rebinds
+                    .values()
+                    .any(|owners| owners.iter().any(|owner| owner.module == module))
+        });
+        if syntactic_binding_access
+            || summarized_binding_access
+            || unavailable_at.contains(&SourceUnitId(stmt.ordinal.0))
+        {
+            binding_access_units.insert(SourceUnitId(stmt.ordinal.0));
+        }
+    }
+    for unavailable in &unavailable_at {
+        for other in &binding_access_units {
+            if unavailable == other {
+                continue;
+            }
+            let (from, to) = if unavailable < other {
+                (*other, *unavailable)
+            } else {
+                (*unavailable, *other)
+            };
+            raw_edges.push((
+                from,
+                to,
+                EdgeReason::sequenced(
+                    SourceUnitOrdinal(from.0),
+                    SequencedCause::ProgramBindingIdentityUnavailable {
+                        module: module.to_owned(),
+                        unavailable_at: SourceUnitOrdinal(unavailable.0),
+                    },
+                ),
+            ));
         }
     }
 }
@@ -2526,6 +3269,97 @@ mod array_heap_frontier_tests {
     }
 
     #[test]
+    fn a_recorded_runtime_birth_exempts_only_its_exact_activation() {
+        use crate::program_execution::effects::{ProgramAllocationEvent, ProgramSourceUnitId};
+
+        let source = EffectCell::SetContents(ProgramAllocationId {
+            module: "entry".to_owned(),
+            origin: 10,
+            event: None,
+        });
+        let source_births = BTreeSet::from([source]);
+        let allocation = ProgramAllocationId {
+            module: "entry".to_owned(),
+            origin: 10,
+            event: Some(ProgramAllocationEvent {
+                owner: ProgramSourceUnitId {
+                    module: "entry".to_owned(),
+                    ordinal: SourceUnitOrdinal(1),
+                },
+                path: Vec::new(),
+                occurrence: 0,
+            }),
+        };
+        let actual = EffectCell::SetContents(allocation.clone());
+        assert!(runtime_birth_has_one_shot_source(
+            &actual,
+            "entry",
+            SourceUnitOrdinal(1),
+            &source_births,
+        ));
+        assert!(!runtime_birth_has_one_shot_source(
+            &actual,
+            "entry",
+            SourceUnitOrdinal(2),
+            &source_births,
+        ));
+        assert!(!runtime_birth_has_one_shot_source(
+            &actual,
+            "other",
+            SourceUnitOrdinal(1),
+            &source_births,
+        ));
+        assert!(!runtime_birth_has_one_shot_source(
+            &actual,
+            "entry",
+            SourceUnitOrdinal(1),
+            &BTreeSet::new(),
+        ));
+        let mut other = allocation;
+        other.event.as_mut().unwrap().occurrence = 1;
+        let other = EffectCell::SetContents(other);
+        let effects = |reads: Vec<ProgramEffectCell>, writes: Vec<ProgramEffectCell>| {
+            crate::StatementEffectSummary {
+                reads: reads.into_iter().collect(),
+                writes: writes.into_iter().collect(),
+            }
+        };
+        let events = [
+            (
+                SourceUnitId(0),
+                SourceUnitOrdinal(0),
+                effects(vec![], vec![]),
+                heap_frontier(),
+            ),
+            (
+                SourceUnitId(1),
+                SourceUnitOrdinal(1),
+                effects(vec![], vec![actual.clone()]),
+                CellOrderBarrier::HeapAllocation,
+            ),
+            (
+                SourceUnitId(2),
+                SourceUnitOrdinal(2),
+                effects(vec![actual.clone()], vec![]),
+                CellOrderBarrier::None,
+            ),
+            (
+                SourceUnitId(3),
+                SourceUnitOrdinal(3),
+                effects(vec![other], vec![]),
+                CellOrderBarrier::None,
+            ),
+        ];
+        let mut unique = source_births;
+        unique.insert(actual);
+        let mut edges = Vec::new();
+        let mut pairs = BTreeSet::new();
+        emit_cell_order_events(events, &mut edges, &mut pairs, Some(&unique));
+        assert!(!pairs.contains(&(SourceUnitId(2), SourceUnitId(0))));
+        assert!(pairs.contains(&(SourceUnitId(3), SourceUnitId(0))));
+    }
+
+    #[test]
     fn repeated_source_origin_allocation_preserves_content_writer_and_readers() {
         let events = [
             heap_event(0, &[], &[10], CellOrderBarrier::HeapAllocation),
@@ -2625,5 +3459,62 @@ mod array_heap_frontier_tests {
                 SourceUnitId(ARRAY_COUNT + barrier - 1),
             )));
         }
+    }
+}
+
+#[cfg(test)]
+mod program_binding_identity_frontier_tests {
+    use super::*;
+    use crate::{AnalysisInputs, facts::analyze_chunk};
+
+    #[test]
+    fn unavailable_binding_identity_adds_only_a_binding_frontier() {
+        let module = raw_js_test_support::parse(
+            "function reader() { return shared; }\nreader();\nconst stable = 1;\nconst after = stable;",
+        );
+        let mut facts = analyze_chunk(&module, &AnalysisInputs::default(), None).facts;
+        for stmt in &mut facts {
+            if let Some(calls) = &mut stmt.synchronous_calls {
+                calls.program_effects.available = true;
+                calls.program_effects.binding_effects_available = true;
+                calls.program_effects.heap_effects_available = true;
+            }
+        }
+        let call = facts
+            .iter_mut()
+            .find(|stmt| stmt.ordinal.0 == 1)
+            .and_then(|stmt| stmt.synchronous_calls.as_mut())
+            .expect("the top-level call has synchronous facts");
+        call.program_effects.available = false;
+        call.program_effects.binding_effects_available = false;
+        call.program_effects.heap_effects_available = true;
+
+        let (graph, _) =
+            build_dependency_graph_for_module("entry.js", &facts, Default::default(), &[])
+                .expect("the sample has no duplicate declarations");
+        let frontier_edges = graph
+            .iter_edges()
+            .filter(|edge| {
+                matches!(
+                    edge.reason.sequenced_cause(),
+                    Some(SequencedCause::ProgramBindingIdentityUnavailable { .. })
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(!frontier_edges.is_empty());
+        assert!(
+            frontier_edges
+                .iter()
+                .any(|edge| { edge.from == SourceUnitId(3) && edge.to == SourceUnitId(1) })
+        );
+        assert!(graph.iter_edges().all(|edge| {
+            !matches!(
+                edge.reason.sequenced_cause(),
+                Some(SequencedCause::CellOrder {
+                    from: CellEffectClass::HeapFrontier { causes },
+                    ..
+                }) if causes.contains(&HeapBarrierCause::ProgramEffectIdentityUnavailable)
+            )
+        }));
     }
 }

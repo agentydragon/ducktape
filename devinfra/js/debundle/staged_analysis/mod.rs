@@ -19,6 +19,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use swc_common::GLOBALS;
 
 pub mod analysis_artifact;
@@ -157,6 +158,108 @@ fn context_ordinals(
     Ok(ContextOrdinals::new(modules))
 }
 
+pub struct PreparedSourceChunk<'source> {
+    pub entry_file: String,
+    pub analysis: analysis::facts::PreparedChunkAnalysis<'source>,
+}
+
+struct PreparedSourceInputs {
+    hints: analysis::AnalysisInputs,
+    export_reentry_policy: Option<ExportReentryPolicy>,
+}
+
+/// Prepare each source module in the summary closure once, then share those
+/// exact runtime payloads with imported-callable execution and selected-chunk
+/// fact settlement. AST views stay alive until the selected facts finish.
+pub fn prepare_program_chunks<'source>(
+    artifact: &'source ChunkBundle,
+    chunk_ids: &BTreeSet<ChunkId>,
+    reparsed: &'source BTreeMap<ChunkId, program_summary::ReparsedEntry>,
+    projection: &analysis_projection::AnalysisProjection<'_>,
+    program_summary: &mut program_summary::ProgramSummary,
+    export_reentry_policies: &BTreeMap<ChunkId, ExportReentryPolicy>,
+    mut source_facts: BTreeMap<ChunkId, analysis::facts::StructuralChunkSourceFacts<'source>>,
+) -> Result<BTreeMap<ChunkId, PreparedSourceChunk<'source>>> {
+    let mut prepared_chunks = BTreeMap::new();
+    let mut source_hints = BTreeMap::new();
+    for chunk_id in chunk_ids {
+        let chunk = artifact.find_chunk(*chunk_id).with_context(|| {
+            format!(
+                "missing chunk {} in source closure",
+                artifact.chunk_table.name(*chunk_id)
+            )
+        })?;
+        let entry_file = &chunk.analysis.entry_file;
+        let Some(file) = chunk.js.get_file(entry_file) else {
+            continue;
+        };
+        let parsed = file
+            .ast()
+            .or_else(|| reparsed.get(chunk_id).map(|entry| &entry.parsed));
+        let Some(parsed) = parsed else {
+            // An opaque reparse stays unavailable to cross-module execution.
+            continue;
+        };
+        let source_path = file.metadata.source_path.clone();
+        let line_index = parsed.line_index();
+        let structural = source_facts.remove(chunk_id).unwrap_or_else(|| {
+            analysis::facts::collect_chunk_source_facts(
+                &parsed.module,
+                Some(analysis::execution_evidence::SourceLocator {
+                    source_path: &source_path,
+                    lines: &line_index,
+                }),
+            )
+        });
+        let module_name = artifact.chunk_table.name(*chunk_id).to_string();
+        let analysis = chunk_facts::prepare_logical_chunk_analysis(
+            &module_name,
+            structural,
+            parsed,
+            &source_path,
+            projection,
+            program_summary,
+        );
+        let hints =
+            chunk_facts::analysis_inputs_for_chunk(&module_name, projection, program_summary);
+        source_hints.insert(
+            module_name,
+            PreparedSourceInputs {
+                hints,
+                export_reentry_policy: export_reentry_policies.get(chunk_id).cloned(),
+            },
+        );
+        prepared_chunks.insert(
+            *chunk_id,
+            PreparedSourceChunk {
+                entry_file: entry_file.clone(),
+                analysis,
+            },
+        );
+    }
+    if let Some(executables) = program_summary.executables.take() {
+        let sources = prepared_chunks
+            .iter()
+            .filter_map(|(chunk_id, prepared)| {
+                let module = artifact.chunk_table.name(*chunk_id).to_string();
+                let source = source_hints.remove(&module)?;
+                Some((
+                    module,
+                    (
+                        &prepared.analysis,
+                        source.hints,
+                        source.export_reentry_policy,
+                    ),
+                ))
+            })
+            .collect();
+        program_summary.executables = Some(Arc::new(
+            executables.as_ref().clone().with_prepared_sources(sources),
+        ));
+    }
+    Ok(prepared_chunks)
+}
+
 fn chunk_source_digests(provenance: &GraphProvenance) -> BTreeMap<String, String> {
     provenance
         .chunk_sources
@@ -269,7 +372,7 @@ pub fn analyze_program(
         Some(&program_summary_chunk_closure),
         diagnostics,
     );
-    let program_summary = program_summary::collect_program_summary(
+    let mut program_summary = program_summary::collect_program_summary(
         &artifact,
         &artifact_indexes,
         &projection,
@@ -291,13 +394,26 @@ pub fn analyze_program(
         spec.entry_file.as_deref(),
         &reparsed,
     )?;
-    drop(reparsed);
+    let prepared_chunks = prepare_program_chunks(
+        &artifact,
+        &program_summary_chunk_closure,
+        &reparsed,
+        &projection,
+        &mut program_summary,
+        &export_reentry_policies,
+        BTreeMap::new(),
+    )?;
     let chunks = GLOBALS
         .with(|globals| {
             selected_chunk_ids
                 .par_iter()
                 .map(|chunk_id| {
                     GLOBALS.set(globals, || {
+                        let prepared = artifact
+                            .chunk_table
+                            .get(chunk_id)
+                            .and_then(|id| prepared_chunks.get(&id))
+                            .map(|prepared| (prepared.entry_file.as_str(), &prepared.analysis));
                         analyze_logical_chunk(
                             LogicalChunkAnalysisContext {
                                 artifact: &artifact,
@@ -309,6 +425,7 @@ pub fn analyze_program(
                             },
                             &projection,
                             &program_summary,
+                            prepared,
                         )
                         .map(|facts| (chunk_id.clone(), facts))
                     })
@@ -332,6 +449,8 @@ pub fn analyze_program(
     };
     // Facts and context ordinals own everything encoding needs. Release the
     // parsed program and its indexes before allocating the encoded artifact.
+    drop(prepared_chunks);
+    drop(reparsed);
     drop(artifact_indexes);
     drop(artifact);
     analysis_artifact::write_artifact(&header, &body, &ordinals)

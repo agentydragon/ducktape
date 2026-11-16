@@ -5,9 +5,7 @@ use crate::facts::{
     DynamicScopeFact, LocalClassConstructionProof, LocalClassConstructionShapes, SetIterableProof,
     SetIterableShapes,
 };
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Chunk-wide code graph: indexes top-level bindings and answers
 /// queries the classifier needs that go beyond per-expression
@@ -83,7 +81,7 @@ pub struct ChunkCodeGraph {
     /// During bottom-up transfer extraction, inferred calls are recorded as
     /// obligations instead of consulting an optimistic Pure placeholder.
     purity_call_targets: BTreeMap<String, PurityFunctionKey>,
-    purity_call_obligations: Option<Rc<RefCell<Vec<PurityCallObligation>>>>,
+    purity_call_obligations: Option<Arc<Mutex<Vec<PurityCallObligation>>>>,
     /// Cells of other chunks, and in export mode this chunk's own module
     /// state, whose reads no consumer graph orders against their writers.
     order_dependent_cells: OrderDependentCells,
@@ -473,7 +471,7 @@ impl ChunkCodeGraph {
             imported_purities: shape_inputs.imported_purities.clone(),
             fluent_bindings: collect_fluent_const_bindings(body, shape_inputs.fluent_bindings),
             purity_call_targets,
-            purity_call_obligations: Some(Rc::new(RefCell::new(Vec::new()))),
+            purity_call_obligations: Some(Arc::new(Mutex::new(Vec::new()))),
             order_dependent_cells,
         }
     }
@@ -517,7 +515,8 @@ impl ChunkCodeGraph {
         let target = self.purity_call_targets.get(name)?.clone();
         self.purity_call_obligations
             .as_ref()?
-            .borrow_mut()
+            .lock()
+            .expect("purity call obligation collector lock is not poisoned")
             .push(PurityCallObligation {
                 callee: target.clone(),
                 name: name.to_string(),
@@ -869,7 +868,10 @@ fn classify_function_body_transfer(
         .purity_call_obligations
         .as_ref()
         .expect("transfer extraction configures an obligation buffer");
-    obligations.borrow_mut().clear();
+    obligations
+        .lock()
+        .expect("purity call obligation collector lock is not poisoned")
+        .clear();
     let mut purity = classify_function_body(function, shadowed, declared_pure, graph).project();
     if let Purity::NotPure { reasons } = &mut purity
         && let Some(locator) = locator
@@ -878,7 +880,9 @@ fn classify_function_body_transfer(
             reason.source_location = locator.span(reason.span);
         }
     }
-    let mut captured = obligations.borrow_mut();
+    let mut captured = obligations
+        .lock()
+        .expect("purity call obligation collector lock is not poisoned");
     let mut obligations = std::mem::take(&mut *captured);
     drop(captured);
     if let Some(locator) = locator {

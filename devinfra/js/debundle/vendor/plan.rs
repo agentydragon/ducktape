@@ -70,6 +70,13 @@ pub struct VendorPlanOptions<'a> {
     pub output_wrapper_dir: Option<&'a Path>,
 }
 
+/// Exact loader target minted by the existing vendor replacement plan.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VendorEvaluationTarget {
+    Package(String),
+    File(String),
+}
+
 pub struct VendorResolutionPlan {
     /// Whole-chunk `swap` marks in chunk-path order, each with
     /// its vendor-local → public export mapping (possibly empty).
@@ -203,6 +210,29 @@ impl VendorResolutionPlan {
     /// emission and the emission-output validations skip them.
     pub fn full_swap_chunk_ids(&self) -> BTreeSet<ChunkId> {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
+    }
+
+    /// The same package/facade coordinates used to construct final imports.
+    /// The schedule guard treats replacement evaluation under the existing
+    /// vendor equivalence promise, never as an effectless generated file.
+    pub fn evaluation_targets(&self) -> Vec<(ChunkId, VendorEvaluationTarget)> {
+        let mut targets = Vec::new();
+        for (chunk, plan) in &self.partial_swaps {
+            targets.extend(
+                plan.packages
+                    .keys()
+                    .map(|package| (*chunk, VendorEvaluationTarget::Package(package.clone()))),
+            );
+        }
+        for (chunk, plan) in &self.bundled_partial_swaps {
+            targets.extend(plan.packages.values().map(|package| {
+                (
+                    *chunk,
+                    VendorEvaluationTarget::File(package.facade_app_path.clone()),
+                )
+            }));
+        }
+        targets
     }
 
     /// Replacement package of every swapped chunk export, by chunk. Facts

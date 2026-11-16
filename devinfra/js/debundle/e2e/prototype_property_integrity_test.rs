@@ -52,8 +52,36 @@ fn split_modules(include_borrowed: bool) -> Vec<LogicalModuleEntry> {
 }
 
 fn assert_preserved_split(prefix: &str) {
-    let source = source(prefix, FACTORY, "", "", "");
-    let fixture = run_fixture(FixtureOpts::new(&source, split_modules(false)));
+    let with_date = source(prefix, FACTORY, "", "", "");
+    let rejected = assert_conservative_schedule_refusal(
+        FixtureOpts::new(&with_date, split_modules(false)),
+        "evaluation_schedule_unknown_reordered",
+        "84 0\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
+    let colocated = run_fixture(FixtureOpts::new(&with_date, vec![]));
+    assert_preserved_entry_output(&colocated, "84 0\n");
+
+    // The global-qualified Date constructor lacks ordered completion modeling.
+    // Without that unrelated operation, the source-derived constructor and
+    // prototype facts still support the actual callback/later split.
+    let source = format!("{prefix}{CLASSES}{FACTORY}{COMMAND}{LATER}{OUTPUT}");
+    let modules = vec![
+        logical_module(
+            "callbacks/wrapped",
+            &[
+                Member::new("Holder"),
+                Member::new("Policy"),
+                Member::new("create"),
+                Member::new("command"),
+            ],
+        ),
+        logical_module("values/later", &[Member::new("later")]),
+    ];
+    let fixture = run_fixture(FixtureOpts::new(&source, modules));
     assert_preserved_entry_output(&fixture, "84 0\n");
     assert_module_exports(
         &fixture.out_root,

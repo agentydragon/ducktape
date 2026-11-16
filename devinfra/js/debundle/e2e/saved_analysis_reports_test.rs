@@ -9,6 +9,239 @@ use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::Value;
 
+/// Initialized binding copies preserve runtime output across a module-order
+/// inversion. Public anchors exclude the private-initialization crossing
+/// exception. Ordinary and exported results also agree after saved replay.
+#[test]
+fn initialized_object_binding_copies_match_direct_and_saved_execution() {
+    for (declaration, imported) in [
+        ("const copy = value;", false),
+        ("export const copy = value;", false),
+        ("const copy = value;", true),
+        ("export const copy = value;", true),
+    ] {
+        let head = if imported {
+            "import { value } from './peer.js';"
+        } else {
+            "const value = {};"
+        };
+        let source = format!(
+            "{head}\nconst before = 0;\n{declaration}\nconst after = 1;\nconsole.log(before, typeof copy, after);\nexport {{ before, after }};\n"
+        );
+        let members = if imported {
+            vec![Member::new("copy")]
+        } else {
+            vec![Member::new("value"), Member::new("copy")]
+        };
+        let peers = [("static/peer", "export const value = {};\n")];
+        let mut opts = FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+                logical_module("copy", &members),
+            ],
+        );
+        if imported {
+            opts = opts.with_extra_chunks(&peers);
+        }
+        let (staged, fixture) = staged(opts);
+        assert_node_output(
+            &fixture.workspace().path().join("snapshot/static/app.js"),
+            "0 object 1\n",
+            "",
+        );
+        let direct = staged.run(&[]);
+        let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+        for run in [&direct, &saved] {
+            assert_ok(&run.result, "initialized object binding copy");
+            let assessment: Value = serde_json::from_slice(
+                &fs::read(
+                    run.output_root()
+                        .join("reports/tree/static/app/effect_translation_validation.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                assessment["swapped_pairs"].as_u64().unwrap() > 0,
+                "the binding copy must cross an anchor: {assessment:#}"
+            );
+            assert_node_output(
+                &run.output_root().join("app/static/app/entry.js"),
+                "0 object 1\n",
+                "",
+            );
+        }
+        assert_same_invocation_trees(&direct, &saved);
+    }
+}
+
+#[test]
+fn uninitialized_binding_copies_still_refuse_a_reordered_schedule() {
+    for declaration in ["const copy = value;", "export const copy = value;"] {
+        let source = format!(
+            "const before = 0;\n{declaration}\nconst value = {{}};\nconst after = 1;\nconsole.log(before, typeof copy, after);\nexport {{ before, after }};\n"
+        );
+        let (staged, fixture) = staged(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+                logical_module("copy", &[Member::new("value"), Member::new("copy")]),
+            ],
+        ));
+        assert_node_error(
+            &fixture.workspace().path().join("snapshot/static/app.js"),
+            "ReferenceError",
+        );
+        let direct = staged.run(&[]);
+        let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+        for run in [&direct, &saved] {
+            assert!(!run.result.status.success());
+            let refusal: Value = serde_json::from_slice(
+                &fs::read(
+                    run.output_root()
+                        .join("reports/tree/evaluation_schedule.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                refusal["kind"], "evaluation_schedule_refused",
+                "{refusal:#}"
+            );
+            assert_eq!(
+                refusal["rejection"]["source_entry"], "static/app",
+                "{refusal:#}"
+            );
+        }
+        assert_same_invocation_trees(&direct, &saved);
+    }
+}
+
+fn primitive_declarations(initializers: &[&str], comma: bool, exported: bool) -> String {
+    let prefix = if exported { "export const" } else { "const" };
+    if comma {
+        format!("{prefix} {};", initializers.join(", "))
+    } else {
+        initializers
+            .iter()
+            .map(|initializer| format!("{prefix} {initializer};\n"))
+            .collect()
+    }
+}
+
+/// Equivalent declaration forms retain the same completion proof when their
+/// values move across public anchors, including after saved-analysis replay.
+#[test]
+fn canonical_primitive_initializers_match_direct_and_saved_execution() {
+    for (comma, exported) in [(false, false), (true, false), (false, true), (true, true)] {
+        let declarations =
+            primitive_declarations(&["a = 1", "b = 2", "c = a + b"], comma, exported);
+        let exports = if exported { "" } else { "a, b, c, " };
+        let source = format!(
+            "const before = 0;\n{declarations}\nconst after = 1;\nconsole.log(before, c, after);\nexport {{ {exports}before, after }};\n"
+        );
+        let (staged, fixture) = staged(FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+                logical_module("value", &[Member::new("c")]),
+            ],
+        ));
+        assert_node_output(
+            &fixture.workspace().path().join("snapshot/static/app.js"),
+            "0 3 1\n",
+            "",
+        );
+        let direct = staged.run(&[]);
+        let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+        // Export probes create runtime helper files; compare the CLI trees first.
+        assert_same_invocation_trees(&direct, &saved);
+        for run in [&direct, &saved] {
+            assert_ok(&run.result, "canonical primitive initializer");
+            let assessment: Value = serde_json::from_slice(
+                &fs::read(
+                    run.output_root()
+                        .join("reports/tree/static/app/effect_translation_validation.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert!(
+                assessment["swapped_pairs"].as_u64().unwrap() > 0,
+                "the initializer must cross a public anchor: {assessment:#}"
+            );
+            assert_module_exports(
+                &run.output_root().join("app"),
+                "static/app/modules/value.js",
+                &["c"],
+                &[],
+            );
+            assert_node_output(
+                &run.output_root().join("app/static/app/entry.js"),
+                "0 3 1\n",
+                "",
+            );
+        }
+    }
+}
+
+#[test]
+fn canonical_primitive_initializers_keep_tdz_and_abrupt_schedules_conservative() {
+    for (initializers, error) in [
+        (["a = 1", "c = a + b", "b = 2"], "ReferenceError"),
+        (["a = 1n", "b = 2", "c = a + b"], "TypeError"),
+        (["a = 1n", "b = 0n", "c = a / b"], "RangeError"),
+    ] {
+        for (comma, exported) in [(false, false), (true, false), (false, true), (true, true)] {
+            let declarations = primitive_declarations(&initializers, comma, exported);
+            let exports = if exported { "" } else { "a, b, c, " };
+            let source = format!(
+                "const before = 0;\n{declarations}\nconst after = 1;\nconsole.log(before, c, after);\nexport {{ {exports}before, after }};\n"
+            );
+            let (staged, fixture) = staged(FixtureOpts::new(
+                &source,
+                vec![
+                    logical_module("anchors", &[Member::new("before"), Member::new("after")]),
+                    // Keep the TDZ reader and later declaration co-located so
+                    // schedule validation, rather than an atomic split, decides.
+                    logical_module(
+                        "value",
+                        &[Member::new("a"), Member::new("b"), Member::new("c")],
+                    ),
+                ],
+            ));
+            assert_node_error(
+                &fixture.workspace().path().join("snapshot/static/app.js"),
+                error,
+            );
+            let direct = staged.run(&[]);
+            let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+            for run in [&direct, &saved] {
+                assert!(!run.result.status.success());
+                let refusal: Value = serde_json::from_slice(
+                    &fs::read(
+                        run.output_root()
+                            .join("reports/tree/evaluation_schedule.json"),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+                assert_eq!(
+                    refusal["kind"], "evaluation_schedule_refused",
+                    "{refusal:#}"
+                );
+                assert_eq!(
+                    refusal["rejection"]["source_entry"], "static/app",
+                    "{refusal:#}"
+                );
+                assert!(!run.output_root().join("app/static/app/entry.js").exists());
+            }
+            assert_same_invocation_trees(&direct, &saved);
+        }
+    }
+}
+
 #[test]
 fn full_effect_stream_matches_between_direct_and_staged_runs() {
     assert_staged_run_matches(split_with_pure_import(), &["--effect-conflicts-jsonl"]);
@@ -25,19 +258,38 @@ fn assert_export_filter_changes_only_sinks(
 ) {
     let extra_modules = [(
         "static/peer",
-        vec![logical_module("provider", &[Member::new("value")])],
+        vec![logical_module_with_anon(
+            "provider",
+            &[Member::new("value")],
+            &["globalThis.externalMarker = 1;"],
+        )],
     )];
     let opts = FixtureOpts::new(
         "import { value } from './peer.js';\nconst first = value + 1;\nconst second = 2;\nconst tail = second;\nconsole.log(first, tail);\nexport { first, second, tail };\n",
         vec![logical_module("outer", &[Member::new("first"), Member::new("tail")]), logical_module("inner", &[Member::new("second")])],
     ).with_extra_chunks(&[("static/peer", "globalThis.externalMarker = 1;\nexport const value = 1;\n")]).with_extra_chunk_logical_modules(&extra_modules);
-    let (staged, _fixture) = staged(opts);
+    let (staged, fixture) = staged(opts);
+    assert_node_output(
+        &fixture.workspace().path().join("snapshot/static/app.js"),
+        "2 2\n",
+        "",
+    );
     let all = staged.run(export_args);
     assert_ok(&all.result, "unfiltered export");
+    assert_node_output(
+        &all.output_root().join("app/static/app/entry.js"),
+        "2 2\n",
+        "",
+    );
     let mut flags = export_args.to_vec();
     flags.extend([filter_flag, "static/app"]);
     let filtered = staged.run(&flags);
     assert_ok(&filtered.result, "filtered export");
+    assert_node_output(
+        &filtered.output_root().join("app/static/app/entry.js"),
+        "2 2\n",
+        "",
+    );
     let without_streams = |root: &Path| {
         tree(root)
             .into_iter()
@@ -65,6 +317,13 @@ fn assert_export_filter_changes_only_sinks(
     assert_ok(
         &filtered_loaded.result,
         "filtered export from full staged analysis",
+    );
+    assert_node_output(
+        &filtered_loaded
+            .output_root()
+            .join("app/static/app/entry.js"),
+        "2 2\n",
+        "",
     );
     assert_same_invocation_trees(&filtered, &filtered_loaded);
     let mut all_selected = export_args.to_vec();

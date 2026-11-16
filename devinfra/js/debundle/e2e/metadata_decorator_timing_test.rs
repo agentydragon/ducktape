@@ -54,13 +54,13 @@ fn metadata_only_applications_keep_methods_deferred_and_metadata_visible() {
         "const decorate = (decorators, target, key, kind) => {",
     );
     for source in [SOURCE, &arrow] {
-        let fixture = run_fixture(
-            FixtureOpts::new(
-                source,
-                modules(MemberEffect::TypescriptMetadataDecorateHelper),
-            )
-            .with_extra_chunks(&peers),
+        let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelper);
+        claimed[2] = logical_module_with_anon(
+            "values/later",
+            &[Member::new("later")],
+            &["console.log(new Controller().read(), annotationsOf(Controller.prototype));"],
         );
+        let fixture = run_fixture(FixtureOpts::new(source, claimed).with_extra_chunks(&peers));
         assert_preserved_entry_output(&fixture, "42 read,record\n");
     }
 }
@@ -244,15 +244,17 @@ fn a_reassigned_helper_does_not_keep_metadata_precision() {
 fn imported_static_member_decorator_keeps_method_deferred() {
     let source = member_source();
     let provider = member_provider();
+    let mut claimed = member_modules(
+        MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators,
+        "api.annotate",
+    );
+    claimed[2] = logical_module_with_anon(
+        "values/later",
+        &[Member::new("later")],
+        &["console.log(new Controller().read(), annotationsOf(Controller.prototype));"],
+    );
     let fixture = run_fixture(
-        FixtureOpts::new(
-            &source,
-            member_modules(
-                MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators,
-                "api.annotate",
-            ),
-        )
-        .with_extra_chunks(&[("static/peer", provider.as_str())]),
+        FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", provider.as_str())]),
     );
     assert_preserved_entry_output(&fixture, "42 read,record\n");
 }

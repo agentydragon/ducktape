@@ -29,10 +29,12 @@ type RetainedCallbackSignatures = BTreeMap<String, Vec<spec::RetainedCallbackSig
 pub(super) struct SavedProgramSummary<'a> {
     bindings: BTreeMap<String, BTreeMap<String, PurityNodeId>>,
     values: Cow<'a, BTreeMap<String, BTreeMap<String, Value>>>,
+    primitive_result_kinds: Cow<'a, BTreeMap<String, BTreeMap<String, analysis_model::PrimKinds>>>,
     primitive_reads: Cow<'a, BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>>,
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
+    foreign_observer_cell_reads: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
@@ -179,10 +181,12 @@ impl<'a> SavedProgramSummary<'a> {
             bindings,
             value_inputs,
             values: Cow::Borrowed(&summary.values),
+            primitive_result_kinds: Cow::Borrowed(&summary.primitive_result_kinds),
             primitive_reads: Cow::Borrowed(&summary.primitive_reads),
             fluent: Cow::Borrowed(&summary.fluent),
             constructors: Cow::Borrowed(&summary.constructors),
             imported_callables,
+            foreign_observer_cell_reads: Cow::Borrowed(&summary.foreign_observer_cell_reads),
             native_integrity: summary
                 .native_integrity
                 .as_ref()
@@ -319,13 +323,16 @@ impl<'a> SavedProgramSummary<'a> {
             })
             .collect::<Result<_>>()?;
         Ok(ProgramSummary {
+            executables: None,
             bindings,
             value_inputs,
             values: self.values.into_owned(),
+            primitive_result_kinds: self.primitive_result_kinds.into_owned(),
             primitive_reads: self.primitive_reads.into_owned(),
             fluent: self.fluent.into_owned(),
             constructors: self.constructors.into_owned(),
             imported_callables,
+            foreign_observer_cell_reads: self.foreign_observer_cell_reads.into_owned(),
             native_integrity: self
                 .native_integrity
                 .map(SavedNativeIntegrity::restore)
@@ -649,12 +656,15 @@ mod tests {
             )]),
         )]);
         let summary = ProgramSummary {
+            executables: None,
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
+            primitive_result_kinds: BTreeMap::new(),
             primitive_reads: primitive_reads.clone(),
             fluent: BTreeMap::new(),
             constructors: BTreeMap::new(),
             imported_callables: BTreeMap::new(),
+            foreign_observer_cell_reads: BTreeMap::new(),
             native_integrity: None,
             bundle_globals: Default::default(),
             value_inputs: BTreeMap::new(),

@@ -25,7 +25,7 @@ impl Executor<'_, '_> {
         outcome: &mut Outcome,
     ) -> CallTransfer {
         if call.kind == CallKind::OpaqueExecution {
-            let fact = &self.inputs.facts[call.owner.0];
+            let fact = &self.source_inputs().facts[call.owner.0];
             let mut reached: Values = env
                 .values()
                 .chain(captures.values())
@@ -47,7 +47,12 @@ impl Executor<'_, '_> {
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
             self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::OpaqueExecution,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
         }
@@ -63,7 +68,12 @@ impl Executor<'_, '_> {
             self.unsettle(&reached);
             self.promote_escaped_callbacks(&reached, outcome);
             self.invoke_possible_callbacks_at(&[reached], false, Some(call.span), outcome);
-            outcome.unsupported(ExecutionOperation::OpaqueExecution, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::OpaqueExecution,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             return CallTransfer::EffectsOnly;
         }
@@ -75,8 +85,7 @@ impl Executor<'_, '_> {
             if values.contains(&AbstractValue::Value(Value::Top))
                 && (self.callee_lookup_is_certified(call)
                     || self
-                        .inputs
-                        .index
+                        .source_index()
                         .no_reentry_accessor_calls
                         .get(&CallSite::from(call.span))
                         .copied()
@@ -106,8 +115,7 @@ impl Executor<'_, '_> {
                 return CallTransfer::EffectsOnly;
             }
             let no_reentry_accessor_call = self
-                .inputs
-                .index
+                .source_index()
                 .no_reentry_accessor_calls
                 .get(&CallSite::from(call.span))
                 .copied();
@@ -120,7 +128,12 @@ impl Executor<'_, '_> {
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
             }
-            outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::MemberRead,
+                call.owner,
+                call.span,
+            );
             return CallTransfer::EffectsOnly;
         }
         if matches!(
@@ -136,8 +149,7 @@ impl Executor<'_, '_> {
                 .collect();
             if call.kind == CallKind::InProtocol
                 && self
-                    .inputs
-                    .index
+                    .source_index()
                     .non_reentrant_global_membership
                     .contains(&call.span.into())
             {
@@ -171,6 +183,7 @@ impl Executor<'_, '_> {
             self.invoke_possible_callbacks_at(&[values], false, Some(call.span), outcome);
             self.note_unknown_call(call);
             outcome.unsupported(
+                self.source_inputs().module_id,
                 match call.kind {
                     CallKind::InProtocol => ExecutionOperation::MembershipProtocol,
                     CallKind::InstanceOfProtocol => ExecutionOperation::InstanceOfProtocol,
@@ -190,16 +203,19 @@ impl Executor<'_, '_> {
                 return CallTransfer::EffectsOnly;
             }
             if let Some(read) = self.root_own_data_read(&call.callee) {
-                outcome
-                    .effects
-                    .record_heap_read(read.cell, self.state.assumption.is_none());
+                outcome.record_runtime_heap_read(
+                    self.inputs.root.index.source_scope(),
+                    read.cell,
+                    self.state.assumption.is_none(),
+                );
                 return CallTransfer::EffectsOnly;
             }
-            if object_own_data_read_property(&call.callee, |id| self.inputs.flow.is_declared(id))
-                .is_some()
+            if object_own_data_read_property(&call.callee, |id| {
+                self.source_inputs().flow.is_declared(id)
+            })
+            .is_some()
                 && self
-                    .inputs
-                    .index
+                    .source_index()
                     .native_own_data_read_premise(call.span)
                     .is_none()
             {
@@ -207,7 +223,12 @@ impl Executor<'_, '_> {
                 self.promote_escaped_callbacks(&selected, outcome);
                 self.invoke_possible_callbacks_at(&[selected], false, Some(call.span), outcome);
                 self.note_unknown_call(call);
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+                outcome.unsupported(
+                    self.source_inputs().module_id,
+                    ExecutionOperation::MemberRead,
+                    call.owner,
+                    call.span,
+                );
                 outcome.unknown_call = true;
                 return CallTransfer::EffectsOnly;
             }
@@ -249,7 +270,9 @@ impl Executor<'_, '_> {
                     if kind.supports_ordinary_own_data_read_proof() =>
                 {
                     if !self.state.world.object_properties_are_settled(*object)
-                        || (!self.inputs.index.plain_data_objects.contains(object)
+                        || (!self
+                            .allocation_index(*object)
+                            .is_some_and(|index| index.plain_data_objects.contains(object))
                             && !self
                                 .state
                                 .world
@@ -316,12 +339,16 @@ impl Executor<'_, '_> {
                 if self.state.array_iteration_depth > 0 {
                     self.state.array_iteration_unsupported = true;
                 }
-                outcome.unsupported(ExecutionOperation::MemberRead, call.owner, call.span);
+                outcome.unsupported(
+                    self.source_inputs().module_id,
+                    ExecutionOperation::MemberRead,
+                    call.owner,
+                    call.span,
+                );
             } else if private_own_field
                 && accessor_getters.is_empty()
                 && self
-                    .inputs
-                    .index
+                    .source_index()
                     .unconditionally_evaluated_member_read(call)
             {
                 outcome
@@ -339,7 +366,12 @@ impl Executor<'_, '_> {
             if self.state.array_iteration_depth > 0 {
                 self.state.array_iteration_unsupported = true;
             }
-            outcome.unsupported(ExecutionOperation::ObjectSpread, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::ObjectSpread,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             self.promote_escaped_callbacks(&values, outcome);
@@ -351,14 +383,21 @@ impl Executor<'_, '_> {
             if let Some(receipt) =
                 self.native_iterable(NativeIterableUse::ArraySpread(call.span), &values)
             {
-                outcome.effects.record_heap_contents(
+                outcome.record_runtime_heap_contents(
+                    self.inputs.root.index.source_scope(),
+                    self.source_index().source_scope(),
                     &receipt.external_heap_contents(),
                     self.state.assumption.is_none(),
                 );
                 outcome.effect_coverage.compose(&receipt.coverage);
                 return CallTransfer::EffectsOnly;
             }
-            outcome.unsupported(ExecutionOperation::ArraySpread, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::ArraySpread,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // Consuming a custom iterator can execute deferred generator bodies.
@@ -390,7 +429,12 @@ impl Executor<'_, '_> {
             // synchronous call and expose callbacks carried by the operand;
             // this covers both the exotic and ordinary conversion paths
             // without assuming which method succeeds first.
-            outcome.unsupported(ExecutionOperation::ImplicitCoercion, call.owner, call.span);
+            outcome.unsupported(
+                self.source_inputs().module_id,
+                ExecutionOperation::ImplicitCoercion,
+                call.owner,
+                call.span,
+            );
             outcome.unknown_call = true;
             self.note_unknown_call(call);
             // A conversion property may be an accessor that returns a

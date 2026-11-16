@@ -198,7 +198,12 @@ fn build_source_unit_nodes_and_edges(
                             .top_level_owner
                             .and_then(|owner| source_units_by_ordinal.get(&owner))
                             .and_then(|source_unit| source_unit.source_location.clone());
-                        if let Some(callsite) = &mut publication.bounded_fallback_callsite {
+                        if let Some(callsite) = &mut publication.bounded_fallback_callsite
+                            && callsite.source_location.is_none()
+                            && callsite.top_level_owner_source_module.as_deref().is_none_or(|module| {
+                                module == assignment_analysis.inputs().chunk_id()
+                            })
+                        {
                             callsite.source_location = callsite
                                 .top_level_owner
                                 .and_then(|owner| source_units_by_ordinal.get(&owner))

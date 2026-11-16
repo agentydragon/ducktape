@@ -13,13 +13,16 @@ CONTROL_CASES = {
     "retained_constructor": ("unlisted_arity.js", 0, "42\n", ("callbacks/wrapped", "values/later")),
     "persistent_registry": ("early_emit.js", 1, "ReferenceError", ("callbacks/registration", "values/later")),
 }
+ACCEPTED_MODULE_DIRS = {"retained_constructor": "accepted_modules", "persistent_registry": "accepted_modules"}
 
 
 def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False)
 
 
-def run_tree(debundle: Path, fixture: Path, out_root: Path) -> subprocess.CompletedProcess[str]:
+def run_tree(
+    debundle: Path, fixture: Path, out_root: Path, module_root: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return run(
         [
             str(debundle),
@@ -27,7 +30,7 @@ def run_tree(debundle: Path, fixture: Path, out_root: Path) -> subprocess.Comple
             "--tree-config",
             str(fixture / "spec_config.yaml"),
             "--tree-modules",
-            str(fixture / "modules"),
+            str(module_root or fixture / "modules"),
             "--tree-vendor-marks",
             str(fixture / "vendor_marks.yaml"),
             "--tree-source-root",
@@ -57,6 +60,43 @@ def _assert_conflict(
         raise AssertionError(f"no atomic-group conflict spans {modules} with cause {required_cause}: {conflicts!r}")
 
 
+def _assert_cycle_refusal(
+    out_root: Path,
+    result: subprocess.CompletedProcess[str],
+    expected_modules: tuple[str, str],
+    expected_witness_fragments: tuple[str, str],
+) -> None:
+    report = out_root / "reports/tree/main/cycles.json"
+    if not report.is_file():
+        raise AssertionError(f"missing cycle rejection report for CLI result:\n{result.stderr}")
+    cycles = json.loads(report.read_text())
+    expected = set(expected_modules)
+    if not any(expected <= set(cycle.get("modules", [])) and cycle.get("cut") for cycle in cycles):
+        raise AssertionError(f"no blocking cycle spans {expected_modules}: {cycles!r}")
+    if not all(fragment in result.stderr for fragment in expected_witness_fragments):
+        raise AssertionError(f"missing expected cycle witness {expected_witness_fragments!r}: {result.stderr}")
+
+
+def _assert_module_exports(node: Path, out_root: Path, module_path: Path, expected: list[str]) -> None:
+    if not module_path.is_file():
+        available = sorted(str(path.relative_to(out_root)) for path in out_root.rglob("*.js"))
+        raise AssertionError(f"missing emitted module {module_path}; available JavaScript files: {available}")
+    source = (
+        "const module = await import("
+        + json.dumps(module_path.resolve().as_uri())
+        + ");\nprocess.stdout.write(JSON.stringify(Object.keys(module).sort()));\n"
+    )
+    result = run([str(node), "--input-type=module", "--eval", source], out_root)
+    if result.returncode != 0 or result.stderr:
+        raise AssertionError(
+            f"could not inspect emitted exports from {module_path}: "
+            f"exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+        )
+    actual = json.loads(result.stdout)
+    if actual != sorted(expected):
+        raise AssertionError(f"unexpected exports from {module_path}: expected {sorted(expected)}, got {actual}")
+
+
 def _run_control(debundle: Path, node: Path, fixture: Path, out_root: Path, name: str) -> str:
     control_name, expected_exit, expected_output, modules = CONTROL_CASES[name]
     with tempfile.TemporaryDirectory(prefix="debundle-contract-control-") as tmp:
@@ -78,9 +118,17 @@ def _run_control(debundle: Path, node: Path, fixture: Path, out_root: Path, name
         transformed = run_tree(debundle, control_fixture, output)
         if transformed.returncode == 0:
             raise AssertionError(f"debundle accepted unsupported control {name}")
-        _assert_conflict(
-            output, modules, transformed, required_cause="eager_use" if name == "persistent_registry" else None
-        )
+        if name == "fresh_factory":
+            _assert_cycle_refusal(
+                output,
+                transformed,
+                ("callbacks/wrapped", "anon_residual_sentinel"),
+                ("wrapped (callbacks/wrapped, unit:", "callback (anon_residual_sentinel, unit:"),
+            )
+        else:
+            _assert_conflict(
+                output, modules, transformed, required_cause="eager_use" if name == "persistent_registry" else None
+            )
     return baseline.stdout + baseline.stderr
 
 
@@ -100,7 +148,8 @@ def run_examples(debundle: Path, node: Path, fixtures: Path, out_root: Path) -> 
             raise AssertionError(f"unexpected Node baseline for {name}: {baseline.stdout!r} {baseline.stderr!r}")
 
         output = out_root / name
-        transformed = run_tree(debundle, fixture, output)
+        module_root = fixture / ACCEPTED_MODULE_DIRS[name] if name in ACCEPTED_MODULE_DIRS else None
+        transformed = run_tree(debundle, fixture, output, module_root)
         if transformed.returncode != 0:
             raise RuntimeError(f"debundle rejected {name}:\n{transformed.stdout}\n{transformed.stderr}")
 
@@ -112,6 +161,10 @@ def run_examples(debundle: Path, node: Path, fixtures: Path, out_root: Path) -> 
                 f"output changed for {name}: baseline={baseline.stdout!r} {baseline.stderr!r}; "
                 f"emitted={emitted.stdout!r} {emitted.stderr!r}"
             )
+        if name == "retained_constructor":
+            _assert_module_exports(node, output, output / "app/main/callbacks/wrapped.js", ["wrapped"])
+        elif name == "persistent_registry":
+            _assert_module_exports(node, output, output / "app/main/callbacks/registration.js", ["observed"])
         outputs[name] = emitted.stdout
 
     for name in CONTROL_CASES:

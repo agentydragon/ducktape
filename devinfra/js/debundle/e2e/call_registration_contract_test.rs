@@ -5,6 +5,14 @@ use debundle_e2e_support::{
 const PROVIDER: &str = "const callbacks = new Set();\nexport function register(name, callback) { console.log('registered', name); callbacks.add(callback); }\nexport function fire() { console.log('fired'); for (const callback of callbacks) callback(); }\n";
 
 fn run_registration_fixture(main: &str, registration_module: &str) -> TreeRun {
+    run_registration_fixture_with_args(main, registration_module, &[])
+}
+
+fn run_registration_fixture_with_args(
+    main: &str,
+    registration_module: &str,
+    extra_args: &[&str],
+) -> TreeRun {
     let run = run_tree_fixture(
         &TreeFixture {
             chunks: &[("main", main), ("peer", PROVIDER)],
@@ -17,6 +25,26 @@ fn run_registration_fixture(main: &str, registration_module: &str) -> TreeRun {
                 ),
             ],
         },
+        extra_args,
+    );
+    std::fs::write(
+        run.root().join("snapshot/package.json"),
+        r#"{"type":"module"}"#,
+    )
+    .unwrap();
+    run
+}
+
+fn run_colocated_registration_fixture(main: &str, statement: &str) -> TreeRun {
+    let module = format!(
+        "members:\n  - name: later\n    selector: {{binding: {{name: later}}}}\nanonymous_statements:\n  - match: \"{statement}\"\n    no_reentry_call: {{callback_arguments: [1]}}\n"
+    );
+    let run = run_tree_fixture(
+        &TreeFixture {
+            chunks: &[("main", main), ("peer", PROVIDER)],
+            module_roots: &[("app/main", "main"), ("app/peer", "peer")],
+            modules: &[("app/main/all.yaml", module.as_str())],
+        },
         &[],
     );
     std::fs::write(
@@ -24,6 +52,36 @@ fn run_registration_fixture(main: &str, registration_module: &str) -> TreeRun {
         r#"{"type":"module"}"#,
     )
     .unwrap();
+    run
+}
+
+fn assert_registration_split_refused(
+    main: &str,
+    registration_module: &str,
+    expected_output: &str,
+) -> TreeRun {
+    let run = run_registration_fixture_with_args(
+        main,
+        registration_module,
+        &["--graphs", "--emit-on-rejection"],
+    );
+    assert_eq!(
+        run.result.status.code(),
+        Some(3),
+        "the split should be refused by the evaluation-schedule guard\nstdout:\n{}\nstderr:\n{}",
+        run.result.stdout,
+        run.result.stderr,
+    );
+    let schedule =
+        std::fs::read_to_string(run.report_root.join("evaluation_schedule.json")).unwrap();
+    assert!(
+        schedule.contains("evaluation_schedule_refused")
+            && schedule.contains("evaluation_schedule_unknown_reordered"),
+        "missing typed evaluation-schedule refusal\n{schedule}"
+    );
+    assert!(run.out_root.join("GATE_REJECTED").is_file());
+    assert_node_output(&run.root().join("snapshot/main.js"), expected_output, "");
+    assert_node_output(&run.out_root.join("app/main/entry.js"), expected_output, "");
     run
 }
 
@@ -48,29 +106,33 @@ fn anonymous_registration_call_without_contract_is_rejected() {
 
 #[test]
 fn annotated_registration_preserves_call_effects_and_retains_callback() {
-    let run = run_registration_fixture(
-        "import * as peer from './peer.js';\npeer.register('topic', () => { later.count += 1; });\nconst later = { count: 0 };\npeer.fire();\nconsole.log(later.count);\n",
-        "anonymous_statements:\n  - match: \"peer.register('topic', () => { later.count += 1; });\"\n    no_reentry_call: {callback_arguments: [1]}\n",
-    );
-    assert!(
-        run.result.status.success(),
-        "annotated registration should permit the proven split\nstdout:\n{}\nstderr:\n{}",
-        run.result.stdout,
-        run.result.stderr,
+    let main = "import * as peer from './peer.js';\npeer.register('topic', () => { later.count += 1; });\nconst later = { count: 0 };\npeer.fire();\nconsole.log(later.count);\n";
+    let statement = "peer.register('topic', () => { later.count += 1; });";
+    let registration_module = "anonymous_statements:\n  - match: \"peer.register('topic', () => { later.count += 1; });\"\n    no_reentry_call: {callback_arguments: [1]}\n";
+    let rejected = assert_registration_split_refused(
+        main,
+        registration_module,
+        "registered topic\nfired\n1\n",
     );
     assert_module_source(
-        &run.out_root,
+        &rejected.out_root,
         "app/main/callbacks/registration.js",
         &["peer.register('topic', ()=>", "later.count += 1"],
         &["no_reentry_call"],
     );
+    let colocated = run_colocated_registration_fixture(main, statement);
+    assert!(
+        colocated.result.status.success(),
+        "{}",
+        colocated.result.stderr
+    );
     assert_node_output(
-        &run.root().join("snapshot/main.js"),
+        &colocated.root().join("snapshot/main.js"),
         "registered topic\nfired\n1\n",
         "",
     );
     assert_node_output(
-        &run.out_root.join("app/main/entry.js"),
+        &colocated.out_root.join("app/main/entry.js"),
         "registered topic\nfired\n1\n",
         "",
     );
@@ -115,15 +177,21 @@ fn guarded_registration_preserves_condition_effects_and_callback_lifetime() {
         let registration_module = format!(
             "anonymous_statements:\n  - match: \"{statement}\"\n    no_reentry_call: {{callback_arguments: [1]}}\n"
         );
-        let run = run_registration_fixture(&main, &registration_module);
-        assert!(
-            run.result.status.success(),
-            "guarded registration should permit the proven split\nstdout:\n{}\nstderr:\n{}",
-            run.result.stdout,
-            run.result.stderr,
+        let rejected = assert_registration_split_refused(&main, &registration_module, expected);
+        assert_module_source(
+            &rejected.out_root,
+            "app/main/callbacks/registration.js",
+            &["peer.register('topic'", "later.count += 1"],
+            &["no_reentry_call"],
         );
-        assert_node_output(&run.root().join("snapshot/main.js"), expected, "");
-        assert_node_output(&run.out_root.join("app/main/entry.js"), expected, "");
+        let colocated = run_colocated_registration_fixture(&main, &statement);
+        assert!(
+            colocated.result.status.success(),
+            "{}",
+            colocated.result.stderr
+        );
+        assert_node_output(&colocated.root().join("snapshot/main.js"), expected, "");
+        assert_node_output(&colocated.out_root.join("app/main/entry.js"), expected, "");
     }
 }
 

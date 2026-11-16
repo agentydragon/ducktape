@@ -75,9 +75,40 @@ fn private_facade_split_from_an_opaque_startup_call() {
         ],
     );
     split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture(split);
+    let rejected = assert_conservative_schedule_refusal(
+        split,
+        "evaluation_schedule_unknown_reordered",
+        "42 42\n",
+    );
+    let assessment = rejected.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
+    assert_eq!(assessment["status"], "incomplete", "{assessment:#}");
+    let effect = rejected.effect_translation_validation();
+    assert_eq!(
+        effect["coverage"]["owner_coverage_refusals"]["unsupported_initializer"], 1,
+        "the split still reports the unsupported Date initializer: {effect:#}"
+    );
+
+    let mut colocated = FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "state/all",
+            &[
+                Member::new("facade"),
+                Member::new("startup"),
+                Member::new("later"),
+            ],
+            &[],
+        )],
+    );
+    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
+    let fixture = run_fixture_with_graphs(colocated);
     assert_preserved_entry_output(&fixture, "42 42\n");
-    assert_effect_verdict_pending(&fixture, "incomplete", "facade split from opaque startup");
+    let effect = fixture.effect_translation_validation();
+    assert_eq!(effect["decision"]["status"], "accepted", "{effect:#}");
+    assert_eq!(effect["decision"]["scope"], "no_reordering", "{effect:#}");
+    assert_eq!(effect["swapped_pairs"], 0, "{effect:#}");
+    assert_eq!(effect["full_semantic_precision"], false, "{effect:#}");
 }
 
 /// Freezing an object another statement already holds is not admitted: the

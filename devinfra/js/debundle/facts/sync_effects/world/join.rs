@@ -2,13 +2,16 @@
 //! otherwise a conservative pointwise join that never certifies a property,
 //! descriptor, completion or publication fact and never panics.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::cells::{CellInitialization, LexicalCell, LexicalCells};
 use super::descriptor_heap::OwnDescriptorMapState;
 use super::object_surface::{AppliedAccessor, ObjectSurfaceStore};
 use super::prefix_values::PrefixValues;
+use super::program_modules::{ModuleEvaluationPhase, ModuleSemanticState};
 use super::{
-    ClassState, DenseArrays, ModuleBindings, NativeRetained, Publication, ReachabilityState,
-    Revision, World, WorldScope,
+    ClassState, DenseArrays, ModuleBindings, ModuleDefaultExport, NativeRetained, Publication,
+    ReachabilityState, Revision, World, WorldScope,
 };
 use crate::facts::abstract_domain::value::Value;
 use crate::facts::sync_effects::allocation_transfer::WritablePrefixState;
@@ -34,6 +37,7 @@ pub(in crate::facts::sync_effects) enum JoinRefusal {
     EmptySet,
     DivergentActiveCells,
     DivergentScope,
+    DivergentModuleFrames,
 }
 
 /// Pointwise join of one owner group over every alternative. `widened` is set
@@ -74,9 +78,12 @@ impl World {
         // Destructure so that a new owner without a join arm fails to compile.
         let World {
             scope,
+            allocation_events: _,
             cells: _,
             active_cells: _,
             module: _,
+            module_phase: _,
+            inactive_modules: _,
             surface: _,
             descriptors: _,
             arrays: _,
@@ -99,6 +106,35 @@ impl World {
         {
             refused = refused.or(Some(JoinRefusal::DivergentActiveCells));
         }
+        let module_scopes: BTreeSet<_> = first.inactive_modules.keys().copied().collect();
+        if worlds.iter().any(|world| {
+            world
+                .inactive_modules
+                .keys()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                != module_scopes
+        }) {
+            // Every known module is instantiated before execution starts.
+            // A missing bank entry cannot be repaired by treating a later
+            // evaluated prefix as available on all paths.
+            refused = refused.or(Some(JoinRefusal::DivergentModuleFrames));
+        }
+        let inactive_modules = module_scopes
+            .into_iter()
+            .filter_map(|scope| {
+                let alternatives: Vec<_> = worlds
+                    .iter()
+                    .filter_map(|world| world.inactive_modules.get(&scope))
+                    .collect();
+                (alternatives.len() == worlds.len()).then(|| {
+                    (
+                        scope,
+                        ModuleSemanticState::join(&alternatives, &mut widened),
+                    )
+                })
+            })
+            .collect();
         let mut arrays = DenseArrays::join(&each(worlds, |world| &world.arrays), &mut widened);
         let mut surface =
             ObjectSurfaceStore::join(&each(worlds, |world| &world.surface), &mut widened);
@@ -111,9 +147,23 @@ impl World {
         revision.bump_reachability();
         let world = World {
             scope: *scope,
+            allocation_events: worlds
+                .iter()
+                .flat_map(|world| {
+                    world
+                        .allocation_events
+                        .iter()
+                        .map(|(id, event)| (*id, event.clone()))
+                })
+                .collect(),
             cells: LexicalCells::join(&each(worlds, |world| &world.cells), &mut widened),
             active_cells,
             module: ModuleBindings::join(&each(worlds, |world| &world.module), &mut widened),
+            module_phase: ModuleEvaluationPhase::join(
+                &each(worlds, |world| &world.module_phase),
+                &mut widened,
+            ),
+            inactive_modules,
             surface,
             descriptors: join_descriptor_maps(&each(worlds, |world| &world.descriptors)),
             arrays,
@@ -147,6 +197,32 @@ impl Join for ModuleBindings {
     fn join(alternatives: &[&Self], widened: &mut bool) -> Self {
         let first = alternatives[0];
         let joined = Self {
+            default_export: alternatives
+                .iter()
+                .find_map(|module| module.default_export.as_ref())
+                .map(|cell| {
+                    let mut joined = ModuleDefaultExport {
+                        values: Values::new(),
+                        initialized: true,
+                        selection: cell.selection.clone(),
+                    };
+                    for alternative in alternatives {
+                        if let Some(cell) = &alternative.default_export {
+                            joined.values.extend(cell.values.iter().cloned());
+                            joined.initialized &= cell.initialized;
+                            if joined.selection != cell.selection {
+                                joined.selection = None;
+                            }
+                        } else {
+                            joined
+                                .values
+                                .insert(AbstractValue::Value(Value::Unavailable));
+                            joined.initialized = false;
+                            joined.selection = None;
+                        }
+                    }
+                    joined
+                }),
             prefix_values: PrefixValues::join(
                 &each_field(alternatives, |module| &module.prefix_values),
                 join_value_maps,
@@ -164,6 +240,46 @@ impl Join for ModuleBindings {
         };
         *widened |= joined != *first;
         joined
+    }
+}
+
+impl Join for ModuleEvaluationPhase {
+    fn join(alternatives: &[&Self], widened: &mut bool) -> Self {
+        let first = *alternatives[0];
+        if alternatives.iter().all(|phase| **phase == first) {
+            first
+        } else {
+            *widened = true;
+            Self::Indeterminate
+        }
+    }
+}
+
+impl Join for ModuleSemanticState {
+    fn join(alternatives: &[&Self], widened: &mut bool) -> Self {
+        Self {
+            bindings: ModuleBindings::join(
+                &each_field(alternatives, |state| &state.bindings),
+                widened,
+            ),
+            reachability: ReachabilityState::join(
+                &each_field(alternatives, |state| &state.reachability),
+                widened,
+            ),
+            phase: ModuleEvaluationPhase::join(
+                &each_field(alternatives, |state| &state.phase),
+                widened,
+            ),
+            exported_runtime_values: union_values(&each_field(alternatives, |state| {
+                &state.exported_runtime_values
+            })),
+            private_constructor_result_owners: intersect_sets(&each_field(alternatives, |state| {
+                &state.private_constructor_result_owners
+            })),
+            accepted_deferred_global_writes: intersect_sets(&each_field(alternatives, |state| {
+                &state.accepted_deferred_global_writes
+            })),
+        }
     }
 }
 
@@ -291,9 +407,6 @@ impl Join for Publication {
                 alternatives,
                 |publication| &publication.first_callback_publication_owners,
             )),
-            returned_callback_owners: union_sets(&each_field(alternatives, |publication| {
-                &publication.returned_callback_owners
-            })),
             accepted_deferred_global_writes: intersect_sets(&each_field(
                 alternatives,
                 |publication| &publication.accepted_deferred_global_writes,
@@ -477,7 +590,9 @@ fn join_dense_arrays(
     }
 }
 
-fn join_writable_prefix(surfaces: &[&ObjectSurfaceStore]) -> OrdMap<u32, WritablePrefixState> {
+fn join_writable_prefix(
+    surfaces: &[&ObjectSurfaceStore],
+) -> OrdMap<RuntimeAllocationId, WritablePrefixState> {
     let keys = surfaces
         .iter()
         .flat_map(|surface| surface.writable_prefix.keys().copied())
@@ -502,7 +617,7 @@ fn join_writable_prefix(surfaces: &[&ObjectSurfaceStore]) -> OrdMap<u32, Writabl
 
 fn join_applied_accessors(
     surfaces: &[&ObjectSurfaceStore],
-) -> OrdMap<u32, BTreeMap<String, AppliedAccessor>> {
+) -> OrdMap<RuntimeAllocationId, BTreeMap<String, AppliedAccessor>> {
     let objects = surfaces
         .iter()
         .flat_map(|surface| surface.applied_accessors.keys().copied())
@@ -646,8 +761,8 @@ fn join_value_maps<K: Ord + Clone>(maps: &[&OrdMap<K, Values>]) -> OrdMap<K, Val
 }
 
 fn join_nested_property_maps<K: Ord + Clone>(
-    maps: &[&OrdMap<u32, BTreeMap<K, Values>>],
-) -> OrdMap<u32, BTreeMap<K, Values>> {
+    maps: &[&OrdMap<RuntimeAllocationId, BTreeMap<K, Values>>],
+) -> OrdMap<RuntimeAllocationId, BTreeMap<K, Values>> {
     let objects = maps
         .iter()
         .flat_map(|map| map.keys().copied())
@@ -755,8 +870,16 @@ mod tests {
         (Atom::from(name), SyntaxContext::empty())
     }
 
+    fn address(local: u32) -> crate::program_execution::RuntimeAllocationId {
+        static SOURCE: std::sync::OnceLock<crate::program_execution::RuntimeSourceScope> =
+            std::sync::OnceLock::new();
+        SOURCE
+            .get_or_init(crate::program_execution::RuntimeSourceScope::fresh)
+            .allocation(local)
+    }
+
     fn object(allocation: u32) -> AbstractValue {
-        AbstractValue::Value(Value::Alloc(Kind::Object, allocation))
+        AbstractValue::Value(Value::Alloc(Kind::Object, address(allocation)))
     }
 
     fn world_with_prefix(name: &str, value: AbstractValue) -> World {
@@ -792,24 +915,24 @@ mod tests {
         let mut right = world_with_prefix("a", object(2));
         right.module.initialized_bindings.insert(binding("b"));
         left.arrays.dense.insert(
-            7,
+            address(7),
             DenseArray {
                 slots: vec![Values::from([object(1)])],
             },
         );
         right.arrays.dense.insert(
-            7,
+            address(7),
             DenseArray {
                 slots: vec![Values::from([object(2)])],
             },
         );
         left.arrays.dense.insert(
-            8,
+            address(8),
             DenseArray {
                 slots: vec![Values::from([object(1)])],
             },
         );
-        right.surface.tainted_objects.insert(9);
+        right.surface.tainted_objects.insert(address(9));
 
         let joined = World::join(&[&left, &right]);
 
@@ -827,14 +950,14 @@ mod tests {
                 .contains(&binding("b"))
         );
         assert_eq!(
-            joined.world.arrays.dense[&7].slots,
+            joined.world.arrays.dense[&address(7)].slots,
             vec![Values::from([object(1), object(2)])]
         );
         // An array present on one path only loses its exact layout.
-        assert!(!joined.world.arrays.dense.contains_key(&8));
-        assert!(joined.world.arrays.unknown_contents.contains(&8));
-        assert!(joined.world.surface.unsettled_objects.contains(&8));
-        assert!(joined.world.surface.tainted_objects.contains(&9));
+        assert!(!joined.world.arrays.dense.contains_key(&address(8)));
+        assert!(joined.world.arrays.unknown_contents.contains(&address(8)));
+        assert!(joined.world.surface.unsettled_objects.contains(&address(8)));
+        assert!(joined.world.surface.tainted_objects.contains(&address(9)));
         assert!(!joined.world.reachability.incomplete);
         assert!(joined.world.revision.prefix > left.revision.prefix);
     }

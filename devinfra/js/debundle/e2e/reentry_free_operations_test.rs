@@ -29,6 +29,31 @@ fn split<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
     )
 }
 
+fn split_with_publication_phase<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module("host/value", &[Member::new(binding)]),
+            logical_module_with_anon(
+                "host/later",
+                &[Member::new("later")],
+                &["globalThis.saved = () => later;"],
+            ),
+        ],
+    )
+}
+
+fn colocated_with_publication<'a>(source: &'a str, binding: &'static str) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon(
+            "host/all",
+            &[Member::new(binding), Member::new("later")],
+            &["globalThis.saved = () => later;"],
+        )],
+    )
+}
+
 const PROMISE_REENTRY_SOURCE: &str = "import { reflect } from './reflect.js';\nglobalThis.saved = () => factory();\nconst gate = Promise.resolve();\nfunction factory() { return LaterError; }\nclass LaterError extends Error {}\nconst laterValue = factory();\nglobalThis.unrelatedKey = 'safe';\nconsole.log(Boolean(gate), laterValue.name, LaterError.name, globalThis.unrelatedKey);\nexport { gate, factory, LaterError, reflect };\n";
 
 fn promise_reentry_split() -> FixtureOpts<'static> {
@@ -71,8 +96,18 @@ const later = 42;
 console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "store"), &["host/value", "host/later"], &[]);
+    let rejected = assert_conservative_schedule_refusal(
+        split_with_publication_phase(source, "store")
+            .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
+        "evaluation_schedule_unknown_reordered",
+        "true 42\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
     let fixture = run_fixture_with_graphs(
-        split(source, "store")
+        colocated_with_publication(source, "store")
             .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
     );
     assert_host_call_remains_impure(&fixture, "store");
@@ -87,8 +122,19 @@ const later = 42;
 console.log(Boolean(gate), later);
 "#;
     expect_atomic_conflict_rejection(split(source, "gate"), &["host/value", "host/later"], &[]);
+    let rejected = assert_conservative_schedule_refusal(
+        split_with_publication_phase(source, "gate")
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+        "evaluation_schedule_unknown_reordered",
+        "true 42\n",
+    );
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true
+    );
     let fixture = run_fixture_with_graphs(
-        split(source, "gate").with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+        colocated_with_publication(source, "gate")
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert_host_call_remains_impure(&fixture, "gate");
     assert_preserved_entry_output_with_bun(&fixture, "true 42\n");
@@ -120,8 +166,17 @@ console.log(Boolean(value), later);
             &["host/value", "host/later"],
             &[],
         );
+        let rejected = assert_conservative_schedule_refusal(
+            split_with_publication_phase(source, "value").with_host_behavior(policy(&[operation])),
+            "evaluation_schedule_unknown_reordered",
+            "true 42\n",
+        );
+        assert_eq!(
+            rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+            true
+        );
         let fixture = run_fixture_with_graphs(
-            split(source, "value").with_host_behavior(policy(&[operation])),
+            colocated_with_publication(source, "value").with_host_behavior(policy(&[operation])),
         );
         assert_host_call_remains_impure(&fixture, "value");
         assert_preserved_entry_output_with_bun(&fixture, "true 42\n");

@@ -41,20 +41,60 @@ fn assert_node_result(result: &CommandResult, expected_stdout: &str, label: &str
     assert_eq!(result.stdout, expected_stdout, "{label}");
 }
 
-#[test]
-fn private_class_can_move_before_first_publication() {
-    let outcome = run_fixture_to_gate_outcome(private_class_fixture(&[Member::new("Hidden")]));
-
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) {
+    let rejected = run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3);
     assert!(
-        outcome.accepted,
-        "moving only the private class should be accepted; source={:?}, emitted={:?}",
-        outcome.source.stdout, outcome.emitted.stdout
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
     );
-    assert_node_result(&outcome.source, PRIVATE_CLASS_OUTPUT, "original source");
-    assert_node_result(
-        &outcome.emitted,
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+}
+
+#[test]
+fn private_class_split_keeps_class_initialization_after_the_observer_call() {
+    assert_schedule_refusal_preserves_source_and_candidate(
+        private_class_fixture(&[Member::new("Hidden")]),
         PRIVATE_CLASS_OUTPUT,
-        "accepted emitted entry",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            PRIVATE_CLASS_SOURCE,
+            vec![logical_module_with_anon(
+                "classes/runtime",
+                &[
+                    Member::new("Holder"),
+                    Member::new("Hidden"),
+                    Member::new("alias"),
+                ],
+                &["inspect(Holder);", "console.log(alias === Hidden);"],
+            )],
+        )
+        .with_extra_chunks(CLASS_OBSERVER_CHUNKS)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, PRIVATE_CLASS_OUTPUT);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/classes/runtime.js",
+        &[
+            "Holder",
+            "Hidden",
+            "alias",
+            "inspect(Holder)",
+            "console.log(alias === Hidden)",
+        ],
+        &[],
     );
 }
 
@@ -84,6 +124,8 @@ export function inspect() {
   catch (error) { console.log(error.name); }
 }
 "#;
+
+const GLOBAL_CYCLIC_OBSERVER: &str = "import { callback } from './app.js';\nglobalThis.inspect = () => console.log(typeof callback);\n";
 
 fn exported_callback_fixture<'a>(
     source: &'a str,
@@ -134,15 +176,138 @@ fn cyclic_importer_can_observe_an_already_initialized_export() {
 }
 
 #[test]
-fn acyclic_observer_does_not_block_export_initialization_relocation() {
+fn globally_installed_cyclic_observer_cannot_see_an_initialized_future_export() {
+    let source = "import './observer.js';\nglobalThis.inspect();\nexport var callback = () => 1;\n";
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let outcome = run_fixture_to_gate_outcome(exported_callback_fixture(source, &chunks));
+    assert_node_result(&outcome.source, "undefined\n", "original cyclic source");
+    assert_node_result(&outcome.emitted, "function\n", "rejected emitted candidate");
+    assert!(
+        !outcome.accepted,
+        "the global observer must preserve the exported cell's initialization order"
+    );
+}
+
+#[test]
+fn transitive_cyclic_observer_cannot_see_an_initialized_future_export() {
+    let source =
+        "import { inspect } from './observer.js';\ninspect();\nexport var callback = () => 1;\n";
+    let chunks = [
+        (
+            "static/observer",
+            "import { read } from './reader.js';\nexport const inspect = () => read();\n",
+        ),
+        (
+            "static/reader",
+            "import { callback } from './app.js';\nexport function read() { console.log(typeof callback); }\n",
+        ),
+    ];
+    let outcome = run_fixture_to_gate_outcome(exported_callback_fixture(source, &chunks));
+    assert_node_result(&outcome.source, "undefined\n", "original transitive source");
+    assert_node_result(&outcome.emitted, "function\n", "rejected emitted candidate");
+    assert!(
+        !outcome.accepted,
+        "transitive observation must preserve cell initialization order"
+    );
+}
+
+#[test]
+fn global_cyclic_observer_can_read_an_already_initialized_export() {
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let fixture = run_fixture(exported_callback_fixture(
+        "import './observer.js';\nexport var callback = () => 1;\nglobalThis.inspect();\n",
+        &chunks,
+    ));
+    assert_preserved_entry_output(&fixture, "function\n");
+}
+
+#[test]
+fn transitive_observer_cell_constraints_survive_saved_analysis() {
+    let source =
+        "import { inspect } from './observer.js';\ninspect();\nexport var callback = () => 1;\n";
+    let chunks = [
+        (
+            "static/observer",
+            "import { read } from './reader.js';\nexport const inspect = () => read();\n",
+        ),
+        (
+            "static/reader",
+            "import { callback } from './app.js';\nexport function read() { console.log(typeof callback); }\n",
+        ),
+    ];
+    let (staged, _fixture) = staged(exported_callback_fixture(source, &chunks));
+    let invocation = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(3),
+        "{}",
+        invocation.result.stderr
+    );
+}
+
+#[test]
+fn global_observer_cell_constraints_survive_saved_analysis() {
+    let chunks = [("static/observer", GLOBAL_CYCLIC_OBSERVER)];
+    let (staged, _fixture) = staged(exported_callback_fixture(
+        "import './observer.js';\nglobalThis.inspect();\nexport var callback = () => 1;\n",
+        &chunks,
+    ));
+    let invocation = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    assert_eq!(
+        invocation.result.status.code(),
+        Some(3),
+        "{}",
+        invocation.result.stderr
+    );
+}
+
+#[test]
+fn unloaded_foreign_reader_split_keeps_export_at_source_phase() {
+    let chunks = [("static/observer", CYCLIC_OBSERVER)];
+    let source = "console.log('ready');\nexport var callback = () => 1;\n";
+    assert_schedule_refusal_preserves_source_and_candidate(
+        exported_callback_fixture(source, &chunks),
+        "ready\n",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "callbacks/value",
+                &[Member::new("callback")],
+                &["console.log('ready');"],
+            )],
+        )
+        .with_extra_chunks(&chunks)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "ready\n");
+}
+
+#[test]
+fn acyclic_observer_split_keeps_export_after_the_call() {
     let chunks = [(
         "static/observer",
         "export function inspect() { console.log('observed'); }\n",
     )];
-    let fixture = run_fixture(exported_callback_fixture(
-        "import { inspect } from './observer.js';\ninspect();\nexport var callback = () => 1;\n",
-        &chunks,
-    ));
+    let source =
+        "import { inspect } from './observer.js';\ninspect();\nexport var callback = () => 1;\n";
+    assert_schedule_refusal_preserves_source_and_candidate(
+        exported_callback_fixture(source, &chunks),
+        "observed\n",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "callbacks/value",
+                &[Member::new("callback")],
+                &["inspect();"],
+            )],
+        )
+        .with_extra_chunks(&chunks)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
     assert_preserved_entry_output(&fixture, "observed\n");
 }
 

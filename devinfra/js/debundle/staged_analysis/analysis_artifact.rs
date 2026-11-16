@@ -347,14 +347,30 @@ mod tests {
     /// exactly the facts a fresh analysis there computes.
     #[test]
     fn decodes_into_a_fresh_globals() {
-        let (bytes, debug_first) = GLOBALS.set(&Globals::new(), || {
+        let bindings = |body: &AnalysisArtifactBody| {
+            body.chunks
+                .values()
+                .flat_map(|chunk| &chunk.facts)
+                .flat_map(|fact| {
+                    fact.declared
+                        .iter()
+                        .chain(&fact.local_bindings)
+                        .chain(&fact.reads.eager)
+                        .chain(&fact.reads.lazy)
+                        .chain(&fact.rebinds.eager)
+                        .chain(&fact.rebinds.lazy)
+                })
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>()
+        };
+        let (bytes, bindings_first) = GLOBALS.set(&Globals::new(), || {
             let artifact = bundle(&[0, 1]);
             let body = analyze(&artifact);
             assert_shared_imported_cause(&body);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             (
                 write_artifact(&header(), &body, &ordinals).expect("encode"),
-                format!("{:?}", body.chunks),
+                bindings(&body),
             )
         });
         GLOBALS.set(&Globals::new(), || {
@@ -368,9 +384,12 @@ mod tests {
             assert_eq!(read, header());
             let decoded = read_body(body, &ordinals).expect("decode");
             assert_shared_imported_cause(&decoded);
-            let debug_fresh = format!("{:?}", fresh.chunks);
-            assert_ne!(debug_fresh, debug_first, "contexts are renumbered");
-            assert_eq!(format!("{:?}", decoded.chunks), debug_fresh);
+            let bindings_fresh = bindings(&fresh);
+            assert_ne!(bindings_fresh, bindings_first, "contexts are renumbered");
+            assert_eq!(bindings(&decoded), bindings_fresh);
+            // Compare all persisted facts through their codec below. Live
+            // arena availability and process-local ledgers deliberately differ
+            // from restored facts and are not a serialization contract.
             assert_eq!(
                 write_artifact(&header(), &decoded, &ordinals).expect("re-encode"),
                 write_artifact(&header(), &fresh, &ordinals).expect("encode fresh"),

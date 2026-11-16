@@ -8,10 +8,12 @@
 
 use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
 use crate::reports::schema::{
-    NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
+    NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativePrototypeMutation,
+    NativePrototypeMutationKind, NativeReceiverPath,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::Arc;
 
 /// One intrinsic slot. Each belongs to a census family. `Global`, `Static`,
 /// `PrototypeProperty` and `Species` slots are own properties, unknown only
@@ -291,6 +293,8 @@ pub(crate) struct IntrinsicIntact {
 /// and reflective writes, which the family census does not.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PrototypeWrites {
+    /// Number of sites, including symbol-only writes with no string keys.
+    site_count: usize,
     /// Writes whose key is unknown.
     any_key: usize,
     /// Writes per known string key.
@@ -302,20 +306,77 @@ impl PrototypeWrites {
     pub(crate) fn new<'a>(writes: impl IntoIterator<Item = Option<&'a BTreeSet<String>>>) -> Self {
         let mut counts = Self::default();
         for keys in writes {
-            match keys {
-                Some(keys) => {
-                    for key in keys {
-                        *counts.by_key.entry(key.clone()).or_default() += 1;
-                    }
-                }
-                None => counts.any_key += 1,
-            }
+            counts.add(keys);
         }
         counts
     }
 
+    fn add(&mut self, keys: Option<&BTreeSet<String>>) {
+        self.site_count += 1;
+        match keys {
+            Some(keys) => {
+                for key in keys {
+                    *self.by_key.entry(key.clone()).or_default() += 1;
+                }
+            }
+            None => self.any_key += 1,
+        }
+    }
+
     fn blocking(&self, property: &str) -> usize {
         self.any_key + self.by_key.get(property).copied().unwrap_or(0)
+    }
+
+    fn blocking_mutations(&self, property: Option<&str>) -> usize {
+        match property {
+            Some(property) => self.blocking(property),
+            None => self.site_count,
+        }
+    }
+}
+
+/// Shared totals and per-chunk counts for one immutable program census.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NativePrototypeMutationCensus {
+    total: Arc<PrototypeWrites>,
+    by_chunk: BTreeMap<String, PrototypeWrites>,
+    has_dynamic_scope: bool,
+}
+
+impl NativePrototypeMutationCensus {
+    pub(crate) fn from_mutations(mutations: &[NativePrototypeMutation]) -> Self {
+        let mut total = PrototypeWrites::default();
+        let mut by_chunk = BTreeMap::<String, PrototypeWrites>::new();
+        let mut has_dynamic_scope = false;
+        for mutation in mutations {
+            total.add(mutation.properties.as_ref());
+            by_chunk
+                .entry(mutation.chunk_id.clone())
+                .or_default()
+                .add(mutation.properties.as_ref());
+            has_dynamic_scope |= mutation.kind == NativePrototypeMutationKind::DynamicScope;
+        }
+        Self {
+            total: Arc::new(total),
+            by_chunk,
+            has_dynamic_scope,
+        }
+    }
+
+    pub(crate) fn total_writes(&self) -> Arc<PrototypeWrites> {
+        Arc::clone(&self.total)
+    }
+
+    pub(crate) fn foreign_blocking(&self, chunk_id: Option<&str>, property: Option<&str>) -> usize {
+        let total = self.total.blocking_mutations(property);
+        let local = chunk_id
+            .and_then(|chunk_id| self.by_chunk.get(chunk_id))
+            .map_or(0, |writes| writes.blocking_mutations(property));
+        total - local
+    }
+
+    pub(crate) fn has_dynamic_scope(&self) -> bool {
+        self.has_dynamic_scope
     }
 }
 
@@ -621,7 +682,7 @@ pub(crate) struct IntegrityFlags {
     own_slot_writes: OwnSlotWrites,
     census_dependencies: ProofDependencies,
     axioms: BTreeMap<u32, IntrinsicIntact>,
-    prototype_writes: PrototypeWrites,
+    prototype_writes: Arc<PrototypeWrites>,
     /// Families `program_premises.intrinsics_never_written` names: every slot
     /// of theirs is intact in a closed census.
     never_written: BTreeSet<NativeIntrinsic>,
@@ -635,7 +696,7 @@ impl IntegrityFlags {
         witnesses: &[NativeMutationWitness],
         census_dependencies: ProofDependencies,
         axioms: BTreeMap<u32, IntrinsicIntact>,
-        prototype_writes: PrototypeWrites,
+        prototype_writes: impl Into<Arc<PrototypeWrites>>,
     ) -> Self {
         let own_slot_writes = OwnSlotWrites::resolve(witnesses, &mutated, |slot| {
             prototype_slot_intact(&mutated, slot)
@@ -646,7 +707,7 @@ impl IntegrityFlags {
             own_slot_writes,
             census_dependencies,
             axioms,
-            prototype_writes,
+            prototype_writes: prototype_writes.into(),
             never_written: BTreeSet::new(),
         }
     }
@@ -867,6 +928,66 @@ fn prototype_slot_intact(mutated: &BTreeSet<NativeIntrinsic>, slot: IntrinsicSlo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::reports::schema::NativePrototypeMutation;
+    use source_identity::SourceUnitOrdinal;
+
+    fn prototype_mutation(
+        chunk_id: &str,
+        properties: Option<BTreeSet<&str>>,
+    ) -> NativePrototypeMutation {
+        NativePrototypeMutation {
+            chunk_id: chunk_id.to_owned(),
+            statement_ordinal: SourceUnitOrdinal(0),
+            source_location: None,
+            kind: NativePrototypeMutationKind::Write,
+            properties: properties
+                .map(|properties| properties.into_iter().map(str::to_owned).collect()),
+            key_dependencies: BTreeSet::new(),
+            span: swc_common::DUMMY_SP,
+        }
+    }
+
+    #[test]
+    fn prototype_census_shares_totals_and_preserves_per_chunk_counts() {
+        let census = NativePrototypeMutationCensus::from_mutations(&[
+            prototype_mutation("foreign.js", Some(BTreeSet::from(["x"]))),
+            prototype_mutation("foreign.js", Some(BTreeSet::from(["x", "y"]))),
+            prototype_mutation("foreign.js", None),
+            prototype_mutation("foreign.js", Some(BTreeSet::new())),
+            prototype_mutation("local.js", Some(BTreeSet::from(["x"]))),
+        ]);
+
+        let first_total = census.total_writes();
+        let second_total = census.total_writes();
+        assert!(Arc::ptr_eq(&first_total, &second_total));
+        assert_eq!(first_total.blocking("x"), 4);
+        assert_eq!(first_total.blocking_mutations(None), 5);
+        assert_eq!(census.foreign_blocking(Some("local.js"), Some("x")), 3);
+        assert_eq!(census.foreign_blocking(Some("local.js"), Some("y")), 2);
+        assert_eq!(census.foreign_blocking(Some("local.js"), None), 4);
+        assert_eq!(census.foreign_blocking(Some("unknown.js"), None), 5);
+    }
+
+    #[test]
+    fn native_integrity_census_cache_does_not_go_stale_after_public_input_changes() {
+        let integrity = crate::analysis_inputs::NativeIntegrity {
+            prototype_mutations: Arc::new(vec![prototype_mutation(
+                "foreign.js",
+                Some(BTreeSet::from(["x"])),
+            )]),
+            ..Default::default()
+        };
+        let original = integrity.prototype_mutation_census();
+        assert_eq!(original.foreign_blocking(None, None), 1);
+
+        let mut changed_integrity = integrity.clone();
+        Arc::make_mut(&mut changed_integrity.prototype_mutations)
+            .push(prototype_mutation("new.js", None));
+        let changed = changed_integrity.prototype_mutation_census();
+
+        assert_eq!(changed.foreign_blocking(None, None), 2);
+        assert_eq!(original.foreign_blocking(None, None), 1);
+    }
 
     fn reference() -> NativeOperationInputRef {
         NativeOperationInputRef {

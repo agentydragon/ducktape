@@ -76,9 +76,10 @@ The sections below hold details, not competing priority queues.
 ### Cyclic export-cell observation soundness
 
 - Cover future export-cell observations by arbitrary unknown execution.
-  The partial source-derived may-read path handles direct imported function
-  declarations and local aliases; it does not cover transitive calls,
-  re-export chains, namespace calls or host/global callees. The broad fence
+  Source-derived foreign lazy reads constrain global and transitive observers
+  reached through static imports. Re-export and namespace identities, eager
+  foreign copies, and namespace aliases still need whole-program cell flow.
+  The broad fence
   tried in draft #16539 rejects the frozen Excalidraw spec (868-unit atomic
   group). <debug/2026_11_14_cyclic_export_cells.md> records the reproduction,
   exact checks, policy blockers and witness. Next lane: establish loader
@@ -171,9 +172,14 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   Close when those production paths neither reparse prepared entries nor build
   duplicate structural censuses, while exact source sites, repeated declarations,
   hygiene, provenance and staged replay remain stable. Preserve `SourceWithAst`
-  mutation invalidation, its release at the `EmissionFiles` boundary, and actual
+  mutation invalidation, read-only retention through final schedule validation, and actual
   source-marker/pass-through-byte controls. Profile retention and memory before
-  claiming a performance improvement.
+  claiming a performance improvement. The
+  [maintained-spec resource probe](debug/2026_11_15_maintained_spec_resource_limits.md)
+  records a failed CLI run and repeated whole-program prototype histograms and
+  foreign-effect map copies. Share immutable census data separately from local
+  activation deltas; retain exact blocker counts, witnesses, premises and
+  direct/saved behavior before measuring the same inputs again.
 
 - **AR6 — Make the limits of source-order ESM lowering explicit.**
   <graph/edge.rs> encodes co-location for shared declarations and rejects writes

@@ -11,7 +11,6 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use analysis::SequencedCause;
 use debundle_e2e_support::*;
 use serde::Deserialize;
 use serde_json::Value;
@@ -202,7 +201,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
 
     assert_eq!(report["totals"]["proposals"], 3, "{report:#}");
     assert_eq!(report["totals"]["rejected"], 0, "{report:#}");
-    assert_eq!(report["totals"]["needs_co_location"], 2, "{report:#}");
+    assert_eq!(report["totals"]["needs_co_location"], 1, "{report:#}");
     assert!(array(&report, "rejected").is_empty(), "{report:#}");
     let proposals = array(&report, "proposals");
     assert_eq!(
@@ -225,17 +224,18 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert_eq!(second["rank_reason"], "partial_cut");
     assert_eq!(second["single_pair_cut"], false);
     assert_eq!(second["cut_edges"], serde_json::json!([0]));
-    assert_eq!(second["remaining_module_pair_edges"], 3);
+    assert_eq!(second["remaining_module_pair_edges"], 2);
     assert_eq!(third["rank"], 3);
     assert_eq!(third["rank_reason"], "partial_cut");
     assert_eq!(third["single_pair_cut"], false);
     assert_eq!(third["cut_edges"], serde_json::json!([0]));
     // beta must still follow the record installation through alpha.
-    assert_eq!(third["remaining_module_pair_edges"], 4);
+    assert_eq!(third["remaining_module_pair_edges"], 3);
 
     // Rank 2 is only a candidate to inert the callback's possible `trace`
-    // observation. The two eager-use edges remain co-location requirements;
-    // this proposal does not establish that `trace` can move past beta's call.
+    // observation. The unresolved eager-use edge remains a co-location
+    // requirement; this proposal does not establish that `trace` can move
+    // past beta's call.
     let [trace_inerted] = array(second, "inerted_edges") else {
         panic!("one inerted trace edge: {second:#}");
     };
@@ -253,7 +253,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
         })
     );
     let needs = array(&report, "needs_co_location");
-    assert_eq!(needs.len(), 2, "{report:#}");
+    assert_eq!(needs.len(), 1, "{report:#}");
     let graph = rejected.dependency_graph();
     let positions: Vec<Value> = needs
         .iter()
@@ -267,10 +267,7 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
         .collect();
     assert_eq!(
         positions,
-        vec![
-            serde_json::json!({ "kind": "promoted_at_init", "callee_source_unit": "unit:1" }),
-            serde_json::json!({ "kind": "unresolved_at_init_call" }),
-        ],
+        vec![serde_json::json!({ "kind": "unresolved_at_init_call" })],
         "eager-use causes remain visible: {report:#}"
     );
 
@@ -337,10 +334,10 @@ fn sequenced_only_cycle_proposes_the_pair_the_gate_accepts() {
     assert!(scc.get("residual_components").is_none(), "{scc:#}");
 }
 
-/// The proposer must account for the gate's preserved-order closure when it
-/// predicts whether a pair cuts an SCC. Removing beta/gamma's original edge
-/// preserves alpha/gamma's order, which leaves the cycle through delta's eager
-/// read of alpha in place.
+/// The proposer must account for the gate's heap-effect order when it predicts
+/// whether a pair cuts an SCC. Removing beta/gamma's original edge leaves the
+/// read-before-write order between gamma and alpha, so the mutator/observer
+/// cycle remains.
 #[test]
 fn proposal_cut_prediction_includes_preserved_order_closure() {
     let rejected = run_rejection_fixture_with_graphs(preserved_order_frontier_fixture(vec![]));
@@ -357,7 +354,12 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
     let scc = only_scc(&report);
     assert_eq!(scc["verdict"], "pairs_cannot_break", "{report:#}");
     assert_eq!(scc["counts_are_lower_bounds"], true, "{report:#}");
-    assert!(blocking_rows(scc).contains(&("sequenced".to_owned(), "preserved_order".to_owned())));
+    assert!(
+        blocking_rows(scc)
+            .iter()
+            .any(|(kind, _)| kind == "sequenced"),
+        "{scc:#}"
+    );
     let [residual] = array(scc, "residual_components") else {
         panic!("one residual component: {scc:#}");
     };
@@ -392,12 +394,9 @@ fn proposal_cut_prediction_includes_preserved_order_closure() {
             edge.source == alpha
                 && edge.target == gamma
                 && edge.constrains_init_order
-                && matches!(
-                    edge.sequenced_cause,
-                    Some(SequencedCause::PreservedOrder { .. })
-                )
+                && edge.sequenced_cause.is_some()
         }),
-        "the gate must retain alpha -> gamma as preserved order: {graph:#?}"
+        "the gate must retain a sequenced alpha -> gamma proof: {graph:#?}"
     );
 }
 

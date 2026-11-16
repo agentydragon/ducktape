@@ -4,7 +4,6 @@ use super::allocation_transfer::AllocationJudgment;
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
 use crate::facts::abstract_domain::value::Value;
-use crate::facts::statement_facts::HeapContentAccesses;
 
 /// A completion summary. `OpaqueMayNormal` preserves a possible normal
 /// payload while recording unresolved behavior separately from throws.
@@ -56,6 +55,24 @@ pub(super) struct NonNormalPossibilities {
 }
 
 impl<N, A> Completion<N, A> {
+    /// A schedule can stop on a definite uncaught throw. An unresolved or
+    /// diverging alternative is not evidence of the same terminal outcome.
+    pub(super) fn module_completion(&self) -> crate::program_execution::schedule::OwnerCompletion {
+        use crate::program_execution::schedule::OwnerCompletion;
+        match self {
+            Self::Normal(_) => OwnerCompletion::Normal,
+            Self::UnknownThrow(_) | Self::Abrupt(_) => OwnerCompletion::Abrupt,
+            Self::Alternatives {
+                normal: None,
+                abrupt,
+                non_normal,
+            } if !abrupt.is_empty() && *non_normal == NonNormalPossibilities::default() => {
+                OwnerCompletion::Abrupt
+            }
+            _ => OwnerCompletion::Unknown,
+        }
+    }
+
     pub(super) fn is_exact_normal(&self) -> bool {
         matches!(self, Self::Normal(_))
     }
@@ -219,7 +236,7 @@ pub(super) struct TransferLedger<N, A> {
     /// Heap cells this transfer read or wrote. Whether the path was assumed,
     /// and whether an isolated scope keeps them private, is the adopter's
     /// decision.
-    pub(super) heap_accesses: HeapContentAccesses,
+    pub(super) heap_accesses: crate::program_execution::RuntimeHeapContentAccesses,
 }
 
 impl<N, A> TransferLedger<N, A> {
@@ -232,7 +249,7 @@ impl<N, A> TransferLedger<N, A> {
             completion,
             effects,
             allocation,
-            heap_accesses: HeapContentAccesses::default(),
+            heap_accesses: Default::default(),
         }
     }
 }

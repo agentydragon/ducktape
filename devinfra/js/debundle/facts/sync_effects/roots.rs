@@ -16,11 +16,16 @@ impl Executor<'_, '_> {
     pub(super) fn execute_owner(&mut self, owner: SourceUnitOrdinal) -> SynchronousCalls {
         let mut root = operands::prepare(self, owner);
         let mut body = body::execute(self, &mut root);
-        self.publish_top_sources(owner, &root.top_env, &root.top_captures);
-        self.iterate_top_sources(owner, &root.top_env, &root.top_captures, &mut body.outcome);
+        if body.outcome.effects.completion
+            != crate::program_execution::schedule::OwnerCompletion::Abrupt
+        {
+            self.publish_top_sources(owner, &root.top_env, &root.top_captures);
+            self.iterate_top_sources(owner, &root.top_env, &root.top_captures, &mut body.outcome);
+        }
         let assigned = assignment::assign(self, &mut root, body);
+        let program_inputs = self.inputs;
         let Executor {
-            inputs,
+            inputs: _,
             state,
             observations,
             queries,
@@ -28,7 +33,7 @@ impl Executor<'_, '_> {
             ..
         } = self;
         finalize::finalize(
-            inputs,
+            program_inputs,
             state,
             observations,
             queries,

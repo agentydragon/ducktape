@@ -58,12 +58,16 @@ fn modules(effect: MemberEffect) -> Vec<LogicalModuleEntry> {
 
 #[test]
 fn three_argument_metadata_keeps_getters_deferred_and_inheritance_intact() {
+    let mut claimed = modules(MemberEffect::TypescriptMetadataDecorateHelperThreeArgs);
+    claimed[3] = logical_module_with_anon(
+        "values/later",
+        &[Member::new("later")],
+        &[
+            "console.log(new Child().read, annotationsOf(Child.prototype), new Base().read, annotationsOf(Base.prototype));",
+        ],
+    );
     let fixture = run_fixture(
-        FixtureOpts::new(
-            SOURCE,
-            modules(MemberEffect::TypescriptMetadataDecorateHelperThreeArgs),
-        )
-        .with_extra_chunks(&[("static/peer", PROVIDER)]),
+        FixtureOpts::new(SOURCE, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
     assert_preserved_entry_output(&fixture, "42 read,own 1 read\n");
 }

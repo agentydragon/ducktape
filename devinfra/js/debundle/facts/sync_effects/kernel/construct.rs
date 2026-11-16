@@ -14,7 +14,7 @@ use swc_common::Span;
 /// `this` is the fresh instance the adapter named for this construction.
 pub(in crate::facts::sync_effects) fn bind_receiver(
     frame: &mut LocalFrame,
-    class: u32,
+    class: crate::program_execution::RuntimeAllocationId,
     instance: Values,
 ) {
     frame.inputs.extend(instance.iter().cloned());

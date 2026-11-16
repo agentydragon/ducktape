@@ -20,6 +20,7 @@ use super::naturalize_cross_chunk_imports;
 /// Canonical materialization output before whole-program rewrites. The only
 /// operation consumes the draft and runs every final rewrite in order.
 pub struct CandidateEmissionDraft {
+    evaluation_plan: Option<super::evaluation_schedule::EvaluationPlan>,
     files: EmissionFiles,
     vendor_plan: Arc<VendorResolutionPlan>,
     selected_lowerings: Vec<SelectedModuleLowering>,
@@ -32,6 +33,7 @@ pub struct CandidateEmissionDraft {
 /// The emitted files after naturalization, vendor rewrites, and both prune
 /// stages. No mutable file access remains; reconstruction consumes it.
 pub struct FinalizedCandidateEmissionDraft {
+    evaluation_refusal: Option<analysis::program_execution::schedule::EvaluationScheduleRefusal>,
     files: EmissionFiles,
     vendor_plan: Arc<VendorResolutionPlan>,
     references_by_symbol: BTreeMap<(ChunkId, String), usize>,
@@ -45,8 +47,10 @@ impl CandidateEmissionDraft {
         selected_lowerings: Vec<SelectedModuleLowering>,
         materialized_chunks: BTreeSet<String>,
         vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+        evaluation_plan: Option<super::evaluation_schedule::EvaluationPlan>,
     ) -> Self {
         Self {
+            evaluation_plan,
             files,
             vendor_plan,
             selected_lowerings,
@@ -61,6 +65,7 @@ impl CandidateEmissionDraft {
         vendor_plan: Arc<VendorResolutionPlan>,
     ) -> Self {
         Self {
+            evaluation_plan: None,
             files: EmissionFiles::from_prepared(source_program),
             vendor_plan,
             selected_lowerings: Vec::new(),
@@ -72,6 +77,7 @@ impl CandidateEmissionDraft {
     /// Run the fixed whole-program rewrite sequence.
     pub fn finalize(self) -> Result<FinalizedCandidateEmissionDraft> {
         let Self {
+            evaluation_plan,
             files,
             vendor_plan,
             selected_lowerings,
@@ -125,7 +131,16 @@ impl CandidateEmissionDraft {
             Ok(())
         })?;
 
+        let evaluation_refusal = evaluation_plan.and_then(|plan| {
+            plan.validate(&files).err().map(|error| {
+                analysis::program_execution::schedule::EvaluationScheduleRefusal::from_error(
+                    None, error,
+                )
+            })
+        });
+
         Ok(FinalizedCandidateEmissionDraft {
+            evaluation_refusal,
             files,
             vendor_plan,
             references_by_symbol,
@@ -135,6 +150,12 @@ impl CandidateEmissionDraft {
 }
 
 impl FinalizedCandidateEmissionDraft {
+    pub fn evaluation_refusal(
+        &self,
+    ) -> Option<&analysis::program_execution::schedule::EvaluationScheduleRefusal> {
+        self.evaluation_refusal.as_ref()
+    }
+
     pub fn files(&self) -> &EmissionFiles {
         &self.files
     }

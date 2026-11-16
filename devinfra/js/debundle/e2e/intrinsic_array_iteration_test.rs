@@ -57,11 +57,63 @@ fn assert_early_iteration_rejected_with_executor(
     );
 }
 
-/// The split is accepted and the emitted entry prints what the source does:
-/// the callback ran on every element without invoking their stored
-/// `executor` callbacks, which read `later`.
-fn assert_iteration_split_accepted(collection: &str, trailing: &str, expected: &str) {
-    assert_iteration_split_accepted_after("", collection, trailing, expected);
+/// Keep the precise schedule refusal while retaining the independent graph
+/// proof and a same-source colocated control.
+fn assert_iteration_schedule_refusal_for_reason(
+    opts: FixtureOpts<'_>,
+    reason: &str,
+    expected: &str,
+) {
+    let rejected = assert_conservative_schedule_refusal(opts.clone(), reason, expected);
+    assert_eq!(
+        rejected.candidate_relocation_assessment()["legacy_gate_accepts"],
+        true,
+        "the independent row and graph proof must survive the schedule limit"
+    );
+    let mut colocated = opts;
+    colocated.logical_modules.clear();
+    let fixture = run_fixture(colocated);
+    assert_preserved_entry_output(&fixture, expected);
+}
+
+fn assert_iteration_schedule_refusal(opts: FixtureOpts<'_>, expected: &str) {
+    assert_iteration_schedule_refusal_for_reason(
+        opts,
+        "evaluation_schedule_unknown_reordered",
+        expected,
+    );
+}
+
+fn assert_iteration_split_refused_after(
+    setup: &str,
+    collection: &str,
+    trailing: &str,
+    expected: &str,
+) {
+    let source = format!(
+        "let later = 0;\n{setup}\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst result = {collection};\n{trailing}\nlater = 42;\nconsole.log(JSON.stringify(result), entries[0].executor());\n"
+    );
+    let mut steps = Vec::new();
+    if !setup.is_empty() {
+        steps.push(setup);
+    }
+    if !trailing.is_empty() {
+        steps.push(trailing);
+    }
+    assert_iteration_schedule_refusal(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("entries"), Member::new("result")],
+                    &steps,
+                ),
+                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            ],
+        ),
+        expected,
+    );
 }
 
 fn assert_iteration_split_accepted_after(
@@ -80,7 +132,7 @@ fn assert_iteration_split_accepted_after(
     if !trailing.is_empty() {
         steps.push(trailing);
     }
-    let fixture = run_fixture(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(FixtureOpts::new(
         &source,
         vec![
             logical_module_with_anon(
@@ -92,19 +144,49 @@ fn assert_iteration_split_accepted_after(
         ],
     ));
     assert_preserved_entry_output(&fixture, expected);
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/registry.js",
+        &["entries", "result"],
+        &[],
+    );
+    assert_module_exports(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["later"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/registry.js",
+        &["const entries", "const result"],
+        &["let later", "later = 42"],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["let later", "later = 42"],
+        &["const entries", "const result"],
+    );
 }
 
 #[test]
-fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
+fn primitive_reduction_splits_with_source_and_emitted_node_parity() {
+    assert_iteration_split_accepted_after(
+        "",
+        "entries.reduce((total, entry) => total + entry.size, 0)",
+        "",
+        "3 42\n",
+    );
+}
+
+#[test]
+fn other_row_operations_preserve_proofs_but_refuse_unproved_completion_splits() {
     for (collection, expected) in [
         ("entries.some(entry => entry.id === 'b')", "true 42\n"),
         ("entries.every(entry => entry.size > 0)", "true 42\n"),
         ("entries.findIndex(entry => entry.id === 'b')", "1 42\n"),
         ("entries.find(entry => entry.id === 'b').size", "2 42\n"),
-        (
-            "entries.reduce((total, entry) => total + entry.size, 0)",
-            "3 42\n",
-        ),
         ("entries.reduce((first, entry) => first).id", "\"a\" 42\n"),
         (
             "entries.flatMap(entry => [entry.id, entry.size])",
@@ -112,7 +194,7 @@ fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
         ),
         ("entries.flatMap(entry => entry.id)", "[\"a\",\"b\"] 42\n"),
     ] {
-        assert_iteration_split_accepted(collection, "", expected);
+        assert_iteration_split_refused_after("", collection, "", expected);
     }
 }
 
@@ -120,14 +202,14 @@ fn iteration_rows_run_callbacks_without_invoking_stored_element_callbacks() {
 /// global object, to `Array` statics, or to `Object.prototype` under other keys
 /// leave them intact.
 #[test]
-fn unrelated_intrinsic_writes_leave_iteration_rows_intact() {
+fn unrelated_intrinsic_writes_leave_rows_intact_but_split_completion_unproved() {
     for setup in [
         "globalThis.appState = { ready: true };",
         "Array.from = Array.from;",
         "Array.prototype.unrelated = function () { return later; };",
         "Object.defineProperty(Object.prototype, 'unrelated', { value: 1, configurable: true });",
     ] {
-        assert_iteration_split_accepted_after(
+        assert_iteration_split_refused_after(
             setup,
             "entries.map(entry => entry.size)",
             "",
@@ -203,21 +285,28 @@ fn iteration_results_keep_retained_element_capabilities() {
 }
 
 #[test]
-fn callback_writes_stay_ordered_before_later_readers() {
+fn callback_writes_remain_proved_but_split_completion_is_unproved() {
     let source = "let later = 0;\nlet seen = 0;\nconst entries = [{ id: 'a' }, { id: 'b' }];\nentries.some(entry => { seen += 1; return entry.id === 'b'; });\nconst copy = seen;\nlater = 42;\nconsole.log(copy, seen, later);\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "registry",
-                &[Member::new("seen"), Member::new("entries")],
-                &["entries.some(entry => { seen += 1; return entry.id === 'b'; });"],
-            ),
-            logical_module("readers", &[Member::new("copy")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "2 2 42\n");
+    assert_iteration_schedule_refusal_for_reason(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "registry",
+                    &[Member::new("seen"), Member::new("entries")],
+                    &["entries.some(entry => { seen += 1; return entry.id === 'b'; });"],
+                ),
+                logical_module("readers", &[Member::new("copy")]),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(copy, seen, later);"],
+                ),
+            ],
+        ),
+        "evaluation_schedule_availability_unknown",
+        "2 2 42\n",
+    );
 }
 
 #[test]
@@ -495,19 +584,21 @@ fn iterating_function_values_stores_them_without_invoking_them() {
         source,
         vec![
             logical_module("registry", &[Member::new("entries"), Member::new("result")]),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+            logical_module_with_anon(
+                "values/later",
+                &[Member::new("later")],
+                &["later = 42;", "console.log(result[0]());"],
+            ),
         ],
     ));
     assert_preserved_entry_output(&fixture, "42\n");
 }
 
 #[test]
-fn prior_unknown_call_does_not_make_fresh_primitive_cache_writes_run_unrelated_getters() {
+fn prior_unknown_call_keeps_primitive_cache_proof_but_refuses_split_completion() {
     let source = "import { prepare } from './peer.js';\nlet later = 0;\nconst ids = { tool: 'tool-id' };\nconst entries = [{ id: ids.tool, name: 'tool', run: () => later }];\nconst lookup = {};\nconst latent = { get value() { return later; } };\nprepare();\nentries.forEach(entry => { lookup[entry.id] = entry.name; });\nlater = 42;\nconsole.log(lookup['tool-id'], entries[0].run());\n";
     let peers = [("static/peer", "export function prepare() { return 0; }\n")];
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&peers));
-    assert_preserved_entry_output(&fixture, "tool 42\n");
-    let fixture = run_fixture(
+    assert_iteration_schedule_refusal(
         FixtureOpts::new(
             source,
             vec![
@@ -524,12 +615,19 @@ fn prior_unknown_call_does_not_make_fresh_primitive_cache_writes_run_unrelated_g
                         "entries.forEach(entry => { lookup[entry.id] = entry.name; });",
                     ],
                 ),
-                logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &[
+                        "later = 42;",
+                        "console.log(lookup['tool-id'], entries[0].run());",
+                    ],
+                ),
             ],
         )
         .with_extra_chunks(&peers),
+        "tool 42\n",
     );
-    assert_preserved_entry_output(&fixture, "tool 42\n");
 }
 
 #[test]
@@ -644,13 +742,13 @@ fn mapped_fallthrough_values_preserve_undefined_default_consumers() {
 }
 
 #[test]
-fn default_instanceof_does_not_execute_unused_constructor_methods() {
+fn default_instanceof_preserves_unused_method_proof_but_refuses_split_completion() {
     for value in ["({})", "getValue()"] {
         let source = format!(
             "import {{ getValue }} from './peer.js';\nlet later = 0;\nclass Matcher {{ unused() {{ return later; }} }}\nconst matches = {value} instanceof Matcher;\nlater = 42;\nconsole.log(matches);\n"
         );
         let peers = [("static/peer", "export function getValue() { return {}; }\n")];
-        let fixture = run_fixture(
+        assert_iteration_schedule_refusal(
             FixtureOpts::new(
                 &source,
                 vec![
@@ -661,13 +759,13 @@ fn default_instanceof_does_not_execute_unused_constructor_methods() {
                     logical_module_with_anon(
                         "values/later",
                         &[Member::new("later")],
-                        &["later = 42;"],
+                        &["later = 42;", "console.log(matches);"],
                     ),
                 ],
             )
             .with_extra_chunks(&peers),
+            "false\n",
         );
-        assert_preserved_entry_output(&fixture, "false\n");
     }
 }
 
@@ -727,25 +825,29 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
 }
 
 #[test]
-fn getter_triggered_async_work_keeps_future_reads_after_await() {
+fn getter_triggered_async_work_keeps_post_await_read_proof_but_refuses_split_completion() {
     let source = "let later = 0;\nclass Reader { static async read() { await 0; console.log(later); } }\nconst holder = { get value() { Reader.read(); return 0; } };\nconst observed = holder.value;\nlater = 42;\nconsole.log(observed);\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
-    assert_preserved_entry_output(&fixture, "0\n42\n");
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "registry",
-                &[
-                    Member::new("Reader"),
-                    Member::new("holder"),
-                    Member::new("observed"),
-                ],
-            ),
-            logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
-        ],
-    ));
-    assert_preserved_entry_output(&fixture, "0\n42\n");
+    assert_iteration_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "registry",
+                    &[
+                        Member::new("Reader"),
+                        Member::new("holder"),
+                        Member::new("observed"),
+                    ],
+                ),
+                logical_module_with_anon(
+                    "values/later",
+                    &[Member::new("later")],
+                    &["later = 42;", "console.log(observed);"],
+                ),
+            ],
+        ),
+        "0\n42\n",
+    );
 }
 
 #[test]

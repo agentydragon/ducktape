@@ -66,6 +66,9 @@ pub struct UnmatchedSpecClaim {
 /// Which realizability-gate check rejected a chunk's assignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
 pub enum GateVerdict {
+    /// Final ESM loader/evaluation schedule differs without a proof.
+    #[strum(to_string = "evaluation schedule refused")]
+    EvaluationSchedule,
     /// Members of one atomic group were claimed by different modules.
     #[strum(to_string = "{count} atomic-group conflict(s)")]
     AtomicGroupConflicts { count: usize },

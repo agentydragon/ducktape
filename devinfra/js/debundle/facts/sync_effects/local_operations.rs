@@ -1119,7 +1119,7 @@ fn ordered_primitive_binary(op: BinaryOp) -> bool {
 
 impl LocalBody {
     pub(super) fn from_initializer(expression: &Expr) -> Option<Self> {
-        let mut body = Self::lower_expression_with_binary(std::iter::empty(), expression, false)?;
+        let mut body = Self::lower_expression_with_binary(std::iter::empty(), expression, true)?;
         body.root_span = Some(expression.span());
         Some(body)
     }
@@ -1136,6 +1136,27 @@ impl LocalBody {
         );
         body.root_span = Some(expression.span());
         Self::without_constructions(body)
+    }
+
+    /// A module statement candidate for the completion lane. Unsupported
+    /// control stays unknown; this uses the same kernel operations as calls.
+    pub(super) fn from_root_statement(statement: &Stmt) -> Option<Self> {
+        match statement {
+            Stmt::Expr(statement) => Self::from_expression_statement(&statement.expr),
+            Stmt::Throw(statement) => {
+                let mut body = Self::from_operations(
+                    BTreeMap::new(),
+                    Vec::new(),
+                    vec![LocalOperation::Throw(LocalExpression::lower(
+                        &statement.arg,
+                        false,
+                    )?)],
+                );
+                body.root_span = Some(statement.span);
+                Self::without_constructions(body)
+            }
+            _ => None,
+        }
     }
 
     /// `target = value` as the whole root statement, where the value runs no

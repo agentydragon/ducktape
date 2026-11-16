@@ -72,6 +72,9 @@ impl ReconstructionPlan {
         browser_options: Option<&spec::EmitBrowserHarnessConfig>,
         vendor_manifest: Option<VendorManifestOutput>,
     ) -> Result<Self> {
+        if let Some(refusal) = candidate.evaluation_refusal() {
+            return Err(refusal.clone().into());
+        }
         let global_use_elisions = candidate.global_use_elisions().clone();
         let (files, vendor) = candidate.into_files_and_vendor_plan();
         let browser_harness = browser_options
@@ -209,7 +212,21 @@ impl RejectedPlan {
         rejections: Vec<ChunkGateRejection>,
         unresolved_claims: &[UnmatchedSpecClaim],
     ) -> Result<Self> {
+        let schedule_refused = candidate.evaluation_refusal().is_some();
         let (files, vendor) = candidate.into_files_and_vendor_plan();
+        let files = if schedule_refused {
+            // Comments mark diagnostic files without changing the validated AST.
+            files.rewrite_bodies(|bundle, _| {
+                for id in bundle.list_chunk_ids() {
+                    for file in &mut bundle.js_chunk_mut(id)?.files {
+                        file.header_lines.insert(0, "// GATE_REJECTED: NOT RUNNABLE. Evaluation schedule refused; see the GATE_REJECTED marker at the output root.".to_owned());
+                    }
+                }
+                Ok(())
+            })?.0
+        } else {
+            files
+        };
         ensure!(
             !rejections.is_empty(),
             "a rejected plan needs at least one gate rejection"

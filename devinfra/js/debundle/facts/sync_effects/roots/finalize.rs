@@ -4,7 +4,7 @@
 //! writes only the execution state and the run-level observations it drains.
 
 use super::super::effect_coverage::BindingEffectCoverage;
-use super::super::interpreter::{ExecutionInputs, ExecutionState, Observations, Outcome};
+use super::super::interpreter::{ExecutionProgramInputs, ExecutionState, Observations};
 use super::super::noninvoking_initialization::CompletedInitialization;
 use super::super::runtime_inference::RuntimeQueries;
 use super::super::value_model::AbstractValue;
@@ -17,7 +17,7 @@ use crate::facts::evaluation_effects::EvaluationEffects;
 use crate::facts::statement_facts::SynchronousCalls;
 
 pub(super) fn finalize(
-    inputs: &ExecutionInputs<'_>,
+    program_inputs: &ExecutionProgramInputs<'_>,
     state: &mut ExecutionState,
     observations: &mut Observations,
     queries: &RuntimeQueries<'_, '_>,
@@ -25,6 +25,7 @@ pub(super) fn finalize(
     root: RootOperands<'_>,
     assigned: RootAssignment,
 ) -> SynchronousCalls {
+    let inputs = program_inputs.active_source(state.current_source);
     let index = inputs.index;
     let RootOperands {
         owner,
@@ -39,6 +40,7 @@ pub(super) fn finalize(
         record_factory_rejection,
         checked_local_constructor_factory,
         provisional_roots,
+        ordered_initializer,
         ordered_statement,
         effect_initializer_source,
         ..
@@ -47,6 +49,8 @@ pub(super) fn finalize(
         mut outcome,
         evaluated_initializer,
     } = assigned;
+    outcome.project_runtime_binding_effects(index.source_scope());
+    outcome.project_runtime_heap_effects(index.source_scope());
     if !state
         .world
         .classes
@@ -88,7 +92,7 @@ pub(super) fn finalize(
         && outcome.complete
         && !outcome.unknown_call
         && outcome.effects.precision_losses.is_empty()
-        && outcome.effects.uninitialized_reads.is_empty()
+        && !outcome.runtime_binding_effects.has_uninitialized_reads()
         && let Some(proof) = checked_local_constructor_factory
     {
         let dependencies = observations.dependencies().clone();
@@ -118,23 +122,53 @@ pub(super) fn finalize(
     state.world_mut().module.top_captures = top_captures;
     state.clear_invocation_memos(queries);
     state.invocation_count = 0;
-    state.fallback_outcome = Outcome::default();
-    state.fallback_callback_sizes = None;
-    state.fallback_local_owners.clear();
-    state.fallback_local_deferred.clear();
+    let complete_operation_effects = outcome.has_complete_operation_effects()
+        && ((ordered_statement.is_some() && super::body::attempt_seal(&outcome, None).is_ok())
+            || (ordered_initializer.is_some()
+                && super::body::attempt_seal(&outcome, Some(calls)).is_ok()));
     for key in std::mem::take(&mut state.statement_invoked_callables) {
-        if let Some(cells) = inputs.callable_heap_contents.get(&key) {
-            outcome.effects.heap_contents.extend(cells);
+        // A completed owner carries the effects of every operation it ran.
+        // The source census is for incomplete execution and discarded probes;
+        // merging it into checked execution loses actual operands and turns
+        // an imported, read-only callback into an opaque heap barrier.
+        if complete_operation_effects {
+            continue;
+        }
+        let projection = inputs.index.source_scope();
+        if let Some(source) = program_inputs.source_for_scope(key.source)
+            && let Some(cells) = source
+                .index
+                .local_origin(key)
+                .and_then(|local| source.callable_heap_contents.get(&local))
+        {
+            outcome.record_runtime_heap_contents(
+                projection,
+                key.source,
+                &key.source.qualify_heap(cells),
+                false,
+            );
+        } else if key.source != inputs.index.source_scope() {
+            // A discarded probe still cannot erase unavailable foreign effects.
+            outcome.record_runtime_heap_contents(
+                projection,
+                key.source,
+                &crate::program_execution::RuntimeHeapContentCells {
+                    opaque: true,
+                    observes_external_heap: true,
+                    ..Default::default()
+                },
+                false,
+            );
         }
     }
     if outcome.effects.local_record_factory_heap_call.is_some() {
-        outcome.effects.heap_contents = crate::facts::HeapContentCells::default();
-        outcome.effects.non_assumed_heap_accesses = Default::default();
+        outcome
+            .discard_source_heap_effects(inputs.index.source_scope(), inputs.index.source_scope());
     }
     let proven_reads = if outcome.complete
         && !outcome.unknown_call
         && outcome.effects.precision_losses.is_empty()
-        && outcome.effects.uninitialized_reads.is_empty()
+        && !outcome.runtime_binding_effects.has_uninitialized_reads()
     {
         outcome
             .effects
@@ -151,7 +185,9 @@ pub(super) fn finalize(
         &proven_reads,
         observations.dependencies(),
     );
-    let mut prior_effect_owners = outcome.executed_owners.clone();
+    let mut prior_effect_owners: std::collections::BTreeSet<_> = outcome
+        .local_executed_owners(inputs.index.source_scope())
+        .collect();
     prior_effect_owners.retain(|owner| {
         !state
             .world
@@ -176,11 +212,6 @@ pub(super) fn finalize(
     state.statement_executed_owners.clear();
     state
         .world_mut()
-        .publication
-        .returned_callback_owners
-        .clear();
-    state
-        .world_mut()
         .classes
         .private_constructor_result_owners
         .clear();
@@ -203,7 +234,7 @@ pub(super) fn finalize(
     if outcome.complete
         && !outcome.unknown_call
         && outcome.effects.precision_losses.is_empty()
-        && outcome.effects.uninitialized_reads.is_empty()
+        && !outcome.runtime_binding_effects.has_uninitialized_reads()
         && let (Some(source), Some(evaluated)) = (initializer_source, evaluated_initializer)
     {
         outcome.effects.completed_initialization =
@@ -213,7 +244,7 @@ pub(super) fn finalize(
         && outcome.complete
         && !outcome.unknown_call
         && outcome.effects.precision_losses.is_empty()
-        && outcome.effects.uninitialized_reads.is_empty()
+        && !outcome.runtime_binding_effects.has_uninitialized_reads()
         && let Some((source, binding, span)) = effect_initializer_source
     {
         outcome.effects.completed_initialization = CompletedInitialization::from_root_effects(
@@ -223,6 +254,7 @@ pub(super) fn finalize(
             span,
             &state.world.module.initialized_bindings,
             &outcome.effect_coverage,
+            initializer_source,
         );
     }
     // The body phase keeps an attempted statement only when it seals.
@@ -272,7 +304,7 @@ pub(super) fn finalize(
                 OwnerInitializationCoverageRefusalReason::UnknownCall
             } else if !outcome.effects.precision_losses.is_empty() {
                 OwnerInitializationCoverageRefusalReason::PrecisionLoss
-            } else if !outcome.effects.uninitialized_reads.is_empty() {
+            } else if outcome.runtime_binding_effects.has_uninitialized_reads() {
                 OwnerInitializationCoverageRefusalReason::UninitializedRead
             } else if !outcome.complete {
                 OwnerInitializationCoverageRefusalReason::IncompleteExecution
@@ -307,7 +339,8 @@ pub(super) fn finalize(
                 && outcome.complete
                 && !outcome.unknown_call
                 && outcome.effects.precision_losses.is_empty()
-                && outcome.effects.uninitialized_reads.is_empty()
+                && !outcome.runtime_binding_effects.has_uninitialized_reads()
+                && !outcome.runtime_binding_effects.has_fallback_effects()
                 && outcome.effects.fallback_only.reads.is_empty()
                 && outcome.effects.fallback_only.rebinds.is_empty())
             .then(|| {
@@ -331,5 +364,48 @@ pub(super) fn finalize(
         // bool-based path if its receipt or identity is lost.
         outcome.effects.binding_effect_coverage = BindingEffectCoverage::LegacyExecution;
     }
+    outcome.project_runtime_binding_effects(inputs.index.source_scope());
+    outcome.effects.program_effects = crate::program_execution::ProgramExecutionEffects::normalize(
+        &outcome.runtime_binding_effects,
+        &outcome.runtime_heap_contents,
+        &outcome.runtime_heap_frontiers,
+        &outcome.observed_runtime_heap_accesses,
+        &outcome.executed_owners,
+        |scope| {
+            inputs
+                .executables
+                .and_then(|program| program.module_name_for_scope(scope))
+                .or_else(|| {
+                    (scope == inputs.index.source_scope())
+                        .then_some(inputs.module_id)
+                        .flatten()
+                })
+                .map(str::to_owned)
+        },
+        |id| state.world.allocation_events.get(&id).cloned().flatten(),
+    );
+    if outcome.effects.completion == crate::program_execution::schedule::OwnerCompletion::Unknown {
+        outcome.effects.completion = outcome.effect_coverage.completion();
+    }
+    // The noninvoking transfer's terminal receipt also proves that this
+    // exact owner returned normally. Callable purity is not such evidence.
+    if outcome.effects.completion == crate::program_execution::schedule::OwnerCompletion::Unknown
+        && outcome
+            .effects
+            .completed_initialization
+            .as_ref()
+            .is_some_and(|receipt| receipt.covers(owner))
+    {
+        outcome.effects.completion = crate::program_execution::schedule::OwnerCompletion::Normal;
+    }
+    if inputs.index.evaluation_noop_owners.contains(&owner) {
+        outcome.effects.completion = crate::program_execution::schedule::OwnerCompletion::Normal;
+    }
+    outcome.effects.runtime_effects_available = true;
+    outcome.effects.runtime_binding_effects = outcome.runtime_binding_effects;
+    outcome.effects.runtime_heap_contents = outcome.runtime_heap_contents;
+    outcome.effects.runtime_heap_frontiers = outcome.runtime_heap_frontiers;
+    outcome.effects.observed_runtime_heap_accesses = outcome.observed_runtime_heap_accesses;
+    outcome.effects.runtime_executed_owners = outcome.executed_owners;
     outcome.effects
 }

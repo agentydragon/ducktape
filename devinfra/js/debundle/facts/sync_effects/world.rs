@@ -4,22 +4,27 @@
 //! Observations (effects, completion, proof dependencies) are not here; they
 //! are returned by the kernel in its ledger and composed by the adopter.
 
+use crate::program_execution::RuntimeAllocationId;
+
 pub(super) mod cells;
 pub(super) mod descriptor_heap;
 pub(super) mod join;
 pub(super) mod object_surface;
 pub(super) mod prefix_values;
+pub(super) mod program_modules;
 
 use super::allocation_transfer::LiteralHeap;
 use super::kernel::frame::CallableSelection;
-use super::value_model::{CallSite, Captured, Context, DenseArray, LexicalCellId, Values};
+use super::value_model::{Captured, Context, DenseArray, LexicalCellId, RuntimeCallSite, Values};
 use crate::analysis_inputs::ProofDependencies;
+use crate::program_execution::RuntimeSourceScope;
 use crate::reports::schema::FirstClassMembersPublication;
 use cells::{CellTrace, LexicalCells};
 use descriptor_heap::{DescriptorHeap, OwnDescriptorMapState};
 use imbl::OrdMap;
 use object_surface::ObjectSurfaceStore;
 use prefix_values::PrefixValues;
+use program_modules::{ModuleEvaluationPhase, ModuleSemanticState};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::Id;
@@ -43,13 +48,20 @@ pub(super) enum WorldScope {
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct World {
     pub(super) scope: WorldScope,
+    /// Portable source events, never the process-local allocation counter.
+    pub(super) allocation_events: OrdMap<
+        crate::program_execution::RuntimeActivationId,
+        Option<crate::program_execution::effects::ProgramAllocationEvent>,
+    >,
     /// Arena of instantiated lexical cells; ids are never reused.
     pub(super) cells: LexicalCells,
     pub(super) active_cells: OrdMap<Id, LexicalCellId>,
     pub(super) module: ModuleBindings,
+    pub(super) module_phase: ModuleEvaluationPhase,
+    pub(super) inactive_modules: OrdMap<RuntimeSourceScope, ModuleSemanticState>,
     pub(super) surface: ObjectSurfaceStore,
     /// Captured own-descriptor maps by the call site that captured them.
-    pub(super) descriptors: OrdMap<CallSite, OwnDescriptorMapState>,
+    pub(super) descriptors: OrdMap<RuntimeCallSite, OwnDescriptorMapState>,
     pub(super) arrays: DenseArrays,
     pub(super) native: NativeRetained,
     pub(super) classes: ClassState,
@@ -65,6 +77,9 @@ pub(super) struct World {
 /// Module-level binding values of the settled prefix.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct ModuleBindings {
+    /// The anonymous default export has its own cell. `export default expr`
+    /// stores a snapshot here; an exported local alias uses its ordinary cell.
+    pub(super) default_export: Option<ModuleDefaultExport>,
     pub(super) prefix_values: PrefixValues,
     /// Published only from an actual ordered initializer result. A flat
     /// projection's singleton value is not evidence of callable selection.
@@ -74,23 +89,30 @@ pub(super) struct ModuleBindings {
     pub(super) top_captures: Context,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct ModuleDefaultExport {
+    pub(super) values: Values,
+    pub(super) initialized: bool,
+    pub(super) selection: Option<CallableSelection>,
+}
+
 /// Array contents by allocation site.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct DenseArrays {
-    pub(super) dense: OrdMap<u32, DenseArray>,
-    pub(super) primitive: OrdMap<u32, ProofDependencies>,
+    pub(super) dense: OrdMap<RuntimeAllocationId, DenseArray>,
+    pub(super) primitive: OrdMap<RuntimeAllocationId, ProofDependencies>,
     /// A proven silent primitive push changed contents, not descriptors or prototypes.
-    pub(super) unknown_contents: BTreeSet<u32>,
+    pub(super) unknown_contents: BTreeSet<RuntimeAllocationId>,
     /// `reduce` results by call site allocation id.
-    pub(super) accumulated_values: OrdMap<u32, Values>,
+    pub(super) accumulated_values: OrdMap<RuntimeAllocationId, Values>,
     pub(super) intrinsic_mutated: bool,
 }
 
 /// Native values the prefix retains or has tainted.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct NativeRetained {
-    pub(super) tainted_sets: BTreeSet<u32>,
-    pub(super) tainted_functions: BTreeSet<u32>,
+    pub(super) tainted_sets: BTreeSet<RuntimeAllocationId>,
+    pub(super) tainted_functions: BTreeSet<RuntimeAllocationId>,
     /// A revoked identity is a semantic root: equal descriptions must retain
     /// that identity even after other references disappear.
     pub(super) revoked_audited_results: BTreeMap<usize, Captured<Values>>,
@@ -100,12 +122,13 @@ pub(super) struct NativeRetained {
 /// Class definitions the prefix constructed, published or tainted.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(super) struct ClassState {
-    pub(super) superclasses: OrdMap<u32, Values>,
-    pub(super) tainted: BTreeSet<u32>,
-    pub(super) escaped_capabilities: BTreeSet<u32>,
+    pub(super) superclasses: OrdMap<RuntimeAllocationId, Values>,
+    pub(super) tainted: BTreeSet<RuntimeAllocationId>,
+    pub(super) escaped_capabilities: BTreeSet<RuntimeAllocationId>,
     /// First actual insertion of each class's members into the escaped pool.
-    pub(super) first_members_publications: BTreeMap<u32, FirstClassMembersPublication>,
-    pub(super) checked_constructor_inputs: BTreeSet<u32>,
+    pub(super) first_members_publications:
+        BTreeMap<RuntimeAllocationId, FirstClassMembersPublication>,
+    pub(super) checked_constructor_inputs: BTreeSet<RuntimeAllocationId>,
     /// Owners executed while building a certified unpublished instance graph.
     /// Their synchronous effects still run; execution alone does not expose
     /// the wrapper or the classes' deferred callable members to the host.
@@ -123,15 +146,11 @@ pub(super) struct Publication {
     pub(super) exported_runtime_values: Values,
     /// First top-level owner observed inserting each function callback into
     /// `global_escaped_callbacks` through `publish_values`.
-    pub(super) first_callback_publication_owners: BTreeMap<u32, SourceUnitOrdinal>,
-    /// Returned callable source closures are static within one top-level
-    /// initialization prefix. Incomplete reachability requires a fresh raw
-    /// closure even when the precise prefix was already summarized.
-    pub(super) returned_callback_owners: BTreeSet<(bool, SourceUnitOrdinal)>,
+    pub(super) first_callback_publication_owners: BTreeMap<RuntimeAllocationId, SourceUnitOrdinal>,
     pub(super) accepted_deferred_global_writes: BTreeSet<SourceUnitOrdinal>,
     /// Fresh object literals a parameter-mutation initializer filled with
     /// primitive data properties (`fresh_data_writes`).
-    pub(super) parameter_initialized_objects: BTreeSet<u32>,
+    pub(super) parameter_initialized_objects: BTreeSet<RuntimeAllocationId>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -164,9 +183,12 @@ impl World {
     pub(super) fn new(scope: WorldScope) -> Self {
         Self {
             scope,
+            allocation_events: OrdMap::new(),
             cells: LexicalCells::default(),
             active_cells: OrdMap::new(),
             module: ModuleBindings::default(),
+            module_phase: ModuleEvaluationPhase::Instantiated,
+            inactive_modules: OrdMap::new(),
             surface: ObjectSurfaceStore::default(),
             descriptors: OrdMap::new(),
             arrays: DenseArrays::default(),
@@ -199,7 +221,7 @@ impl World {
 
     /// Skipped local code can change descriptors or prototypes even when no
     /// escape to foreign code was observed. Neither set permits prefix reads.
-    pub(super) fn object_properties_are_settled(&self, object: u32) -> bool {
+    pub(super) fn object_properties_are_settled(&self, object: RuntimeAllocationId) -> bool {
         self.surface.object_accessors_are_settled(object)
             && !self.arrays.unknown_contents.contains(&object)
             && !self.arrays.primitive.contains_key(&object)
@@ -210,9 +232,12 @@ impl World {
     pub(super) fn trace_roots<'a>(&'a self, trace: &mut CellTrace<'a>) {
         let World {
             scope: _,
+            allocation_events: _,
             cells: _,
             active_cells,
             module,
+            module_phase: _,
+            inactive_modules,
             surface,
             descriptors,
             arrays,
@@ -226,12 +251,32 @@ impl World {
         for values in module
             .prefix_values
             .values()
+            .chain(module.default_export.iter().map(|cell| &cell.values))
             .chain(module.top_env.values())
             .chain(module.top_captures.values())
             .chain(classes.superclasses.values())
             .chain(arrays.accumulated_values.values())
         {
             trace.values(values);
+        }
+        for inactive in inactive_modules.values() {
+            for values in inactive
+                .bindings
+                .prefix_values
+                .values()
+                .chain(
+                    inactive
+                        .bindings
+                        .default_export
+                        .iter()
+                        .map(|cell| &cell.values),
+                )
+                .chain(inactive.bindings.top_env.values())
+                .chain(inactive.bindings.top_captures.values())
+            {
+                trace.values(values);
+            }
+            trace.values(&inactive.exported_runtime_values);
         }
         trace.values(&publication.global_escaped_callbacks);
         trace.values(&publication.exported_runtime_values);

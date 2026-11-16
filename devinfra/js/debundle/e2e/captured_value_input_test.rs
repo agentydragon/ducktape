@@ -8,13 +8,8 @@ use serde_json::Value;
 const PROVIDER: &str = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { get touched() { globalThis.runtimeSettings.events.push('getter'); return true; } });\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
 const OPAQUE: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { value: 'ready', child: new Map() }; } };\n";
 const OPAQUE_ARRAY_CHILD: &str = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { child: Array.prototype }; } };\n";
-const PROVIDER_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER)];
-// The raw fixture entry is `static/app.js`; the emitted entry is
-// `static/app/entry.js`. Both resolve their relative `./opaque.js` import.
-const OPAQUE_FILES: &[(&str, &str)] = &[
-    ("static/opaque.js", OPAQUE),
-    ("static/app/opaque.js", OPAQUE),
-];
+// Every executable dependency belongs to the analyzed source closure.
+const PROVIDER_CHUNKS: &[(&str, &str)] = &[("static/peer", PROVIDER), ("static/opaque", OPAQUE)];
 
 fn input_for(source: &str, declaration: &str) -> ValueInputContract {
     ValueInputContract {
@@ -45,13 +40,22 @@ fn fixture_opts(inputs: Vec<ValueInputContract>) -> FixtureOpts<'static> {
             logical_module("later", &[Member::new("Later")]),
         ],
     )
-    .with_extra_chunks(PROVIDER_CHUNKS)
-    .with_extra_files(OPAQUE_FILES);
+    .with_extra_chunks(PROVIDER_CHUNKS);
     if inputs.is_empty() {
         opts
     } else {
         opts.with_value_inputs("static/peer", inputs)
     }
+}
+
+fn assert_schedule_refusal(fixture: &RejectedFixture) {
+    let report: Value = read_json(&fixture.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused", "{report:#}");
+    assert!(
+        fixture.stderr.contains("evaluation_schedule_"),
+        "{}",
+        fixture.stderr
+    );
 }
 
 fn input_refs(value: &Value) -> bool {
@@ -66,30 +70,47 @@ fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
     let provider = format!(
         "import {{ readLater }} from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nfunction get(key) {{ return captured[key]; }}\n{flow_source}\nreceiver[Symbol.iterator] = function evil() {{ return 0; }};\nexport function factory() {{ const state = new Map(); return {{ get size() {{ return state.size; }}, label() {{ return readLater().name; }} }}; }}\n"
     );
-    let chunks = [("static/peer", provider.as_str())];
-    let opaque_files = [
-        ("static/opaque.js", OPAQUE_ARRAY_CHILD),
-        ("static/app/opaque.js", OPAQUE_ARRAY_CHILD),
+    let chunks = [
+        ("static/peer", provider.as_str()),
+        ("static/opaque", OPAQUE_ARRAY_CHILD),
     ];
     run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconst copied = [...[1, 2]];\nconsole.log(queue.size, queue.label(), copied.length);\nexport { queue, Later };\n",
-            vec![
-                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
-                logical_module("later", &[Member::new("Later")]),
-            ],
+            vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(&opaque_files)
         .with_value_inputs("static/peer", vec![captured_input(&provider)]),
     )
 }
 
 #[test]
 fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
-    expect_atomic_conflict_rejection(fixture_opts(Vec::new()), &["queue", "later"], &[]);
+    let unrefined = run_rejection_fixture_with_graphs(fixture_opts(Vec::new()));
+    assert_schedule_refusal(&unrefined);
 
-    let fixture = run_fixture_with_graphs(fixture_opts(vec![captured_input(PROVIDER)]));
+    // The capture contract refines receiver identity, not execution readiness
+    // across the provider cycle. Keep that remaining limitation explicit.
+    let refined_split =
+        run_rejection_fixture_with_graphs(fixture_opts(vec![captured_input(PROVIDER)]));
+    assert_schedule_refusal(&refined_split);
+    assert!(
+        refined_split
+            .stderr
+            .contains("evaluation_schedule_availability_unknown"),
+        "{}",
+        refined_split.stderr
+    );
+    let mut refined = fixture_opts(vec![captured_input(PROVIDER)]);
+    refined.logical_modules = vec![logical_module(
+        "store",
+        &[
+            Member::new("queue"),
+            Member::new("readLater"),
+            Member::new("Later"),
+        ],
+    )];
+    let fixture = run_fixture_with_graphs(refined);
     assert_preserved_entry_output(&fixture, "0 Later 0 2 capture,getter\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -196,31 +217,42 @@ fn unmaterialized_provider_value_input_restores_only_the_captured_receiver() {
         "successful native-call identity must report its author-conditioned input: {graph}"
     );
 
-    let record_use = graph["nodes"].as_array().unwrap().iter().any(|node| {
-        node["synchronous_execution"]["returned_record_uses"]
-            .as_array()
-            .is_some_and(|uses| {
-                uses.iter()
-                    .any(|usage| input_refs(&usage["native_integrity_value_inputs"]))
-            })
-    });
+    let queue = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|node| {
+            node["declared_bindings"]
+                .as_array()
+                .is_some_and(|bindings| {
+                    bindings.iter().any(|binding| binding["binding"] == "queue")
+                })
+        })
+        .expect("imported factory initializer");
     assert!(
-        record_use,
-        "imported returned-record use must retain input provenance: {graph}"
+        queue["synchronous_execution"]["native_integrity_uses"]
+            .as_array()
+            .is_some_and(|uses| uses.iter().any(|usage| {
+                usage["guard"] == "native_call_identity" && input_refs(&usage["value_input_refs"])
+            })),
+        "executing the prepared provider body retains its native premise: {queue}"
+    );
+    assert!(
+        queue["synchronous_execution"]["returned_record_uses"].is_null(),
+        "prepared-body execution does not invent a legacy returned-record certificate: {queue}"
     );
 }
 
 #[test]
 fn captured_primitive_predicate_return_preserves_cli_runtime() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function isReady() { if (captured.ready) return false; return true; }\n";
-    let chunks = [("static/peer", provider)];
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { isReady } from './peer.js';\nconsole.log(isReady(), globalThis.runtimeSettings.events.join(','));\n",
             vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert_preserved_entry_output(&fixture, "false capture\n");
@@ -244,24 +276,14 @@ fn captured_primitive_predicate_return_preserves_cli_runtime() {
 #[test]
 fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nfunction key() { globalThis.runtimeSettings.events.push('key'); return 'child'; }\nfunction get(name) { return captured[name]; }\nexport function childSize() { return get(key()).size; }\nObject.assign(captured, { ready: true });\nconst alias = captured;\nObject.assign(alias, {});\nfunction unrelatedOpaque() { return ({}).child; }\nObject.assign({}, unrelatedOpaque());\n";
-    let chunks = [("static/peer", provider)];
-    let opaque_files = [
-        (
-            "static/opaque.js",
-            "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n",
-        ),
-        (
-            "static/app/opaque.js",
-            "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n",
-        ),
-    ];
+    let opaque = "globalThis.runtimeSettings = { events: [], get state() { this.events.push('capture'); return { get child() { globalThis.runtimeSettings.events.push('child'); return new Map(); } }; } };\n";
+    let chunks = [("static/peer", provider), ("static/opaque", opaque)];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { childSize } from './peer.js';\nconsole.log(childSize(), globalThis.runtimeSettings.events.join(','));\n",
             vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(&opaque_files)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert_preserved_entry_output(&fixture, "0 capture,key,child\n");
@@ -317,14 +339,13 @@ fn captured_member_return_runs_through_the_real_cli_without_derived_writes() {
 fn captured_fluent_and_derived_array_values_share_cli_analysis() {
     let provider = "const toolkit = { object(shape) { return { shape, extend(more) { return { shape: Object.assign({}, this.shape, more) }; } }; } };\nexport { toolkit as e4 };\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function isReady() { if (captured.ready) return false; return true; }\n";
     let source = "import './opaque.js';\nimport { e4, isReady } from './peer.js';\nconst mapped = [1].map((value) => value + 1);\nconst copied = mapped.slice();\nconst base = e4.object({ value: copied[0] });\nconst schema = base.extend({ ready: true });\nconsole.log(schema.shape.value, schema.shape.ready, isReady(), globalThis.runtimeSettings.events.join(','));\nexport { schema };\n";
-    let chunks = [("static/peer", provider)];
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
     let fluent = [ChunkExportPurityBuilder::new("static/peer")
         .with_fluent_exports(&["e4"])
         .build()];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES)
             .with_chunk_export_purity(&fluent)
             .with_value_inputs(
                 "static/peer",
@@ -396,13 +417,11 @@ fn fresh_graph_does_not_hide_stale_source_pin_or_wrong_export() {
 
     let missing_provider = FixtureOpts::new("console.log('ready');\n", vec![])
         .with_extra_chunks(PROVIDER_CHUNKS)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/missing", vec![captured_input(PROVIDER)]);
     expect_rejection_containing_all(missing_provider, &["names no loaded provider chunk"]);
 
     let out_of_closure = FixtureOpts::new("console.log('ready');\n", vec![])
         .with_extra_chunks(PROVIDER_CHUNKS)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(PROVIDER)]);
     expect_rejection_containing_all(
         out_of_closure,
@@ -512,14 +531,13 @@ fn recognized_native_and_any_rebinding_reject_the_value_input() {
 #[test]
 fn mixed_primitive_and_recursive_return_producers_do_not_close_the_capture_flow() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nfunction recurse() { return recurse(); }\nfunction get() { void captured; let result = false; if (globalThis.runtimeSettings.branch) result = recurse(); return result; }\nObject.assign(captured, {});\n";
-    let chunks = [("static/peer", provider)];
-    let rejected = run_rejection_fixture(
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport './peer.js';\nconsole.log('ready');\n",
             vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert!(
@@ -565,9 +583,10 @@ fn returned_descendant_alias_wrapper_and_container_keep_array_iterator_barriers(
         "function wrap() { return { child: get('child') }; }\nconst receiver = wrap().child;",
         "function makeReader() { return function readChild() { return captured.child; }; }\nconst reader = makeReader();\nconst receiver = reader();",
     ] {
-        // A `[Symbol.iterator]` write cannot reach the `%Map%` slot, so
-        // `queue` still splits from `later`; the barrier lands on the spread.
+        // The descendant mutation must invalidate the Array iterator guard.
+        // Keep original initialization order while checking that census fact.
         let fixture = run_array_descendant_mutation(flow_source);
+        assert_preserved_entry_error(&fixture, "TypeError");
         let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
         let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
         assert!(
@@ -614,14 +633,13 @@ fn returned_descendant_alias_wrapper_and_container_keep_array_iterator_barriers(
 #[test]
 fn arbitrary_member_projection_does_not_borrow_capture_or_fresh_object_safety() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.prototype.child = Array.prototype;\nfunction get() { void captured; return ({}).child; }\nconst receiver = get();\nreceiver[Symbol.iterator] = function evil() { return 0; };\n";
-    let chunks = [("static/peer", provider)];
-    let rejected = run_rejection_fixture(
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
+    let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport './peer.js';\nconsole.log('ready');\n",
             vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert!(
@@ -636,7 +654,7 @@ fn arbitrary_member_projection_does_not_borrow_capture_or_fresh_object_safety() 
 #[test]
 fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
     let descendant = "import { readLater } from './app.js';\nvar captured = globalThis.runtimeSettings.state;\nObject.assign(captured.child, {});\nfunction getCaptured() { return captured; }\nObject.assign(getCaptured(), {});\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
-    let chunks = [("static/peer", descendant)];
+    let chunks = [("static/peer", descendant), ("static/opaque", OPAQUE)];
     let input = captured_input(descendant);
     let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
@@ -647,17 +665,9 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
             ],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![input]),
     );
-    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
-        let claims = conflict["claims"].as_array().expect("conflict claims");
-        ["queue", "later"].iter().all(|module| {
-            claims
-                .iter()
-                .any(|claim| claim["module"].as_str() == Some(*module))
-        })
-    }));
+    assert_schedule_refusal(&rejected);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
     let retained_barriers = program_graph["native_integrity_witnesses"]
@@ -692,7 +702,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
     );
 
     let before_init = "import { readLater } from './app.js';\nconst alias = captured;\nconst captured = globalThis.runtimeSettings.state;\nObject.assign(alias, {});\nexport function factory() { const state = new Map(); return { get size() { return state.size; }, label() { return readLater().name; } }; }\n";
-    let chunks = [("static/peer", before_init)];
+    let chunks = [("static/peer", before_init), ("static/opaque", OPAQUE)];
     let input = captured_input(before_init);
     let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
@@ -703,17 +713,9 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
             ],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![input]),
     );
-    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
-        let claims = conflict["claims"].as_array().expect("conflict claims");
-        ["queue", "later"].iter().all(|module| {
-            claims
-                .iter()
-                .any(|claim| claim["module"].as_str() == Some(*module))
-        })
-    }));
+    assert_schedule_refusal(&rejected);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
     assert!(
@@ -768,6 +770,7 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
     let chunks = [
         ("static/peer", PROVIDER),
         ("static/native-mutation", mutation),
+        ("static/opaque", OPAQUE),
     ];
     let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(
@@ -778,17 +781,9 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
             ],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(PROVIDER)]),
     );
-    assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
-        let claims = conflict["claims"].as_array().expect("conflict claims");
-        ["queue", "later"].iter().all(|module| {
-            claims
-                .iter()
-                .any(|claim| claim["module"].as_str() == Some(*module))
-        })
-    }));
+    assert_schedule_refusal(&rejected);
     let graph = serde_json::to_value(rejected.dependency_graph()).unwrap();
     let program_graph = serde_json::to_value(rejected.program_graph()).unwrap();
     assert!(
@@ -810,12 +805,11 @@ fn actual_native_mutation_in_another_chunk_still_blocks_map_capability() {
 fn prototype_absence_keeps_captured_census_provenance() {
     let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.marker = 1;\nexport const marker = 1;\n";
     let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Box { constructor(config) { this.value = config.value ?? 3; } }\nconst result = new Box({});\nconsole.log(result.value, marker);\n";
-    let chunks = [("static/peer", provider)];
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
     let inputs = vec![captured_input(provider)];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
             .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", inputs),
     );
     assert_preserved_entry_output(&fixture, "3 1\n");
@@ -853,12 +847,8 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
     // prove this prototype write disjoint from the constructor's string fields.
     let provider = "var captured = globalThis.runtimeSettings.state;\ncaptured.marker = 1;\nconst key = Symbol.for('factoryMarker');\nObject.prototype[key] = 1;\nexport const marker = 1;\n";
     let source = "import './opaque.js';\nimport { marker } from './peer.js';\nclass Holder { constructor(record) { this.record = record; this.value = record.value ?? 3; } }\nfunction create(record) { return new Holder(record); }\nconst command = create({ execute: () => later });\nconst barrier = console.log('barrier');\nconst later = 42;\nconsole.log(command.value, command.record.execute(), marker);\n";
-    let chunks = [("static/peer", provider)];
-    let base_opts = || {
-        FixtureOpts::new(source, vec![])
-            .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES)
-    };
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
+    let base_opts = || FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks);
 
     let fixture = run_fixture_with_graphs(
         base_opts().with_value_inputs("static/peer", vec![captured_input(provider)]),
@@ -935,28 +925,25 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
 fn primitive_set_split_keeps_the_same_input_in_purity_and_callback_timing() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport const ready = true;\n";
     let source = "import './opaque.js';\nimport { ready } from './peer.js';\nglobalThis.saved = () => later;\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.size, globalThis.saved());\n";
-    let chunks = [("static/peer", provider)];
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
     let modules = || {
         vec![
+            logical_module("collection", &[Member::new("unique")]),
             logical_module_with_anon(
-                "collection",
-                &[Member::new("unique")],
+                "value",
+                &[Member::new("later")],
                 &["globalThis.saved = () => later;"],
             ),
-            logical_module("value", &[Member::new("later")]),
         ]
     };
     expect_atomic_conflict_rejection(
-        FixtureOpts::new(source, modules())
-            .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES),
+        FixtureOpts::new(source, modules()).with_extra_chunks(&chunks),
         &["collection", "value"],
         &[],
     );
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, modules())
             .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert_preserved_entry_output(&fixture, "true 2 42\n");
@@ -998,14 +985,13 @@ fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback(
     let source = format!(
         "import './opaque.js';\nimport {{ ready }} from './peer.js';\nglobalThis.saved = () => later;\n{replacement}\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.observed);\n"
     );
-    let chunks = [("static/peer", provider)];
+    let chunks = [("static/peer", provider), ("static/opaque", OPAQUE)];
     let opts = |modules| {
         FixtureOpts::new(&source, modules)
             .with_extra_chunks(&chunks)
-            .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input(provider)])
     };
-    let fixture = run_fixture(opts(vec![]));
+    let fixture = run_fixture_with_graphs(opts(vec![]));
     assert_preserved_entry_output(&fixture, "true ReferenceError\n");
     expect_atomic_conflict_rejection(
         opts(vec![
@@ -1025,14 +1011,17 @@ fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback(
 fn inferred_pure_imports_keep_captured_inputs_through_two_modules() {
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function make() { return new Set(['ready']); }\n";
     let middle = "import { make } from './peer.js';\nexport function forward() { return make(); }\nexport function unrelated() { return 7; }\n";
-    let chunks = [("static/peer", provider), ("static/middle", middle)];
+    let chunks = [
+        ("static/peer", provider),
+        ("static/middle", middle),
+        ("static/opaque", OPAQUE),
+    ];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(
             "import './opaque.js';\nimport { forward, unrelated } from './middle.js';\nconst collection = forward();\nconst number = unrelated();\nconsole.log(collection.size, number);\n",
             vec![],
         )
         .with_extra_chunks(&chunks)
-        .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),
     );
     assert_preserved_entry_output(&fixture, "1 7\n");

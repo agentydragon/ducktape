@@ -256,15 +256,27 @@ fn simultaneous_batch_activates_promoted_edge_from_final_mapping() {
         .find(|edge| {
             edge.from == SourceUnitId(2)
                 && edge.to == SourceUnitId(0)
+                && edge.reason.kind() == DepKind::EagerUse
                 && matches!(edge.reason.role(), EdgeRole::PromotedAtInit { .. })
         })
-        .expect("parsed fixture should include the promoted readSeed -> seed edge");
-    assert!(matches!(
+        .expect("parsed fixture should include the promoted sub1 -> seed edge");
+    // The aggregate initializer's conservative promotion belongs to its
+    // scheduling caller (sub1), independently of readSeed's lexical body.
+    assert_eq!(
         promoted.reason.role(),
         EdgeRole::PromotedAtInit {
-            callee_source_unit: SourceUnitId(1)
+            callee_source_unit: SourceUnitId(2)
         }
-    ));
+    );
+    assert!(
+        dependency_graph.iter_edges().any(|edge| {
+            edge.from == SourceUnitId(1)
+                && edge.to == SourceUnitId(0)
+                && edge.reason.kind() == DepKind::LazyUse
+                && edge.reason.role() == EdgeRole::Direct
+        }),
+        "readSeed must retain its separate lexical seed dependency"
+    );
 
     let assignment = ModuleAssignment::new(
         &dependency_graph,
@@ -282,6 +294,14 @@ fn simultaneous_batch_activates_promoted_edge_from_final_mapping() {
         .overlay_for_batch(&dependency_graph, index.assignment(), &batch);
     let canonical = index.quotient.canonical_with_overlay(&overlay);
     assert!(canonical.edges.contains_key(&(ModuleId(2), ModuleId(0))));
+    let mut final_assignment = index.assignment().clone();
+    for (&source_unit, &destination) in batch.destinations() {
+        final_assignment.set(source_unit, destination);
+    }
+    assert_eq!(
+        canonical,
+        chunk_constraining_module_edges(&dependency_graph, &final_assignment)
+    );
 
     assert_batch_agrees_across_paths(&index, &dependency_graph, &batch);
     let verdict = index.verdict_after_batch(&dependency_graph, &batch);
@@ -1415,42 +1435,73 @@ fn assignment_with(
 
 /// Every single- and pair-source unit move from every assignment of the
 /// source units to three modules (module 0 is residual; the targets include
-/// a fresh module) must agree across the overlay, the committed path
-/// and the pure reference. The first two sources carry
-/// The first and third sources have resolved promoted edges; the
-/// second retains a fallback-promoted edge (`callee_source_unit == from`).
+/// a fresh module) must agree across the overlay, committed path and pure
+/// reference for caller-owned, lexical-callee-owned and mixed promotions.
 #[test]
 fn move_overlay_matches_committed_and_pure_on_promoted_edge_graphs() {
     let sources = [
-        // `r = g()` resolves through the local alias to `read_a`, so its
-        // promoted edge carries that function source unit. The overlay must still
-        // agree with the committed and reference gates after every move.
+        // Aliases, object properties and aggregate initializers retain the
+        // scheduling caller as owner of their conservative promoted read.
         (
             "const a = 1; function read_a() { return a; } const g = read_a; const r = g(); const m = r + 1;",
-            false,
+            3,
+            &[3][..],
         ),
-        // `r = api.read()` resolves the object's static function property.
-        // Its promoted `r -> a` edge retains the lexical source unit of the arrow
-        // stored on `api`. Moving `r` must preserve agreement between the
-        // overlay, committed graph, and reference gate.
         (
             "const a = 1; const api = { read: () => a }; const r = api.read(); const m = r + 1;",
-            false,
+            2,
+            &[2][..],
         ),
         (
             "const a = 1; const read_a = () => a; const s = { v: read_a() }; const t = s.v + 1; const u = t;",
-            false,
+            2,
+            &[2][..],
+        ),
+        // An incomplete direct body preserves both the caller-owned fallback
+        // and the independently resolved first-order callee's promotion.
+        (
+            "const a = 1; function read_a() { unknown(); return a; } const r = read_a();",
+            2,
+            &[1, 2][..],
+        ),
+        // The conservative first-order census retains a resolved generator
+        // body read. This tests projection of a lexical-only role, without
+        // asserting that constructing the iterator executes the generator body.
+        (
+            "const a = 1; function* read_a() { yield a; } const r = read_a();",
+            2,
+            &[1][..],
         ),
     ];
-    for (source, callee_is_caller) in sources {
+    for (source, caller, promotion_owners) in sources {
         let dependency_graph = parse_and_build(source);
+        let owners = dependency_graph
+            .iter_edges()
+            .filter(|edge| {
+                edge.from == SourceUnitId(caller)
+                    && edge.to == SourceUnitId(0)
+                    && edge.reason.kind() == DepKind::EagerUse
+            })
+            .map(|edge| {
+                let EdgeRole::PromotedAtInit { callee_source_unit } = edge.reason.role() else {
+                    panic!("expected a promoted read: {edge:#?}");
+                };
+                callee_source_unit
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            owners,
+            promotion_owners.iter().copied().map(SourceUnitId).collect(),
+            "{source}"
+        );
         assert!(
-            dependency_graph.iter_edges().any(|edge| matches!(
-                edge.reason.role(),
-                EdgeRole::PromotedAtInit { callee_source_unit }
-                    if (callee_source_unit == edge.from) == callee_is_caller
-            )),
-            "{source}: fixture lost its promoted edge",
+            dependency_graph.iter_edges().any(|edge| {
+                edge.from == SourceUnitId(1)
+                    && edge.to == SourceUnitId(0)
+                    && edge.reason.kind() == DepKind::LazyUse
+                    && edge.reason.role() == EdgeRole::Direct
+            }),
+            "lexical body dependency must remain separate: {source}"
         );
         let source_unit_count = dependency_graph.num_nodes();
         let moves: Vec<Vec<SourceUnitId>> = (0..source_unit_count)

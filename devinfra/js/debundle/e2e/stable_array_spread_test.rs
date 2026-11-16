@@ -3,18 +3,22 @@
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::*;
 
-const SOURCE: &str = r#"const clientBefore = console.log("before");
+// Keep the observable calls after all three modules initialize. This fixture
+// tests spread ownership, independently of host reentry during initialization.
+const SOURCE: &str = r#"const clientBefore = "before";
 const first = ["a"], second = ["b"], scopes = ["base", ...first, ...second];
 const apiError = scopes;
 const clientAfter = apiError;
+console.log(clientBefore);
 console.log(scopes.join(","), clientAfter.join(","));
 export { scopes, apiError, clientAfter };
 "#;
 
-const LITERAL_CONTROL: &str = r#"const clientBefore = console.log("before");
+const LITERAL_CONTROL: &str = r#"const clientBefore = "before";
 const first = ["a"], second = ["b"], scopes = ["base", "a", "b"];
 const apiError = scopes;
 const clientAfter = apiError;
+console.log(clientBefore);
 console.log(scopes.join(","), clientAfter.join(","));
 export { scopes, apiError, clientAfter };
 "#;

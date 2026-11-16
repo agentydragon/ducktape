@@ -22,6 +22,7 @@ pub mod export_policies;
 mod indexed_files;
 pub mod metrics;
 pub mod paths;
+pub mod program_linker;
 pub mod reports;
 pub mod runtime_resources;
 mod source_program;
@@ -210,14 +211,6 @@ impl JsFile {
             body: JsFileBody::SourceWithAst(SourceWithAst { parsed, source }),
             ..self
         })
-    }
-
-    /// End read-only source analysis without enrolling pass-through files in
-    /// emission rewrites that operate on ordinary retained ASTs.
-    pub(crate) fn release_analysis_ast(&mut self) {
-        if let JsFileBody::SourceWithAst(SourceWithAst { source, .. }) = &self.body {
-            self.body = JsFileBody::Source(source.src.to_string());
-        }
     }
 
     /// Consume self, replacing an AST body with its rendered source text.

@@ -24,12 +24,82 @@ pub(super) struct RootBody {
     pub(super) ordered_initializer_result: Option<SelectedValue>,
 }
 
-pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'_>) -> RootBody {
+pub(super) fn execute<'source>(
+    executor: &mut Executor<'source, '_>,
+    root: &mut RootOperands<'source>,
+) -> RootBody {
     let mut attempt = None;
+    // Completion is independent of purity or binding-effect admission. An
+    // exact abrupt kernel result cannot be erased by replaying the flat lane.
+    if executor.validate_evaluation
+        && let Some(body) = executor
+            .source_inputs()
+            .index
+            .evaluation_statements
+            .get(&root.owner)
+    {
+        let checkpoint = executor.checkpoint_root_attempt();
+        let outcome = execute_statement(executor, root.owner, body);
+        if outcome.effects.completion
+            != crate::program_execution::schedule::OwnerCompletion::Unknown
+        {
+            return settle(executor, root, outcome);
+        }
+        executor.rewind_root_attempt(checkpoint);
+    }
+    if executor.validate_evaluation
+        && matches!(root.assignments.as_slice(), [(_, _)])
+        && let Some(body) = {
+            let index = executor.source_inputs().index;
+            let plan = index.evaluation_initializers.get(&root.owner);
+            // A bare GetBindingValue needs an initialized declarative cell,
+            // including the qualified live provider cell for an import.
+            // Eventual flow and purity establish neither prerequisite.
+            let binding_ready = plan
+                .and_then(|plan| plan.required_initialized_binding.as_ref())
+                .is_none_or(|binding| {
+                    executor.initialized_local_binding(binding)
+                        || executor.initialized_import_binding(binding)
+                });
+            binding_ready
+                .then(|| {
+                    index
+                        .ordered_initializers
+                        .get(&root.owner)
+                        .or_else(|| plan.map(|plan| &plan.body))
+                })
+                .flatten()
+        }
+    {
+        let checkpoint = executor.checkpoint_root_attempt();
+        let outcome = execute_ordered(executor, root.owner, root.assignments, body);
+        if outcome.effects.completion
+            != crate::program_execution::schedule::OwnerCompletion::Unknown
+        {
+            root.ordered_initializer = Some(body);
+            root.effect_initializer_source = super::operands::ordered_effect_source(
+                executor.source_inputs().index,
+                root.owner,
+                root.assignments,
+                body,
+            );
+            return settle(executor, root, outcome);
+        }
+        executor.rewind_root_attempt(checkpoint);
+    }
     if let Some((body, source)) = root.attempted_initializer.take() {
         let checkpoint = executor.checkpoint_root_attempt();
         let mut outcome = execute_ordered(executor, root.owner, root.assignments, body);
-        match attempt_seal(executor, &outcome, Some(root.calls)) {
+        if outcome.effects.completion == crate::program_execution::schedule::OwnerCompletion::Abrupt
+            || (executor.validate_evaluation
+                && outcome.effects.completion
+                    == crate::program_execution::schedule::OwnerCompletion::Normal)
+        {
+            root.ordered_initializer = Some(body);
+            root.effect_initializer_source = Some(source);
+            return settle(executor, root, outcome);
+        }
+        match attempt_seal(&outcome, Some(root.calls)) {
             Ok(()) => {
                 root.ordered_initializer = Some(body);
                 root.effect_initializer_source = Some(source);
@@ -48,7 +118,7 @@ pub(super) fn execute(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'
     if let Some(body) = root.ordered_statement.take() {
         let checkpoint = executor.checkpoint_root_attempt();
         let mut outcome = execute_statement(executor, root.owner, body);
-        match attempt_seal(executor, &outcome, None) {
+        match attempt_seal(&outcome, None) {
             Ok(()) => {
                 root.ordered_statement = Some(body);
                 outcome.effects.root_attempt = Some(RootAttempt::Sealed);
@@ -84,17 +154,23 @@ fn execute_ordered(
     let [(binding, _)] = assignments else {
         unreachable!("ordered root initializer has one assignment");
     };
-    executor.execute_local_body(
+    let source_module = executor.receipt_source_module(executor.source_index().source_scope());
+    let mut outcome = executor.execute_local_body(
         body,
         Context::new(),
         None,
         owner,
         LocalActivation::RootInitializer(RootInitializerIdentity {
+            source_module: source_module.clone().flatten(),
             owner,
             binding: binding.clone(),
             initializer_span: body.root_span(),
         }),
-    )
+    );
+    if source_module.is_none() {
+        outcome.effect_coverage = Default::default();
+    }
+    outcome
 }
 
 /// An admitted root expression statement; its completion value is discarded.
@@ -120,8 +196,7 @@ fn execute_statement(
 /// every effect domain covered and no loss, unknown call or effect only a
 /// fallback summary saw. An initializer also needs its root binding's
 /// lexical receipt; a statement has no binding and needs none.
-fn attempt_seal(
-    executor: &Executor<'_, '_>,
+pub(super) fn attempt_seal(
     outcome: &Outcome,
     lexical_root_calls: Option<&[Call]>,
 ) -> Result<(), RootAttemptRewind> {
@@ -132,18 +207,14 @@ fn attempt_seal(
         lexical_root_calls.is_none() && !outcome.complete,
         IncompleteExecution,
     )?;
-    seal(
-        outcome.unknown_call || executor.state.fallback_outcome.unknown_call,
-        UnknownCall,
-    )?;
+    seal(outcome.unknown_call, UnknownCall)?;
     seal(!outcome.effects.precision_losses.is_empty(), PrecisionLoss)?;
     seal(
-        !outcome.effects.uninitialized_reads.is_empty(),
+        outcome.runtime_binding_effects.has_uninitialized_reads(),
         UninitializedRead,
     )?;
     seal(
-        !outcome.effects.fallback_only.reads.is_empty()
-            || !outcome.effects.fallback_only.rebinds.is_empty(),
+        outcome.runtime_binding_effects.has_fallback_effects(),
         FallbackOnlyEffect,
     )?;
     seal(
@@ -178,7 +249,7 @@ pub(super) fn expected_root_calls(calls: &[Call]) -> BTreeSet<(u32, u32)> {
 }
 
 fn execute_flat(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'_>) -> Outcome {
-    let inputs = executor.inputs;
+    let inputs = executor.source_inputs();
     let index = inputs.index;
     let needed = &inputs.needed_bindings;
     let RootOperands {
@@ -205,7 +276,7 @@ fn execute_flat(executor: &mut Executor<'_, '_>, root: &mut RootOperands<'_>) ->
     for (id, expression) in assignments {
         if !needed.contains(id)
             || !fact.rebinds.eager.contains(id)
-            || !(executor.inputs.var_bindings.contains(id)
+            || !(executor.source_inputs().var_bindings.contains(id)
                 || executor
                     .state
                     .world
@@ -291,7 +362,7 @@ fn settle(
     root: &mut RootOperands<'_>,
     mut outcome: Outcome,
 ) -> RootBody {
-    let index = executor.inputs.index;
+    let index = executor.source_index();
     let RootOperands {
         fact,
         ordered_initializer,
@@ -305,36 +376,26 @@ fn settle(
         values: std::mem::take(&mut outcome.returns),
         selection: outcome.return_selection.take(),
     });
-    let mut fallback = std::mem::take(&mut executor.state.fallback_outcome);
-    if fallback.unknown_call {
-        // Every effect only the fallback summary contributed is assumed
-        // by it, whichever path opened the summary.
-        let reason = AssumedEffectReason::FallbackSummary {
-            loss: fallback
-                .effects
-                .precision_losses
-                .first()
-                .expect("a fallback summary records the loss that opened it")
-                .reason
-                .clone(),
-        };
-        outcome.absorb_call_effects(&mut fallback.effects, Some(&reason));
-        outcome.executed_owners.extend(fallback.executed_owners);
-        outcome.unknown_call = true;
-        outcome.inherit_completeness(false, fallback.effects.precision_losses);
-    }
     if ordered_initializer.is_some()
         && private_factory_result
         && outcome.complete
         && !outcome.unknown_call
     {
-        // The kernel records the root as executed. This root ran only the
-        // substituted factory call, which retains the callback in its
-        // private result, so the owner exposes nothing by itself.
-        outcome.executed_owners.remove(&fact.ordinal);
+        // The kernel records the root as executed. The independently checked
+        // factory premise retains its callback only in the private result,
+        // including when its prepared body actually ran. Keep that body's
+        // execution and effects; the result owner exposes nothing by itself.
+        outcome
+            .executed_owners
+            .remove(&executor.source_index().source_scope().unit(fact.ordinal));
     }
     if index.opaque_top.contains(&fact.ordinal) {
-        outcome.unsupported(ExecutionOperation::OpaqueExecution, fact.ordinal, DUMMY_SP);
+        outcome.unsupported(
+            executor.source_inputs().module_id,
+            ExecutionOperation::OpaqueExecution,
+            fact.ordinal,
+            DUMMY_SP,
+        );
     }
     outcome.effects.complete = outcome.complete;
     outcome.effects.settled_array_elements = std::mem::take(settled_array_elements);
@@ -372,18 +433,19 @@ fn settle(
         for owner in executor.state.world.reachability.owners.clone() {
             executor.promote_lazy_owner(owner, fact.ordinal, &mut restored);
         }
-        outcome.absorb_call_effects(&mut restored.effects, Some(&reason));
+        outcome.absorb_call_outcome(&mut restored, Some(&reason));
         executor.apply_rebind_effects(&outcome.effects.rebinds);
     }
     // These are available roots for the remainder of this owner's value
     // evaluation, independently of the completed prior-effect frontier.
+    let source_scope = executor.source_index().source_scope();
     let state = &mut *executor.state;
-    if !state.world.reachability.unknown_call_seen
+    let world = state.world.clone();
+    if !world.reachability.unknown_call_seen
         && let Some(roots) = &mut state.prior_reachability_roots
     {
-        roots.extend(outcome.executed_owners.iter().copied().filter(|owner| {
-            !state
-                .world
+        roots.extend(outcome.local_executed_owners(source_scope).filter(|owner| {
+            !world
                 .classes
                 .private_constructor_result_owners
                 .contains(owner)

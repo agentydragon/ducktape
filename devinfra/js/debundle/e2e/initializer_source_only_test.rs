@@ -48,10 +48,39 @@ fn isolated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
     options
 }
 
+fn phase_preserving_encoder_split(source: &'static str) -> FixtureOpts<'static> {
+    let mut options = isolated_encoder_split(source);
+    options.logical_modules.push(logical_module_with_anon(
+        "values",
+        &[Member::new("peek"), Member::new("later")],
+        &["globalThis.saved = peek;", "globalThis.marker = 1;"],
+    ));
+    options
+}
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, expected_output: &str) -> RejectedFixture {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    // The fixture runner compares source and emitted Node behavior; keep the
+    // result explicit for this pending schedule shape.
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+    rejected
+}
+
 #[test]
-fn audited_encoder_initializers_emit_together_and_preserve_output() {
-    let fixture = run_fixture(isolated_encoder_split(
-        "const encoder = new TextEncoder();\n\
+fn phase_preserving_encoder_split_remains_conservative() {
+    const SOURCE: &str = "const encoder = new TextEncoder();\n\
          function peek() { return later; }\n\
          globalThis.saved = peek;\n\
          const left = encoder.encode('a');\n\
@@ -59,15 +88,32 @@ fn audited_encoder_initializers_emit_together_and_preserve_output() {
          const right = encoder.encode('b');\n\
          const later = 2;\n\
          console.log(left[0], right[0], globalThis.marker, globalThis.saved());\n\
-         export { encoder, left, right };\n",
-    ));
+         export { encoder, left, right };\n";
+    expect_schedule_refusal(isolated_encoder_split(SOURCE), "97 98 1 2\n");
+
+    // Even after keeping the published callback and its captured binding in
+    // one source-ordered module, the final schedule proof remains unknown.
+    // Keep the layout and its real runtime result visible as a typed pending
+    // capability instead of treating the author contract as a schedule proof.
+    let fixture = expect_schedule_refusal(phase_preserving_encoder_split(SOURCE), "97 98 1 2\n");
+    let app_root = fixture.app_root();
     assert_module_exports(
-        &fixture.out_root,
+        &app_root,
         "static/app/modules/codec.js",
         &["encoder", "left", "right"],
         &[],
     );
-    assert_preserved_entry_output(&fixture, "97 98 1 2\n");
+    assert_module_source(
+        &app_root,
+        "static/app/modules/values.js",
+        &[
+            "function peek",
+            "globalThis.saved = peek",
+            "globalThis.marker = 1",
+            "const later",
+        ],
+        &[],
+    );
 }
 
 #[test]
@@ -130,7 +176,7 @@ fn encoder_initializers_commute_with_independent_allocations() {
 }
 
 #[test]
-fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_promises() {
+fn isolated_encoder_initializers_remain_pending_across_heap_barriers() {
     let options = isolated_encoder_split(
         "const encoder = new TextEncoder();\n\
          const values = [];\n\
@@ -142,14 +188,11 @@ fn isolated_encoder_initializers_emit_across_heap_barriers_without_pairwise_prom
     )
     .with_dataflow_aware_s_chain()
     .with_trusted_dataflow_summaries();
-    let fixture = run_fixture(options);
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/codec.js",
-        &["encoder", "left", "right"],
-        &[],
-    );
-    assert_preserved_entry_output(&fixture, "0 a b\n");
+    // The isolated-effect promise remains bound to both selected calls, but
+    // the final schedule guard conservatively retains the intervening heap
+    // barriers. The ordinary allocation-only positive and the known-write
+    // contradiction controls remain above/below this case.
+    expect_schedule_refusal(options, "0 a b\n");
 }
 
 #[test]
@@ -720,6 +763,34 @@ fn assert_private_metadata_acceptance(
     );
 }
 
+fn assert_private_metadata_schedule_refusal(
+    source: &'static str,
+    provider: &'static str,
+    expected_stdout: &str,
+) {
+    let chunks = [("static/provider", provider)];
+    let rejected = run_rejection_fixture_with_graphs_and_args(
+        private_metadata_split(source, &chunks),
+        &["--emit-on-rejection"],
+        3,
+    );
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative schedule refusal:\n{}",
+        rejected.stderr
+    );
+    // The rejection helper checks source/emitted Node parity; retain the
+    // concrete output too so this is a pending optimizer capability only.
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_stdout,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+}
+
 #[test]
 fn private_metadata_contract_accepts_fresh_weak_map_entries() {
     const PROVIDER: &str = "const metadata = new WeakMap();\n\
@@ -743,7 +814,7 @@ fn private_metadata_contract_accepts_fresh_weak_map_entries() {
 }
 
 #[test]
-fn private_metadata_recognizes_fresh_nested_array_arguments() {
+fn private_metadata_nested_array_arguments_keep_schedule_refusal() {
     const PROVIDER: &str = "const metadata = new WeakMap();\n\
         export function makeSchema(labels) {\n\
           const schema = {};\n\
@@ -751,7 +822,7 @@ fn private_metadata_recognizes_fresh_nested_array_arguments() {
           return schema;\n\
         }\n\
         export function description(schema) { return metadata.get(schema); }\n";
-    assert_private_metadata_acceptance(
+    assert_private_metadata_schedule_refusal(
         "import { makeSchema, description } from './provider.js';\n\
          makeSchema(['unused']);\n\
          const first = makeSchema(['a']);\n\
@@ -783,6 +854,60 @@ fn private_metadata_contract_accepts_stable_provider_configuration_reads() {
          export { first, second };\n",
         PROVIDER,
         "pa pb a b 0 0\n",
+    );
+}
+
+#[test]
+fn private_metadata_keeps_observed_provider_property_ordering() {
+    const PROVIDER: &str = "const config = { prefix: 'p' };\n\
+        export function make(label) { return { value: config.prefix + label }; }\n\
+        export function configure(prefix) { config.prefix = prefix; }\n";
+    const SOURCE: &str = "import { make, configure } from './provider.js';\n\
+        const first = make('a');\n\
+        configure('q');\n\
+        const second = make('b');\n\
+        console.log(first.value, second.value);\n";
+    let chunks = [("static/provider", PROVIDER)];
+    let outcome = run_fixture_to_gate_outcome(private_metadata_split(SOURCE, &chunks));
+    assert!(outcome.source.status.success(), "{}", outcome.source.stderr);
+    assert_eq!(outcome.source.stdout, "pa qb\n");
+    assert!(
+        !outcome.accepted,
+        "a known provider-property write must remain ordered"
+    );
+    assert_eq!(
+        outcome.assessment["legacy_gate_accepts"], false,
+        "{:#}",
+        outcome.assessment
+    );
+    assert!(
+        outcome.emitted.status.success(),
+        "{}",
+        outcome.emitted.stderr
+    );
+    assert_eq!(outcome.emitted.stdout, "pa pb\n");
+}
+
+#[test]
+fn isolated_initializer_cannot_hide_known_provider_property_reads() {
+    let source =
+        "import { make } from './provider.js';\nconst first = make();\nconsole.log(first);\n";
+    let mut extracted = logical_module("a", &[Member::new("first")]);
+    extracted.1.annotations.insert(
+        "first".to_owned(),
+        BindingAnnotation {
+            initializer_external_effects: Some(InitializerExternalEffects::Isolated),
+            ..Default::default()
+        },
+    );
+    expect_rejection_containing_all(
+        FixtureOpts::new(source, vec![extracted])
+            .with_extra_chunks(&[(
+                "static/provider",
+                "const config = { value: 7 };\nexport function make() { return config.value; }\n",
+            )])
+            .with_unassigned_mode(unassigned_mode_inline()),
+        &["isolated", "cannot establish fresh ownership", "first"],
     );
 }
 
@@ -872,23 +997,46 @@ fn private_metadata_contract_replays_raw_analysis_for_comma_declarators_and_chun
             fs::read(&staged.artifact).unwrap(),
             "private-metadata annotation must leave raw facts and receipts unchanged"
         );
-        let direct = staged.run(&[]);
-        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
-        assert_ok(&direct.result, "direct private-metadata materialization");
-        assert_ok(&loaded.result, "loaded private-metadata materialization");
-        assert_same_invocation_trees(&direct, &loaded);
-        assert_module_exports(
-            &loaded.output_root().join("app"),
-            "static/app/modules/a.js",
-            &["second"],
-            &["first"],
+        let direct = staged.run(&["--emit-on-rejection"]);
+        let loaded = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+        for invocation in [&direct, &loaded] {
+            assert_eq!(invocation.result.status.code(), Some(3));
+            assert!(
+                invocation
+                    .result
+                    .stderr
+                    .contains("evaluation_schedule_unknown_reordered"),
+                "raw and saved-analysis paths must retain the same conservative gate:\n{}",
+                invocation.result.stderr
+            );
+        }
+        let direct_schedule: Value = read_json(
+            &direct
+                .output_root()
+                .join("reports/tree/evaluation_schedule.json"),
         );
+        let loaded_schedule: Value = read_json(
+            &loaded
+                .output_root()
+                .join("reports/tree/evaluation_schedule.json"),
+        );
+        assert_eq!(direct_schedule, loaded_schedule);
+        for invocation in [&direct, &loaded] {
+            assert_module_exports(
+                &invocation.output_root().join("app"),
+                "static/app/modules/a.js",
+                &["second"],
+                &["first"],
+            );
+        }
         assert_node_output(&staged.root().join("snapshot/static/app.js"), "a b\n", "");
-        assert_node_output(
-            &loaded.output_root().join("app/static/app/entry.js"),
-            "a b\n",
-            "",
-        );
+        for invocation in [&direct, &loaded] {
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                "a b\n",
+                "",
+            );
+        }
     }
 }
 

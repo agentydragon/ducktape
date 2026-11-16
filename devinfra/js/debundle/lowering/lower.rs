@@ -3,7 +3,10 @@
 //! emitting cross-module imports, and naturalizing object shorthand. The chunk-
 //! level planning and gate checks that wrap this live in `materialize/`.
 
-use js_ast::import_decl_module_item;
+use js_ast::{
+    import_decl_module_item, module_export_name_node, named_export_module_item,
+    named_export_specifier,
+};
 use source_identity::ChunkId;
 use source_identity::StatementId;
 use std::sync::Mutex;
@@ -43,7 +46,9 @@ use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
-use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
+use frontend_elaboration::chunk_ast::{
+    ExportedNameOrigin, SourceExportIdentity, TopLevelDecl, top_level_declaration_names,
+};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
@@ -139,6 +144,8 @@ pub(super) struct LowerChunkAst<'a> {
     pub(super) runtime_ast: &'a ParsedJsModule,
     pub(super) declarations: &'a [TopLevelDecl],
     pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
+    pub(super) source_public_export_identities_by_statement:
+        &'a HashMap<StatementId, Vec<SourceExportIdentity>>,
     pub(super) chunk_top_level_mark: swc_common::Mark,
 }
 
@@ -213,6 +220,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
         runtime_ast,
         declarations,
         declaration_by_name,
+        source_public_export_identities_by_statement,
         chunk_top_level_mark,
     } = ast;
     let LowerChunkPlan {
@@ -535,6 +543,12 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     ) {
         entry_body.push(export);
     }
+    entry_body.extend(moved_statement_default_reexports(
+        whole_statement_assignment,
+        source_public_export_identities_by_statement,
+        module_plans,
+        entry_file,
+    ));
     // The sealed EntryPublicExports map is keyed by the residual
     // binding's original name; the emitted export clause is keyed by
     // entry's post-rename local, so remap through
@@ -808,4 +822,50 @@ fn split_entry_body(
             selected_by_module,
         ));
     }
+}
+
+/// Preserve literal default exports when their source statement moves into a
+/// logical module. The provider module keeps the original export statement;
+/// the source chunk's entry forwards that public surface to the provider.
+///
+/// The source-AST pass supplies the export identity map so lowering does not
+/// infer public names by rescanning or reconstructing syntax. Local named
+/// export clauses are already retained in the entry by `split_entry_body`.
+fn moved_statement_default_reexports(
+    whole_statement_assignment: &BTreeMap<StatementId, usize>,
+    source_public_export_identities_by_statement: &HashMap<StatementId, Vec<SourceExportIdentity>>,
+    module_plans: &[ModulePlan],
+    entry_file: &str,
+) -> Vec<ModuleItem> {
+    whole_statement_assignment
+        .iter()
+        .filter_map(|(statement, module_index)| {
+            let has_statement_default = source_public_export_identities_by_statement
+                .get(statement)
+                .is_some_and(|identities| {
+                    identities.iter().any(|identity| {
+                        identity.public_name == "default"
+                            && matches!(
+                                &identity.origin,
+                                ExportedNameOrigin::Statement {
+                                    statement: export_statement,
+                                    ..
+                                } if *export_statement == *statement
+                            )
+                    })
+                });
+            if !has_statement_default {
+                return None;
+            }
+            let plan = module_plans.get(*module_index)?;
+            let source = relative_source(entry_file, &plan.target_file);
+            Some(named_export_module_item(
+                vec![named_export_specifier(
+                    module_export_name_node("default"),
+                    None,
+                )],
+                Some(&source),
+            ))
+        })
+        .collect()
 }

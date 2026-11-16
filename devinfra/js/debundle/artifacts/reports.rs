@@ -207,6 +207,9 @@ pub struct ChunkRuntimeFacts {
     /// bodies may read, including deferred descendant bodies. This is not an
     /// execution or completeness judgment.
     pub function_import_reads: BTreeMap<String, BTreeSet<String>>,
+    /// Import bindings referenced in lazy bodies, including installed closures
+    /// and namespace roots. This inventory carries no callable capability.
+    pub lazy_import_reads: BTreeSet<String>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,
@@ -219,6 +222,56 @@ pub struct ChunkRuntimeFacts {
     pub interop_uses: Vec<InteropUse>,
     pub loader_bindings: Vec<LoaderBindingUses>,
     pub namespace_requests: Vec<NamespaceRequest>,
+    /// Runtime import specifiers retained for canonical program-wide linking.
+    /// These records come from the canonical shallow SWC walk and are kept out
+    /// of the serialized public report format.
+    pub import_links: Vec<ImportLinkRecord>,
+    /// Runtime export edges, including reexports and export-star declarations,
+    /// retained for canonical program-wide linking.
+    pub export_links: Vec<ExportLinkRecord>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImportLinkRecord {
+    pub line: Option<usize>,
+    pub source: String,
+    pub local: String,
+    pub kind: ImportSpecifierKind,
+    pub imported: Option<String>,
+    /// False for import assertions/phases outside ordinary synchronous ESM.
+    pub ordinary: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExportLinkRecord {
+    pub line: Option<usize>,
+    /// Original index in the provider's parsed `Module.body`.
+    pub body_index: usize,
+    pub kind: ExportLinkKind,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExportLinkKind {
+    Local {
+        exported: String,
+        local: String,
+    },
+    DefaultValue,
+    ReExport {
+        exported: String,
+        source: String,
+        imported: String,
+        ordinary: bool,
+    },
+    NamespaceReExport {
+        exported: String,
+        source: String,
+        ordinary: bool,
+    },
+    StarReExport {
+        source: String,
+        ordinary: bool,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -1,10 +1,11 @@
 //! Assignment and export: the owner's bindings receive their values in
 //! source order, then its exported values are published.
 
+use super::super::allocation_transfer::AllocationJudgment;
 use super::super::interpreter::{Executor, Outcome};
 use super::super::noninvoking_initialization::EvaluatedInitializer;
 use super::super::runtime_inference::{RuntimeOperation, RuntimeValue};
-use super::super::value_model::AbstractValue;
+use super::super::value_model::{AbstractValue, ValueExpr};
 use super::body::RootBody;
 use super::operands::RootOperands;
 use crate::facts::abstract_domain::value::Value;
@@ -19,7 +20,15 @@ pub(super) fn assign(
     root: &mut RootOperands<'_>,
     body: RootBody,
 ) -> RootAssignment {
-    let inputs = executor.inputs;
+    if body.outcome.effects.completion
+        == crate::program_execution::schedule::OwnerCompletion::Abrupt
+    {
+        return RootAssignment {
+            outcome: body.outcome,
+            evaluated_initializer: None,
+        };
+    }
+    let inputs = executor.source_inputs();
     let index = inputs.index;
     let needed = &inputs.needed_bindings;
     let RootOperands {
@@ -68,6 +77,27 @@ pub(super) fn assign(
             if values.len() > 1 {
                 values.remove(&AbstractValue::Value(Value::Unavailable));
             }
+            // Completion-only execution must not discard the independent
+            // source transfer for a direct initialized local read. Reuse its
+            // actual result at the same prefix; do not replay the initializer
+            // or treat Normal as an allocation/noninvoking certificate.
+            if let Some(source) = initializer_source
+                && let Some(ValueExpr::Binding(read)) = source.composed_expression()
+                && matches!(expression, ValueExpr::Binding(binding) if binding == read)
+                && executor.initialized_local_binding(read)
+                && executor.state.world.module.prefix_values.get(read) == Some(&values)
+                && let Some(operation_dependencies) = outcome.effect_coverage.normal_dependencies()
+            {
+                let mut dependencies = executor.boxed_settled_prefix_dependencies();
+                dependencies.extend(&operation_dependencies);
+                evaluated_initializer = source.evaluated(
+                    executor.source_index().source_scope(),
+                    expression,
+                    &values,
+                    &AllocationJudgment::CoveredAllocationOnly(dependencies),
+                    None,
+                );
+            }
             (values, selection)
         } else if let Some(source) = initializer_source {
             let RuntimeValue::Initializer {
@@ -84,12 +114,15 @@ pub(super) fn assign(
             else {
                 unreachable!("checked initializer transfers produce initializer results");
             };
+            let selection = evaluated
+                .as_ref()
+                .and_then(|evaluated| evaluated.callable_selection(&values));
             evaluated_initializer = evaluated.map(|evaluated| *evaluated);
             if let Some(coverage) = operation_coverage {
                 outcome.effect_coverage = *coverage;
             }
             *initialization_coverage_refusal = initialization_coverage_refusal.or(refusal);
-            (values, None)
+            (values, selection)
         } else {
             (executor.evaluate(expression, top_env, top_captures), None)
         };
@@ -98,7 +131,7 @@ pub(super) fn assign(
         if !needed.contains(id) {
             continue;
         }
-        if !executor.inputs.top_bindings.contains(id) {
+        if !executor.source_inputs().top_bindings.contains(id) {
             top_captures
                 .entry(id.clone())
                 .or_default()
@@ -108,7 +141,7 @@ pub(super) fn assign(
             .entry(id.clone())
             .or_default()
             .extend(values.clone());
-        if executor.inputs.top_bindings.contains(id) {
+        if executor.source_inputs().top_bindings.contains(id) {
             executor
                 .state
                 .world_mut()
@@ -147,6 +180,31 @@ pub(super) fn assign(
         );
     for expression in &index.top_exported_values[fact.ordinal.0] {
         let values = executor.evaluate(expression, top_env, top_captures);
+        if index
+            .default_export_value
+            .as_ref()
+            .is_some_and(|(owner, _, hoisted)| *owner == fact.ordinal && !hoisted)
+        {
+            // This evaluation is the export expression's snapshot. Later
+            // assignments to a local it read cannot update this cell.
+            let mut stored = values.clone();
+            stored.remove(&AbstractValue::Value(Value::Unavailable));
+            let initialized = !stored.is_empty();
+            let selection = initialized
+                .then(|| {
+                    super::super::kernel::frame::CallableSelection::observed(
+                        &stored,
+                        executor.boxed_settled_prefix_dependencies(),
+                    )
+                })
+                .flatten();
+            executor.state.world_mut().module.default_export =
+                Some(super::super::world::ModuleDefaultExport {
+                    values: stored,
+                    initialized,
+                    selection,
+                });
+        }
         executor
             .state
             .world_mut()

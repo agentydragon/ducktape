@@ -81,8 +81,8 @@ fn malformed_manual_claim_edits_are_refused_before_unassigning() {
             "participates in ownership conflict",
         ),
         (
-            r#"import { dep } from "external"; const gamma = 3;"#,
-            r#"source_matches: [{match: 'import { dep } from "external";', bindings: [{local: dep, name: Dep}]}]"#,
+            r#"import { basename as dep } from "node:path"; const gamma = 3;"#,
+            r#"source_matches: [{match: 'import { basename as dep } from "node:path";', bindings: [{local: dep, name: Dep}]}]"#,
             "binding `dep` does not map to a dependency graph node",
         ),
         (

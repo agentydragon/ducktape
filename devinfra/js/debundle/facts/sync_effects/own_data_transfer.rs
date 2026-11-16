@@ -6,19 +6,20 @@ use super::value_model::{
 use crate::execution_evidence::OrderedFieldReadRefusal;
 use crate::facts::EffectCell;
 use crate::facts::abstract_domain::value::Value;
+use crate::program_execution::RuntimeAllocationId;
 use analysis_model::PrimKinds;
 use std::collections::BTreeSet;
 
 pub(super) trait OwnDataContext {
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape>;
-    fn object_properties_are_settled(&self, allocation: u32) -> bool;
-    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values>;
-    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool;
-    fn property_is_writable(&self, allocation: u32, property: &str) -> bool;
+    fn ordinary_record_shape(&self, allocation: RuntimeAllocationId) -> Option<&OwnPropertyShape>;
+    fn object_properties_are_settled(&self, allocation: RuntimeAllocationId) -> bool;
+    fn property_values(&self, allocation: RuntimeAllocationId, property: &str) -> Option<&Values>;
+    fn property_is_accessor(&self, allocation: RuntimeAllocationId, property: &str) -> bool;
+    fn property_is_writable(&self, allocation: RuntimeAllocationId, property: &str) -> bool;
 
     /// Only an application prefix with the first uninterrupted dense array
     /// literal execution provides this current length.
-    fn first_generation_dense_array_length(&self, _allocation: u32) -> Option<u32> {
+    fn first_generation_dense_array_length(&self, _allocation: RuntimeAllocationId) -> Option<u32> {
         None
     }
 }
@@ -28,19 +29,19 @@ pub(super) trait OwnDataContext {
 pub(super) enum OwnDataOwnership<'a> {
     CurrentPrefix,
     FreshLocal {
-        borrowed: &'a BTreeSet<u32>,
-        fresh: &'a BTreeSet<u32>,
+        borrowed: &'a BTreeSet<RuntimeAllocationId>,
+        fresh: &'a BTreeSet<RuntimeAllocationId>,
     },
 }
 
 pub(super) struct OwnDataSlot {
-    pub(super) object: u32,
+    pub(super) object: RuntimeAllocationId,
     property: String,
 }
 
 pub(super) struct OwnDataRead {
     pub(super) values: Values,
-    pub(super) cell: EffectCell,
+    pub(super) cell: crate::program_execution::RuntimeEffectCell,
 }
 
 /// A checked present own-data read. The variant keeps the array proof separate
@@ -52,7 +53,7 @@ pub(super) enum PresentOwnDataSlot {
 }
 
 impl PresentOwnDataSlot {
-    pub(super) fn object(&self) -> u32 {
+    pub(super) fn object(&self) -> RuntimeAllocationId {
         match self {
             Self::OrdinaryRecord(slot) | Self::ArrayIndex(slot) | Self::ArrayLength(slot) => {
                 slot.object
@@ -76,7 +77,7 @@ impl PresentOwnDataSlot {
 }
 
 impl OwnDataSlot {
-    pub(super) fn cell(&self) -> EffectCell {
+    pub(super) fn cell(&self) -> crate::program_execution::RuntimeEffectCell {
         EffectCell::OwnProperty {
             origin: self.object,
             property: self.property.clone(),

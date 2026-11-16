@@ -33,10 +33,10 @@ use crate::analysis_inputs::{NativeIntrinsic, ProofDependencies};
 use crate::execution_evidence::{
     AssumedEffectReason, ExecutionOperation, ExecutionPrecisionLossReason,
 };
-use crate::facts::OwnerInitializationCoverageRefusalReason;
 use crate::facts::abstract_domain::builtins;
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::evaluation_effects::{EvaluationEffects, GlobalAccessKind};
+use crate::program_execution::RuntimeAllocationId;
 use crate::reports::schema::NativeIntegrityGuard;
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
@@ -46,16 +46,16 @@ use swc_ecma_ast::*;
 
 #[derive(Clone, Copy)]
 pub(in crate::facts::sync_effects) enum LocalExecutionScope {
-    Callable(u32),
+    Callable(RuntimeAllocationId),
     /// A root owner's variable initializer or expression statement.
     Root,
     /// The lowered base-constructor body of this class, run by the kernel's
     /// construct rule. It has no call operation of its own.
-    Constructor(u32),
+    Constructor(RuntimeAllocationId),
 }
 
 impl LocalExecutionScope {
-    pub(in crate::facts::sync_effects) fn caller(self) -> Option<u32> {
+    pub(in crate::facts::sync_effects) fn caller(self) -> Option<RuntimeAllocationId> {
         match self {
             Self::Callable(key) => Some(key),
             Self::Root | Self::Constructor(_) => None,
@@ -72,23 +72,23 @@ pub(in crate::facts::sync_effects) struct LocalExecutionContext<'a, 'source, 'ru
 }
 
 impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
-    fn ordinary_record_shape(&self, allocation: u32) -> Option<&OwnPropertyShape> {
+    fn ordinary_record_shape(&self, allocation: RuntimeAllocationId) -> Option<&OwnPropertyShape> {
         self.executor.ordinary_record_shape(allocation)
     }
 
-    fn object_properties_are_settled(&self, allocation: u32) -> bool {
+    fn object_properties_are_settled(&self, allocation: RuntimeAllocationId) -> bool {
         self.executor.object_properties_are_settled(allocation)
     }
 
-    fn property_values(&self, allocation: u32, property: &str) -> Option<&Values> {
+    fn property_values(&self, allocation: RuntimeAllocationId, property: &str) -> Option<&Values> {
         self.executor.property_values(allocation, property)
     }
 
-    fn property_is_accessor(&self, allocation: u32, property: &str) -> bool {
+    fn property_is_accessor(&self, allocation: RuntimeAllocationId, property: &str) -> bool {
         self.executor.property_is_accessor(allocation, property)
     }
 
-    fn property_is_writable(&self, allocation: u32, property: &str) -> bool {
+    fn property_is_writable(&self, allocation: RuntimeAllocationId, property: &str) -> bool {
         self.executor.property_is_writable(allocation, property)
     }
 }
@@ -96,14 +96,22 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
     pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
         match self.scope {
-            LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
-            LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
+            LocalExecutionScope::Callable(key) => {
+                &self
+                    .executor
+                    .source_index()
+                    .callables
+                    .get(&key)
+                    .expect("kernel callable activation checks its source index")
+                    .calls
+            }
+            LocalExecutionScope::Root => &self.executor.source_index().top_calls[self.owner.0],
             LocalExecutionScope::Constructor(_) => &[],
         }
     }
 
     fn binding_values<'a>(&'a self, binding: &Id, frame: &'a LocalFrame) -> Option<&'a Values> {
-        if self.executor.inputs.top_bindings.contains(binding) {
+        if self.executor.source_inputs().top_bindings.contains(binding) {
             self.executor.state.world.module.prefix_values.get(binding)
         } else if let Some(cell) = self.executor.state.world.active_cells.get(binding) {
             Some(&self.executor.state.world.cells[cell.0].values)
@@ -124,7 +132,11 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                 call.kind,
                 CallKind::LocalMemberRead | CallKind::AccessorCalleeLookup
             ) || call.owner != self.owner
-                || call.caller != self.scope.caller()
+                || call.caller
+                    != self
+                        .scope
+                        .caller()
+                        .and_then(|key| self.executor.source_index().local_origin(key))
                 || call.span.hi < truncation.lo
             {
                 continue;
@@ -151,10 +163,16 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
 
         let writes: &[MemberValueWrite] = match self.scope {
             LocalExecutionScope::Callable(key) => {
-                &self.executor.inputs.index.callables[&key].member_value_writes
+                &self
+                    .executor
+                    .source_index()
+                    .callables
+                    .get(&key)
+                    .expect("kernel callable activation checks its source index")
+                    .member_value_writes
             }
             LocalExecutionScope::Root => {
-                &self.executor.inputs.index.top_member_value_writes[self.owner.0]
+                &self.executor.source_index().top_member_value_writes[self.owner.0]
             }
             LocalExecutionScope::Constructor(_) => &[],
         };
@@ -198,7 +216,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
         let span = self
             .scope
             .caller()
-            .and_then(|key| self.executor.inputs.index.callable_spans.get(&key))
+            .and_then(|key| self.executor.source_index().callable_spans.get(&key))
             .copied()
             .unwrap_or(DUMMY_SP);
         self.fallback(
@@ -220,7 +238,7 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
     /// yet. Kept out of line for the kernel's recursion depth.
     #[inline(never)]
     fn extend_with_remainder(&self, frame: &LocalFrame, span: Span, reached: &mut Values) {
-        let index = self.executor.inputs.index;
+        let index = self.executor.source_index();
         // A constructor body lies inside its statement.
         let body = self
             .scope
@@ -239,7 +257,12 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                             .get(key)
                             .is_some_and(|callable| callable.owner == self.owner)
                 })
-                .map(|(key, _)| AbstractValue::Value(Value::Alloc(Kind::Function, *key))),
+                .map(|(key, _)| {
+                    AbstractValue::Value(Value::Alloc(
+                        Kind::Function,
+                        self.executor.source_index().allocation(*key),
+                    ))
+                }),
         );
         for binding in index.references_within(span.hi.0, body.hi.0) {
             if let Some(values) = self.binding_values(binding, frame) {
@@ -286,7 +309,11 @@ impl<'source> LocalExecutionContext<'_, 'source, '_> {
                     )
                 })
             }) {
-                self.outcome.lose_call_target(call.owner, call.span);
+                self.outcome.lose_call_target(
+                    self.executor.source_inputs().module_id,
+                    call.owner,
+                    call.span,
+                );
             }
         }
     }
@@ -401,16 +428,16 @@ impl LocalExecutionContext<'_, '_, '_> {
 impl BindingContext for LocalExecutionContext<'_, '_, '_> {
     fn cell_policy(&self) -> CellPolicy<'_> {
         CellPolicy {
-            captured: &self.executor.inputs.captured_local_bindings,
+            captured: &self.executor.source_inputs().captured_local_bindings,
         }
     }
     fn capture_policy(&self) -> CapturePolicy<'_> {
-        self.executor.inputs.capture_policy()
+        self.executor.source_inputs().capture_policy()
     }
     fn cell_effect(&self) -> EffectCoverageFragment {
-        // This activation-local binding has no live cell to expose a heap,
-        // global, or host effect. Its value's evaluation is covered
-        // separately by the ordered operation that produced it.
+        // Creating/initializing an activation-local binding, or storing to
+        // an uncaptured one, invokes no user code and touches no exterior
+        // cell. Evaluation of the stored value is covered separately.
         EffectCoverageFragment::no_effects()
     }
     /// Only an admitted root statement stores to a module binding: a root
@@ -423,7 +450,7 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
     ) -> Option<EffectCoverageFragment> {
         if !matches!(self.scope, LocalExecutionScope::Root)
             || self.outcome.root_binding_effect_identity.is_some()
-            || !self.executor.inputs.top_bindings.contains(binding)
+            || !self.executor.source_inputs().top_bindings.contains(binding)
             || self
                 .executor
                 .module_binding_store_refusal(binding)
@@ -433,7 +460,12 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         }
         // The flattened lane's join, which the owner's assignment phase
         // repeats: the statement may be one of several writers.
-        if self.executor.inputs.needed_bindings.contains(binding) {
+        if self
+            .executor
+            .source_inputs()
+            .needed_bindings
+            .contains(binding)
+        {
             let world = self.executor.state.world_mut();
             let possible = world.module.prefix_values.entry_or_default(binding);
             let before = possible.len();
@@ -444,8 +476,49 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         }
         Some(EffectCoverageFragment::module_binding_store())
     }
+    fn module_namespace_member(
+        &mut self,
+        receivers: &Values,
+        property: &str,
+    ) -> Option<LocalValueResult> {
+        let mut receivers = receivers.iter();
+        let AbstractValue::ModuleNamespace(scope) = receivers.next()? else {
+            return None;
+        };
+        if receivers.next().is_some() {
+            return None;
+        }
+        let super::super::interpreter::program_activation::ProgramMemberRead {
+            values,
+            initialized,
+            target,
+        } = self.executor.namespace_member(*scope, property)?;
+        if let Some(target) = &target {
+            let projection = self.executor.source_index().source_scope();
+            self.executor.record_program_cell_read(
+                target,
+                self.executor
+                    .state
+                    .runtime_effect_owner(projection, self.owner),
+                !initialized,
+                self.outcome,
+            );
+        }
+        let selection =
+            target.and_then(|target| self.executor.program_cell_selection(&target, &values));
+        Some(LocalValueResult {
+            allocation: super::super::allocation_transfer::AllocationValue::opaque(values),
+            effects: if initialized {
+                EffectCoverageFragment::initialized_module_read()
+            } else {
+                EffectCoverageFragment::default()
+            },
+            selection,
+        })
+    }
     fn prefix_tracked_receiver(&self, binding: &Id, receivers: &Values) -> bool {
         self.executor.initialized_local_binding(binding)
+            || self.executor.initialized_import_binding(binding)
             || (!receivers.is_empty()
                 && receivers.iter().all(|value| {
                     matches!(value, AbstractValue::Value(Value::Alloc(Kind::Object, record))
@@ -457,16 +530,46 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         binding: &Id,
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition> {
+        if matches!(self.scope, LocalExecutionScope::Callable(_))
+            && binding.0.as_ref() == "arguments"
+            && !self.body.bindings.contains_key(binding)
+        {
+            // The implicit object can expose every actual input, including
+            // inputs with no formal parameter. Its first read truncates this
+            // activation; earlier operations keep their own provenance.
+            self.fallback(
+                frame,
+                Values::new(),
+                ExecutionPrecisionLossReason::UnsupportedOperation {
+                    operation: ExecutionOperation::CallableInputs,
+                    ordered_field_read_refusal: None,
+                    ordered_call_admission_refusal: None,
+                },
+                DUMMY_SP,
+            );
+            return Err(RemainderDisposition::AlreadySummarized);
+        }
         if missing_activation_binding(self.body, binding, frame) {
             self.refuse_activation_value(frame);
             return Err(RemainderDisposition::AlreadySummarized);
         }
-        if self.executor.inputs.top_bindings.contains(binding) {
+        if self.executor.source_inputs().top_bindings.contains(binding)
+            || self
+                .executor
+                .source_index()
+                .imported_bindings
+                .contains(binding)
+        {
             self.executor
                 .promote_top_effects(&[binding], &[], self.owner, self.outcome);
         }
         let values = self.executor.evaluate_binding(binding, &frame.environment);
-        if self.executor.inputs.top_bindings.contains(binding)
+        if self.executor.source_inputs().top_bindings.contains(binding)
+            || self
+                .executor
+                .source_index()
+                .imported_bindings
+                .contains(binding)
             || (self.executor.state.world.active_cells.contains_key(binding)
                 && !self.body.bindings.contains_key(binding))
         {
@@ -487,18 +590,20 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
         let imported_primitive_read = normal
             && self
                 .executor
-                .inputs
+                .source_inputs()
                 .imported_primitive_read(binding)
                 .is_some_and(|read| {
                     values == Values::from([AbstractValue::Value(Value::Prim(read.kinds))])
                 });
         let effects = if normal
-            && (self.executor.initialized_local_binding(binding) || imported_primitive_read)
+            && (self.executor.initialized_local_binding(binding)
+                || self.executor.initialized_import_binding(binding)
+                || imported_primitive_read)
         {
             EffectCoverageFragment::initialized_module_read()
         } else if normal
             && frame.initialized_bindings.contains(binding)
-            && !self.executor.state.world.active_cells.contains_key(binding)
+            && self.body.bindings.contains_key(binding)
         {
             EffectCoverageFragment::no_effects()
         } else {
@@ -514,17 +619,18 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
                 .filter(|selection| selection.matches(&values))
                 .cloned()
                 .or_else(|| {
-                    let key = self.executor.inputs.index.hoisted_bindings.get(binding)?;
+                    let key = self.executor.source_index().hoisted_bindings.get(binding)?;
                     (self
                         .executor
-                        .inputs
-                        .index
+                        .source_index()
                         .direct_top_level_functions
                         .contains(binding)
                         && self
                             .executor
                             .local_call_target(&values)
-                            .is_some_and(|(target, _)| target == *key))
+                            .is_some_and(|(target, _)| {
+                                self.executor.source_index().local_origin(target) == Some(*key)
+                            }))
                     .then(|| {
                         CallableSelection::observed(
                             &values,
@@ -533,6 +639,8 @@ impl BindingContext for LocalExecutionContext<'_, '_, '_> {
                     })
                     .flatten()
                 })
+        } else if self.executor.initialized_import_binding(binding) {
+            self.executor.imported_callable_selection(binding, &values)
         } else {
             frame
                 .binding_selections
@@ -565,7 +673,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                     identity.owner == self.owner
                         && self
                             .executor
-                            .inputs
+                            .source_inputs()
                             .initializer_call_effect_input(
                                 self.owner,
                                 &identity.binding,
@@ -643,14 +751,18 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             };
             if let Some(mut result) = array_transfer::push(self.executor, selection, &args) {
                 for cell in result.reads {
-                    self.outcome
-                        .effects
-                        .record_heap_read(cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_read(
+                        self.executor.inputs.root.index.source_scope(),
+                        cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                 }
                 for cell in result.writes {
-                    self.outcome
-                        .effects
-                        .record_heap_write(cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_write(
+                        self.executor.inputs.root.index.source_scope(),
+                        cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                 }
                 result.effects.selected_local_call(LocalCallReceipt {
                     caller,
@@ -705,20 +817,20 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             .find(|call| call.kind == CallKind::Call && call.span == span)
             .expect("a source-covered call has its canonical call record")
             .clone();
-        let audited_input =
-            self.outcome
-                .root_binding_effect_identity
-                .as_ref()
-                .filter(|identity| {
-                    matches!(self.scope, LocalExecutionScope::Root) && identity.owner == self.owner
-                })
-                .and_then(|identity| match &call.callee {
-                    ValueExpr::Binding(callee) => self
-                        .executor
-                        .inputs
-                        .initializer_call_effect_input(self.owner, &identity.binding, callee, span),
-                    _ => None,
-                });
+        let audited_input = self
+            .outcome
+            .root_binding_effect_identity
+            .as_ref()
+            .filter(|identity| {
+                matches!(self.scope, LocalExecutionScope::Root) && identity.owner == self.owner
+            })
+            .and_then(|identity| match &call.callee {
+                ValueExpr::Binding(callee) => self
+                    .executor
+                    .source_inputs()
+                    .initializer_call_effect_input(self.owner, &identity.binding, callee, span),
+                _ => None,
+            });
         let selected_const_factory_result =
             audited_input.is_some_and(|input| input.returns_opaque_function_from_const_primitive);
         let audited_input = audited_input.map(|input| input.reference.clone());
@@ -729,7 +841,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 .as_ref()
                 .is_some_and(|identity| {
                     self.executor
-                        .inputs
+                        .source_inputs()
                         .declared_pure_initializers
                         .contains(identity.binding.0.as_ref())
                 });
@@ -766,7 +878,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         };
         let complete = outcome.complete && !outcome.unknown_call;
         let no_child_losses = outcome.effects.precision_losses.is_empty()
-            && outcome.effects.uninitialized_reads.is_empty();
+            && !outcome.runtime_binding_effects.has_uninitialized_reads();
         let missing_result = complete && matches!(transfer, CallTransfer::EffectsOnly);
         let admission_refusal = match &transfer {
             CallTransfer::UnsupportedOperands(refusal) => Some(*refusal),
@@ -780,12 +892,14 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
                 )
             })
         {
-            self.outcome.lose_call_target(self.owner, span);
+            self.outcome.lose_call_target(
+                self.executor.source_inputs().module_id,
+                self.owner,
+                span,
+            );
         }
-        self.outcome.absorb_call_effects(
-            &mut outcome.effects,
-            self.executor.state.assumption.as_ref(),
-        );
+        self.outcome
+            .absorb_call_outcome(&mut outcome, self.executor.state.assumption.as_ref());
         self.outcome.executed_owners.extend(outcome.executed_owners);
         self.outcome.unknown_call |= outcome.unknown_call;
         self.outcome
@@ -866,7 +980,10 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
             .filter(|(key, target)| {
                 !target.opaque
                     && !target.generator
-                    && !self.executor.inputs.index.async_callables.contains(key)
+                    && self
+                        .executor
+                        .allocation_index(*key)
+                        .is_some_and(|index| !index.async_callables.contains(key))
             });
             if let Some((key, _)) = terminal_local_target {
                 // The admitted source call already ran and supplied its
@@ -904,7 +1021,13 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
 
 impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     fn index(&self) -> &ExecutionIndex {
-        self.executor.inputs.index
+        self.executor.source_index()
+    }
+    fn instantiate_allocation(
+        &mut self,
+        local: u32,
+    ) -> crate::program_execution::RuntimeAllocationId {
+        self.executor.instantiate_allocation(local)
     }
     fn world(&self) -> &World {
         &self.executor.state.world
@@ -919,16 +1042,15 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
         &mut self,
         frame: &LocalFrame,
         creation: super::super::local_operations::DeferredCallableCreation,
-        captures: &LexicalCaptures,
+        _captures: &LexicalCaptures,
     ) -> Result<ClosureAdmission, RemainderDisposition> {
         let callable = creation.callable();
-        let Some(body) = self.executor.inputs.index.callables.get(&callable) else {
+        let Some(body) = self.executor.source_index().callables.get(&callable) else {
             return Err(RemainderDisposition::NeedsSummary);
         };
         let reads = self
             .executor
-            .inputs
-            .index
+            .source_index()
             .prototype_callable_reads
             .get(&callable)
             .unwrap_or(&body.reads);
@@ -939,63 +1061,14 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
             self.refuse_activation_value(frame);
             return Err(RemainderDisposition::AlreadySummarized);
         }
-        // This exact root creates one fresh ordinary function as the provider
-        // call's argument. Its body does not run at creation, even when the
-        // deferred body contains syntax the callable interpreter marks opaque.
-        // Keep the capture-cell restriction and preserve the closure value so
-        // an eager invocation or later escape still follows its usual path.
-        let selected_function_argument = body.opaque
-            && matches!(
-                creation,
-                super::super::local_operations::DeferredCallableCreation::Function(_)
-            )
-            && matches!(self.scope, LocalExecutionScope::Root)
-            && self
-                .outcome
-                .root_binding_effect_identity
-                .as_ref()
-                .is_some_and(|identity| {
-                    identity.owner == self.owner
-                        && identity.initializer_span == self.body.root_span()
-                        && self
-                            .body
-                            .single_identifier_call_with_function_argument_initializer()
-                            .is_some_and(|(callee, call_span)| {
-                                self.executor
-                                    .inputs
-                                    .initializer_call_effect_input(
-                                        self.owner,
-                                        &identity.binding,
-                                        callee,
-                                        call_span,
-                                    )
-                                    .is_some()
-                            })
-                });
-        let effects = if captures.cells.is_empty()
-            && (!body.opaque || selected_function_argument)
-            && !body.generator
-            && !self
-                .executor
-                .inputs
-                .index
-                .async_callables
-                .contains(&callable)
-        {
-            // Creating this checked closure allocates a callable without
-            // evaluating its body or touching exterior state. The prefix
-            // prerequisites still select its exact captured environment.
-            let mut effects = EffectCoverageFragment::no_effects();
-            effects.depend_on(&self.executor.settled_prefix_dependencies());
-            effects
-        } else {
-            if !captures.cells.is_empty() {
-                self.executor.observations.refuse_owner_coverage(
-                    OwnerInitializationCoverageRefusalReason::CallbackCapturesLiveCell,
-                );
-            }
-            EffectCoverageFragment::default()
-        };
+        // The kernel checked this exact function/arrow/method creation. Its
+        // body and parameter defaults do not execute, including async and
+        // generator bodies and syntax invocation cannot model. Captures keep
+        // live cell identities; creation performs no GetBindingValue on them.
+        // Later initialization, reads, writes and invocation retain their own
+        // guards and effects rather than inheriting this creation receipt.
+        let mut effects = EffectCoverageFragment::no_effects();
+        effects.depend_on(&self.executor.settled_prefix_dependencies());
         Ok(ClosureAdmission {
             effects,
             judgment: super::super::allocation_transfer::AllocationJudgment::Opaque,
@@ -1008,7 +1081,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
     /// the class and built-in prototypes, so [[Set]] defines a data property.
     fn constructor_assignment_absence(
         &mut self,
-        class: u32,
+        class: RuntimeAllocationId,
         property: &str,
     ) -> Option<Box<ProofDependencies>> {
         let LocalExecutionScope::Constructor(scope) = self.scope else {
@@ -1017,8 +1090,7 @@ impl HeapContext for LocalExecutionContext<'_, '_, '_> {
         (scope == class
             && self
                 .executor
-                .inputs
-                .index
+                .source_index()
                 .local_constructors
                 .get(&class)
                 .is_some_and(|constructor| constructor.own_fields.contains(property))
@@ -1051,9 +1123,11 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
                 property: selection.property().into(),
             },
         ] {
-            self.outcome
-                .effects
-                .record_heap_read(cell, self.executor.state.assumption.is_none());
+            self.outcome.record_runtime_heap_read(
+                self.executor.inputs.root.index.source_scope(),
+                cell,
+                self.executor.state.assumption.is_none(),
+            );
         }
         Some((selection, effects))
     }
@@ -1106,8 +1180,12 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
             span.into(),
         );
         native_own_data_read_slots(&callee, |id| {
-            self.executor.inputs.flow.is_declared(id)
-                || self.executor.inputs.shadowed.contains(id.0.as_ref())
+            self.executor.source_inputs().flow.is_declared(id)
+                || self
+                    .executor
+                    .source_inputs()
+                    .shadowed
+                    .contains(id.0.as_ref())
         })?;
         let data = builtins::data_property(receiver.0.as_ref(), property)?;
         self.calls().iter().find(|call| {
@@ -1120,8 +1198,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         })?;
         let premise = self
             .executor
-            .inputs
-            .index
+            .source_index()
             .native_own_data_read_premise(span)?;
         let dependencies = premise.dependencies.clone();
         self.executor.record_inference_use(
@@ -1132,8 +1209,7 @@ impl NativeContext for LocalExecutionContext<'_, '_, '_> {
         if !premise.census {
             let evidence = self
                 .executor
-                .inputs
-                .index
+                .source_index()
                 .native_operation_input_evidence
                 .get(&CallSite::from(span))?
                 .clone();
@@ -1199,9 +1275,11 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 if matches!(self.scope, LocalExecutionScope::Root)
                     && let Some(read) = self.executor.present_own_data_read(receivers, property)
                 {
-                    self.outcome
-                        .effects
-                        .record_heap_read(read.cell, self.executor.state.assumption.is_none());
+                    self.outcome.record_runtime_heap_read(
+                        self.executor.inputs.root.index.source_scope(),
+                        read.cell,
+                        self.executor.state.assumption.is_none(),
+                    );
                     return Disposition::Resolved(
                         super::super::allocation_transfer::AllocationValue::opaque(read.values),
                     );
@@ -1227,7 +1305,14 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                     {
                         lookup.clone()
                     }
-                    _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
+                    _ => Call::member_read(
+                        self.owner,
+                        self.scope
+                            .caller()
+                            .and_then(|key| self.executor.source_index().local_origin(key)),
+                        callee,
+                        span,
+                    ),
                 };
                 // Retain established native, array and borrowed-record read proofs.
                 // The receiver is only a declarative cell, so the value projection
@@ -1284,7 +1369,31 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                 );
                 Disposition::Summarized
             }
-            Unproved::CaptureStore { values, span } => {
+            Unproved::CaptureStore {
+                binding,
+                values,
+                span,
+            } => {
+                if self.executor.initialized_local_binding(binding)
+                    && !self
+                        .executor
+                        .source_index()
+                        .top_const_bindings
+                        .contains(binding)
+                {
+                    // SetMutableBinding was reached with a value and an
+                    // initialized mutable module cell. We cannot continue its
+                    // value transfer, but its lexical write already happened;
+                    // the remainder's havoc cannot turn it into a hypothetical
+                    // callback effect or confer an operation receipt.
+                    let source = self.executor.source_index().source_scope();
+                    self.outcome.record_runtime_binding_rebind(
+                        source,
+                        source.binding(binding.clone()),
+                        self.executor.state.runtime_effect_owner(source, self.owner),
+                        self.executor.state.assumption.as_ref(),
+                    );
+                }
                 self.fallback(
                     frame,
                     values.clone(),

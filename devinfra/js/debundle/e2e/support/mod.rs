@@ -7,6 +7,7 @@ mod ast_assertions;
 mod case_commands;
 mod failure_workspace;
 mod fixture_spec;
+mod placement;
 pub use case_commands::{
     RecordedCommand, debundle_fixture_output, fixture_output, recorded_commands, replay_command,
 };
@@ -18,6 +19,7 @@ mod tree_assertions;
 mod unescaped_local_callable;
 mod workspace;
 
+pub use placement::ProgramPlacement;
 pub use tree_assertions::{assert_same_tree, read_tree};
 pub use unescaped_local_callable::{
     assert_unescaped_local_callable_split, unescaped_local_callable_modules,
@@ -47,8 +49,9 @@ pub use fixture_spec::{
 };
 pub use runtime::{
     assert_all_emitted_js_checks, assert_compiled_bun_entry_output, assert_entry_output,
-    assert_generated_module_after_entry_script, assert_module_exports, assert_node_error,
-    assert_node_output, assert_preserved_entry_error, assert_preserved_entry_output,
+    assert_generated_module_after_entry_script, assert_module_exports,
+    assert_module_exports_after_entry, assert_node_error, assert_node_output,
+    assert_preserved_entry_error, assert_preserved_entry_output,
     assert_preserved_entry_output_with_bun, list_module_exports, node_module_evaluation_order,
 };
 
@@ -71,7 +74,7 @@ pub use spec::{
     NonLiteralLoaderCalls, PredefinedGlobals, ProcessPrototypeChainAccessors, ProgramPremises,
     ReentryFreeOperation, ResolvedMemberSelector, SourceMatchClaim, SourceUnitSelector,
     SynchronousLoadDrainsMicrotasks, SynchronousLoadRunsAppCallbacks, SynchronousModuleLoader,
-    ValueInputContract, VendorLevel, VendorMark,
+    UnassignedMode, ValueInputContract, VendorLevel, VendorMark,
 };
 
 use artifact::paths::path_from_module_path;
@@ -383,10 +386,11 @@ pub fn expect_sequenced_cycle_rejection(opts: FixtureOpts<'_>, modules: &[&str])
     );
 }
 
-/// Runs `opts` and asserts the atomic-group check rejected it: some conflict of
-/// `atomic_group_conflicts.json` has claims in every one of `modules` and every one of `causes`.
+/// Runs `opts` with graph export and asserts the atomic-group check rejected it:
+/// some conflict of `atomic_group_conflicts.json` has claims in every one of
+/// `modules` and every one of `causes`.
 pub fn expect_atomic_conflict_rejection(opts: FixtureOpts<'_>, modules: &[&str], causes: &[&str]) {
-    let conflicts = run_rejection_fixture(opts).atomic_group_conflicts();
+    let conflicts = run_rejection_fixture_with_graphs(opts).atomic_group_conflicts();
     assert!(
         conflicts.iter().any(|conflict| {
             let claims = conflict["claims"].as_array().expect("conflict claims");
@@ -443,6 +447,36 @@ pub fn run_emit_on_rejection_fixture(opts: FixtureOpts<'_>) -> RejectedFixture {
 
 pub fn run_emit_on_rejection_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
     run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3)
+}
+
+/// A currently unproved relocation whose diagnostic tree preserves the
+/// concrete oracle. The typed schedule refusal remains required even when
+/// graph acceptance or ordinary Node output alone would permit the split.
+pub fn assert_conservative_schedule_refusal(
+    opts: FixtureOpts<'_>,
+    reason: &str,
+    expected_stdout: &str,
+) -> RejectedFixture {
+    let rejected = run_emit_on_rejection_fixture_with_graphs(opts);
+    let report: Value = read_json(&rejected.report_root.join("evaluation_schedule.json"));
+    assert_eq!(report["kind"], "evaluation_schedule_refused", "{report:#}");
+    assert!(
+        report["rejection"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with(reason),
+        "{report:#}"
+    );
+    assert!(rejected.gate_rejected_marker().exists());
+    assert_node_output(
+        &rejected
+            .source_root
+            .join(format!("{}.js", rejected.chunk_id)),
+        expected_stdout,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_stdout, "");
+    rejected
 }
 
 /// The xfail form of a positive the gate still refuses: the split is valid

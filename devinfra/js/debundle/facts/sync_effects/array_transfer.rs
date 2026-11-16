@@ -1,5 +1,7 @@
 //! Native array operations over an uninterrupted literal's descriptor state.
 
+use crate::program_execution::RuntimeAllocationId;
+
 use super::effect_coverage::EffectCoverageFragment;
 use super::value_model::{AbstractValue, Values};
 use crate::analysis_inputs::ProofDependencies;
@@ -17,13 +19,13 @@ pub(super) trait ArrayContext {
     /// and none of the `absent` own properties. Reused allocation sites and
     /// descriptor changes lose this witness even if their pooled element
     /// values are still available.
-    fn literal_array_length(&self, object: u32, absent: &[&str]) -> Option<u32>;
+    fn literal_array_length(&self, object: RuntimeAllocationId, absent: &[&str]) -> Option<u32>;
     /// Records the slot check it makes as an admission fact.
     fn array_slots_intact(&mut self, slots: &[IntrinsicSlot]) -> bool;
     /// The exact element values of a settled dense array without holes.
-    fn dense_array_slots(&self, object: u32) -> Option<Vec<Values>>;
+    fn dense_array_slots(&self, object: RuntimeAllocationId) -> Option<Vec<Values>>;
     fn array_dependencies(&self) -> ProofDependencies;
-    fn append_primitives(&mut self, object: u32, length: u32, arguments: &[Values]);
+    fn append_primitives(&mut self, object: RuntimeAllocationId, length: u32, arguments: &[Values]);
 }
 
 /// An `%Array.prototype%` method selected by GetValue on a literal array,
@@ -35,7 +37,7 @@ pub(super) enum ArrayMethodSelection {
 }
 
 impl ArrayMethodSelection {
-    pub(super) fn object(&self) -> u32 {
+    pub(super) fn object(&self) -> RuntimeAllocationId {
         match self {
             Self::Push(selection) => selection.object,
             Self::Iteration(selection) => selection.object,
@@ -55,7 +57,7 @@ impl ArrayMethodSelection {
 /// receiver and the rest of the row's slots after the arguments.
 #[derive(Clone)]
 pub(super) struct ArrayIterationSelection {
-    pub(super) object: u32,
+    pub(super) object: RuntimeAllocationId,
     pub(super) row: &'static IterationRow,
     dependencies: ProofDependencies,
 }
@@ -135,7 +137,7 @@ pub(super) fn iteration_snapshot(
 /// checks the receiver and indexed-setter protocol again after the arguments.
 #[derive(Clone)]
 pub(super) struct ArrayPushSelection {
-    pub(super) object: u32,
+    pub(super) object: RuntimeAllocationId,
     dependencies: ProofDependencies,
 }
 
@@ -167,8 +169,8 @@ fn select_push(
 pub(super) struct ArrayPushResult {
     pub(super) values: Values,
     pub(super) effects: EffectCoverageFragment,
-    pub(super) reads: Vec<EffectCell>,
-    pub(super) writes: Vec<EffectCell>,
+    pub(super) reads: Vec<crate::program_execution::RuntimeEffectCell>,
+    pub(super) writes: Vec<crate::program_execution::RuntimeEffectCell>,
     pub(super) dependencies: ProofDependencies,
 }
 

@@ -112,6 +112,7 @@ impl<'a> SavedNativeIntegrity<'a> {
                     .map(SavedNativePrototypeMutation::restore)
                     .collect(),
             ),
+            prototype_mutation_census: Arc::default(),
             witnesses: Arc::new(
                 self.witnesses
                     .into_iter()

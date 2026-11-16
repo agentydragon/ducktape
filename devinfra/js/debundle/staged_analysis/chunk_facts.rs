@@ -7,7 +7,7 @@ use analysis::facts::{ChunkFactAnalysis, ExportReentryPolicy, StructuralChunkSou
 use analysis_projection::AnalysisProjection;
 use anyhow::{Context, Result};
 use artifact::{ArtifactIndexes, ChunkBundle, chunk_runtime_entry};
-use chunk_analysis::{DynamicImportTarget, check_chunk_facts, compute_chunk_facts};
+use chunk_analysis::{DynamicImportTarget, check_chunk_facts};
 use js_ast::ParsedJsModule;
 use source_identity::ChunkId;
 use spec::AdmissionCheck;
@@ -29,6 +29,7 @@ pub fn analyze_logical_chunk(
     context: LogicalChunkAnalysisContext<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
+    prepared: Option<(&str, &analysis::facts::PreparedChunkAnalysis<'_>)>,
 ) -> Result<ChunkFactAnalysis> {
     let LogicalChunkAnalysisContext {
         artifact,
@@ -46,13 +47,18 @@ pub fn analyze_logical_chunk(
         chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
     let source_path = runtime_file.metadata.source_path.clone();
     let line_index = runtime_ast.line_index();
-    let structural_analysis = analysis::facts::collect_chunk_source_facts(
-        &runtime_ast.module,
-        Some(SourceLocator {
-            source_path: &source_path,
-            lines: &line_index,
-        }),
-    );
+    let prepared_facts = match prepared {
+        Some((prepared_entry, prepared)) if prepared_entry == target_file => {
+            ChunkFacts::Prepared(prepared)
+        }
+        _ => ChunkFacts::Compute(analysis::facts::collect_chunk_source_facts(
+            &runtime_ast.module,
+            Some(SourceLocator {
+                source_path: &source_path,
+                lines: &line_index,
+            }),
+        )),
+    };
     diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
     let LogicalChunkFacts { facts, .. } = compute_logical_chunk_facts(
         ChunkFactsContext {
@@ -68,7 +74,7 @@ pub fn analyze_logical_chunk(
                 .get(&chunk_id_interned)
                 .unwrap_or(&ExportReentryPolicy::Conservative),
         },
-        ChunkFacts::Compute(structural_analysis),
+        prepared_facts,
         projection,
         program_summary,
     )?;
@@ -92,11 +98,13 @@ pub struct ChunkFactsContext<'a> {
 }
 
 /// Where a chunk's facts come from.
-pub enum ChunkFacts<'a> {
+pub enum ChunkFacts<'source, 'prepared> {
     /// Analyze the chunk from its structural facts.
-    Compute(StructuralChunkSourceFacts<'a>),
+    Compute(StructuralChunkSourceFacts<'source>),
     /// Facts an analysis artifact holds for this chunk.
     Loaded(ChunkFactAnalysis),
+    /// Use a source preparation already retained by the whole-program pass.
+    Prepared(&'prepared analysis::facts::PreparedChunkAnalysis<'source>),
 }
 
 /// One chunk's checked facts and what the chunk report records beside them.
@@ -108,50 +116,20 @@ pub struct LogicalChunkFacts {
     pub redundant_admission_overrides: Vec<AdmissionCheck>,
 }
 
-/// Analyze one chunk's facts from its source, its spec projection and the
-/// program summary, or check facts loaded for it.
-pub fn compute_logical_chunk_facts(
-    context: ChunkFactsContext<'_>,
-    facts: ChunkFacts<'_>,
+/// Build the exact per-chunk assumptions used by source preparation and final
+/// fact settlement. Keeping this projection shared ensures retained executable
+/// sources are prepared under the same inputs as their local analysis.
+pub(crate) fn analysis_inputs_for_chunk(
+    chunk_id: &str,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
-) -> Result<LogicalChunkFacts> {
-    let ChunkFactsContext {
-        artifact,
-        artifact_indexes,
-        chunk_id,
-        diagnostics,
-        chunk_id_interned,
-        target_file,
-        runtime_ast,
-        source_path,
-        export_reentry_policy,
-    } = context;
-    // `local_property_effects` selects the facts pass's local-effect policy,
-    // which travels in the hints.
+) -> AnalysisInputs {
     let chunk_analysis_inputs = projection
         .chunk_analysis_inputs
         .get(chunk_id)
         .cloned()
         .unwrap_or_default();
     let host_behavior = projection.host_behavior;
-    let line_index = runtime_ast.line_index();
-    // A3 admission resolver: where does a dynamic-import specifier in
-    // this chunk's entry land? Same artifact resolution the specifier
-    // rewriter uses; `SameChunk` marks a debundled internal module.
-    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
-        .resolve_runtime_import_reference(
-            specifier,
-            chunk_id_interned,
-            target_file,
-            &artifact.chunk_table,
-        ) {
-        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
-            DynamicImportTarget::SameChunk
-        }
-        Some(_) => DynamicImportTarget::OtherChunk,
-        None => DynamicImportTarget::External,
-    };
     let analysis_inputs: AnalysisInputs = {
         let mut inputs = AnalysisInputs {
             assumptions: projection
@@ -196,6 +174,7 @@ pub fn compute_logical_chunk_facts(
         inputs.assumptions.reentry_free_operations = host_behavior.reentry_free_operations.clone();
         inputs.assumptions.predefined_globals = host_behavior.predefined_globals;
         inputs.assumptions.bundle_globals = program_summary.bundle_globals.clone();
+        inputs.executables = program_summary.executables.clone();
         inputs.imported_purities = program_summary
             .bindings
             .get(chunk_id)
@@ -203,6 +182,11 @@ pub fn compute_logical_chunk_facts(
             .unwrap_or_default();
         inputs.stable_imports = program_summary
             .stable_imports
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
+        inputs.imported_primitive_result_kinds = program_summary
+            .primitive_result_kinds
             .get(chunk_id)
             .cloned()
             .unwrap_or_default();
@@ -233,6 +217,11 @@ pub fn compute_logical_chunk_facts(
         if let Some(callables) = program_summary.imported_callables.get(chunk_id) {
             inputs.merge_imported_callables(callables.clone());
         }
+        inputs.foreign_observer_cell_reads = program_summary
+            .foreign_observer_cell_reads
+            .get(chunk_id)
+            .cloned()
+            .unwrap_or_default();
         if let Some(factories) = program_summary.retained_callback_factories.get(chunk_id) {
             inputs
                 .assumptions
@@ -306,6 +295,88 @@ pub fn compute_logical_chunk_facts(
             .clone();
         inputs
     };
+    analysis_inputs
+}
+
+/// Prepare one chunk's source-dependent analysis once using the same summary
+/// projection later used to settle its facts and construct execution views.
+pub(crate) fn prepare_logical_chunk_analysis<'source>(
+    chunk_id: &str,
+    structural_analysis: StructuralChunkSourceFacts<'source>,
+    runtime_ast: &ParsedJsModule,
+    source_path: &str,
+    projection: &AnalysisProjection<'_>,
+    program_summary: &super::program_summary::ProgramSummary,
+) -> analysis::facts::PreparedChunkAnalysis<'source> {
+    let analysis_inputs = analysis_inputs_for_chunk(chunk_id, projection, program_summary);
+    let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
+        structural_analysis,
+        program_summary
+            .native_operation_inputs
+            .get(chunk_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default(),
+        program_summary
+            .inferred_set_constructions
+            .get(chunk_id)
+            .unwrap_or(&BTreeMap::new()),
+        &analysis_inputs.assumptions.argument_inputs,
+    );
+    let line_index = runtime_ast.line_index();
+    analysis::facts::prepare_chunk_analysis(
+        structural_analysis,
+        &analysis_inputs,
+        Some(SourceLocator {
+            source_path,
+            lines: &line_index,
+        }),
+    )
+}
+
+/// Analyze one chunk's facts from its source, its spec projection and the
+/// program summary, or check facts loaded for it.
+pub fn compute_logical_chunk_facts(
+    context: ChunkFactsContext<'_>,
+    facts: ChunkFacts<'_, '_>,
+    projection: &AnalysisProjection<'_>,
+    program_summary: &super::program_summary::ProgramSummary,
+) -> Result<LogicalChunkFacts> {
+    let ChunkFactsContext {
+        artifact,
+        artifact_indexes,
+        chunk_id,
+        diagnostics,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        source_path,
+        export_reentry_policy,
+    } = context;
+    // `local_property_effects` selects the facts pass's local-effect policy,
+    // which travels in the hints.
+    let chunk_analysis_inputs = projection
+        .chunk_analysis_inputs
+        .get(chunk_id)
+        .cloned()
+        .unwrap_or_default();
+    let line_index = runtime_ast.line_index();
+    // A3 admission resolver: where does a dynamic-import specifier in
+    // this chunk's entry land? Same artifact resolution the specifier
+    // rewriter uses; `SameChunk` marks a debundled internal module.
+    let resolve_dynamic_import = |specifier: &str| match artifact_indexes
+        .resolve_runtime_import_reference(
+            specifier,
+            chunk_id_interned,
+            target_file,
+            &artifact.chunk_table,
+        ) {
+        Some(resolved) if resolved.target_chunk_id == chunk_id_interned => {
+            DynamicImportTarget::SameChunk
+        }
+        Some(_) => DynamicImportTarget::OtherChunk,
+        None => DynamicImportTarget::External,
+    };
+    let analysis_inputs = analysis_inputs_for_chunk(chunk_id, projection, program_summary);
     let (facts, redundant_admission_overrides) = match facts {
         ChunkFacts::Loaded(facts) => {
             let redundant = check_chunk_facts(
@@ -319,33 +390,50 @@ pub fn compute_logical_chunk_facts(
             (facts, redundant)
         }
         ChunkFacts::Compute(structural_analysis) => {
-            let structural_analysis = analysis::facts::complete_chunk_structural_with_inputs(
-                structural_analysis,
-                program_summary
-                    .native_operation_inputs
-                    .get(chunk_id)
-                    .map(Vec::as_slice)
-                    .unwrap_or_default(),
-                program_summary
-                    .inferred_set_constructions
-                    .get(chunk_id)
-                    .unwrap_or(&BTreeMap::new()),
-                &analysis_inputs.assumptions.argument_inputs,
-            );
-            compute_chunk_facts(
+            let prepared = prepare_logical_chunk_analysis(
                 chunk_id,
-                diagnostics,
-                &runtime_ast.module,
                 structural_analysis,
+                runtime_ast,
+                source_path,
+                projection,
+                program_summary,
+            );
+            let facts = prepared.finish(
                 &analysis_inputs,
+                export_reentry_policy,
                 Some(SourceLocator {
                     source_path,
                     lines: &line_index,
                 }),
+            );
+            let redundant = check_chunk_facts(
+                chunk_id,
+                diagnostics,
+                &runtime_ast.module,
+                &facts,
                 chunk_analysis_inputs.admission_overrides,
-                export_reentry_policy,
                 &resolve_dynamic_import,
-            )?
+            )?;
+            (facts, redundant)
+        }
+        ChunkFacts::Prepared(prepared) => {
+            let facts = prepared.finish(
+                &analysis_inputs,
+                export_reentry_policy,
+                Some(SourceLocator {
+                    source_path,
+                    lines: &line_index,
+                }),
+            );
+            let redundant = check_chunk_facts(
+                chunk_id,
+                diagnostics,
+                &runtime_ast.module,
+                &facts,
+                chunk_analysis_inputs.admission_overrides,
+                &resolve_dynamic_import,
+            )?;
+            (facts, redundant)
         }
     };
     Ok(LogicalChunkFacts {

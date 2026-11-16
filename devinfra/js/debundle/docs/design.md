@@ -90,6 +90,107 @@ read expressions. This prevents moving an observer across a later initializer.
 Unresolved-call analysis joins all declaration sites when following possible
 function values. Value-specific purity inference must account for all sites.
 
+### Foreign observers of exported cells
+
+Callable availability and cell observation are separate obligations. A cyclic
+importer can read an exported `var` before its initializer stores a function;
+there is no callable value in that cell for callback discovery to visit yet.
+The canonical shallow walk retains imported binding references in lazy bodies,
+including closures installed on globals. Program analysis projects these reads
+back to the owning export cells along the source module links and static request
+reach. Opaque execution retains the resulting may-read constraints under
+fallback provenance, including uninitialized observations. These constraints
+grant no purity, normal-read receipt, or callable completeness capability.
+
+## Final ESM evaluation schedule
+
+The chunk graph remains the placement gate. Accepted output also passes a
+program evaluation check after import naturalization, vendor rewrites, and dead
+import/export pruning. This check reads the same immutable ASTs reconstruction
+will emit. Canonical preparation retains per-declarator and default-export
+origins; the final AST determines both owner placement and execution order.
+Synthetic executable items without a unique original owner refuse validation.
+Materialization supplies explicit source-entry to emitted-entry correspondence;
+an output file is identified by both its chunk and its physical path.
+
+Source module requests come from the prepared link index. The emitted DFS comes
+from final static import and re-export directives, including bare imports. A
+missing relative dependency refuses validation even when the owner order would
+otherwise be unchanged. Opaque host/package requests retain their identities and
+evaluation cuts; they never establish provider readiness. Generic bare package
+requests also retain their unresolved physical directory scope: moving a source
+file into a chunk directory (or a nested module directory) cannot assume the same
+package resolution. Explicit vendor
+identities and directory-independent `node:`/URL targets remain separate.
+No-op declarations and
+linkage directives do not create body execution barriers. Full vendor swaps
+exclude their retained original files from emitted traversal. Partial replacement
+packages and generated facades use the exact targets from `VendorResolutionPlan`.
+A replacement and its residual must occupy one uninterrupted opaque evaluation
+block; intervening application code refuses validation. This comparison relies
+on the existing vendor equivalence promise, including evaluation effects and
+loader behavior; it is not a source-derived proof about the replacement package.
+Vendor dependency closures remain explicit source events and must match the
+final loader graph; an opaque replacement never makes a missing dependency ready.
+
+Changed schedules execute the same canonical owners against separate fresh
+worlds with the original shared module cells, hoisted declarations, and live
+import aliases. The comparison includes all reached owners, kernel-derived
+normal/abrupt/unknown completion, and ordered availability observations at query
+points. Definite uncaught abrupt completion stops the schedule; subsequent owner
+initializers and effects do not run. An unknown completion or availability state
+cannot cross an evaluation cut without proof. For unknown completion only, a
+normal noninvoking initializer may cross when both executions issue its dedicated
+terminal receipt and its cell is neither exported nor captured by any callable.
+An operand-free primitive source initializer may use its covered normal kernel
+receipt for the same proof without replaying the expression. This exception is disabled by dynamic cell access or any source reference to
+`eval`, including lazy bodies. General operation coverage and callable purity do
+not establish this exception; opaque barriers and definite abrupt frontiers stay
+strict. Identical owner and opaque-event
+schedules preserve unsupported behavior without claiming it is normal. Saved
+analysis reconstructs the prepared executable registry for this check; serialized
+local facts cannot stand in for a program execution world. Refusals carry
+`EvaluationScheduleRefusal` and, when reports are enabled,
+`evaluation_schedule.json`; no accepted program output is written.
+
+### Host-setter alias writes preserve initialization phase
+
+A host can install a setter for a property that module code later assigns. If
+the assigned value is a callback over a lexical cell, that setter can invoke
+the callback between the cell's initialization and a later update:
+
+```js
+Object.defineProperty(globalThis, "saved", {
+  set(callback) {
+    console.log("setter", callback());
+  },
+  configurable: true,
+});
+
+let later = 0;
+const callback = () => later;
+globalThis.saved = callback;
+const computed = 264;
+later = 42;
+console.log(computed, callback());
+```
+
+The source observes `setter 0` and then `264 42`. Moving `later` to a static
+dependency can make the setter run while that dependency's lexical cell is in
+the TDZ. The real CLI/Node regression
+<../e2e/evaluation_schedule_test.rs>
+(`a_host_setter_observes_the_original_captured_cell_before_its_later_update`)
+refuses that schedule; its marked rejected output demonstrates the TDZ
+divergence and is not an accepted bundle. A separate selected-`Symbol` case
+shows that proving one native operation does not certify this setter's timing
+(<../e2e/native_operation_input_test.rs>,
+`a_selected_native_call_does_not_authorize_a_changed_host_setter_phase`).
+
+The host setter is a possible external observer at the property write. A
+qualified cell identity says which live cell the callback reads, not whether
+the refactor preserves the phase in which the host can read it. The final
+schedule comparison supplies that check.
+
 ## Soundness over completeness
 
 The debundler's contract: **any spec the validator accepts must emit a
@@ -282,8 +383,11 @@ outcome's `SynchronousCalls::fallback_only` with that path unless already
 held, and an observed insertion clears the entry. `invoke` clears the
 assumption, so an invocation's outcome and memo stay relative to it, and
 `absorb_binding_effects` re-tags a nested outcome under the merging path. The
-per-statement fallback accumulator (`fallback_outcome`) merges under
-`fallback_summary` at the statement's end. Graph build tags the
+bounded fallback transfer records `fallback_summary` provenance and returns
+its complete qualified outcome through ordinary call absorption. Source-only
+closure censuses may be cached, but their read/rebind sets are promoted for
+every invocation's qualified scheduling owner; no module bank retains an
+unreturned effect accumulator. Graph build tags the
 unresolved-call read closure's eager uses for the shared-`var` order. A
 path whose code the statement definitely runs (an applied accessor, an
 unsupported construction's body, a named setter) stays `Observed`, which only
@@ -661,9 +765,12 @@ effects start active. These observations are diagnostic only: a clean source
 prefix does not certify an emitted module layout, which may reorder a later
 native mutation before the guarded read. The whole-program guard remains in
 force until the graph preserves those read/write orders. The report describes
-modeled evaluations, not an exhaustive runtime call trace: invocation memo hits
-do not replay observations. A later guard relaxation must include native effect
-state in invocation memo validity as well as preserve emitted read/write order.
+modeled evaluations, not an exhaustive runtime call trace. Invocation memo
+reuse requires an unchanged semantic world, control/admission state, read
+dependencies and allocation judgment; a hit replays the completed transition
+and its ordered observations at the current request. See
+<../SPEC.md#dependency-graph-array-ordering> for the runtime identity and replay
+contract.
 
 ### Saved-graph input contract
 
@@ -2799,8 +2906,9 @@ The pipeline has three stages with different inputs and responsibilities:
   requires those retained ASTs and never reparses provider source. Read-only
   analysis retention preserves the original source representation for source
   labels and emission; mutable AST access discards that representation before
-  exposing the staged body. The emission boundary releases analysis-only ASTs
-  back to source storage before emission rewrites. Source entry,
+  exposing the staged body. Emission retains read-only provider ASTs for final
+  evaluation-schedule analysis, including pass-through providers. Their source
+  representation continues to control labels and emitted bytes. Source entry,
   chunk selection and source-marker label resolution belong to `artifact`.
   Projection generation returns directly from
   this service; materialization consumes its same resolution and claims before
@@ -4039,6 +4147,31 @@ ordered root's binding-effect receipt, or its completed initialization.
 It never replaces `complete`. `complete` can be false without a recorded
 precision loss: the terminal-call stop in the application adapter clears it
 and records none.
+
+### Prepared callback reachability stays prefix-aware
+
+Following a callable into its defining prepared source can identify the
+callable's own effects without making every lexical initializer reachable.
+When a traversed source owner reads a future lexical binding, keep that binding
+read but stop before promoting deferred bodies held by the not-yet-initialized
+cell. Recheck availability at each later promotion and expand the callback
+closure after the cell initializes. Incomplete reachability retains the full
+conservative closure. This keeps execution readiness separate from source
+metadata and from later callback behavior.
+
+A retained-callback memo caches only the callback graph reached from the exact
+evaluated roots. Reuse requires its live-read witness to remain unchanged,
+including escaped callbacks, heap properties, accessors and descriptors,
+captured cells, and namespace exports in active and inactive module banks.
+Native activation, current binding availability, class promotion, source-owner
+effects and the actual callable's heap ledger still run for each use. The memo
+avoids a repeated graph walk; it grants neither readiness nor effect coverage.
+The future-binding CLI controls are in
+<../e2e/callback_future_availability_test.rs>; namespace-cell invalidation is
+covered by the `CallbackGraphReads` tests in
+<../facts/sync_effects/interpreter/callback_reads.rs>. Runtime allocation
+identity, qualified ledgers and replay details remain specified in
+<../SPEC.md#dependency-graph-array-ordering>.
 
 ## Vendor chunk swapping
 

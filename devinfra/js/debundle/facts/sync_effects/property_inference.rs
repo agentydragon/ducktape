@@ -12,6 +12,7 @@ use crate::analysis_inputs::ProofDependencies;
 use crate::analysis_provenance::{InferenceRule, InferenceUse};
 use crate::facts::abstract_domain::value::{Kind, Value};
 use crate::facts::semantic_inference::{NativePremise, SemanticFact, SemanticFacts, SemanticKey};
+use crate::program_execution::RuntimeAllocationId;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone)]
@@ -44,7 +45,7 @@ pub(super) struct OwnPropertyNamesProjection {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct OwnPropertyDescriptorProjection {
-    pub(super) source_object: u32,
+    pub(super) source_object: RuntimeAllocationId,
     /// ECMAScript own-key order, including canonical integer indices first.
     pub(super) ordered_names: Vec<String>,
     pub(super) properties: BTreeMap<String, CapturedPropertyDescriptor>,
@@ -53,7 +54,7 @@ pub(super) struct OwnPropertyDescriptorProjection {
 
 #[derive(Debug, Clone)]
 pub(super) enum OwnPropertyProjection {
-    Ordinary { source_object: u32 },
+    Ordinary { source_object: RuntimeAllocationId },
     Names(OwnPropertyNamesProjection),
     Descriptors(OwnPropertyDescriptorProjection),
 }
@@ -93,7 +94,7 @@ fn valid_shape(shape: &OwnPropertyShape) -> bool {
 }
 
 fn descriptor_projection(
-    source_object: u32,
+    source_object: RuntimeAllocationId,
     ordered_names: &[String],
     shape: &OwnPropertyShape,
     prefix_properties: &BTreeMap<Option<String>, Values>,
@@ -110,7 +111,11 @@ fn descriptor_projection(
                     let AbstractValue::Closure(HeapAddress { callable: key, .. }, _) = value else {
                         return None;
                     };
-                    if !expected.contains(key) {
+                    if source_object
+                        .source
+                        .local_origin(*key)
+                        .is_none_or(|local| !expected.contains(&local))
+                    {
                         return None;
                     }
                     callbacks.insert(value.clone());
@@ -120,7 +125,7 @@ fn descriptor_projection(
                         callbacks
                             .iter()
                             .filter(|value| {
-                                matches!(value, AbstractValue::Closure(HeapAddress { callable: found, .. }, _) if *found == key)
+                                matches!(value, AbstractValue::Closure(HeapAddress { callable: found, .. }, _) if source_object.source.local_origin(*found) == Some(key))
                             })
                             .cloned()
                             .collect()
@@ -181,7 +186,7 @@ fn require_native_certificate(
 }
 
 pub(super) fn infer_own_property_projection(
-    source_object: u32,
+    source_object: RuntimeAllocationId,
     source_values: &Values,
     shape: &OwnPropertyShape,
     prefix_properties: &BTreeMap<Option<String>, Values>,
@@ -304,7 +309,7 @@ mod tests {
 
     #[test]
     fn ordinary_projection_has_no_native_call_premise() {
-        let source_object = 7;
+        let source_object = crate::program_execution::RuntimeSourceScope::fresh().allocation(7);
         let source_values = Values::from([AbstractValue::Value(Value::Alloc(
             Kind::Object,
             source_object,
@@ -330,7 +335,7 @@ mod tests {
 
         assert!(matches!(
             proof.projection,
-            OwnPropertyProjection::Ordinary { source_object: 7 }
+            OwnPropertyProjection::Ordinary { source_object: actual } if actual == source_object
         ));
         assert_eq!(
             proof.inference_use().conclusion,
@@ -349,7 +354,7 @@ mod tests {
 
     #[test]
     fn native_projection_imports_the_call_premise_provenance() {
-        let source_object = 7;
+        let source_object = crate::program_execution::RuntimeSourceScope::fresh().allocation(7);
         let source_values = Values::from([AbstractValue::Value(Value::Alloc(
             Kind::Object,
             source_object,

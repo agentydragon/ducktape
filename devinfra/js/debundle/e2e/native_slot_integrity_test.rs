@@ -15,6 +15,20 @@ fn opts<'a>(source: &'a str, member: &'static str, anonymous: &[&str]) -> Fixtur
     )
 }
 
+fn safe_split_opts<'a>(
+    source: &'a str,
+    member: &'static str,
+    later_anonymous: &[&str],
+) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module("values/native", &[Member::new(member)]),
+            logical_module_with_anon("values/later", &[Member::new("later")], later_anonymous),
+        ],
+    )
+}
+
 /// `mutations` run first, then the native operation declaring `member`; the
 /// published callback reads `later` before its initialization.
 fn source(mutations: &[&str], declaration: &str, output: &str) -> String {
@@ -36,9 +50,21 @@ fn assert_split(
     stdout: &str,
 ) {
     let source = source(mutations, declaration, output);
-    let fixture = run_fixture(opts(&source, member, &anonymous(mutations)));
+    let fixture = run_fixture_with_graphs(safe_split_opts(&source, member, &anonymous(mutations)));
     assert_preserved_entry_output(&fixture, stdout);
     assert_all_emitted_js_checks(&fixture);
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/later.js",
+        &["globalThis.saved = ()=>later;", "const later = 42;"],
+        &[],
+    );
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/values/native.js",
+        &[member],
+        &["globalThis.saved = () => later;", "const later = 42;"],
+    );
 }
 
 /// Refused because the native operation itself may run user code: its

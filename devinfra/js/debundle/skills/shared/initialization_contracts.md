@@ -199,11 +199,29 @@ compares original and emitted Node behavior for accepted cases.
 Controls replace `source/main.js` in temporary copies, preserving its import
 paths; run them through the recipe.
 
-| Example                                                                                | Audited YAML                                                                                    | Boundary control                                                                                                                                                     |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Fresh factory](examples/contract_examples/fresh_factory/source/main.js)               | [Single-callback factory](examples/contract_examples/fresh_factory/spec_config.yaml)            | [Named callback](examples/contract_examples/fresh_factory/source/controls/named_callback.js) needs the separate retained-input audit and signature                   |
-| [Constructed instance](examples/contract_examples/retained_constructor/source/main.js) | [Exact constructor signature](examples/contract_examples/retained_constructor/spec_config.yaml) | [Unlisted arity](examples/contract_examples/retained_constructor/source/controls/unlisted_arity.js) keeps conservative timing                                        |
-| [Persistent registry](examples/contract_examples/persistent_registry/source/main.js)   | [Registration timing](examples/contract_examples/persistent_registry/spec_config.yaml)          | [Early opaque invocation](examples/contract_examples/persistent_registry/source/controls/early_emit.js) can reach the callback before its captured value initializes |
+The retained-constructor recipe uses `accepted_modules/` so the constructor call
+that creates `wrapped` and its captured `later` cell stay together in source
+order. The constructor signature contract permits retaining the callback; it
+does not prove that construction completes normally before a later module
+initializes. The original cross-module split remains in `modules/` as a
+conservative schedule refusal, covered with the same source and annotation by
+`//devinfra/js/debundle/e2e:retained_constructor_callback_test`.
+
+The persistent-registry recipe also uses `accepted_modules/` to keep the
+registration call, its captured `later` cell, and the later `emit()` read in
+source order. The no-reentry contract permits callback storage but does not
+prove that registration completes normally before another module initializes.
+Its original cross-module split remains in `modules/` as a conservative
+schedule refusal; `//devinfra/js/debundle/e2e:no_reentry_callback_test` checks
+that refusal with the same source and annotation, then checks a colocated
+accepted layout. The separate `early_emit.js` control still verifies the
+callback's temporal-dead-zone behavior.
+
+| Example                                                                                | Audited YAML                                                                                                                                                                                                                    | Boundary control                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Fresh factory](examples/contract_examples/fresh_factory/source/main.js)               | [Single-callback factory](examples/contract_examples/fresh_factory/spec_config.yaml)                                                                                                                                            | [Named callback](examples/contract_examples/fresh_factory/source/controls/named_callback.js) needs the separate retained-input audit and signature                                                                  |
+| [Constructed instance](examples/contract_examples/retained_constructor/source/main.js) | [Exact constructor signature](examples/contract_examples/retained_constructor/spec_config.yaml) and [phase-preserving assignment](examples/contract_examples/retained_constructor/accepted_modules/main/callbacks/wrapped.yaml) | [Unlisted arity](examples/contract_examples/retained_constructor/source/controls/unlisted_arity.js) keeps conservative timing; the original split remains a schedule refusal                                        |
+| [Persistent registry](examples/contract_examples/persistent_registry/source/main.js)   | [Registration timing](examples/contract_examples/persistent_registry/spec_config.yaml) and [phase-preserving assignment](examples/contract_examples/persistent_registry/accepted_modules/main/callbacks/registration.yaml)      | [Early opaque invocation](examples/contract_examples/persistent_registry/source/controls/early_emit.js) can reach the callback before its captured value initializes; the original split remains a schedule refusal |
 
 From this guide's directory, using the adapter's engine and a Node binary:
 

@@ -16,7 +16,7 @@ pub(super) enum ModelOperation {
         outcome: Box<Outcome>,
     },
     ConstructLocalClass {
-        key: u32,
+        key: crate::program_execution::RuntimeAllocationId,
         arguments: Vec<Values>,
     },
     SummarizeMetadataDecoration {

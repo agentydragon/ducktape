@@ -4,32 +4,117 @@ use debundle_e2e_support::*;
 
 const PROVIDER: &str = "const callbacks = new Set;\nexport function register(callback) { callbacks.add(callback); }\nexport function emit() { return [...callbacks].map(callback => callback()); }\n";
 
+fn assert_schedule_refusal_preserves_source_and_candidate(
+    opts: FixtureOpts<'_>,
+    expected_output: &str,
+) {
+    let rejected = run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+}
+
 #[test]
 fn registration_defers_callback_reads_without_asserting_purity() {
-    let fixture = run_fixture(
+    let source = "import { register, emit } from './peer.js';\nconst registration = register(() => later);\nconst later = 42;\nconsole.log(emit()[0]);\n";
+    let policy = ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_callback("register", 1, &[0])
+        .build();
+    assert_schedule_refusal_preserves_source_and_candidate(
         FixtureOpts::new(
-            "import { register, emit } from './peer.js';\nconst registration = register(() => later);\nconst later = 42;\nconsole.log(emit()[0]);\n",
+            source,
             vec![
                 logical_module("callbacks/registration", &[Member::new("registration")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
         .with_extra_chunks(&[("static/peer", PROVIDER)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_no_reentry_callback("register", 1, &[0])
-            .build()]),
+        .with_chunk_export_purity(std::slice::from_ref(&policy)),
+        "42\n",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "callbacks/runtime",
+                &[Member::new("registration"), Member::new("later")],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", PROVIDER)])
+        .with_chunk_export_purity(&[policy]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/callbacks/runtime.js",
+        &["registration", "later"],
+        &[],
+    );
 }
 
 #[test]
 fn stable_named_aliases_and_multiple_callbacks_accept_primitive_metadata() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "import { register, emit } from './peer.js';\nfunction callback() { return later; }\nconst alias = callback;\nconst registration = register(alias, () => other, 'metadata');\nconst later = 42;\nconst other = 7;\nconsole.log(emit().join(' '));\n",
-        vec![logical_module("callbacks/registration", &[Member::new("callback"), Member::new("alias"), Member::new("registration")]), logical_module("values/later", &[Member::new("later"), Member::new("other")])],
-    ).with_extra_chunks(&[("static/peer", "const callbacks = new Set;\nexport function register(callback, other, metadata) { callbacks.add(callback); callbacks.add(other); }\nexport function emit() { return [...callbacks].map(callback => callback()); }\n")])
-      .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_no_reentry_callback("register", 3, &[0, 1]).build()]));
+    let source = "import { register, emit } from './peer.js';\nfunction callback() { return later; }\nconst alias = callback;\nconst registration = register(alias, () => other, 'metadata');\nconst later = 42;\nconst other = 7;\nconsole.log(emit().join(' '));\n";
+    let provider = "const callbacks = new Set;\nexport function register(callback, other, metadata) { callbacks.add(callback); callbacks.add(other); }\nexport function emit() { return [...callbacks].map(callback => callback()); }\n";
+    let policy = ChunkExportPurityBuilder::new("static/peer")
+        .with_no_reentry_callback("register", 3, &[0, 1])
+        .build();
+    assert_schedule_refusal_preserves_source_and_candidate(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "callbacks/registration",
+                    &[
+                        Member::new("callback"),
+                        Member::new("alias"),
+                        Member::new("registration"),
+                    ],
+                ),
+                logical_module(
+                    "values/later",
+                    &[Member::new("later"), Member::new("other")],
+                ),
+            ],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(std::slice::from_ref(&policy)),
+        "42 7\n",
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "callbacks/runtime",
+                &[
+                    Member::new("callback"),
+                    Member::new("alias"),
+                    Member::new("registration"),
+                    Member::new("later"),
+                    Member::new("other"),
+                ],
+            )],
+        )
+        .with_extra_chunks(&[("static/peer", provider)])
+        .with_chunk_export_purity(&[policy]),
+    );
     assert_preserved_entry_output(&fixture, "42 7\n");
+    assert_module_source(
+        &fixture.out_root,
+        "static/app/modules/callbacks/runtime.js",
+        &["registration", "later", "other"],
+        &[],
+    );
 }
 
 #[test]

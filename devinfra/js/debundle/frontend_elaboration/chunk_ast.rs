@@ -77,7 +77,8 @@ pub struct ChunkAstAnalysis {
     /// Literal public export names in the already-resolved AST, keyed by their
     /// owning source statement. Collected in this pass rather than by reparsing
     /// source text; coarse residual planning uses the identities to decide
-    /// whether independent source units can share one emitted ESM module.
+    /// whether independent source units can share one emitted ESM module, and
+    /// lowering retains statement-owned public exports moved behind an entry.
     pub source_public_export_identities_by_statement:
         HashMap<StatementId, Vec<SourceExportIdentity>>,
 }

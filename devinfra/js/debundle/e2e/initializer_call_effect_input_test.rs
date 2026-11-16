@@ -1,7 +1,6 @@
 //! One exact audited initializer call can remove its own operation-domain
 //! barrier while unrelated heap writes and retained callback use remain live.
 
-use analysis::analysis_provenance::InferenceRule;
 use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
 use debundle_e2e_support::*;
 use spec::{
@@ -37,11 +36,10 @@ const EAGER_PROVIDER: &str = "export function wrap(callback) {\n\
   const result = callback();\n\
   return { invoke() { return result; } };\n\
 }\n";
-// Both branches allocate a fresh wrapper, but the conditional/metadata read
-// leaves this provider outside the straight-line imported-call result summary.
+// The result is private at runtime, but try/finally has no ordered kernel
+// plan. An operation annotation cannot supply the missing result execution.
 const PROVIDER_WITHOUT_RESULT_SUMMARY: &str = "export function wrap(callback) {\n\
-  if (callback.length === 0) return { invoke() { return callback(); } };\n\
-  return { invoke() { return callback(); } };\n\
+  try { return { invoke() { return callback(); } }; } finally {}\n\
 }\n";
 const SOURCE_COMMA: &str = "import { wrap } from './peer.js';\n\
 const neighbor = ['initial'];\n\
@@ -115,6 +113,26 @@ export { seed, slot, sibling, seen };\n";
 const LATER_CALL_PROVIDER: &str = "export function make(seed) {\n\
   return () => globalThis.value + seed.length;\n\
 }\n";
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, expected_output: &str) -> RejectedFixture {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    // The fixture runner also compares source and emitted Node execution.
+    // Keep the intended runtime result explicit at each downgraded oracle.
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        expected_output,
+        "",
+    );
+    assert_node_output(&rejected.entry_path(), expected_output, "");
+    rejected
+}
 
 #[test]
 fn exact_string_factory_result_allows_separate_data_module() {
@@ -303,7 +321,7 @@ fn opts<'a>(purity: &'a [(&'a str, ChunkExportPurity)], asserted_calls: usize) -
 }
 
 #[test]
-fn selected_call_in_prepared_comma_list_initializers_is_covered() {
+fn selected_call_inputs_do_not_override_the_final_schedule_guard() {
     let purity = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .with_retained_callback_factory("wrap", 1, &[0])
@@ -318,7 +336,7 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
         !unannotated.cycles().is_empty(),
         "unselected split calls must retain their barriers"
     );
-    let fixture = run_fixture_with_graphs(
+    let fixture = expect_schedule_refusal(
         FixtureOpts::new(SOURCE_COMMA, modules())
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
@@ -327,8 +345,8 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
                 "static/app",
                 vec![input(SOURCE_COMMA, "first"), input(SOURCE_COMMA, "second")],
             ),
+        "initial later 2\n",
     );
-    assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(
         report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -341,7 +359,7 @@ fn selected_call_in_prepared_comma_list_initializers_is_covered() {
 }
 
 #[test]
-fn separate_wrappers_with_deferred_callbacks_are_emitted() {
+fn separate_wrappers_with_deferred_callbacks_keep_the_schedule_refusal() {
     let modules = vec![
         logical_module(
             "callbacks/first",
@@ -369,26 +387,23 @@ fn separate_wrappers_with_deferred_callbacks_are_emitted() {
     let inputs = ["first", "second", "third"]
         .map(|binding| input(SOURCE_THREE_WRAPPERS, binding))
         .to_vec();
-    let fixture = run_fixture(opts().with_initializer_call_effect_inputs("static/app", inputs));
-    for binding in ["first", "second", "third"] {
-        assert!(
-            fixture
-                .out_root
-                .join(format!("static/app/modules/callbacks/{binding}.js"))
-                .exists(),
-            "each selected wrapper must emit into its own logical module"
-        );
-    }
-    assert_preserved_entry_output(&fixture, "3 3 3 3\n");
+    let rejected = expect_schedule_refusal(
+        opts().with_initializer_call_effect_inputs("static/app", inputs),
+        "3 3 3 3\n",
+    );
     assert_eq!(
-        fixture.translation_validation()["accepts"],
-        true,
-        "the emitted split must pass translation validation"
+        rejected.effect_translation_validation()["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
+        serde_json::json!([
+            {"defining_chunk": "static/app", "input_index": 0},
+            {"defining_chunk": "static/app", "input_index": 1},
+            {"defining_chunk": "static/app", "input_index": 2},
+        ]),
+        "the author receipts remain exact even when schedule completion is conservative"
     );
 }
 
 #[test]
-fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
+fn exact_initializer_call_effect_inputs_do_not_bypass_schedule_completion() {
     let purity = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .with_retained_callback_factory("wrap", 1, &[0])
@@ -415,8 +430,7 @@ fn exact_initializer_call_effect_inputs_break_only_selected_operation_cycles() {
         "the selected first initializer needs normal root coverage: {first_only_report:#}"
     );
 
-    let fixture = run_fixture_with_graphs(opts(&purity, 2));
-    assert_preserved_entry_output(&fixture, "initial later 2\n");
+    let fixture = expect_schedule_refusal(opts(&purity, 2), "initial later 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(
         report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -440,20 +454,18 @@ fn deferred_opaque_callback_body_does_not_poison_fresh_function_creation() {
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
     };
-    let no_input = run_rejection_fixture_with_graphs(fixture_opts());
-    assert!(
-        !no_input.cycles().is_empty(),
-        "callback timing and purity alone do not cover the wrapper operation"
-    );
+    // The shared provider body allocates only its private record and method.
+    // Its creation receipt does not execute the opaque deferred callback.
+    expect_schedule_refusal(fixture_opts(), "initial later 2\n");
 
     let inputs = vec![
         input(SOURCE_DEFERRED_OPAQUE, "first"),
         input(SOURCE_DEFERRED_OPAQUE, "second"),
     ];
-    let fixture = run_fixture_with_graphs(
+    let fixture = expect_schedule_refusal(
         fixture_opts().with_initializer_call_effect_inputs("static/app", inputs),
+        "initial later 2\n",
     );
-    assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(
         report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -494,25 +506,20 @@ fn exact_wrapper_effect_input_does_not_cover_eager_callback_body() {
 }
 
 #[test]
-fn ordered_imported_callback_factory_transfers_a_retained_result() {
-    // This is the plain callback-factory assertion. The older positive case
-    // above uses the separate retained-callback-factory signature, which has
-    // its own ordered return transfer.
+fn ordered_imported_callback_factory_keeps_receipts_under_schedule_refusal() {
+    // A prepared provider executes its actual allocation-only body. Complete
+    // private-cell and method-creation operations can prove this result even
+    // without an opaque retaining-factory transfer or operation annotation.
     let purity = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .with_callback_factories(&["wrap"])
         .build()];
-    let no_input = run_rejection_fixture_with_graphs(opts(&purity, 0));
-    assert!(
-        !no_input.cycles().is_empty(),
-        "callback timing and provider purity do not cover the initializer operation"
-    );
+    expect_schedule_refusal(opts(&purity, 0), "initial later 2\n");
 
     let source_inferred = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .build()];
-    let without_factory = run_fixture_with_graphs(opts(&source_inferred, 2));
-    assert_preserved_entry_output(&without_factory, "initial later 2\n");
+    let without_factory = expect_schedule_refusal(opts(&source_inferred, 2), "initial later 2\n");
     let inferred_graph = without_factory.dependency_graph();
     for binding in ["first", "second"] {
         let owner_id = source_unit_for_binding(&inferred_graph, binding);
@@ -521,15 +528,27 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
             .iter()
             .find(|node| node.id == owner_id)
             .expect("source-inferred wrapper owner");
-        assert!(
+        let execution = serde_json::to_value(
             owner
                 .synchronous_execution
                 .as_ref()
-                .expect("wrapper execution evidence")
-                .inference_uses
+                .expect("wrapper execution evidence"),
+        )
+        .unwrap();
+        assert_eq!(
+            execution["binding_effect_authority"]["authority"],
+            "operation_receipt"
+        );
+        assert!(
+            execution["binding_effect_authority"]["receipt"]["calls"]
+                .as_array()
+                .unwrap()
                 .iter()
-                .any(|usage| usage.conclusion == InferenceRule::ForeignCallSummary),
-            "{binding} needs independent source-derived result evidence"
+                .any(|call| {
+                    call["target"]["kind"] == "callable"
+                        && call["target"]["source_module"] == "static/peer"
+                }),
+            "{binding} needs the actual provider body's receipt: {execution:#}"
         );
     }
     let without_factory_report = without_factory.effect_translation_validation();
@@ -558,18 +577,27 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         !without_result_evidence.cycles().is_empty(),
         "operation and purity inputs cannot invent a result for an opaque provider"
     );
-    let without_result_report = without_result_evidence.effect_translation_validation();
-    assert_eq!(
-        without_result_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
-        serde_json::Value::Null,
-        "a provider without result evidence must not consume the operation inputs"
-    );
+    let without_result_graph = without_result_evidence.dependency_graph();
+    for binding in ["first", "second"] {
+        let owner_id = source_unit_for_binding(&without_result_graph, binding);
+        let owner = without_result_graph
+            .nodes
+            .iter()
+            .find(|node| node.id == owner_id)
+            .unwrap();
+        let execution =
+            serde_json::to_value(owner.synchronous_execution.as_ref().unwrap()).unwrap();
+        assert_ne!(
+            execution["binding_effect_authority"]["authority"], "operation_receipt",
+            "operation-domain inputs cannot seal an unmodeled provider body: {execution:#}"
+        );
+    }
 
     let no_initializer_purity = vec![
         logical_module("callbacks/first", &[Member::new("first")]),
         logical_module("callbacks/second", &[Member::new("second")]),
     ];
-    let without_initializer_purity = run_rejection_fixture_with_graphs(
+    let without_initializer_purity = expect_schedule_refusal(
         FixtureOpts::new(SOURCE, no_initializer_purity)
             .with_extra_chunks(EXTRA_CHUNKS)
             .with_unassigned_mode(unassigned_mode_inline())
@@ -578,10 +606,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
                 "static/app",
                 vec![input(SOURCE, "first"), input(SOURCE, "second")],
             ),
-    );
-    assert!(
-        !without_initializer_purity.cycles().is_empty(),
-        "the factory carrier and operation input cannot certify a nonthrowing initializer"
+        "initial later 2\n",
     );
     let without_purity_report = without_initializer_purity.effect_translation_validation();
     assert_eq!(
@@ -590,12 +615,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "missing initializer purity must not consume the operation inputs"
     );
 
-    let first_only = run_rejection_fixture_with_graphs(opts(&purity, 1));
-    assert_eq!(
-        first_only.cycles().len(),
-        1,
-        "only the unselected second wrapper should remain ordered with the neighbor"
-    );
+    let first_only = expect_schedule_refusal(opts(&purity, 1), "initial later 2\n");
     let first_report = first_only.effect_translation_validation();
     assert_eq!(
         first_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -603,10 +623,9 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
         "the first exact call must earn ordinary root coverage: {first_report:#}"
     );
 
-    let both = run_fixture_with_graphs(opts(&purity, 2));
+    let both = expect_schedule_refusal(opts(&purity, 2), "initial later 2\n");
     // `invoke` runs after the neighbor mutation; the callback and its later
     // heap read must remain reachable through the returned opaque wrapper.
-    assert_preserved_entry_output(&both, "initial later 2\n");
     let both_report = both.effect_translation_validation();
     assert_eq!(
         both_report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -619,7 +638,7 @@ fn ordered_imported_callback_factory_transfers_a_retained_result() {
 }
 
 #[test]
-fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
+fn ordered_inline_callback_factory_keeps_receipts_under_schedule_refusal() {
     let purity = [ChunkExportPurityBuilder::new("static/peer")
         .with_pure_exports(&["wrap"])
         .with_inline_callback_factories(&["wrap"])
@@ -632,14 +651,14 @@ fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
         entry.audited_provider_sha256 = source_sha256(PROVIDER_INLINE_FACTORY);
     }
     let extra_chunks = [("static/peer", PROVIDER_INLINE_FACTORY)];
-    let fixture = run_fixture(
+    let fixture = expect_schedule_refusal(
         FixtureOpts::new(SOURCE_INLINE_FACTORY, modules())
             .with_extra_chunks(&extra_chunks)
             .with_unassigned_mode(unassigned_mode_inline())
             .with_chunk_export_purity(&purity)
             .with_initializer_call_effect_inputs("static/app", inputs),
+        "initial later 2\n",
     );
-    assert_preserved_entry_output(&fixture, "initial later 2\n");
     let report = fixture.effect_translation_validation();
     assert_eq!(
         report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
@@ -652,7 +671,7 @@ fn ordered_inline_callback_factory_transfers_its_fresh_callable() {
 }
 
 #[test]
-fn selected_bundled_replacement_needs_exact_effective_identity() {
+fn selected_bundled_replacement_needs_exact_effective_identity_in_a_phase_preserving_layout() {
     for (case, expected_error) in [
         ("valid", None),
         ("missing", Some("effective_replacement is required")),
@@ -713,7 +732,13 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
             .with_pure_exports(&["wrap"])
             .with_retained_callback_factory("wrap", 1, &[0])
             .build()];
+        let phase_preserving_layout = expected_error.is_none();
         let mut inputs = vec![input(SOURCE, "first"), input(SOURCE, "second")];
+        if phase_preserving_layout {
+            for input in &mut inputs {
+                input.resolved_member.module = "callbacks/combined".into();
+            }
+        }
         for input in &mut inputs {
             if case != "missing" {
                 input.effective_replacement = Some(InitializerCallEffectiveReplacement {
@@ -734,8 +759,21 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
                 });
             }
         }
+        let modules = if phase_preserving_layout {
+            vec![logical_module_with_anon(
+                "callbacks/combined",
+                &[
+                    Member::new("neighbor"),
+                    Member::new("first").with_initializer_purity(),
+                    Member::new("second").with_initializer_purity(),
+                ],
+                &["neighbor.push('later');"],
+            )]
+        } else {
+            modules()
+        };
         let fixture = write_validate_fixture_spec(
-            FixtureOpts::new(SOURCE, modules())
+            FixtureOpts::new(SOURCE, modules)
                 .with_extra_chunks(EXTRA_CHUNKS)
                 .with_unassigned_mode(unassigned_mode_inline())
                 .with_chunk_export_purity(&purity)
@@ -769,24 +807,27 @@ fn selected_bundled_replacement_needs_exact_effective_identity() {
         }
         assert!(
             result.status.success(),
-            "valid replacement failed\nstdout:\n{}\nstderr:\n{}",
+            "exact effective replacement and phase-preserving layout should pass\nstdout:\n{}\nstderr:\n{}",
             result.stdout,
             result.stderr
         );
+        let workspace = fixture.workspace();
+        assert!(
+            workspace
+                .path()
+                .join("out/app/vendors/generated/static/peer/neutral-wrapper.js")
+                .is_file(),
+            "the accepted CLI run must emit the selected replacement facade"
+        );
         assert_node_output(
-            &root.join("out/app/static/app/entry.js"),
+            &workspace.path().join("snapshot/static/app.js"),
             "initial later 2\n",
             "",
         );
-        let report: serde_json::Value =
-            read_json(&root.join("out/reports/tree/static/app/effect_translation_validation.json"));
-        assert_eq!(
-            report["coverage"]["covered_owner_dependencies"]["initializer_call_effect_inputs"],
-            serde_json::json!([
-                {"defining_chunk": "static/app", "input_index": 0},
-                {"defining_chunk": "static/app", "input_index": 1},
-            ]),
-            "effective replacement must preserve both normal owner receipts: {report:#}"
+        assert_node_output(
+            &workspace.path().join("out/app/static/app/entry.js"),
+            "initial later 2\n",
+            "",
         );
     }
 }

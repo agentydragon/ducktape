@@ -118,13 +118,14 @@ fn hints_beyond_the_probe_budget_are_not_probed() {
     let fixture = write_validate_fixture_spec(
         FixtureOpts::new(
             SOURCE,
-            vec![logical_module(
+            vec![logical_module_with_anon(
                 "helpers/functions",
                 &[
                     Member::new("seven").with_purity(MemberPurity::Pure),
                     Member::new("leaf").with_purity(MemberPurity::Pure),
                     Member::new("a"),
                 ],
+                &["globalThis.flag = 1;"],
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),

@@ -70,9 +70,23 @@ pub(super) struct EvaluatedInitializer {
     dependencies: ProofDependencies,
 }
 
+impl EvaluatedInitializer {
+    /// Only an actual checked initializer result can establish this cell's
+    /// callable selection. An eventual flow singleton cannot issue it.
+    pub(super) fn callable_selection(
+        &self,
+        values: &Values,
+    ) -> Option<super::kernel::frame::CallableSelection> {
+        super::kernel::frame::CallableSelection::observed(
+            values,
+            Box::new(self.dependencies.clone()),
+        )
+    }
+}
+
 /// A candidate exists only while one dedicated root initializer is evaluated.
 /// Its matching transfer is recorded by that root's native New dispatch.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct NativeConstructorCandidate {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
@@ -83,7 +97,7 @@ pub(super) struct NativeConstructorCandidate {
 /// Evidence that the exact root New dispatch selected and applied the native
 /// constructor row for its collected source form. This is not a value identity
 /// or a heap-shape fact.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct NativeConstructorTransfer {
     owner: SourceUnitOrdinal,
     call_site: CallSite,
@@ -145,6 +159,22 @@ impl NativeConstructorCandidate {
 pub(crate) struct CompletedInitialization {
     owner: SourceUnitOrdinal,
     dependencies: ProofDependencies,
+    #[serde(default)]
+    noninvoking: bool,
+}
+
+/// The covered source lowering excludes computed keys, spread, methods,
+/// accessors and __proto__. Primitive/nested literal operands therefore run no
+/// code and publish no pre-existing identity. Actual normal kernel completion
+/// is still required before this source fact can issue a terminal receipt.
+fn operand_free_literal(value: &ValueExpr) -> bool {
+    match value {
+        ValueExpr::Undefined | ValueExpr::NonCallable(_) => true,
+        ValueExpr::ObjectLiteral(_, properties) => properties
+            .iter()
+            .all(|(_, value)| operand_free_literal(value)),
+        _ => false,
+    }
 }
 
 impl CompletedInitialization {
@@ -157,6 +187,7 @@ impl CompletedInitialization {
         initializer_span: Span,
         initialized: &BTreeSet<Id>,
         effects: &EffectCoverageFragment,
+        original: Option<&OriginalInitializer>,
     ) -> Option<Self> {
         if !source.matches(owner, binding, initializer_span) || !initialized.contains(binding) {
             return None;
@@ -164,6 +195,13 @@ impl CompletedInitialization {
         Some(Self {
             owner,
             dependencies: effects.normal_dependencies()?,
+            // The kernel already executed this exact root. An operand-free
+            // literal in the retained source has no hidden invocation or
+            // external write; do not replay it just to issue this evidence.
+            noninvoking: original.is_some_and(|original| {
+                original.identity.matches(owner, binding, initializer_span)
+                    && matches!(&original.leaf, Leaf::Composed(value) if operand_free_literal(value))
+            }),
         })
     }
 
@@ -178,7 +216,14 @@ impl CompletedInitialization {
         Some(Self {
             owner,
             dependencies: effects.normal_dependencies()?,
+            noninvoking: false,
         })
+    }
+
+    /// Requires a noninvoking source/transfer proof in addition to completion.
+    /// General operation coverage may include externally visible writes.
+    pub(crate) fn is_noninvoking(&self) -> bool {
+        self.noninvoking
     }
 
     pub(crate) fn covers(&self, owner: SourceUnitOrdinal) -> bool {
@@ -370,18 +415,28 @@ fn javascript_parameter(parameter: &Pat) -> bool {
     }
 }
 
+fn deferred_class_function(function: &Function) -> bool {
+    function.decorators.is_empty()
+        && function.body.is_some()
+        && function.type_params.is_none()
+        && function.return_type.is_none()
+        && function.params.iter().all(|parameter| {
+            parameter.decorators.is_empty() && javascript_parameter(&parameter.pat)
+        })
+}
+
 fn plain_class_member(member: &ClassMember) -> bool {
     match member {
         ClassMember::Method(method) => {
-            method.kind == MethodKind::Method
-                && !matches!(method.key, PropName::Computed(_))
-                && method.function.decorators.is_empty()
-                && method.function.body.is_some()
-                && method.function.type_params.is_none()
-                && method.function.return_type.is_none()
-                && method.function.params.iter().all(|parameter| {
-                    parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
-                })
+            !matches!(method.key, PropName::Computed(_))
+                && deferred_class_function(&method.function)
+                && !method.is_abstract
+                && !method.is_optional
+                && !method.is_override
+        }
+        ClassMember::PrivateMethod(method) => {
+            deferred_class_function(&method.function)
+                && method.accessibility.is_none()
                 && !method.is_abstract
                 && !method.is_optional
                 && !method.is_override
@@ -393,7 +448,7 @@ fn plain_class_member(member: &ClassMember) -> bool {
                 && !constructor.is_optional
                 && constructor.params.iter().all(|parameter| match parameter {
                     ParamOrTsParamProp::Param(parameter) => {
-                        parameter.decorators.is_empty() && ordinary_parameter(&parameter.pat)
+                        parameter.decorators.is_empty() && javascript_parameter(&parameter.pat)
                     }
                     ParamOrTsParamProp::TsParamProp(_) => false,
                 })
@@ -409,10 +464,18 @@ fn plain_class_member(member: &ClassMember) -> bool {
                 && !property.declare
                 && !property.definite
         }
+        ClassMember::PrivateProp(property) => {
+            !property.is_static
+                && property.decorators.is_empty()
+                && property.type_ann.is_none()
+                && property.accessibility.is_none()
+                && !property.is_optional
+                && !property.is_override
+                && !property.readonly
+                && !property.definite
+        }
         ClassMember::Empty(_) => true,
-        ClassMember::PrivateMethod(_)
-        | ClassMember::PrivateProp(_)
-        | ClassMember::TsIndexSignature(_)
+        ClassMember::TsIndexSignature(_)
         | ClassMember::StaticBlock(_)
         | ClassMember::AutoAccessor(_) => false,
     }
@@ -422,7 +485,8 @@ fn plain_class_member(member: &ClassMember) -> bool {
 /// functions, then publishes the class through its lexical binding. With no
 /// heritage, decorators, computed keys, or static initialization, class
 /// evaluation runs no user code and cannot expose those fresh objects before
-/// binding initialization. Method bodies and instance field values stay lazy.
+/// binding initialization. Public/private method and accessor bodies,
+/// constructor parameters/defaults and instance field values all stay lazy.
 fn inert_class_declaration(declaration: &ClassDecl) -> bool {
     let class = &declaration.class;
     !declaration.declare
@@ -470,6 +534,9 @@ fn primitive_literal(expression: &Expr) -> bool {
     )
 }
 
+// Identifier spreads are only candidates: the dedicated dispatch additionally
+// requires the canonical primitive iterable projection for this exact array,
+// constructor and owner. Arbitrary argument expressions cannot enter this lane.
 fn set_primitive_array_constructor(
     expression: &Expr,
 ) -> Option<(Id, CallSite, NativeConstructorForm)> {
@@ -497,7 +564,10 @@ fn set_primitive_array_constructor(
     if !array.elems.iter().all(|element| {
         element
             .as_ref()
-            .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+            .is_some_and(|element| match element.spread {
+                None => primitive_literal(&element.expr),
+                Some(_) => matches!(element.expr.as_ref(), Expr::Ident(_)),
+            })
     }) {
         return None;
     }
@@ -538,7 +608,7 @@ impl OriginalInitializer {
         let leaf = match initializer.unwrap_parens() {
             Expr::New(_) => {
                 if let Some((callee, call_site)) = empty_direct_constructor(initializer)
-                    && matches!(callee.0.as_ref(), "Map" | "WeakMap")
+                    && matches!(callee.0.as_ref(), "Map" | "WeakMap" | "WeakSet")
                 {
                     Leaf::KeyedCollectionOperation { callee, call_site }
                 } else if let Some((callee, call_site, kind)) =
@@ -677,6 +747,7 @@ impl OriginalInitializer {
     /// Generic lowering or an empty effect ledger is no proof.
     pub(super) fn evaluated(
         &self,
+        source: crate::program_execution::RuntimeSourceScope,
         expression: &ValueExpr,
         values: &Values,
         judgment: &AllocationJudgment,
@@ -705,18 +776,28 @@ impl OriginalInitializer {
                 .is_some_and(|(candidate, transfer)| {
                     values.len() == 1
                         && transfer.matches(candidate)
-                        && candidate.matches_set_primitive_array_allocation(*allocation)
+                        && source.local_origin(*allocation).is_some_and(|local| {
+                            candidate.matches_set_primitive_array_allocation(local)
+                        })
                 }),
             (
                 Leaf::RegExp(allocation),
                 ValueExpr::Alloc(Kind::RegExp, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::RegExp, evaluated)),
-            ) => values.len() == 1 && allocation == lowered && allocation == evaluated,
+            ) => {
+                values.len() == 1
+                    && allocation == lowered
+                    && Some(*allocation) == source.local_origin(*evaluated)
+            }
             (
                 Leaf::Class(expected),
                 ValueExpr::Alloc(Kind::Class, lowered),
                 AbstractValue::Value(Value::Alloc(Kind::Class, evaluated)),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && Some(*expected) == source.local_origin(*evaluated)
+            }
             (
                 Leaf::Function(expected),
                 ValueExpr::Alloc(Kind::Function, lowered),
@@ -727,7 +808,11 @@ impl OriginalInitializer {
                     },
                     _,
                 ),
-            ) => values.len() == 1 && expected == lowered && expected == evaluated,
+            ) => {
+                values.len() == 1
+                    && expected == lowered
+                    && Some(*expected) == source.local_origin(*evaluated)
+            }
             _ => false,
         };
         if !matches {
@@ -763,6 +848,7 @@ impl OriginalInitializer {
         .then_some(CompletedInitialization {
             owner,
             dependencies: evaluated.dependencies,
+            noninvoking: true,
         })
     }
 }

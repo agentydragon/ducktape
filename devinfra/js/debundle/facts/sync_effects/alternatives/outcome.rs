@@ -31,6 +31,10 @@ impl Outcome {
         for leaf in leaves {
             let Outcome {
                 mut effects,
+                runtime_binding_effects,
+                runtime_heap_contents,
+                runtime_heap_frontiers,
+                observed_runtime_heap_accesses,
                 body_invoked,
                 // Joined above, over every leaf at once.
                 effect_coverage: _,
@@ -43,6 +47,14 @@ impl Outcome {
             } = leaf;
             // Binding and heap may-effects, with their assumed-path
             // provenance: an effect one leaf observed is observed.
+            joined
+                .runtime_binding_effects
+                .extend(&runtime_binding_effects, None);
+            joined.extend_runtime_heap_frontiers(&runtime_heap_frontiers);
+            joined.runtime_heap_contents.extend(&runtime_heap_contents);
+            joined
+                .observed_runtime_heap_accesses
+                .extend(&observed_runtime_heap_accesses);
             joined.absorb_call_effects(&mut effects, None);
             join_reports(&mut joined, effects);
             joined.body_invoked &= body_invoked;
@@ -65,8 +77,16 @@ impl Outcome {
 /// new field without a join rule fails to compile.
 fn join_reports(joined: &mut Outcome, leaf: SynchronousCalls) {
     let SynchronousCalls {
+        completion: _,
         // Written by owner finalization (`roots/`) after the owner's body
         // has joined: every leaf still holds the fork point's value.
+        program_effects: _,
+        runtime_effects_available: _,
+        runtime_binding_effects: _,
+        runtime_heap_contents: _,
+        runtime_heap_frontiers: _,
+        observed_runtime_heap_accesses: _,
+        runtime_executed_owners: _,
         initializer_binding_effects: _,
         initializer_external_effects: _,
         completed_initialization: _,

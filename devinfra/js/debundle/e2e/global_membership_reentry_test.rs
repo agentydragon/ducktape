@@ -17,16 +17,10 @@ fn probe_opts<'a>(source: &'a str) -> FixtureOpts<'a> {
         ],
     );
     opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    opts.extra_files = &[
-        (
-            "static/app/prelude.js",
-            "globalThis.window = globalThis; globalThis.addEventListener = () => {}; export {};\n",
-        ),
-        (
-            "static/prelude.js",
-            "globalThis.window = globalThis; globalThis.addEventListener = () => {}; export {};\n",
-        ),
-    ];
+    opts.extra_chunks = &[(
+        "static/prelude",
+        "globalThis.window = globalThis; globalThis.addEventListener = () => {}; export {};\n",
+    )];
     opts
 }
 

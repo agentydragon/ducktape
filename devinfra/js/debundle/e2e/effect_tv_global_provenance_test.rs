@@ -140,7 +140,7 @@ fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
 }
 
 #[test]
-fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
+fn global_aliases_and_shadowed_receivers_keep_truncated_remainders_conservative() {
     for (alias, output) in [
         ("globalThis", "1 2 1\n"),
         ("globalThis.choose ? globalThis : {}", "1 2 undefined\n"),
@@ -194,14 +194,22 @@ fn global_aliases_and_shadowed_receivers_keep_conservative_provenance() {
                 .join(&fixture.chunk_id)
                 .join("effect_conflicts.jsonl"),
         );
-        assert_eq!(
+        // The borrowed-parameter member operation in shadow() is unproved.
+        // The ordered root stops there, before peek(); that unreached call
+        // need not acquire a named marker cell from hypothetical expansion.
+        // Its effects remain in the global havoc of the truncated remainder.
+        assert!(
+            !rows.is_empty(),
+            "the split must retain a conflict: {rows:#?}"
+        );
+        assert!(
             rows.iter()
-                .flat_map(|row| row["cells"].as_array().unwrap())
-                .any(|cell| cell["cell"]["kind"] == "global_prop"
-                    && cell["cell"]["key"] == "marker"
-                    && cell["observed_conflict"] == false),
-            alias != "global",
-            "only aliases modeled by the execution value domain contribute cells; census-only Node global stays opaque: {rows:#?}"
+                .any(|row| row["first_opacity"]["execution_losses"]
+                    .as_array()
+                    .is_some_and(|losses| losses
+                        .iter()
+                        .any(|loss| loss["reason"]["code"] == "unsupported_operation"))),
+            "the unproved operation must retain its precision loss: {rows:#?}"
         );
         assert!(
             rows.iter()

@@ -49,6 +49,22 @@ fn source(bundle: &str) -> String {
     )
 }
 
+fn keep_publication_phase(mut options: FixtureOpts<'_>) -> FixtureOpts<'_> {
+    let (_, mut startup) = options.logical_modules.remove(0);
+    let (_, later) = options.logical_modules.remove(0);
+    startup
+        .members
+        .retain(|member| member.name.as_deref() != Some("collection"));
+    startup.members.extend(later.members);
+    // Keep publication and all potentially effectful setup in their original
+    // phase; only the independently covered empty construction moves.
+    options.logical_modules = vec![
+        logical_module("values/native", &[Member::new("collection")]),
+        ("values/later".into(), startup),
+    ];
+    options
+}
+
 const SENTRY: &str = "function register(n, value) { var e = typeof window != \"undefined\" ? window : typeof global != \"undefined\" ? global : typeof globalThis != \"undefined\" ? globalThis : typeof self != \"undefined\" ? self : {}; e._sentryDebugIds = e._sentryDebugIds || {}; e._sentryDebugIds[n] = value; }";
 const OTEL: &str = "const root = typeof globalThis == \"object\" ? globalThis : typeof self == \"object\" ? self : {};\nconst key = Symbol.for(\"registry.api.1\");\nfunction register(type, value) { var registry = (root[key] = root[key] ?? { version: \"1\" }); registry[type] = value; return true; }\nfunction unregister(type) { var registry = root[key]; registry && delete registry[type]; }";
 const ANALYTICS: &str = "const root = typeof globalThis < \"u\" ? globalThis : self;\nfunction getInstance(name) { root.analyticsConnectorInstances || (root.analyticsConnectorInstances = {}); root.analyticsConnectorInstances[name] || (root.analyticsConnectorInstances[name] = { name }); return root.analyticsConnectorInstances[name]; }";
@@ -75,7 +91,7 @@ fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 6] {
         (
             LOGICAL_NOT_REGISTRY,
             vec!["root", "safeValue", "register"],
-            vec![],
+            vec!["root.registry = safeValue;"],
         ),
     ]
 }
@@ -84,7 +100,9 @@ fn cases() -> [(&'static str, Vec<&'static str>, Vec<&'static str>); 6] {
 fn bundle_owned_globals_keep_native_slots() {
     for (bundle, members, anonymous) in cases() {
         let source = source(bundle);
-        let fixture = run_fixture(opts(&source, &members, &anonymous, true));
+        let fixture = run_fixture_with_graphs(keep_publication_phase(opts(
+            &source, &members, &anonymous, true,
+        )));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
         assert_global_resolution_preserved(&fixture);
@@ -167,8 +185,10 @@ fn a_store_in_another_chunk_keeps_the_slot_unknown() {
         "static/poison",
         "export function poison(value) { globalThis.registry = { value }; }\n",
     )];
-    let fixture =
-        run_fixture(opts(&source, &["root", "install"], &[], true).with_extra_chunks(&clean));
+    let fixture = run_fixture_with_graphs(
+        keep_publication_phase(opts(&source, &["root", "install"], &[], true))
+            .with_extra_chunks(&clean),
+    );
     assert_preserved_entry_output(&fixture, "0 42\n");
 }
 
@@ -197,10 +217,10 @@ fn a_premise_on_the_calling_function_keeps_the_slot() {
         "function call(method, key, value) { const run = () => root[method](key, value); run(); }";
     for declaration in [DIRECT, NESTED] {
         let source = source(&ACCESSOR_CALL.replace(DIRECT, declaration));
-        let fixture = run_fixture_with_graphs(accessor_opts(
+        let fixture = run_fixture_with_graphs(keep_publication_phase(accessor_opts(
             &source,
             no_accessor_install(declaration, "call"),
-        ));
+        )));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_all_emitted_js_checks(&fixture);
         // `new Map()` consumes the census the premise kept intact.
@@ -271,7 +291,12 @@ const COMPONENT_HANDLER: &str = "const root = globalThis;\nfunction install(name
 #[test]
 fn a_global_no_write_names_is_never_the_global_object() {
     let source = source(COMPONENT_HANDLER);
-    let fixture = run_fixture(opts(&source, &["root", "install", "upgrade"], &[], true));
+    let fixture = run_fixture_with_graphs(keep_publication_phase(opts(
+        &source,
+        &["root", "install", "upgrade"],
+        &[],
+        true,
+    )));
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_all_emitted_js_checks(&fixture);
 }
@@ -307,7 +332,9 @@ fn a_global_holding_a_fresh_binding_is_bundle_owned() {
         "globalThis.componentHandler = handler;",
     ];
     let published = source(PUBLISHED_HANDLER);
-    let fixture = run_fixture(opts(&published, &members, &anonymous, true));
+    let fixture = run_fixture_with_graphs(keep_publication_phase(opts(
+        &published, &members, &anonymous, true,
+    )));
     assert_preserved_entry_output(&fixture, "0 42\n");
     assert_all_emitted_js_checks(&fixture);
     assert_global_resolution_preserved(&fixture);
@@ -330,12 +357,12 @@ const BUN_REGISTRY: &str = "const root = globalThis;\nfunction getInstance(name)
 fn a_bun_host_predefines_its_own_globals() {
     let registry = source(BUN_REGISTRY);
     let members = ["root", "getInstance"];
-    let fixture = run_fixture(opts_on(
+    let fixture = run_fixture_with_graphs(keep_publication_phase(opts_on(
         &registry,
         &members,
         &[],
         PredefinedGlobals::Standard,
-    ));
+    )));
     assert_preserved_entry_output(&fixture, "0 42\n");
     expect_atomic_conflict_rejection(
         opts_on(&registry, &members, &[], PredefinedGlobals::Bun),
@@ -344,12 +371,12 @@ fn a_bun_host_predefines_its_own_globals() {
     );
     for (bundle, members, anonymous) in cases() {
         let source = source(bundle);
-        let fixture = run_fixture(opts_on(
+        let fixture = run_fixture_with_graphs(keep_publication_phase(opts_on(
             &source,
             &members,
             &anonymous,
             PredefinedGlobals::Bun,
-        ));
+        )));
         assert_preserved_entry_output(&fixture, "0 42\n");
         assert_global_resolution_preserved(&fixture);
     }

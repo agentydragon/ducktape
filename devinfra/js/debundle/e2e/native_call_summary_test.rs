@@ -14,6 +14,48 @@ fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> Fi
     )
 }
 
+fn split_native_call_opts<'a>(
+    source: &'a str,
+    members: &[Member],
+    publication: &'a [&'a str],
+) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![
+            logical_module("native/value", members),
+            logical_module_with_anon("native/later", &[Member::new("later")], publication),
+        ],
+    )
+}
+
+fn colocated_native_call_opts<'a>(
+    source: &'a str,
+    members: &[Member],
+    anonymous: &[&str],
+) -> FixtureOpts<'a> {
+    FixtureOpts::new(
+        source,
+        vec![logical_module_with_anon("native/all", members, anonymous)],
+    )
+}
+
+fn expect_schedule_refusal(opts: FixtureOpts<'_>, source_output: &str) {
+    let rejected = run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected a conservative evaluation-schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(
+        &rejected.source_root.join("static/app.js"),
+        source_output,
+        "",
+    );
+}
+
 #[test]
 fn finalization_registry_retains_cleanup_without_invoking_it() {
     let source = r#"const registry = new globalThis.FinalizationRegistry(() => Later);
@@ -22,10 +64,10 @@ console.log(typeof registry);
 "#;
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
-        vec![
-            logical_module("registry/value", &[Member::new("registry")]),
-            logical_module("registry/later", &[Member::new("Later")]),
-        ],
+        vec![logical_module(
+            "registry/all",
+            &[Member::new("registry"), Member::new("Later")],
+        )],
     ));
     assert_preserved_entry_output(&fixture, "object\n");
 
@@ -38,6 +80,28 @@ console.log(typeof registry);
         .expect("registry source unit");
     let purity = serde_json::to_value(&registry.purity).unwrap();
     assert_eq!(purity["kind"], "not_pure");
+
+    // The row proves that construction retains, but does not invoke, the
+    // cleanup callback. The ordered interpreter does not yet model normal
+    // completion of this global-qualified constructor, so it cannot certify
+    // relocating the construction across Later's initialization.
+    let split = FixtureOpts::new(
+        source,
+        vec![
+            logical_module("registry/value", &[Member::new("registry")]),
+            logical_module("registry/later", &[Member::new("Later")]),
+        ],
+    );
+    let rejected = run_rejection_fixture_with_graphs_and_args(split, &["--emit-on-rejection"], 3);
+    assert!(
+        rejected
+            .stderr
+            .contains("evaluation_schedule_unknown_reordered"),
+        "expected callback-availability schedule refusal:\n{}",
+        rejected.stderr
+    );
+    assert!(rejected.gate_rejected_marker().is_file());
+    assert_node_output(&rejected.source_root.join("static/app.js"), "object\n", "");
 }
 
 #[test]
@@ -63,16 +127,14 @@ const frozen = globalThis.Object.freeze({ callback: () => Later });
 class Later {}
 console.log(typeof values, typeof frozen.callback);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
+    let fixture = run_fixture_with_graphs(colocated_native_call_opts(
         source,
-        vec![
-            logical_module_with_anon(
-                "native/value",
-                &[Member::new("values"), Member::new("frozen")],
-                &["globalThis.saved = () => Later;"],
-            ),
-            logical_module("native/later", &[Member::new("Later")]),
+        &[
+            Member::new("values"),
+            Member::new("frozen"),
+            Member::new("Later"),
         ],
+        &["globalThis.saved = () => Later;"],
     ));
     assert_preserved_entry_output(&fixture, "object function\n");
 
@@ -98,6 +160,24 @@ console.log(typeof values, typeof frozen.callback);
         identity
             .derivation_rules
             .contains(&InferenceRule::NativeIntegrity)
+    );
+
+    expect_schedule_refusal(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "native/value",
+                    &[Member::new("values"), Member::new("frozen")],
+                ),
+                logical_module_with_anon(
+                    "native/later",
+                    &[Member::new("Later")],
+                    &["globalThis.saved = () => Later;"],
+                ),
+            ],
+        ),
+        "object function\n",
     );
 }
 
@@ -185,7 +265,7 @@ const later = 42;
 console.log(text, later);
 "#
         );
-        let fixture = run_fixture(split_opts(
+        let fixture = run_fixture_with_graphs(split_native_call_opts(
             &source,
             &[
                 Member::new("input"),
@@ -195,6 +275,21 @@ console.log(text, later);
             &["globalThis.saved = () => later;"],
         ));
         assert_preserved_entry_output(&fixture, &format!("{expected} 42\n"));
+        assert_all_emitted_js_checks(&fixture);
+        if method == "round" {
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/native/value.js",
+                &["const normalized = Math.round(input);"],
+                &["globalThis.saved", "const later"],
+            );
+            assert_module_source(
+                &fixture.out_root,
+                "static/app/modules/native/later.js",
+                &["globalThis.saved = ()=>later;", "const later = 42;"],
+                &["Math.round(input)"],
+            );
+        }
     }
 }
 
@@ -208,12 +303,37 @@ const later = 42;
 console.log(pattern.test("OK"), later);
 "#
         );
-        let fixture = run_fixture(split_opts(
+        let fixture = run_fixture_with_graphs(colocated_native_call_opts(
             &source,
-            &[Member::new("pattern")],
+            &[Member::new("pattern"), Member::new("later")],
             &["globalThis.saved = () => later;"],
         ));
         assert_preserved_entry_output(&fixture, "true 42\n");
+
+        let split_opts = split_native_call_opts(
+            &source,
+            &[Member::new("pattern")],
+            &["globalThis.saved = () => later;"],
+        );
+        if constructor == "RegExp" {
+            let split = run_fixture_with_graphs(split_opts);
+            assert_preserved_entry_output(&split, "true 42\n");
+            assert_all_emitted_js_checks(&split);
+            assert_module_source(
+                &split.out_root,
+                "static/app/modules/native/value.js",
+                &["const pattern = RegExp("],
+                &["globalThis.saved"],
+            );
+            assert_module_source(
+                &split.out_root,
+                "static/app/modules/native/later.js",
+                &["globalThis.saved = ()=>later;", "const later = 42;"],
+                &["const pattern = RegExp("],
+            );
+        } else {
+            expect_schedule_refusal(split_opts, "true 42\n");
+        }
     }
 }
 
@@ -294,7 +414,7 @@ const later = 42;
 console.log(typeof marker, later);
 "#
         );
-        let fixture = run_fixture(split_opts(
+        let fixture = run_fixture_with_graphs(split_native_call_opts(
             &source,
             &[Member::new("marker")],
             &["globalThis.saved = () => later;"],

@@ -377,10 +377,18 @@ export { box, later };
         source,
         vec![
             logical_module("runtime/calendar", &[Member::new("Calendar")]),
-            logical_module("runtime/core", &[Member::new("Core")]),
-            logical_module("runtime/derived", &[Member::new("Derived")]),
-            logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
-            logical_module("values/later", &[Member::new("later")]),
+            // Preserve the heritage and mutation phase while Calendar's
+            // unused getter remains in a separate module with a live import.
+            logical_module_with_anon(
+                "runtime/call",
+                &[
+                    Member::new("Core"),
+                    Member::new("Derived"),
+                    Member::new("box"),
+                    Member::new("later"),
+                ],
+                &["box.flag = 1;"],
+            ),
         ],
     )
     .with_extra_chunks(&peer);
@@ -468,8 +476,11 @@ export { box, later };
         source,
         vec![
             logical_module("runtime/class", &[Member::new("Container")]),
-            logical_module_with_anon("runtime/call", &[Member::new("box")], &["box.flag = 1;"]),
-            logical_module("values/later", &[Member::new("later")]),
+            logical_module_with_anon(
+                "runtime/call",
+                &[Member::new("box"), Member::new("later")],
+                &["box.flag = 1;"],
+            ),
         ],
     )
     .with_extra_chunks(&peer);
@@ -583,16 +594,13 @@ export { box, command, later };
             logical_module("runtime/functions", &[Member::new("load")]),
             logical_module_with_anon(
                 "runtime/call",
-                &[Member::new("box")],
-                &["globalThis.saved = load;", "box.flag = 1;"],
-            ),
-            logical_module(
-                "values/late",
                 &[
+                    Member::new("box"),
                     Member::new("reader"),
                     Member::new("command"),
                     Member::new("later"),
                 ],
+                &["globalThis.saved = load;", "box.flag = 1;"],
             ),
         ],
     )
@@ -1256,21 +1264,22 @@ console.log("ready");
 }
 
 #[test]
-fn unhinted_unknown_registration_still_preserves_callback_tdz() {
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            r#"import { registry as importedRegistry } from "./registry.js";
+fn unhinted_prepared_registration_keeps_stored_provider_deferred() {
+    let source = r#"import { registry as importedRegistry } from "./registry.js";
 const registry = importedRegistry;
 const provider = { read() { return later; } };
 registry.registerProvider(provider);
 const later = 42;
 console.log("ready");
-"#,
-            registered_provider_modules(false),
-        )
-        .with_chunk_id("static/provider")
-        .with_extra_chunks(&[("static/registry", REGISTRY)]),
-        &["values/later"],
-        &["sequenced"],
+"#;
+    // The prepared body only stores the provider. Its actual transfer proves
+    // the lazy read stays deferred without a callback timing annotation.
+    let fixture = registered_provider_fixture(source, false);
+    assert_preserved_entry_output(&fixture, "ready\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "console.log(globalThis.savedProvider.read());\n",
+        "42\n",
     );
+    assert_all_emitted_js_checks(&fixture);
 }

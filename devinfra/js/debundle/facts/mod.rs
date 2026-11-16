@@ -107,16 +107,19 @@ pub use statement_facts::{
     ReturnedRecordUseFact,
 };
 pub(crate) use statement_facts::{
-    ConstructorFacts, ExportLinkage, HeapContentCells, LocalRecordFactoryPurityCertificate,
-    SettledElements,
+    ConstructorFacts, ExportLinkage, FallbackOnlyEffects, HeapContentAccesses, HeapContentCells,
+    LocalRecordFactoryPurityCertificate, SettledElements,
 };
 pub(crate) use value_flow::{CandidateObjectIndex, ChunkValueFlow, own_data_keys};
 
 // Public API: importable at `facts::<item>` exactly as before the split.
+#[allow(unused_imports)] // Used by the program execution registry integration.
+pub(crate) use analyze::PreparedExecutionModule;
 pub use analyze::{
-    ExportReentryPolicy, analyze_chunk, analyze_chunk_structural, analyze_chunk_with_policy,
-    analyze_vendor_prune_chunk, collect_chunk_source_facts, collect_chunk_source_facts_from_items,
-    complete_chunk_structural, complete_chunk_structural_with_inputs, module_has_top_level_await,
+    ExportReentryPolicy, PreparedChunkAnalysis, analyze_chunk, analyze_chunk_structural,
+    analyze_chunk_with_policy, analyze_vendor_prune_chunk, collect_chunk_source_facts,
+    collect_chunk_source_facts_from_items, complete_chunk_structural,
+    complete_chunk_structural_with_inputs, module_has_top_level_await, prepare_chunk_analysis,
 };
 pub(crate) use analyze::{complete_chunk_structural_with_flow, structural_value_flow};
 pub use evaluation_effects::{

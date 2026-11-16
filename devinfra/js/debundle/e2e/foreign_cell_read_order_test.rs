@@ -184,14 +184,15 @@ fn reads_of_foreign_state_moved_across_its_writers_are_refused_and_diverge() {
 }
 
 /// A provider binding that is never rebound, holding a primitive, reads the
-/// same at every point of initialization: these relocations stay accepted.
+/// same at every point of initialization. The unrelated write uses modeled
+/// assignment and arithmetic so its completion is established independently.
 #[test]
 fn reads_of_immutable_foreign_bindings_relocate() {
     let peers = [(
         "static/peer",
         "export const limit = 3;\n\
          let count = 0;\n\
-         export function next() { return ++count; }\n\
+         export function next() { count = count + 1; return count; }\n\
          export function bound() { return limit; }\n",
     )];
     for (case, source, expected) in [

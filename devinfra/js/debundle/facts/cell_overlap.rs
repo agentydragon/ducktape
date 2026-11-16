@@ -18,19 +18,19 @@ pub enum CellOverlapLaw {
 
 /// A source-backed pair of effect-cell footprints joined by an overlap law.
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-pub struct CellOverlap {
-    left: EffectCell,
-    right: EffectCell,
+pub struct CellOverlap<A = u32, B = swc_ecma_ast::Id> {
+    left: EffectCell<A, B>,
+    right: EffectCell<A, B>,
     law: CellOverlapLaw,
 }
 
-impl CellOverlap {
+impl<A, B> CellOverlap<A, B> {
     /// Returns the footprint stored in the index.
-    pub fn left(&self) -> &EffectCell {
+    pub fn left(&self) -> &EffectCell<A, B> {
         &self.left
     }
     /// Returns the footprint queried against the index.
-    pub fn right(&self) -> &EffectCell {
+    pub fn right(&self) -> &EffectCell<A, B> {
         &self.right
     }
     /// Returns the law that establishes overlap between the two footprints.
@@ -40,7 +40,10 @@ impl CellOverlap {
 }
 
 /// Returns the symmetric address overlap, preserving the source footprints.
-pub(crate) fn may_overlap(left: &EffectCell, right: &EffectCell) -> Option<CellOverlap> {
+pub(crate) fn may_overlap<A: Ord + Clone, B: Ord + Clone>(
+    left: &EffectCell<A, B>,
+    right: &EffectCell<A, B>,
+) -> Option<CellOverlap<A, B>> {
     let law = if left == right {
         CellOverlapLaw::ExactCell
     } else if array_contents_alias(left, right) {
@@ -56,18 +59,21 @@ pub(crate) fn may_overlap(left: &EffectCell, right: &EffectCell) -> Option<CellO
 }
 
 /// Addresses conflict only when they overlap and at least one access writes.
-pub(crate) fn may_conflict(
-    left: &EffectCell,
+pub(crate) fn may_conflict<A: Ord + Clone, B: Ord + Clone>(
+    left: &EffectCell<A, B>,
     left_writes: bool,
-    right: &EffectCell,
+    right: &EffectCell<A, B>,
     right_writes: bool,
-) -> Option<CellOverlap> {
+) -> Option<CellOverlap<A, B>> {
     (left_writes || right_writes)
         .then(|| may_overlap(left, right))
         .flatten()
 }
 
-fn array_contents_alias(left: &EffectCell, right: &EffectCell) -> bool {
+fn array_contents_alias<A: PartialEq, B: PartialEq>(
+    left: &EffectCell<A, B>,
+    right: &EffectCell<A, B>,
+) -> bool {
     match (left, right) {
         (
             EffectCell::ArrayContents(origin),
@@ -89,7 +95,10 @@ fn array_contents_alias(left: &EffectCell, right: &EffectCell) -> bool {
 
 /// A newer write may discard an older footprint only when it covers all of
 /// that footprint. Overlap by itself is not an equivalence relation.
-fn dominates(newer: &EffectCell, older: &EffectCell) -> bool {
+fn dominates<A: PartialEq, B: PartialEq>(
+    newer: &EffectCell<A, B>,
+    older: &EffectCell<A, B>,
+) -> bool {
     if newer == older {
         return true;
     }
@@ -101,12 +110,12 @@ fn dominates(newer: &EffectCell, older: &EffectCell) -> bool {
 /// A keyed participant map with only the current cross-kind array alias index.
 /// Queries visit exact keys and matching array index/length keys for one origin.
 #[derive(Debug)]
-pub struct CellOverlapIndex<V> {
-    by_cell: BTreeMap<EffectCell, V>,
-    array_properties: BTreeMap<u32, BTreeSet<String>>,
+pub struct CellOverlapIndex<V, A = u32, B = swc_ecma_ast::Id> {
+    by_cell: BTreeMap<EffectCell<A, B>, V>,
+    array_properties: BTreeMap<A, BTreeSet<String>>,
 }
 
-impl<V> Default for CellOverlapIndex<V> {
+impl<V, A, B> Default for CellOverlapIndex<V, A, B> {
     fn default() -> Self {
         Self {
             by_cell: BTreeMap::new(),
@@ -115,8 +124,8 @@ impl<V> Default for CellOverlapIndex<V> {
     }
 }
 
-impl<V> CellOverlapIndex<V> {
-    pub(crate) fn insert(&mut self, cell: EffectCell, value: V) -> Option<V> {
+impl<V, A: Ord + Clone, B: Ord + Clone> CellOverlapIndex<V, A, B> {
+    pub(crate) fn insert(&mut self, cell: EffectCell<A, B>, value: V) -> Option<V> {
         if !self.by_cell.contains_key(&cell) {
             self.index_cell(&cell);
         }
@@ -124,7 +133,7 @@ impl<V> CellOverlapIndex<V> {
     }
 
     /// Gets the value for `cell`, inserting its default value when absent.
-    pub fn get_or_default(&mut self, cell: EffectCell) -> &mut V
+    pub fn get_or_default(&mut self, cell: EffectCell<A, B>) -> &mut V
     where
         V: Default,
     {
@@ -134,7 +143,10 @@ impl<V> CellOverlapIndex<V> {
         self.by_cell.entry(cell).or_default()
     }
 
-    pub(crate) fn remove_dominated(&mut self, query: &EffectCell) -> Vec<(EffectCell, V)> {
+    pub(crate) fn remove_dominated(
+        &mut self,
+        query: &EffectCell<A, B>,
+    ) -> Vec<(EffectCell<A, B>, V)> {
         let cells = self
             .overlapping(query)
             .into_iter()
@@ -152,7 +164,7 @@ impl<V> CellOverlapIndex<V> {
         self.array_properties.clear();
     }
 
-    pub(crate) fn remove(&mut self, cell: &EffectCell) -> Option<V> {
+    pub(crate) fn remove(&mut self, cell: &EffectCell<A, B>) -> Option<V> {
         let value = self.by_cell.remove(cell)?;
         if let EffectCell::OwnProperty { origin, property } = cell
             && (property == "length" || is_array_index(property))
@@ -170,13 +182,13 @@ impl<V> CellOverlapIndex<V> {
         Some(value)
     }
 
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&EffectCell, &V)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&EffectCell<A, B>, &V)> {
         self.by_cell.iter()
     }
 
     /// Finds every indexed address that overlaps `query`.
     /// Results preserve both footprints and are sorted deterministically.
-    pub fn overlapping(&self, query: &EffectCell) -> Vec<(CellOverlap, &V)> {
+    pub fn overlapping(&self, query: &EffectCell<A, B>) -> Vec<(CellOverlap<A, B>, &V)> {
         let mut matches = Vec::new();
         if let Some((cell, value)) = self.by_cell.get_key_value(query)
             && let Some(overlap) = may_overlap(cell, query)
@@ -188,7 +200,7 @@ impl<V> CellOverlapIndex<V> {
                 if let Some(properties) = self.array_properties.get(origin) {
                     for property in properties {
                         let indexed = EffectCell::OwnProperty {
-                            origin: *origin,
+                            origin: origin.clone(),
                             property: property.clone(),
                         };
                         if let Some((cell, value)) = self.by_cell.get_key_value(&indexed)
@@ -202,7 +214,7 @@ impl<V> CellOverlapIndex<V> {
             EffectCell::OwnProperty { origin, property }
                 if property == "length" || is_array_index(property) =>
             {
-                let indexed = EffectCell::ArrayContents(*origin);
+                let indexed = EffectCell::ArrayContents(origin.clone());
                 if let Some((cell, value)) = self.by_cell.get_key_value(&indexed)
                     && let Some(overlap) = may_overlap(cell, query)
                 {
@@ -215,12 +227,12 @@ impl<V> CellOverlapIndex<V> {
         matches
     }
 
-    fn index_cell(&mut self, cell: &EffectCell) {
+    fn index_cell(&mut self, cell: &EffectCell<A, B>) {
         if let EffectCell::OwnProperty { origin, property } = cell
             && (property == "length" || is_array_index(property))
         {
             self.array_properties
-                .entry(*origin)
+                .entry(origin.clone())
                 .or_default()
                 .insert(property.clone());
         }
@@ -286,8 +298,20 @@ mod tests {
                 may_overlap(&EffectCell::ArrayContents(9), &own_property(9, property)).is_none()
             );
         }
-        assert!(may_overlap(&EffectCell::ArrayContents(9), &EffectCell::ObjectShape(9)).is_none());
-        assert!(may_overlap(&EffectCell::ArrayContents(9), &own_property(10, "0")).is_none());
+        assert!(
+            may_overlap(
+                &EffectCell::<u32, swc_ecma_ast::Id>::ArrayContents(9),
+                &EffectCell::<u32, swc_ecma_ast::Id>::ObjectShape(9)
+            )
+            .is_none()
+        );
+        assert!(
+            may_overlap(
+                &EffectCell::<u32, swc_ecma_ast::Id>::ArrayContents(9),
+                &own_property(10, "0")
+            )
+            .is_none()
+        );
     }
 
     #[test]

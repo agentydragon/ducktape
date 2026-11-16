@@ -25,6 +25,15 @@ pub(in crate::facts::sync_effects) trait BindingContext {
         binding: &Id,
         frame: &mut LocalFrame,
     ) -> Result<LocalValueResult, RemainderDisposition>;
+    /// A module namespace [[Get]] reads a live export cell. The receiver
+    /// has already been evaluated; ordinary objects use the heap transfer.
+    fn module_namespace_member(
+        &mut self,
+        _receivers: &Values,
+        _property: &str,
+    ) -> Option<LocalValueResult> {
+        None
+    }
     /// Whether this exact evaluated receiver is an object the current prefix
     /// tracks for a covered own-data read: the value of an initialized,
     /// non-imported module binding, or an element record an active iteration
@@ -48,8 +57,8 @@ pub(in crate::facts::sync_effects) trait BindingContext {
     fn cell_policy(&self) -> CellPolicy<'_>;
     /// How a closure created here retains free bindings without a cell.
     fn capture_policy(&self) -> CapturePolicy<'_>;
-    /// The effects of creating, initializing or storing to a declared binding
-    /// that has no cell: no closure can observe it.
+    /// The effects of creating/initializing this activation's declared binding,
+    /// or storing to one with no captured cell. Operand evaluation is separate.
     fn cell_effect(&self) -> EffectCoverageFragment;
 }
 
@@ -97,6 +106,11 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     /// the kernel returns them in its ledger.
     fn world(&self) -> &World;
     fn world_mut(&mut self) -> &mut World;
+    /// Called only at actual allocation, never while consulting source facts.
+    fn instantiate_allocation(
+        &mut self,
+        local: u32,
+    ) -> crate::program_execution::RuntimeAllocationId;
     /// Conditions under which the current settled prefix is valid at this
     /// moment: `World.prerequisites` plus whatever the adapter's queries have
     /// consumed since it was last folded in.
@@ -116,7 +130,7 @@ pub(in crate::facts::sync_effects) trait HeapContext:
     /// instance's prototype chain. `None` leaves the store unproved.
     fn constructor_assignment_absence(
         &mut self,
-        _class: u32,
+        _class: crate::program_execution::RuntimeAllocationId,
         _property: &str,
     ) -> Option<Box<ProofDependencies>> {
         None
@@ -211,7 +225,11 @@ pub(in crate::facts::sync_effects) enum Unproved<'a> {
     IterateSpread { operand: &'a Values, span: Span },
     /// A store to a binding this body does not declare and no active cell
     /// holds: it reaches state outside the kernel's world.
-    CaptureStore { values: &'a Values, span: Span },
+    CaptureStore {
+        binding: &'a Id,
+        values: &'a Values,
+        span: Span,
+    },
 }
 
 pub(in crate::facts::sync_effects) enum Disposition {
