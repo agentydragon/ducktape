@@ -154,7 +154,6 @@ known-first-party = [
     "gnome",
     "grocy_mcp",
     "homeassistant",
-    "inop",
     "inventree_utils",
     "laser",
     "llm",

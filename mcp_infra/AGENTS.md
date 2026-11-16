@@ -2,8 +2,6 @@
 
 ## MCP conventions
 
-- Tests constructing namespaced tool names use `build_mcp_function(server, tool)`
-  from `mcp_infra.testing.naming`, not hard-coded `server_tool` strings.
 - Server constructors take per-agent state; no globals/singletons, mutable state
   scoped to the server instance.
 - Many clients never show server `instructions` to the model: anything needed to call

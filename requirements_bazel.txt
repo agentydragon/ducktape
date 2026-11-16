@@ -251,7 +251,6 @@ anyio[trio]==4.15.1 \
     #   ducktape (pyproject.toml)
     #   anthropic
     #   claude-agent-sdk
-    #   claude-code-sdk
     #   httpx
     #   httpx2
     #   inspect-ai
@@ -1073,10 +1072,6 @@ claude-agent-sdk==0.2.152 \
     # via
     #   ducktape (pyproject.toml)
     #   agent-framework-claude
-claude-code-sdk==0.0.25 \
-    --hash=sha256:0d9e1eba432d4fe8a2f75f06ec9bb4c310f39b1d55246e7e4b2c69bfdd69eab3 \
-    --hash=sha256:3d6a4ef958182f311d6050776d2675d9b39650a2db221c582a0a5156472dcee3
-    # via ducktape (pyproject.toml)
 click==8.5.0 \
     --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360 \
     --hash=sha256:ba0d2089de75ea0310e2dde03160e6ca10009947fb95a182f9b54021bb272e34
@@ -2992,7 +2987,6 @@ mcp[cli]==2.2.0 \
     # via
     #   ducktape (pyproject.toml)
     #   claude-agent-sdk
-    #   claude-code-sdk
     #   fastmcp-slim
     #   openai-agents
 mcp-types==2.2.0 \

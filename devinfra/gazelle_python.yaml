@@ -63,7 +63,6 @@ manifest:
     cffi: cffi
     charset_normalizer: charset_normalizer
     claude_agent_sdk: claude_agent_sdk
-    claude_code_sdk: claude_code_sdk
     click: click
     cloudpickle: cloudpickle
     colorama: colorama
@@ -454,4 +453,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 08dc5d49c3304080220f9e564b7d28e1d71456326310529c3e4adc6177b04ace
+integrity: 87d2fde857e863559c48375026f17d397bc0e3cda8391c98ec528b291d4e664f
