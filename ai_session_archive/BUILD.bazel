@@ -159,6 +159,7 @@ py_library(
         ":database",
         ":models",
         ":record_json",
+        ":record_payloads",
         ":restic",
         ":statuses",
         ":usage_observations",
@@ -728,6 +729,7 @@ py_test(
         ":ingest",
         ":models",
         ":queries",
+        ":record_payloads",
         ":restic",
         ":testing",
         ":version_queries",
@@ -770,6 +772,17 @@ py_library(
         ":models",
         ":record_json",
         ":version_lineage",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "record_payloads",
+    srcs = ["record_payloads.py"],
+    deps = [
+        ":database",
+        ":record_json",
+        ":usage_observations",
         "@pypi//sqlalchemy",
     ],
 )
