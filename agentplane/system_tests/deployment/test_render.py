@@ -908,7 +908,12 @@ def test_native_recovery_profile_uses_service_caller_without_app(
     controller = yaml.safe_load(_resource(docs, "ConfigMap", "sandbox-controller-settings")["data"]["config.yaml"])
     assert controller["environment_service"]["operators"] == [caller]
     assert set(certificate["uris"]) <= set(gateway["dispatcher_service_callers"])
-    assert set(certificate["uris"]) <= set(controller["environment_service"]["runtime_proxy"]["readers"])
+    assert set(certificate["uris"]) <= set(controller["environment_service"]["service_readers"])
+    proxy_readers = set(controller["environment_service"]["runtime_proxy"]["readers"])
+    assert set(certificate["uris"]).isdisjoint(proxy_readers)
+    notifications_certificate = _resource(docs, "Certificate", "notifications-workload")["spec"]
+    assert notifications_certificate["uris"] == ["spiffe://agentplane/notifications"]
+    assert set(notifications_certificate["uris"]) <= proxy_readers
     history = yaml.safe_load(_resource(docs, "ConfigMap", "history-service-config")["data"]["config.yaml"])
     assert set(certificate["uris"]) <= set(history["reader_service_callers"])
     bootstrap = _resource(docs, "ConfigMap", "postgres-bootstrap")["data"]["bootstrap.sql"]
