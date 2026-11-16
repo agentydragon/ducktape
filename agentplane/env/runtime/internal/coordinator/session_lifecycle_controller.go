@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"

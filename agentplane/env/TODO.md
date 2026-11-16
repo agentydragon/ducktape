@@ -116,7 +116,7 @@ or failure without assuming all harnesses support the same placement.
 COSI runtime is pinned in `third_party/go.mod`; evaluate its APIs against the actual ownership and
 teardown contracts rather than treating every controller as a simple resource transform.
 
-- `env/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
+- `runtime/internal/cosi.Write` also serves Bootstrap, Session, Codex app-server and Execution status writes,
   where `changed` wakes Runtime or app-server waiters. The Session aggregate's `WriteStatus`
   delegates to `cosi.Write` and queues another reconcile on change because it does
   not watch its own output. A pre-read is not an atomic change detector: a competing writer

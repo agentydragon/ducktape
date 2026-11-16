@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agentydragon/ducktape/agentplane/env/cosi"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"

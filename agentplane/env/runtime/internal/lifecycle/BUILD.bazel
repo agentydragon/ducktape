@@ -10,7 +10,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle",
     deps = [
-        "//agentplane/env/cosi",
+        "//agentplane/env/runtime/internal/cosi",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/meta/spec",
