@@ -252,6 +252,15 @@ grafana_dashboard(
 )
 
 grafana_dashboard(
+    name = "cilium_agent",
+    srcs = ["cilium_agent.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+grafana_dashboard(
     name = "etcd",
     srcs = ["etcd.py"],
     deps = [
