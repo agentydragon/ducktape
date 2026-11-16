@@ -5,8 +5,8 @@ existing Sandbox Controller service SVID. Reconcilers and lifecycle-fact observa
 the listener and its independent policy watches determine readiness on leaders and standbys. See
 [the serving contract](SPEC.md#environmentservice-listener). App and Actions use this receiver with
 service SVIDs. Actions preserves effective-Identity delegation for list/get/resume and the separate
-launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Gateway no longer
-registers EnvironmentService or accepts its obsolete settings; automatic wake stays with Sessions.
+launcher grant for reviewed orchestration. Managed Sandbox CLIs use the dedicated local EnvironmentService route. The Sessions
+binary does not serve EnvironmentService; automatic wake stays with Sessions.
 Explicit resume is implemented in `internal/resume` without a wake-budget dependency. Dispatcher
 owns automatic wake execution and budgeting; the two owners share `environments/lifecycle` policy
 and guarded writes, with independent policy views and no Environments-to-Sessions call.
@@ -17,8 +17,8 @@ Deployment enables `environment_service.runtime_proxy` to serve the existing Run
 Executor on every replica at `sandbox-controller:8082`, with independent routing watches and narrow
 service SVID grants. Its outbound `runtime-proxy` certificate is separate from the Controller's
 binding observer certificate. App diagnostics, Notifications inventory, Sessions delivery, central sampler Executor and Controller
-lifecycle calls target this Service and pin its Sandbox Controller server identity. The Gateway
-registers no Runtime proxy or Executor receiver and starts no direct Runtime watches.
+lifecycle calls target this Service and pin its Sandbox Controller server identity. The Sessions
+binary has no Runtime proxy or Executor receiver and starts no direct Runtime watches.
 Proxy admission uses service SVIDs directly; `runtime_proxy` has no bearer audience setting.
 See [the receiver contract](SPEC.md#optional-runtime-proxy-and-executor-receiver).
 
@@ -101,7 +101,7 @@ Every Agentplane environment runs it from `cluster/cdk8s/agentplane/sandbox_cont
 also holds its RBAC; its runner `SandboxTemplate`s are in `environment_sandbox.py`. The Controller
 reads its required, strict YAML settings file from the path named by
 `AGENTPLANE_SANDBOX_CONTROLLER_CONFIG_FILE`. Static settings are authored in
-[`settings.py`](settings.py); the projected Runner Gateway token remains a separate read-only file.
+[`settings.py`](settings.py); the projected `runner_token_file` remains a separate read-only file.
 Locally:
 
 ```bash

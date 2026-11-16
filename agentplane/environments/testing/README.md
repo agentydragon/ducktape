@@ -1,10 +1,10 @@
 # EnvironmentService process fixture
 
 `process.py` runs the production every-replica listener from `internal/serving` against a supplied
-Kubernetes API server. App integration, browser, and Runner tests use independent Environments peers
+Kubernetes API server. App integration, browser, and Runtime tests use independent Environments peers
 with the App SVID and Controller server identity. The fixture can enable the production Runtime proxy
 on those peers; it connects to each Sandbox Runtime with the `spiffe://agentplane/runtime-proxy` SVID.
-The Runner Gateway fixture serves Dispatcher only, at a separate address. Each process owns its
+The Sessions fixture serves SessionDispatcher only, at a separate address. Each process owns its
 listener, policy watches and bounded shutdown.
 
 The test binary omits the leader-only reconcilers: these tests set Sandbox status and run scripted

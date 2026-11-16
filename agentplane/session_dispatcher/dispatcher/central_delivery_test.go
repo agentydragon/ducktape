@@ -246,9 +246,9 @@ func (s *proxyRuntimeFixture) ListSessions(ctx context.Context, _ *sessionpb.Lis
 	if authorization := md.Get("authorization"); len(authorization) != 0 {
 		s.token = authorization[0]
 	}
-	s.sandboxName = firstMetadataValue(md, sandboxapi.RunnerProxySandboxMetadataKey)
-	s.sandboxUID = firstMetadataValue(md, sandboxapi.RunnerProxySandboxUIDMetadataKey)
-	s.sandboxScope = firstMetadataValue(md, sandboxapi.RunnerProxySandboxNamespaceMetadataKey)
+	s.sandboxName = firstMetadataValue(md, sandboxapi.RuntimeProxySandboxMetadataKey)
+	s.sandboxUID = firstMetadataValue(md, sandboxapi.RuntimeProxySandboxUIDMetadataKey)
+	s.sandboxScope = firstMetadataValue(md, sandboxapi.RuntimeProxySandboxNamespaceMetadataKey)
 	if remote, ok := peer.FromContext(ctx); ok {
 		if tlsInfo, ok := remote.AuthInfo.(credentials.TLSInfo); ok && len(tlsInfo.State.PeerCertificates) != 0 {
 			if uris := tlsInfo.State.PeerCertificates[0].URIs; len(uris) != 0 {

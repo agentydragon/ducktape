@@ -15,7 +15,7 @@ import (
 )
 
 // Config contains the per-replica Environments proxy wiring. Callers use exact service SVID grants;
-// runner connections use explicitly configured transport security and incarnation-fenced metadata.
+// runtime connections use explicitly configured transport security and incarnation-fenced metadata.
 type Config struct {
 	RuntimeReaders     []string
 	SessionServices    []string
@@ -40,31 +40,31 @@ func defaultControlTiming(timing ControlTiming) ControlTiming {
 
 func validateControlTiming(timing ControlTiming) error {
 	if timing.LivenessTimeout <= 0 {
-		return fmt.Errorf("Gateway control timings must be positive")
+		return fmt.Errorf("Runtime observation liveness timeout must be positive")
 	}
 	return nil
 }
 
-// Gateway serves the per-Sandbox Runtime proxy and dials authenticated Runtimes.
+// Server serves the per-Sandbox Runtime proxy and dials authenticated Runtimes.
 // Environments owns the receiver and its independent Runtime observation.
-type Gateway struct {
+type Server struct {
 	config      Config
 	sandboxes   *sandboxResolver
 	connections *connections
 	objects     client.Reader
-	// observerQueue holds the names of Sandboxes whose observer RunRunnerObservers must reconcile.
+	// observerQueue holds the names of Sandboxes whose observer RunRuntimeObservers must reconcile.
 	observerQueue workqueue.TypedRateLimitingInterface[string]
 }
 
-// New builds a Gateway reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
+// New builds a Server reading Sandboxes, Pods and KubeVirt objects through objects, which in production is
 // an informer cache whose health is objectsHealth.
 func New(
 	config Config,
 	objects client.Reader,
 	objectsHealth *watchhealth.Health,
-) (*Gateway, error) {
+) (*Server, error) {
 	if err := config.RunnerSecurity.Validate(); err != nil {
-		return nil, fmt.Errorf("runner security: %w", err)
+		return nil, fmt.Errorf("Runtime transport security: %w", err)
 	}
 	if config.Namespace == "" {
 		return nil, fmt.Errorf("Runtime proxy namespace is required")
@@ -77,7 +77,7 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	return &Gateway{
+	return &Server{
 		config: config, objects: objects,
 		sandboxes: sandboxes, connections: newConnections(),
 		observerQueue: workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]()),
@@ -86,7 +86,7 @@ func New(
 
 // Methods admits callers of the Environment Runtime proxy and the typed execution API. Only the Sandbox
 // controller may quiesce or change Firecracker suspension admission; with no controller configured, nobody may.
-func (g *Gateway) Methods() (auth.Methods, error) {
+func (g *Server) Methods() (auth.Methods, error) {
 	callers, err := auth.Services(g.config.RuntimeReaders)
 	if err != nil {
 		return nil, err
@@ -128,15 +128,15 @@ func (g *Gateway) Methods() (auth.Methods, error) {
 }
 
 // RegisterProxy installs the per-Sandbox Environment Runtime proxy.
-func (g *Gateway) RegisterProxy(server *grpc.Server) {
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, &environmentRuntimeProxy{gateway: g})
+func (g *Server) RegisterProxy(server *grpc.Server) {
+	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, &environmentRuntimeProxy{server: g})
 }
 
 // RegisterExecutor enables the typed execution path only when its own caller allowlist is
 // configured. Environments keeps the RPC absent without an Executor grant.
-func (g *Gateway) RegisterExecutor(server *grpc.Server) {
+func (g *Server) RegisterExecutor(server *grpc.Server) {
 	if len(g.config.ExecutorServices) == 0 {
 		return
 	}
-	executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
+	executorpb.RegisterExecutorServer(server, &executorServer{server: g})
 }

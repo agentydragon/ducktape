@@ -9,23 +9,23 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const runnerConnectionUnavailable = "runner connection is not available on this Gateway replica"
+const runtimeConnectionUnavailable = "Environment Runtime connection is not available on this replica"
 
 var errSupersededConnection = status.Error(codes.Aborted, "superseded by a newer connection")
 
-type runnerConnection struct {
+type runtimeConnection struct {
 	identity    *sandboxreader.Identity
 	podUID      string
 	bootID      string
-	runner      environmentruntimepb.EnvironmentRuntimeClient
-	direct      *fencedRunnerConn
+	runtime     environmentruntimepb.EnvironmentRuntimeClient
+	direct      *fencedRuntimeConn
 	closeDirect func()
 	ended       chan struct{}
 	endMu       sync.Mutex
 	endErr      error
 }
 
-func (c *runnerConnection) end(err error) {
+func (c *runtimeConnection) end(err error) {
 	c.endMu.Lock()
 	select {
 	case <-c.ended:
@@ -41,26 +41,26 @@ func (c *runnerConnection) end(err error) {
 	}
 }
 
-func (c *runnerConnection) error() error {
+func (c *runtimeConnection) error() error {
 	c.endMu.Lock()
 	defer c.endMu.Unlock()
 	if c.endErr != nil {
 		return c.endErr
 	}
-	return status.Error(codes.Unavailable, "runner observation ended")
+	return status.Error(codes.Unavailable, "Environment Runtime observation ended")
 }
 
 // connections is this replica's table of authenticated Runtime observations.
 type connections struct {
 	mu    sync.RWMutex
-	local map[string]*runnerConnection
+	local map[string]*runtimeConnection
 }
 
 func newConnections() *connections {
-	return &connections{local: make(map[string]*runnerConnection)}
+	return &connections{local: make(map[string]*runtimeConnection)}
 }
 
-func (c *connections) accept(connection *runnerConnection) {
+func (c *connections) accept(connection *runtimeConnection) {
 	c.mu.Lock()
 	previous := c.local[connection.identity.Uid]
 	c.local[connection.identity.Uid] = connection
@@ -70,7 +70,7 @@ func (c *connections) accept(connection *runnerConnection) {
 	}
 }
 
-func (c *connections) remove(connection *runnerConnection, err error) {
+func (c *connections) remove(connection *runtimeConnection, err error) {
 	c.mu.Lock()
 	if c.local[connection.identity.Uid] == connection {
 		delete(c.local, connection.identity.Uid)
@@ -79,19 +79,19 @@ func (c *connections) remove(connection *runnerConnection, err error) {
 	connection.end(err)
 }
 
-func (c *connections) holder(sandboxUID string) (*runnerConnection, error) {
+func (c *connections) holder(sandboxUID string) (*runtimeConnection, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	connection := c.local[sandboxUID]
 	if connection == nil {
-		return nil, status.Error(codes.Unavailable, runnerConnectionUnavailable)
+		return nil, status.Error(codes.Unavailable, runtimeConnectionUnavailable)
 	}
 	select {
 	case <-connection.ended:
 		if err := connection.error(); err != nil {
 			return nil, err
 		}
-		return nil, status.Error(codes.Unavailable, "runner observation ended")
+		return nil, status.Error(codes.Unavailable, "Environment Runtime observation ended")
 	default:
 		return connection, nil
 	}

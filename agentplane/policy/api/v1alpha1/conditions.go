@@ -4,5 +4,5 @@ package v1alpha1
 // cannot use, so one missing set reads the same in every reader's condition.
 const PolicySetUnavailable = "PolicySetUnavailable"
 
-// EnvironmentReady is the condition maintained by the Runner Gateway's environment rule reader.
+// EnvironmentReady is the condition maintained by the Environments binary's environment rule reader.
 const EnvironmentReady = "EnvironmentReady"

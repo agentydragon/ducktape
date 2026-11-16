@@ -13,7 +13,7 @@ import (
 // RuntimeStatus is Environments' internal diagnostic read on its replica-local transport.
 // The caller supplies the incarnation from an uncached Sandbox read; no incoming proxy headers
 // or caller credentials are forwarded to the Runtime.
-func (g *Gateway) RuntimeStatus(ctx context.Context, target *identitypb.EnvironmentTarget, incarnationUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
+func (g *Server) RuntimeStatus(ctx context.Context, target *identitypb.EnvironmentTarget, incarnationUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if target.GetNamespace() == "" || target.GetName() == "" || target.GetUid() == "" || incarnationUID == "" {
 		return nil, status.Error(codes.InvalidArgument, "exact environment and incarnation are required")
 	}
@@ -32,7 +32,7 @@ func (g *Gateway) RuntimeStatus(ctx context.Context, target *identitypb.Environm
 	if !proto.Equal(connection.identity, target) || connection.podUID != incarnationUID {
 		return nil, status.Error(codes.Unavailable, "Runtime connection belongs to another incarnation")
 	}
-	snapshot, err := connection.runner.GetStatus(ctx, &sessionpb.GetStatusRequest{})
+	snapshot, err := connection.runtime.GetStatus(ctx, &sessionpb.GetStatusRequest{})
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, status.FromContextError(ctx.Err()).Err()

@@ -41,9 +41,9 @@ func bearing(t *testing.T, token string) context.Context {
 
 func TestEveryRPCRefusesLegacyBearerCallers(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, peertls.CentralSamplerURI)
-	methods := gatewayMethods(t, g)
-	connection := serveGateway(t, g, registerStandIns)
+	g := f.newServer(t, peertls.CentralSamplerURI)
+	methods := serverMethods(t, g)
+	connection := serveServer(t, g, registerStandIns)
 	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
 		for _, method := range grpcmethods.Of(desc) {
 			want := codes.Unauthenticated
@@ -53,7 +53,7 @@ func TestEveryRPCRefusesLegacyBearerCallers(t *testing.T) {
 			for name, token := range map[string]string{
 				"none": "", "app": f.appToken, "dispatcher": f.dispatcherToken,
 				"unbound dispatcher": f.unboundDispatcherToken, "executor": f.executorToken,
-				"controller": f.controllerToken, "workload": f.runnerToken,
+				"controller": f.controllerToken, "workload": f.runtimeToken,
 			} {
 				if got := status.Code(method.Call(bearing(t, token), connection)); got != want {
 					t.Errorf("%s %s: %v, want %v", method.Name, name, got, want)
@@ -71,9 +71,9 @@ func TestUnauthorizedExecutorCallerCannotReadEnvironmentFailureState(t *testing.
 	if err := f.objects.Status().Update(t.Context(), sandbox); err != nil {
 		t.Fatal(err)
 	}
-	g := f.newGateway(t, peertls.CentralSamplerURI)
-	connection := grpcmethods.Serve(t, gatewayMethods(t, g), func(server *grpc.Server) {
-		executorpb.RegisterExecutorServer(server, &executorServer{gateway: g})
+	g := f.newServer(t, peertls.CentralSamplerURI)
+	connection := grpcmethods.Serve(t, serverMethods(t, g), func(server *grpc.Server) {
+		executorpb.RegisterExecutorServer(server, &executorServer{server: g})
 	})
 	stream, err := executorpb.NewExecutorClient(connection).OpenSession(bearing(t, ""), &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
@@ -108,7 +108,7 @@ func TestCheckpointedLauncherWithIncarnationRoutesAsSuspended(t *testing.T) {
 
 func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t, peertls.CentralSamplerURI)
+	g := f.newServer(t, peertls.CentralSamplerURI)
 	g.config.RuntimeReaders = []string{peertls.AppURI}
 	g.config.SessionServices = []string{peertls.SessionsURI}
 	g.config.ControllerServices = []string{peertls.SandboxControllerURI}
@@ -122,7 +122,7 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(append(gatewayMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	server := grpc.NewServer(append(serverMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	registerStandIns(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -170,11 +170,11 @@ func TestRuntimeProxyServiceRolesStayMethodScoped(t *testing.T) {
 
 func TestEmptyServiceGrantsAdmitNobody(t *testing.T) {
 	f := newSandboxFixture(t)
-	g := f.newGateway(t)
+	g := f.newServer(t)
 	g.config.RuntimeReaders = nil
 	g.config.SessionServices = nil
 	g.config.ControllerServices = nil
-	connection := serveGateway(t, g, registerStandIns)
+	connection := serveServer(t, g, registerStandIns)
 	for _, desc := range []grpc.ServiceDesc{environmentruntimepb.EnvironmentRuntime_ServiceDesc, executorpb.Executor_ServiceDesc} {
 		for _, method := range grpcmethods.Of(desc) {
 			for _, actor := range []string{peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {

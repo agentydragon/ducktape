@@ -12,8 +12,8 @@ The controller reads one required, strict YAML settings file at the path named b
 configuration fail startup; metrics and health bind addresses keep their existing defaults when omitted.
 The controller does not fall back to per-setting environment variables. The file is mounted read-only
 from the cdk8s-authored ConfigMap and is loaded at process startup. Reloader restarts the Deployment
-when the ConfigMap changes. The file contains static settings and the path to the projected Runner
-Gateway token; token contents remain in the rotating read-only projected volume.
+when the ConfigMap changes. The file contains static settings and the path to the projected token
+named by `runner_token_file`; token contents remain in the rotating read-only projected volume.
 
 ## EnvironmentService listener
 
@@ -41,7 +41,7 @@ and verifies inventory, management and delegated resume; retained state and crea
 
 Omitting `environment_service` retains the controller-only process and existing readiness behavior.
 Deployment configuration enables the listener only after the accepting image is pinned; caller
-configuration changes follow the running receiver. The Gateway does not register EnvironmentService;
+configuration changes follow the running receiver. The Sessions binary does not register EnvironmentService;
 restoring it for rollback requires its accepting image before callers are retargeted.
 
 ## Live Runtime diagnostics
@@ -80,7 +80,7 @@ workload Identity or delegated proxy access, and does not expose `WatchState` to
 service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
 Deployment targets this [proxy implementation](runtimeproxy/SPEC.md) for App diagnostics,
 Notifications inventory, Sessions delivery, central sampler Executor and Controller lifecycle calls.
-The Gateway registers no Runtime proxy or Executor receiver and makes no direct Runtime calls. Before reverting
+The Sessions binary has no Runtime proxy or Executor receiver and makes no direct Runtime calls. Before reverting
 an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
 
 ## State PVC
@@ -122,7 +122,7 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
   the ingress has not acknowledged it. The controller persists the last request time and runner Pod
   UID in `status.quiesceAttempt` together with `status.stopStage: Quiescing` before calling the runner,
   so watch events and controller restarts cannot bypass its one-minute
-  retry deadline. One handshake makes at most three attempts on `Unavailable` using fresh Gateway
+  retry deadline. One handshake makes at most three attempts on `Unavailable` using fresh Runtime proxy
   connections within its existing 30-second total budget, always requiring the originally requested incarnation Pod UID.
   An incarnation change or authorization refusal is not retried, and an acknowledged unfinished
   seal returns to the persisted deadline. Fresh directly observed Runtime facts can complete the seal sooner. Applies only to a controller configured
@@ -159,17 +159,17 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
   that runner is already sealed to new work. A Firecracker wake resumes the same incarnation.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
-- Runner control uses the runner as an mTLS server. The Runner Gateway is its command client;
+- Runtime control uses the Environment Runtime as an mTLS server. The Environments Runtime proxy is its command client;
   the Sandbox Controller has a dedicated SVID authorized only for passive state observation. The
   controller exposes no transport choice on a `SandboxTemplate` and labels workloads only with the
   credential ID each incarnation was started with.
   Its direct `WatchState(observe_only=true)` names the accepted workload Pod UID (the
   virt-launcher Pod UID for a VM). Runtime uses this authenticated observation to bind the
   incarnation for its process lifetime and complete ordinary lifecycle adoption before publishing
-  facts. A reconnect for the same UID can restore observation; a Gateway cannot choose or advance
+  facts. A reconnect for the same UID can restore observation; the Runtime proxy cannot choose or advance
   the binding. Each new Runtime process has a fresh boot ID, even when retained state and workload
   UID are unchanged.
-  The controller's own Gateway calls retain their projected bearer and verify the shared service's
+  The controller's own Runtime proxy calls retain their projected bearer and verify the shared service's
   SVID with `runner_gateway_tls`. Its scalar environment fields are
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__CA_FILE` and
   `AGENTPLANE_SANDBOX_CONTROLLER_RUNNER_GATEWAY_TLS__SERVER_URI`; a partial TLS configuration is refused.
@@ -183,7 +183,7 @@ an image that accepts this setting, remove the setting and verify its ConfigMap 
   controller creates no Certificate and reads no Secret: it labels the workload with the issued
   credential ID and mounts the issued Secret by name. Two trust-manager bundles are mounted beside
   it: `cluster-internal-ca-bundle`, the cluster root, and `agentplane-workload-ca-bundle`, the
-  workload CA alone, which a runner's control listener trusts for the Gateway's client SVID and its
+  workload CA alone, which an Environment Runtime's control listener trusts for the Environments proxy's client SVID and its
   sidecar for the server SVIDs it dials. A Pod template cannot declare or claim the reserved runner
   TLS volume name or mount path in any regular or init container.
 - A Pod projects the same per-incarnation Secret and both trust bundles, the workload CA as
@@ -323,7 +323,8 @@ The controller uses the historically named `runner_gateway_target` to call the s
 admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
 routes the request to its own Runtime connection. No per-Sandbox control Service is created.
 Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the
-Controller-bound workload UID and Runtime boot ID. The Gateway does not observe or call Runtimes.
+Controller-bound workload UID and Runtime boot ID. This observer is separate from the Environments
+proxy's per-replica Runtime observation and callable connection.
 
 ## Launch
 
@@ -342,7 +343,7 @@ Controller-bound workload UID and Runtime boot ID. The Gateway does not observe 
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
   recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
 - The current validated incarnation stays published while it seals, including while its credential
-  is reissued, so the Gateway can continue reporting quiesce progress. A replacement must have its
+  is reissued, so the Runtime proxy can continue reporting quiesce progress. A replacement must have its
   own binding accepted before publication. A restart needed for sealing waits for issuance and
   rotates the credential as an ordinary start does; deletion never reuses the previous workload's key.
 - Then the Pod or VM is deleted, and once it and any VMI are gone the finalizer clears and the PVC
@@ -380,8 +381,8 @@ while the Policy Controller issues the Sandbox's credential; conflicts
 keep the workload from starting until resolved. `SuspendPending` holds a suspend while the runner's bootstrap
 or a Session's setup is still running, so the suspend never interrupts it; a delete does not wait.
 This hold has `status.operatingMode: Suspended` with no stop stage. When the hold ends, the controller
-publishes `Quiescing` with the attempt before its Quiesce RPC. The Gateway admits that RPC from the
-controller through an informer snapshot that still shows the held suspend, but denies other Runner
+publishes `Quiescing` with the attempt before its Quiesce RPC. The Runtime proxy admits that RPC from the
+controller through an informer snapshot that still shows the held suspend, but denies other Runtime
 proxy methods there; incarnation, Pod readiness and caller checks still apply.
 While a scheduled Pod is Pending, the reason is
 `PullingImage` when its latest Event is an image pull, and the message carries that latest Event;
@@ -394,7 +395,7 @@ with the reason and message of `Running`.
 `EnvironmentRuntimeConnected` is True after an authenticated direct `WatchState` snapshot for the
 current Sandbox UID and incarnation Pod UID, until 30 seconds without a heartbeat plus a one-minute
 status grace. It is False with `NeverConnected`, `ConnectionLost` or `WorkloadNotReady`. The elected
-Controller uses its own narrow SVID and an observe-only stream; it has no Gateway command
+Controller uses its own narrow SVID and an observe-only stream; it has no Runtime proxy command
 authority. This stream establishes the process's immutable incarnation binding before the first
 snapshot; stream loss does not clear that binding. Losing the
 stream immediately disqualifies facts for idle suspension and quiescence,

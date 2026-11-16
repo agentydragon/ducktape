@@ -51,14 +51,14 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, e
 	ctx, cancel := context.WithTimeout(ctx, config.Timeout)
 	defer cancel()
 	metadataPairs := []string{
-		sandboxapi.RunnerProxySandboxMetadataKey, config.SandboxName,
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey, config.SandboxNamespace,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, config.SandboxUID,
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey, config.SandboxName,
+		sandboxapi.RuntimeProxySandboxMetadataKey, config.SandboxName,
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, config.SandboxNamespace,
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey, config.SandboxUID,
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, config.SandboxNamespace,
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, config.SandboxName,
 	}
 	if config.ExpectedIncarnationUID != "" {
-		metadataPairs = append(metadataPairs, sandboxapi.RunnerProxyIncarnationUIDMetadataKey, config.ExpectedIncarnationUID)
+		metadataPairs = append(metadataPairs, sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, config.ExpectedIncarnationUID)
 	}
 	if config.ReplaceOutgoingMetadata {
 		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(metadataPairs...))

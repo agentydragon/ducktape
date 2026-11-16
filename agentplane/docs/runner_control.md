@@ -21,8 +21,8 @@ The Controller serves EnvironmentService on every replica at `sandbox-controller
 existing service SVID. This inventory/desired-state listener has no Runtime command client and does
 not change the leader-only observation below. The optional Runtime proxy on the same listener
 separately owns callable Runtime connections on every replica. Its readiness depends on
-local serving and policy watches, independently of leadership. App, Actions and Sandbox CLIs call this receiver with their service or workload SVIDs. The Gateway
-no longer registers EnvironmentService; automatic wake grants remain with the Dispatcher. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
+local serving and policy watches, independently of leadership. App, Actions and Sandbox CLIs call this receiver with their service or workload SVIDs. The Sessions binary
+does not register EnvironmentService; automatic wake grants remain with the Dispatcher. See [the Controller contract](../environments/SPEC.md#environmentservice-listener).
 
 The leader-elected Sandbox Controller independently opens `WatchState(observe_only=true)` directly
 to each accepted incarnation, authenticating with its dedicated client SVID. This stream grants no
@@ -72,7 +72,7 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 Every Environments replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on
 `sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection. App,
 Notifications, Sessions, central sampler and Controller lifecycle callers pin the Sandbox Controller
-server SVID. The Gateway registers no Runtime proxy or Executor receiver and starts no Runtime watches.
+server SVID. The Sessions binary has no Runtime proxy or Executor receiver and starts no Runtime watches.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.

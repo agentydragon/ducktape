@@ -6,11 +6,11 @@ go_library(
         "connections.go",
         "diagnostics.go",
         "executor.go",
-        "gateway.go",
         "peer.go",
         "proxy.go",
-        "runner_observer.go",
+        "runtime_observer.go",
         "sandboxes.go",
+        "server.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/environments/runtimeproxy",
     visibility = [
@@ -52,15 +52,15 @@ go_library(
 )
 
 go_test(
-    name = "gateway_test",
+    name = "server_test",
     srcs = [
         "diagnostics_test.go",
         "fixture_test.go",
-        "gateway_testmain_test.go",
         "methods_test.go",
         "peer_test.go",
         "proxy_test.go",
-        "runner_observer_test.go",
+        "runtime_observer_test.go",
+        "server_testmain_test.go",
     ],
     embed = [":runtimeproxy"],
     deps = [
@@ -103,12 +103,12 @@ go_test(
 )
 
 go_test(
-    name = "queue_runner_integration_test",
+    name = "queue_runtime_integration_test",
     size = "medium",
     srcs = [
         "fixture_test.go",
-        "queue_runner_integration_test.go",
-        "queue_runner_integration_testmain_test.go",
+        "queue_runtime_integration_test.go",
+        "queue_runtime_integration_testmain_test.go",
     ],
     embed = [":runtimeproxy"],
     tags = ["requires_docker"],

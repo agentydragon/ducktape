@@ -94,7 +94,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 		ServiceLaunchers: sets.New(c.ServiceLaunchers...),
 	}
 	if proxy != nil {
-		serviceOptions.RuntimeDiagnostics = proxy.gateway
+		serviceOptions.RuntimeDiagnostics = proxy.server
 	}
 	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, serviceOptions)
 	if err != nil {
@@ -117,7 +117,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	allMethods := auth.HealthMethods()
 	maps.Copy(allMethods, methods)
 	if proxy != nil {
-		proxyMethods, err := proxy.gateway.Methods()
+		proxyMethods, err := proxy.server.Methods()
 		if err != nil {
 			return nil, err
 		}
@@ -128,8 +128,8 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	server := grpc.NewServer(options...)
 	environmentpb.RegisterEnvironmentServiceServer(server, service)
 	if proxy != nil {
-		proxy.gateway.RegisterProxy(server)
-		proxy.gateway.RegisterExecutor(server)
+		proxy.server.RegisterProxy(server)
+		proxy.server.RegisterExecutor(server)
 	}
 	rpcHealth := health.NewServer()
 	rpcHealth.SetServingStatus("", healthpb.HealthCheckResponse_NOT_SERVING)
