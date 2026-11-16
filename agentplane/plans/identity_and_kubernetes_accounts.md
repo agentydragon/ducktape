@@ -50,17 +50,13 @@ acting for an agent proves itself with its certificate and names the effective I
 caller's grant. Kubernetes authentication remains only toward the Kubernetes API; operators retain
 app OIDC and MCP clients the edge's OAuth tokens.
 
-[`PRIVILEGED_BACKEND_AUTH_DESIGN`](task_dag.md#privileged_backend_auth_design--one-service-authentication-mode)
-tracks the staged receiver/caller cutover and image-pin gates. The app's special Kubernetes bearer
-was removed independently (operator, 2026-11-14 05:05–05:06 UTC): callers stopped minting it
-([#16347](https://github.com/agentydragon/ducktape/pull/16347)), its subjects and audience left the
-manifests ([#16372](https://github.com/agentydragon/ducktape/pull/16372),
-[#16381](https://github.com/agentydragon/ducktape/pull/16381)), and the App removed its settings and
-TokenReview path ([#16383](https://github.com/agentydragon/ducktape/pull/16383)). The unused agent
-ServiceAccount and App TokenReview RBAC are retired after staging App Pods run `ff801c8` or later.
+The [service-SVID authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)
+is deployed. The App's special Kubernetes bearer, its subjects/audience, ServiceAccount and
+token-request RBAC are retired. Receiver bearer admission, compatibility settings and TokenReview
+RBAC are removed.
 Live smoke-test issuer provisioning remains [frozen](task_freezer.md#live_smoke_operator_token--provision-a-live-test-operator-token);
 live callers supply an operator ID token through `AGENTPLANE_SYSTEM_TEST_TOKEN`.
-No Agentplane receiver admits a Kubernetes bearer at the exit.
+No Agentplane receiver admits a Kubernetes bearer.
 
 ## Where the migration stands
 
@@ -71,7 +67,7 @@ decision-log check. It does not claim that every workload rollout has been obser
 | Area                   | Current contract                                                                                                                                                                                                                                                                                                                 | Remaining question or evidence                                                                                             |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `Identity` and Sandbox | Workload `PolicyBinding`s and `WorkloadCredential`s use Identity subjects; component bindings may still name ServiceAccounts. The Sandbox controller pins the live Identity UID; Sandbox live acceptance, including owned cleanup, is recorded in the [rollout evidence](../docs/sandbox_identity_cutover_2026_11_12/README.md). | No repeat Sandbox rollout gate. Standing-workload proxy decision-log observation remains separately tracked in the DAG.    |
-| Service authentication | Workload SVIDs resolve to Identity subjects; old ServiceAccount-subject `WorkloadCredential`s fail closed. Direct component ServiceAccount authentication and provenance remain supported. Session delegation records the effective Identity for workload requests.                                                              | Component actor proof moves to service SVIDs; provenance remains separate.                                                 |
+| Service authentication | Workload SVIDs resolve to Identity subjects; old ServiceAccount-subject `WorkloadCredential`s fail closed. Components authenticate with exact role service SVIDs; historical ServiceAccount provenance remains readable. Session delegation records the effective Identity for workload requests.                                | No service-authentication cutover remains; provenance stays separate.                                                      |
 | Session and History    | New Sessions execute as an exact Identity incarnation. History workload reads scope to the recorded Session Identity; writer and direct component-reader provenance remains independently recorded.                                                                                                                              | Broader cross-principal History reads remain held by `THREAD_READ_POLICY_DESIGN`.                                          |
 | Notification inbox     | Inbox owners pin the Session Identity and destination Sandbox UID. Same-Identity sends pass directly; cross-Identity sends still require `session_inbox_access` under the current Sandbox/tag target model.                                                                                                                      | Target/group semantics and grant lifetime remain unresolved in `SESSION_ACCESS_GROUPING_DESIGN`; enforcement is unchanged. |
 | App API                | Operator OIDC session or ID-token bearer (`app/internal/auth/auth.go`); Kubernetes bearers are rejected.                                                                                                                                                                                                                         | No special agent bearer remains.                                                                                           |

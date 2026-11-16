@@ -113,14 +113,11 @@ exploration (#10990, closed after this section absorbed it).
   connection Lease. Existing route objects, if present, remain owned by the Sandbox for normal
   garbage collection. These workloads need
   scheduling, image pulls, kubelet mounts, cluster DNS and Cilium NetworkPolicy.
-- **Workload identity.** Pods get kubelet-projected tokens: 600 s in Sandbox Pods
-  (`cluster/cdk8s/agentplane/sandbox_pod.py`), 3600 s in service Deployments. Destination services
-  use the Go resolver, which reuses accepted TokenReviews for up to 30 s
-  ([workload authentication](../docs/workload_authentication.md)). Pod-bound resolution checks the
-  bound Pod's existence and UID through TokenReview (`identity/auth`); Action Service also
-  supports account-only resolution. A VM guest holds no token; the relay in its launcher Pod does. A
-  second apiserver holds no Pods, so it cannot do the bound-Pod check: callers keep reviewing
-  against the primary.
+- **Workload identity.** Workload SVIDs resolve through live `WorkloadCredential` and Identity
+  records, with Pod/controller provenance where available
+  ([workload authentication](../docs/workload_authentication.md)). First-party services authenticate
+  with role service SVIDs and exact method grants; no receiver calls TokenReview. Moving records to
+  another API server must preserve the live lookup/revocation contract and its policy namespace.
 - **RBAC.** Agents run `kubectl` against the real apiserver as their Sandbox's ServiceAccount through
   the egress proxy ([Sandbox Actions](../action_service/sandbox/README.md)): product behavior, not a
   record. `PolicySet` `kubernetes_*` rules become native RoleBindings

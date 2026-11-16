@@ -12,9 +12,7 @@ The Controller serves EnvironmentService on each replica at `sandbox-controller:
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
 reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
 preserves typed delegation. EnvironmentService rejects Kubernetes bearer credentials and performs no
-TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. Legacy
-receiver audience/account/delegation settings decode without authority until manifest omission and
-rollout. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
+TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
 EnvironmentService and opens no direct Runtime watch.
 
 EnvironmentService also serves an App-only `GetRuntimeDiagnostics` read through its replica-local,
@@ -325,8 +323,8 @@ Managed Pod and VM callers receive the `AGENTPLANE_SESSIONS_URL`, but no bearer 
 Sandbox route. The URL targets the `session-dispatcher.<namespace>.svc.cluster.local:8080` alias of the
 Gateway's shared TLS RPC listener. The egress sidecar or VM launcher relay maps that exact origin through
 central CONNECT and presents its Runner SVID on the same `:8080` listener; the central proxy carries the
-destination TLS bytes opaquely. The Gateway resolves the current Sandbox credential and ServiceAccount UID before applying
-the unchanged Session method rules. No Dispatcher audience token is projected
+destination TLS bytes opaquely. The Gateway resolves the live workload credential and exact Identity UID
+before applying the Session method rules. No Dispatcher audience token is projected
 into Sandbox Pods. Backend checks of the Sandbox identity and
 object UID remain authoritative; network reachability grants no Session authority. The Action Service
 presents its service SVID on Dispatcher, History and EnvironmentService calls, including the opted-in
@@ -372,8 +370,7 @@ launcher handler allows template listing and environment creation with a complet
 origin, while the Dispatcher role remains separate from operator authority. History's exact reader
 SVID list includes Actions. Actions presents that SVID for both direct orchestration and
 caller-delegated Dispatcher/History requests. Delegated calls retain their typed Action/Identity
-envelope; direct component grants never supply the effective caller's authority. Gateway receiver
-bearer admission is retired; projection and RBAC removal follow their own rollout. History's read
+envelope; direct component grants never supply the effective caller's authority. Gateway receivers reject Kubernetes bearers; service-token projections and TokenReview RBAC are absent. History's read
 and journal paths admit workload or exact service SVIDs only.
 
 ```mermaid
@@ -675,8 +672,6 @@ RPC listener. Notification resolves the credential's current Identity name and U
 existing Session and Sandbox ownership checks. The receiver rejects Kubernetes bearer credentials and
 performs no TokenReview. It accepts the exact App service SVID only for the five read-only Session
 diagnostic methods. That service grant never supplies an agent Identity or permits inbox mutation.
-Legacy receiver audience/account settings and bearer listener entries decode without granting admission
-until the separate manifest omission and rollout cleanup.
 
 The Notification service does not call the integration app, which watches subscription and notice
 state over the diagnostic methods of the `Notifications` gRPC service. GitHub sends it signed webhooks; it
@@ -718,7 +713,7 @@ flowchart LR
     mcp_client -->|MCP over OAuth| edge
     app -->|Action RPCs: service SVID mTLS + operator OIDC; MCP OAuth callback: HTTP| actions
     app -->|ConnectionService RPCs and health: mTLS gRPC :8443| edge
-    edge -->|account scoped gRPC| actions
+    edge -->|mTLS: edge SVID + typed Connection delegation| actions
     edge -->|public MCP client metadata: gRPC| actions
     actions -->|create + watch Pods| k8s
     actions -->|exec via Kubernetes API| workload
@@ -727,7 +722,7 @@ flowchart LR
     guest --> relay -->|mTLS Runtime SVID :8888| egress
     nonSandbox[Action boxes] -->|mTLS box SVID :8888| egress
     standing[Haku UI and Anki sidecars] -->|mTLS standing SVID :8888| egress
-    app -->|EgressAdmin TLS gRPC :8081; current App bearer| egress
+    app -->|EgressAdmin mTLS gRPC :8081; App SVID| egress
     egress -->|policy and credential watches; live Sandbox lookup for SVID| k8s
     egress -->|policy-approved requests| other
     egress -.->|opaque TLS; Rules verifies SVID :8081| rules[Rules and EgressAdmin TLS gRPC :8081]
@@ -810,13 +805,12 @@ flowchart LR
     controller[Sandbox Controller SVID] -->|mTLS: passive WatchState only| runtime
 ```
 
-## Staged Policy and Egress Admin certificate admission
+## Policy and Egress Admin certificate admission
 
 The Policy TLS listener verifies client SVIDs against the workload CA and grants the exact App SVID
 separate reader and writer authority. App→Policy presents the App SVID over verified mTLS.
 PolicyService accepts only service SVIDs; bearers, workload SVIDs and delegation envelopes are refused.
-Egress Admin admits only configured service SVIDs, and the App uses its SVID over mTLS. Its legacy
-bearer settings remain decodable until their manifest keys are removed and rolled out. The forward proxy continues
+Egress Admin admits only configured service SVIDs, and the App uses its SVID over mTLS. The forward proxy continues
 to authenticate workload Identities independently of its admin API.
 
 ```mermaid

@@ -37,12 +37,10 @@ sets:
 These grants are broader than observed calls: Notifications can also `GetStatus`; App can also
 `ListSessions`. No caller Identity is delegated through these methods. Component credentials admit
 a trusted service, while destination headers/scope identify and fence the Sandbox; naming a Sandbox
-does not authorize an arbitrary workload Identity. Legacy Gateway-audience bearer rules remain:
-`gateway_callers` covers App, Notifications and the combined Gateway account for diagnostics;
-Session writes admit the verified combined Gateway account, lifecycle calls the Controller account,
-and Executor the sampler account. Their retirement belongs to
-[auth stage 5](service_svid_stage5_readiness.md), not this audit. Do not widen those account grants
-as services separate. Deployed and wire names remain unchanged.
+does not authorize an arbitrary workload Identity. Runtime proxy and Executor receivers admit exact service SVIDs; Kubernetes bearers grant no
+access. Keep the independent method/role grants as services separate
+([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)).
+Deployed and wire names remain unchanged.
 
 ## Callers and dispositions
 
