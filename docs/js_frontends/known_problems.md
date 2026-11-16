@@ -4,7 +4,7 @@ These notes cover Bazel and pnpm integration issues that can affect JavaScript f
 
 ## 1. Playwright Module Identity Issue
 
-The Props Playwright-from-JS failure and unsuccessful experiments are recorded in the [current local Bazel/JS survey](exploration_bazel_js_rules.md#browser-tests-and-the-historical-module-identity-failure) and the [full original investigation](../../props/frontend/docs/playwright_bazel_investigation.md). Props now uses Python Playwright visual tests; that investigation remains useful for other Bazel frontends.
+The Props Playwright-from-JS module-identity failure is summarized in the [Bazel/JS survey](exploration_bazel_js_rules.md#browser-tests-and-the-historical-module-identity-failure) and [historical investigation](../../props/frontend/docs/playwright_bazel_investigation.md). Props now uses Python Playwright visual tests; the finding remains useful for other Playwright-from-JS Bazel integrations.
 
 ## 2. Module Resolution in Bazel Sandbox with chdir
 
