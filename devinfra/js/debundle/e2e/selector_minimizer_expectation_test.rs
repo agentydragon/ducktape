@@ -6,7 +6,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use debundle_e2e_support::{
-    parse_stdout_json, run_debundle, run_match_selector, run_synthesize_selectors, write_text_file,
+    BindingGroup, FixtureOpts, assert_entry_output, assert_generated_module_after_entry_script,
+    logical_module_with_binding_groups, parse_stdout_json, run_debundle, run_fixture,
+    run_match_selector, run_synthesize_selectors, write_text_file,
 };
 
 struct MinimizedSelectorCase {
@@ -31,6 +33,164 @@ struct SelectorOutputExpectation {
 struct SelectorOutput {
     exports: BTreeSet<String>,
     match_source: String,
+}
+
+#[test]
+fn identical_adjacent_declarations_can_be_claimed_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let case = MinimizedSelectorCase {
+        name: "a jointly identifiable run of otherwise identical initializers",
+        source: "function make(callback) { return callback; }\n\
+                 const a = make(() => {});\n\
+                 const b = make(() => {});\n\
+                 const c = make(() => {});\n\
+                 const d = make(() => {});\n\
+                 const e = make(() => {});\n\
+                 console.log(typeof a, a !== b, b !== c, c !== d, d !== e);\n\
+                 export { a, b, c, d, e };\n",
+        module: "app/callbacks",
+        bindings: &[
+            BindingCase {
+                export_name: "First",
+                runtime_name: "a",
+            },
+            BindingCase {
+                export_name: "Second",
+                runtime_name: "b",
+            },
+            BindingCase {
+                export_name: "Third",
+                runtime_name: "c",
+            },
+            BindingCase {
+                export_name: "Fourth",
+                runtime_name: "d",
+            },
+            BindingCase {
+                export_name: "Fifth",
+                runtime_name: "e",
+            },
+        ],
+        outputs: &[],
+    };
+    let (modules, source) = write_case(dir.path(), &case);
+    let output = run_synthesize_selectors(
+        &modules,
+        &[
+            "--source-file",
+            source.to_str().unwrap(),
+            "--apply",
+            "--format",
+            "json",
+        ],
+    );
+    let report = parse_stdout_json(&output);
+    assert_eq!(report["summary"]["skipped_candidates"], 0, "{report}");
+    let module: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(modules.join("app/callbacks.yaml")).unwrap())
+            .unwrap();
+    let claims = module["source_matches"].as_sequence().unwrap();
+    assert_eq!(claims.len(), 1, "{module:?}");
+    let selector = claims[0]["match"].as_str().unwrap();
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            case.source,
+            vec![logical_module_with_binding_groups(
+                case.module,
+                &[],
+                &[BindingGroup::source_alpha(
+                    selector,
+                    &[
+                        ("First", "First"),
+                        ("Second", "Second"),
+                        ("Third", "Third"),
+                        ("Fourth", "Fourth"),
+                        ("Fifth", "Fifth"),
+                    ],
+                )],
+            )],
+        )
+        .with_import_order(&["residual", "app/callbacks"]),
+    );
+    assert_entry_output(&fixture, "function true true true true\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\n\
+         const chosen = await import('./static/app/modules/app/callbacks.js');\n\
+         console.log(chosen.First === entry.a, chosen.Second === entry.b,\n\
+                     chosen.Third === entry.c, chosen.Fourth === entry.d, chosen.Fifth === entry.e);",
+        "true true true true true\n",
+    );
+}
+
+#[test]
+fn joint_synthesis_does_not_claim_gaps_or_choose_an_ambiguous_subrun() {
+    const MIDDLE: &[BindingCase] = &[
+        BindingCase {
+            export_name: "Second",
+            runtime_name: "b",
+        },
+        BindingCase {
+            export_name: "Third",
+            runtime_name: "c",
+        },
+        BindingCase {
+            export_name: "Fourth",
+            runtime_name: "d",
+        },
+    ];
+    const GAPPED: &[BindingCase] = &[
+        BindingCase {
+            export_name: "First",
+            runtime_name: "a",
+        },
+        BindingCase {
+            export_name: "Third",
+            runtime_name: "c",
+        },
+        BindingCase {
+            export_name: "Fifth",
+            runtime_name: "e",
+        },
+    ];
+    for bindings in [MIDDLE, GAPPED] {
+        let dir = tempfile::tempdir().unwrap();
+        let case = MinimizedSelectorCase {
+            name: "partial claims cannot borrow omitted declarations",
+            source: "function make(callback) { return callback; }\n\
+                     const a = make(() => {});\n\
+                     const b = make(() => {});\n\
+                     const c = make(() => {});\n\
+                     const d = make(() => {});\n\
+                     const e = make(() => {});\n",
+            module: "app/callbacks",
+            bindings,
+            outputs: &[],
+        };
+        let (modules, source) = write_case(dir.path(), &case);
+        let module = modules.join("app/callbacks.yaml");
+        let before = fs::read(&module).unwrap();
+        let output = run_synthesize_selectors(
+            &modules,
+            &[
+                "--source-file",
+                source.to_str().unwrap(),
+                "--format",
+                "json",
+            ],
+        );
+        let report = parse_stdout_json(&output);
+        assert!(
+            report["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|candidate| candidate["export_name"] == "Third"
+                    && candidate["action"] == "skipped"),
+            "{report}"
+        );
+        assert_eq!(fs::read(&module).unwrap(), before);
+    }
 }
 
 fn write_case(root: &Path, case: &MinimizedSelectorCase) -> (PathBuf, PathBuf) {

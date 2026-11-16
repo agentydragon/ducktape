@@ -22,6 +22,14 @@ per entity. Every command that resolves selectors calls it, directly or as
 A command that needs a selector unique on its own resolves it as a spec of one
 entity: its outcome is then its own candidates' verdict.
 
+Selector synthesis first tries each requested declaration. If individual
+claims fail, a maximal consecutive run of requested declarations with the same
+shape may prove as one binding group. The proof must resolve every requested
+binding to its intended declaration on its own selector. This shares the same
+path for existing name-pin rewrites and fresh residual claims. It never adds
+omitted declarations, crosses module destinations, or searches subwindows of
+an ambiguous run.
+
 `spec match-selector --explain --statements` is a local structural comparison,
 not a resolve. It uses the matcher directly on the explicitly selected range
 and cannot certify a unique or globally valid assignment. See
