@@ -3,7 +3,11 @@
 
 use debundle_e2e_support::*;
 
-fn split_later(source: &'static str, callsite_bindings: &[&'static str]) -> FixtureOpts<'static> {
+fn split_later(
+    source: &'static str,
+    callsite_bindings: &[&'static str],
+    import_order: &[&str],
+) -> FixtureOpts<'static> {
     let callsite_members: Vec<_> = callsite_bindings
         .iter()
         .map(|name| Member::new(name))
@@ -15,11 +19,16 @@ fn split_later(source: &'static str, callsite_bindings: &[&'static str]) -> Fixt
             logical_module("values/later", &[Member::new("later")]),
         ],
     )
+    .with_import_order(import_order)
 }
 
-fn assert_later_is_atomic_with_callsite(source: &'static str, callsite_bindings: &[&'static str]) {
+fn assert_later_is_atomic_with_callsite(
+    source: &'static str,
+    callsite_bindings: &[&'static str],
+    import_order: &[&str],
+) {
     expect_atomic_conflict_rejection(
-        split_later(source, callsite_bindings),
+        split_later(source, callsite_bindings, import_order),
         &["callbacks/invocation", "values/later"],
         &[],
     );
@@ -35,6 +44,7 @@ const later = 42;
 export { result, later };
 "#,
         &["result"],
+        &["residual", "callbacks/invocation", "values/later"],
     );
 }
 
@@ -46,6 +56,7 @@ const later = 42;
 export { result, later };
 "#,
         &["result"],
+        &["callbacks/invocation", "values/later"],
     );
 }
 
@@ -59,6 +70,7 @@ const later = 42;
 export { result, later };
 "#,
         &["result"],
+        &["residual", "callbacks/invocation", "values/later"],
     );
 }
 
@@ -76,7 +88,11 @@ export { outcome, later };
 
 #[test]
 fn same_source_unit_assignment_is_visible_to_unknown_call_callback() {
-    assert_later_is_atomic_with_callsite(SAME_SOURCE_UNIT_SOURCE, &["outcome", "reader"]);
+    assert_later_is_atomic_with_callsite(
+        SAME_SOURCE_UNIT_SOURCE,
+        &["outcome", "reader"],
+        &["callbacks/invocation", "values/later"],
+    );
 }
 
 #[test]
@@ -99,12 +115,18 @@ export { outcome, later };
     let peer_modules = [("static/peer", Vec::new())];
     let fixture = run_fixture(
         FixtureOpts::new(PROVIDER, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&peer)
             .with_extra_chunk_logical_modules(&peer_modules),
     );
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
     expect_atomic_conflict_rejection(
-        split_later(PROVIDER, &["reader", "outcome"]).with_extra_chunks(&peer),
+        split_later(
+            PROVIDER,
+            &["reader", "outcome"],
+            &["callbacks/invocation", "values/later"],
+        )
+        .with_extra_chunks(&peer),
         &["callbacks/invocation", "values/later"],
         &[],
     );
@@ -136,6 +158,7 @@ export { outcome, later };
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["callbacks/invocation", "values/later"])
         .with_extra_chunks(&peer),
         &["callbacks/invocation", "values/later"],
         &[],
@@ -144,6 +167,7 @@ export { outcome, later };
     let peer_modules = [("static/peer", Vec::new())];
     let fixture = run_fixture(
         FixtureOpts::new(PROVIDER, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&peer)
             .with_extra_chunk_logical_modules(&peer_modules),
     );

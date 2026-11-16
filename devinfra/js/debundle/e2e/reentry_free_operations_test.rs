@@ -65,6 +65,7 @@ console.log(Boolean(store), later);
     expect_atomic_conflict_rejection(split(source, "store"), &["host/value", "host/later"], &[]);
     let fixture = run_fixture_with_graphs(
         split(source, "store")
+            .with_import_order(&["host/value", "host/later"])
             .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
     );
     assert_host_call_remains_impure(&fixture, "store");
@@ -166,6 +167,7 @@ console.log(Boolean(value), later);
 fn unused_operation_assertion_is_not_evidence() {
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new("const value = 42; console.log(value);", vec![])
+            .with_import_order(&["residual"])
             .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     assert!(
@@ -190,7 +192,7 @@ const delta = calls - before;
 hook.disable();
 console.log(delta);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "1\n");
     assert_preserved_entry_output_with_bun(&fixture, "0\n");
     assert_compiled_bun_entry_output(&fixture, "0\n");
@@ -233,6 +235,7 @@ console.log(Boolean(store), later);
 "#;
     expect_atomic_conflict_rejection(
         split(source, "store")
+            .with_import_order(&["host/value", "host/later", "residual"])
             .with_host_behavior(policy(&[ReentryFreeOperation::AsyncLocalStorageConstruct])),
         &["host/value", "host/later"],
         &[],
@@ -242,7 +245,9 @@ console.log(Boolean(store), later);
 #[test]
 fn promise_host_timing_requires_proved_native_identity() {
     let rejected = run_rejection_fixture_with_graphs(
-        promise_reentry_split().with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
+        promise_reentry_split()
+            .with_import_order(&["gate", "factory", "later", "residual"])
+            .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
     );
     unknown_receiver_witness(&serde_json::to_value(rejected.program_graph()).unwrap());
     assert!(
@@ -264,43 +269,62 @@ fn promise_host_timing_requires_proved_native_identity() {
 
 #[test]
 fn promise_resolve_rejects_member_alias_argument_and_mutation() {
-    for source in [
-        r#"globalThis.saved = () => later;
+    for (source, import_order) in [
+        (
+            r#"globalThis.saved = () => later;
 const P = Promise;
 const gate = P.resolve();
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
-        r#"globalThis.saved = () => later;
+            &["host/value", "host/later", "residual"][..],
+        ),
+        (
+            r#"globalThis.saved = () => later;
 const gate = Promise["resolve"]();
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
-        r#"globalThis.saved = () => later;
+            &["host/value", "host/later"][..],
+        ),
+        (
+            r#"globalThis.saved = () => later;
 const gate = Promise.resolve({ get then() { globalThis.saved(); return undefined; } });
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
-        r#"globalThis.saved = () => later;
+            &["host/value", "host/later"][..],
+        ),
+        (
+            r#"globalThis.saved = () => later;
 const gate = Promise.resolve?.();
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
-        r#"globalThis.saved = () => later;
+            &["host/value", "host/later"][..],
+        ),
+        (
+            r#"globalThis.saved = () => later;
 const gate = Promise.resolve(...[]);
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
-        r#"globalThis.saved = () => later;
+            &["host/value", "host/later"][..],
+        ),
+        (
+            r#"globalThis.saved = () => later;
 const original = Promise.resolve;
 Promise.resolve = () => { globalThis.saved(); return original.call(Promise); };
 const gate = Promise.resolve();
 const later = 42;
 console.log(Boolean(gate), later);
 "#,
+            &["host/value", "host/later", "residual"][..],
+        ),
     ] {
         expect_atomic_conflict_rejection(
             split(source, "gate")
+                .with_import_order(import_order)
                 .with_host_behavior(policy(&[ReentryFreeOperation::PromiseResolve])),
             &["host/value", "host/later"],
             &[],

@@ -96,19 +96,22 @@ fn inferred_pure_hof_wrapper_across_modules_emits_no_s_cycle() {
     // an `S` cycle that the gate rejects. With inferred purity,
     // no `S` edges are emitted between the modules and the
     // build accepts.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function wrap(f) { return { kind: "wrapped", impl: f }; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function wrap(f) { return { kind: "wrapped", impl: f }; }
 const A = wrap(function () { return "a"; });
 const B = wrap(function () { return "b"; });
 const C = wrap(function () { return "c"; });
 console.log(A.impl(), B.impl(), C.impl());
 export { A, B, C };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     assert_entry_output(&fixture, "a b c\n");
 }
 
@@ -192,8 +195,9 @@ fn inferred_pure_static_object_method_aliasing_emits_no_s_cycle() {
     // well-known `Object` global, the analyzer should
     // recognize that no standard property is a getter, so
     // reading the function reference is side-effect-free.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const define = Object.defineProperty;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const define = Object.defineProperty;
 const freeze = Object.freeze;
 const values = Object.values;
 const keys = Object.keys;
@@ -201,11 +205,13 @@ const obj = freeze({ x: 1 });
 console.log(values(obj)[0], keys(obj)[0]);
 export { define, freeze, values, keys };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("define"), Member::new("values")]),
-            logical_module("mod_b", &[Member::new("freeze"), Member::new("keys")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("define"), Member::new("values")]),
+                logical_module("mod_b", &[Member::new("freeze"), Member::new("keys")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     // Log primitives directly: Node's `util.inspect` array
     // formatting (`[ 1 ]` vs `[1]`) shifts across versions; a
     // primitive comparison is version-stable.
@@ -251,7 +257,8 @@ export { A, B, C };
                 logical_module("mod_a", &[Member::new("A"), Member::new("C")]),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
-        ),
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["mod_a", "mod_b"],
     );
 }
@@ -266,8 +273,9 @@ fn inferred_pure_recursive_function_classified_pure() {
     // coercing operator on a possibly-object operand and
     // classifies NotPure by design — this test pins recursion
     // termination, not arithmetic.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function prev(n) { return n === 4 ? 3 : n === 3 ? 2 : n === 2 ? 1 : 0; }
 function even(n) { return n === 0 ? true : odd(prev(n)); }
 function odd(n) { return n === 0 ? false : even(prev(n)); }
 const fourEven = even(4);
@@ -275,11 +283,13 @@ const fiveOdd = odd(5);
 console.log(fourEven, fiveOdd);
 export { even, odd, fourEven, fiveOdd };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
-            logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("even"), Member::new("fourEven")]),
+                logical_module("mod_b", &[Member::new("odd"), Member::new("fiveOdd")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     assert_entry_output(&fixture, "true true\n");
 }
 
@@ -307,7 +317,8 @@ export { a1, a2, b1 };
                 logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
-        ),
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["mod_a", "mod_b"],
     );
 }
@@ -334,7 +345,8 @@ export { a1, a2, b1 };
                 logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
-        ),
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["mod_a", "mod_b"],
     );
 }
@@ -414,7 +426,8 @@ export { a1, a2, b1 };
                 logical_module("mod_a", &[Member::new("a1"), Member::new("a2")]),
                 logical_module("mod_b", &[Member::new("b1")]),
             ],
-        ),
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["mod_a", "mod_b"],
     );
 }
@@ -434,8 +447,9 @@ fn declared_pure_member_suppresses_s_edges_for_opaque_call() {
     // `dispatcher` member with `purity: "pure"`. The
     // validator trusts the assertion and stops emitting
     // `S` edges for `dispatcher(...)` call sites.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const registry = {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const registry = {
   alpha: function (x) { return { handled: "alpha", x }; },
   beta: function (x) { return { handled: "beta", x }; },
   gamma: function (x) { return { handled: "gamma", x }; },
@@ -449,22 +463,24 @@ const C = dispatcher({ kind: "gamma", payload: 3 });
 console.log(A.handled, B.handled, C.handled);
 export { A, B, C, dispatcher };
 "#,
-        vec![
-            logical_module(
-                "mod_a",
-                &[
-                    Member::new("A"),
-                    Member::new("C"),
-                    // Author asserts: calls to `dispatcher` have no
-                    // observable side effects. Both call sites in
-                    // mod_a (A, C) and the one in mod_b (B) drop
-                    // their `S` edges.
-                    Member::new("dispatcher").with_purity(MemberPurity::Pure),
-                ],
-            ),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "mod_a",
+                    &[
+                        Member::new("A"),
+                        Member::new("C"),
+                        // Author asserts: calls to `dispatcher` have no
+                        // observable side effects. Both call sites in
+                        // mod_a (A, C) and the one in mod_b (B) drop
+                        // their `S` edges.
+                        Member::new("dispatcher").with_purity(MemberPurity::Pure),
+                    ],
+                ),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
@@ -541,13 +557,14 @@ export { A, B, C, dispatcher };
     };
 
     expect_rejection_containing_all(
-        FixtureOpts::new(ENTRY, modules(dispatcher())),
+        FixtureOpts::new(ENTRY, modules(dispatcher()))
+            .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["cycle", "mod_a", "mod_b", "side-effect"],
     );
-    let fixture = run_fixture(FixtureOpts::new(
-        ENTRY,
-        modules(dispatcher().with_purity(MemberPurity::Pure)),
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(ENTRY, modules(dispatcher().with_purity(MemberPurity::Pure)))
+            .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
     assert_entry_output(&fixture, "alpha beta gamma\n");
 }
 
@@ -648,7 +665,8 @@ export { A, B, C, PureBox };
                 ),
                 logical_module("mod_b", &[Member::new("B")]),
             ],
-        ),
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
         &["mod_a", "mod_b"],
     );
 }
@@ -688,9 +706,12 @@ fn builtin_container_initializers_break_the_side_effect_cycle() {
         let source = format!(
             "const a = (() => 1)();\n{declaration}\nconst c = {read} + a;\nconsole.log(c);\nexport {{ a, b, c }};"
         );
-        assert_pure_cycle_break(
-            &source,
-            vec![logical_module("b_module", &[Member::new("b")])],
+        assert_pure_cycle_break_with_opts(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module("b_module", &[Member::new("b")])],
+            )
+            .with_import_order(&["b_module", "residual"]),
             "b_module",
             &[declaration.split_inclusive('(').next().unwrap()],
             &["const a"],
@@ -705,8 +726,9 @@ fn class_static_new_map_field() {
     // only static-side-effect candidate. Without the rule the
     // class is flagged side-effecting and pulled into the
     // S-chain.
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 class C {
   static x = new Map();
 }
@@ -714,7 +736,9 @@ const c = C.x.size + a;
 console.log(c);
 export { a, C, c };
 "#,
-        vec![logical_module("c_module", &[Member::new("C")])],
+            vec![logical_module("c_module", &[Member::new("C")])],
+        )
+        .with_import_order(&["c_module", "residual"]),
         "c_module",
         &["class C", "static x = new Map()"],
         &["const a"],
@@ -755,15 +779,18 @@ fn optional_chain_on_whitelisted_receiver_classified_pure() {
     //   which is whitelisted), so Y has has_side_effect=false.
     //   No Y → X s-edge. Only edge: residual → y_module
     //   (Z's at-init read of Y). DAG. Validator accepts.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const X = (() => "x")();
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const X = (() => "x")();
 const Y = Number?.MAX_SAFE_INTEGER;
 const Z = Y + 1;
 console.log(Z);
 export { X, Y, Z };
 "#,
-        vec![logical_module("y_module", &[Member::new("Y")])],
-    ));
+            vec![logical_module("y_module", &[Member::new("Y")])],
+        )
+        .with_import_order(&["y_module", "residual"]),
+    );
 
     // y_module owns Y but does NOT own X — X stays in residual.
     assert_module_source(
@@ -790,18 +817,21 @@ export { X, Y, Z };
 
 #[test]
 fn immutable_symbol_key_does_not_make_class_definition_an_effect() {
-    assert_pure_cycle_break(
-        r#"const before = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const before = (() => 1)();
 const brand = Symbol('brand');
 class Hidden { [brand]() { return 7; } }
 const after = Hidden.name + before;
 console.log(after);
 export { Hidden, after };
 "#,
-        vec![logical_module(
-            "class/hidden",
-            &[Member::new("brand"), Member::new("Hidden")],
-        )],
+            vec![logical_module(
+                "class/hidden",
+                &[Member::new("brand"), Member::new("Hidden")],
+            )],
+        )
+        .with_import_order(&["class/hidden", "residual"]),
         "class/hidden",
         &["class Hidden", "brand"],
         &["const before"],
@@ -848,14 +878,17 @@ fn symbol_with_string_literal_arg_classified_pure() {
     //
     // With this rule: Symbol("b") is Pure → b is not SE → no
     // b → a s-edge. Only edge: residual → b_module. DAG.
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Symbol("b");
 const c = b.description + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Symbol(", "export {", "b"],
         &["const a", "(()=>1)"],
@@ -868,14 +901,17 @@ fn symbol_with_no_args_classified_pure() {
     // No description argument — pure under the same rule
     // (ECMA-262 §20.4.1.1 step 2: descString is undefined when
     // description is undefined, no ToString call).
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Symbol();
 const c = (typeof b) + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Symbol()", "export {", "b"],
         &["const a"],
@@ -1286,6 +1322,7 @@ fn fluent_chain_schema_decls_without_assertion_emit_s_cycle() {
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
+        .with_import_order(&["mod_a", "mod_b", "residual"])
         .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)]),
         &["mod_a", "mod_b"],
     );
@@ -1306,6 +1343,7 @@ fn asserted_fluent_export_chains_emit_no_s_cycle() {
                 logical_module("mod_b", &[Member::new("B")]),
             ],
         )
+        .with_import_order(&["mod_a", "mod_b", "residual"])
         .with_extra_chunks(&[("static/vendorlib", FLUENT_VENDORLIB)])
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/vendorlib")
             .with_fluent_exports(&["e4"])
@@ -1497,14 +1535,17 @@ fn annotation_property_write_cannot_be_split_from_its_declarer() {
 
 #[test]
 fn string_raw_template_initializer_admits_cycle_break() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = String.raw`value:${1}`;
 const c = b.length + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = String.raw"],
         &["const a"],

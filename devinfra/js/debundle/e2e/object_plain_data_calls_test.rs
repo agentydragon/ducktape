@@ -32,14 +32,17 @@ use debundle_e2e_support::*;
 /// `b` is not SE, the cycle disappears, validator accepts.
 #[test]
 fn object_freeze_on_plain_object_literal_admits() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Object.freeze({ x: 1 });
 const c = b.x + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Object.freeze("],
         &["const a"],
@@ -49,14 +52,17 @@ export { a, b, c };
 
 #[test]
 fn object_entries_on_plain_object_literal_admits() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Object.entries({ x: 1, y: 2 });
 const c = b.length + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Object.entries("],
         &["const a"],
@@ -68,14 +74,17 @@ export { a, b, c };
 fn object_keys_on_plain_array_literal_admits() {
     // Array literal is also an ordinary plain-data shape — its own
     // properties are integer-indexed data slots, no accessors.
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Object.keys([10, 20, 30]);
 const c = b.length + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Object.keys("],
         &["const a"],
@@ -85,14 +94,17 @@ export { a, b, c };
 
 #[test]
 fn object_from_entries_on_array_of_pair_literals_admits() {
-    assert_pure_cycle_break(
-        r#"const a = (() => 1)();
+    assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(
+            r#"const a = (() => 1)();
 const b = Object.fromEntries([["x", 1], ["y", 2]]);
 const c = b.x + a;
 console.log(c);
 export { a, b, c };
 "#,
-        vec![logical_module("b_module", &[Member::new("b")])],
+            vec![logical_module("b_module", &[Member::new("b")])],
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
         &["const b = Object.fromEntries("],
         &["const a"],
@@ -114,7 +126,8 @@ console.log(c);
 export { a, b, c };
 "#,
             vec![logical_module("b_module", &[Member::new("b")])],
-        ),
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
     );
 }
@@ -135,7 +148,8 @@ console.log(c);
 export { a, b, c };
 "#,
             vec![logical_module("b_module", &[Member::new("b")])],
-        ),
+        )
+        .with_import_order(&["b_module", "residual"]),
         "b_module",
     );
 }

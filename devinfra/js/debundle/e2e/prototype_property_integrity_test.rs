@@ -51,9 +51,11 @@ fn split_modules(include_borrowed: bool) -> Vec<LogicalModuleEntry> {
     ]
 }
 
-fn assert_preserved_split(prefix: &str) {
+fn assert_preserved_split(prefix: &str, import_order: &[&str]) {
     let source = source(prefix, FACTORY, "", "", "");
-    let fixture = run_fixture(FixtureOpts::new(&source, split_modules(false)));
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, split_modules(false)).with_import_order(import_order),
+    );
     assert_preserved_entry_output(&fixture, "84 0\n");
     assert_module_exports(
         &fixture.out_root,
@@ -71,9 +73,28 @@ fn assert_split_rejected(source: &str, extra_chunks: &[(&str, &str)]) {
     );
 }
 
+fn assert_split_rejected_with_import_order(
+    source: &str,
+    extra_chunks: &[(&str, &str)],
+    import_order: &[&str],
+) {
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(source, split_modules(false))
+            .with_import_order(import_order)
+            .with_extra_chunks(extra_chunks),
+        &["callbacks/wrapped", "values/later"],
+        &[],
+    );
+}
+
 fn assert_effect_rejected(effect: &str) {
     let source = source(effect, FACTORY, "", "", "");
     assert_split_rejected(&source, &[]);
+}
+
+fn assert_effect_rejected_with_import_order(effect: &str, import_order: &[&str]) {
+    let source = source(effect, FACTORY, "", "", "");
+    assert_split_rejected_with_import_order(&source, &[], import_order);
 }
 
 fn assert_later_conflict(source: &str, include_borrowed: bool) {
@@ -86,17 +107,23 @@ fn assert_later_conflict(source: &str, include_borrowed: bool) {
 
 #[test]
 fn deferred_object_entries_replacement_preserves_the_later_callback_split() {
-    assert_preserved_split("function mutate(value) { Object.entries = value; }\n");
+    assert_preserved_split(
+        "function mutate(value) { Object.entries = value; }\n",
+        &["callbacks/wrapped", "residual", "values/later"],
+    );
 }
 
 #[test]
 fn unrelated_global_receiver_write_preserves_the_later_callback_split() {
-    assert_preserved_split("function mutate(value) { globalThis.slot.marker = value; }\n");
+    assert_preserved_split(
+        "function mutate(value) { globalThis.slot.marker = value; }\n",
+        &["callbacks/wrapped", "residual", "values/later"],
+    );
 }
 
 #[test]
 fn control_without_a_write_preserves_the_later_callback_split() {
-    assert_preserved_split("");
+    assert_preserved_split("", &["callbacks/wrapped", "values/later"]);
 }
 
 #[test]
@@ -115,15 +142,17 @@ fn inherited_setter_on_the_constructor_field_remains_rejected() {
 
 #[test]
 fn aliased_object_define_property_remains_rejected() {
-    assert_effect_rejected(
+    assert_effect_rejected_with_import_order(
         "const define = Object.defineProperty;\ndefine(Object.prototype, 'weight', { configurable: true, get() { return later; } });\n",
+        &["callbacks/wrapped", "residual", "values/later"],
     );
 }
 
 #[test]
 fn aliased_reflect_define_property_remains_rejected() {
-    assert_effect_rejected(
+    assert_effect_rejected_with_import_order(
         "const define = Reflect.defineProperty;\ndefine(Object.prototype, 'weight', { configurable: true, get() { return later; } });\n",
+        &["callbacks/wrapped", "residual", "values/later"],
     );
 }
 
@@ -158,17 +187,19 @@ fn cross_chunk_descriptor_mutation_remains_rejected() {
 
 #[test]
 fn unknown_computed_descriptor_key_remains_rejected() {
-    assert_effect_rejected(
+    assert_effect_rejected_with_import_order(
         "const key = globalThis.propertyName || 'weight';\n\
          Object.defineProperty(Object.prototype, key, { configurable: true, get() { return later; } });\n",
+        &["callbacks/wrapped", "residual", "values/later"],
     );
 }
 
 #[test]
 fn dynamic_legacy_accessor_method_remains_rejected() {
-    assert_effect_rejected(
+    assert_effect_rejected_with_import_order(
         "const methodName = globalThis.methodName || '__defineGetter__';\n\
          Object.prototype[methodName]('weight', function() { return later; });\n",
+        &["callbacks/wrapped", "residual", "values/later"],
     );
 }
 
@@ -185,7 +216,11 @@ fn descriptor_mutation_after_await_remains_rejected() {
         "Promise.resolve().then(() => console.log(command.record.weight));\n",
         "",
     );
-    assert_split_rejected(&source, &[]);
+    assert_split_rejected_with_import_order(
+        &source,
+        &[],
+        &["callbacks/wrapped", "residual", "values/later"],
+    );
 }
 
 #[test]
@@ -211,7 +246,11 @@ fn derived_public_field_on_prototype_remains_rejected() {
         "command.weight();\n",
         "",
     );
-    assert_split_rejected(&source, &[]);
+    assert_split_rejected_with_import_order(
+        &source,
+        &[],
+        &["callbacks/wrapped", "residual", "values/later"],
+    );
 }
 
 #[test]

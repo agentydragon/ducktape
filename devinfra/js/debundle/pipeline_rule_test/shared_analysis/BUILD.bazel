@@ -26,8 +26,8 @@ debundle_analysis(
     debundle_apply(
         name = name,
         analysis = ":analysis",
-        spec_tree_inputs = glob([name + "/**/*.yaml"]),
-        tree_config = "config.yaml",
+        spec_tree_inputs = glob([name + "/**/*.yaml"]) + (["b_config.yaml"] if name == "b" else []),
+        tree_config = "b_config.yaml" if name == "b" else "config.yaml",
         tree_modules = name,
         tree_source_root = ":source",
         tree_vendor_marks = "vendor_marks.yaml",

@@ -450,7 +450,8 @@ fn nested_record_factory_wrapper_preserves_a_split_cycle() {
                 logical_module("later", &[Member::new("later")]),
             ],
         )
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["later", "command"]),
     );
     assert_eq!(split.translation_validation()["accepts"], true);
     assert_preserved_entry_output(&split, "7\n");
@@ -680,7 +681,8 @@ export { first, second, shared };
                 logical_module("shared", &[Member::new("shared")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_import_order(&["framework", "shared", "first", "second"]),
     );
     assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
     let graph = fixture.dependency_graph();
@@ -778,7 +780,8 @@ export { first, second, shared, after };
                 logical_module("shared", &[Member::new("shared"), Member::new("after")]),
             ],
         )
-        .with_dataflow_aware_s_chain(),
+        .with_dataflow_aware_s_chain()
+        .with_import_order(&["shared", "first", "second", "framework"]),
     );
     assert_preserved_entry_output(&fixture, "1 2 2 3 0,1,2\n");
     assert_eq!(fixture.translation_validation()["accepts"], true);
@@ -881,11 +884,15 @@ fn exported_record_factory_modules(callback_statements: &[&str]) -> Vec<LogicalM
 }
 
 fn run_exported_record_factory(source: &str, modules: Vec<LogicalModuleEntry>) -> Fixture {
+    let provider_paths: Vec<String> = modules.iter().map(|(module, _)| module.clone()).collect();
+    let provider_priority: Vec<&str> = provider_paths.iter().map(String::as_str).collect();
     run_fixture(
         FixtureOpts::new(ACYCLIC_COMMAND_IMPORTER, vec![])
             .with_chunk_id("static/consumer")
+            .with_import_order(&["residual"])
             .with_extra_chunks(&[("static/provider", source)])
-            .with_extra_chunk_logical_modules(&[("static/provider", modules)]),
+            .with_extra_chunk_logical_modules(&[("static/provider", modules)])
+            .with_chunk_import_order("static/provider", &provider_priority),
     )
 }
 
@@ -893,11 +900,15 @@ fn run_exported_record_factory_with_graphs(
     source: &str,
     modules: Vec<LogicalModuleEntry>,
 ) -> Fixture {
+    let provider_paths: Vec<String> = modules.iter().map(|(module, _)| module.clone()).collect();
+    let provider_priority: Vec<&str> = provider_paths.iter().map(String::as_str).collect();
     run_fixture_with_graphs(
         FixtureOpts::new(ACYCLIC_COMMAND_IMPORTER, vec![])
             .with_chunk_id("static/consumer")
+            .with_import_order(&["residual"])
             .with_extra_chunks(&[("static/provider", source)])
-            .with_extra_chunk_logical_modules(&[("static/provider", modules)]),
+            .with_extra_chunk_logical_modules(&[("static/provider", modules)])
+            .with_chunk_import_order("static/provider", &provider_priority),
     )
 }
 
@@ -1436,6 +1447,10 @@ fn exported_factory_result_preserves_later_mutation() {
         FixtureOpts::new(
             &mutated_provider,
             exported_record_factory_modules(&mutation),
+        )
+        .with_chunk_import_order(
+            "static/provider",
+            &["callbacks/wrapped", "values/dynamic", "values/later"],
         )
         .with_chunk_id("static/provider")
         .with_extra_chunks(&consumer_chunks),

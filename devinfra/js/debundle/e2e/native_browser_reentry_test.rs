@@ -639,11 +639,23 @@ console.log(later);
 
 #[test]
 fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
-    for before in [
-        "Object.defineProperty(globalThis, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
-        "const alias = globalThis; alias.inspectState = () => later;",
-        "const alias = ({root: globalThis}).root; Object.defineProperty(alias, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
-        "const receive = value => Object.defineProperty(value, 'inspectState', {set(fn) { globalThis.seen = fn(); }}); receive(globalThis);",
+    for (before, has_residual) in [
+        (
+            "Object.defineProperty(globalThis, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
+            false,
+        ),
+        (
+            "const alias = globalThis; alias.inspectState = () => later;",
+            true,
+        ),
+        (
+            "const alias = ({root: globalThis}).root; Object.defineProperty(alias, 'inspectState', {set(fn) { globalThis.seen = fn(); }});",
+            true,
+        ),
+        (
+            "const receive = value => Object.defineProperty(value, 'inspectState', {set(fn) { globalThis.seen = fn(); }}); receive(globalThis);",
+            true,
+        ),
     ] {
         let source = format!(
             "let later = 0;\n{before}\nglobalThis.inspectState = () => later;\nconst startup = new globalThis.Date();\nlater = 42;\nconsole.log(later);\n"
@@ -659,7 +671,12 @@ fn deferred_global_certificate_rejects_visible_descriptor_or_alias() {
                 logical_module("startup", &[Member::new("startup")]),
                 logical_module_with_anon("state/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        );
+        )
+        .with_import_order(if has_residual {
+            &["debug/exposure", "startup", "state/later", "residual"]
+        } else {
+            &["debug/exposure", "startup", "state/later"]
+        });
         opts.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
         opts.deferred_global_publications = &[("globalThis", "inspectState")];
         expect_atomic_conflict_rejection(opts, &["startup", "state/later"], &[]);

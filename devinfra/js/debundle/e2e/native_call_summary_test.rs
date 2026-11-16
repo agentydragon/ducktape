@@ -124,17 +124,47 @@ console.log(normalized);
 
 #[test]
 fn finalization_registry_guards_keep_unsupported_calls_conservative() {
-    for source in [
-        "globalThis.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const host = globalThis;\nhost.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "Object.defineProperty(globalThis, 'FinalizationRegistry', { configurable: true, get() { return function(callback) {}; } });\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const globalThis = { FinalizationRegistry: function(callback) {} };\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const FinalizationRegistry = function(callback) {};\nconst registry = new FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const host = globalThis;\nconst registry = new host.FinalizationRegistry(() => Later);\nclass Later {}\n",
-        "const registry = new globalThis['FinalizationRegistry'](() => Later);\nclass Later {}\n",
-        "const registry = new (globalThis?.FinalizationRegistry)(() => Later);\nclass Later {}\n",
-        "const registry = new globalThis.FinalizationRegistry(...[() => Later]);\nclass Later {}\n",
-        "const registry = new globalThis.FinalizationRegistry({ cleanup: () => Later });\nclass Later {}\n",
+    for (source, has_residual) in [
+        (
+            "globalThis.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+        ),
+        (
+            "const host = globalThis;\nhost.FinalizationRegistry = function(callback) {};\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            true,
+        ),
+        (
+            "Object.defineProperty(globalThis, 'FinalizationRegistry', { configurable: true, get() { return function(callback) {}; } });\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            false,
+        ),
+        (
+            "const globalThis = { FinalizationRegistry: function(callback) {} };\nconst registry = new globalThis.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            true,
+        ),
+        (
+            "const FinalizationRegistry = function(callback) {};\nconst registry = new FinalizationRegistry(() => Later);\nclass Later {}\n",
+            true,
+        ),
+        (
+            "const host = globalThis;\nconst registry = new host.FinalizationRegistry(() => Later);\nclass Later {}\n",
+            true,
+        ),
+        (
+            "const registry = new globalThis['FinalizationRegistry'](() => Later);\nclass Later {}\n",
+            false,
+        ),
+        (
+            "const registry = new (globalThis?.FinalizationRegistry)(() => Later);\nclass Later {}\n",
+            false,
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry(...[() => Later]);\nclass Later {}\n",
+            false,
+        ),
+        (
+            "const registry = new globalThis.FinalizationRegistry({ cleanup: () => Later });\nclass Later {}\n",
+            false,
+        ),
     ] {
         expect_atomic_conflict_rejection(
             FixtureOpts::new(
@@ -143,7 +173,12 @@ fn finalization_registry_guards_keep_unsupported_calls_conservative() {
                     logical_module("registry/value", &[Member::new("registry")]),
                     logical_module("registry/later", &[Member::new("Later")]),
                 ],
-            ),
+            )
+            .with_import_order(if has_residual {
+                &["registry/value", "registry/later", "residual"]
+            } else {
+                &["registry/value", "registry/later"]
+            }),
             &["registry/value", "registry/later"],
             &[],
         );
@@ -221,7 +256,7 @@ console.log(globalThis.observed, pattern.test("ok"));
         &["native/value", "native/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
@@ -254,7 +289,7 @@ console.log(globalThis.observed, pattern.test("ok"));
         &["native/value", "native/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError true\n");
 }
 
@@ -264,7 +299,7 @@ fn regexp_syntax_errors_remain_observable() {
 try { new RegExp("("); } catch (error) { failure = error.name; }
 console.log(failure);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "SyntaxError\n");
 }
 
@@ -307,7 +342,7 @@ console.log(globalThis.observed, typeof marker);
         &["native/value", "native/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
 
@@ -340,6 +375,6 @@ console.log(globalThis.observed, typeof marker);
         &["native/value", "native/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError symbol\n");
 }
