@@ -34,6 +34,10 @@ retain their existing paths, and Codex shares `StateDir/codex/`. Journal transac
 publication or corresponding native writes. Model/reasoning changes, terminal receipts and the
 effective configuration checkpoint commit together. Native adapters read committed configuration.
 Dispatched commands without a committed outcome remain uncertain and are not replayed.
+Codex `turn/start` can accept an input into a running turn without delivering it. Runtime supplies
+the command ID as `clientUserMessageId` and confirms delivery from the matching user-message item
+or paginated native history. Incomplete, ambiguous or legacy history without that identity does
+not settle an input.
 
 Codex turn-start replies and notifications share one durable turn boundary per native turn ID.
 A delayed notification for a recorded turn retains its native evidence without starting that

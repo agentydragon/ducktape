@@ -799,6 +799,52 @@ type rpcReconciliationAdapter struct {
 	session *Session
 }
 
+type inputRecoveryAdapter struct {
+	harness.Adapter
+	called  chan struct{}
+	session *Session
+}
+
+func (*inputRecoveryAdapter) BlocksCommandDispatch() bool { return false }
+func (*inputRecoveryAdapter) NeedsInputRecovery() bool    { return true }
+func (a *inputRecoveryAdapter) RecoverInputs(ctx context.Context) error {
+	if a.session != nil {
+		_, err := a.session.RequestNativeHandshake(ctx, json.RawMessage(`{"history":true}`), func(raw json.RawMessage) bool { return string(raw) == `{"history":true}` })
+		if err != nil {
+			return err
+		}
+	}
+	close(a.called)
+	return nil
+}
+
+func TestCompletedTurnSchedulesInputRecoveryOutsideReader(t *testing.T) {
+	var gate sync.Mutex
+	s, process, manager := frameTestSessionWithControllerGate(t, []string{"/bin/cat"}, true, &gate)
+	adapter := &inputRecoveryAdapter{called: make(chan struct{}), session: s}
+	withSessionControllerGate(t, s, &gate, func() {
+		setLifecycleStatusReady(t, manager, s)
+		s.mu.Lock()
+		s.adapter = adapter
+		s.mu.Unlock()
+	})
+	s.connection.readers.Add(1)
+	reader := frameTestAdapter{onFrame: func(context.Context, json.RawMessage, uint64) error { return nil }}
+	go s.connection.readStdout(process, func(ctx context.Context, line []byte) error { return s.receive(ctx, line, reader) })
+	ctx := context.Background()
+	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-adapter.called:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal("input history recovery did not run")
+	}
+}
+
 func (*rpcReconciliationAdapter) BlocksCommandDispatch() bool { return false }
 
 func (a *rpcReconciliationAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sequence uint64) error {

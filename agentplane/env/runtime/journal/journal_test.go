@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,37 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
+
+func TestConcurrentUserMessageConfirmationsCommitOnce(t *testing.T) {
+	journal := openTestJournal(t)
+	ctx := context.Background()
+	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+	if _, _, err := journal.Admit(ctx, command, ""); err != nil {
+		t.Fatal(err)
+	}
+	event := &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{OriginCommandIds: []string{"input-1"}, Text: "hello", TurnId: "turn", HarnessMessageId: "item"}}}
+	before := journal.LastCursor()
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := journal.Append(ctx, event, AppendOptions{TerminalCommandIDs: []string{"input-1"}})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := journal.LastCursor(); got != before+1 {
+		t.Fatalf("concurrent confirmations advanced cursor to %d, want %d", got, before+1)
+	}
+}
 
 func TestAdmissionDeduplicatesFullCommandAndRejectsConflicts(t *testing.T) {
 	journal := openTestJournal(t)

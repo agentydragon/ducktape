@@ -77,7 +77,7 @@ func (e *NativeResponsePendingError) Is(target error) bool {
 	return target == ErrNativeResponsePending
 }
 
-// UserMessageConfirmation records native evidence that an input reached a model request.
+// UserMessageConfirmation records native evidence that an input entered the harness conversation.
 type UserMessageConfirmation struct {
 	HarnessMessageID string
 	Text             string
@@ -145,4 +145,11 @@ type ProcessAdapter interface {
 
 type RecoveryAdapter interface {
 	Recover(context.Context) error
+}
+
+// InputRecoveryAdapter consults the live native history after the handshake.
+// It must not replay inputs whose native outcome is uncertain.
+type InputRecoveryAdapter interface {
+	RecoverInputs(context.Context) error
+	NeedsInputRecovery() bool
 }

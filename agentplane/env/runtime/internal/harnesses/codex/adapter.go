@@ -37,10 +37,11 @@ type codexPendingChange struct {
 }
 
 type codexTurnStart struct {
-	commandID    string
-	text         string
-	modelChange  *codexPendingChange
-	effortChange *codexPendingChange
+	commandID      string
+	text           string
+	modelChange    *codexPendingChange
+	effortChange   *codexPendingChange
+	inputDelivered bool
 }
 
 type codexAdapter struct {
@@ -56,6 +57,7 @@ type codexAdapter struct {
 	pendingEffortChanges []codexPendingChange
 	turnStarts           map[string]codexTurnStart
 	processingResponses  map[string]bool
+	awaitingInputs       map[string]bool
 }
 
 // New creates an adapter for one Runtime-owned Session hosted as a thread of the Environment Runtime's shared
@@ -68,14 +70,25 @@ func New(host harness.AdapterHost) harness.Adapter {
 	}
 	return &codexAdapter{
 		host: host, threadID: threadID, adapterID: uuid.NewString(),
-		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool),
+		turnStarts: make(map[string]codexTurnStart), processingResponses: make(map[string]bool), awaitingInputs: make(map[string]bool),
 	}
+}
+
+func (a *codexAdapter) NeedsInputRecovery() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.awaitingInputs) != 0
 }
 
 func (a *codexAdapter) BlocksCommandDispatch() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return len(a.turnStarts) != 0
+	for _, start := range a.turnStarts {
+		if !start.inputDelivered {
+			return true
+		}
+	}
+	return false
 }
 
 // Handshake starts or resumes this Session's thread on the shared app-server, which the Environment Runtime has
@@ -183,6 +196,7 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 		return err
 	}
 	requestIDs := map[string]bool{}
+	inputIDs := map[string]string{}
 	inFlightChanges := map[string]bool{}
 	var replayFrom uint64
 	a.mu.Lock()
@@ -196,6 +210,9 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 			command := record.Command
 			if input := command.GetSubmitInput(); input != nil {
 				start.commandID, start.text = command.GetCommandId(), input.GetText()
+				if record.TerminalCursor == nil {
+					inputIDs[request.ID] = command.GetCommandId()
+				}
 				before := uint64(0)
 				if record.AdmittedCursor > 0 {
 					before = record.AdmittedCursor - 1
@@ -251,7 +268,25 @@ func (a *codexAdapter) Recover(ctx context.Context) error {
 		for _, entry := range entries {
 			cursor = entry.GetCursor()
 			native := entry.GetEvent().GetNative()
-			if native == nil || native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
+			if native == nil {
+				continue
+			}
+			if native.GetDirection() == eventpb.Direction_DIRECTION_TO_HARNESS {
+				var sent struct {
+					ID     string `json:"id"`
+					Method string `json:"method"`
+					Params struct {
+						ClientID string `json:"clientUserMessageId"`
+					} `json:"params"`
+				}
+				if json.Unmarshal([]byte(native.GetLine()), &sent) == nil && sent.Method == "turn/start" && sent.Params.ClientID != "" && sent.Params.ClientID == inputIDs[sent.ID] {
+					a.mu.Lock()
+					a.awaitingInputs[sent.Params.ClientID] = true
+					a.mu.Unlock()
+				}
+				continue
+			}
+			if native.GetDirection() != eventpb.Direction_DIRECTION_FROM_HARNESS {
 				continue
 			}
 			frame, err := jsonrpc.Parse([]byte(native.GetLine()))
@@ -322,17 +357,19 @@ func (a *codexAdapter) Submit(ctx context.Context, commandID, text string) error
 	}
 	a.mu.Lock()
 	a.turnStarts[requestID] = start
+	a.awaitingInputs[commandID] = true
 	a.mu.Unlock()
 	if err := a.send(ctx, jsonrpc.Request[any]{
 		ID: requestID, Method: "turn/start",
 		Params: protocol.TurnStartParams{
 			ThreadID: threadID, Input: []protocol.UserInput{{Type: "text", Text: &text}},
-			Model: &model, Effort: effort,
+			ClientUserMessageID: &commandID, Model: &model, Effort: effort,
 		},
 	}); err != nil {
 		if !errors.Is(err, harness.ErrNativeResponsePending) {
 			a.mu.Lock()
 			delete(a.turnStarts, requestID)
+			delete(a.awaitingInputs, commandID)
 			a.mu.Unlock()
 		}
 		return err
@@ -470,6 +507,9 @@ func (a *codexAdapter) OnFrame(ctx context.Context, raw json.RawMessage, sourceS
 	case "item/started":
 		return a.projectItemStarted(ctx, routing["item"], sources)
 	case "item/completed":
+		if err := a.confirmInputItem(ctx, routing["item"], routing["turnId"], sources); err != nil {
+			return err
+		}
 		return a.projectItemCompleted(ctx, routing["item"], sources)
 	case "item/agentMessage/delta":
 		var params protocol.AgentMessageDeltaNotification
@@ -514,6 +554,9 @@ func (a *codexAdapter) onResponse(ctx context.Context, frame jsonrpc.Message, re
 
 func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame jsonrpc.Message, start codexTurnStart, sources []uint64) error {
 	if frame.Error != nil || len(frame.Result) == 0 || string(frame.Result) == "null" {
+		a.mu.Lock()
+		delete(a.awaitingInputs, start.commandID)
+		a.mu.Unlock()
 		reason := "turn/start returned no result"
 		if frame.Error != nil {
 			reason = frame.Error.Message
@@ -555,9 +598,78 @@ func (a *codexAdapter) applyTurnStartResponse(ctx context.Context, frame jsonrpc
 	if err := a.startTurn(ctx, result.Turn.ID, model, sources); err != nil {
 		return err
 	}
-	return a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
-		HarnessMessageID: result.Turn.ID, Text: start.text, OriginCommandIDs: []string{start.commandID}, TurnID: result.Turn.ID,
-	}, sources)
+	// A successful response may only enqueue input on an active turn. Codex can
+	// still discard that input on interrupt, so wait for the user-message item.
+	return nil
+}
+
+// confirmInputItem uses the client-provided command ID rather than matching text:
+// distinct submissions can contain identical text, including within one turn.
+func (a *codexAdapter) confirmInputItem(ctx context.Context, raw, rawTurn json.RawMessage, sources []uint64) error {
+	var header struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &header); err != nil {
+		return err
+	}
+	if header.Type != "userMessage" {
+		return nil
+	}
+	var item struct {
+		ID       string  `json:"id"`
+		ClientID *string `json:"clientId"`
+		Content  []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &item); err != nil {
+		return err
+	}
+	if item.ID == "" || item.ClientID == nil || *item.ClientID == "" || len(item.Content) != 1 || item.Content[0].Type != "text" {
+		return nil
+	}
+	var turnID string
+	if err := json.Unmarshal(rawTurn, &turnID); err != nil {
+		return err
+	}
+	if turnID == "" {
+		return nil
+	}
+	requests, err := a.host.Journal().PendingNativeRequests(ctx)
+	if err != nil {
+		return err
+	}
+	for _, request := range requests {
+		if request.Kind != harness.CodexTurnStart {
+			continue
+		}
+		for _, record := range request.Commands {
+			if record.TerminalCursor != nil || record.Command.GetCommandId() != *item.ClientID {
+				continue
+			}
+			input := record.Command.GetSubmitInput()
+			if input == nil || input.Text != item.Content[0].Text {
+				return nil
+			}
+			if err := a.host.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{
+				HarnessMessageID: item.ID, Text: input.Text, OriginCommandIDs: []string{*item.ClientID}, TurnID: turnID,
+			}, sources); err != nil {
+				return err
+			}
+			a.mu.Lock()
+			delete(a.awaitingInputs, *item.ClientID)
+			for id, start := range a.turnStarts {
+				if start.commandID == *item.ClientID {
+					start.inputDelivered = true
+					a.turnStarts[id] = start
+				}
+			}
+			a.mu.Unlock()
+			return nil
+		}
+	}
+	return nil
 }
 
 func (a *codexAdapter) startTurn(ctx context.Context, turnID, model string, sources []uint64) error {
@@ -730,18 +842,24 @@ func (a *codexAdapter) answerServerRequest(ctx context.Context, frame jsonrpc.Me
 }
 
 func (a *codexAdapter) request(ctx context.Context, request jsonrpc.Request[any]) (jsonrpc.Message, error) {
+	response, _, err := a.requestEvidence(ctx, request)
+	return response, err
+}
+
+func (a *codexAdapter) requestEvidence(ctx context.Context, request jsonrpc.Request[any]) (jsonrpc.Message, uint64, error) {
 	frame, err := json.Marshal(request)
 	if err != nil {
-		return jsonrpc.Message{}, err
+		return jsonrpc.Message{}, 0, err
 	}
 	receipt, err := a.host.RequestNativeHandshake(ctx, frame, func(raw json.RawMessage) bool {
 		response, err := jsonrpc.Parse(raw)
 		return err == nil && response.Answers(request.ID)
 	})
 	if err != nil {
-		return jsonrpc.Message{}, err
+		return jsonrpc.Message{}, 0, err
 	}
-	return jsonrpc.Parse(receipt.Frame)
+	response, err := jsonrpc.Parse(receipt.Frame)
+	return response, receipt.Sequence, err
 }
 
 // nextID names a request uniquely on the shared app-server, which carries every Codex Session's requests.

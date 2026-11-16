@@ -1,5 +1,13 @@
 # TODO — Agentplane environment
 
+## Resolve legacy Codex inputs without a client message ID
+
+Some retained Codex inputs predate `clientUserMessageId`. A matching historical text item does
+not prove its origin: an earlier identical queued input may drain after the later request was journaled, and
+the native thread may have other writers. Define an operator-visible resolution path and any
+closed-world proof of exclusive writer, complete history and unambiguous delivery. Preserve the
+original evidence and command identity; never resend an uncertain input or clear it by inference.
+
 ## Prove VM guest boot and console autologin
 
 The VM system suite boots a test guest using shared Runtime units, not the production NixOS guest.
