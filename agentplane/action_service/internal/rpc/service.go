@@ -14,6 +14,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -38,14 +39,14 @@ type Service struct {
 	updates *wakeups.Hub
 	catalog *catalog.Catalog
 	// gate admitted each call; a watch asks it again before every frame.
-	gate *Gate
+	gate *grpcgate.Gate
 	// policy is the policy index admission resolves bindings from.
 	policy      *informer.Index
 	submissions Submissions
 }
 
 func NewService(
-	requests *store.Store, updates *wakeups.Hub, groups *catalog.Catalog, gate *Gate, policy *informer.Index, submissions Submissions,
+	requests *store.Store, updates *wakeups.Hub, groups *catalog.Catalog, gate *grpcgate.Gate, policy *informer.Index, submissions Submissions,
 ) *Service {
 	return &Service{store: requests, updates: updates, catalog: groups, gate: gate, policy: policy, submissions: submissions}
 }
@@ -86,7 +87,7 @@ func (s *Service) ListActionRequests(ctx context.Context, request *action_servic
 		}
 		filter.AfterID = &after
 	}
-	requests, err := s.store.List(ctx, admitted(ctx).principal, filter)
+	requests, err := s.store.List(ctx, grpcgate.Admitted(ctx).Principal, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +111,7 @@ func (s *Service) ListActionRequestHistory(ctx context.Context, request *action_
 	if bound != nil {
 		page.Limit = *bound
 	}
-	requests, next, err := s.store.History(ctx, admitted(ctx).principal, page)
+	requests, next, err := s.store.History(ctx, grpcgate.Admitted(ctx).Principal, page)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +127,7 @@ func (s *Service) GetActionRequest(ctx context.Context, request *action_servicep
 	if err != nil {
 		return nil, err
 	}
-	found, err := s.store.Get(ctx, id, admitted(ctx).principal)
+	found, err := s.store.Get(ctx, id, grpcgate.Admitted(ctx).Principal)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +150,7 @@ func (s *Service) ListActionRequestEvents(ctx context.Context, request *action_s
 	if filter.Limit, err = limit("limit", request.Limit, maxListLimit); err != nil {
 		return nil, err
 	}
-	events, err := s.store.Events(ctx, id, admitted(ctx).principal, filter)
+	events, err := s.store.Events(ctx, id, grpcgate.Admitted(ctx).Principal, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +169,7 @@ func (s *Service) CancelActionRequest(ctx context.Context, request *action_servi
 		return nil, err
 	}
 	var owner store.Owner
-	switch principal := admitted(ctx).principal.(type) {
+	switch principal := grpcgate.Admitted(ctx).Principal.(type) {
 	case store.Owner:
 		owner = principal
 	case store.OperatorPrincipal:

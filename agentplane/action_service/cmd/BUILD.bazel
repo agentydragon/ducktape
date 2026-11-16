@@ -15,6 +15,7 @@ go_library(
         "//agentplane/action_service/api/contracts:operator_action_service_go_proto",
         "//agentplane/action_service/api/web_push:web_push_service_go_proto",
         "//agentplane/action_service/internal/admission/catalog",
+        "//agentplane/action_service/internal/admission/grpcgate",
         "//agentplane/action_service/internal/admission/informer",
         "//agentplane/action_service/internal/admission/policies",
         "//agentplane/action_service/internal/linkage",

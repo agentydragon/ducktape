@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
@@ -37,14 +38,14 @@ type Submissions struct {
 
 func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servicepb.SubmitActionRequestRequest) (*action_servicepb.SubmitActionRequestResponse, error) {
 	var caller store.Owner
-	switch principal := admitted(ctx).principal.(type) {
+	switch principal := grpcgate.Admitted(ctx).Principal.(type) {
 	case store.Owner:
 		caller = principal
 	case store.OperatorPrincipal:
 		return nil, status.Error(codes.PermissionDenied, "an operator cannot submit a request")
 	default:
 		// A service reader acts as no caller: it is refused as an account without the caller label is.
-		return nil, unauthenticated
+		return nil, grpcgate.ErrUnauthenticated
 	}
 	input, arguments, err := submission(request)
 	if err != nil {
@@ -62,7 +63,7 @@ func (s *Service) SubmitActionRequest(ctx context.Context, request *action_servi
 			"group", input.Action.Group, "action", input.Action.Name, "error", err)
 		return nil, status.Error(codes.Internal, "the Action's input schema cannot be used")
 	}
-	admission := store.Admission{RequestID: uuid.New(), Attribution: admitted(ctx).attribution}
+	admission := store.Admission{RequestID: uuid.New(), Attribution: grpcgate.Admitted(ctx).Attribution}
 	switch decision := s.decide(ctx, caller, input.Action, arguments).(type) {
 	case policies.Allow:
 		admission.Vote = &decision.Vote

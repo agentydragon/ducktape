@@ -1,4 +1,4 @@
-package rpc
+package grpcgate
 
 import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -18,27 +18,27 @@ func recordedDelegation(proof auth.Admission) (*store.DelegationAttribution, err
 		attribution.Actor = action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: proof.Actor.SPIFFEID}}
 		envelope = proof.Provenance
 	default:
-		return nil, unauthenticated
+		return nil, ErrUnauthenticated
 	}
 	switch provenance := envelope.GetProvenance().(type) {
 	case *delegationpb.Delegation_Session:
 		id, err := uuid.Parse(provenance.Session.GetSessionId())
 		if err != nil {
-			return nil, unauthenticated
+			return nil, ErrUnauthenticated
 		}
 		attribution.Provenance = store.SessionProvenance{SessionID: id}
 	case *delegationpb.Delegation_Connection:
 		connectionID, err := uuid.Parse(provenance.Connection.GetConnectionId())
 		if err != nil {
-			return nil, unauthenticated
+			return nil, ErrUnauthenticated
 		}
 		grantID, err := uuid.Parse(provenance.Connection.GetGrantId())
 		if err != nil {
-			return nil, unauthenticated
+			return nil, ErrUnauthenticated
 		}
 		attribution.Provenance = store.ConnectionProvenance{ConnectionID: connectionID, GrantID: grantID}
 	default:
-		return nil, unauthenticated
+		return nil, ErrUnauthenticated
 	}
 	return attribution, nil
 }

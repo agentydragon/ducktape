@@ -1,0 +1,50 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/mcp_edge:__subpackages__"])
+
+go_library(
+    name = "actionclient",
+    srcs = [
+        "action_metadata.go",
+        "core_client.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient",
+    deps = [
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/identity/auth",
+        "//agentplane/identity/auth/grpc",
+        "//agentplane/mcp_edge/internal/connections",
+        "//agentplane/net/peertls",
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "actionclient_test",
+    srcs = [
+        "action_metadata_test.go",
+        "core_client_test.go",
+    ],
+    deps = [
+        "//agentplane/action_service/api/contracts:action_service_go_proto",
+        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
+        "//agentplane/identity/auth",
+        "//agentplane/mcp_edge/internal/actionclient",
+        "//agentplane/mcp_edge/internal/connections",
+        "//agentplane/net/peertls",
+        "//agentplane/net/peertls/testing",
+        "//agentplane/proto:delegation_go_proto",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_modelcontextprotocol_go_sdk//auth",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

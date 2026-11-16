@@ -1,4 +1,4 @@
-package main
+package actionclient
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type edgeBearerKey struct{}
+type bearerKey struct{}
 
 // callerIdentity is the OAuth grant and exact Identity incarnation an external MCP request is authorized to use.
 type callerIdentity struct {
@@ -28,13 +28,41 @@ type callerIdentity struct {
 	grantID      string
 }
 
-type connectionBearerVerifier func(context.Context, string) (*connections.ResolvedGrant, error)
+// GrantResolver resolves a presented Connection bearer against the live grant and Identity binding.
+type GrantResolver func(context.Context, string) (*connections.ResolvedGrant, error)
+
+// Config defines the edge's live grant resolver and stream recheck behavior.
+type Config struct {
+	ResolveGrant  GrantResolver
+	RecheckPeriod time.Duration
+	Logger        *slog.Logger
+}
+
+// Client owns delegated calls from the MCP edge to the Action Service.
+type Client struct {
+	caller *coreCaller
+}
+
+// New creates a delegated Action client. The resolver must consult current Connection authority on every call.
+func New(config Config) (*Client, error) {
+	if config.ResolveGrant == nil {
+		return nil, errors.New("Connection grant resolver is required")
+	}
+	return &Client{caller: &coreCaller{
+		authority: config.ResolveGrant, recheckPeriod: config.RecheckPeriod, logger: config.Logger,
+	}}, nil
+}
+
+// WithBearer attaches the external Connection bearer used to resolve the effective Identity for Action calls.
+func WithBearer(ctx context.Context, bearer string) context.Context {
+	return context.WithValue(ctx, bearerKey{}, bearer)
+}
 
 // coreCaller crosses the edge-to-Actions authority boundary. Every RPC resolves the bearer through its current
 // Connection and grant, then delegates that Identity using the edge's own projected Action-audience token. An open
 // stream rechecks the grant and binding on a ticker.
 type coreCaller struct {
-	authority     connectionBearerVerifier
+	authority     GrantResolver
 	recheckPeriod time.Duration
 	logger        *slog.Logger
 }
@@ -42,7 +70,7 @@ type coreCaller struct {
 func (c *coreCaller) identity(ctx context.Context) (callerIdentity, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	bearer, _ := ctx.Value(edgeBearerKey{}).(string)
+	bearer, _ := ctx.Value(bearerKey{}).(string)
 	if bearer == "" {
 		return callerIdentity{}, status.Error(codes.Unauthenticated, "invalid bearer")
 	}
@@ -187,8 +215,9 @@ func (s *checkedStream) CloseSend() error {
 	return err
 }
 
-func dialActions(target, tokenFile string, timeout time.Duration, tls *peertls.ClientTLS, caller *coreCaller) (*grpc.ClientConn, error) {
+// Dial opens the Action Service connection using the projected actor token or configured service SVID.
+func (c *Client) Dial(target, tokenFile string, timeout time.Duration, tls *peertls.ClientTLS) (*grpc.ClientConn, error) {
 	return workloadgrpc.DialDelegated(target, tokenFile, timeout, tls, workloadgrpc.ClientInterceptors{
-		Unary: caller.unary, Stream: caller.stream,
+		Unary: c.caller.unary, Stream: c.caller.stream,
 	})
 }

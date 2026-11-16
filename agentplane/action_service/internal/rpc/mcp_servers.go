@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"google.golang.org/grpc"
@@ -19,7 +20,7 @@ import (
 // StartMcpServerLinkage begins a link for the calling operator, whom the flow records.
 func (s *OperatorService) StartMcpServerLinkage(ctx context.Context, request *operator_action_servicepb.StartMcpServerLinkageRequest) (*operator_action_servicepb.StartMcpServerLinkageResponse, error) {
 	// The Gate admits only operators to this service.
-	operator := admitted(ctx).principal.(store.OperatorPrincipal)
+	operator := grpcgate.Admitted(ctx).Principal.(store.OperatorPrincipal)
 	return s.linkages.Start(ctx, request.GetServerId(), request.GetScopes(), operator)
 }
 
@@ -69,7 +70,7 @@ func (s *OperatorService) WatchMcpServers(_ *operator_action_servicepb.WatchMcpS
 		due, stop := wakeAt(lapse)
 		err = (follower{gate: s.gate, updates: updates, due: due}).changed(ctx)
 		stop()
-		if errors.Is(err, errDraining) {
+		if errors.Is(err, grpcgate.ErrDraining) {
 			// A planned renewal, as for WatchActionRequests.
 			return send(ctx, ctx, s.gate, stream, &operator_action_servicepb.WatchMcpServersResponse{
 				Frame: &operator_action_servicepb.WatchMcpServersResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},

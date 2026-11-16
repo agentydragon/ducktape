@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
@@ -31,10 +32,10 @@ var conflictCodes = map[store.ConflictReason]codes.Code{
 	store.ConflictAlreadyDecided:     codes.FailedPrecondition,
 }
 
-// failure answers a failed call with the status code the protos name for it. A message the client can act on is
+// Failure answers a failed call with the status code the protos name for it. A message the client can act on is
 // one this service wrote; a fault of the database or of a collaborator gets a fixed message, and its cause is
 // logged.
-func failure(ctx context.Context, err error) error {
+func Failure(ctx context.Context, err error) error {
 	var (
 		conflict *store.ConflictError
 		unusable *linkage.UnusableError
@@ -67,8 +68,8 @@ func failure(ctx context.Context, err error) error {
 		return status.Error(codes.AlreadyExists, err.Error())
 	case errors.Is(err, errPushNotConfigured):
 		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, errDraining):
-		return status.Error(codes.Unavailable, errDraining.Error())
+	case errors.Is(err, grpcgate.ErrDraining):
+		return status.Error(codes.Unavailable, grpcgate.ErrDraining.Error())
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "action request deadline expired")
 	case ctx.Err() != nil:

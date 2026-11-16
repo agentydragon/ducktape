@@ -1,4 +1,3 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -36,119 +35,17 @@ py_test(
     ],
 )
 
-go_library(
-    name = "main_lib",
-    srcs = [
-        "action_metadata.go",
-        "callers.go",
-        "config.go",
-        "core_client.go",
-        "http_facade.go",
-        "http_health.go",
-        "main.go",
-    ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/mcp_edge",
-    visibility = ["//agentplane/mcp_edge:__subpackages__"],
-    deps = [
-        "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
-        "//agentplane/action_service/callers",
-        "//agentplane/grpc/graceful",
-        "//agentplane/identity/auth",
-        "//agentplane/identity/auth/grpc",
-        "//agentplane/identity/operator",
-        "//agentplane/kubeclient",
-        "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
-        "//agentplane/mcp_edge/internal/admission",
-        "//agentplane/mcp_edge/internal/authserver",
-        "//agentplane/mcp_edge/internal/connections",
-        "//agentplane/mcp_edge/internal/mcpserver",
-        "//agentplane/mcp_edge/migrations",
-        "//agentplane/net/peertls",
-        "//agentplane/observability",
-        "//agentplane/policy/api/v1alpha1",
-        "//agentplane/policy/client:clientset",
-        "//agentplane/policy/client:informer_version",
-        "//agentplane/policy/reader",
-        "//agentplane/postgres",
-        "//agentplane/postgres/migrate",
-        "//agentplane/postgres/probes",
-        "//agentplane/postgres/wakeups",
-        "//agentplane/proto:delegation_go_proto",
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/watchhealth",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
-        "@com_github_lib_pq//:pq",
-        "@com_github_modelcontextprotocol_go_sdk//auth",
-        "@com_github_prometheus_client_golang//prometheus/promhttp",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_k8s_api//authentication/v1:authentication",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/api/errors",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/types",
-        "@io_k8s_apimachinery//pkg/util/sets",
-        "@io_k8s_apimachinery//pkg/util/validation",
-        "@io_k8s_client_go//informers/core/v1:core",
-        "@io_k8s_client_go//kubernetes",
-        "@io_k8s_client_go//rest",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//health/grpc_health_v1",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
+test_suite(
     name = "runtime_test",
-    srcs = [
-        "action_metadata_test.go",
-        "config_test.go",
-        "core_client_test.go",
-        "http_facade_test.go",
-        "http_health_test.go",
+    tests = [
+        "//agentplane/mcp_edge/cmd:cmd_test",
+        "//agentplane/mcp_edge/internal/actionclient:actionclient_test",
     ],
-    embed = [":main_lib"],
-    deps = [
-        "//agentplane/action_service/api/contracts:action_service_go_proto",
-        "//agentplane/action_service/api/contracts:linkage_service_go_proto",
-        "//agentplane/identity/auth",
-        "//agentplane/mcp_edge/api/connection:connection_service_go_proto",
-        "//agentplane/mcp_edge/internal/admission",
-        "//agentplane/mcp_edge/internal/connections",
-        "//agentplane/net/peertls",
-        "//agentplane/net/peertls/testing",
-        "//agentplane/proto:delegation_go_proto",
-        "//agentplane/watchhealth",
-        "@com_github_google_uuid//:uuid",
-        "@com_github_modelcontextprotocol_go_sdk//auth",
-        "@io_k8s_api//authentication/v1:authentication",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/runtime",
-        "@io_k8s_apimachinery//pkg/util/sets",
-        "@io_k8s_client_go//kubernetes/fake",
-        "@io_k8s_client_go//testing",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_grpc//test/bufconn",
-        "@org_golang_google_protobuf//proto",
-    ],
-)
-
-go_binary(
-    name = "mcp-edge",
-    embed = [":main_lib"],
-    pure = "on",
 )
 
 pkg_tar(
     name = "service_binary_layer",
-    srcs = [":mcp-edge"],
+    srcs = ["//agentplane/mcp_edge/cmd:mcp-edge"],
     package_dir = "/usr/local/bin",
 )
 

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -17,6 +19,7 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -173,7 +176,49 @@ func connectionContext(t *testing.T, ctx context.Context, certificate string, en
 }
 
 func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *testing.T) {
-	s := serve(t)
+	s := serveWithGateOptions(t, func(options *grpcgate.Options, namespace policyNamespace) {
+		identityUIDs, err := auth.KubernetesIdentityUIDs(policyObjects, string(namespace))
+		if err != nil {
+			t.Fatal(err)
+		}
+		methods := []string{
+			action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+			action_servicepb.ActionService_ListActionRequests_FullMethodName,
+			action_servicepb.ActionService_WatchActionPolicy_FullMethodName,
+		}
+		rules := make(auth.Methods, len(methods))
+		for _, method := range methods {
+			rules[method], err = auth.Services(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		options.ConnectionDelegation, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{
+			SPIFFEID: peertls.MCPEdgeURI, ConnectionProvenance: true,
+		}}, identityUIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sessionMethods := []string{
+			action_servicepb.ActionService_ListActionGroups_FullMethodName,
+			action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
+			action_servicepb.ActionService_ListActionRequests_FullMethodName,
+			action_servicepb.ActionService_GetActionRequest_FullMethodName,
+			action_servicepb.ActionService_WatchActionRequest_FullMethodName,
+		}
+		sessionRules := make(auth.Methods, len(sessionMethods))
+		for _, method := range sessionMethods {
+			sessionRules[method], err = auth.Services(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		options.SessionDelegation, err = sessionRules.WithServiceDelegation(sessionMethods,
+			[]auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identityUIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 	namespace := policyNamespace(s.policy)
 	identity := &policyapi.Identity{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "connection-subject"},
@@ -182,48 +227,6 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	if err := policyObjects.Create(t.Context(), identity); err != nil {
 		t.Fatal(err)
 	}
-	identityUIDs, err := auth.KubernetesIdentityUIDs(policyObjects, s.policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := []string{
-		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
-		action_servicepb.ActionService_ListActionRequests_FullMethodName,
-		action_servicepb.ActionService_WatchActionPolicy_FullMethodName,
-	}
-	rules := make(auth.Methods, len(methods))
-	for _, method := range methods {
-		rules[method], err = auth.Services(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	s.gate.connectionDelegation, err = rules.WithServiceDelegation(methods, []auth.ServiceDelegator{{
-		SPIFFEID: peertls.MCPEdgeURI, ConnectionProvenance: true,
-	}}, identityUIDs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessionMethods := []string{
-		action_servicepb.ActionService_ListActionGroups_FullMethodName,
-		action_servicepb.ActionService_SubmitActionRequest_FullMethodName,
-		action_servicepb.ActionService_ListActionRequests_FullMethodName,
-		action_servicepb.ActionService_GetActionRequest_FullMethodName,
-		action_servicepb.ActionService_WatchActionRequest_FullMethodName,
-	}
-	sessionRules := make(auth.Methods, len(sessionMethods))
-	for _, method := range sessionMethods {
-		sessionRules[method], err = auth.Services(nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	s.gate.sessionDelegation, err = sessionRules.WithServiceDelegation(sessionMethods,
-		[]auth.ServiceDelegator{{SPIFFEID: peertls.CentralSamplerURI}}, identityUIDs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.gate.callers = s.index
 	connectionID, grantID := uuid.NewString(), uuid.NewString()
 	connectionEnvelope := func(subject *identitypb.Identity) *delegationpb.Delegation {
 		return &delegationpb.Delegation{
@@ -243,7 +246,7 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 	}
 
 	// The method allowlist is exact; the shared auth contract rejects legacy ServiceAccount callers.
-	_, err = s.client.GetActionPolicy(delegated(identityRef), &action_servicepb.GetActionPolicyRequest{})
+	_, err := s.client.GetActionPolicy(delegated(identityRef), &action_servicepb.GetActionPolicyRequest{})
 	wantCode(t, "an Action method without Connection delegation", err, codes.Unauthenticated)
 
 	set := namespace.policySet(t, "connection-subject-set", exactActions("other-group", "not-this-action"))
@@ -346,7 +349,11 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 		PeerCertificates: []*x509.Certificate{leaf}, VerifiedChains: [][]*x509.Certificate{{leaf}},
 	}}})
 	sessionCtx = metadata.NewIncomingContext(sessionCtx, metadata.Pairs(auth.DelegationMetadataKey, string(encoded)))
-	admittedSession, err := s.gate.admit(sessionCtx, s.gate.authenticateAction(action_servicepb.ActionService_WatchActionRequest_FullMethodName))
+	var admittedSession context.Context
+	err = s.gate.StreamInterceptor(nil, contextStream{ctx: sessionCtx}, &grpc.StreamServerInfo{FullMethod: action_servicepb.ActionService_WatchActionRequest_FullMethodName}, func(_ any, stream grpc.ServerStream) error {
+		admittedSession = stream.Context()
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("admit Session watch: %v", err)
 	}
@@ -370,8 +377,9 @@ func TestConnectionDelegationUsesAnExactIdentityAndRechecksItOnActionStreams(t *
 // A service certificate proves the app transport actor. Only the separately verified
 // operator token grants operator authority; a Kubernetes bearer never substitutes for it.
 func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
-	s := serve(t)
-	s.gate.operatorServices.Insert(peertls.AppURI)
+	s := serveWithGateOptions(t, func(options *grpcgate.Options, _ policyNamespace) {
+		options.OperatorServices = []string{peertls.AppURI}
+	})
 	ca := transporttesting.NewCA(t)
 	for _, tc := range []struct {
 		name, actor, token string
@@ -397,13 +405,15 @@ func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
 			if tc.token != "" {
 				ctx = metadata.NewIncomingContext(ctx, metadata.Pairs("authorization", "Bearer "+tc.token))
 			}
-			result, err := s.gate.authenticateOperator(ctx)
+			_, err = s.gate.UnaryInterceptor(ctx, nil, &grpc.UnaryServerInfo{FullMethod: operator_action_servicepb.OperatorActionService_DecideActionRequest_FullMethodName}, func(ctx context.Context, _ any) (any, error) {
+				if _, ok := grpcgate.Admitted(ctx).Principal.(store.OperatorPrincipal); !ok {
+					t.Fatalf("operator proof = %#v", grpcgate.Admitted(ctx).Principal)
+				}
+				return nil, nil
+			})
 			if tc.allowed {
 				if err != nil {
 					t.Fatal(err)
-				}
-				if _, ok := result.principal.(store.OperatorPrincipal); !ok {
-					t.Fatalf("operator proof = %#v", result.principal)
 				}
 			} else if status.Code(err) != codes.Unauthenticated {
 				t.Fatalf("unproved operator: %v", err)
@@ -411,3 +421,10 @@ func TestServiceActorMustAlsoProveOperatorOIDC(t *testing.T) {
 		})
 	}
 }
+
+type contextStream struct {
+	grpc.ServerStream
+	ctx context.Context
+}
+
+func (s contextStream) Context() context.Context { return s.ctx }
