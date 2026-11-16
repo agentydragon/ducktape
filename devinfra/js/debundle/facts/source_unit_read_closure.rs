@@ -8,7 +8,6 @@
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use petgraph::algo::tarjan_scc;
 use petgraph::graphmap::DiGraphMap;
 use roaring::RoaringBitmap;
@@ -22,55 +21,45 @@ struct LazyEffectBits {
     rebinds: RoaringBitmap,
 }
 
-struct SccLazyEffectRules {
-    successors: Vec<Vec<usize>>,
-}
-
-impl IterativeRules for SccLazyEffectRules {
-    type Key = usize;
-    type Fact = LazyEffectBits;
-    type Rule = usize;
-
-    fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
-        let mut reads = RoaringBitmap::new();
-        let mut rebinds = RoaringBitmap::new();
-        for &successor in &self.successors[*rule] {
-            if let Some(effects) = context.read(successor) {
-                reads |= &effects.reads;
-                rebinds |= &effects.rebinds;
-            }
-        }
-        context.propose(*rule, LazyEffectBits { reads, rebinds });
-    }
-
-    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
-        let previous_reads = current.reads.len();
-        let previous_rebinds = current.rebinds.len();
-        current.reads |= &contribution.reads;
-        current.rebinds |= &contribution.rebinds;
-        current.reads.len() != previous_reads || current.rebinds.len() != previous_rebinds
-    }
-}
-
 fn close_scc_lazy_effects(
-    local_effects: Vec<LazyEffectBits>,
+    mut local_effects: Vec<LazyEffectBits>,
     successors: Vec<Vec<usize>>,
 ) -> Vec<LazyEffectBits> {
     debug_assert_eq!(local_effects.len(), successors.len());
-    let producers: Vec<_> = successors
+    // SCC condensation is acyclic. A component is ready exactly when all
+    // successors have completed; each completed summary crosses each incoming
+    // edge once. No parent is recomputed for an intermediate successor value.
+    let mut predecessors = vec![Vec::new(); successors.len()];
+    for (source, targets) in successors.iter().enumerate() {
+        for &target in targets {
+            predecessors[target].push(source);
+        }
+    }
+    let mut remaining: Vec<_> = successors.iter().map(Vec::len).collect();
+    let mut ready: VecDeque<_> = successors
         .iter()
         .enumerate()
-        .filter_map(|(scc, targets)| (!targets.is_empty()).then_some(scc))
+        .filter_map(|(scc, targets)| targets.is_empty().then_some(scc))
         .collect();
-    let mut inference = IterativeInference::new(SccLazyEffectRules { successors });
-    for (scc, effects) in local_effects.into_iter().enumerate() {
-        inference.seed(scc, effects);
+    let mut completed = 0;
+    while let Some(successor) = ready.pop_front() {
+        completed += 1;
+        let summary = local_effects[successor].clone();
+        for &predecessor in &predecessors[successor] {
+            local_effects[predecessor].reads |= &summary.reads;
+            local_effects[predecessor].rebinds |= &summary.rebinds;
+            remaining[predecessor] -= 1;
+            if remaining[predecessor] == 0 {
+                ready.push_back(predecessor);
+            }
+        }
     }
-    inference
-        .solve(producers)
-        .into_values()
-        .into_values()
-        .collect()
+    assert_eq!(
+        completed,
+        local_effects.len(),
+        "SCC condensation is acyclic"
+    );
+    local_effects
 }
 
 /// SourceUnit read closure over one chunk's statement facts.
@@ -331,7 +320,7 @@ mod tests {
     use roaring::RoaringBitmap;
 
     #[test]
-    fn scc_rules_propagate_transitive_reads_and_rebinds() {
+    fn scc_closure_propagates_transitive_reads_and_rebinds() {
         let mut local = vec![LazyEffectBits::default(); 4];
         local[0].reads.insert(0);
         local[2].rebinds.insert(2);
@@ -347,5 +336,22 @@ mod tests {
         assert_eq!(effects[2].rebinds, RoaringBitmap::from_iter([2]));
         assert_eq!(effects[3].reads, RoaringBitmap::from_iter([3]));
         assert!(effects[3].rebinds.is_empty());
+    }
+
+    #[test]
+    fn diamond_components_share_the_completed_successor_effects() {
+        let mut local = vec![LazyEffectBits::default(); 5];
+        for (index, effects) in local.iter_mut().enumerate() {
+            effects.reads.insert(index as u32);
+        }
+        local[1].rebinds.insert(6);
+        let effects =
+            close_scc_lazy_effects(local, vec![vec![1], vec![], vec![1], vec![0, 2], vec![]]);
+        assert_eq!(effects[3].reads, RoaringBitmap::from_iter([0, 1, 2, 3]));
+        assert_eq!(effects[3].rebinds, RoaringBitmap::from_iter([6]));
+        assert_eq!(effects[0].reads, RoaringBitmap::from_iter([0, 1]));
+        assert_eq!(effects[2].reads, RoaringBitmap::from_iter([1, 2]));
+        assert_eq!(effects[4].reads, RoaringBitmap::from_iter([4]));
+        assert!(effects[4].rebinds.is_empty());
     }
 }

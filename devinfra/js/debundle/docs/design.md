@@ -1590,6 +1590,15 @@ Rebind targets are promoted as `EagerUse` in either path, an order constraint
 only: write legality is enforced by the direct `LazyRebind` /
 `DeferredRebind` edge at the write site.
 
+Source-unit lazy-effect closure uses the same condensation-DAG order. A
+component's summary is its local reads and rebinds unioned with every completed
+successor summary. Processing sinks first and propagating each completed
+summary once per incoming edge proves this equation by induction, regardless
+of component index order. With `V` components, `E` condensation edges and `B`
+binding ordinals, bitmap work is `O((V + E)(B + 1))` and storage is
+`O(V B + E)` slots before materializing the ordered-ID query view. This bounds
+source preprocessing, not the per-use promotion and observation ledger.
+
 An `await` cuts off synchronous effects only on paths that must reach it.
 Conditional branches are joined conservatively; loops, switches, and
 try/catch/finally retain effects across possible paths. Under A11, the
