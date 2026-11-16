@@ -42,6 +42,7 @@ fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static>
         ],
     )
     .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(&["probes/inner", "probes/outer"])
     .with_commuting_statements("static/app", pairs)
 }
 

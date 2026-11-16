@@ -14,7 +14,10 @@ fn assert_stored_callback_keeps_early_read(setup: &str, call: &str, names: &[&'s
     } else {
         vec![]
     };
-    assert_preserved_entry_output(&run_fixture(FixtureOpts::new(&source, vec![])), "0\n");
+    assert_preserved_entry_output(
+        &run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"])),
+        "0\n",
+    );
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             &source,
@@ -22,7 +25,8 @@ fn assert_stored_callback_keeps_early_read(setup: &str, call: &str, names: &[&'s
                 logical_module_with_anon("registry", &registry, &steps),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        ),
+        )
+        .with_import_order(&["registry", "values/later"]),
         &["registry", "values/later"],
         &[],
     );

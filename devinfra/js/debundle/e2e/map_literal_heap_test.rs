@@ -170,7 +170,9 @@ fn unsafe_map_constructors_keep_the_opaque_heap_path() {
         ),
     ];
     for (label, source) in cases {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         let graph = fixture.dependency_graph();
         let node = node_declaring(&graph, "a");
         let frontier = node
@@ -191,7 +193,9 @@ fn poisoned_native_steps_remain_observable_at_runtime() {
         "const iteratorPrototype = Object.getPrototypeOf([][Symbol.iterator]()); const nativeNext = iteratorPrototype.next; let touched = 0; iteratorPrototype.next = function (...args) { touched++; return nativeNext.apply(this, args); }; const a = new Map([['k', 'v']]); console.log(touched > 0, a.get('k')); export { a };",
     ];
     for source in cases {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "true v\n");
         assert_eq!(fixture.translation_validation()["accepts"], true);
         assert_all_emitted_js_checks(&fixture);

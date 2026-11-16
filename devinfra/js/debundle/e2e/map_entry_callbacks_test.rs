@@ -190,7 +190,8 @@ export { result, missing, later };
     .with_unassigned_mode(unassigned_mode_inline());
     assert_preserved_entry_output(&run_fixture(colocated), "ok true\n");
     expect_atomic_conflict_rejection(
-        split_collection_later(source, &[Member::new("result"), Member::new("missing")]),
+        split_collection_later(source, &[Member::new("result"), Member::new("missing")])
+            .with_import_order(&["values/collection", "values/later", "residual"]),
         &["anon_residual_sentinel", "values/collection"],
         &[],
     );

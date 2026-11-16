@@ -64,6 +64,7 @@ fn intrinsic_alias_opts(source: &str) -> FixtureOpts<'_> {
             ),
         ],
     )
+    .with_import_order(&["alpha", "beta", "residual"])
 }
 
 fn resolved_member_input(source: &str, module: &str, name: &str) -> NativeOperationInputContract {

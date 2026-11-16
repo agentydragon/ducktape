@@ -132,6 +132,10 @@ console.log(first.delayed);
 "#;
 
 fn expect_split_rejected(source: &str, peer: &str) {
+    expect_split_rejected_with_order(source, peer, &["wrapped", "later"]);
+}
+
+fn expect_split_rejected_with_order(source: &str, peer: &str, order: &[&str]) {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             source,
@@ -140,6 +144,7 @@ fn expect_split_rejected(source: &str, peer: &str) {
                 logical_module("later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(order)
         .with_extra_chunks(&[("static/peer", peer)]),
         &["wrapped", "later"],
         &[],
@@ -209,14 +214,26 @@ fn wrapper_rejects_proxy_input_and_mutated_native_call() {
     let aliased_prototype = format!(
         "const functionPrototype = Object.getPrototypeOf(Map);\nfunctionPrototype.call = () => later;\n{SPLIT_SOURCE}"
     );
-    expect_split_rejected(&aliased_prototype, WRAPPER);
+    expect_split_rejected_with_order(
+        &aliased_prototype,
+        WRAPPER,
+        &["wrapped", "later", "residual"],
+    );
     let object_prototype = format!(
         "const objectPrototype = Object.getPrototypeOf(Math);\nobjectPrototype.hasOwnProperty = () => later;\n{SPLIT_SOURCE}"
     );
-    expect_split_rejected(&object_prototype, WRAPPER);
+    expect_split_rejected_with_order(
+        &object_prototype,
+        WRAPPER,
+        &["wrapped", "later", "residual"],
+    );
     let dynamic_prototype =
         format!("const key = '__proto__';\nMap[key].call = () => later;\n{SPLIT_SOURCE}");
-    expect_split_rejected(&dynamic_prototype, WRAPPER);
+    expect_split_rejected_with_order(
+        &dynamic_prototype,
+        WRAPPER,
+        &["wrapped", "later", "residual"],
+    );
 }
 
 #[test]
