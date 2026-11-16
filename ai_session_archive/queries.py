@@ -39,9 +39,10 @@ from ai_session_archive.statuses import (
     SnapshotInventoryStatus,
     SnapshotProcessingStatus,
 )
+from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage
 
 MAX_EVENT_PAGE_SIZE = 500
-MAX_DELTA_DEPTH = 63
+MAX_DELTA_DEPTH = CHECKPOINT_INTERVAL - 1
 
 
 def list_machines(session: DbSession) -> list[Machine]:
@@ -338,21 +339,6 @@ def get_version(session: DbSession, *, session_id: UUID, version_id: UUID) -> Se
     )
 
 
-def _version_lineage(session: DbSession, version: FileVersionRow) -> list[FileVersionRow]:
-    lineage = [version]
-    while not lineage[-1].is_checkpoint:
-        if len(lineage) > MAX_DELTA_DEPTH:
-            raise RuntimeError(f"file version delta chain exceeds {MAX_DELTA_DEPTH}: {version.id}")
-        parent_id = lineage[-1].parent_version_id
-        if parent_id is None:
-            raise RuntimeError(f"non-checkpoint file version has no parent: {lineage[-1].id}")
-        parent = session.get(FileVersionRow, parent_id)
-        if parent is None or parent.session_id != version.session_id:
-            raise RuntimeError(f"file version has an invalid parent: {lineage[-1].id}")
-        lineage.append(parent)
-    return lineage
-
-
 def list_events(
     session: DbSession,
     *,
@@ -382,7 +368,7 @@ def list_events(
     if start >= end:
         return EventPage(data=[], next_cursor=None)
 
-    lineage = _version_lineage(session, version)
+    lineage = version_lineage(session, version, max_delta_depth=MAX_DELTA_DEPTH)
     lineage_rank = {row.id: index for index, row in enumerate(lineage)}
     rows = session.execute(
         select(FileVersionRecordRow, RecordPayloadRow)

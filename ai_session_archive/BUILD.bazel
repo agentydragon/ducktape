@@ -108,6 +108,7 @@ py_library(
         ":models",
         ":record_json",
         ":statuses",
+        ":version_lineage",
         "@pypi//sqlalchemy",
     ],
 )
@@ -163,6 +164,7 @@ py_library(
         ":restic",
         ":statuses",
         ":usage_observations",
+        ":version_lineage",
         "@pypi//sqlalchemy",
     ],
 )
@@ -728,6 +730,28 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres_fixtures",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "version_lineage",
+    srcs = ["version_lineage.py"],
+    deps = [
+        ":database",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_version_lineage",
+    srcs = ["test_version_lineage.py"],
+    deps = [
+        ":database",
+        ":version_lineage",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
