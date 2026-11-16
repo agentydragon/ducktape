@@ -484,15 +484,10 @@ declaratively managed one.
 
 ## Keep authority at the boundary that can enforce it
 
-Session-facing and environment-facing responsibilities may eventually warrant different binary
-and deployment boundaries. The current Runner Gateway combines SessionDispatcher and
-EnvironmentService; the Sandbox Controller runs separately. Alternatives to review include keeping
-the combined process, splitting Session dispatch from Environment management/routing, combining
-some Environment responsibilities with Sandbox Controller, and other groupings. This is an open
-topology decision, not a selected split or merge; service contracts and ownership do not follow
-automatically from which code shares a process. The
-[delivery ownership and topology task](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology)
-owns the review.
+Two binaries split Session-facing and environment-facing responsibilities: Sessions (Dispatcher)
+and Environments (Sandbox Controller, EnvironmentService, Runtime proxy, Executor), decided in
+[the task DAG](task_dag.md#17-two-binaries-and-the-go-layout). Service contracts and ownership
+still do not follow automatically from which code shares a process.
 
 | Owner                           | Owns                                                                                                                                                                                                      | Does not own                                                                                           |
 | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |

@@ -18,8 +18,7 @@ standard shape.
 
 ### `DISPATCHER_KEYED_DELIVERY`
 
-Unscheduled; the [per-Session delivery lease](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology)
-it waited on landed in #16858.
+In flight; released by the operator 2026-11-16 06:40 UTC.
 Dispatcher already runs delivery through a rate-limited queue keyed by Session ID. Its reconciliation
 still turns Sandbox and database changes into unkeyed signals and, on each signal and every 10 s,
 lists the Sandbox inventory and pending work (`session_dispatcher/dispatcher/delivery.go`), detecting
@@ -31,8 +30,7 @@ notifications and Sandbox deletion.
 
 ### `DISPATCHER_WATCH_VERSIONS`
 
-Unscheduled; the [per-Session delivery lease](task_dag.md#dispatcher_persistence_model_design--choose-delivery-ownership-and-service-topology)
-it waited on landed in #16858.
+In flight; released by the operator 2026-11-16 06:40 UTC.
 `WatchDispatches` ships deleted rows as base64 protobuf split into `pg_notify` parts (`dispatcher/terminal.go`), reassembled with a timeout
 and a pending cap, failing every stream on any malformed part, with no replay, through its own
 `pq.NewListener` rather than the shared `postgres/wakeups.Hub`; every stream re-lists its scope on

@@ -113,6 +113,7 @@ The manual queue, replica and wake probes are documented in the
   Environment. Current Session creation still requires an Environment.
   No replica owns a Sandbox or queue. Environment deletion and terminal notices serialize with
   worker attempts and settlements through the deletion advisory lock and Session lease rows.
+  Why a Session key and a timed lease: [decision record](../../docs/adr_session_delivery_lease.md).
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
