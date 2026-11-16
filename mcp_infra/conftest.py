@@ -3,8 +3,6 @@
 import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
-from agent_core.testing.fixtures import *  # noqa: F403
-from agent_core.testing.mcp.fixtures import *  # noqa: F403
 from mcp_infra.testing.fixtures import *  # noqa: F403
 from util.db_url import render_postgresql_url
 from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
