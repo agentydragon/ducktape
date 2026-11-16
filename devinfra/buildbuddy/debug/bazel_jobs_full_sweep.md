@@ -118,7 +118,7 @@ the API showed no remaining nonterminal execution records for them.
 
 That attempt is not the matched comparison above. Its captured baseline had
 1,693 passes and a 60.1 s timeout in
-`//x/ai_session_archive:test_codex_title_retry`; the later baseline above passes
+`//ai_session_archive:test_codex_title_retry`; the later baseline above passes
 that test. No candidate total or following build was obtained from the
 interrupted attempt. See the [whole-script replay evidence](ci_remote_cancellation/vm_shutdown_retry.md#full-suite-replay-on-2026-10-31)
 for the three outer IDs and separation from Bazel's action-level retries.

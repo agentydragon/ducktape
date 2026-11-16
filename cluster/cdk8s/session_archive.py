@@ -23,6 +23,7 @@ from cdk8s_plus_34 import (
 from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
+from ai_session_archive.web_settings import WebSettings
 from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
@@ -33,7 +34,6 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from util.settings_contract import env_name
-from x.ai_session_archive.web_settings import WebSettings
 
 NAME = "ai-session-archive"
 NAMESPACE = session_backup.NAMESPACE

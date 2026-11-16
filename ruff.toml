@@ -139,6 +139,7 @@ known-third-party = ["ansible", "docker", "google"]
 #   `bazel run` validator that scans the tree (or runs `bazel query`) is the shape.
 #   Until then, a missing entry surfaces as a (cryptic) bazel-out I001 from the lint aspect.
 known-first-party = [
+    "ai_session_archive",
     "model_catalog",
     "devinfra",
     "util",
