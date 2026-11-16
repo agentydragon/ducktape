@@ -938,8 +938,11 @@ for actual TDZ-cell creation, successful initialization and subsequent reads.
 Initializer effects compose separately; an abrupt initializer never marks its
 binding initialized. Prebound values do not establish these receipts. Local
 declaration receipts do not certify captured cells, `var`/function hoisting,
-later assignments, or global/heap/host coverage, and cannot manufacture callable
-selection evidence from a stored value.
+or global/heap/host coverage, and cannot manufacture callable selection evidence
+from a stored value. A simple assignment to an initialized, noncaptured local
+`let` or parameter composes its checked store receipt after the right-hand
+side's effects. TDZ or immutable stores cannot seal normal coverage, and the
+store cannot discharge an uncovered operand or captured-cell effect.
 Default-bearing bodies with body `var` or function declarations retain the
 compatibility path until separate parameter and body environments are modeled.
 Live captured-cell, rest/destructuring, `arguments`, async and generator

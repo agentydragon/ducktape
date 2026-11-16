@@ -3919,6 +3919,13 @@ policy difference is a trait method: which bindings get cells, capture
 snapshots, closure admission, the native rows, and the disposition of an
 unproved operation (summarize or refuse).
 
+Simple binding assignment composes operand effects as the RHS executes, then
+the shared `store_binding` rule checks PutValue and supplies the store's effects.
+An initialized noncaptured local `let` or parameter needs no global, heap, host
+or module-binding effect. Captured cells, other binding kinds and abrupt stores
+retain their existing uncovered fragments. A covered store cannot repair an
+uncovered RHS, and a TDZ or immutable store cannot seal normal completion.
+
 **Array methods are selected at GetValue and executed by the call.**
 `NativeContext::array_method_callee` selects an original `Array.prototype`
 method on a literal array before the arguments run: `push`, or an iteration

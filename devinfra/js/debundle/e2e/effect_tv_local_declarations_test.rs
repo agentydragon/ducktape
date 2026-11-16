@@ -10,6 +10,7 @@ fn local_declaration_operations_cover_private_cells_and_compose_receipts() {
     for body in [
         "const local = seed; return local;",
         "let local = seed; return local;",
+        "let local = seed; local = seed; return local;",
         "const first = seed, second = first; return second;",
         "let local; return (local, seed);",
         "return seed; let unreached;",
@@ -89,10 +90,9 @@ fn local_declaration_receipts_preserve_callable_selection_requirements() {
 }
 
 #[test]
-fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
+fn local_declaration_receipts_refuse_captured_cells_and_var_hoisting() {
     for body in [
         "var local = seed; return local;",
-        "let local = seed; local = seed; return local;",
         "const local = seed; const read = () => local; return read();",
     ] {
         let source = format!(
@@ -114,7 +114,7 @@ fn local_declaration_receipts_refuse_captured_cells_and_rebinding() {
         assert_eq!(
             execution["binding_effect_authority"]["authority"],
             "ordered_root_initializer_uncovered",
-            "other cell kinds and assignment effects need their own receipts: {body}: {execution:#}"
+            "other cell kinds need their own receipts: {body}: {execution:#}"
         );
     }
 }

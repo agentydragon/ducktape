@@ -19,8 +19,9 @@ parameter reads, returns and exact initialized-binding publication. Ordinary
 simple/default parameter execution and ordinary noncaptured local `let`/`const`
 declarations supply actual creation/initialization/read receipts. Initializer
 effects compose independently, and TDZ or abrupt initialization cannot seal a
-normal root. Captured cells, `var`/function hoisting, later assignments and
-separate body-var environments remain open.
+normal root. Simple assignments to initialized noncaptured `let`/parameter
+bindings use the same checked store receipts as numeric updates. Captured cells,
+`var`/function hoisting and separate body-var environments remain open.
 An alias without an actual selection producer remains uncovered and retains
 closure fallback; normal completion alone cannot restore legacy authority.
 
