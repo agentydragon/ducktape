@@ -58,7 +58,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "test refusal")
         await context.send_initial_metadata((("x-backend-private", "must-not-reach-browser"),))
         try:
-            yield session_dispatcher_pb2.WatchDispatchesResponse(caught_up={})
+            yield session_dispatcher_pb2.WatchDispatchesResponse(caught_up={}, resume_token="test-dispatch-cursor")
             if not self.clean_eof:
                 await asyncio.Event().wait()
         finally:
@@ -119,11 +119,12 @@ async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_hea
         assert response.headers["x-accel-buffering"] == "no"
         assert not any(key.startswith("grpc-metadata-") for key in response.headers)
         lines = response.aiter_lines()
-        assert json.loads(await anext(lines)) == {"result": {"caughtUp": {}}}
+        assert json.loads(await anext(lines)) == {"result": {"caughtUp": {}, "resumeToken": "test-dispatch-cursor"}}
     async with asyncio.timeout(5):
         await peer.service.cancelled.wait()
     assert peer.service.authorization == ["Bearer test-dispatcher-token", "Bearer rotated-dispatcher-token"]
     assert peer.service.watches[0].filter == peer.service.requests[0].filter
+    assert not peer.service.watches[0].resume_token
 
 
 @pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "sigterm"])
@@ -173,7 +174,9 @@ async def test_clean_grpc_eof_ends_browser_watch(http: httpx.AsyncClient, peer: 
     peer.service.clean_eof = True
     response = await http.get(WATCH)
     assert response.status_code == 200
-    assert [json.loads(line) for line in response.text.splitlines()] == [{"result": {"caughtUp": {}}}]
+    assert [json.loads(line) for line in response.text.splitlines()] == [
+        {"result": {"caughtUp": {}, "resumeToken": "test-dispatch-cursor"}}
+    ]
 
 
 async def test_another_replica_logout_ends_only_its_sessions_stream(
