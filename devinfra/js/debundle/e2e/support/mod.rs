@@ -15,9 +15,13 @@ pub mod process;
 mod runtime;
 pub mod saved_analysis;
 mod tree_assertions;
+mod unescaped_local_callable;
 mod workspace;
 
 pub use tree_assertions::{assert_same_tree, read_tree};
+pub use unescaped_local_callable::{
+    assert_unescaped_local_callable_split, unescaped_local_callable_modules,
+};
 pub use workspace::{
     TreeFixture, TreeRun, TreeWorkspace, run_tree_fixture, run_tree_graph_fixture, tree_spec_args,
     write_tree_fixture,

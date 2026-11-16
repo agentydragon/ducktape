@@ -275,31 +275,10 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-        vec![
-            logical_module(
-                "values/dynamic",
-                &[Member::new("dynamic"), Member::new("prefix")],
-            ),
-            logical_module(
-                "values/later",
-                &[Member::new("later"), Member::new("readLater")],
-            ),
-        ],
+        unescaped_local_callable_modules(),
     ));
 
-    assert_preserved_entry_output(&fixture, "1\n");
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/dynamic.js",
-        &["dynamic"],
-        &[],
-    );
-    assert_module_exports(
-        &fixture.out_root,
-        "static/app/modules/values/later.js",
-        &["later"],
-        &[],
-    );
+    assert_unescaped_local_callable_split(&fixture);
 }
 
 #[test]
