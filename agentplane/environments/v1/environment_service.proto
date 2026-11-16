@@ -33,7 +33,9 @@ service EnvironmentService {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
   }
   // Live diagnostic evidence, available only to the App service peer. Never wakes an environment.
-  rpc GetRuntimeDiagnostics(GetRuntimeDiagnosticsRequest) returns (GetRuntimeDiagnosticsResponse);
+  rpc GetRuntimeDiagnostics(GetRuntimeDiagnosticsRequest) returns (GetRuntimeDiagnosticsResponse) {
+    option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}:runtime-diagnostics"};
+  }
   // Reports only the currently retained Sandbox-owned WorkloadCredential. Prior records are
   // revoked on stop and cannot provide a complete identity history.
   rpc GetEnvironmentIdentityRecord(GetEnvironmentRequest) returns (EnvironmentIdentityRecord) {

@@ -47,11 +47,16 @@ restoring it for rollback requires its accepting image before callers are retarg
 ## Live Runtime diagnostics
 
 `EnvironmentService.GetRuntimeDiagnostics` is a native gRPC read for the exact App service SVID
-(`spiffe://agentplane/app`), which enforces operator authorization at its browser boundary. Other
-service roles, workload Identities, bearer credentials and delegated envelopes grant no access.
-No new settings or manifest grants are needed. The request names an exact Environment
-namespace/name/UID. Environments reads the Sandbox uncached before and after the Runtime call;
-same-name replacement is `NOT_FOUND`, and a changed workload incarnation is `ABORTED`.
+(`spiffe://agentplane/app`), which enforces operator authorization at its browser boundary. The App
+exposes its generated HTTP mapping through its authenticated facade at
+`GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
+That facade uses the App's existing EnvironmentService connection; the Controller does not add an
+HTTP listener. The route ships with the App's generated gateway; the EnvironmentService RPC is
+already served by the backend. Other service roles, workload Identities, bearer credentials and
+delegated envelopes grant no backend access. No new settings or manifest grants are needed. The
+request names an exact Environment namespace/name/UID. Environments reads the Sandbox uncached
+before and after the Runtime call; same-name replacement is `NOT_FOUND`, and a changed workload
+incarnation is `ABORTED`.
 
 The response includes that target, the workload Pod UID, completion observation time and the live
 `EnvironmentRuntimeStatus` snapshot, including its boot ID. The replica uses its existing fenced
