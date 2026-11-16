@@ -12,7 +12,15 @@ import pytest
 import pytest_bazel
 
 from agentplane.central_sampler.api import sampler_pb2, sampler_pb2_grpc
-from agentplane.central_sampler.testing import METADATA, Endpoint, Request, create_request, service, settings
+from agentplane.central_sampler.testing import (
+    METADATA,
+    Endpoint,
+    Request,
+    create_request,
+    service,
+    settings,
+    submit_input,
+)
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.codex.testing.responses_sse import Message, response_stream
 from agentplane.proto import event_pb2, session_pb2
@@ -144,12 +152,12 @@ async def test_failed_setup_remains_terminal_after_reopen(
             )
             assert snapshot.blocked
             with pytest.raises(grpc.aio.AioRpcError) as rejected:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="after-failed-setup", text="Must not sample."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=request.session_id,
+                    command_id="after-failed-setup",
+                    text="Must not sample.",
+                    timeout_s=10,
                 )
             assert rejected.value.code() == grpc.StatusCode.FAILED_PRECONDITION
             events = await recorded_events(stub, request.session_id)

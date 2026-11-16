@@ -27,10 +27,10 @@ from agentplane.central_sampler.testing import (
     create_request,
     service,
     settings,
+    submit_input,
     turn_completed,
 )
 from agentplane.central_sampler.testing_store import Store
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.native.testing.model_endpoint import SseEvent
 from agentplane.proto import event_pb2
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -175,12 +175,12 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
 
             if operation == "failed_compaction":
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID, command_id="anthropic-seed", text="Save the pre-compaction context."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=SESSION_ID,
+                    command_id="anthropic-seed",
+                    text="Save the pre-compaction context.",
+                    timeout_s=10,
                 )
                 async with await endpoint.next() as exchange:
                     assert exchange.request.body["stream"] is True
@@ -262,14 +262,12 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 )
                 assert not snapshot.blocked, "exhausting provider retries blocked the Session"
 
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID,
-                        command_id="input-after-failed-compaction",
-                        text="Continue after compaction failure.",
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=SESSION_ID,
+                    command_id="input-after-failed-compaction",
+                    text="Continue after compaction failure.",
+                    timeout_s=10,
                 )
                 async with await endpoint.next() as exchange:
                     next_body = exchange.request.body
@@ -280,12 +278,12 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 ).status == event_pb2.TURN_STATUS_COMPLETED
                 await wait_command_outcome(stub, "input-after-failed-compaction", sampler_pb2.COMMAND_OUTCOME_APPLIED)
             else:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID, command_id=TURN_ID, text="Ask the eager JSON tool to run once."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=SESSION_ID,
+                    command_id=TURN_ID,
+                    text="Ask the eager JSON tool to run once.",
+                    timeout_s=10,
                 )
                 body = None
                 for attempt in range(3):
@@ -357,14 +355,12 @@ async def test_anthropic_truncated_stream_retries_without_committing_partial_dat
                 )
                 assert not await store.has_live_cell(SESSION_ID), "partial tool call dispatched an executor cell"
 
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID,
-                        command_id="input-after-truncated-sampling",
-                        text="Continue after provider failure.",
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=SESSION_ID,
+                    command_id="input-after-truncated-sampling",
+                    text="Continue after provider failure.",
+                    timeout_s=10,
                 )
                 async with await endpoint.next() as exchange:
                     assert "Continue after provider failure." in json.dumps(exchange.request.body)

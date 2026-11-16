@@ -26,6 +26,7 @@ from agentplane.central_sampler.testing import (
     create_request,
     service,
     settings,
+    submit_input,
     turn_completed,
 )
 from agentplane.central_sampler.testing_store import Store
@@ -78,12 +79,8 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
             assert rejected.value.code() == grpc.StatusCode.INVALID_ARGUMENT
             request.spec.model = "test-model"
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="hold-turn", text="Wait for the response."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="hold-turn", text="Wait for the response.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 for model, code in (
@@ -174,12 +171,12 @@ async def test_flat_model_routes_enforce_effort_and_session_contract(
                 metadata=METADATA,
                 timeout=10,
             )
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="continue", text="Continue with the same model."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="continue",
+                text="Continue with the same model.",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 assert exchange.request.body["model"] == "test-model"
@@ -206,12 +203,8 @@ async def test_session_store_survives_idle_turns_and_is_separate_between_session
                 await stub.CreateSession(request, metadata=METADATA, timeout=10)
 
             async def run_cell(session_id: str, command_id: str, source: str, expected: str) -> int:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=session_id, command_id=command_id, text="Run the next cell."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub, session_id=session_id, command_id=command_id, text="Run the next cell.", timeout_s=10
                 )
                 async with await endpoint.next() as exchange:
                     await exchange.send(
@@ -303,12 +296,12 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
             async with await endpoint.next() as exchange:
                 assert "received:hello" in json.dumps(exchange.request.body)
                 # Input admitted while the provider is held steers the running turn.
-                queued = await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID, command_id="queued", text="Also mention the steering input."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                queued = await submit_input(
+                    stub,
+                    session_id=SESSION_ID,
+                    command_id="queued",
+                    text="Also mention the steering input.",
+                    timeout_s=10,
                 )
                 assert queued.admission.cursor > first.admission.cursor
                 await exchange.send(*response_stream([Message("first answer")], model="test-model").events)
@@ -365,13 +358,7 @@ async def test_api_wait_stdin_queue_compaction_and_restart(
         # Independent runtime instance resumes canonical context and idempotent receipts.
         async with service(config) as stub:
             assert await stub.SubmitInput(request, metadata=METADATA, timeout=10) == first
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=SESSION_ID, command_id="after", text="After compaction"
-                ),
-                metadata=METADATA,
-                timeout=10,
-            )
+            await submit_input(stub, session_id=SESSION_ID, command_id="after", text="After compaction", timeout_s=10)
             async with await endpoint.next() as exchange:
                 assert any(item.get("encrypted_content") == "test-opaque" for item in exchange.request.body["input"])
                 await exchange.send(*response_stream([Message("resumed")], model="test-model").events)
@@ -406,12 +393,8 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
                         sampler_pb2.GetSessionRequest(session_id=SESSION_ID), metadata=metadata, timeout=10
                     )
                 assert error.value.code() == expected
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=SESSION_ID, command_id="active", text="Wait for interrupt"
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=SESSION_ID, command_id="active", text="Wait for interrupt", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 payload = {"type": "response.output_text.delta", "item_id": "partial", "delta": "partial output"}
@@ -434,21 +417,11 @@ async def test_interrupt_streaming_evidence_and_service_svid_admission(
                 assert (await turn_completed(stub, SESSION_ID, "active")).status == event_pb2.TURN_STATUS_INTERRUPTED
             assert await stub.InterruptTurn(interrupt, metadata=METADATA, timeout=10) == receipt
             with pytest.raises(grpc.aio.AioRpcError) as error:
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=SESSION_ID, command_id="interrupt", text="different payload"
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub, session_id=SESSION_ID, command_id="interrupt", text="different payload", timeout_s=10
                 )
             assert error.value.code() == grpc.StatusCode.ALREADY_EXISTS
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=SESSION_ID, command_id="continued", text="Continue"
-                ),
-                metadata=METADATA,
-                timeout=10,
-            )
+            await submit_input(stub, session_id=SESSION_ID, command_id="continued", text="Continue", timeout_s=10)
             async with await endpoint.next() as exchange:
                 await exchange.send(*response_stream([Message("continued")], model="test-model").events)
             await turn_completed(stub, SESSION_ID, "continued")
@@ -464,12 +437,8 @@ async def test_nested_command_inherits_executor_environment(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="env", text="Show the environment."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="env", text="Show the environment.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -501,12 +470,8 @@ async def test_reasoning_summaries_are_requested_and_reach_history(
         request = create_request(tmp_path)
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="think", text="Think, then answer."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="think", text="Think, then answer.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 reasoning = exchange.request.body["reasoning"]
@@ -594,12 +559,12 @@ async def test_interrupt_admission_survives_unavailable_executor(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="remote", text="Start a supervised process"
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="remote",
+                text="Start a supervised process",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -646,12 +611,8 @@ async def test_restart_settles_live_javascript_and_continues(
         request = create_request(tmp_path)
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="yielded", text="Retain a live JS cell"
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="yielded", text="Retain a live JS cell", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -689,12 +650,12 @@ async def test_restart_settles_live_javascript_and_continues(
                 sampler_pb2.GetSessionRequest(session_id=request.session_id), metadata=METADATA, timeout=10
             )
             assert not session.blocked
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="lost-cell", text="Continue after host loss"
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="lost-cell",
+                text="Continue after host loss",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 assert "store()/load() values has been lost" in json.dumps(exchange.request.body)
@@ -719,12 +680,12 @@ async def test_exited_process_with_open_output_yields_and_preserves_late_output(
         async with service(config) as stub:
             try:
                 await stub.CreateSession(request, metadata=METADATA, timeout=10)
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="start-open-output", text="Run the command."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=request.session_id,
+                    command_id="start-open-output",
+                    text="Run the command.",
+                    timeout_s=10,
                 )
                 async with await endpoint.next() as exchange:
                     command = f"(while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf late-output) & printf early-output"
@@ -767,12 +728,12 @@ async def test_exited_process_with_open_output_yields_and_preserves_late_output(
                         assert process.status == "exited_unread"
                         assert process.buffered_output == b"late-output"
 
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="read-late-output", text="Read the late output."
-                    ),
-                    metadata=METADATA,
-                    timeout=10,
+                await submit_input(
+                    stub,
+                    session_id=request.session_id,
+                    command_id="read-late-output",
+                    text="Read the late output.",
+                    timeout_s=10,
                 )
                 async with await endpoint.next() as exchange:
                     arguments = {"session_id": process_id, "yield_time_ms": 1}
@@ -818,14 +779,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
         async with service(config) as stub:
             for session in (request, second):
                 await stub.CreateSession(session, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id,
-                    command_id="background",
-                    text="Start a background process and answer.",
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="background",
+                text="Start a background process and answer.",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 arguments = {
@@ -850,12 +809,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             process = await store.process(process_id)
             assert process is not None
             assert process.status == "running"
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=second.session_id, command_id="queued", text="Run once capacity is released."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=second.session_id,
+                command_id="queued",
+                text="Run once capacity is released.",
+                timeout_s=10,
             )
             release.write_text("")
             async with await endpoint.next() as exchange:
@@ -869,12 +828,12 @@ async def test_unpolled_process_exit_releases_capacity_and_retains_output(
             assert process.status == "exited_unread"
             assert process.buffered_output == b"retained-output"
             assert process.conversation_owner is not None
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="read-retained", text="Read the retained output."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="read-retained",
+                text="Read the retained output.",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 assert str(process_id) in json.dumps(exchange.request.body)
@@ -925,12 +884,12 @@ async def test_unknown_custom_call_returns_failure_and_preserves_live_state(
         process_id: int | None = None
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="unknown-custom", text="Continue after an unknown tool."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="unknown-custom",
+                text="Continue after an unknown tool.",
+                timeout_s=10,
             )
             try:
                 async with await endpoint.next() as exchange:
@@ -1051,14 +1010,12 @@ async def test_unknown_json_function_call_returns_function_output(
         request.spec.reasoning_effort = ""
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id,
-                    command_id="unknown-function",
-                    text="Continue after an unknown function.",
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="unknown-function",
+                text="Continue after an unknown function.",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -1128,12 +1085,12 @@ async def test_json_exec_runs_shell_resumes_and_recovers(
         request.spec.reasoning_effort = ""
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="standard-json", text="Run a shell command."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="standard-json",
+                text="Run a shell command.",
+                timeout_s=10,
             )
 
             async with await endpoint.next() as exchange:
@@ -1320,12 +1277,8 @@ async def test_notify_outputs_follow_the_step_that_emitted_them(
         request = create_request(tmp_path)
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="notify", text="Notify from cells."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="notify", text="Notify from cells.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -1381,12 +1334,12 @@ async def test_interrupt_discards_queued_notify_output(
         request = create_request(tmp_path)
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="interrupted", text="Notify, then get interrupted."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="interrupted",
+                text="Notify, then get interrupted.",
+                timeout_s=10,
             )
             async with await endpoint.next() as exchange:
                 # The cell notifies only once the test releases it, after the next step is held.
@@ -1452,12 +1405,8 @@ async def test_view_image_reads_executor_file_and_prepares_cell_image(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="view-image", text="Look at the image."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="view-image", text="Look at the image.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 await exchange.send(
@@ -1494,12 +1443,8 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
         request = create_request(tmp_path)
         async with service(config) as stub:
             await stub.CreateSession(request, metadata=METADATA, timeout=10)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="steered", text="Run a long cell."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="steered", text="Run a long cell.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 # The cell never settles and would hold its observation for its whole yield time.
@@ -1507,12 +1452,8 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
                 await exchange.send(
                     *response_stream([CustomToolCall("long", "exec", source)], model="test-model").events
                 )
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="steer", text="Read this instead."
-                ),
-                metadata=METADATA,
-                timeout=10,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="steer", text="Read this instead.", timeout_s=10
             )
             async with await endpoint.next() as exchange:
                 body_input = exchange.request.body["input"]

@@ -22,9 +22,16 @@ from sqlalchemy import text
 from tenacity import AsyncRetrying, Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.central_sampler.api import sampler_pb2
-from agentplane.central_sampler.testing import METADATA, Endpoint, create_request, service, settings, turn_completed
+from agentplane.central_sampler.testing import (
+    METADATA,
+    Endpoint,
+    create_request,
+    service,
+    settings,
+    submit_input,
+    turn_completed,
+)
 from agentplane.central_sampler.testing_store import Store
-from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
 from agentplane.grpc.serving import serving
 from agentplane.native.codex.testing.responses_sse import CustomToolCall, FunctionCall, Message, response_stream
@@ -222,12 +229,7 @@ async def test_turn_outcomes_preserve_safe_continuation(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="first", text="Start"
-                ),
-                metadata=METADATA,
-            )
+            await submit_input(stub, session_id=request.session_id, command_id="first", text="Start", timeout_s=None)
             if failure == "invalid_wait":
                 async with await endpoint.next() as exchange:
                     await exchange.send(
@@ -337,11 +339,8 @@ async def test_turn_outcomes_preserve_safe_continuation(
             )
             if failure == "partial":
                 assert not (tmp_path / "partial-provider-call-ran").exists()
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="second", text="Continue"
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="second", text="Continue", timeout_s=None
             )
             async with await endpoint.next() as exchange:
                 next_input = json.dumps(exchange.request.body["input"])
@@ -370,11 +369,8 @@ async def test_lost_process_read_reply_resumes_same_process_and_cursor(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="read-recovery", text="Run one command."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub, session_id=request.session_id, command_id="read-recovery", text="Run one command.", timeout_s=None
             )
             async with await endpoint.next() as exchange:
                 source = 'text(await tools.exec_command({cmd: "printf x >> fault-marker && printf ' + output + '"}));'
@@ -456,11 +452,12 @@ async def test_lost_process_read_after_observed_output_is_catchable_without_repl
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="observed-read-fault", text="Run one command."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="observed-read-fault",
+                text="Run one command.",
+                timeout_s=None,
             )
             async with await endpoint.next() as exchange:
                 source = (
@@ -575,11 +572,12 @@ async def test_lost_process_start_ack_rejects_tool_and_caught_call_continues(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="start-ack-lost", text="Run one command."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="start-ack-lost",
+                text="Run one command.",
+                timeout_s=None,
             )
             async with await endpoint.next() as exchange:
                 source = (
@@ -658,11 +656,12 @@ async def test_uncaught_lost_apply_patch_ack_reaches_model_and_thread_continues(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="uncaught-patch", text="Apply one patch."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="uncaught-patch",
+                text="Apply one patch.",
+                timeout_s=None,
             )
             async with await endpoint.next() as exchange:
                 source = 'store("uncaught-sentinel", "persisted"); await tools.apply_patch(' + json.dumps(patch) + ");"
@@ -744,11 +743,12 @@ async def test_host_loss_settles_and_resets_javascript_session(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="recover-start", text="Start the operation."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="recover-start",
+                text="Start the operation.",
+                timeout_s=None,
             )
             async with await endpoint.next() as exchange:
                 source = 'store("recovery-state", "old-state"); await new Promise(() => {});'
@@ -796,11 +796,12 @@ async def test_host_loss_settles_and_resets_javascript_session(
                 await stub.RecoverSession(recovery, metadata=METADATA)
             assert nothing_to_recover.value.code() == grpc.StatusCode.FAILED_PRECONDITION
 
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="continue-after-recovery", text="Continue safely."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="continue-after-recovery",
+                text="Continue safely.",
+                timeout_s=None,
             )
             async with await endpoint.next() as exchange:
                 prompt = json.dumps(exchange.request.body["input"])
@@ -848,11 +849,12 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
         async with service(config) as stub:
             request = create_request(tmp_path)
             await stub.CreateSession(request, metadata=METADATA)
-            await stub.SubmitInput(
-                environment_runtime_pb2.SubmitInputRequest(
-                    session_id=request.session_id, command_id="stale-json-cell", text="Start a process and continue."
-                ),
-                metadata=METADATA,
+            await submit_input(
+                stub,
+                session_id=request.session_id,
+                command_id="stale-json-cell",
+                text="Start a process and continue.",
+                timeout_s=None,
             )
 
             process_id: int | None = None
@@ -955,11 +957,12 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 assert process is not None
                 assert process.status == "running"
 
-                await stub.SubmitInput(
-                    environment_runtime_pb2.SubmitInputRequest(
-                        session_id=request.session_id, command_id="after-stale-json-cell", text="Continue once more."
-                    ),
-                    metadata=METADATA,
+                await submit_input(
+                    stub,
+                    session_id=request.session_id,
+                    command_id="after-stale-json-cell",
+                    text="Continue once more.",
+                    timeout_s=None,
                 )
                 async with await endpoint.next() as exchange:
                     active_handles = json.dumps(exchange.request.body["input"])

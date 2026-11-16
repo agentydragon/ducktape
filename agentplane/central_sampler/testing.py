@@ -277,15 +277,19 @@ async def follow_turn(
     raise AssertionError(f"event stream ended before {turn_id=} completed")
 
 
+async def submit_input(
+    stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str, *, timeout_s: float | None
+) -> environment_runtime_pb2.SubmitInputResponse:
+    """Admit one input and return its receipt without following the resulting turn."""
+    request = environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text)
+    return await stub.SubmitInput(request, metadata=METADATA, timeout=timeout_s)
+
+
 async def submit(
     stub: sampler_pb2_grpc.SamplerAsyncStub, session_id: str, command_id: str, text: str, *, timeout_s: float
 ) -> Turn:
     """Submit one input and follow the turn it starts, which takes the command's ID."""
-    await stub.SubmitInput(
-        environment_runtime_pb2.SubmitInputRequest(session_id=session_id, command_id=command_id, text=text),
-        metadata=METADATA,
-        timeout=10,
-    )
+    await submit_input(stub, session_id=session_id, command_id=command_id, text=text, timeout_s=10)
     return await follow_turn(stub, session_id, command_id, timeout_s=timeout_s)
 
 
