@@ -97,7 +97,8 @@ enum SpecNsCommand {
     /// loosest readable unique form — holes and stable anchors over long
     /// exact current-source bodies, which can be over-narrow even when
     /// they match today. Automated forms: exact function/class
-    /// declarations, and `var`/`let`/`const` declaration groups with
+    /// declarations, jointly proven adjacent declaration runs, and
+    /// `var`/`let`/`const` declaration groups with
     /// non-target declarator runs collapsed to `DECLARATORS_BEFORE` /
     /// `DECLARATORS_BETWEEN` / `DECLARATORS_AFTER`. Dry-run JSON
     /// includes candidate count, matched top-level body index, group id,

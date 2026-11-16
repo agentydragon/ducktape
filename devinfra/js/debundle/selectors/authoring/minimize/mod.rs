@@ -209,7 +209,7 @@ pub(crate) fn exact_declaration_rejection(
     }
 }
 
-fn exact_declaration_source(
+pub(crate) fn exact_declaration_source(
     item: &ModuleItem,
     targets: &[SynthesizedTargetBinding],
 ) -> Result<Option<String>> {

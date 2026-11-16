@@ -53,10 +53,11 @@ pub mod match_selector;
 pub mod source_input;
 
 use crate::minimize::{
-    collapse_statement_hole_runs, exact_declaration_rejection, minimize_class_selector_candidates,
-    minimize_function_selector_candidates, minimize_var_group_selector,
-    minimize_var_group_selector_candidates, relax_exact_declaration,
+    collapse_statement_hole_runs, exact_declaration_rejection, exact_declaration_source,
+    minimize_class_selector_candidates, minimize_function_selector_candidates,
+    minimize_var_group_selector, minimize_var_group_selector_candidates, relax_exact_declaration,
 };
+use crate::render::holes_present;
 
 #[derive(Debug, Clone)]
 pub struct SelectorCodemodConfig {
@@ -195,15 +196,19 @@ pub fn synthesize_residual_claims_for_modules(
                     });
             }
             let mut claims = Vec::new();
-            for (decl_idx, members) in groups {
-                let synthesized =
-                    match synthesize_simplest_selector_for_group(&index, decl_idx, &members, 1)? {
-                        GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
-                        GroupSelectorOutcome::Skipped(reason) => bail!(
-                            "no uniquely proven structural selector for declaration {decl_idx}: {}",
-                            reason.explanation()
-                        ),
-                    };
+            for RequestedDeclGroup {
+                decl_idx,
+                members: _,
+                outcome,
+            } in synthesize_requested_declaration_groups(&index, groups, 1)?
+            {
+                let synthesized = match outcome? {
+                    GroupSelectorOutcome::Synthesized(synthesized) => synthesized,
+                    GroupSelectorOutcome::Skipped(reason) => bail!(
+                        "no uniquely proven structural selector for declaration {decl_idx}: {}",
+                        reason.explanation()
+                    ),
+                };
                 let mut claim_bindings = Vec::new();
                 for target in synthesized.target_bindings {
                     if target.selector_local == target.runtime_binding
@@ -784,13 +789,12 @@ fn rewrite_name_bindings_to_source_match(
     // pass and emit skip/error candidates immediately (they carry no selector to
     // group).
     let mut synthesized_groups = Vec::new();
-    for (decl_idx, group_members) in grouped {
-        let outcome = synthesize_simplest_selector_for_group(
-            index,
-            decl_idx,
-            &group_members,
-            options.candidates,
-        );
+    for RequestedDeclGroup {
+        decl_idx,
+        members: group_members,
+        outcome,
+    } in synthesize_requested_declaration_groups(index, grouped, options.candidates)?
+    {
         // Some groups still have no proving joint selector. Salvage members
         // whose own declarators prove as separate claims.
         if group_members.len() > 1 && !matches!(&outcome, Ok(GroupSelectorOutcome::Synthesized(_)))
@@ -1308,6 +1312,134 @@ enum GroupSelectorOutcome {
     Skipped(SynthesisSkipReason),
 }
 
+struct RequestedDeclGroup {
+    decl_idx: usize,
+    members: Vec<NameBindingMember>,
+    outcome: Result<GroupSelectorOutcome>,
+}
+
+fn synthesis_targets(members: &[NameBindingMember]) -> Vec<SynthesizedTargetBinding> {
+    members
+        .iter()
+        .map(|member| SynthesizedTargetBinding {
+            export_name: member.export_name.clone(),
+            runtime_binding: member.binding_name.clone(),
+            selector_local: member.export_name.clone(),
+        })
+        .collect()
+}
+
+/// Individual declarations need not be independently identifiable. When a
+/// requested maximal run has the same shape, prove that run jointly before
+/// reporting its ambiguous members. Only requested declarations participate;
+/// gaps and destination boundaries cannot acquire extra claims. There is one
+/// joint proof per run, never a search through subwindows or binding subsets.
+fn synthesize_requested_declaration_groups(
+    index: &ChunkSelectorIndex<'_>,
+    groups: BTreeMap<usize, Vec<NameBindingMember>>,
+    candidates_limit: usize,
+) -> Result<Vec<RequestedDeclGroup>> {
+    let prepared: Vec<_> = groups
+        .into_iter()
+        .map(|(decl_idx, members)| {
+            let outcome =
+                synthesize_simplest_selector_for_group(index, decl_idx, &members, candidates_limit);
+            RequestedDeclGroup {
+                decl_idx,
+                members,
+                outcome,
+            }
+        })
+        .collect();
+    if !prepared
+        .iter()
+        .any(|group| matches!(&group.outcome, Ok(GroupSelectorOutcome::Skipped(_))))
+    {
+        return Ok(prepared);
+    }
+
+    struct RunItem {
+        group: RequestedDeclGroup,
+        exact: Option<String>,
+        shape: Option<String>,
+    }
+    let mut items = prepared
+        .into_iter()
+        .map(|group| {
+            let declaration = &index.decls[group.decl_idx];
+            let exact = exact_declaration_source(
+                &index.module.body[declaration.body_idx],
+                &synthesis_targets(&group.members),
+            )?;
+            let shape = exact.as_deref().and_then(selector_shape_signature);
+            Ok(RunItem {
+                group,
+                exact,
+                shape,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .peekable();
+    let mut result = Vec::new();
+    while let Some(first) = items.next() {
+        let mut run = vec![first];
+        while let Some(next) = items.peek() {
+            let previous = run.last().expect("run contains its first item");
+            let previous_decl = &index.decls[previous.group.decl_idx];
+            let next_decl = &index.decls[next.group.decl_idx];
+            if previous_decl.kind == IndexedDeclarationKind::Other
+                || previous_decl.kind != next_decl.kind
+                || previous_decl.body_idx + 1 != next_decl.body_idx
+                || previous.shape.is_none()
+                || previous.shape != next.shape
+            {
+                break;
+            }
+            run.push(items.next().expect("peeked item exists"));
+        }
+        if run.len() >= 2
+            && run.iter().all(|item| item.group.outcome.is_ok())
+            && run
+                .iter()
+                .any(|item| matches!(&item.group.outcome, Ok(GroupSelectorOutcome::Skipped(_))))
+        {
+            let targets: Vec<_> = run
+                .iter()
+                .flat_map(|item| synthesis_targets(&item.group.members))
+                .collect();
+            let source = run
+                .iter()
+                .map(|item| item.exact.as_deref().expect("a shape has exact source"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let decl_idx = run[0].group.decl_idx;
+            let declaration = &index.decls[decl_idx];
+            if prove_synthesized_selector(index, declaration, &targets, &source).is_ok() {
+                result.push(RequestedDeclGroup {
+                    decl_idx,
+                    members: run
+                        .into_iter()
+                        .flat_map(|item| item.group.members)
+                        .collect(),
+                    outcome: Ok(GroupSelectorOutcome::Synthesized(
+                        SynthesizedSelectorGroup {
+                            body_idx: declaration.body_idx,
+                            target_bindings: targets,
+                            rewritten_holes: holes_present(&source)?.into_iter().collect(),
+                            match_source: source,
+                            alternatives: Vec::new(),
+                        },
+                    )),
+                });
+                continue;
+            }
+        }
+        result.extend(run.into_iter().map(|item| item.group));
+    }
+    Ok(result)
+}
+
 fn synthesize_simplest_selector_for_group(
     index: &ChunkSelectorIndex<'_>,
     decl_idx: usize,
@@ -1323,14 +1455,7 @@ fn synthesize_simplest_selector_for_group(
         .body
         .get(decl.body_idx)
         .with_context(|| format!("missing source body index {}", decl.body_idx))?;
-    let mut targets = members
-        .iter()
-        .map(|member| SynthesizedTargetBinding {
-            export_name: member.export_name.clone(),
-            runtime_binding: member.binding_name.clone(),
-            selector_local: member.export_name.clone(),
-        })
-        .collect::<Vec<_>>();
+    let mut targets = synthesis_targets(members);
     // Try readable selector locals first. The var renderer rewrites uses of
     // selected bindings inside sibling initializers to the same local names.
     let mut specialized = match synthesize_specialized_selector(index, item, decl, &targets)? {
