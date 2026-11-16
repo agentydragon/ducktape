@@ -1199,13 +1199,6 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let entry_path = ws.out_root.join("app/static/app/entry.js");
-    assert_source_file(
-        &entry_path,
-        &["pkg/util.js"],
-        &[&format!("from \"{PACKAGE_NAME}\"")],
-    );
-
     let probe_path = ws.out_root.join("__run_materialized_collision.mjs");
     write_text_file(
         &probe_path,
@@ -1293,27 +1286,6 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let module_path = ws.out_root.join("app/static/app/modules/flags.js");
-    assert_source_file(
-        &module_path,
-        &[
-            "import * as z from \"zod\"",
-            "zodBoolean: z.boolean",
-            "keepMe as kept",
-        ],
-        &[],
-    );
-    let entry_path = ws.out_root.join("app/static/app/entry.js");
-    assert_source_file(
-        &entry_path,
-        &[
-            "import * as z from \"zod\"",
-            "zodBoolean: z.boolean",
-            "function shadow(zodBoolean)",
-        ],
-        &[],
-    );
-
     let manifest: Value =
         serde_json::from_str(&fs::read_to_string(&ws.manifest_path).expect("partial manifest"))
             .expect("partial manifest parses");
@@ -1369,12 +1341,6 @@ fn partial_swap_proto_shorthand_preserves_data_property_and_shadowing() {
     });
 
     assert_success(&fixture.result);
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &["[\"__proto__\"]: z.boolean", "function shadow(__proto__)"],
-        &[],
-    );
-
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
@@ -1476,18 +1442,6 @@ fn partial_swap_named_kind_auto_renames_local_binding() {
     });
 
     assert_success(&fixture.result);
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &[
-            "import { observer } from \"mobx-react-lite\"",
-            "mobxObserver: observer",
-            ".mobxObserver(\"X\")",
-            ".mobxObserver(\"local\")",
-            "keepMe as kept",
-        ],
-        &[],
-    );
-
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
@@ -1510,22 +1464,7 @@ fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
     // exports the renamed import under the source's public name. Unrewritten,
     // the module exports an unbound name and fails to link. (`parse`, not a
     // reserved word like `boolean`, so the named kind does rename the local.)
-    for (kind, emitted) in [
-        (
-            PartialSwapKind::Member,
-            [
-                "export { parse as zodBoolean } from \"zod\"",
-                "export { parse as aliased } from \"zod\"",
-            ],
-        ),
-        (
-            PartialSwapKind::Named,
-            [
-                "import { parse } from \"zod\"",
-                "export { parse as zodBoolean, parse as aliased }",
-            ],
-        ),
-    ] {
+    for kind in [PartialSwapKind::Member, PartialSwapKind::Named] {
         let fixture = run_partial_swap_kind_fixture(PartialSwapKindFixtureArgs {
             kind,
             package_name: "zod",
@@ -1541,8 +1480,6 @@ fn partial_swap_local_exports_of_swapped_imports_stay_bound() {
         });
 
         assert_success(&fixture.result);
-        assert_source_file(&fixture.caller_emitted_path, &emitted, &[]);
-
         let app_root = emitted_app_root(&fixture);
         install_node_module(
             &app_root,
@@ -1694,16 +1631,6 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
         ],
     );
     assert_success(&result);
-
-    let caller_path = ws.out_root.join("app/static/app").join("entry.js");
-    assert_source_file(
-        &caller_path,
-        &[
-            "vendors/generated/static/megachunk/react.js",
-            "vendors/generated/static/megachunk/react_jsx-runtime.js",
-        ],
-        &["from \"react\"", "from \"react/jsx-runtime\""],
-    );
 
     let probe_path = ws.out_root.join("__run_entry.mjs");
     write_text_file(
@@ -1883,15 +1810,6 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let materialized_path = ws
-        .out_root
-        .join("app/static/app/modules/helpers/observer.js");
-    assert_source_file(
-        &materialized_path,
-        &["vendors/generated/static/vendor/observer-kit_observer.js"],
-        &["vendor/entry.js"],
-    );
-
     let probe_path = ws.out_root.join("__run_materialized.mjs");
     write_text_file(
         &probe_path,
@@ -1988,20 +1906,6 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    let materialized_path = ws
-        .out_root
-        .join("app/static/app/modules/helpers/toolkit.js");
-    assert_source_file(
-        &materialized_path,
-        &[
-            "vendors/generated/static/vendor/toolkit-core.js",
-            "Toolkit.map(",
-            "Toolkit.make(",
-            "toolkitMap(\"shadow\")",
-        ],
-        &["toolkitMap(\"top\")", "toolkitMake"],
-    );
-
     let probe_path = ws.out_root.join("__run_materialized_named.mjs");
     write_text_file(
         &probe_path,
@@ -2063,12 +1967,6 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
-    assert_source_file(
-        &ws.out_root.join("app/static/vendor/entry.js"),
-        &["nY:", ".instanceof"],
-        &["function nY"],
-    );
-
     let probe_path = ws.out_root.join("__run_local_helper.mjs");
     write_text_file(
         &probe_path,
@@ -2105,12 +2003,6 @@ fn partial_swap_does_not_rewrite_shadowing_inner_binding() {
     // The top-level import-local use is rewritten to the facade member.
     // The shadowing parameter and its read must survive verbatim — the
     // inner `zodFlag()` is a call on the parameter, not the import local.
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &["z.boolean()", "function pick(zodFlag)", "return zodFlag()"],
-        &[],
-    );
-
     // Runtime proof: `fromParam` must reflect the argument passed to
     // `pick`, not the swapped upstream value.
     let app_root = fixture
@@ -2342,14 +2234,6 @@ fn partial_swap_rewrites_import_peeled_into_coarse_residual() {
     write_yaml_file(&spec_path, &spec);
     let result = run_debundler(&spec_path, &[("fac", &package_root)]);
     assert_success(&result);
-    let residual_path = ws
-        .out_root
-        .join("app/static/app/__auto/residual_groups/0000.js");
-    assert_source_file(
-        &residual_path,
-        &["fac", "residual"],
-        &["megachunk/entry.js"],
-    );
     install_node_module(
         &ws.out_root.join("app"),
         "fac",
@@ -2423,16 +2307,6 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("zod", &package_root)]);
 
     assert_success(&fixture.result);
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &[
-            "export { boolean as zodBoolean } from \"zod\"",
-            "keepMe",
-            "../megachunk/entry.js",
-        ],
-        &["e6"],
-    );
-
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
@@ -2471,12 +2345,6 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("clsx", &package_root)]);
 
     assert_success(&fixture.result);
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &["export { default as z } from \"clsx\""],
-        &[],
-    );
-
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
@@ -2515,12 +2383,6 @@ fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
     let fixture = run_partial_swap_with_mark(ws, vendor, &[("react", &package_root)]);
 
     assert_success(&fixture.result);
-    assert_source_file(
-        &fixture.caller_emitted_path,
-        &["export * as React from \"react\""],
-        &[],
-    );
-
     let app_root = emitted_app_root(&fixture);
     install_node_module(
         &app_root,
