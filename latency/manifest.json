@@ -1,23 +1,29 @@
 {
-  "source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
+  "source_devel_commit": "425fb8cab9a062f42a29ddc85079af4feedf155b",
   "window_start_utc": "2026-11-10T00:00:00Z",
   "window_end_utc": "2026-11-16T10:45:00Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-16T11:30:10.027160+00:00",
-  "audited_at_utc": "2026-11-16T11:22:53.649014+00:00",
+  "snapshot_prepared_at_utc": "2026-11-16T13:45:24.528182+00:00",
+  "audited_at_utc": "2026-11-16T13:53:09.605559+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "69a428562003abb6df71e72c2a9f3c7c2dd8b235",
+  "previous_report_commit": "9f1800ff73de110ec92a9f67fa6d6587cd7938d6",
   "history_base_gh_pages_commit": "73f2a736861ab4fdaf60bd33962a09d2235bfe11",
   "population": "136 balanced exact latest heads, 10-16Nov; new backend subset12green/13heads",
   "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
-  "report_sha256": "11c32b6aaf8b1378de8df4b56b010db59d656b52210b5e03870c773ce513d619",
-  "evidence_sha256": "f2481655b98298849005728a282bed9c0ae0df023328147efc8f65e77f011f32",
+  "report_sha256": "ea17cb96bc3a93b2c875c897ed1a8766cf01caa259f921046b101aee3cf1a95b",
+  "evidence_sha256": "3b8e1412583e7e467cd1c19e19206f0cdc72e8739bbb172b978407117265b7c2",
   "visual_validation": "visual-validation.json",
-  "visual_invocation": "08fde914-bf02-4be2-a1eb-9773e9bdac8d",
+  "visual_invocation": "b8bc66d2-34a1-4c4e-b6df-4887f2b0acd5",
   "experiment_window_utc": [
     "2026-11-16T10:58:11.934Z",
     "2026-11-16T11:11:20.708Z"
   ],
-  "window_note": "Primary window describes the PR cohort. The separate bounded resource experiment is timestamped above."
+  "window_note": "Primary window remains the unchanged PR cohort. The separate qualification window records new same-input VM/shared-KVM measurements; the earlier managed-resource experiment retains experiment_window_utc.",
+  "cohort_source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
+  "qualification_window_utc": [
+    "2026-11-16T12:37:15.283Z",
+    "2026-11-16T13:41:28.436867Z"
+  ],
+  "qualification_population": "Three candidate bursts / two completed controls; 60 matched NEW TestRunner actions / 220 passing JUnit cases; twelve candidate / eight complete control VM actions. One interrupted twelve-action control is retained separately; selected graph, not full GitHub required gates"
 }

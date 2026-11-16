@@ -73,12 +73,11 @@
       const pr = (n) => link(`${gh}/pull/${n}`, `#${n}`);
       const inv = (id) =>
         link(`https://app.buildbuddy.io/invocation/${id}`, id.slice(0, 8));
-      const fmt = (s) =>
-        s == null
-          ? "Unobserved"
-          : `${Math.floor(s / 60)}m ${Math.round(s % 60)
-              .toString()
-              .padStart(2, "0")}s`;
+      const fmt = (s) => {
+        if (s == null) return "Unobserved";
+        const rounded = Math.round(s);
+        return `${Math.floor(rounded / 60)}m ${(rounded % 60).toString().padStart(2, "0")}s`;
+      };
       const num = (n) => (n == null ? "Unknown" : Number(n).toFixed(1));
       const table = (headers, rows, width = 800) =>
         html`<${Table.ScrollContainer} minWidth=${width}
@@ -191,7 +190,7 @@
         ],
         [
           "KVM placement and capacity",
-          "Old one-worker reservation incident is historical. #15822 closed; #15996 pilot/capacity evidence merged. Four actions on three slots queued 215.314s; Pod still last. Prior #16378 had 537.14s queue/444.392s conditional feedback headroom with 36/36 saturated samples. Current window has 1–2 registered workers and a consequential 416s wait on a failed head. Required routing remains unchanged.",
+          "Old one-worker reservation incident is historical. #15822 closed; #15996 pilot/capacity evidence merged. Four actions on three slots queued 215.314s; Pod still last. Prior #16378 had 537.14s queue/444.392s conditional feedback headroom with 36/36 saturated samples. The historical 09:15–10:45 UTC window had 1–2 registered workers and a consequential 416s wait on a failed head. Later #17015 permits eight workers and removes host spread; the new same-input qualification above shows the slow registration ramp still defeats required-VM routing under this policy. Required routing remains unchanged.",
         ],
         [
           "Reliability and recovery",
@@ -206,10 +205,186 @@
           "Original ten-lane cohorts and methods remain linked below. Seven-day/50-fresh-outcome follow-ups for baseline, MCP and browser repairs are not mature; new selected cases are not substitutes. Current report advances fleet sampling, physical long paths, pool clocks and one provider early-failure signal. Matched full-graph architecture qualification and trust-reuse cost attribution remain open in #16034/#16099.",
         ],
       ];
+      function Qualification() {
+        const q = e.vm_kvm_qualification;
+        const a = q.aggregate_by_arm;
+        return html`<section id="vm-kvm-qualification">
+          <${Title} order=${2}>VM tests in the shared KVM pool<//>
+          <${Text} my="sm"
+            >${q.window_utc.join(" → ")} UTC · pinned source
+            <${Code}>${q.source_devel_commit}<//>. ${q.workload}<//
+          >
+          <${Alert}
+            title=${q.status}
+            color=${q.qualified ? "green" : "yellow"}
+            my="md"
+          >
+            ${q.decision}
+          <//>
+          <${SimpleGrid} cols=${{ base: 1, sm: 3 }} my="md">
+            <${Paper} withBorder p="md"
+              ><${Text} c="dimmed">Managed VM process<//>
+              <${Title} order=${3}>${fmt(a.control.vm.process.p50)} median<//>
+              <${Text}
+                >p90 ${fmt(a.control.vm.process.p90)} · mean
+                ${fmt(a.control.vm.process.mean)} ·
+                n=${a.control.vm.process.n}<//
+              >
+            <//>
+            <${Paper} withBorder p="md"
+              ><${Text} c="dimmed">KVM VM process<//>
+              <${Title} order=${3}>${fmt(a.candidate.vm.process.p50)} median<//>
+              <${Text}
+                >p90 ${fmt(a.candidate.vm.process.p90)} · mean
+                ${fmt(a.candidate.vm.process.mean)} ·
+                n=${a.candidate.vm.process.n}<//
+              >
+            <//>
+            <${Paper} withBorder p="md"
+              ><${Text} c="dimmed">KVM VM admission wait<//>
+              <${Title} order=${3}>${fmt(a.candidate.vm.queue.p90)} p90<//>
+              <${Text}
+                >Valid queue n=${a.candidate.vm.queue.n};
+                ${a.candidate.vm.invalid_queue_count} unknown/inverted clocks.
+                Waiting is additional to execution.<//
+              >
+            <//>
+          <//>
+          <${Box}
+            role="img"
+            data-chart="qualification-process"
+            aria-label="VM test process median and p90 by configured execution lane, seconds"
+          >
+            <${BarChart}
+              h=${240}
+              data=${["control", "candidate"].map((k) => ({ lane: k === "control" ? "Managed TCG" : "Shared KVM", Median: a[k].vm.process.p50, p90: a[k].vm.process.p90 }))}
+              dataKey="lane"
+              series=${[
+                { name: "Median", color: "blue.6" },
+                { name: "p90", color: "orange.6" },
+              ]}
+              withLegend
+              valueFormatter=${(v) => `${num(v)}s`}
+            />
+          <//>
+          <${Text} my="sm">${q.comparison_boundary}<//>
+          ${table(
+            [
+              "Lane / fixture state",
+              "VM actions",
+              "Process p50 / p90 / mean",
+              "Setup median",
+              "Concurrent-case envelope median",
+              "Retained-baseline cleanup median",
+            ],
+            ["control", "candidate"].flatMap((k) =>
+              Object.entries(a[k].vm_by_persistence || {}).map(([state, v]) => [
+                `${k} / ${state}`,
+                v.process.n,
+                `${num(v.process.p50)} / ${num(v.process.p90)} / ${num(v.process.mean)}s`,
+                fmt(v.setup_seconds.p50),
+                fmt(v.case_envelope_seconds.p50),
+                fmt(v.cleanup_seconds.p50),
+              ]),
+            ),
+            1100,
+          )}
+          ${table(
+            [
+              "Round / lane / invocation",
+              "All selected actions",
+              "Registered start → end",
+              "Bazel command",
+              "VM process p50 / p90 / mean",
+              "VM queue p50 / p90 / mean (valid n)",
+              "Firecracker queue p50 / p90 / mean (valid n)",
+              "Last selected test",
+            ],
+            q.runs.map((r) => [
+              html`${r.round} · ${r.arm}<br />${inv(r.invocation)}`,
+              `${r.passed_actions}/${r.actions} passed; ${r.failed_actions} failed`,
+              `${r.registered_at_arm_start ?? "Unknown"} → ${r.registered_at_arm_end ?? "Unknown"}`,
+              fmt(r.command_elapsed_s),
+              `${num(r.vm.process.p50)} / ${num(r.vm.process.p90)} / ${num(r.vm.process.mean)}s`,
+              `${num(r.vm.queue.p50)} / ${num(r.vm.queue.p90)} / ${num(r.vm.queue.mean)}s (n=${r.vm.queue.n})`,
+              `${num(r.firecracker.queue.p50)} / ${num(r.firecracker.queue.p90)} / ${num(r.firecracker.queue.mean)}s (n=${r.firecracker.queue.n})`,
+              r.last_test,
+            ]),
+            1450,
+          )}
+          <${Text} size="sm" my="sm">${q.feedback_boundary}<//>
+          <${Alert}
+            title="Interrupted third control · retained outcome"
+            color="gray"
+            my="md"
+          >
+            ${inv(q.interrupted_control.invocation)} ·
+            ${q.interrupted_control.reason} ${q.interrupted_control.disposition}
+          <//>
+          <${Title} order=${3} mt="lg"
+            >Requested workers versus registered capacity<//
+          >
+          <${Box}
+            role="img"
+            data-chart="qualification-capacity"
+            aria-label="Qualification window desired workers, registered executors and occupied tasks at fifteen-second resolution"
+            my="md"
+          >
+            <${LineChart}
+              h=${280}
+              data=${q.timeline.map((p) => ({ ...p, time: new Date(p.t * 1000).toISOString().slice(11, 19) }))}
+              dataKey="time"
+              series=${[
+                { name: "desired", label: "Desired workers", color: "gray.6" },
+                { name: "registered", label: "Registered", color: "blue.6" },
+                { name: "busy", label: "Tasks in progress", color: "teal.6" },
+              ]}
+              withLegend
+              withDots=${false}
+              curveType="step"
+              yAxisProps=${{ allowDecimals: false }}
+            />
+          <//>
+          <${Text} my="sm">${q.admission_mechanism}<//>
+          <${Text} size="sm"
+            >Local reservations can duplicate actions and are not a central
+            backlog count. Executing-task gauges include preparation and upload.
+            Sampled registration, VMI readiness and native worker logs were
+            checked separately.<//
+          >
+          <${Title} order=${3} mt="lg"
+            >Coverage, resource and cleanup qualification<//
+          >
+          ${table(
+            ["Criterion", "Observed result", "Limit / disposition"],
+            q.gates.map((g) => [g.criterion, g.result, g.limit]),
+            1050,
+          )}
+          ${table(["Resource / scope", "Observed value", "Interpretation"], q.resource_rows, 1050)}
+          <${Text} my="sm">${q.resource_summary}<//>
+          <${Text} size="sm">${q.next_action}<//>
+          <${Accordion} variant="contained" mt="md">
+            <${Accordion.Item} value="qualification-methods">
+              <${Accordion.Control}
+                >Qualification commands, clocks and limits<//
+              >
+              <${Accordion.Panel}
+                ><${Stack} gap="sm">
+                  ${q.methods.map((m) => html`<${Text} size="sm">${m}<//>`)}
+                  ${link(`${gh}/blob/${q.source_devel_commit}/agentplane/system_tests/suites/test_vm.py`, "Both unchanged harness cases")}
+                  ${link(`${gh}/blob/${q.source_devel_commit}/agentplane/system_tests/x/vm_kvm/BUILD.bazel`, "Existing manual KVM configuration")}
+                  ${link(`${gh}/pull/17015`, "Merged pool capacity change")}
+                <//><//
+              >
+            <//>
+          <//>
+        </section>`;
+      }
+
       function Report() {
         return html`<${Container}
           component="main"
-          size="76 rem"
+          size="76rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
           ><${Stack} gap="xl">
@@ -218,35 +393,35 @@
                 >CI latency · reviewed 16 November 2026 UTC<//
               >
               <${Title} order=${1} my="sm"
-                >Backend feedback still takes about nine minutes<//
+                >VM tests pass; shared-pool queues limit latency<//
               >
               <${Text} size="lg"
-                >VM guest work controls some App changes; a reconnect-budget
-                scenario controls a shared-service change. Most measured RBE
-                action waits are tiny. KVM admission still produces a tail,
-                while failures can announce themselves well before the required
-                job ends.<//
+                >Both real VM harness cases pass in the existing KVM pool.
+                Shared-pool admission delays outweigh the measured process-time
+                benefit in these bursts under current autoscaling. Required
+                routing stays on its current managed lane.<//
               >
               <${Text} size="sm" c="dimmed" mt="sm"
-                ><${ManifestStamp} src="./manifest.json" /><br />New since the
-                previous report:12 green /13s ampled production heads; median
-                8m52s, p90 10m47s, mean 9m11s. Broader 10–16 November frame
-                below. These are exact-head CI-gate clocks from workflow
-                creation, not observed push-to-auto-merge eligibility.<//
+                ><${ManifestStamp} src="./manifest.json" /><br />New: three KVM
+                bursts and two complete controls on the pinned source below. The
+                retained 10–16 November cohort has 12 green /13 sampled new
+                production heads; median 8m52s, p90 10m47s, mean 9m11s. Broader
+                10–16 November frame below. These are exact-head CI-gate clocks
+                from workflow creation, not observed push-to-auto-merge
+                eligibility.<//
               >
             </header>
-            <${Alert} title="Decision" color="blue"
-              >The managed VM shape already requests the account maximum of 16
-              vCPUs. Both larger resource candidates were rejected before
-              execution. Further hardware trials need a different entitlement or
-              placement; preserve contract decomposition as the other
-              architectural option. A larger KVM pool targets a measured tail,
-              without a demonstrated typical-feedback benefit. The 30%
-              improvement and four-minute mean objectives remain unqualified.<//
+            <${Qualification} />
+            <${Title} order=${2}>Existing PR feedback measurements<//>
+            <${Text}
+              >The following cohort, managed-resource trial and historical
+              findings retain their original windows. The new burst experiment
+              did not recollect these PR heads or measure a fleet
+              improvement.<//
             >
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">New backend sample<//
+                ><${Text} c="dimmed">Retained backend subset<//
                 ><${Title} order=${2}>8m52s median<//
                 ><${Text}
                   >12 green,1 failed at collection; no superseded-head
@@ -271,7 +446,9 @@
               >
             <//>
             <section id="cohort">
-              <${Title} order=${2}>What different PRs experience<//>
+              <${Title} order=${2}
+                >What different PRs experienced · 10–16 November<//
+              >
               <${Text} my="sm"
                 >${c.frame_count} newly opened devel-base PRs formed the 10 Nov
                 00:00→16 Nov 10:45 UTC frame; ${c.selected_count} selected,
@@ -498,8 +675,12 @@
                 >361 joint 15s observations:1–2 registered workers; local
                 reservations peak 7;87 points show reservations while every
                 registered worker has a task. The chart uses 60s samples;
-                evidence retains 15s. Configured maximum remains 3 with strict
-                host spread,4 CPU/8 GiBguests and 7 GiBadvertised.
+                evidence retains 15s. As of this historical 09:15–10:45 UTC
+                window, the maximum was three with strict host spread, 4-CPU /
+                8-GiB guests and 7-GiB advertised. Later merged #17015 raised
+                the maximum to eight, reduced CPU requests to two and removed
+                host spread; the qualification above measures that deployed
+                state.
                 ${link("https://grafana.allegedly.works/d/buildbuddy-executor-pool", "Executor pool dashboard")}.
                 Reservations can duplicate physical actions; they are not
                 central backlog.<//
@@ -510,9 +691,9 @@
                 intervals are inverted by about 1s and remain unknown. Earlier
                 #16378’s537.14s queue and 444.392s conditional headroom remain
                 valid historical tail evidence, not a current capacity forecast.
-                Adding a fourth worker still requires relaxing/provisioning the
-                explicit placement constraint and a matched burst/drain
-                qualification.<//
+                The later qualification above exercises the relaxed placement
+                and records the actual registration ramp; eight-worker and
+                scale-down/drain qualification remain incomplete.<//
               >
               <${Text} size="sm"
                 >90 mincensus:839 runs,1961 job
@@ -555,8 +736,10 @@
                 positive App consumers 7–8. Its common renderer still imports
                 App settings. No full historical-PR replay or causal renderer
                 speedup is newly claimed; the measured runtime long poles take
-                priority over repeating that query. No production workflow,
-                deployed capacity or required coverage was changed.<//
+                priority over repeating that query. That earlier 10:58–11:11 UTC
+                allocation trial changed no deployed capacity or required
+                coverage. The separate #17015 capacity rollout and later
+                qualification are described above.<//
               >
             </section>
             <section id="recovery">
@@ -646,7 +829,7 @@
                   [
                     "KVM tail capacity — cluster pool owner",
                     "Historical headroom reaches 444s, but the recent 416s wait is on a failed head; typical managed VM/budget paths stay unchanged.",
-                    "Fourth independent 4-CPU / 8-GiB worker plus SSD/host capability, or reserved capacity. Maximum three and strict host spread are real constraints. Repeat matched four-PR bursts and scale-down/drain qualification only after a capacity decision; no deployment change made.",
+                    "Maximum eight, two-CPU requests and relaxed host spread are deployed by #17015; 4-vCPU / 8-GiB guests and local SSD eligibility remain. New three-round qualification above passes functionally but loses on admission. Qualify faster scale-up, matched starting capacity and drain before promoting required routing; eight-worker saturation remains untested.",
                   ],
                   [
                     "Retained daemon correctness — K3s baseline owner",
