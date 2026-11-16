@@ -633,18 +633,17 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Complete downstream explicit-order adoption and selected-view
-  construction.** Follow <plans/explicit_import_order.md>. Migrate and validate
+- **W9 — Complete downstream explicit-order adoption and extraction acceptance.**
+  Follow <plans/explicit_import_order.md>. Bound the source-analysis fact-store
+  memory before resuming large consumer runs. Migrate and validate
   every configured downstream consumer with its reviewed complete priority;
   preserve diagnostic and passing controls as distinct inputs. Update maintained
   downstream guidance and land the production pin only after the final engine
-  passes fresh configured validation and emitted-runtime checks. Complete the
-  selected-ownership placement overlay described in the plan before claiming a
-  partial-spec extraction loop: semantic premises and selector anchors remain
-  grounded in the full authored tree, while only the selected placement view is
-  edited. Keep the completed graph-export foundation inspection-only until that
-  writer is available; do not substitute a rejected canonical graph or weaken
-  full-context selector constraints.
+  passes fresh configured validation and emitted-runtime checks. Demonstrate
+  useful unseeded discovery, check, preview, application and behavior on that pin.
+  Selected-view semantic premises and selector anchors remain grounded in the
+  full authored tree while the selected placement view is edited; do not
+  substitute a rejected canonical graph or weaken full-context constraints.
 
 - **W10 — Prove additional useful residual families.** The first complete
   constructor only moves true-entry atoms to one fresh owner while retaining the
