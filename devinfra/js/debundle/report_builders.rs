@@ -104,6 +104,12 @@ pub(crate) fn build_dependency_graph_report(
         build_quotient_scc_reports(assignment_analysis, &quotient_nodes, &quotient_edges);
     DependencyGraphReport {
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
+        import_order: assignment_analysis
+            .import_schedule()
+            .discovery_order()
+            .into_iter()
+            .map(|module| assignment_analysis.module_path(module))
+            .collect(),
         program_graph,
         nodes,
         purity_causes,

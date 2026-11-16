@@ -127,6 +127,12 @@ Each nested `cycles` row uses the `cycles.json` blocking-SCC fields, plus
 array of `{premise, spec_location}` rows. `premise` identifies its defining
 chunk and input index; a structured premise cannot be a JSON object key.
 
+`dependency_graph.json.gz.import_order` records every nonentry emitted owner
+once, in the retained traversal's discovery order. Using that priority on the
+same canonical import graph reproduces its DFS discovery/finish trace. The
+entry owner is implicit. This is traversal evidence; a rejected diagnostic
+materialization does not make its captured traversal a valid witness.
+
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
 `source_unit_ids` and `members` identify the source units in that group.

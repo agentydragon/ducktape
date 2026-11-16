@@ -150,6 +150,7 @@ mod from_report_tests {
     fn report_with_edge(target: &str, role: Option<EdgeRoleReport>) -> DependencyGraphReport {
         DependencyGraphReport {
             chunk_id: "chunk".into(),
+            import_order: Vec::new(),
             program_graph: "../program_graph.json.gz".into(),
             nodes: vec![node("unit:0", 0), node("unit:1", 1), node("unit:2", 2)],
             purity_causes: Vec::new(),
