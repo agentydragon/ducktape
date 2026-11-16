@@ -1858,6 +1858,22 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "selector_placement_scope_test",
+    size = "small",
+    srcs = ["selectors/resolution/selector_placement_scope_test.rs"],
+    crate_root = "selectors/resolution/selector_placement_scope_test.rs",
+    edition = "2024",
+    deps = [
+        ":js_ast",
+        ":selector_outcome",
+        ":selector_resolve",
+        ":source_identity",
+        ":source_match",
+        ":spec",
+    ],
+)
+
 rust_library(
     name = "spec_resolution",
     srcs = ["spec_resolution.rs"],

@@ -149,6 +149,32 @@ fn lower_atom_constraint(
             variables: projected_variables,
             rows,
         } => add_projected_allowed_tuples(model, variables, projected_variables, rows),
+        SelectorAtom::SourceUnitNotIn {
+            source_unit: SourceUnitTerm::Var { id },
+            excluded,
+        } => {
+            let variable = model_variable(variables, *id)?;
+            let encoded = excluded
+                .iter()
+                .map(|source_unit| model.intern_source_unit(*source_unit))
+                .collect::<Result<Vec<_>, _>>()?;
+            model.exclude_variable_encoded_values(variable, encoded)?;
+            Ok(())
+        }
+        SelectorAtom::SourceUnitNotIn {
+            source_unit: SourceUnitTerm::Const { source_unit },
+            excluded,
+        } => {
+            if excluded.contains(source_unit) {
+                Err(
+                    CompiledSelectorProblemBuildError::ConstantOnlyAtomUnsatisfied {
+                        atom: format!("source_unit_not_in({source_unit:?})"),
+                    },
+                )
+            } else {
+                Ok(())
+            }
+        }
         SelectorAtom::SourceUnitReferencesSourceUnit {
             source_unit,
             referenced,
@@ -1066,7 +1092,8 @@ impl DerivedFactRequirements {
                 }
                 SelectorAtom::SourceUnitKind { .. }
                 | SelectorAtom::SourceUnitDeclaresBinding { .. }
-                | SelectorAtom::ProjectedAllowedTuples { .. } => {}
+                | SelectorAtom::ProjectedAllowedTuples { .. }
+                | SelectorAtom::SourceUnitNotIn { .. } => {}
             }
         }
         requirements
@@ -1454,6 +1481,15 @@ impl FactDomains {
                     for value in row {
                         self.add_projected_value(value);
                     }
+                }
+            }
+            SelectorAtom::SourceUnitNotIn {
+                source_unit,
+                excluded,
+            } => {
+                self.add_source_unit_term(source_unit);
+                for source_unit in excluded {
+                    self.add_source_unit(*source_unit);
                 }
             }
             SelectorAtom::SourceUnitReferencesSourceUnit {

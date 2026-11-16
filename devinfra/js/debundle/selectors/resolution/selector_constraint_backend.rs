@@ -676,6 +676,37 @@ impl CompiledSelectorProblemBuilder {
         self.set_variable_domain(variable, replacement)
     }
 
+    /// Removes values from a variable's current finite domain. Unlike an
+    /// allowed-values table, this stays proportional to the excluded set and
+    /// the variable's current sparse domain.
+    pub fn exclude_variable_encoded_values(
+        &mut self,
+        variable: ConstraintVariableId,
+        excluded: impl IntoIterator<Item = BackendValueId>,
+    ) -> Result<(), CompiledSelectorProblemError> {
+        let domain = self.require_variable(variable)?.domain;
+        let mut excluded = excluded.into_iter().collect::<Vec<_>>();
+        excluded.sort_unstable();
+        excluded.dedup();
+        for value in &excluded {
+            self.validate_encoded_variable_domain_value(variable, domain, *value)?;
+        }
+
+        let values = match self.require_variable(variable)?.values.clone() {
+            CompiledVariableDomain::Full(domain) => self.full_domains.get(domain).to_vec(),
+            CompiledVariableDomain::Sparse(values) => values,
+            CompiledVariableDomain::SharedSparse(id) => {
+                self.shared_variable_domains[id.0].values.clone()
+            }
+        };
+        let remaining = values
+            .into_iter()
+            .filter(|value| excluded.binary_search(value).is_err())
+            .collect::<Vec<_>>();
+        let replacement = self.compiled_sparse_variable_domain(domain, remaining);
+        self.set_variable_domain(variable, replacement)
+    }
+
     pub fn intern_source_unit(
         &mut self,
         value: SourceUnitId,
