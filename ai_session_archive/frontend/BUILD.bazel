@@ -131,9 +131,11 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":api",
         ":schema",
         ":session_viewer_formatting",
         "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
@@ -163,7 +165,6 @@ ts_library(
         ":schema",
         ":session_list_sidebar",
         ":session_viewer_formatting",
-        ":session_viewer_queries",
         ":session_viewer_url",
         ":transcript",
         "//:node_modules/@mantine/core",
@@ -174,20 +175,6 @@ ts_library(
         "//:node_modules/react-router",
         "//util/frontend:resize_handle",
         "//util/frontend/transcript:history_recorder_tools",
-    ],
-)
-
-ts_library(
-    name = "session_viewer_queries",
-    srcs = ["session-viewer-queries.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":api",
-        ":schema",
-        "//:node_modules/@tanstack/react-query",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
     ],
 )
 
