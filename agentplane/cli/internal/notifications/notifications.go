@@ -49,13 +49,7 @@ func (a *commands) notificationCall(fn func(context.Context, notificationspb.Not
 	}
 }
 
-func notificationJSON(message proto.Message) ([]byte, error) {
-	body, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(message)
-	if err != nil {
-		return nil, invocation.InvalidResponse("%v", err)
-	}
-	return body, nil
-}
+var notificationJSONOptions = protojson.MarshalOptions{EmitUnpopulated: true}
 
 var pullRequestPattern = regexp.MustCompile(`^([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)#([1-9][0-9]*)$`)
 
@@ -118,11 +112,7 @@ func (a *commands) subscribeRequestCommand() *cobra.Command {
 			if response.GetSubscription().GetCancelled() {
 				return invocation.ClientFailure(invocation.ExitConflict, "ALREADY_EXISTS", "idempotency key %s belongs to a cancelled subscription: use a new key", request.GetIdempotencyKey())
 			}
-			encoded, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showSubscription(encoded)
+			return a.showSubscription(response.GetSubscription())
 		}),
 	}
 	command.Flags().StringVar(&filename, "request-file", "", "protobuf JSON request file; - reads stdin")
@@ -146,19 +136,7 @@ func (a *commands) inboxesCommand() *cobra.Command {
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			inboxes, err := responseField(body, "inboxes")
-			if err != nil {
-				return err
-			}
-			items, err := invocation.Decode[[]json.RawMessage](inboxes)
-			if err != nil {
-				return err
-			}
-			return a.Show(items, inboxLine)
+			return invocation.ShowProto(a.Invocation, response.GetInboxes(), inboxLine, notificationJSONOptions)
 		}),
 	}
 }
@@ -179,15 +157,7 @@ func (a *commands) getInboxCommand() *cobra.Command {
 					return "no inbox for session " + args[0], nil
 				})
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			inbox, err := responseField(body, "inbox")
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(inbox, inboxLine)
+			return invocation.ShowProto(a.Invocation, []*notificationspb.Inbox{response.GetInbox()}, inboxLine, notificationJSONOptions)
 		}),
 	}
 }
@@ -205,13 +175,9 @@ Session no longer needs this inbox.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, func(json.RawMessage) (string, error) {
+			return invocation.ShowProto(a.Invocation, []*notificationspb.RetireInboxResponse{response}, func(*notificationspb.RetireInboxResponse) (string, error) {
 				return "retired inbox for session " + args[0], nil
-			})
+			}, notificationJSONOptions)
 		}),
 	}
 }
@@ -238,11 +204,7 @@ entries per page, and expired payloads are reported in inbox.expiredThrough.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, inboxPageLine)
+			return invocation.ShowProto(a.Invocation, []*notificationspb.ReadInboxResponse{response}, inboxPageLine, notificationJSONOptions)
 		}),
 	}
 	command.Flags().Int64Var(&after, "after", 0, "read entries with cursors greater than CURSOR")
@@ -273,23 +235,15 @@ never moves the cursor backwards and refuses a cursor beyond the inbox's last en
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			inbox, err := notificationJSON(response.GetInbox())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(inbox, inboxLine)
+			return invocation.ShowProto(a.Invocation, []*notificationspb.Inbox{response.GetInbox()}, inboxLine, notificationJSONOptions)
 		}),
 	}
 	command.Flags().Int64Var(&through, "through", 0, "last cursor you have handled; required")
 	return command
 }
 
-func inboxPageLine(raw json.RawMessage) (string, error) {
-	var page notificationspb.ReadInboxResponse
-	if err := decodeMessage(raw, &page); err != nil {
-		return "", err
-	}
-	if page.GetInbox().GetId() == "" {
+func inboxPageLine(page *notificationspb.ReadInboxResponse) (string, error) {
+	if page == nil || page.GetInbox().GetId() == "" {
 		return "", invocation.InvalidResponse("no inbox in the response")
 	}
 	lines := []string{inboxSummary(page.GetInbox())}
@@ -305,15 +259,11 @@ func inboxPageLine(raw json.RawMessage) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func inboxLine(raw json.RawMessage) (string, error) {
-	var inbox notificationspb.Inbox
-	if err := decodeMessage(raw, &inbox); err != nil {
-		return "", err
-	}
-	if inbox.GetId() == "" {
+func inboxLine(inbox *notificationspb.Inbox) (string, error) {
+	if inbox == nil || inbox.GetId() == "" {
 		return "", invocation.InvalidResponse("no inbox ID in the response")
 	}
-	return inboxSummary(&inbox), nil
+	return inboxSummary(inbox), nil
 }
 
 func inboxSummary(inbox *notificationspb.Inbox) string {
@@ -403,27 +353,6 @@ func (o *optionalInt) String() string {
 }
 
 func (o *optionalInt) Type() string { return "int" }
-
-// decodeMessage reads a response into its generated message. Fields a newer service added are skipped.
-func decodeMessage(raw []byte, into proto.Message) error {
-	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(raw, into); err != nil {
-		return invocation.InvalidResponse("%v", err)
-	}
-	return nil
-}
-
-// responseField is the value of one top-level field of a response, unmodified.
-func responseField(raw []byte, name string) (json.RawMessage, error) {
-	fields, err := invocation.Decode[map[string]json.RawMessage](raw)
-	if err != nil {
-		return nil, err
-	}
-	value, ok := fields[name]
-	if !ok {
-		return nil, invocation.InvalidResponse("no %q in the response", name)
-	}
-	return value, nil
-}
 
 func (a *commands) notificationSessionID(flag string) (string, error) {
 	if flag != "" {
@@ -534,11 +463,7 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 				return invocation.ClientFailure(invocation.ExitConflict, "ALREADY_EXISTS",
 					"idempotency key %s belongs to a cancelled subscription: pass a new --key", body.IdempotencyKey)
 			}
-			encoded, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showSubscription(encoded)
+			return a.showSubscription(response.GetSubscription())
 		}),
 	}
 	command.Flags().StringArrayVar(&events, "event", nil, "NAME[:ACTION[,ACTION]]; replaces defaults; repeatable; mergeability_changed has no actions")
@@ -548,13 +473,11 @@ lifetime), and when the key belongs to a cancelled subscription (pass a new --ke
 	return command
 }
 
-// showSubscription prints the subscription of a single-subscription response.
-func (a *commands) showSubscription(response []byte) error {
-	subscription, err := responseField(response, "subscription")
-	if err != nil {
-		return err
+func (a *commands) showSubscription(subscription *notificationspb.Subscription) error {
+	if subscription == nil && a.JSON() {
+		return a.ShowOne([]byte("null"), nil)
 	}
-	return a.ShowOne(subscription, subscriptionLine)
+	return invocation.ShowProto(a.Invocation, []*notificationspb.Subscription{subscription}, subscriptionLine, notificationJSONOptions)
 }
 
 func (a *commands) subscriptionsCommand() *cobra.Command {
@@ -567,7 +490,7 @@ func (a *commands) subscriptionsCommand() *cobra.Command {
 To continue, pass the last item's id as --after.`,
 		Args: cobra.NoArgs,
 		RunE: a.notificationCall(func(ctx context.Context, svc notificationspb.NotificationsClient, _ []string) error {
-			items, err := invocation.Collect(limit, after, func(after string, _ int) ([]json.RawMessage, error) {
+			items, err := invocation.Collect(limit, after, func(after string, _ int) ([]*notificationspb.Subscription, error) {
 				request := &notificationspb.ListSubscriptionsRequest{}
 				if after != "" {
 					request.AfterId = proto.String(after)
@@ -576,20 +499,12 @@ To continue, pass the last item's id as --after.`,
 				if err != nil {
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
-				body, err := notificationJSON(response)
-				if err != nil {
-					return nil, err
-				}
-				page, err := responseField(body, "subscriptions")
-				if err != nil {
-					return nil, err
-				}
-				return invocation.Decode[[]json.RawMessage](page)
-			}, invocation.IDOf)
+				return response.GetSubscriptions(), nil
+			}, subscriptionID)
 			if err != nil {
 				return err
 			}
-			return invocation.ShowPage(a.Invocation, items, limit, invocation.IDOf, subscriptionLine)
+			return invocation.ShowProtoPage(a.Invocation, items, limit, subscriptionID, subscriptionLine, notificationJSONOptions)
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -608,11 +523,7 @@ func (a *commands) subscriptionCommand() *cobra.Command {
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showSubscription(body)
+			return a.showSubscription(response.GetSubscription())
 		}),
 	}
 }
@@ -635,11 +546,7 @@ default 7). A version that changed in between exits 4: read the subscription and
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showSubscription(body)
+			return a.showSubscription(response.GetSubscription())
 		}),
 	}
 	command.Flags().Var(&lifetime, "lifetime-days", "new lifetime in days (service default 7)")
@@ -658,11 +565,7 @@ the inbox.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showSubscription(body)
+			return a.showSubscription(response.GetSubscription())
 		}),
 	}
 }
@@ -714,11 +617,7 @@ RESOURCE_EXHAUSTED (too many of your messages there await acknowledgement: wait,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			encoded, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showMessage(encoded)
+			return a.showMessage(response.GetMessage())
 		}),
 	}
 	command.Flags().StringVar(&body, "body", "", "the message text")
@@ -759,32 +658,31 @@ account sent or a purged inbox; it never means the message was not delivered.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := notificationJSON(response)
-			if err != nil {
-				return err
-			}
-			return a.showMessage(body)
+			return a.showMessage(response.GetMessage())
 		}),
 	}
 }
 
-// showMessage prints the message of a single-message response.
-func (a *commands) showMessage(response []byte) error {
-	message, err := responseField(response, "message")
-	if err != nil {
-		return err
+func (a *commands) showMessage(message *notificationspb.Message) error {
+	if message == nil && a.JSON() {
+		return a.ShowOne([]byte("null"), nil)
 	}
-	return a.ShowOne(message, messageLine)
+	return invocation.ShowProto(a.Invocation, []*notificationspb.Message{message}, messageLine, notificationJSONOptions)
 }
 
-func messageLine(raw json.RawMessage) (string, error) {
-	var message notificationspb.Message
-	if err := decodeMessage(raw, &message); err != nil {
-		return "", err
+func messageLine(message *notificationspb.Message) (string, error) {
+	if message == nil {
+		return "", invocation.InvalidResponse("no message in the response")
+	}
+	acceptedAt := message.GetAcceptedAt()
+	if acceptedAt != nil {
+		if err := acceptedAt.CheckValid(); err != nil {
+			return "", invocation.InvalidResponse("accepted_at: %v", err)
+		}
 	}
 	ref := message.GetDestinationRef()
 	line := invocation.Fields(message.GetId(), fmt.Sprintf("to %s/%s session %s", ref.GetNamespace(), ref.GetName(), message.GetSessionId()),
-		"accepted "+message.GetAcceptedAt().AsTime().UTC().Format(time.RFC3339))
+		"accepted "+acceptedAt.AsTime().UTC().Format(time.RFC3339))
 	if message.GetCovered() {
 		line += "  covered"
 	}
@@ -797,16 +695,15 @@ func messageLine(raw json.RawMessage) (string, error) {
 	return line, nil
 }
 
-// enumSuffix is a proto enum value name without its prefix, lowercased: `SOURCE_FAILURE_KIND_RATE_LIMITED`
-// with prefix `SOURCE_FAILURE_KIND_` reads `rate_limited`.
-
-func subscriptionLine(raw json.RawMessage) (string, error) {
-	var subscription notificationspb.Subscription
-	if err := decodeMessage(raw, &subscription); err != nil {
-		return "", err
+func subscriptionLine(subscription *notificationspb.Subscription) (string, error) {
+	if subscription == nil {
+		return "", invocation.InvalidResponse("no subscription in the response")
 	}
 	line := invocation.Fields(subscription.Id, sourceLabel(subscription.Source), "v"+strconv.FormatInt(subscription.GetVersion(), 10))
 	if subscription.ExpiresAt != nil {
+		if err := subscription.ExpiresAt.CheckValid(); err != nil {
+			return "", invocation.InvalidResponse("expires_at: %v", err)
+		}
 		line = invocation.Fields(line, "expires "+subscription.ExpiresAt.AsTime().UTC().Format(time.RFC3339))
 	}
 	if subscription.Cancelled {
@@ -824,6 +721,10 @@ func subscriptionLine(raw json.RawMessage) (string, error) {
 	}
 
 	return line, nil
+}
+
+func subscriptionID(subscription *notificationspb.Subscription) (string, error) {
+	return subscription.GetId(), nil
 }
 
 func sourceLabel(source *notificationspb.Source) string {

@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	"github.com/agentydragon/ducktape/agentplane/notification_service/api/notifications/notificationspb"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestMergeabilityEventFilterHasNoActionsAndInboxSummaryNamesItsPullRequest(t *testing.T) {
@@ -77,7 +76,11 @@ func TestSubscriptionSummarySerializesGitHubStatus(t *testing.T) {
 			"reviews":{"lastSuccessAt":"2026-10-27T12:00:00Z","errorKind":"SOURCE_FAILURE_KIND_UNAVAILABLE","error":"reviews unavailable","retryAt":"2026-10-27T12:02:00Z","refreshingUntil":"2026-10-27T12:03:00Z"}
 		}
 	}`)
-	line, err := subscriptionLine(raw)
+	var subscription notificationspb.Subscription
+	if err := protojson.Unmarshal(raw, &subscription); err != nil {
+		t.Fatal(err)
+	}
+	line, err := subscriptionLine(&subscription)
 	if err != nil {
 		t.Fatal(err)
 	}

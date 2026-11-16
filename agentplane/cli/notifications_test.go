@@ -699,6 +699,42 @@ func TestMessageShowsWhatTheSenderCanFollow(t *testing.T) {
 	}
 }
 
+func TestSubscriptionsRejectInvalidRenderedTimestampWithoutPartialText(t *testing.T) {
+	first := pullRequestSubscription(1, false)
+	first.Id = "subscription-1"
+	second := pullRequestSubscription(1, false)
+	second.Id = "subscription-2"
+	second.ExpiresAt = &timestamppb.Timestamp{Seconds: 253402300800}
+	servicer := &notificationsServer{list: func(*notificationspb.ListSubscriptionsRequest) ([]*notificationspb.Subscription, error) {
+		return []*notificationspb.Subscription{first, second}, nil
+	}}
+
+	code, stdout, stderr := invoke(notificationsEnv(serveNotifications(t, servicer)), "notifications", "subscriptions", "--limit", "0")
+	if code != 1 || stdout != "" || !strings.Contains(stderr, "INTERNAL") {
+		t.Fatalf("exit %d, stdout %q, stderr %q; want invalid timestamp and no partial output", code, stdout, stderr)
+	}
+}
+
+func TestMissingNestedObjectsKeepJSONNullAndRejectText(t *testing.T) {
+	servicer := &notificationsServer{
+		get:    func(*notificationspb.GetSubscriptionRequest) (*notificationspb.Subscription, error) { return nil, nil },
+		lookup: func(*notificationspb.GetMessageRequest) (*notificationspb.Message, error) { return nil, nil },
+	}
+	env := notificationsEnv(serveNotifications(t, servicer))
+	for _, args := range [][]string{
+		{"notifications", "subscription", subscriptionID},
+		{"notifications", "message", messageID},
+	} {
+		jsonArgs := append(append([]string{}, args...), "--json")
+		if code, stdout, stderr := invoke(env, jsonArgs...); code != 0 || stdout != "null\n" {
+			t.Errorf("%v --json: exit %d, stdout %q, stderr %q; want null", args, code, stdout, stderr)
+		}
+		if code, stdout, stderr := invoke(env, args...); code != 1 || stdout != "" || !strings.Contains(stderr, "INTERNAL") {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q; want invalid response without output", args, code, stdout, stderr)
+		}
+	}
+}
+
 func TestNotificationClientOmitsBearerWhenCredentialIsUnset(t *testing.T) {
 	servicer := answering(pullRequestSubscription(1, false))
 	env := notificationsEnv(serveNotifications(t, servicer))
