@@ -7,16 +7,11 @@ import {
   Box,
   Button,
   Center,
-  Checkbox,
   Group,
   Loader,
   Menu,
-  NativeSelect,
   Paper,
   Popover,
-  ScrollArea,
-  Select,
-  SimpleGrid,
   Stack,
   Text,
   Title,
@@ -28,6 +23,7 @@ import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord, Harness, SessionSummary } from "./schema";
+import { SessionListSidebar, TranscriptStatusBadge, formatDateTime, transcriptStatus } from "./session-list-sidebar";
 import {
   readSessionViewerSearch,
   SESSION_KINDS,
@@ -37,7 +33,7 @@ import {
   sessionPath as buildSessionPath,
   sessionVersionPath,
 } from "./session-viewer-url";
-import { ResizeHandle, usePaneSize, type PaneSize } from "../../util/frontend/resize_handle";
+import { usePaneSize, type PaneSize } from "../../util/frontend/resize_handle";
 import { HistoryRecorderTools } from "../../util/frontend/transcript/history_recorder_tools";
 import { historyRecorder } from "./history-recorder";
 
@@ -72,37 +68,6 @@ function parentLinkLabel(kind: string | null): string | null {
     default:
       return `Parent link source: ${kind.replaceAll("_", " ")}`;
   }
-}
-
-function transcriptStatus(session: SessionSummary): { label: string; color: string } {
-  switch (session.transcript_status) {
-    case "captured":
-      return { label: session.latest_version_record_count === 0 ? "Latest capture empty" : "Captured", color: "green" };
-    case "pending":
-      return { label: "Inventory only", color: "yellow" };
-    case "failed":
-      return { label: "Import failed", color: "red" };
-    case "unavailable":
-      return { label: "No captured version", color: "gray" };
-  }
-}
-
-function TranscriptStatusBadge({
-  session,
-  size,
-  className,
-}: {
-  session: SessionSummary;
-  size: "xs" | "sm";
-  className?: string;
-}): JSX.Element | null {
-  if (session.transcript_status === "captured" && session.latest_version_record_count !== 0) return null;
-  const status = transcriptStatus(session);
-  return (
-    <Badge className={className} size={size} color={status?.color} variant="light">
-      {status?.label}
-    </Badge>
-  );
 }
 
 function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
@@ -142,7 +107,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const selectedKinds = useMemo(() => sessionKindsFromScope(kindScope), [kindScope]);
   const queryClient = useQueryClient();
   const layoutRef = useRef<HTMLDivElement>(null);
-  const mobileSessionListRef = useRef<HTMLElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
   const [relatedSessionsOpen, setRelatedSessionsOpen] = useState(false);
@@ -374,40 +338,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   }, []);
 
   useEffect(() => {
-    if (!mobileSessionListOpen) return;
-    const previousFocus = document.activeElement;
-    const sidebar = mobileSessionListRef.current;
-    const focusableElements = (): HTMLElement[] => [
-      ...(sidebar?.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      ) ?? []),
-    ];
-    focusableElements()[0]?.focus();
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setMobileSessionListOpen(false);
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = focusableElements();
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      if (previousFocus instanceof HTMLElement) previousFocus.focus();
-    };
-  }, [mobileSessionListOpen]);
-
-  useEffect(() => {
     setRelatedSessionsOpen(false);
   }, [selectedSession?.id]);
 
@@ -448,6 +378,35 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     if (nextPath !== `${location.pathname}${location.search}`) navigate(nextPath);
   };
 
+  const sessionListSidebarModel = {
+    filters: {
+      machines,
+      machineId: selectedMachineId,
+      harness: selectedHarness,
+      kinds: selectedKinds,
+      loadingMachines,
+      onChange: changeFilter,
+      onKindsChange: changeKinds,
+    },
+    sessions: {
+      items: sessions,
+      machineNames,
+      selectedId: sessionId,
+      pathFor: sessionPath,
+      nextCursor: sessionCursor,
+      loading: loadingSessions,
+      loadingNext: loadingMoreSessions,
+      onLoadMore: loadMoreSessions,
+      onRefresh: () => void queryClient.resetQueries({ queryKey: sessionListQueryKey, exact: true }),
+    },
+    layout: {
+      mobileOpen: mobileSessionListOpen,
+      setMobileOpen: setMobileSessionListOpen,
+      sidebarWidth,
+      sidebarPane,
+    },
+  };
+
   return (
     <Stack gap="sm" style={{ height: "100%", minHeight: 0 }}>
       <Box component="header" className="session-browser-header">
@@ -484,122 +443,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
         className="session-browser-layout"
         style={{ "--session-sidebar-width": `${sidebarWidth}px` } as CSSProperties}
       >
-        {mobileSessionListOpen && (
-          <button
-            type="button"
-            className="session-browser-mobile-backdrop"
-            aria-label="Close session list"
-            tabIndex={-1}
-            onClick={() => setMobileSessionListOpen(false)}
-          />
-        )}
-        <Paper
-          component="aside"
-          ref={mobileSessionListRef}
-          aria-label="Session list"
-          aria-modal={mobileSessionListOpen || undefined}
-          role={mobileSessionListOpen ? "dialog" : "complementary"}
-          id="session-browser-sidebar"
-          withBorder
-          radius="sm"
-          p="xs"
-          className={`session-browser-sidebar${mobileSessionListOpen ? " session-browser-sidebar-open" : ""}`}
-        >
-          <Stack gap="xs" style={{ height: "100%", minHeight: 0 }}>
-            <Group className="session-browser-mobile-sidebar-heading" justify="space-between" align="center">
-              <Text size="sm" fw={600}>
-                Session list
-              </Text>
-              <Button size="xs" variant="default" onClick={() => setMobileSessionListOpen(false)}>
-                Close
-              </Button>
-            </Group>
-            <Select
-              label="Machine"
-              aria-label="Filter by machine"
-              data={[
-                { value: "", label: "All machines" },
-                ...machines.map((machine) => ({ value: machine.id, label: machine.display_name })),
-              ]}
-              value={selectedMachineId}
-              onChange={(value) => changeFilter("machine", value ?? "")}
-              disabled={loadingMachines}
-              placeholder={loadingMachines ? "Loading machines…" : "All machines"}
-            />
-            <NativeSelect
-              label="Harness"
-              aria-label="Filter by harness"
-              value={selectedHarness}
-              onChange={(event) => changeFilter("harness", event.currentTarget.value)}
-              data={[
-                { value: "", label: "All harnesses" },
-                { value: "claude", label: "Claude Code" },
-                { value: "codex", label: "Codex CLI" },
-              ]}
-            />
-            <Checkbox.Group label="Session kinds" value={selectedKinds} onChange={changeKinds}>
-              <SimpleGrid cols={2} spacing={4} mt={4}>
-                {SESSION_KINDS.map(({ value, label }) => (
-                  <Checkbox key={value} value={value} label={label} size="xs" />
-                ))}
-              </SimpleGrid>
-            </Checkbox.Group>
-            <Button
-              size="xs"
-              variant="default"
-              loading={loadingSessions}
-              onClick={() => void queryClient.resetQueries({ queryKey: sessionListQueryKey, exact: true })}
-            >
-              Refresh session list
-            </Button>
-            <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
-              {loadingSessions ? (
-                <Center h={200}>
-                  <Loader size="sm" aria-label="Loading sessions" />
-                </Center>
-              ) : sessions.length === 0 ? (
-                <Center h={160} px="md">
-                  <Text size="sm" c="dimmed" ta="center">
-                    No captured sessions match these filters.
-                  </Text>
-                </Center>
-              ) : (
-                <Stack gap={4}>
-                  {sessions.map((session) => (
-                    <SessionRow
-                      key={session.id}
-                      session={session}
-                      machineName={machineNames.get(session.machine_id) ?? session.machine_id}
-                      selected={session.id === sessionId}
-                      to={sessionPath(session.id)}
-                      onClick={() => setMobileSessionListOpen(false)}
-                    />
-                  ))}
-                </Stack>
-              )}
-              {sessionCursor !== null && (
-                <Button
-                  fullWidth
-                  variant="default"
-                  mt="xs"
-                  loading={loadingMoreSessions}
-                  onClick={() => void loadMoreSessions()}
-                >
-                  Load more sessions
-                </Button>
-              )}
-            </ScrollArea>
-          </Stack>
-        </Paper>
-
-        <ResizeHandle
-          pane={sidebarPane}
-          axis="x"
-          className="session-browser-resize-handle"
-          aria-label="Resize session list"
-          aria-controls="session-browser-sidebar"
-          aria-valuetext={`${sidebarWidth} pixels`}
-        />
+        <SessionListSidebar model={sessionListSidebarModel} />
 
         <Paper
           component="section"
@@ -975,54 +819,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   );
 }
 
-function SessionRow({
-  session,
-  machineName,
-  selected,
-  to,
-  onClick,
-}: {
-  session: SessionSummary;
-  machineName: string;
-  selected: boolean;
-  to: string;
-  onClick: () => void;
-}): JSX.Element {
-  return (
-    <Button
-      component={Link}
-      to={to}
-      onClick={onClick}
-      variant={selected ? "light" : "subtle"}
-      color={selected ? "blue" : "gray"}
-      fullWidth
-      justify="flex-start"
-      className="session-browser-session-row"
-      aria-current={selected ? "page" : undefined}
-      styles={{
-        root: { height: "auto", padding: "8px", textAlign: "left" },
-        label: { display: "block", width: "100%" },
-      }}
-    >
-      <Box className="session-browser-session-row-content">
-        <Text className="session-row-machine" size="xs" fw={600} truncate>
-          {machineName}
-        </Text>
-        <Text className="session-row-harness" size="xs" c="dimmed">
-          {harnessLabel(session.harness)}
-        </Text>
-        <Text className="session-row-time" size="xs" c="dimmed">
-          {formatDateTime(session.last_activity_at)}
-        </Text>
-        <Text className="session-row-title" size="sm" fw={500} lineClamp={2} style={{ whiteSpace: "normal" }}>
-          {session.title || "Untitled session"}
-        </Text>
-        <TranscriptStatusBadge className="session-row-status" session={session} size="xs" />
-      </Box>
-    </Button>
-  );
-}
-
 function mergeById<T extends { id: string }>(previous: T[], incoming: T[]): T[] {
   const byId = new Map(previous.map((item) => [item.id, item]));
   for (const item of incoming) byId.set(item.id, item);
@@ -1033,13 +829,6 @@ function mergeByOrdinal(previous: EventRecord[], incoming: EventRecord[]): Event
   const byOrdinal = new Map(previous.map((event) => [event.ordinal, event]));
   for (const event of incoming) byOrdinal.set(event.ordinal, event);
   return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
-}
-
-function formatDateTime(value: string | null): string {
-  if (value === null) return "Unknown time";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function formatBytes(bytes: number): string {
