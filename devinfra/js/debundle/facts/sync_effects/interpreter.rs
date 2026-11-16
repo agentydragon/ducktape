@@ -1,6 +1,7 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
+use super::allocation_transfer::MAX_EXACT_ARRAY_SPREAD_SLOTS;
 use super::alternatives::execution_state::{ExecutionPath, JoinedPath};
 use super::alternatives::{Family, Leaf, join_frames};
 use super::array_transfer::ArrayContext;
@@ -3122,6 +3123,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             if !self.array_slots_intact(ARRAY_PROTOTYPE_SLOTS) {
                 return None;
             }
+            if source.primitive_slots.len() > MAX_EXACT_ARRAY_SPREAD_SLOTS {
+                return None;
+            }
             let mut dependencies = self.settled_prefix_dependencies();
             dependencies
                 .imported_primitive_array_spread_inputs
@@ -3181,6 +3185,13 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 .applied_accessors
                 .contains_key(object)
             || self.state.world.native.tainted_sets.contains(object)
+        {
+            return None;
+        }
+        if matches!(operation, NativeIterableUse::ArraySpread(_))
+            && self
+                .settled_dense_array_slot_count(*object)
+                .is_some_and(|length| length > MAX_EXACT_ARRAY_SPREAD_SLOTS)
         {
             return None;
         }
@@ -3856,6 +3867,18 @@ impl<'source, 'rule> Executor<'source, 'rule> {
             && !self.inputs.shadowed.contains("Array")
             && self.inputs.index.dynamic_scope_owners.is_empty()
             && self.native_guard_intact(NativeIntegrityGuard::ArrayIntrinsics, slots)
+    }
+
+    fn settled_dense_array_slot_count(&self, object: u32) -> Option<usize> {
+        if !self.state.world.object_properties_are_settled(object) {
+            return None;
+        }
+        self.state
+            .world
+            .arrays
+            .dense
+            .get(&object)
+            .map(|array| array.slots.len())
     }
 
     fn settled_dense_array_slots(&self, object: u32) -> Option<Vec<Values>> {
