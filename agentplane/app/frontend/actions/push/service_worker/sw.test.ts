@@ -12,8 +12,8 @@ import {
   ActionState,
   Verdict as ProtoVerdict,
   type ActionRequest,
-} from "../../../../action_service/api/contracts/action_service_pb";
-import { DecideActionRequestRequestSchema } from "../../../../action_service/api/contracts/operator_action_service_pb";
+} from "../../../../../action_service/api/contracts/action_service_pb";
+import { DecideActionRequestRequestSchema } from "../../../../../action_service/api/contracts/operator_action_service_pb";
 import { decideActionRequestProtoJson, listActionRequestsProtoJson } from "../../testing/proto_fixtures";
 
 type PushMessage =
