@@ -63,11 +63,21 @@ fn new_placement_can_claim_an_omitted_unit_without_changing_retained_identity() 
         .unwrap(),
     )
     .unwrap();
-    let selected = run_fixture_with_args(
+    let selected = run_fixture_with_graphs_and_args(
         options().with_import_order(&["kept", "placed"]),
         &["--ownership-subset", view.path().to_str().unwrap()],
     );
     assert_entry_output(&selected, "0 1\n");
+    let graph: serde_json::Value = read_gzip_json(
+        &selected
+            .report_root
+            .join("static/app/dependency_graph.json.gz"),
+    );
+    assert_eq!(graph["import_order"], serde_json::json!(["kept", "placed"]));
+    assert_eq!(
+        graph["ownership_subset"],
+        serde_json::json!([{"module":"kept"}])
+    );
     assert_generated_module_after_entry_script(
         &selected,
         "const kept = await import('./static/app/modules/kept.js'); const placed = await import('./static/app/modules/placed.js'); console.log(JSON.stringify([Object.keys(kept).sort(), Object.keys(placed).sort(), kept.Kept, placed.Placed]));",

@@ -29,8 +29,8 @@ use selector_outcome::{
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 use source_identity::ChunkId;
-use source_identity::SourceUnitId;
 use source_identity::StatementId;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use spec::MemberSelectorSpec;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::VecDeque;
@@ -932,12 +932,13 @@ impl ChunkPlanBuilder {
     /// Prepare an additional fresh-owner layer after retained ownership has
     /// applied its normal destructuring and anonymous-statement placement.
     /// Occupancy comes from the shared complete source-unit assignment, not
-    /// from a second interpretation of named selector hits.
+    /// from a second interpretation of named selector hits. The checked layout
+    /// converts graph IDs into the selector resolver's source ordinal domain.
     pub(super) fn begin_placement_layer(
         &mut self,
         precomputed: &DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
-    ) -> Result<(usize, BTreeSet<SourceUnitId>)> {
+    ) -> Result<(usize, BTreeSet<SourceUnitOrdinal>)> {
         ensure!(
             self.residual_plan_index.is_none(),
             "placement claims must precede residual routing"
@@ -977,7 +978,13 @@ impl ChunkPlanBuilder {
         let occupied = assembled
             .assignment
             .iter()
-            .filter_map(|(unit, owner)| (owner != entry).then_some(unit))
+            .filter(|(_, owner)| *owner != entry)
+            .map(|(unit, _)| {
+                layout
+                    .by_source_unit(unit)
+                    .expect("checked layout contains every graph unit")
+                    .ordinal
+            })
             .collect();
         self.catalogue_index_by_name = self
             .bindings_catalogue
