@@ -26,8 +26,8 @@ unobserved. [Confirmation checklist and query window](acceptance_monitoring.md).
   queries, coverage requirements, historical gaps, and notification limitations.
 - [Notification delivery](notification_delivery.md): the source-specific ntfy
   TCP failure and the boundary between rule evaluation and actual receipt.
-- [Earlier investigation](earlier_investigation.md): prior measurements and
-  hypotheses; its header identifies superseded conclusions.
+- [Historical evidence ledger](earlier_investigation.md): dated quota measurements,
+  controls, and coverage limits; the canonical conclusion and acceptance gate remain above.
 - [Wyrm2 restart pod delta](wyrm2_pod_delta_2026_09_04.md): supporting historical
   evidence about the scope of the node-off control, not current caller exclusion.
 
