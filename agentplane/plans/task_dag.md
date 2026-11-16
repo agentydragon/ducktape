@@ -309,6 +309,7 @@ flowchart LR
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
     ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
+    WAKE_ON_DELIVERY_DESIGN -. wake rule .-> ACTION_WAKE_AS_IDENTITY
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Central Session without Environment, section 13]
     CENTRAL_SESSION_INPUT_METADATA[Blocked: central sampler metadata passthrough]
@@ -328,9 +329,10 @@ Details: [command admission](../session_dispatcher/dispatcher/README.md#contract
 
 ### `ACTION_WAKE_AS_IDENTITY` — authorize Action-originated automatic wake as caller Identity
 
-**Unscheduled.** Dispatcher temporarily assesses Action-attributed sends through the Actions service
-broker grant. Replace that mapping with authorization as the Identity that called the Action, for
-example through that Identity's launcher grant on the target Sandbox. Keep the effective Identity
+**Unscheduled; follows [`WAKE_ON_DELIVERY_DESIGN`](#wake_on_delivery_design--whether-delivering-session-work-wakes-its-environment).**
+Dispatcher temporarily assesses Action-attributed sends through the Actions service broker grant.
+Replace that mapping with authorization as the Identity that called the Action, under the wake rule
+that design selects. Keep the effective Identity
 and service actor separate in row attribution. Then remove Actions from the Dispatcher's
 `wake_service_callers` and remove the Action-proof mapping to `ServiceWakeCaller`.
 
@@ -3393,6 +3395,7 @@ flowchart LR
     SESSION_IDENTITY_AUTHZ --> SESSION_CROSS_IDENTITY_AUTHORITY[Deferred: acting on another Identity's Sessions]
     ENVIRONMENT_RUNTIME_NATIVE_SURFACE[Deferred: a runtime surface unmistakably about native Sessions]
     CROSS_IDENTITY_SESSION_BINDING[Deferred: binding a Session to another Identity's environment]
+    WAKE_ON_DELIVERY_DESIGN[Deferred decision: send to a suspended Session, Session and Sandbox states, wakeOnSend]
     IDENTITY_SYSTEM_TESTS[Remaining automated identity-boundary acceptance]
     SANDBOX_IDENTITY_CHANGE_CHECKPOINT[Deferred: restart after Identity change]
 ```
@@ -3605,16 +3608,33 @@ decided cut and the renames or splits it implies.
 
 ### `WAKE_ON_DELIVERY_DESIGN` — whether delivering Session work wakes its environment
 
-**Deferred (operator, 2026-11-11).** The [`environment` rule design](environment_rules.md) keeps
-only `resume`, an explicit request; it has no `wake` operation. Today a delivery wakes a suspended
-Sandbox through the implied same-Identity path (`identityWakeAssessment`) or a configured broker
-role (`wake_callers`), gated by `spec.wakeOnSend` and wake budgets. Direction: the sender's right to
-deliver is already a grant, so whether delivery starts the Sandbox is the recipient's choice, a
-property of the Sandbox or of the Session living in a harness inside it, rather than a sender-side
-"X may wake S" rule. A per-sender wake rule is not planned (YAGNI, operator 2026-11-11); add it
-only if a use appears. Decide which carries it (a Sandbox default with a per-Session override is one
-option), how budgets bound a permitted sender, and what replaces the broker role. **Exit:** a
-decided design and the PRs it implies.
+**Deferred (operator, 2026-11-11); questions added by the operator 2026-11-16.** The
+[`environment` rule design](environment_rules.md) keeps only `resume`, an explicit request; it has no
+`wake` operation. Today a delivery wakes a suspended Sandbox through the implied same-Identity path
+(`identityWakeAssessment`) or a configured broker role (`wake_callers`, `wake_service_callers`;
+Action-attributed sends use the Actions service's broker grant until
+[`ACTION_WAKE_AS_IDENTITY`](#action_wake_as_identity--authorize-action-originated-automatic-wake-as-caller-identity)),
+gated by `spec.wakeOnSend` and wake budgets. Direction: the sender's right to deliver is already a
+grant, so whether delivery starts the Sandbox is the recipient's choice, a property of the Sandbox or
+of the Session living in a harness inside it, rather than a sender-side "X may wake S" rule. A
+per-sender wake rule is not planned (YAGNI, operator 2026-11-11); add it only if a use appears.
+
+Questions for the operator (2026-11-16):
+
+- **Send contract.** The operator's candidate: a send grant is held at Session level ("may send to
+  Session X") and implies reviving that Session's Sandbox as needed. Constraints from the current
+  code: lifecycle policy already tells an idle-suspended Sandbox from a requested stop
+  (`requestedStop`), and a requested stop wins over automatic wake today; one Sandbox can host several
+  Sessions, so waking it for one wakes them all; wake budgets are reserved per waking caller
+  (ServiceAccount, Identity or broker service). Session-scoped send grants are also open under
+  [`SESSION_ACCESS_GROUPING_DESIGN`](#session_access_grouping_design--access-groups-across-independent-sessions-and-environments).
+- **State machine.** One model of Session and Sandbox states and the transitions between them (send,
+  idle suspension, requested stop, resume, deletion), including central Sessions with no environment,
+  which have no Sandbox to revive.
+- **`wakeOnSend`.** Whether to keep the per-Sandbox wake-on-message boolean at all.
+
+Decide which object carries the wake choice (if any remains), how budgets bound a permitted sender,
+and what replaces the broker role. **Exit:** a decided design and the PRs it implies.
 
 ### `CROSS_IDENTITY_SESSION_BINDING` — binding a Session to another Identity's environment
 
