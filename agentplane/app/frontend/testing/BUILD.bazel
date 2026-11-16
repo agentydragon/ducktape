@@ -63,6 +63,8 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/proto:identity_pb",
         "//agentplane/proto:session_pb",
     ],
 )

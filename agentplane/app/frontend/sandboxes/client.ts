@@ -9,6 +9,7 @@ import {
   type CreateEnvironmentRequest,
   EnvironmentMutationRequestSchema,
   EnvironmentIdentityRecordSchema,
+  GetRuntimeDiagnosticsResponseSchema,
   ListEnvironmentTemplatesResponseSchema,
   ResumeEnvironmentRequestSchema,
   ResumeEnvironmentResponseSchema,
@@ -17,19 +18,27 @@ import {
   SetEnvironmentIdentityRequestSchema,
   SetEnvironmentWakeOnSendRequestSchema,
 } from "../../../environments/v1/environment_service_pb";
-import { EnvironmentRuntimeStatusSchema, type EnvironmentRuntimeStatus } from "../../../proto/session_pb";
-import { GetEnvironmentRuntimeStatusRequestSchema } from "../../app_service_pb";
+import type { EnvironmentRuntimeStatus } from "../../../proto/session_pb";
 
 export async function getEnvironmentRuntimeStatus(target: EnvironmentTarget): Promise<EnvironmentRuntimeStatus> {
-  const request = create(GetEnvironmentRuntimeStatusRequestSchema, { name: target.name, sandboxUid: target.uid });
-  const body = await fetchJson(
-    `/sandboxes/${encodeURIComponent(request.name)}/runner-status?sandbox_uid=${encodeURIComponent(request.sandboxUid)}`,
-    { headers: { Accept: "application/json" } }
+  if (!target.namespace || !target.name || !target.uid) throw new Error("Complete Environment target is required");
+  const response = fromJson(
+    GetRuntimeDiagnosticsResponseSchema,
+    await environmentJSON(
+      `${environmentPath(target)}:runtime-diagnostics?target.uid=${encodeURIComponent(target.uid)}`,
+      { headers: { Accept: "application/json" } }
+    )
   );
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new Error("Runner status response must be a JSON object");
-  }
-  return fromJson(EnvironmentRuntimeStatusSchema, body);
+  if (
+    response.target?.namespace !== target.namespace ||
+    response.target.name !== target.name ||
+    response.target.uid !== target.uid ||
+    !response.incarnationUid ||
+    !response.observedAt ||
+    !response.status?.environmentRuntimeBootId
+  )
+    throw new Error("EnvironmentService returned incomplete or mismatched Runtime evidence");
+  return response.status;
 }
 
 const environmentPath = (target: EnvironmentTarget): string =>
