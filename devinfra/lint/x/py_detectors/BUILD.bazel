@@ -1,0 +1,75 @@
+# gazelle:exclude rules
+# rules/ is excluded (macro-generated packages), so imports into it need pins:
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.broad_except_order.rule //devinfra/lint/x/py_detectors/rules:broad_except_order
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.dynamic_attr_probe.rule //devinfra/lint/x/py_detectors/rules:dynamic_attr_probe
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.flatten_nested_guards.rule //devinfra/lint/x/py_detectors/rules:flatten_nested_guards
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.import_aliasing.rule //devinfra/lint/x/py_detectors/rules:import_aliasing
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.imports_inside_def.rule //devinfra/lint/x/py_detectors/rules:imports_inside_def
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.magic_tuple_indices.rule //devinfra/lint/x/py_detectors/rules:magic_tuple_indices
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.optional_string_simplify.rule //devinfra/lint/x/py_detectors/rules:optional_string_simplify
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.pathlike_str_casts.rule //devinfra/lint/x/py_detectors/rules:pathlike_str_casts
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.pydantic_v1_shims.rule //devinfra/lint/x/py_detectors/rules:pydantic_v1_shims
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.swallow_errors.rule //devinfra/lint/x/py_detectors/rules:swallow_errors
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.trivial_alias.rule //devinfra/lint/x/py_detectors/rules:trivial_alias
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.trivial_passthrough.rule //devinfra/lint/x/py_detectors/rules:trivial_passthrough
+# gazelle:resolve py devinfra.lint.x.py_detectors.rules.walrus_suggest.rule //devinfra/lint/x/py_detectors/rules:walrus_suggest
+
+"""Python detectors package — entry points and shared infrastructure."""
+
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+
+package(default_visibility = ["//devinfra/lint/x/py_detectors:__subpackages__"])
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":registry",
+        "//devinfra/lint/x/py_detectors/rules:broad_except_order",
+        "//devinfra/lint/x/py_detectors/rules:dynamic_attr_probe",
+        "//devinfra/lint/x/py_detectors/rules:flatten_nested_guards",
+        "//devinfra/lint/x/py_detectors/rules:import_aliasing",
+        "//devinfra/lint/x/py_detectors/rules:imports_inside_def",
+        "//devinfra/lint/x/py_detectors/rules:magic_tuple_indices",
+        "//devinfra/lint/x/py_detectors/rules:optional_string_simplify",
+        "//devinfra/lint/x/py_detectors/rules:pathlike_str_casts",
+        "//devinfra/lint/x/py_detectors/rules:pydantic_v1_shims",
+        "//devinfra/lint/x/py_detectors/rules:swallow_errors",
+        "//devinfra/lint/x/py_detectors/rules:trivial_alias",
+        "//devinfra/lint/x/py_detectors/rules:trivial_passthrough",
+        "//devinfra/lint/x/py_detectors/rules:walrus_suggest",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "registry",
+    srcs = ["registry.py"],
+    deps = [
+        ":models",
+        ":utils",
+    ],
+)
+
+py_library(
+    name = "import_graph",
+    srcs = ["import_graph.py"],
+)
+
+py_library(
+    name = "utils",
+    srcs = ["utils.py"],
+)
+
+py_binary(
+    name = "py_detectors_cli",
+    main_module = "devinfra.lint.x.py_detectors.main",
+    visibility = ["//visibility:private"],
+    deps = [":main"],
+)
