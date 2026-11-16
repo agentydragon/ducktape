@@ -34,7 +34,8 @@ def _resource_readiness(id: int, kind: str, *, ready: bool = True) -> stat.Panel
     plural = "GitRepositories" if kind == "GitRepository" else f"{kind}s"
     status = 'status="True"' if ready else 'status!="True"'
     expression = f'kube_customresource_flux_{kind.lower()}_ready{{namespace=~"$namespace",{status}}}'
-    expression = f"count({expression} == 1)" if ready else f"sum({expression})"
+    # These are one-hot 0/1 gauges, so sum counts matching conditions and preserves an all-zero result.
+    expression = f"sum({expression})"
     return (
         (_readiness_stat() if ready else _readiness_stat("green", "red"))
         .id(id)
