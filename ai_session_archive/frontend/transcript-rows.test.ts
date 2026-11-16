@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityStep, TranscriptRow } from "./transcript-rows";
-import { isClaudeIntermediateBlock, recordPresentation, summarizeActivity, transcriptRows } from "./transcript-rows";
+import type { ActivityStep, TranscriptRow } from "./transcript-row-types";
+import { isClaudeIntermediateBlock } from "./claude-transcript";
+import { recordPresentation, summarizeActivity, transcriptRows } from "./transcript-rows";
 import type { EventRecord } from "./schema";
 
 function record(ordinal: number, parsed: unknown): EventRecord {

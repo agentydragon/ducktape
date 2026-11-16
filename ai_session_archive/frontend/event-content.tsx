@@ -7,7 +7,7 @@ import { DisclosureBody } from "../../util/frontend/disclosure";
 import { RetainedDisclosure } from "../../util/frontend/transcript/retained_disclosures";
 import { TextBlock } from "../../util/frontend/transcript/text_block";
 import type { EventRecord } from "./schema";
-import { isClaudeIntermediateBlock } from "./transcript-rows";
+import { isClaudeIntermediateBlock } from "./claude-transcript";
 
 export function recordLabel(record: EventRecord): string {
   const parsed = object(record.parsed);
