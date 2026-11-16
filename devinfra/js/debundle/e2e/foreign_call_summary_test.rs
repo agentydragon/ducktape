@@ -64,7 +64,7 @@ fn class_fields_keep_typed_empty_keyed_collection_constructions() {
         FixtureOpts::new(
             "import { Collections } from './peer.js';\nconst collections = new Collections();\nconsole.log(collections instanceof Collections);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export class Collections { #map = new Map(); #set = new Set(); #weakMap = new WeakMap(); #weakSet = new WeakSet(); }\n",
@@ -86,7 +86,7 @@ fn callable_factories_use_shared_empty_keyed_collection_transfers() {
         FixtureOpts::new(
             "import { makeCache, makeRecord } from './peer.js';\nfunction localCache() { return new Map(); }\nconst cache = makeCache();\nconst record = makeRecord();\nconsole.log(cache instanceof Map, cache.size, record.nested.cache instanceof Map, record.nested.cache.size, localCache().size);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function makeCache() { const cache = new Map(); return cache; }\nexport function makeRecord() { const cache = new Map(); return { nested: { cache } }; }\n",
@@ -126,7 +126,7 @@ fn regexp_literal_factories_return_fresh_allocations_without_protocol_shape() {
              const nestedPattern = record.nested.pattern;\n\
              console.log(first !== second, first.test('a'), first.lastIndex, second.lastIndex, first.test('a'), first.lastIndex, local.test('b'), local.lastIndex, nestedPattern.test('c'), nestedPattern.lastIndex);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "const RegExp = () => { throw new Error('mutable RegExp binding called'); };\n\
@@ -166,7 +166,7 @@ fn regexp_literal_summary_keeps_global_binding_and_prototype_behavior_live() {
              globalThis.RegExp = originalRegExp;\n\
              console.log(pattern.test('x'), String(pattern), Object.getPrototypeOf(pattern) === originalRegExp.prototype, constructed instanceof originalRegExp, globalThis.getterCalls, globalThis.coercionCalls, globalThis.constructorCalls);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function literal() { return /x/g; }\n\
@@ -199,6 +199,7 @@ fn regexp_literal_does_not_bypass_unmigrated_method_record_metadata() {
              console.log(first !== second, first.test('x'), first.lastIndex, second.lastIndex);\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function mixed() { return { pattern() { return /x/g; } }; }\n",
@@ -254,7 +255,7 @@ fn class_constructor_does_not_treat_a_getter_as_a_data_field() {
         FixtureOpts::new(
             "import { GetterReader } from './peer.js';\nglobalThis.getterCalls = 0;\nconst reader = new GetterReader();\nconsole.log(globalThis.getterCalls, reader.invoke());\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export class GetterReader { #read; constructor() { const record = { get value() { globalThis.getterCalls++; return () => 42; } }; this.#read = record.value; } invoke() { return this.#read(); } }\n",
@@ -274,7 +275,7 @@ fn a_constructor_returning_this_keeps_the_legacy_admission_boundary() {
         FixtureOpts::new(
             "import { SelfReturning } from './peer.js';\nconst value = new SelfReturning();\nconsole.log(value instanceof SelfReturning);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export class SelfReturning { constructor() { return this; } }\n",
@@ -388,7 +389,9 @@ fn returned_closure_can_resolve_provider_module_bindings_without_callback_eviden
                       return () => moduleCheck(callback()) ? 'ok' : 'no';\n\
                     }\n";
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 ok\n");
 
@@ -425,7 +428,9 @@ fn returned_closure_can_read_a_destructured_catch_binding() {
                      };\n\
                    }\n";
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "true false\n");
 
@@ -461,7 +466,9 @@ fn returned_closure_destructuring_locals_stay_deferred() {
                      };\n\
                    }\n";
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "0 42 1\n");
 
@@ -492,7 +499,9 @@ fn returned_closure_nested_patterns_keep_formals_and_callback_policy() {
                      return wrapped;\n\
                    }\n";
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 7 1\n");
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
@@ -526,7 +535,9 @@ fn destructuring_in_factory_or_class_closure_keeps_existing_refusals() {
                      invoke(input) { return this.#callback(input); }\n\
                    }\n";
     let fixture = run_fixture(
-        FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[("static/peer", provider)]),
     );
     assert_preserved_entry_output(&fixture, "42 7\n");
     let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
@@ -537,42 +548,49 @@ fn destructuring_in_factory_or_class_closure_keeps_existing_refusals() {
 
 #[test]
 fn strict_expression_returns_preserve_runtime_values_and_retained_arguments() {
-    for (returned, use_result, expected, retained) in [
+    for (returned, use_result, expected, retained, import_order) in [
         (
             "{ type: input, compare: compare === void 0 ? null : compare }",
             "console.log(make(() => 42).compare === null); const value = make(() => 42, () => 7); console.log(value.type(), value.compare());",
             "true\n42 7\n",
             vec![0, 1],
+            &["residual"][..],
         ),
         (
             "{ chosen: input ? null : compare }",
             "console.log(make(false, () => 42).chosen()); console.log(make(true, () => 7).chosen);",
             "42\nnull\n",
             vec![1],
+            &[][..],
         ),
         (
             "{ value: input === compare }",
             "const value = { get hidden() { throw Error('getter'); }, [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value).value, make(value, {}).value);",
             "true false\n",
             vec![],
+            &["residual"][..],
         ),
         (
             "input !== compare",
             "const value = { [Symbol.toPrimitive]() { throw Error('coercion'); } }; console.log(make(value, value), make(value, {}));",
             "false true\n",
             vec![],
+            &["residual"][..],
         ),
         (
             "void input",
             "let calls = 0; console.log(make(() => ++calls) === undefined, calls);",
             "true 0\n",
             vec![],
+            &["residual"][..],
         ),
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{use_result}\n");
         let provider = format!("export function make(input, compare) {{ return {returned}; }}\n");
         let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(import_order)
+                .with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
         let report: serde_json::Value =
@@ -648,7 +666,9 @@ fn strict_expression_children_keep_observable_effects_and_throws() {
         );
         let provider = format!("export function make(input) {{ return {returned}; }}\n");
         let fixture = run_fixture(
-            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", &provider)]),
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
         let report: serde_json::Value =
@@ -808,7 +828,7 @@ fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
         FixtureOpts::new(
             "import { wrap } from './peer.js';\nconst input = {};\nconst first = wrap(input);\nconst second = wrap(input);\nconst selected = first.value;\nconsole.log(first === second, selected === second.value);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[("static/peer", "export function wrap(value) { return { value }; }\n")]),
     );
     assert_preserved_entry_output(&fixture, "false true\n");
@@ -945,7 +965,7 @@ fn initializer_call_and_record_summary_requires_an_isolated_provider() {
             FixtureOpts::new(
                 "import { make } from './peer.js';\nconst queue = make();\nconsole.log(queue.size);\n",
                 vec![],
-            )
+            ).with_import_order(&["residual"])
             .with_extra_chunks(&[("static/peer", &provider)]),
         );
         assert_preserved_entry_output(&fixture, "0\n");
@@ -963,7 +983,7 @@ fn initializer_call_and_record_summary_requires_an_isolated_provider() {
 
 #[test]
 fn deferred_descriptor_creation_migration_controls() {
-    for (provider, entry, expected, retained, native, members) in [
+    for (provider, entry, expected, retained, native, members, import_order) in [
         (
             "export function make() { let stored = 0; return { get value() { globalThis.events.push('get'); return stored; }, set value(next) { globalThis.events.push('set'); stored = next; }, run() { return this.value; }, tag: 'record' }; }",
             "globalThis.events = []; const record = make(); const descriptor = Object.getOwnPropertyDescriptor(record, 'value'); console.log(events.length, typeof descriptor.get, typeof descriptor.set, Object.hasOwn(descriptor, 'value')); record.value = 7; console.log(record.run(), events.join(','));",
@@ -971,6 +991,7 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![],
             vec![],
             vec![],
+            &["residual"][..],
         ),
         (
             "export function make() { const state = new Map(); return { put(key, value) { state.set(key, value); }, get size() { return state.size; }, async settle() { return Promise.all([...state.values()]); }, *values() { yield* state.values(); } }; }",
@@ -979,6 +1000,7 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![],
             vec!["map"],
             vec!["put", "size", "settle", "values"],
+            &["residual"][..],
         ),
         (
             "export function make() { return { read() { return super.value + this.offset; } }; }",
@@ -987,6 +1009,7 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![],
             vec![],
             vec!["read"],
+            &["residual"][..],
         ),
         (
             "export function make(callback, unused) { return [, callback, () => callback(), { run() { return callback(); } }]; }",
@@ -995,6 +1018,7 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![0, 1],
             vec![],
             vec![],
+            &["residual"][..],
         ),
         (
             "export function make(callback, unused) { const label = ``; var repeated = 1; var repeated; return function recur(count) { return count ? recur(count - 1) : callback() + label.length + repeated; }; const unreachable = 9; }",
@@ -1003,6 +1027,7 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![0, 1],
             vec![],
             vec![],
+            &[][..],
         ),
         (
             "export function make(callback, unused) { return { run() { return callback(); }, run: 7, get value() { return callback(); }, set value(next) {}, get value() { return 42; } }; }",
@@ -1011,11 +1036,14 @@ fn deferred_descriptor_creation_migration_controls() {
             vec![0, 1],
             vec![],
             vec![],
+            &["residual"][..],
         ),
     ] {
         let source = format!("import {{ make }} from './peer.js';\n{entry}\n");
         let fixture = run_fixture(
-            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(import_order)
+                .with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, expected);
         let report: serde_json::Value =
@@ -1095,7 +1123,7 @@ fn repeated_sparse_factory_keeps_holes_and_old_alias_contents() {
     let fixture = run_fixture(FixtureOpts::new(
         "function make(value) { return [, value]; } const early = make(1); early[0] = 7; const late = make(2); const values = new Set(late); console.log(early[0], Object.hasOwn(late, 0), values.has(undefined), [...late].join(','));",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "7 false true ,2\n");
 }
 
@@ -1136,6 +1164,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
                 "import { make } from './peer.js'; console.log(typeof make(42));",
                 vec![],
             )
+            .with_import_order(&[])
             .with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, "function\n");
@@ -1151,6 +1180,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
             "import { make } from './peer.js'; console.log(make(42));",
             vec![],
         )
+        .with_import_order(&[])
         .with_extra_chunks(&[(
             "static/peer",
             "export function make(value) { var local = value; return local; function local() {} }",
@@ -1167,7 +1197,7 @@ fn hoisted_function_values_do_not_reuse_parameter_or_undefined_values() {
         FixtureOpts::new(
             "import { make } from './peer.js'; const earlier = make(41); const later = make(42); console.log(earlier(), later());",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function make(value) { var local = value; return () => local; function local() {} }",

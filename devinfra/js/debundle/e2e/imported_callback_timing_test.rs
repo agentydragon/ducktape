@@ -40,6 +40,7 @@ fn direct_imported_no_reentry_call_with_published_callback() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["values/later", "callbacks/slot"])
         .with_extra_chunks(&peer)
         .with_chunk_export_purity(&purity),
     );
@@ -222,6 +223,7 @@ fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() 
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["values/later", "callbacks/slot"])
         .with_extra_chunks(&peer)
         .with_chunk_export_purity(&purity),
     );
@@ -258,6 +260,7 @@ fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["values/later", "callbacks/slot"])
         .with_extra_chunks(&peer)
         .with_chunk_export_purity(&purity),
     );
@@ -1125,6 +1128,7 @@ fn a_shadowing_parameter_does_not_inherit_the_import_contract() {
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&peers),
         &["callbacks/wrapped", "values/later"],
         &[],
@@ -1195,13 +1199,23 @@ fn available_imported_factory_without_eligible_call_has_no_proof_use() {
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factories(&["factory"])
         .build()];
-    for source in [
-        "import { factory } from './peer.js';\nconsole.log(42);\n",
-        "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
-        "import { factory } from './peer.js';\nfunction use(factory) { return factory(() => 1); }\nconsole.log(use((callback) => callback()) + 41);\n",
+    for (source, priority) in [
+        (
+            "import { factory } from './peer.js';\nconsole.log(42);\n",
+            &[][..],
+        ),
+        (
+            "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
+            &[][..],
+        ),
+        (
+            "import { factory } from './peer.js';\nfunction use(factory) { return factory(() => 1); }\nconsole.log(use((callback) => callback()) + 41);\n",
+            &["residual"][..],
+        ),
     ] {
         let fixture = run_fixture_with_graphs(
             FixtureOpts::new(source, vec![])
+                .with_import_order(priority)
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
         );
@@ -1223,10 +1237,14 @@ fn nested_repeated_factory_use_keeps_lexical_site_and_top_level_owner() {
                   const pair = [wrap(), wrap()];\n\
                   const later = 42;\n\
                   console.log(pair[0](), pair[1]());\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_extra_chunks(&[(
-        "static/peer",
-        "export function factory(callback) { return () => callback(); }\n",
-    )]));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&[(
+                "static/peer",
+                "export function factory(callback) { return () => callback(); }\n",
+            )]),
+    );
     assert_preserved_entry_output(&fixture, "42 42\n");
     let graph = fixture.dependency_graph();
     let pair = graph
@@ -1302,6 +1320,7 @@ fn private_factory_result_records_reachability_exemption() {
          console.log(wrapped());\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function factory(callback) { return () => callback(); }\n",
@@ -1353,11 +1372,14 @@ fn private_factory_result_requires_an_exact_initializer_and_retains_summary_evid
              globalThis.marker = 0;\nconst wrapped = {initializer};\n\
              const later = 42;\nconsole.log(globalThis.marker, wrapped());\n"
         );
-        let fixture =
-            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-                "static/peer",
-                "export function factory(callback) { return () => callback(); }\n",
-            )]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[(
+                    "static/peer",
+                    "export function factory(callback) { return () => callback(); }\n",
+                )]),
+        );
         assert_preserved_entry_output(&fixture, &format!("{marker} 42\n"));
         let graph = fixture.dependency_graph();
         let wrapped = graph
@@ -1400,11 +1422,14 @@ fn callback_factory_privacy_does_not_cover_throwing_operands() {
     ] {
         let source =
             format!("import {{ factory }} from './peer.js';\nconst wrapped = {initializer};\n");
-        let fixture =
-            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-                "static/peer",
-                "export function factory(callback) { return () => callback(); }\n",
-            )]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[(
+                    "static/peer",
+                    "export function factory(callback) { return () => callback(); }\n",
+                )]),
+        );
         assert_preserved_entry_error(&fixture, "Error: operand");
         assert!(fixture.dependency_graph().nodes.iter().all(|node| {
             node.synchronous_execution.as_ref().is_none_or(|execution| {
@@ -1423,7 +1448,7 @@ fn private_factory_result_retains_the_audited_summary() {
         FixtureOpts::new(
             "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export function factory(callback) { return { invoke: () => callback() }; }\n",
@@ -1466,11 +1491,14 @@ fn acyclic_exported_factory_result_keeps_its_initialization_exemption() {
         let source = format!(
             "import {{ factory }} from './peer.js';\n{declaration}\nconst later = 42;\nconsole.log(wrapped());\n"
         );
-        let fixture =
-            run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-                "static/peer",
-                "export function factory(callback) { return () => callback(); }\n",
-            )]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[(
+                    "static/peer",
+                    "export function factory(callback) { return () => callback(); }\n",
+                )]),
+        );
         assert_preserved_entry_output(&fixture, "42\n");
         assert_eq!(
             fixture
@@ -1500,6 +1528,7 @@ fn joined_imported_factories_preserve_behavior_without_false_direct_proof_use() 
          console.log(wrapped());\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[
             (
                 "static/first",
@@ -1681,6 +1710,7 @@ fn import_and_local_aliases_preserve_factory_identity() {
          const wrapped = alias(() => later);\nconst later = 42;\nconsole.log(wrapped());\n",
             modules(),
         )
+        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&peers),
     );
     assert_preserved_entry_output(&fixture, "42\n");
@@ -1961,6 +1991,7 @@ fn namespace_factory_keeps_unproven_instance_writes_conservative() {
                 ),
                 modules(),
             )
+            .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
             .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
             .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
                 .with_callback_factory_members("api", &["make"])
@@ -2009,6 +2040,7 @@ fn namespace_factory_ignores_member_callees_in_callback_result_literals() {
                 &[Member::new("wrapped")],
             )],
         )
+        .with_import_order(&["callbacks/wrapped", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = {\n\
@@ -2225,6 +2257,7 @@ fn namespace_factory_ignores_unrelated_call_results_outside_mutation_receivers()
                 &[Member::new("wrapped")],
             )],
         )
+        .with_import_order(&["callbacks/wrapped", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -2251,6 +2284,7 @@ fn namespace_factory_ignores_unrelated_constructor_results_outside_mutation_rece
                 &[Member::new("wrapped")],
             )],
         )
+        .with_import_order(&["callbacks/wrapped", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -2312,6 +2346,7 @@ fn assert_namespace_factory_publication_rejected(prefix: &str) {
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -2424,6 +2459,7 @@ fn namespace_factory_class_field_alias_observes_api_mutation_at_runtime() {
              console.log(globalThis.changed, wrapped.invoke());\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -2448,6 +2484,7 @@ fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
                 &[Member::new("wrapped")],
             )],
         )
+        .with_import_order(&["callbacks/wrapped", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = {\n\
@@ -2476,7 +2513,7 @@ fn unrelated_primitive_operator_results_do_not_disable_namespace_factories() {
              const later = 42;\n\
              console.log(wrapped.invoke());\n",
             modules(),
-        )
+        ).with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -2513,6 +2550,7 @@ fn primitive_operator_operands_keep_callback_reentry_visible() {
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&peers)
         .with_chunk_export_purity(&contracts),
         &["callbacks/wrapped", "values/later"],
@@ -2534,18 +2572,22 @@ fn primitive_operator_coercion_keeps_key_with_later_value() {
                 logical_module("values/key", &[Member::new("key")]),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        ),
+        )
+        .with_import_order(&["values/key", "values/later", "residual"]),
         &["values/key", "values/later"],
         &["eager_use"],
     );
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "values",
-            &[Member::new("key"), Member::new("later")],
-            &["later = 42;"],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values",
+                &[Member::new("key"), Member::new("later")],
+                &["later = 42;"],
+            )],
+        )
+        .with_import_order(&["values", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "prefix0 42\n");
 }
 
@@ -2565,7 +2607,8 @@ fn ordinary_to_primitive_fallback_keeps_key_with_later_value() {
                 logical_module("values/key", &[Member::new("key")]),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        ),
+        )
+        .with_import_order(&["values/key", "values/later", "residual"]),
         &["values/key", "values/later"],
         &["eager_use"],
     );
@@ -2616,18 +2659,22 @@ fn symbol_to_primitive_getter_return_keeps_key_with_later_value() {
                 logical_module("values/key", &[Member::new("key")]),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
-        ),
+        )
+        .with_import_order(&["values/key", "values/later", "residual"]),
         &["values/key", "values/later"],
         &["eager_use"],
     );
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "values",
-            &[Member::new("key"), Member::new("later")],
-            &["later = 42;"],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values",
+                &[Member::new("key"), Member::new("later")],
+                &["later = 42;"],
+            )],
+        )
+        .with_import_order(&["values", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "prefix0 42\n");
 }
 
@@ -2681,17 +2728,20 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
 
 #[test]
 fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        "const object = { [Symbol.toPrimitive]() { return later; } };\n\
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            "const object = { [Symbol.toPrimitive]() { return later; } };\n\
          const same = object === null;\n\
          const key = 'prefix' + (1 + 2);\n\
          const later = 42;\n\
          console.log(same, key, later);\n",
-        vec![
-            logical_module("values/key", &[Member::new("same"), Member::new("key")]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    ));
+            vec![
+                logical_module("values/key", &[Member::new("same"), Member::new("key")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["values/key", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "false prefix3 42\n");
     let graph = fixture.dependency_graph();
     let comparison = source_unit_for_binding(&graph, "same");
@@ -2744,6 +2794,7 @@ fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receiv
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = {\n\
@@ -3011,7 +3062,7 @@ fn namespace_factory_contract_rejects_computed_namespace_mutation() {
                 logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        )
+        ).with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[ (
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
@@ -3040,7 +3091,7 @@ fn namespace_factory_contract_rejects_dynamic_write_through_member_alias() {
                 logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        )
+        ).with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[ (
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
@@ -3069,7 +3120,7 @@ fn namespace_factory_contract_rejects_unknown_call_results_as_write_receivers() 
                 logical_module("callbacks/wrapped", &[Member::new("wrapped")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        )
+        ).with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[ (
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
@@ -3319,7 +3370,7 @@ fn namespace_factory_ignores_adjacent_fresh_error_metadata_writes() {
              const error = helper(null, 'message', 1, 2);\n\
              console.log(wrapped.invoke(), error.name, error.error, error.suppressed);\n",
             modules(),
-        )
+        ).with_import_order(&["callbacks/wrapped", "values/later", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
@@ -3340,46 +3391,54 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
     let contracts = [ChunkExportPurityBuilder::new("static/peer")
         .with_callback_factory_members("api", &["make"])
         .build()];
-    for (helper, setup, has_global_alias) in [
+    for (helper, setup, has_global_alias, import_order) in [
         (
             "function helper(result, first) { result.make = first; return (result = Error('x'), result.make = first, result); }",
             None,
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { function Error() { return api; } return (result = Error('x'), result.make = first, result); }",
             None,
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x', { cause: api }).cause, result.make = first, result); }",
             None,
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { function replace() { result = api; } return (result = Error('x'), replace(), result.make = first, result); }",
             None,
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = lookup(), result.make = first, result); } function lookup() { return api; }",
             None,
             false,
+            &["callbacks/wrapped", "values/later", "residual"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } globalThis.Error = function() { return api; };",
             Some("globalThis.Error = function() { return api; };"),
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } globalThis['Error'] = function() { return api; };",
             Some("globalThis['Error'] = function() { return api; };"),
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Reflect.set(globalThis, 'Error', function() { return api; });",
             Some("Reflect.set(globalThis, 'Error', function() { return api; });"),
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Object.defineProperty(globalThis, 'Error', { value: function() { return api; } });",
@@ -3387,16 +3446,19 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
                 "Object.defineProperty(globalThis, 'Error', { value: function() { return api; } });",
             ),
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } const globalAlias = globalThis; globalAlias.Error = function() { return api; };",
             Some("globalAlias.Error = function() { return api; };"),
             true,
+            &["callbacks/wrapped", "values/later"][..],
         ),
         (
             "function helper(result, first) { return (result = Error('x'), result.make = first, result); } Error = function() { return api; };",
             Some("Error = function() { return api; };"),
             false,
+            &["callbacks/wrapped", "values/later"][..],
         ),
     ] {
         let source = format!(
@@ -3434,6 +3496,7 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
                     ),
                 ],
             )
+            .with_import_order(import_order)
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
             &["callbacks/wrapped", "values/later"],
@@ -3441,6 +3504,7 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
         );
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
         );
@@ -3474,6 +3538,7 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
         );
         expect_atomic_conflict_rejection(
             FixtureOpts::new(&source, modules())
+                .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
             &["callbacks/wrapped", "values/later"],
@@ -3487,6 +3552,7 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
                     &[Member::new("wrapped"), Member::new("later")],
                 )],
             )
+            .with_import_order(&["callbacks/wrapped", "residual"])
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
         );
@@ -3548,6 +3614,7 @@ fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
                     ),
                 ],
             )
+            .with_import_order(&["callbacks/wrapped", "values/later"])
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
             &["callbacks/wrapped", "values/later"],
@@ -3555,6 +3622,7 @@ fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
         );
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
         );
@@ -3634,6 +3702,7 @@ fn destructuring_member_values_keep_namespace_publication_visible() {
                     ),
                 ],
             )
+            .with_import_order(&["callbacks/wrapped", "values/later"])
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
             &["callbacks/wrapped", "values/later"],
@@ -3641,6 +3710,7 @@ fn destructuring_member_values_keep_namespace_publication_visible() {
         );
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
         );
@@ -3782,6 +3852,7 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
         ];
         expect_atomic_conflict_rejection(
             FixtureOpts::new(&source, split)
+                .with_import_order(&["callbacks/wrapped", "values/later"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
             &["callbacks/wrapped", "values/later"],
@@ -3789,6 +3860,7 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
         );
         let colocated = run_fixture(
             FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
         );
@@ -3822,6 +3894,7 @@ fn namespace_capability_privacy_preserves_early_result_invocation() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["callbacks/wrapped", "values/later"])
         .with_extra_chunks(&peers)
         .with_chunk_export_purity(&contracts),
         &["callbacks/wrapped", "values/later"],
@@ -3829,6 +3902,7 @@ fn namespace_capability_privacy_preserves_early_result_invocation() {
     );
     let colocated = run_fixture(
         FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
     );
@@ -3894,6 +3968,7 @@ fn namespace_capability_privacy_requires_total_supported_family_uses() {
         };
         let fixture = run_fixture(
             FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
                 .with_admission_overrides(overrides)
                 .with_extra_chunks(&peers)
                 .with_chunk_export_purity(&contracts),
@@ -3916,6 +3991,7 @@ fn namespace_capability_privacy_requires_total_supported_family_uses() {
                     logical_module("values/later", &[Member::new("later")]),
                 ],
             )
+            .with_import_order(&["callbacks/wrapped", "values/later"])
             .with_admission_overrides(overrides)
             .with_extra_chunks(&peers)
             .with_chunk_export_purity(&contracts),
@@ -4156,13 +4232,24 @@ fn source_record_deferred_live_cell_access_preserves_the_tdz() {
 #[test]
 fn unused_or_ineligible_source_record_factory_has_no_graph_proof_use() {
     let provider = "export function factory() { let state = new Map(); return { get size() { return state.size; } }; }\n";
-    for source in [
-        "import { factory } from './peer.js';\nconsole.log(42);\n",
-        "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
-        "import { factory } from './peer.js';\nfunction use(factory) { return factory(); }\nconsole.log(use(() => 42));\n",
+    for (source, priority) in [
+        (
+            "import { factory } from './peer.js';\nconsole.log(42);\n",
+            &[][..],
+        ),
+        (
+            "import { factory } from './peer.js';\nfactory(123);\nconsole.log(42);\n",
+            &[][..],
+        ),
+        (
+            "import { factory } from './peer.js';\nfunction use(factory) { return factory(); }\nconsole.log(use(() => 42));\n",
+            &["residual"][..],
+        ),
     ] {
         let fixture = run_fixture_with_graphs(
-            FixtureOpts::new(source, vec![]).with_extra_chunks(&[("static/peer", provider)]),
+            FixtureOpts::new(source, vec![])
+                .with_import_order(priority)
+                .with_extra_chunks(&[("static/peer", provider)]),
         );
         assert_preserved_entry_output(&fixture, "42\n");
         let graph = fixture.dependency_graph();
@@ -4302,7 +4389,11 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
         ("static/peer", SOURCE_RECORD_NAMESPACE_PEER),
         ("static/namespace", namespace),
     ];
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_extra_chunks(&chunks));
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&chunks),
+    );
     assert_preserved_entry_output(&fixture, "ReferenceError Later\n");
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
@@ -4316,6 +4407,7 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
+        .with_import_order(&["queue", "later"])
         .with_extra_chunks(&chunks),
         &["queue", "later"],
         &[],
