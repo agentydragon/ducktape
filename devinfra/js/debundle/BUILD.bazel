@@ -1110,7 +1110,6 @@ rust_library(
     name = "peel",
     srcs = [
         "peel/assignment.rs",
-        "peel/decompose.rs",
         "peel/gate_differential_test.rs",
         "peel/mod.rs",
         "peel/placement.rs",

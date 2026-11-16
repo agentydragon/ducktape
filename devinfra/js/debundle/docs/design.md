@@ -1066,8 +1066,8 @@ asymmetric `(eager forward, lazy back)` I-cycles that the
 
 1. `DependencyGraphInput` loads a report once and reconstructs one immutable typed
    `DependencyGraph`, with every edge (constraining and lazy), its original
-   `DepKind`, edge role and commuting premise. Inspection, proposals, decomposition
-   candidates and post-edit gates borrow that topology; quotient working states
+   `DepKind`, edge role and commuting premise. Inspection, proposals, assignment
+   checks and post-edit gates borrow that topology; quotient working states
    share it through `Arc`. Only the input boundary reconstructs the graph.
    Report rows retain external IDs, binding labels, saved destinations and
    diagnostic facts. Saved module and atomic projections remain report data:

@@ -5,14 +5,14 @@ operations. This guide owns the spec/tool improvement loop and shared planning,
 worker, and integration procedures; project adapters supply concrete paths,
 commands, conventions, and gates.
 
-| Task                                | Read                                                                                   | Result                                                        |
-| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Plan an assignment without editing  | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed proposal, decomposition, or selector worklist   |
-| Ground residual proposals           | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                          |
-| Apply one assigned edit             | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence         |
-| Combine worker results              | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition            |
-| Improve specs and the tool together | [Drive specs and tool improvements](#drive-specs-and-tool-improvements)                | Prioritized canonical capability and justified solution route |
-| Coordinate a round                  | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups |
+| Task                                | Read                                                                                   | Result                                                                               |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Plan an assignment without editing  | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed placement proposal, existing-assignment worklist, or selector worklist |
+| Ground residual proposals           | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                                                 |
+| Apply one assigned edit             | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence                                |
+| Combine worker results              | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition                                   |
+| Improve specs and the tool together | [Drive specs and tool improvements](#drive-specs-and-tool-improvements)                | Prioritized canonical capability and justified solution route                        |
+| Coordinate a round                  | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups                        |
 
 ## Roles
 
@@ -491,9 +491,9 @@ before extending the prerequisite chain.
 1. Select the outcome and solution route above. Reuse matching pipeline
    outputs, graphs and reports, refreshing stale evidence as needed. Use
    [planning](../../docs/planning.md#plan-an-assignment) for assignment work.
-2. Route residual proposals through intake. Send reviewed existing-module maps
-   directly to workers; intake does not consume decomposition reports. Prefer
-   coherent synthesis buckets for selector cleanup.
+2. Route residual proposals through intake. Send reviewed maps for existing-module
+   assignments directly to workers. Prefer coherent synthesis buckets for selector
+   cleanup.
 3. Establish each worker's isolated inputs and permitted scope using the
    [adapter contract](#adapter-contract), then dispatch the relevant role.
 4. Collect completed patches and execution evidence; integrate green work using
