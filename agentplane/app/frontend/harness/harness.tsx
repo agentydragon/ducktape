@@ -3562,11 +3562,19 @@ function drops(url: URL): boolean {
 const droppedStreams = new Set<string>();
 
 const unrecordedSessions = new Map<string, Session>();
+// Dispatcher creation and App/History recording have separate timestamps. Preserve the
+// established fixture order with independent Session creation times.
+const fixtureSessionCreatedAt = new Map(
+  THREADS_WITH_SANDBOXES.map((thread, index) => [
+    thread.metadata.threadId,
+    timestampFromDate(new Date(ago((index + 1) * HOUR))),
+  ])
+);
 function sessionInventoryFrames() {
   const sessions = THREADS_WITH_SANDBOXES.map(mapThread).map((thread) =>
     create(SessionSchema, {
       sessionId: thread.metadata.threadId,
-      createdAt: thread.metadata.createdAt,
+      createdAt: fixtureSessionCreatedAt.get(thread.metadata.threadId) ?? thread.metadata.createdAt,
       placement: thread.summary.attached?.spec?.placement ?? {
         kind: {
           case: "environmentHosted",
