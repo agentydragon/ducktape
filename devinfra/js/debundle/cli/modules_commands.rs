@@ -198,8 +198,9 @@ enum ModulesNsCommand {
     Delete(Box<DeleteArgs>),
     /// Construct an entry-residual peel into one fresh owner appended to the
     /// supplied priority, preserving existing assignments and their DFS trace.
-    /// Returns a snapshot-bound plan or a scoped outcome; check and preview
-    /// the plan before applying it.
+    /// Returns a snapshot-bound plan or a scoped outcome. Check it with
+    /// `modules check --plan` and preview with `modules apply --plan --dry-run`
+    /// before applying it.
     Propose(ProposeArgs),
     /// Check an explicit source-unit destination batch against the complete
     /// accepted assignment. Omitted units retain their owners; writes no spec.

@@ -437,7 +437,7 @@ enum DebundleCommand {
     Analyze(AnalyzeArgs),
     /// Per-binding spec verbs (list, assign, unassign, rename, comment).
     Bindings(BindingsNs),
-    /// Module-level spec verbs (list, merge, delete, propose, apply, comment).
+    /// Module-level spec verbs (list, merge, delete, propose, check, apply, comment).
     Modules(ModulesNs),
     /// List atomic groups (source-unit-level SCCs of the constraining-edge
     /// graph; per docs/design.md § "Two classes of atom").
