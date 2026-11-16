@@ -212,6 +212,7 @@ def settings(
         ),
         policy_service_target=policy_controller.tls_target(namespace),
         policy_service_tls=workload_tls.service_client_tls(POLICY_CONTROLLER_URI, client_uri=APP_URI),
+        runner_gateway_control_target=environment_service.control_target(namespace),
         history_service_target=(
             f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).port.number}"
         ),

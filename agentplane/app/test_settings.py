@@ -39,6 +39,7 @@ def _settings_fields() -> dict[str, object]:
         "sandbox_namespace": "sandboxes",
         "runner_gateway_target": "runner-gateway.test:8080",
         "session_dispatcher_target": "session-dispatcher.test:8080",
+        "runner_gateway_control_target": "runner-gateway.{namespace}.svc:8080",
         "history_service_target": "history.test:8080",
         "policy_service_target": "policy-controller.test:8083",
         "policy_service_tls": ClientTLS(
