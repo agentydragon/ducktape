@@ -222,7 +222,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
-        await expect(page.get_by_role("link", name="Test archived thread", exact=True)).to_be_visible()
+        await expect(page.get_by_role("navigation").get_by_text("Test archived thread", exact=True)).to_be_visible()
         await review_view.capture(label="Archived Thread after reload")
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
@@ -922,7 +922,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         expanded_reasoning = reasoning_details.locator(".ui-disclosure-panel .ui-markdown")
         await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
         await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
-        await expect(page.get_by_role("link", name="Streamed thread", exact=True)).to_be_visible()
+        await expect(page.get_by_role("navigation").get_by_text("Streamed thread", exact=True)).to_be_visible()
         await review_view.capture(label="Streamed Thread with tool call and reasoning open")
 
         await page.reload()
