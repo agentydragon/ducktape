@@ -1,0 +1,147 @@
+syntax = "proto3";
+package debundle.saved_native;
+
+import "devinfra/js/debundle/saved_callable.proto";
+import "devinfra/js/debundle/saved_purity.proto";
+import "devinfra/js/debundle/spec_wire.proto";
+
+message NativeIntegrity {
+  repeated debundle.saved_purity.NativeIntrinsic mutated = 1;
+  repeated PrototypeMutation prototype_mutations = 2;
+  repeated MutationWitness witnesses = 3;
+  // Evidence contains its stable author-input key.
+  repeated ValueInputEvidence value_input_evidence = 4;
+  repeated debundle.saved_purity.AuthorInputRef consumed_value_inputs = 5;
+  repeated debundle.saved_purity.HostBehaviorKey consumed_host_behavior = 6;
+  repeated debundle.saved_purity.NativeIntrinsic never_written = 7;
+  repeated NeverWrittenOverride never_written_overrides = 8;
+}
+
+message ValueInputEvidence {
+  debundle.saved_purity.AuthorInputRef reference = 1;
+  string spec_location = 2;
+  debundle.spec.SourceMatchClaim source_match = 3;
+  optional debundle.spec.CapturedValueKind value_kind = 4;
+  string source_path = 5;
+  optional string parser_input_file = 6;
+  string audited_source_sha256 = 7;
+  string selected_binding = 8;
+  debundle.saved_purity.SourceLocation declaration_location = 9;
+  debundle.saved_purity.SourceLocation initializer_location = 10;
+  optional string expected_export = 11;
+  optional string note = 12;
+}
+
+message MutationWitness {
+  string chunk_id = 1;
+  uint64 statement_ordinal = 2;
+  debundle.saved_purity.SourceLocation source_location = 3;
+  optional NativeMutationOperation operation = 4;
+  repeated debundle.saved_purity.NativeIntrinsic receiver_roots = 5;
+  bool through_local_alias = 6;
+  optional string receiver_global = 7;
+  repeated debundle.saved_purity.NativeIntrinsic affected_roots = 8;
+  repeated WriteSlot target_slots = 9;
+  repeated debundle.saved_purity.NativeIntrinsic key_dependencies = 10;
+  repeated debundle.saved_purity.NativeIntrinsic invalidated_key_dependencies = 11;
+  repeated debundle.saved_purity.AuthorInputRef value_input_refs = 12;
+  repeated ValueInputEvidence value_input_evidence = 13;
+  UnreachableBranch unreachable_branch = 14;
+  debundle.saved_purity.Span span = 15;
+}
+
+message WriteSlot {
+  ReceiverPath receiver = 1;
+  PropertyKey key = 2;
+}
+
+message ReceiverPath {
+  oneof path {
+    Special special = 1;
+    debundle.saved_purity.NativeIntrinsic constructor = 2;
+    debundle.saved_purity.NativeIntrinsic prototype = 3;
+    debundle.saved_purity.NativeIntrinsic descendant = 4;
+  }
+  enum Special {
+    SPECIAL_GLOBAL_OBJECT = 0;
+    SPECIAL_ARRAY_ITERATOR_PROTOTYPE = 1;
+    SPECIAL_SET_ITERATOR_PROTOTYPE = 2;
+    SPECIAL_UNKNOWN = 3;
+  }
+}
+
+message PropertyKey {
+  oneof key {
+    string string_key = 1;
+    Affixed affixed = 2;
+    Special special = 3;
+  }
+  message Affixed {
+    string prefix = 1;
+    string suffix = 2;
+  }
+  enum Special {
+    SPECIAL_SYMBOL_ITERATOR = 0;
+    SPECIAL_OTHER_SYMBOL = 1;
+    SPECIAL_UNKNOWN = 2;
+  }
+}
+
+message UnreachableBranch {
+  debundle.saved_callable.CallbackObjectArguments arguments = 1;
+  string imported_local = 2;
+  debundle.saved_purity.SourceLocation wrapper_call_location = 3;
+  debundle.saved_purity.SourceLocation callback_location = 4;
+  debundle.saved_purity.SourceLocation guard_location = 5;
+  debundle.saved_purity.Span guard_span = 6;
+  debundle.saved_purity.Span wrapper_call_span = 7;
+  debundle.saved_purity.Span callback_span = 8;
+}
+
+message PrototypeMutation {
+  string chunk_id = 1;
+  uint64 statement_ordinal = 2;
+  debundle.saved_purity.SourceLocation source_location = 3;
+  optional NativePrototypeMutationKind kind = 4;
+  // Absent means any property; present with no names means only Symbol keys.
+  PropertyNames properties = 5;
+  repeated debundle.saved_purity.NativeIntrinsic key_dependencies = 6;
+  debundle.saved_purity.Span span = 7;
+}
+
+message PropertyNames {
+  repeated string names = 1;
+}
+
+message NeverWrittenOverride {
+  uint64 witness = 1;
+  string chunk_id = 2;
+  debundle.saved_purity.SourceLocation source_location = 3;
+  repeated debundle.saved_purity.NativeIntrinsic families = 4;
+  optional NeverWrittenReach reach = 5;
+}
+
+enum NativeMutationOperation {
+  NATIVE_MUTATION_OPERATION_PROPERTY_ASSIGNMENT = 0;
+  NATIVE_MUTATION_OPERATION_BINDING_ASSIGNMENT = 1;
+  NATIVE_MUTATION_OPERATION_UPDATE = 2;
+  NATIVE_MUTATION_OPERATION_DELETE = 3;
+  NATIVE_MUTATION_OPERATION_MUTATION_CALL = 4;
+}
+
+enum NativePrototypeMutationKind {
+  NATIVE_PROTOTYPE_MUTATION_KIND_WRITE = 0;
+  NATIVE_PROTOTYPE_MUTATION_KIND_DELETE = 1;
+  NATIVE_PROTOTYPE_MUTATION_KIND_REFLECTIVE = 2;
+  NATIVE_PROTOTYPE_MUTATION_KIND_ESCAPE = 3;
+  NATIVE_PROTOTYPE_MUTATION_KIND_DYNAMIC_SCOPE = 4;
+}
+
+enum NeverWrittenReach {
+  // The receiver may be any native object.
+  NEVER_WRITTEN_REACH_UNKNOWN_RECEIVER = 0;
+  // A global write whose key may name a binding or couples prototype slots.
+  NEVER_WRITTEN_REACH_GLOBAL_OBJECT = 1;
+  // A family-wide write without an exact receiver path.
+  NEVER_WRITTEN_REACH_FAMILY = 2;
+}

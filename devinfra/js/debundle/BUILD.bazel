@@ -668,8 +668,8 @@ rust_library(
     name = "analysis",
     srcs = [
         "analysis_inputs.rs",
-        "analysis_inputs/saved.rs",
         "analysis_inputs/saved_callable.rs",
+        "analysis_inputs/saved_native.rs",
         "analysis_provenance.rs",
         "assignment_assembly.rs",
         "atomic_groups.rs",
@@ -819,6 +819,7 @@ rust_library(
         ":js_ast",
         ":report_io",
         ":saved_callable_rust_proto",
+        ":saved_native_rust_proto",
         ":saved_purity_rust_proto",
         ":selector_outcome",
         ":source_identity",
@@ -2339,4 +2340,41 @@ rust_test(
     crate = ":analysis_projection",
     edition = "2024",
     deps = ["@crates//:serde_yaml"],
+)
+
+proto_library(
+    name = "saved_native_proto",
+    srcs = ["saved_native.proto"],
+    data = [":saved_native_options"],
+    deps = [
+        ":saved_callable_proto",
+        ":saved_purity_proto",
+        ":spec_wire_proto",
+    ],
+)
+
+rust_prost_library(
+    name = "saved_native_rust_proto",
+    proto = ":saved_native_proto",
+)
+
+rust_prost_transform(
+    name = "saved_native_options",
+    prost_opts = [
+        "type_attribute=debundle.saved_native.NativeMutationOperation=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_native.NativeMutationOperation=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_native.NativeMutationOperation=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_native.NativeMutationOperation=#[derive(::strum::Display)]",
+        "type_attribute=debundle.saved_native.NativeMutationOperation=#[strum(serialize_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_native.NativePrototypeMutationKind=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_native.NativePrototypeMutationKind=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_native.NativePrototypeMutationKind=#[serde(rename_all = \"snake_case\")]",
+        "type_attribute=debundle.saved_native.NeverWrittenReach=#[derive(::serde::Serialize)]",
+        "type_attribute=debundle.saved_native.NeverWrittenReach=#[derive(::serde::Deserialize)]",
+        "type_attribute=debundle.saved_native.NeverWrittenReach=#[serde(rename_all = \"snake_case\")]",
+    ],
+    deps = [
+        "@crates//:serde",
+        "@crates//:strum",
+    ],
 )

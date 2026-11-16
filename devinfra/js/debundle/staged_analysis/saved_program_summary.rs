@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::analysis_inputs::saved::SavedNativeIntegrity;
+use analysis::analysis_inputs::saved_native;
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
     InitializerCallEffectInputRef, NativeOperationInputEvidence, ResolvedArgumentInput,
@@ -35,7 +35,7 @@ pub(super) struct SavedProgramSummary<'a> {
     imported_callables: Vec<u8>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
-    native_integrity: Option<SavedNativeIntegrity<'a>>,
+    native_integrity: Option<Vec<u8>>,
     bundle_globals: Cow<'a, analysis::analysis_inputs::BundleGlobalNames>,
     value_inputs: BTreeMap<String, Vec<SavedValueInput>>,
     native_operation_inputs: BTreeMap<String, Vec<SavedNativeOperationInput>>,
@@ -174,7 +174,8 @@ impl<'a> SavedProgramSummary<'a> {
             native_integrity: summary
                 .native_integrity
                 .as_ref()
-                .map(SavedNativeIntegrity::snapshot),
+                .map(saved_native::encode)
+                .transpose()?,
             bundle_globals: Cow::Borrowed(&summary.bundle_globals),
             native_operation_inputs,
             initializer_call_effect_inputs,
@@ -306,7 +307,7 @@ impl<'a> SavedProgramSummary<'a> {
             imported_callables,
             native_integrity: self
                 .native_integrity
-                .map(SavedNativeIntegrity::restore)
+                .map(|bytes| saved_native::decode(&bytes))
                 .transpose()?,
             bundle_globals: self.bundle_globals.into_owned(),
             native_operation_inputs,

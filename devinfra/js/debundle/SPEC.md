@@ -386,7 +386,10 @@ Saved analysis uses a compressed MessagePack container with typed protobuf
 purity and imported-callable tables. The callable table preserves trusted
 provider dependencies for analysis; runtime reports continue to omit them.
 Saved purity facts refer to verdicts by index; shared cause references must
-point to earlier table entries. Other saved-analysis facts retain MessagePack.
+point to earlier table entries. The whole-program native-integrity census also
+uses typed protobuf, including source spans absent from report JSON. Its
+property-name message preserves absent (any property) versus present-empty
+(only Symbol keys). Other saved-analysis facts retain MessagePack.
 
 The analysis projection omits only fields explicitly declared as author-note
 provenance. Semantic map entries remain data even when a chunk, export, or

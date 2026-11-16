@@ -16,8 +16,8 @@ use crate::execution_evidence::SourceLocation;
 use crate::purity::Purity;
 use spec::{BuiltinGlobalRoot, CapturedValueKind, ResolvedMemberSelector, SourceMatchClaim};
 
-pub mod saved;
 pub mod saved_callable;
+pub mod saved_native;
 
 pub use analysis_projection_wire_proto::debundle::analysis_projection::{
     KnownEffect, LocalEffectPolicy,
