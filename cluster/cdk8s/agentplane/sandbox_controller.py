@@ -77,17 +77,13 @@ def _account(account: ServiceAccountRef) -> str:
 
 @dataclass(frozen=True)
 class EnvironmentServiceAuthority:
-    """The shared authority projection for the legacy Gateway and the Controller receiver."""
+    """The service identity grants for the EnvironmentService receiver."""
 
-    readers: frozenset[str]
-    managers: frozenset[str]
     launchers: frozenset[str]
-    operators: frozenset[str]
     service_readers: frozenset[ServiceSPIFFEID]
     service_managers: frozenset[ServiceSPIFFEID]
     service_launchers: frozenset[ServiceSPIFFEID]
     service_operators: frozenset[ServiceSPIFFEID]
-    wake_callers: frozenset[str]
     wake_service_callers: frozenset[ServiceSPIFFEID]
     service_delegation_actor: ServiceSPIFFEID | None
     service_delegation_methods: tuple[str, ...]
@@ -96,10 +92,8 @@ class EnvironmentServiceAuthority:
 def environment_service_authority(
     env: Environment,
     *,
-    operator_callers: Iterable[ServiceAccountRef],
     launchers: Iterable[ServiceAccountRef],
     operator_service_callers: frozenset[ServiceSPIFFEID],
-    wake_callers: Iterable[ServiceAccountRef],
     wake_service_callers: frozenset[ServiceSPIFFEID],
     delegation_actor: ServiceAccountRef | None,
     extra_delegated_methods: tuple[str, ...] = (),
@@ -116,10 +110,7 @@ def environment_service_authority(
         else ()
     )
     return EnvironmentServiceAuthority(
-        readers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
-        managers=frozenset({_account(ServiceAccountRef(namespace=env.namespace, name=app_component.NAME))}),
         launchers=launcher_accounts,
-        operators=frozenset(map(_account, operator_callers)),
         service_readers=frozenset({APP_URI}),
         service_managers=frozenset({APP_URI}),
         service_launchers=(
@@ -128,7 +119,6 @@ def environment_service_authority(
             else frozenset()
         ),
         service_operators=operator_service_callers,
-        wake_callers=frozenset(map(_account, wake_callers)),
         wake_service_callers=wake_service_callers,
         service_delegation_actor=ACTIONS_URI if delegated_methods else None,
         service_delegation_methods=delegated_methods,
@@ -170,7 +160,6 @@ class SandboxController(Construct):
         id: str,
         env: Environment,
         *,
-        gateway_audience: str,
         gateway_control_target: str,
         authority: EnvironmentServiceAuthority,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -219,16 +208,10 @@ class SandboxController(Construct):
                 auth=[workload_listener.SPIFFEAuth(ca_file=Path(runner_tls.ca_file))],
             ),
             policy_namespace=namespace,
-            audience=gateway_audience,
-            readers=tuple(sorted(authority.readers)),
-            managers=tuple(sorted(authority.managers)),
-            launchers=tuple(sorted(authority.launchers)),
-            operators=tuple(sorted(authority.operators)),
             service_readers=tuple(sorted(authority.service_readers)),
             service_managers=tuple(sorted(authority.service_managers)),
             service_launchers=tuple(sorted(authority.service_launchers)),
             service_operators=tuple(sorted(authority.service_operators)),
-            wake_callers=tuple(sorted(authority.wake_callers)),
             wake_service_callers=tuple(sorted(authority.wake_service_callers)),
             service_delegation=(
                 ServiceDelegation(

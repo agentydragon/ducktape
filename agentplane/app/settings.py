@@ -160,8 +160,9 @@ class Settings(BaseModel):
     policy_service_target: str = Field(min_length=1)
     policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")
     # CLEANUP(added 2026-11-16): Remove after manifest omission and App config rollout.
-    runner_gateway_control_target: str = Field(
-        min_length=1,
+    runner_gateway_control_target: str | None = Field(
+        default=None,
+        exclude=True,
         description="Environments Runtime proxy target, typically `sandbox-controller.{namespace}.svc:8082`; "
         "the proxy routes each Runtime call using the Sandbox identity.",
     )

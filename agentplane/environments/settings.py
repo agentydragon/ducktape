@@ -56,17 +56,17 @@ class EnvironmentService(BaseModel):
     policy_namespace: str = Field(min_length=1)
     # CLEANUP(added 2026-11-15): Remove legacy audience/account fields after manifest omission and rollout.
     # These settings decode old deployments but grant no admission.
-    audience: str = ""
-    readers: tuple[Account, ...] = ()
-    managers: tuple[Account, ...] = ()
-    launchers: tuple[Account, ...] = ()
-    operators: tuple[Account, ...] = ()
+    audience: str = Field(default="", exclude=True)
+    readers: tuple[Account, ...] = Field(default=(), exclude=True)
+    managers: tuple[Account, ...] = Field(default=(), exclude=True)
+    launchers: tuple[Account, ...] = Field(default=(), exclude=True)
+    operators: tuple[Account, ...] = Field(default=(), exclude=True)
     service_readers: tuple[ServiceSPIFFEID, ...] = ()
     service_managers: tuple[ServiceSPIFFEID, ...] = ()
     service_launchers: tuple[ServiceSPIFFEID, ...] = ()
     service_operators: tuple[ServiceSPIFFEID, ...] = ()
     # CLEANUP(added 2026-11-15): Remove after manifests omit wake_callers and that rollout completes. Ignored.
-    wake_callers: tuple[Account, ...] = ()
+    wake_callers: tuple[Account, ...] = Field(default=(), exclude=True)
     # Read-only automatic-wake eligibility must match the Sessions broker grants.
     wake_service_callers: tuple[ServiceSPIFFEID, ...] = ()
     service_delegation: ServiceDelegation | None = None

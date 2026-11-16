@@ -4228,7 +4228,6 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/app
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
-    runner_gateway_control_target: sandbox-controller.{namespace}.svc:8082
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
     notifications_request_timeout_s: 5
@@ -6532,15 +6531,6 @@ data:
           - mode: spiffe
             ca_file: /run/agentplane/workload-trust/ca-certificates.crt
       policy_namespace: agentplane-staging
-      audience: agentplane-runner-gateway
-      readers:
-        - agentplane-staging/app
-      managers:
-        - agentplane-staging/app
-      launchers:
-        - agentplane-staging/actions
-      operators:
-        - agentplane-staging/app
       service_readers:
         - spiffe://agentplane/app
       service_managers:
@@ -6549,10 +6539,6 @@ data:
         - spiffe://agentplane/actions
       service_operators:
         - spiffe://agentplane/app
-      wake_callers:
-        - agentplane-staging/actions
-        - agentplane-staging/app
-        - agentplane-staging/notifications
       wake_service_callers:
         - spiffe://agentplane/app
         - spiffe://agentplane/notifications

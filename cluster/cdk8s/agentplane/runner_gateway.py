@@ -3,7 +3,6 @@
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "runner-gateway"
-TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 
 

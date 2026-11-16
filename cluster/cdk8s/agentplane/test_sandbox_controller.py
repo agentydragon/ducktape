@@ -145,11 +145,6 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
     )
     receiver = controller.environment_service
     assert receiver is not None
-    namespace = staging.ENV.namespace
-    assert set(receiver.readers) == {f"{namespace}/{app.NAME}"}
-    assert set(receiver.managers) == {f"{namespace}/{app.NAME}"}
-    assert set(receiver.launchers) == {f"{namespace}/{actions.NAME}"}
-    assert set(receiver.operators) == {f"{namespace}/{app.NAME}"}
     assert set(receiver.service_readers) == {APP_URI}
     assert set(receiver.service_managers) == {APP_URI}
     assert set(receiver.service_launchers) == {ACTIONS_URI}
@@ -224,10 +219,8 @@ def test_actions_service_launcher_requires_its_existing_namespaced_launcher_gran
 ) -> None:
     authority = sandbox_controller.environment_service_authority(
         replace(staging.ENV, namespace="receiver-test"),
-        operator_callers=(),
         launchers=() if launcher is None else (launcher,),
         operator_service_callers=frozenset(),
-        wake_callers=(),
         wake_service_callers=frozenset(),
         delegation_actor=None,
     )
