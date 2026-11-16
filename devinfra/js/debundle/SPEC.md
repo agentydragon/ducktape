@@ -1143,8 +1143,10 @@ necessary contraction clauses can branch, so the worst case can be exponential.
 The status is relative to the captured graph, assumptions, owner policy and
 destination scope. Selector realization and emitted runtime behavior remain
 separate checks. See [exact residual placement](docs/module_search.md) for the
-CLI workflow and [module placement](docs/module_placement.md) for its
-constructive coverage proof.
+CLI workflow. The [schedule-existence proof](docs/polynomial_esm_scheduling.md)
+explains the complexity boundary; the
+[explicit-order model](docs/placement_algorithm.md) specifies the scoped target
+constructor, which does not establish the current CLI already implements it.
 
 `modules propose --strategy auto` remains an explicit advisory factorization
 inventory. Readiness labels and empty output do not establish that no peel
@@ -4814,7 +4816,7 @@ not a certified schedule or an accepted program.
 
 The preferred policy supplies ordering choices; it is not an exhaustive
 acceptance rule. The exact constructor checks the full graph, and the
-[construction proof](docs/module_placement.md) describes its completeness.
+[exact trial argument](docs/polynomial_esm_scheduling.md#exact-trial-completeness) describes its completeness.
 
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
 is a Pass-1 cycle of constraining edges. A Pass-2 `esm_evaluation_tdz` rejection

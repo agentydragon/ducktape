@@ -7,6 +7,10 @@ the validator enforces) before working on the splitting pipeline.
 
 ## Spec authoring
 
+- Plans hold outstanding work only. Consolidate overlapping placement plans;
+  keep enduring graph contracts, proofs and failed-approach lessons in `docs/`,
+  then remove completed or superseded plans. Follow the repository's
+  <../../../README.md#plans> lifecycle rule.
 - Invest in tools and side-output analyses that make spec authoring cheap; the
   pipeline emits machine-readable artifacts for suggesting source-unit/module splits and
   renames.
@@ -37,8 +41,9 @@ the validator enforces) before working on the splitting pipeline.
   `--max-checks` budgets analyzed partition states, not arbitrary complete-
   assignment retries. Keep graph
   acceptance distinct from selector realization and runtime evidence. The CLI
-  workflow is in <docs/module_search.md>; the construction proof is in
-  <docs/module_placement.md>. Preserve the real-source CLI and property/oracle
+  workflow is in <docs/module_search.md>. The scheduling complexity boundary is
+  in <docs/polynomial_esm_scheduling.md>; the scoped target construction is in
+  <docs/placement_algorithm.md>. Preserve the real-source CLI and property/oracle
   tests when changing candidate generation, scheduling, gate checks, or plan
   application.
 - When a new bundle shape exposes a missing capability, extend the debundler,

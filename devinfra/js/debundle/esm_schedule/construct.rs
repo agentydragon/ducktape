@@ -1,6 +1,6 @@
 //! Derive an actual ESM traversal, committing successful subtrees rather than
-//! enumerating import-list permutations. See docs/module_placement.md for the
-//! successor-closure and completion-preservation proofs.
+//! enumerating import-list permutations. See docs/polynomial_esm_scheduling.md
+//! for the exact-trial proof and why failed retries can still be exponential.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 

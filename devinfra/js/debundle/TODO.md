@@ -13,8 +13,8 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/module_placement.md> — completed constructive placement delivery and
-  validation evidence; the remaining measured performance work is W9 below.
+- <plans/explicit_import_order.md> — active explicit-order delivery contract and
+  complete, polynomial residual family; remaining acceptance is W9 below.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
@@ -208,6 +208,11 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   for same-named modules in different chunks, case collisions, normalized paths
   and supported qualified spellings. Preserve Linux path semantics without
   introducing transitional identity shims.
+
+- **AR9 — Group configuration by chunk.** Consider replacing parallel
+  `<chunk>.<setting>` maps with one typed chunk record, optionally in per-chunk
+  YAML files. Keep this separate from the explicit-order delivery: preserve
+  chunk identity, source/spec provenance and semantic analysis cache keys.
 
 ### Automation product flows over the solver
 
@@ -613,24 +618,31 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Reduce measured broad-placement cost.** Complete construction, exact
-  SCC-local scheduling, cooperative deadlines and retained-schedule certification
-  are implemented; <plans/module_placement.md> tracks delivery evidence. A fresh
-  optimized 1,073-atom query with one new owner reached only 11 partitions in a
-  ten-second placement budget, with repeated canonical quotient construction
-  prominent in the profile. A separate default-scope query spent its budget in
-  one constrained import component. These are `incomplete`, not no-peel results.
-  Consumer-indexed early-conflict checks bound avoidable scans in the regression
-  tests, but the final broad query still reached its time budget in that first
-  component. Profile repeated trials and deadline-polling cost before choosing
-  the next scheduler optimization; retain independent raw-import oracles and
-  cancellation checks.
-  For repeated quotient work, investigate updating canonical edge contributions
-  through the existing simultaneous batch machinery rather than rebuilding
-  every state. Preserve Gate activation, changing module universes, exact domains
-  and contraction-clause coverage with from-scratch differentials and work-count
-  tests. Close when broad queries show a measured gain at the same scope and
-  limits, not by narrowing scope, weakening the gate or relabeling incompleteness.
+- **W9 — Deliver explicit-order residual construction.** Follow
+  <plans/explicit_import_order.md> and the proof in
+  <docs/placement_algorithm.md>. Require each materialized chunk to supply one
+  shared priority; verify it without arbitrary scheduling or implicit repair.
+  Carry the final priority with owner changes through check, preview and apply.
+  Replace general placement search with the proved append-one-owner,
+  baseline-preserving residual family and report that exact completeness scope.
+  Derive all-seed feasibility once on the closure SCC DAG, materialize one
+  selected group and certify it once. Keep selector realization distinct from
+  graph feasibility. Retire competing proposal/factorization/refine paths and
+  update the supported CLI, docs, AGENTS, skills and executable recipes.
+  Close with independent tiny subset/import oracles, real CLI/apply/Node tests,
+  passing public/private controls and a fresh unseeded useful peel followed by
+  checked application. Prepared graph-query cost must be measured separately
+  from source/selector analysis. Historical broad-placement timeouts are
+  inconclusive and do not establish the new guarantee; the useful algorithmic lessons are in the design docs.
+
+- **W10 — Prove additional useful residual families.** The first complete
+  constructor only moves true-entry atoms to one fresh owner while retaining the
+  old traversal. Existing-owner extensions, generated/catchall residual owners,
+  reordered traversals and beneficial owner reorganization need separate
+  algorithms and proofs. Report unsupported routes explicitly. Extend the
+  supported scope only with a useful residual-reduction example, independent
+  small-case soundness/completeness evidence and prepared-query measurements;
+  do not silently widen the initial family's negative result.
 
 ### Planner CLI follow-ups
 

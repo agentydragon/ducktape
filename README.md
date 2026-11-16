@@ -40,11 +40,12 @@ GitHub Actions run `bazel {build,test}` (including lint) via `bbr` on a BuildBud
 
 ### `plans/`
 
-`<dir>/plans/`, or `<dir>/PLAN.md` for one central plan, holds future and in-progress design.
+`<dir>/plans/`, or `<dir>/PLAN.md` for one central plan, holds active work only: outstanding implementation, open decisions and acceptance criteria. Plans are not historical records or stable references.
 
-- A plan burns down: entries leave when their work lands; the plan is deleted when done (at most a short tombstone while a compatibility boundary needs a pointer).
-- Nothing outside a plan cites one (code, `SPEC.md`, docs) — a stable citable identifier means the content is ready to graduate.
+- A plan burns down: entries leave when their work lands; delete completed or superseded plans. Consolidate overlapping plans under one active owner.
+- Code, `SPEC.md` and maintained docs cite enduring documentation, not a plan. `TODO.md` may link an active plan for dispatch; remove that pointer when the plan closes.
 - Durable content graduates to the code site, `SPEC.md`, or `<dir>/docs/`. A goal the code doesn't meet yet stays plan content until the last step achieves it.
+- Capture non-obvious lessons from failed approaches as maintained constraints or proofs, then delete the obsolete plan. Git and PRs retain the chronology and old validation logs.
 
 ### `debug/`
 

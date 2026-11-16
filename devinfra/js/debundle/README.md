@@ -156,7 +156,7 @@ Docs: splitting correctness and implementation entry points <docs/design.md>
 cross-command CLI semantics (env vars, output formats, validation defaults, batch
 atomicity, gate queries, other invocation shapes) <docs/cli.md>, per-command flags
 `debundle <command> --help`; selector authoring <docs/selectors.md>; module/binding
-editing <docs/spec_editing.md>. Work queue <TODO.md>; `plans/` designs, `perf/`
+editing <docs/spec_editing.md>. Work queue <TODO.md>; `plans/` active work only, `perf/`
 measurements, `docs/lessons_learned/` rejected approaches. Frozen specimen copies
 elsewhere in the repo are not the live implementation.
 
