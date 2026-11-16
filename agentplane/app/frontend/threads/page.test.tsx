@@ -77,7 +77,7 @@ import {
   type ThreadViewInit,
 } from "./testing/state";
 import { ThreadSyncContext, type ThreadState, type ThreadSync } from "./thread_sync";
-import { TopbarContext } from "../topbar";
+import { TopbarContext } from "../shell/topbar";
 import { reconnected, serveEventStreams, ServedWatch, stubWatchFetch } from "../testing/watch";
 
 const COMMAND_TARGET = { sandbox: THREAD.summary.sandbox!.name, sandboxUid: "20000000-0000-4000-8000-000000000001" };

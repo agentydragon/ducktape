@@ -30,7 +30,7 @@ ts_library(
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:time_ago",
-        "//agentplane/app/frontend:topbar",
+        "//agentplane/app/frontend/shell:topbar",
     ],
 )
 

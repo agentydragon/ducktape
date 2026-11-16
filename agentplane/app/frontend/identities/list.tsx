@@ -6,7 +6,7 @@ import type { Credential } from "../../../egress/api/rules/egress_rules_pb";
 import type { Identity, PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { useCredentialMetadata } from "../bindings/credential_watch";
 import { useIdentities, usePolicyResources } from "../policy/watch";
-import { TopbarTitle } from "../topbar";
+import { TopbarTitle } from "../shell/topbar";
 import { kubernetesAccounts } from "./accounts";
 import { identityOrigin } from "./origin";
 import { identityBindings } from "./references";

@@ -33,9 +33,9 @@ import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type { Live } from "../live";
-import { SandboxRoute } from "../app";
+import { SandboxRoute } from "../shell/app";
 import { SandboxPage } from "./sandbox_page";
-import { TopbarContext } from "../topbar";
+import { TopbarContext } from "../shell/topbar";
 import type * as SandboxLiveModule from "./live";
 import {
   EnvironmentRuntimeLifecycleMode,

@@ -1,4 +1,4 @@
-import type { ThreadTabStatus } from "../tab_metadata";
+import type { ThreadTabStatus } from "../shell/tab_metadata";
 import { THREAD_STATUS_MARKS, type ThreadStatusMark } from "../status_mark";
 
 const FAVICON_ID = "agentplane-favicon";

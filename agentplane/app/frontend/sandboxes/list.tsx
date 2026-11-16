@@ -36,7 +36,7 @@ import { MarkGlyph } from "../mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
-import { TopbarTitle } from "../topbar";
+import { TopbarTitle } from "../shell/topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 import { launchEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";
 

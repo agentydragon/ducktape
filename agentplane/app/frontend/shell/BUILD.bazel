@@ -1,0 +1,171 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    testonly = True,
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
+)
+
+ts_library(
+    name = "frontend_config",
+    srcs = ["frontend_config.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend:app_config_client",
+    ],
+)
+
+ts_library(
+    name = "tab_metadata",
+    srcs = ["tab_metadata.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = ["//agentplane/app/frontend:status_mark"],
+)
+
+agentplane_vitest_test(
+    name = "tab_metadata_test",
+    srcs = ["tab_metadata.test.ts"],
+    deps = [
+        ":tab_metadata",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:status_mark",
+    ],
+)
+
+js_library(
+    name = "sidebar_css",
+    srcs = ["sidebar.css"],
+)
+
+js_library(
+    name = "shell_css",
+    srcs = ["shell.css"],
+)
+
+ts_library(
+    name = "sidebar",
+    srcs = [
+        "sidebar.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":sidebar_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/threads:thread_list",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
+        "//util/frontend:resize_handle",
+        "//util/frontend/transcript:history_recorder_tools",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "sidebar_test",
+    srcs = ["sidebar.test.tsx"],
+    deps = [
+        ":sidebar",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/react-router",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:schema",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/testing:watch",
+        "//agentplane/app/frontend/threads:client",
+        "//agentplane/app/frontend/threads:live",
+        "//agentplane/app/frontend/threads:thread_groups",
+        "//agentplane/app/frontend/threads:thread_status",
+        "//agentplane/app/frontend/threads:thread_view_recorder",
+        "//agentplane/app/frontend/threads/testing:state",
+        "//agentplane/environments/v1:environment_service_pb",
+        "//agentplane/history_service/api/history:history_service_pb",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+ts_library(
+    name = "topbar",
+    srcs = ["topbar.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+    ],
+)
+
+ts_library(
+    name = "app",
+    srcs = [
+        "app.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":shell_css",
+        ":sidebar",
+        ":tab_metadata",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend:live",
+        "//agentplane/app/frontend:settings",
+        "//agentplane/app/frontend:stream_status",
+        "//agentplane/app/frontend:system",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/connections:consent",
+        "//agentplane/app/frontend/identities:identity_page",
+        "//agentplane/app/frontend/identities:list",
+        "//agentplane/app/frontend/sandboxes:list",
+        "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/sandboxes:sandbox_page",
+        "//agentplane/app/frontend/threads:electric_sync",
+        "//agentplane/app/frontend/threads:home",
+        "//agentplane/app/frontend/threads:live",
+        "//agentplane/app/frontend/threads:page",
+        "//agentplane/app/frontend/threads:thread_sync",
+    ],
+)
+
+ts_library(
+    name = "theme",
+    srcs = ["theme.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+check_vitest_specs()
