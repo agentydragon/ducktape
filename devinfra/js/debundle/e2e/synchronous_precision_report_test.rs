@@ -23,10 +23,13 @@ fn assert_reason(execution: &Value, expected: Value) -> &Value {
 
 #[test]
 fn complete_execution_has_no_precision_loss() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        "function factory() { return 3; }\nconst result = factory();\nconsole.log(result);",
-        vec![],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            "function factory() { return 3; }\nconst result = factory();\nconsole.log(result);",
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     assert_eq!(result["complete"], true, "{result:#}");
@@ -46,15 +49,18 @@ fn complete_execution_has_no_precision_loss() {
 
 #[test]
 fn incomplete_local_call_preserves_unrelated_own_data_reads() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const record = { name: "ready" };
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const record = { name: "ready" };
 function ignore(value) {}
 ignore(...[{}]);
 const selected = [record.name];
 console.log(selected[0]);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, "ready\n");
     let selected = execution(&fixture, "selected");
     assert_eq!(selected["complete"], true, "{selected}");
@@ -69,13 +75,16 @@ console.log(selected[0]);
 
 #[test]
 fn initialized_enum_own_data_read_is_complete_and_keeps_eager_dependency() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
 const selected = [Status.READY];
 console.log(selected[0]);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_preserved_entry_output(&fixture, "ready\n");
     let selected = execution(&fixture, "selected");
@@ -127,7 +136,8 @@ const reflected = [Reflected.READY];
 
 console.log(changed[0], escaped[0], getter[0], dynamic[0], reflected[0]);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "changed ready getter ready reflected\n");
 
     for binding in ["changed", "escaped", "getter", "dynamic", "reflected"] {
@@ -171,7 +181,9 @@ fn skipped_local_mutations_keep_later_property_reads_conservative() {
              const selected = {observed};\n\
              console.log(selected, globalThis.observed);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, output);
         let report = execution(&fixture, "selected");
         assert_eq!(report["complete"], false, "{mutation}: {report}");
@@ -190,8 +202,9 @@ fn skipped_local_mutations_keep_later_property_reads_conservative() {
 
 #[test]
 fn skipped_getter_installation_keeps_binding_effects_at_the_later_read() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const state = 'ready';
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const state = 'ready';
 const record = { name: 'original' };
 function change(value) {
   Object.defineProperty(value, 'name', { get() { return state; } });
@@ -201,8 +214,10 @@ change(...[record]);
 const selected = record.name;
 console.log(selected);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, "ready\n");
     let graph = fixture.dependency_graph();
     let reader = source_unit_for_binding(&graph, "selected");
@@ -231,7 +246,9 @@ fn skipped_post_initializer_writes_disable_the_closed_enum_certificate() {
              const selected = Status.READY;\n\
              console.log(selected);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "changed\n");
         let report = execution(&fixture, "selected");
         assert_eq!(report["complete"], false, "{mutation}: {report}");
@@ -248,7 +265,9 @@ fn skipped_local_mutations_invalidate_reads_in_the_same_statement() {
              const selected = ({mutation}, record.name);\n\
              console.log(selected);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "changed\n");
         let report = execution(&fixture, "selected");
         assert_reason(
@@ -274,7 +293,7 @@ const coerced = { [value]: true };
 console.log(observed, Object.keys(coerced)[0]);
 "#,
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "undefined changed\n");
     assert_reason(
         &execution(&fixture, "observed"),
@@ -300,7 +319,9 @@ fn skipped_operation_events_preserve_same_owner_getter_effects() {
         "const record = { name: 'original' };\nfunction tag(_, value) { Object.defineProperty(value, 'name', { get() { return state; } }); }\nconst selected = (tag`${record}`, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
         "const record = { name: 'original' };\nconst trigger = { get value() { return 0; }, set value(_) { Object.defineProperty(record, 'name', { get() { return state; } }); } };\nconst selected = (trigger.value++, record.name);\nvar state = 'changed';\nconsole.log(selected);\n",
     ] {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "undefined\n");
         let report = execution(&fixture, "selected");
         assert_reason(
@@ -322,7 +343,8 @@ fn stable_ts_enum_primitive_member_is_safe_as_computed_property_key() {
 const preferences = { [Status.READY]: true };
 console.log(preferences.ready);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "true\n");
 
     let graph = fixture.dependency_graph();
@@ -380,7 +402,8 @@ const escaped = { [Escaped.READY]: true };
 
 console.log(rebound.rebound, reboundCalls, looped.looped, loopedCalls, mutated.mutated, dynamic.ready, accessor.accessor, getterCalls, escaped.ready);
 "#;
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "true 1 true 1 true true true 1 true\n");
 
     let graph = fixture.dependency_graph();
@@ -412,7 +435,7 @@ fn enum_member_read_before_initializer_remains_a_throwing_read() {
 var Status = ((values) => ((values.READY = "ready"), values))(Status || {});
 console.log(selected[0]);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
 
     assert_preserved_entry_error(&fixture, "TypeError");
 
@@ -423,7 +446,8 @@ console.log(selected[0]);
                 logical_module("early", &[Member::new("selected")]),
                 logical_module("enum", &[Member::new("Status")]),
             ],
-        ),
+        )
+        .with_import_order(&["early", "enum", "residual"]),
         &["early", "enum"],
         &["eager_use"],
     );
@@ -434,7 +458,7 @@ fn nested_unknown_call_keeps_lexical_callsite_and_deduplicates_cached_execution(
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function factory() { return Number('3'); }\nconst result = factory() + factory();\nconsole.log(result);",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "6\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "unknown_call_target"}));
@@ -457,7 +481,7 @@ fn unsupported_coercion_reports_its_operation() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const object = { valueOf() { return 3; } };\nconst result = +object;\nconsole.log(result);",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(
@@ -483,7 +507,8 @@ fn acyclic_call_chain_reports_the_actual_depth_bound() {
     source.push_str(
         "function step66() { return 3; }\nconst result = step0();\nconsole.log(result);\n",
     );
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(
@@ -510,7 +535,8 @@ fn single_call_root_depth_limit_does_not_invent_a_caller_remainder() {
     source.push_str(
         "function step66() { return 3; }\nconst result = step0();\nconsole.log(result);\n",
     );
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(
@@ -546,7 +572,9 @@ fn compound_call_chains_preserve_output_at_the_depth_limit() {
         source.push_str(&format!(
             "function step66() {{ return {tail}; }}\nconst marker = 1;\nconst result = step0();\nconsole.log(result, marker);\n",
         ));
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
 
         assert_preserved_entry_output(&fixture, "8 1\n");
         let result = execution(&fixture, "result");
@@ -572,7 +600,8 @@ fn compound_call_root_keeps_its_unexecuted_remainder_fallback() {
         ));
     }
     source.push_str("function step66() { return 3; }\nfunction tail() { return seed; }\nconst result = (step0(), tail());\nconsole.log(result);\n");
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "7\n");
     let result = execution(&fixture, "result");
     assert_reason(
@@ -608,8 +637,11 @@ fn multichunk_acyclic_call_chain_below_depth_bound_remains_complete() {
     }
     source.push_str("const result = step0(seed);\nconsole.log(result);\n");
     let extra_chunks = [("static/peer", source.as_str())];
-    let fixture =
-        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_extra_chunks(&extra_chunks));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(&source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&extra_chunks),
+    );
 
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
@@ -631,7 +663,7 @@ fn finite_recursive_function_reports_cycle_without_changing_runtime_result() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function factory(count) { return count ? factory(count - 1) : 3; }\nconst result = factory(2);\nconst following = 4;\nconsole.log(result + following);",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "7\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(&result, serde_json::json!({"code": "recursive_invocation"}));
@@ -653,7 +685,8 @@ fn large_callback_pool_reports_the_actual_pool_bound() {
     let callbacks = (0..65).map(|_| "() => 3").collect::<Vec<_>>().join(", ");
     let source =
         format!("const result = JSON.stringify([{callbacks}]);\nconsole.log(result.length);\n");
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "326\n");
     let result = execution(&fixture, "result");
     let loss = assert_reason(
@@ -672,7 +705,9 @@ fn small_callback_pool_formals_keep_callbacks_and_unknown_values() {
         let source = format!(
             "function read() {{ return later; }}\n{relay}\nconst result = JSON.stringify([relay, read]);\nconst later = 7;\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "[null,null]\n");
         // Localize Top to this formal's invocation, not JSON.stringify or
         // the captured callback's separate invocation.
@@ -720,7 +755,11 @@ fn global_reach(cause: &str) -> Value {
 /// The reach of the rejected construction of `result` in `source`, whose
 /// entry prints `3`.
 fn construction_reach(source: &str, extra_chunks: &[(&str, &str)]) -> Value {
-    construction_reach_of(FixtureOpts::new(source, vec![]).with_extra_chunks(extra_chunks))
+    construction_reach_of(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(extra_chunks),
+    )
 }
 
 fn construction_reach_of(opts: FixtureOpts<'_>) -> Value {
@@ -803,7 +842,7 @@ fn dynamic_scope_in_the_chunk_has_global_reach() {
             FixtureOpts::new(
                 "function probe() { return eval('0'); }\nclass Box { constructor(read) { this.read = read; } }\nconst result = new Box(...[() => 3]);\nconsole.log(result.read());",
                 vec![],
-            )
+            ).with_import_order(&["residual"])
             .with_admission_overrides(&["a1_eval"]),
         ),
         global_reach("dynamic_scope")
@@ -813,7 +852,8 @@ fn dynamic_scope_in_the_chunk_has_global_reach() {
 /// Each fixture constructs `result` from a local class whose construction
 /// proof fails at one check; the loss names that check.
 fn assert_construction_rejection(source: &str, expected_output: &str, rejection: Value) {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, expected_output);
     let result = execution(&fixture, "result");
     assert_reason(
@@ -867,7 +907,8 @@ fn wide_acyclic_execution_below_the_expansion_bound_remains_complete() {
         calls.push_str(&format!("step{index}();"));
     }
     source.push_str(&format!("function factory() {{ {calls} return 3; }}\nconst result = factory();\nconsole.log(result);\n"));
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     assert_eq!(result["complete"], true, "{result:#}");
@@ -894,7 +935,8 @@ fn wide_acyclic_execution_reports_the_actual_expansion_bound() {
         calls.push_str(&format!("step{index}();"));
     }
     source.push_str(&format!("function factory() {{ {calls} return 3; }}\nconst result = factory();\nconsole.log(result);\n"));
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "3\n");
     let result = execution(&fixture, "result");
     assert_reason(
@@ -910,7 +952,7 @@ fn property_absence_failure_reports_the_cross_chunk_write() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
         vec![],
-    ).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
+    ).with_import_order(&["residual"]).with_extra_chunks(&[("static/mutation", "export function mutate() { const alias = globalThis.slot; alias.value = 1; }")]));
     assert_entry_output(&fixture, "3\n");
     let program_graph = serde_json::to_value(fixture.program_graph()).unwrap();
     let witnesses = program_graph["native_integrity_witnesses"]
@@ -952,7 +994,7 @@ fn unrelated_object_write_does_not_supply_native_mutation_evidence() {
         FixtureOpts::new(
             "import './mutation.js';\nclass Box { constructor(config) { this.value = config.value; } }\nconst result = new Box({ value: 3 });\nconsole.log(result.value);",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[("static/mutation", "const object = {}; export function mutate() { object.flag = 1; }")]),
     );
     assert_entry_output(&fixture, "3\n");
@@ -975,7 +1017,8 @@ fn array_prefix_fixture_with_graphs(write: &str) -> Fixture {
          const arrayResult = [1, 2].map(value => value + 1);\n\
          console.log(arrayResult.join(','));"
     );
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "2,3\n");
     fixture
 }
@@ -988,7 +1031,8 @@ fn prototype_prefix_fixture_with_graphs(write: &str) -> Fixture {
          const result = new Box({{ prefixProbe: 3 }});\n\
          console.log(result.prefixProbe);"
     );
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "3\n");
     fixture
 }
@@ -1063,7 +1107,7 @@ fn foreign_dynamic_scope_starts_active_despite_a_local_deferred_write() {
         FixtureOpts::new(
             "import './mutation.js';\nfunction local() { globalThis.slot.value = 1; }\nclass Box { constructor(config) { this.prefixProbe = config.prefixProbe; } }\nconst result = new Box({ prefixProbe: 3 });\nconsole.log(result.prefixProbe);",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/mutation",
             "export function uncertain() { eval('0'); }",
@@ -1116,7 +1160,7 @@ fn array_guard_references_a_direct_native_write_without_unknown_alias_widening()
         FixtureOpts::new(
             "import './mutation.js';\nconst result = [1, 2].map(value => value + 1);\nconsole.log(result.join(','));",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&[("static/mutation", "export function mutate() { Array.flag = 1; }")]),
     );
     assert_entry_output(&fixture, "2,3\n");
@@ -1320,7 +1364,7 @@ fn silent_primitive_push_invalidates_contents_without_inventing_a_getter() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const record = [0];\nconst first = record.push(1);\nconst second = record.push(2);\nconst copied = record.map(value => value);\nconst snapshot = Object.getOwnPropertyDescriptors(record);\nconsole.log(copied.join(','), snapshot.length.value);\n",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "0,1,2 3\n");
     for binding in ["first", "second"] {
         assert_eq!(execution(&fixture, binding)["complete"], true, "{binding}");
@@ -1339,7 +1383,9 @@ fn local_method_receiver_precision_excludes_implicit_captures() {
         let source = format!(
             "const record = {{ name: 'original', change() {{ {body} }} }};\nconst returned = record.change();\nif (returned) returned();\nconst selected = record.name;\nconsole.log(selected);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "changed\n");
         assert_reason(
             &execution(&fixture, "selected"),
@@ -1354,7 +1400,9 @@ fn external_root_getter_keeps_published_source_callbacks_at_the_read() {
         "globalThis.syntheticHost = { get read() { return state; } };\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
         "globalThis.syntheticHost = {};\nObject.defineProperty(globalThis.syntheticHost, 'read', { get() { return state; } });\nconst observed = syntheticHost.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n",
     ] {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "undefined\n");
         assert_reason(
             &execution(&fixture, "observed"),
@@ -1379,7 +1427,9 @@ fn external_binding_alias_proof_excludes_reassignment_private_and_skipped_values
         let source = format!(
             "globalThis.syntheticHost = {{ read: 'original' }};\n{setup}\nconst observed = alias.read;\nvar state = 'late';\nconsole.log(observed);\ndelete globalThis.syntheticHost;\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "undefined\n");
         let graph = fixture.dependency_graph();
         let observed = source_unit_for_binding(&graph, "observed");
@@ -1407,7 +1457,9 @@ fn skipped_reach_keeps_distinct_captures_and_later_prefix_references() {
             "second undefined\n",
         ),
     ] {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         if readers == ["observed"] {
             assert_eq!(execution(&fixture, "before")["complete"], true);
@@ -1451,7 +1503,9 @@ fn completed_purity_retains_residual_evaluation_obligations() {
             None,
         ),
     ] {
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, output);
         let graph = fixture.dependency_graph();
         let value = graph
@@ -1478,7 +1532,9 @@ fn completed_purity_retains_residual_evaluation_obligations() {
         let source = format!(
             "const value = new {constructor}();\nconsole.log(value instanceof {constructor});\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "true\n");
         let graph = fixture.dependency_graph();
         let value = graph
@@ -1511,7 +1567,9 @@ fn completed_owner_publication_retains_final_value_and_export_capabilities() {
         let source = format!(
             "const record = {{ value: () => 0 }};\nfunction install() {{ record.value = () => state; return 1; }}\n{declaration}\nconst observed = record.value();\nvar state = 'late';\nconsole.log(observed);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "undefined\n");
         let graph = fixture.dependency_graph();
         let observed = source_unit_for_binding(&graph, "observed");
