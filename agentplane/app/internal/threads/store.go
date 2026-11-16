@@ -16,9 +16,6 @@ const (
 	MaxPage        = 200
 )
 
-// ErrNotFound means an app-owned thread row does not exist.
-var ErrNotFound = errors.New("thread not found")
-
 // Thread is the app-owned metadata for one History Session. The History Service remains the authority
 // for its Sandbox identity and folded activity.
 type Thread struct {
@@ -141,14 +138,11 @@ func (s *Store) Rename(ctx context.Context, id uuid.UUID, name *string) (Thread,
 	err := withTx(ctx, s.db, func(tx *sql.Tx) error {
 		var err error
 		thread, err = scanThread(tx.QueryRowContext(ctx, `
-			UPDATE thread
-			   SET name = $2
-			 WHERE id = $1
+			INSERT INTO thread (id, created_at, name)
+			VALUES ($1, $3, $2)
+			ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name
 			RETURNING id, created_at, name, archived
-		`, id, name))
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrNotFound, id)
-		}
+		`, id, name, s.now().UTC()))
 		if err != nil {
 			return err
 		}
@@ -172,12 +166,11 @@ func (s *Store) setArchived(ctx context.Context, id uuid.UUID, archived bool) (T
 	err := withTx(ctx, s.db, func(tx *sql.Tx) error {
 		var err error
 		thread, err = scanThread(tx.QueryRowContext(ctx, `
-			UPDATE thread SET archived = $2 WHERE id = $1
+			INSERT INTO thread (id, created_at, archived)
+			VALUES ($1, $3, $2)
+			ON CONFLICT (id) DO UPDATE SET archived = EXCLUDED.archived
 			RETURNING id, created_at, name, archived
-		`, id, archived))
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("%w: %s", ErrNotFound, id)
-		}
+		`, id, archived, s.now().UTC()))
 		if err != nil {
 			return err
 		}

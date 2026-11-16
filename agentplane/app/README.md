@@ -361,6 +361,10 @@ proxy also reaches the Service and forwards caller-supplied headers, so anyone w
 on it could grant themselves egress. The outpost would also stall every SSE stream for 15 seconds,
 since its response writer implements no `Flush()`.
 
+Session titles and archived flags are created in the App metadata table on first write, even before
+History records the Session. Writes preserve the other metadata fields. Archiving recorded Sessions
+retains the existing live-runtime busy check; an absent History summary does not block metadata writes.
+
 ## Sidebar inventory updates
 
 The browser builds the Thread window from the generated app metadata list and History summary reads. It pages app-owned
