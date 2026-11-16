@@ -2,8 +2,7 @@ import { dispatchFromJson } from "./client";
 import { HttpError } from "../transport/client";
 import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { WatchStreamError } from "../transport/watch_stream";
-import type { LocalCommands } from "./local_commands";
-import { canonicalDispatchCommandIds } from "./local_commands";
+import { canonicalDispatchCommandIds, type LocalCommands } from "./local_commands";
 
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */
 const MAX_WATCHED_COMMANDS = 1000;

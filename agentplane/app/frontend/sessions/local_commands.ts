@@ -3,7 +3,6 @@ import { create, equals, fromJson, toJson, type JsonValue } from "@bufbuild/prot
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import {
-  DeliveryState,
   DispatchSchema,
   type Dispatch,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
