@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
-  "observed_at_utc": "2026-11-16T21:40:00Z",
+  "source_sha": "53a0c0853d6cd7ba4e83059f78e3ae7a7057e506",
+  "observed_at_utc": "2026-11-16T23:42:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1367,
-    "directories": 256,
-    "production": 752,
-    "tests": 615
+    "files": 1374,
+    "directories": 258,
+    "production": 758,
+    "tests": 616
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -1705,8 +1705,8 @@
       "id": "central_sampler",
       "path": "agentplane/central_sampler",
       "counts": {
-        "files": 165,
-        "directories": 27
+        "files": 171,
+        "directories": 28
       },
       "directories": [
         {
@@ -1787,22 +1787,35 @@
         },
         {
           "path": "agentplane/central_sampler/internal/executor",
-          "production": 8,
+          "production": 7,
           "tests": 5,
           "files": [
+            "agentplane/central_sampler/internal/executor/bindings.go",
             "agentplane/central_sampler/internal/executor/executor.go",
             "agentplane/central_sampler/internal/executor/executor_evidence_test.go",
             "agentplane/central_sampler/internal/executor/executor_resume_test.go",
             "agentplane/central_sampler/internal/executor/executor_test.go",
             "agentplane/central_sampler/internal/executor/failure.go",
-            "agentplane/central_sampler/internal/executor/incarnation_fence.go",
             "agentplane/central_sampler/internal/executor/integration_testmain_test.go",
-            "agentplane/central_sampler/internal/executor/operations.go",
             "agentplane/central_sampler/internal/executor/processes.go",
-            "agentplane/central_sampler/internal/executor/session.go",
+            "agentplane/central_sampler/internal/executor/transport_adapter.go",
             "agentplane/central_sampler/internal/executor/unified_exec.go",
             "agentplane/central_sampler/internal/executor/unified_exec_test.go",
             "agentplane/central_sampler/internal/executor/view_image.go"
+          ]
+        },
+        {
+          "path": "agentplane/central_sampler/internal/executor/transport",
+          "production": 6,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/executor/transport/api.go",
+            "agentplane/central_sampler/internal/executor/transport/failure_evidence.go",
+            "agentplane/central_sampler/internal/executor/transport/incarnation_fence.go",
+            "agentplane/central_sampler/internal/executor/transport/operations.go",
+            "agentplane/central_sampler/internal/executor/transport/session.go",
+            "agentplane/central_sampler/internal/executor/transport/transport.go",
+            "agentplane/central_sampler/internal/executor/transport/transport_test.go"
           ]
         },
         {
@@ -2065,7 +2078,6 @@
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
         "sampler-content-persistence",
-        "sampler-executor-boundary",
         "sampler-resident-session",
         "sampler-codehost-ownership",
         "history-journals",
@@ -2095,6 +2107,7 @@
           "agentplane/central_sampler/internal/eventcodec",
           "agentplane/central_sampler/internal/executionstate",
           "agentplane/central_sampler/internal/executor",
+          "agentplane/central_sampler/internal/executor/transport",
           "agentplane/central_sampler/internal/jsonwire",
           "agentplane/central_sampler/internal/outputbuffer",
           "agentplane/central_sampler/internal/ownershiprewrite",
@@ -2256,23 +2269,41 @@
         },
         {
           "path": "agentplane/central_sampler/internal/executor",
-          "role": "Model tool binding to an incarnation-fenced remote Executor",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/central_sampler/internal/executor",
-            "agentplane/central_sampler/internal/executor/transport",
-            "agentplane/central_sampler/internal/executor/tools"
-          ],
-          "reason": "Transport handshakes/rebind and model tool parsing currently share Executor fields. Separate those roles only after evidence ownership is explicit.",
+          "role": "Model tool facade over the remote Executor: tool mapping, workspace preparation, process and cursor settlement, and retirement.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#17065 (sampler-executor-boundary) moved connection lifetime, handshake and reconnect, incarnation fencing, dispatch classification and wire evidence to `executor/transport`; `transport_adapter.go` connects it to the Store's existing fenced journal operations.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/executor/executor.go"
           ],
           "declared_packages": ["executor"],
-          "pending_tracks": ["sampler-executor-boundary"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 8,
+            "non_test": 7,
             "tests": 5
+          }
+        },
+        {
+          "path": "agentplane/central_sampler/internal/executor/transport",
+          "role": "Remote Executor transport: connection and execution-session lifetime, handshake and reconnect, incarnation fencing, dispatch classification and raw wire evidence.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted by #17065 (sampler-executor-boundary). It has no Store dependency; the facade's journal adapter calls the Store's fenced operations.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/executor/transport/api.go",
+            "agentplane/central_sampler/internal/executor/transport/failure_evidence.go",
+            "agentplane/central_sampler/internal/executor/transport/incarnation_fence.go",
+            "agentplane/central_sampler/internal/executor/transport/operations.go",
+            "agentplane/central_sampler/internal/executor/transport/session.go",
+            "agentplane/central_sampler/internal/executor/transport/transport.go"
+          ],
+          "declared_packages": ["transport"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 6,
+            "tests": 1
           }
         },
         {
@@ -9082,8 +9113,8 @@
       "id": "testing",
       "path": "agentplane/testing",
       "counts": {
-        "files": 13,
-        "directories": 8
+        "files": 14,
+        "directories": 9
       },
       "directories": [
         {
@@ -9103,6 +9134,12 @@
           "production": 1,
           "tests": 0,
           "files": ["agentplane/testing/eventually/eventually.go"]
+        },
+        {
+          "path": "agentplane/testing/executor",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/testing/executor/executor.go"]
         },
         {
           "path": "agentplane/testing/grpcmethods",
@@ -9177,6 +9214,7 @@
           "agentplane/testing/configtest",
           "agentplane/testing/envtest",
           "agentplane/testing/eventually",
+          "agentplane/testing/executor",
           "agentplane/testing/grpcmethods",
           "agentplane/testing/httptransport",
           "agentplane/testing/kubeapiserver",
@@ -9233,6 +9271,21 @@
             "agentplane/testing/eventually/eventually.go"
           ],
           "declared_packages": ["eventually"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
+          "path": "agentplane/testing/executor",
+          "role": "Test-only fake of the generated Executor client",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved out of the sampler's Executor tests by #17065 so the facade and transport tests share one fake.",
+          "gate": "Keep testonly.",
+          "evidence_paths": ["agentplane/testing/executor/executor.go"],
+          "declared_packages": ["executor"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -9562,58 +9615,6 @@
       "dependencies": [],
       "priority": 8,
       "group": "sampler-state",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "sampler-executor-boundary",
-      "title": "Separate remote Executor transport from model tools",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/internal/executor/session.go",
-        "agentplane/central_sampler/internal/executor/incarnation_fence.go",
-        "agentplane/central_sampler/internal/executor/operations.go",
-        "agentplane/central_sampler/internal/executor/processes.go",
-        "agentplane/central_sampler/internal/executor/view_image.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/executor/transport",
-        "agentplane/central_sampler/internal/executor/tools",
-        "agentplane/central_sampler/internal/executor"
-      ],
-      "source_owner": "agentplane/central_sampler/internal/executor",
-      "status": "DESIGN REQUIRED",
-      "summary": "Keep one model-tool facade. A concrete transport owner manages handshake, stream/rebind and incarnation scope; tool handlers own argument mapping and visible results.",
-      "how": [
-        "Map Executor fields, transport lifetime and evidence sinks to the operations that mutate them.",
-        "Extract the connection/incarnation owner with explicit close and observed-outcome results.",
-        "Extract tool families only after they can consume that owner without importing the facade or bypassing Store intent fences."
-      ],
-      "gate": "Remote mutation outcomes, journal evidence and reconnect fencing must have one explicit owner before methods leave Executor.",
-      "preserve": "No replay, unknown versus rejected effects, incarnation fencing, process cursors and image evidence.",
-      "validation": [
-        "//agentplane/central_sampler/internal/executor:executor_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/internal/executor/session.go",
-        "agentplane/central_sampler/internal/executor/incarnation_fence.go",
-        "agentplane/central_sampler/internal/executor/operations.go",
-        "agentplane/central_sampler/internal/executor/processes.go",
-        "agentplane/central_sampler/internal/executor/view_image.go",
-        "agentplane/central_sampler/internal/executor/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 9,
-      "group": "sampler-runtime",
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
       "kind": "responsibility extraction",
       "path_moves": [],
@@ -10566,7 +10567,6 @@
       "title": "Extract responsibilities behind a local contract",
       "work": [
         "sampler-content-persistence",
-        "sampler-executor-boundary",
         "env-supervision-backends",
         "env-runtime-coordinator",
         "sampler-resident-session",
@@ -10574,7 +10574,7 @@
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, and #17054 the PID1 half of the supervision backends. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why."
     },
     {
       "stage": 5,
@@ -10601,12 +10601,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 256,
-    "go_files": 1367,
+    "go_packages": 258,
+    "go_files": 1374,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+    "review_source_sha": "53a0c0853d6cd7ba4e83059f78e3ae7a7057e506",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10623,8 +10623,8 @@
       {
         "slice": "central_sampler",
         "components": ["central_sampler"],
-        "packages": 27,
-        "go_files": 165
+        "packages": 28,
+        "go_files": 171
       },
       {
         "slice": "cli",
@@ -10797,8 +10797,8 @@
       {
         "slice": "testing",
         "components": ["testing"],
-        "packages": 8,
-        "go_files": 13
+        "packages": 9,
+        "go_files": 14
       },
       {
         "slice": "watchhealth",
