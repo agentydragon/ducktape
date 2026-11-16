@@ -381,7 +381,7 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
         [
             "/run/agentplane/environment/bin/agentplane",
             "--json",
-            "sessions",
+            "session-dispatcher",
             "create",
             session_id,
             "--sandbox",
