@@ -156,8 +156,9 @@ def test_apic_probes_are_scoped_and_removed_on_setup_or_scenario_failure(
     assert {command.removeprefix("-:") for command in commands[2:]} == {
         command.split()[0][2:] for command in commands[:2]
     }
-    assert set(next(value for path, value in writes if path.name == "set_event_pid").split()) == {"42", "43"}
-    assert any(path.name == "event-fork" and value == "1" for path, value in writes)
+    filtering = [(path.name, value) for path, value in writes if path.name in {"set_event_pid", "event-fork"}]
+    assert filtering[:2] == [("set_event_pid", "42"), ("event-fork", "1")]
+    assert set(filtering[2][1].split()) == {"42", "43"}
     assert any(path.name == "enable" and value == "0" for path, value in writes)
     assert bool(record["errors"]) == fail_enable
 

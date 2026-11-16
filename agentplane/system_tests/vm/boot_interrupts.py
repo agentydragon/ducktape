@@ -104,7 +104,7 @@ def _apic_probes(executable: Path) -> list[_Probe]:
             raise ValueError("APIC SDT capture requires a little-endian x86-64 ELF executable")
         program_offset, section_offset = struct.unpack_from("<QQ", header, 32)
         program_size, program_count, section_size, section_count = struct.unpack_from("<HHHH", header, 54)
-        segments = []
+        segments: list[tuple[int, int, int]] = []
         for index in range(program_count):
             stream.seek(program_offset + index * program_size)
             segment = struct.unpack("<IIQQQQQQ", stream.read(56))
@@ -281,8 +281,11 @@ def _capture_apic(
             _write_trace(instance / "tracing_on", "0")
             _write_trace(instance / "buffer_size_kb", str(TRACE_BUFFER_KIB))
             _write_trace(instance / "trace_clock", "mono")
-            _write_trace(instance / "set_event_pid", " ".join(task.name for task in (process / "task").iterdir()))
+            _write_trace(instance / "set_event_pid", process.name)
             _write_trace(instance / "options" / "event-fork", "1")
+            # Track new threads before enumerating existing ones, so a vCPU
+            # cloned by the main thread during setup is not lost to the filter.
+            _write_trace(instance / "set_event_pid", " ".join(task.name for task in (process / "task").iterdir()))
             record["trace_pid"] = int(process.name)
             record["trace_buffer_kib_per_cpu"] = TRACE_BUFFER_KIB
             for index, probe in enumerate(probes):
