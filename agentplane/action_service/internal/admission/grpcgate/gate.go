@@ -209,12 +209,6 @@ func (g *Gate) workloadIdentity(identity auth.Identity) (Admission, error) {
 	return Admission{Principal: store.IdentityPrincipal{Identity: store.Identity{Name: identity.Name, UID: identity.UID}}}, nil
 }
 
-// Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.
-func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
-	operator := Admitted(ctx).Principal.(store.OperatorPrincipal)
-	return operator.Issuer, operator.Subject
-}
-
 // DrainingContext is cancelled once the service drains.
 func (g *Gate) DrainingContext() context.Context { return g.draining }
 
