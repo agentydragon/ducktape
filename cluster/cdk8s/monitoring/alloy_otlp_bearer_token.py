@@ -12,27 +12,13 @@ KUBERNETES_IDENTITY = "opentofu-alloy-otlp-bearer-token"
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
-    opentofu.secret_access(
-        chart, "authentik-secrets", identity=identity, namespace="authentik", read=["authentik-bootstrap"], write=[]
-    )
-    opentofu.secret_access(
-        chart,
-        "agents-infra-secrets",
-        identity=identity,
-        namespace="agents-infra",
-        read=[],
-        write=["alloy-otlp-client-credentials"],
-    )
-    opentofu.gitops_workspace(
-        chart,
-        "workspace",
-        name=TF_MODULE_NAME,
-        provider_config_name=NAME,
+    return opentofu.gitops_workspace_chart(
+        app,
+        module_name=TF_MODULE_NAME,
+        identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(TF_MODULE_NAME),
-        directory=f"tf/gitops/{TF_MODULE_NAME}",
-        management_policies=["Observe", "Create", "Update"],
-        kubernetes_identity=KUBERNETES_IDENTITY,
+        secret_accesses=(
+            ("authentik-secrets", "authentik", ("authentik-bootstrap",), ()),
+            ("agents-infra-secrets", "agents-infra", (), ("alloy-otlp-client-credentials",)),
+        ),
     )
-    return chart

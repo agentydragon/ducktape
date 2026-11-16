@@ -12,47 +12,38 @@ KUBERNETES_IDENTITY = "opentofu-agent-machine-access"
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, WORKSPACE_NAME, disable_resource_name_hashes=True)
-    identity = opentofu.kubernetes_service_account(chart, KUBERNETES_IDENTITY)
-    opentofu.secret_access(
-        chart,
-        "agents-infra-secrets",
-        identity=identity,
-        namespace="agents-infra",
-        read=[],
-        write=[
-            # keep-sorted start
-            "agentplane-grocy-sf-readonly",
-            "haku-client-credentials",
-            "haku-mail-client-credentials",
-            "kubectl-sandbox-client-credentials",
-            # keep-sorted end
-        ],
-    )
-    opentofu.secret_access(
-        chart,
-        "authentik-secrets",
-        identity=identity,
-        namespace="authentik",
-        read=["authentik-bootstrap"],
-        write=[
-            # keep-sorted start
-            "aiquota-oidc",
-            "grocy-mcp-oidc-sf",
-            "grocy-mcp-oidc-vallejo",
-            "haku-console-oidc",
-            "tana-mcp-facade-oidc",
-            # keep-sorted end
-        ],
-    )
-    opentofu.gitops_workspace(
-        chart,
-        "workspace",
-        name=NAME,
-        provider_config_name=WORKSPACE_NAME,
+    return opentofu.gitops_workspace_chart(
+        app,
+        module_name=NAME,
+        identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(NAME),
-        directory=f"tf/gitops/{NAME}",
-        management_policies=["Observe", "Create", "Update"],
-        kubernetes_identity=KUBERNETES_IDENTITY,
+        secret_accesses=(
+            (
+                "agents-infra-secrets",
+                "agents-infra",
+                (),
+                (
+                    # keep-sorted start
+                    "agentplane-grocy-sf-readonly",
+                    "haku-client-credentials",
+                    "haku-mail-client-credentials",
+                    "kubectl-sandbox-client-credentials",
+                    # keep-sorted end
+                ),
+            ),
+            (
+                "authentik-secrets",
+                "authentik",
+                ("authentik-bootstrap",),
+                (
+                    # keep-sorted start
+                    "aiquota-oidc",
+                    "grocy-mcp-oidc-sf",
+                    "grocy-mcp-oidc-vallejo",
+                    "haku-console-oidc",
+                    "tana-mcp-facade-oidc",
+                    # keep-sorted end
+                ),
+            ),
+        ),
     )
-    return chart
