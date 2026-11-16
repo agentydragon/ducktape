@@ -13,6 +13,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "selected_ownership_workflow_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_propose_cli_test",
     deps = [
         ":graph_support",

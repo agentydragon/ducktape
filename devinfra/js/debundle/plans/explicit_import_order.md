@@ -11,6 +11,18 @@ priorities is separately deferred as AR10 there.
 
 ## Current acceptance gaps
 
+- Audit every plan-producing `modules check` path against the executable-plan
+  contract. The ordinary explicit-batch regression with duplicate initializer
+  shapes demonstrates graph acceptance followed by selector-synthesis failure.
+  Route executable plans through the shared writer preflight; retain a clear
+  graph-only result for graph/oracle inspection without claiming selector
+  realization. Preserve independent graph-validity oracles when tightening
+  the CLI contract.
+- Verify preparation cost for selected-view corpus proposals. Reuse compatible
+  captured program/source and full-base selector preparation across the corpus;
+  never rebuild them per inventory seed. Measure source/selector preparation
+  separately from constructor queries and selected-plan certification. A fast
+  single-chunk loop does not establish practical whole-corpus preparation.
 - Private migration and required-engine adoption remain partial. Complete all
   configured specs, including diagnostic configurations, and run their relevant
   controls on the final landed pin. Preparatory replay on the permissive schema
@@ -27,36 +39,18 @@ priorities is separately deferred as AR10 there.
   verified propose/check/preview/apply behavior while trimming independently
   merged preparation from the activation diff. Complete the downstream guidance
   audit with its engine-pin migration.
-- Selected ownership graph export is now a provenance-bound inspection
-  foundation: the exact subset bytes and normalized per-chunk choice are
-  recorded with each graph. The selected graph is not a canonical editable
-  base. Complete a separate placement-overlay writer before claiming a passing
-  partial-spec extraction loop: keep the full authored tree as the sole owner of
-  semantic premises and selector anchors; resolve its base claims once, then
-  project retained claims plus new placement claims without putting omitted
-  base claims in the placement solve's global `all_different` target set. Keep
-  omitted claims' contracts and reference anchors available, including when a
-  new placement targets a unit claimed by an omitted owner. Do not persist dense
-  `unit:<SourceUnitId>` values as spec coordinates; selector-backed placement
-  claims must be re-resolved against the canonical source-unit manifest. A
-  proposal must construct the actual overlay, prove its complete selected
-  assignment matches the graph-checked candidate, and bind preview/apply to the
-  graph, program and selection snapshot. Stage the selected view and final
-  priority before writes; preserve inactive base claims and metadata. Test an
-  omitted owner's necessary purity/callback premise, omitted selector anchors,
-  relocation from an omitted claim without a duplicate, stable retained selector
-  identity, imports, anonymous units, multi-binding atoms, stale base/selection,
-  failed order and ambiguous selectors with no writes, then a real CLI-to-Node
-  extraction. The selected baseline must be a genuinely passing configuration;
-  a rejected canonical graph or graph-only inventory is not executable
-  acceptance. Writer preflight must reuse the normal materializer's full-base
-  frontend, retained/placement claim builder and structural projection against
-  the captured source and graph. Report-backed graphs omit hygienic declaration
-  identities, so join declarations from that same parsed source census using a
-  checked source-unit layout and ordinal before applying AST placement rules.
-  Keep this in the shared materializer path, not command-local selector
-  reinterpretation or per-seed full-pipeline work; run selected-plan preflight
-  once after constructing the candidate.
+- Land selected-ownership graph support, selector-backed placement materialization
+  and the propose/check/apply writer. Keep the complete base tree as the owner
+  of semantic premises and selector anchors. The selected-view workflow uses
+  chunk-local owner paths and appends one fresh residual owner while preserving
+  existing ownership, export names and priority. Preserve the CLI-to-Node
+  regressions for omitted selector anchors and necessary premises, retained
+  identity, imports, anonymous units, whole atoms, selector ambiguity, stale
+  inputs and no-write failures through final landing.
+- Add the passing selected consumer's graph/CLI wrapper and run its unseeded
+  proposal, check, preview, actual application and behavior controls on the
+  final adopted engine. A rejected canonical graph or a graph-only inventory
+  cannot establish that consumer's extraction-loop acceptance.
 
 The fresh `fc0a` integration rehearsal discovers a useful 380-unit peel
 unseeded in 6.17 seconds, checks it in 0.81 seconds, previews in 6.42 seconds,

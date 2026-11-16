@@ -96,12 +96,26 @@ selector-writer failure cannot become graph exhaustion.
 Graphs exported from `run --ownership-subset` record the normalized selected
 claims in each chunk graph and in the program graph's provenance. The exact
 subset-file bytes are fingerprinted and verified with the other graph inputs.
-These graphs support inspection of the selected baseline. Until selected-view
-overlay authoring is implemented, `modules propose` reports `inventory_only`
-without a plan, `modules check` refuses to create one, and source-backed edits
-refuse the selected graph before writing. Do not apply a selected graph's unit
-IDs to the full authored tree or treat its selected assignment as a canonical
-base assignment.
+For a passing `inline_in_entry` selected baseline, the same propose/check/apply
+workflow writes new selector claims into the selected JSON's `placements` map,
+along with the appended priority in `--tree-config`. It preserves the complete
+base tree, semantic premises, retained identities and existing placements.
+Supply the same config, module tree and source roots used for graph verification;
+the captured run context supplies the remaining source and package inputs.
+Selected-view destinations in `--into`, explicit batches and plans are
+chunk-local owner paths, matching the selected JSON's placement keys.
+
+Before offering a selected-view plan, the writer synthesizes ordinary selectors
+on the prepared source AST and resolves the actual staged view through the
+normal materializer's ownership and structural placement rules. Its complete
+source-unit assignment must equal the checked candidate. Preview repeats this
+check and writes nothing; apply stages both documents before writes. Changed
+base, source, config or view inputs invalidate the graph/plan. A graph-feasible
+group with no realizable selectors remains `inventory_only` with its blocker.
+Moving existing owners, extending a current owner, changing the baseline
+priority, other selected-view edit verbs, and optional `--analysis` effect
+assessment are unsupported. Never apply selected graph IDs to the base module
+YAMLs or persist them as selector coordinates.
 
 | Constructor status             | Meaning                                                                                         |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |
@@ -124,7 +138,8 @@ test. A future heuristic must have an explicit incomplete contract and opt-in.
 
 Plans use logical module destinations and record graph and program identity.
 `modules check --plan` and `modules apply --plan` verify that identity before
-using the plan. With `--tree-config`, destination paths are checked against the
-graph chunk's configured module roots. A changed destination map or priority
+using the plan. For full-tree editing, `--tree-config` maps logical plan
+destinations through the graph chunk's configured physical module roots.
+A changed destination map or priority
 needs a new complete check. Applying one plan invalidates peer plans made from
 the same old snapshot: refresh the graph and propose again.

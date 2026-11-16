@@ -39,8 +39,11 @@ normalized selection in its top-level `ownership_subset` field. The matching
 records the subset file under a distinct relocatable input root, and fingerprints
 the exact bytes parsed by the run. Graph readers reject a chunk graph whose
 selection differs from program provenance and graph queries verify the subset
-fingerprint. This permits selected-baseline inspection; it does not make the
-selected owner map an editable overlay on the canonical authored tree.
+fingerprint. Selected-view edits persist ordinary selector claims in that
+input's `placements` map; the canonical authored tree remains the source of
+semantic premises and base selector anchors. Graph source-unit IDs remain
+snapshot coordinates rather than persisted selector claims. See
+<module_proposals.md> for the checked selected-view workflow.
 
 The staged per-chunk `SynchronousCalls` fact now carries
 `non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content

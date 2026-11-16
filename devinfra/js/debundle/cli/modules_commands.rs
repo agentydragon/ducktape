@@ -24,6 +24,9 @@ pub(super) struct ModulesNs {
 }
 
 impl ModulesNs {
+    pub(super) fn supports_selected_ownership_edit(&self) -> bool {
+        matches!(&self.command, ModulesNsCommand::Apply(_))
+    }
     pub(super) fn edits_with_graph(&self) -> bool {
         match &self.command {
             ModulesNsCommand::Merge(args) => args.edit.dependency_graph_path.is_some(),
@@ -237,12 +240,13 @@ struct ModulesCheckArgs {
     format: Option<OutputFormat>,
 }
 
-fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) -> Result<()> {
+fn run_modules_check(
+    args: ModulesCheckArgs,
+    output: &mut dyn std::io::Write,
+    stderr: &mut (dyn std::io::Write + Send),
+    source_context: Option<&VerifiedGraphSourceContext>,
+) -> Result<()> {
     let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
-    anyhow::ensure!(
-        input.report().ownership_subset.is_none(),
-        "modules check cannot produce an executable plan from a selected-ownership graph; selected-view overlay authoring is not supported"
-    );
     let bytes = if args.batch.as_deref() == Some("-") {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes)?;
@@ -270,6 +274,7 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             (serde_json::from_slice(&bytes)?, import_order)
         };
     if args.plan.is_none()
+        && input.report().ownership_subset.is_none()
         && let Some(config) = &args.tree_config
     {
         let scope = spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
@@ -296,7 +301,34 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             .as_str()
             .to_string();
     }
-    let is_accepted = accepted(&validation);
+    let selector_realization_error =
+        if accepted(&validation) && input.report().ownership_subset.is_some() {
+            let realization = (|| {
+                let source_root = args.source_root.as_deref().context(
+                    "selected-view check requires --source-root for executable selector preflight",
+                )?;
+                crate::source_unit_apply::run_source_unit_apply(
+                    stderr,
+                    &args.common.modules_root,
+                    &args.common.dependency_graph_path,
+                    source_root,
+                    source_context,
+                    crate::source_unit_apply::SourceUnitApplyOptions {
+                        tree_config: args.tree_config.as_deref(),
+                        assignments: changes.clone(),
+                        import_order: Some(import_order.clone()),
+                        readable_names: Default::default(),
+                        selector_overrides: Default::default(),
+                        dry_run: true,
+                        effect_assessment_context: None,
+                    },
+                )
+            })();
+            realization.err().map(|error| format!("{error:#}"))
+        } else {
+            None
+        };
+    let is_accepted = accepted(&validation) && selector_realization_error.is_none();
     #[derive(serde::Serialize)]
     struct CheckReport {
         accepted: bool,
@@ -305,6 +337,8 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
         residual_units_extracted: usize,
         existing_units_moved: usize,
         validation: gate::AssignmentReport,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        selector_realization_error: Option<String>,
         plan: Option<AssignmentPlan>,
     }
     let report = CheckReport {
@@ -323,6 +357,7 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
         residual_units_extracted: problem.residual_gain(&candidate),
         existing_units_moved: problem.existing_units_moved(&candidate),
         validation: validation.report,
+        selector_realization_error,
     };
     emit_report(
         output,
@@ -337,6 +372,9 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
         },
         "writing assignment check",
     )?;
+    if let Some(error) = &report.selector_realization_error {
+        anyhow::bail!("selected-view selector realization rejected the batch: {error}");
+    }
     ensure!(is_accepted, "complete assignment gate rejected the batch");
     Ok(())
 }
@@ -389,11 +427,14 @@ fn search_one_graph(
     let input = analysis::DependencyGraphInput::read(graph_path)?;
     let chunk_id = input.report().chunk_id.clone();
     let problem = AssignmentProblem::new(&input)?;
-    let scope = args
-        .tree_config
-        .as_ref()
-        .map(|config| spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id))
-        .transpose()?;
+    let scope = if input.report().ownership_subset.is_none() {
+        args.tree_config
+            .as_ref()
+            .map(|config| spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id))
+            .transpose()?
+    } else {
+        None
+    };
     let mut into = args.into.clone();
     if scope.is_some() {
         for destination in &mut into {
@@ -410,12 +451,7 @@ fn search_one_graph(
             .transpose()?,
     };
     let mut report = peel::search::search(&problem, &options)?;
-    if input.report().ownership_subset.is_some() {
-        report.status = peel::search::SearchStatus::InventoryOnly;
-        report.blockers.push(
-            "selected-ownership graphs are inspection-only until selected-view overlay authoring is supported".into(),
-        );
-    } else if report.status == peel::search::SearchStatus::Found {
+    if report.status == peel::search::SearchStatus::Found {
         if let Some(source_root) = args.source_root.as_deref() {
             let context = source_context.filter(|context| context.chunk_id() == chunk_id);
             // Compatibility verification accepts the exact configured chunk
@@ -767,7 +803,7 @@ pub(super) fn run(
             run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
         }
         ModulesNsCommand::Propose(p) => run_assignment_search(&p, stderr, source_contexts, output),
-        ModulesNsCommand::Check(args) => run_modules_check(args, output),
+        ModulesNsCommand::Check(args) => run_modules_check(args, output, stderr, source_context),
         ModulesNsCommand::Apply(args) => {
             run_modules_apply(output, stderr, args, source_context, analysis_engine_sha256)
         }

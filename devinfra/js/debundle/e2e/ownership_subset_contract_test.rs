@@ -178,7 +178,7 @@ export { wrapped, later };
 }
 
 #[test]
-fn selected_graphs_are_inspectable_but_not_editable_or_stale_reusable() {
+fn selected_graphs_preserve_crud_refusals_and_reject_stale_reuse() {
     let module_a =
         serde_yaml::to_string(&logical_module("values/a", &[Member::new("A")]).1).unwrap();
     let module_b =
@@ -274,116 +274,15 @@ fn selected_graphs_are_inspectable_but_not_editable_or_stale_reusable() {
         .unwrap();
     assert!(!stale_snapshot.status.success());
 
-    let batch_path = root.join("batch.json");
-    std::fs::write(&batch_path, "[]").unwrap();
-    let modules_before = read_tree(&root.join("modules"));
     let common = [
         "--graph-ownership-subset-root".to_owned(),
         root.display().to_string(),
     ];
-    let proposal = Command::new(debundler_path())
-        .args(common.iter().map(String::as_str))
-        .args([
-            "modules",
-            "propose",
-            "--graph",
-            graph_path.to_str().unwrap(),
-            "--modules",
-            root.join("modules").to_str().unwrap(),
-            "--source-root",
-            root.to_str().unwrap(),
-            "--tree-config",
-            config_path.to_str().unwrap(),
-            "--into",
-            "candidate",
-            "--format",
-            "json",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        proposal.status.success(),
-        "{}",
-        String::from_utf8_lossy(&proposal.stderr)
-    );
-    let proposal: serde_json::Value = serde_json::from_slice(&proposal.stdout).unwrap();
-    assert_eq!(proposal["status"], "inventory_only");
-    assert!(proposal["plan"].is_null());
-    assert!(
-        proposal["blockers"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|blocker| {
-                blocker
-                    .as_str()
-                    .unwrap()
-                    .contains("selected-ownership graphs are inspection-only")
-            })
-    );
-    assert_eq!(read_tree(&root.join("modules")), modules_before);
-
-    let full_modules = root.join("modules").display().to_string();
     let chunk_modules = root.join("modules/main").display().to_string();
     let source_root = root.display().to_string();
     let config_path = config_path.display().to_string();
     let graph_path = graph_path.display().to_string();
-    let batch_path = batch_path.display().to_string();
     let mut cases = vec![
-        (
-            "modules check",
-            vec![
-                "modules".to_owned(),
-                "check".to_owned(),
-                "--graph".to_owned(),
-                graph_path.clone(),
-                "--modules".to_owned(),
-                full_modules.clone(),
-                "--source-root".to_owned(),
-                source_root.clone(),
-                "--tree-config".to_owned(),
-                config_path.clone(),
-                "--batch".to_owned(),
-                batch_path,
-                "--format".to_owned(),
-                "json".to_owned(),
-            ],
-        ),
-        (
-            "modules apply dry-run",
-            vec![
-                "modules".to_owned(),
-                "apply".to_owned(),
-                "--graph".to_owned(),
-                graph_path.clone(),
-                "--modules".to_owned(),
-                full_modules.clone(),
-                "--source-root".to_owned(),
-                source_root.clone(),
-                "--tree-config".to_owned(),
-                config_path.clone(),
-                "--assignments".to_owned(),
-                "[]".to_owned(),
-                "--dry-run".to_owned(),
-            ],
-        ),
-        (
-            "modules apply write",
-            vec![
-                "modules".to_owned(),
-                "apply".to_owned(),
-                "--graph".to_owned(),
-                graph_path.clone(),
-                "--modules".to_owned(),
-                full_modules,
-                "--source-root".to_owned(),
-                source_root.clone(),
-                "--tree-config".to_owned(),
-                config_path.clone(),
-                "--assignments".to_owned(),
-                "[]".to_owned(),
-            ],
-        ),
         (
             "bindings assign",
             vec![

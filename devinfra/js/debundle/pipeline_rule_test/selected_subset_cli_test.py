@@ -55,9 +55,10 @@ def test_selected_graph_cli_uses_relocated_subset_runfile() -> None:
     )
     assert result.returncode == 0, f"{result.stderr}\n{result.stdout}"
     report = json.loads(result.stdout)
-    assert report["status"] == "inventory_only"
+    # The selected `values` owner claims the fixture's only source unit. A
+    # relocated selected graph can therefore prove this residual is exhausted.
+    assert report["status"] == "exhausted_no_peel"
     assert report["plan"] is None
-    assert any("selected-ownership graphs are inspection-only" in blocker for blocker in report["blockers"])
 
 
 if __name__ == "__main__":

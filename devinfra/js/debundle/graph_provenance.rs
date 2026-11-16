@@ -187,6 +187,9 @@ pub struct VerifiedGraphSourceContext {
     tree_config: Option<Arc<[u8]>>,
     tree_config_path: Option<PathBuf>,
     selected_ownership: Option<Vec<SelectedOwnershipModule>>,
+    ownership_subset: Option<(PathBuf, Arc<[u8]>)>,
+    regeneration_command: Vec<String>,
+    current_roots: CurrentRoots,
 }
 
 impl VerifiedGraphSourceContext {
@@ -222,6 +225,25 @@ impl VerifiedGraphSourceContext {
 
     pub fn selected_ownership(&self) -> Option<&[SelectedOwnershipModule]> {
         self.selected_ownership.as_deref()
+    }
+
+    /// Exact selected-view input from the same read that verified its graph
+    /// fingerprint. A staged candidate must not replace these baseline bytes.
+    pub fn ownership_subset_input(&self) -> Option<(&Path, &[u8])> {
+        self.ownership_subset
+            .as_ref()
+            .map(|(path, bytes)| (path.as_path(), bytes.as_ref()))
+    }
+
+    /// Canonical run arguments with every input root relocated by verification.
+    /// Consumers parse these through the ordinary CLI, rather than inventing a
+    /// second interpretation of the transform's source and package context.
+    pub fn regeneration_command(&self) -> &[String] {
+        &self.regeneration_command
+    }
+
+    pub fn current_roots(&self) -> &CurrentRoots {
+        &self.current_roots
     }
 
     pub fn sha256(&self) -> &str {
@@ -1046,6 +1068,7 @@ impl GraphProvenance {
         };
         let mut verified_source_bytes = None;
         let mut verified_tree_config = None;
+        let mut verified_ownership_subset = None;
         for membership in &self.yaml_memberships {
             let dir = self.resolve(&membership.root, &membership.directory, current)?;
             if !dir.is_dir() {
@@ -1100,6 +1123,16 @@ impl GraphProvenance {
             };
             if file.root == InputRoot::Spec && self.config_path.as_ref() == Some(&file.path) {
                 verified_tree_config = contents.as_deref().map(Arc::from);
+            }
+            if file.root == InputRoot::OwnershipSubset {
+                anyhow::ensure!(
+                    verified_ownership_subset.is_none(),
+                    "graph provenance has multiple selected-view inputs"
+                );
+                if let Some(contents) = &contents {
+                    verified_ownership_subset =
+                        Some((absolute(&path)?, Arc::from(contents.as_slice())));
+                }
             }
             if source.is_some_and(|(source, _)| {
                 source.input_file.root == file.root && source.input_file.path == file.path
@@ -1173,6 +1206,9 @@ impl GraphProvenance {
                 .selected_ownership_by_chunk
                 .get(&source.chunk_id)
                 .cloned(),
+            ownership_subset: verified_ownership_subset,
+            regeneration_command: regenerate_command,
+            current_roots: current.clone(),
             sha256: source.sha256.clone(),
             source: Arc::from(
                 String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,

@@ -203,6 +203,11 @@ fn physical_plan_changes(
         return Ok(changes);
     };
     let input = analysis::DependencyGraphInput::read(&args.graph)?;
+    if input.report().ownership_subset.is_some() {
+        // Selected-view claims are stored under chunk-logical module keys,
+        // independent of the immutable base tree's physical YAML roots.
+        return Ok(changes);
+    }
     let scope = ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
     let modules_root = source_context
         .and_then(VerifiedGraphSourceContext::modules_root)

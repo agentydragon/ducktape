@@ -1552,6 +1552,7 @@ rust_library(
         "cli/outcome.rs",
         "cli/propose_commutations.rs",
         "cli/scc_cluster.rs",
+        "cli/selected_view_apply.rs",
         "cli/selector_explanation.rs",
         "cli/selector_input.rs",
         "cli/snapshot.rs",

@@ -17,6 +17,7 @@ mod integrity_explanation;
 mod module_proposals;
 mod modules_commands;
 mod propose_commutations;
+mod selected_view_apply;
 mod selector_explanation;
 mod selector_input;
 mod snapshot;
@@ -60,6 +61,19 @@ fn single_graph_context(
         .into_iter()
         .map(|context| (context.chunk_id().to_owned(), context))
         .collect()
+}
+
+/// Reuse the normal run parser for the graph's fully relocated transform
+/// context. This only prepares inputs; it never dispatches the recorded run.
+pub(crate) fn graph_transform_request(
+    context: &graph_provenance::VerifiedGraphSourceContext,
+) -> Result<pipeline::TransformRequest> {
+    let args = DebundleArgs::try_parse_from(context.regeneration_command())
+        .context("parsing the verified graph's canonical run context")?;
+    let DebundleCommand::Run(run) = args.command else {
+        anyhow::bail!("graph regeneration context is not a run command");
+    };
+    run.transform.context.resolve()
 }
 
 /// Which current authoring scope a graph-backed command actually interprets.
@@ -593,13 +607,18 @@ fn run_debundle_cli(
         DebundleCommand::Modules(args) => args.writes_with_graph(),
         _ => false,
     };
+    let supports_selected_ownership_edit = match &args.command {
+        DebundleCommand::Modules(args) => args.supports_selected_ownership_edit(),
+        _ => false,
+    };
     if edits_with_graph
+        && !supports_selected_ownership_edit
         && source_contexts
             .values()
             .any(|context| context.selected_ownership().is_some())
     {
         anyhow::bail!(
-            "selected-ownership graphs are inspection-only; source-backed edits require selected-view overlay authoring"
+            "this edit does not support selected-ownership graphs; use modules propose/check/apply to append a fresh residual owner"
         );
     }
     let result = match args.command {
