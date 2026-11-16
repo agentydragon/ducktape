@@ -94,7 +94,7 @@ class SimulatedCrash(BaseException):
 def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engine) -> None:
     contents = _contents()
     importer = _ingestor(postgres_engine, contents)
-    store_batch = importer._store_record_batch
+    store_batch = importer._staging.store_record_batch
     read_batch = ingest._read_record_batch
     factory = sessionmaker(postgres_engine)
     committed_sizes = []
@@ -138,7 +138,7 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
             raise SimulatedCrash
 
     with (
-        patch.object(importer, "_store_record_batch", side_effect=crash_after_second_batch),
+        patch.object(importer._staging, "store_record_batch", side_effect=crash_after_second_batch),
         patch.object(ingest, "_read_record_batch", side_effect=parse_without_transaction),
         pytest.raises(SimulatedCrash),
     ):
@@ -190,7 +190,7 @@ def test_concurrent_importers_share_committed_batches(postgres_engine: Engine, s
     barrier = Barrier(2)
 
     def run(importer: SnapshotIngestor) -> IngestReport:
-        store_batch = importer._store_record_batch
+        store_batch = importer._staging.store_record_batch
         first_batch = True
 
         def synchronize(*args: Any, **kwargs: Any) -> None:
@@ -200,7 +200,7 @@ def test_concurrent_importers_share_committed_batches(postgres_engine: Engine, s
                 barrier.wait(timeout=15)
             store_batch(*args, **kwargs)
 
-        with patch.object(importer, "_store_record_batch", side_effect=synchronize):
+        with patch.object(importer._staging, "store_record_batch", side_effect=synchronize):
             return importer.ingest()
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -309,7 +309,7 @@ def test_large_checkpoint_and_growing_publication(postgres_engine: Engine) -> No
     )
     repository.snapshots.append(growing)
     repository.contents[growing.id] = contents + b'{"type":"user","message":{"content":"new"}}\n'
-    store_batch = importer._store_record_batch
+    store_batch = importer._staging.store_record_batch
     stage_sizes = []
 
     def inspect_staging(*args: Any, **kwargs: Any) -> None:
@@ -320,7 +320,7 @@ def test_large_checkpoint_and_growing_publication(postgres_engine: Engine) -> No
     profile.clear()
     with (
         patch.object(importer, "_publish_version", side_effect=profile_publication),
-        patch.object(importer, "_store_record_batch", side_effect=inspect_staging),
+        patch.object(importer._staging, "store_record_batch", side_effect=inspect_staging),
     ):
         assert importer.ingest().files_complete == 2
     assert stage_sizes == [0] * 100 + [1]
@@ -359,13 +359,16 @@ def test_prefix_retry_and_changed_parent_reconstruct_checkpoint(postgres_engine:
     )
     repository.snapshots.append(current)
     repository.contents[current.id] = contents + b'{"type":"custom-title","customTitle":"new title"}\n'
-    store_batch = importer._store_record_batch
+    store_batch = importer._staging.store_record_batch
 
     def crash_after_prefix(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
         raise SimulatedCrash
 
-    with patch.object(importer, "_store_record_batch", side_effect=crash_after_prefix), pytest.raises(SimulatedCrash):
+    with (
+        patch.object(importer._staging, "store_record_batch", side_effect=crash_after_prefix),
+        pytest.raises(SimulatedCrash),
+    ):
         importer.ingest()
     with sessionmaker(postgres_engine)() as db:
         stage = db.scalar(select(FileVersionImportRow))
@@ -501,7 +504,7 @@ def test_dump_fingerprint_and_parse_release_transactions(postgres_engine: Engine
 @pytest.mark.parametrize("changed_metadata", ["file", "snapshot"])
 def test_publication_rechecks_identity_after_parsing(postgres_engine: Engine, changed_metadata: str) -> None:
     importer = _ingestor(postgres_engine, _contents())
-    store_batch = importer._store_record_batch
+    store_batch = importer._staging.store_record_batch
 
     def change_file_identity_after_batch(*args: Any, **kwargs: Any) -> None:
         store_batch(*args, **kwargs)
@@ -515,7 +518,7 @@ def test_publication_rechecks_identity_after_parsing(postgres_engine: Engine, ch
                 assert snapshot is not None
                 snapshot.tree_id = "changed-tree"
 
-    with patch.object(importer, "_store_record_batch", side_effect=change_file_identity_after_batch):
+    with patch.object(importer._staging, "store_record_batch", side_effect=change_file_identity_after_batch):
         assert importer.ingest().files_failed == 1
     with sessionmaker(postgres_engine)() as db, db.begin():
         assert db.scalar(select(func.count()).select_from(FileVersionRow)) == 0
