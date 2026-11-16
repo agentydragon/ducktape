@@ -3,7 +3,7 @@ package codexappserver
 import (
 	"context"
 
-	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/oneoff"
 )
 
 func (c *Host) startOperation(slot **oneoff.Operation, work func(context.Context) error) error {

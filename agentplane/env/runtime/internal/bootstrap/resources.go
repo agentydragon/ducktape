@@ -23,7 +23,7 @@ const (
 	HostOwner           = "bootstrap-host"
 )
 
-// oneoff.Operation publishes once before work and once after completion.
+// internal/oneoff.Operation publishes once before work and once after completion.
 const operationCompletionRevision uint64 = 2
 
 // Request records accepted Sandbox bootstrap demand under the Runtime admission lock.

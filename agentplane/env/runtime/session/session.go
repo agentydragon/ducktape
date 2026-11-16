@@ -10,9 +10,9 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
-	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
