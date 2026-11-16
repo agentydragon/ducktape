@@ -36,7 +36,7 @@ RUNNER_READY_SECONDS = 120.0
 
 @dataclass(frozen=True)
 class NativePlatformClients:
-    """Real backend clients authenticated as the fixture-owned native principal."""
+    """Real backend clients using each API's admitted fixture service role."""
 
     cluster: Cluster
     environment: EnvironmentServiceClient
@@ -115,7 +115,7 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
                 control_target=environment_target,
                 token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-                channel_credentials=credentials,
+                channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
         )

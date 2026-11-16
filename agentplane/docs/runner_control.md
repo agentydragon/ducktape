@@ -70,9 +70,10 @@ runner journal; a repeated ID with a different operation or payload fails `ALREA
 ## Runner proxy
 
 Every Environments replica serves `agentplane.env.runtime.control.EnvironmentRuntime` on
-`sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection. App,
+`sandbox-controller:8082` and forwards unary calls over its own direct Runtime connection.
 Notifications, Sessions, central sampler and Controller lifecycle callers pin the Sandbox Controller
-server SVID. The Sessions binary has no Runtime proxy or Executor receiver and starts no Runtime watches.
+server SVID. App diagnostics use `EnvironmentService.GetRuntimeDiagnostics` on the same listener,
+without a raw-proxy grant. The Sessions binary has no Runtime proxy or Executor receiver and starts no Runtime watches.
 
 - **Sandbox.** The caller names it in the `x-agentplane-sandbox` header. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
@@ -80,7 +81,7 @@ server SVID. The Sessions binary has no Runtime proxy or Executor receiver and s
   `x-agentplane-sandbox-owner-namespace` and `x-agentplane-sandbox-owner-name` exactly once.
   The proxy checks them against the current Sandbox and ready runner Pod before resolving its
   connection. A stale UID or owner returns `NOT_FOUND`; an unavailable runner returns `UNAVAILABLE`.
-- **Authorization.** Exact service SVIDs grant App and Notifications `ListSessions` and `GetStatus`,
+- **Authorization.** Exact service SVIDs grant Notifications `ListSessions` and `GetStatus`,
   Sessions creation and command methods, and Controller lifecycle methods. Executor grants admit
   only the central sampler. Proxy calls reject bearers, workload Identities and delegation; public
   Session callers use SessionDispatcher with their existing direct or delegated authority. See the [proxy contract](../environments/runtimeproxy/SPEC.md).
@@ -229,8 +230,8 @@ unrelated and remains part of durable command scheduling.
 
 ## Lifecycle operations
 
-Sessions makes native Session calls through the Environments proxy. App and Notifications reach
-any Environments replica through `sandbox-controller:8082`.
+Sessions makes native Session calls and Notifications reads inventory through the Environments
+proxy at `sandbox-controller:8082`. App diagnostics go through EnvironmentService instead.
 
 - `ListSessions` reads retained Session inventory.
 - `GetStatus` reads a coherent live snapshot of process incarnations, Session assignments and

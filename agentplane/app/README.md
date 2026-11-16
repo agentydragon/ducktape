@@ -15,7 +15,8 @@ Actions, operator decisions and Connection consent. The staging instance lives i
 
 Diagnostics use the `environment_service` target and pin `spiffe://agentplane/sandbox-controller`.
 The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
-The old raw-proxy target setting remains decoded until its manifest omission has rolled.
+The App has no raw Runtime-proxy grant. The old raw-proxy target setting remains rendered and decoded
+until its manifest omission has rolled.
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.
@@ -63,8 +64,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. EnvironmentService on the Sandbox Controller owns inventory reads, watches and management;
 the app calls its generated authenticated facade. The app retains Thread and policy composition. The [Session Dispatcher](../session_dispatcher/dispatcher/README.md)
-owns logical Session records and durable command delivery; the [Runner Gateway](../session_dispatcher/README.md) owns the
-runner control stream and authorized live Runner proxy; the
+owns logical Session records and durable command delivery; [Environments](../environments/README.md)
+owns Runtime transport and the EnvironmentService diagnostics API; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation. The browser's pure History reads
 use the generated ProtoJSON HTTP surface under `/upstream/history/v1/`; the app forwards them to
@@ -444,19 +445,15 @@ restarted History Session-recording worker replays recorded Sessions; creating a
 ## Shape
 
 ```text
-browser (OIDC session)  /  agent (Kubernetes token)
+browser (OIDC session)
    |  REST + Electric sync + inventory SSE, through the cluster gateway
-integration app (Deployment, namespace agentplane-staging)
-   |  EnvironmentService (Sandbox Controller) / Kubernetes reads
-   |                              |  gRPC Dispatcher / live Gateway checks
-Sandbox -> Pod, PVC               v
-                    Session Dispatcher
-                         | runner proxy
-                         Runner Gateway
-                            |  mTLS Runner gRPC
-                    runner process, state dir on the PVC
-                    claude / codex child per session
-                    model traffic to LiteLLM through the egress proxy, which holds the key
+integration app
+   |-- EnvironmentService: inventory, management, GetRuntimeDiagnostics --> Environments
+   |-- gRPC Dispatcher --> Session Dispatcher -- privileged Runtime proxy --> Environments
+                                                                            | mTLS Runtime gRPC
+                                                               Environment Runtime, state PVC
+                                                               Claude / Codex child per Session
+                                                               model traffic through egress
 ```
 
 Kubernetes is the sandbox inventory, including a compact annotation holding its live preset

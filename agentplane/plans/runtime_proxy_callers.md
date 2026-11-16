@@ -187,12 +187,12 @@ implementations of this boundary, not external proxy clients.
 
 The following is tracked work, not implementation release:
 
-| Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                      |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled. |
-| App raw diagnostics     | Direction approved by operator; add the narrow EnvironmentService method with exact Environment UID, explicit observation/incarnation/boot evidence and unavailable semantics; preserve operator diagnostic authorization and browser output. Retarget the App after the receiver is pinned.                                                          |
-| App archive safety      | Resolve `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, then replace this guard with the reviewed Session-status contract. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Remove the App proxy grant only after both active paths move.              |
-| Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                    |
+| Work                    | Required contract and acceptance                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notification validation | Review admitted-versus-materialized behavior above; keep foreign/stale Identity and missing Session denial, source authorization, and delivery through Dispatcher. Test subscription while Runtime is offline and during materialization, plus later delivery after recovery. Remove its reader grant only after the changed caller image has rolled.                                    |
+| App raw diagnostics     | Implemented in #16819 and #16825; App uses EnvironmentService for browser status and the conservative archive check. Its raw reader grant is removed after the App rollout verified below.                                                                                                                                                                                               |
+| App archive safety      | Resolve `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`, then replace this guard with the reviewed Session-status contract. Test shared-host siblings, busy/idle/unknown/stale evidence and offline/replaced environments; keep retained Sessions with no live attachment readable. Both active paths already use EnvironmentService; this Session-status follow-up needs no App raw-proxy grant. |
+| Privileged transport    | The proxy/Executor and Controller-internal transport extraction landed (#16723 to #16775). Keep the Sessions and sampler method sets separate; reject other service SVIDs, workload Identities and delegated envelopes. Preserve UID/incarnation/boot fencing and current uncertain-outcome rules.                                                                                       |
 
 Use receivers before senders, image before settings, then retire grants and old receiver code only
 once callers have rolled and supported rollback no longer needs them. The physical proxy move may
@@ -209,9 +209,20 @@ Operator released the receiver, App cutover and final App-grant narrowing on 202
 physical transport move. The accepting RPC is `EnvironmentService.GetRuntimeDiagnostics`: exact
 App service peer only, exact Environment handle, workload incarnation, observation time and the
 Runtime snapshot with its authenticated boot ID. It is a live read with explicit unavailable errors,
-not a persisted Session-status authority. The App cutover uses its EnvironmentService connection after the receiver image pin. Remove its
-raw-proxy grant only after this caller image has rolled. Keep the busy-archive check
-conservative until the Session-status decision; Notifications retains its independently reviewed path.
+not a persisted Session-status authority. Receiver #16819 and App cutover #16825 landed. The
+Coordinator verified on 2026-11-16 that staging App image `926c288` includes #16825 and has run since
+03:23 UTC; no App Go code dials the Runtime proxy. The final authorization removal drops only the
+App raw-proxy reader grant. Notifications keeps its grant, and EnvironmentService reader, manager,
+operator and wake grants are unchanged. Keep the busy-archive check conservative until the
+Session-status decision.
+
+The k3s `//agentplane/system_tests/suites:test_pod` scenario
+`environments_forwards_runtime_reads_and_refuses_stale_incarnations` covers native diagnostics and
+App HTTP status against a live Runtime, refuses App raw `GetStatus`/`ListSessions`, and preserves
+Notifications reads and stale-incarnation denial. Reverting the grant-removal PR restores the App
+raw-reader authorization; after Flux applies it, check Controller readiness, App diagnostics and
+Session delivery. The App's dead `runner_gateway_control_target` is still rendered and required;
+its CLEANUP gate (manifest omission and App config rollout) is unmet, so it remains decoded.
 
 ## Review question
 

@@ -38,6 +38,7 @@ from agentplane.system_tests.driver.identity import (
 from agentplane.system_tests.driver.sandbox import ENVIRONMENT_RUNTIME_CONTAINER, POD_TEMPLATE
 from agentplane.system_tests.driver.sandbox_diagnostics import container_mount_sources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
+from agentplane.system_tests.driver.tls import service_svid_credentials
 from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -295,7 +296,7 @@ async def deployed_session_command_cannot_cross_deletion(
         runtime_reader_channel = await stack.enter_async_context(
             dial(
                 runtime_target,
-                channel_credentials=app.channel_credentials,
+                channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
@@ -705,7 +706,7 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
             runtime_reader_channel = await identities.enter_async_context(
                 dial(
                     runtime_target,
-                    channel_credentials=app.channel_credentials,
+                    channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
                     server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
                 )
             )

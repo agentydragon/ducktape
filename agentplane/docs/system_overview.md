@@ -484,14 +484,15 @@ flowchart LR
 
 ## Environment control and native Sessions
 
-The Environments Runtime proxy and Executor admit only exact component service SVIDs: App and Notifications for diagnostics, Sessions for native Session
+The Environments Runtime proxy and Executor admit only exact component service SVIDs: Notifications for reads, Sessions for native Session
 operations, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods.
 These are independent method grants. Caller configuration activates each edge only after its image
 is pinned; the proxy's existing native Runtime mTLS identity remains separate.
 
 ```mermaid
 flowchart LR
-    services[Configured App, Notifications, Sessions, Controller and sampler service SVIDs]
+    app[App service SVID] -->|EnvironmentService.GetRuntimeDiagnostics only| sandboxctl
+    services[Configured Notifications, Sessions, Controller and sampler service SVIDs]
     services -->|service SVID only: method-scoped proxy and Executor grants| sandboxctl
     subgraph environment_runtime[Environment Runtime process]
       runtime[Runtime admission and lifecycle]
@@ -874,9 +875,9 @@ Deployment enables `environment_service.runtime_proxy` on the existing every-rep
 grants. Each replica's routing inventory and Runtime watches operate independently of leadership
 and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
 from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
-mutation outcomes stay unchanged. App diagnostics, Notifications inventory, Sessions delivery,
-Controller lifecycle and central sampler Executor now target this Service and pin its Sandbox
-Controller server SVID. Dispatcher API calls retain their separate endpoint and identity.
+mutation outcomes stay unchanged. Notifications inventory, Sessions delivery, Controller lifecycle
+and central sampler Executor target this Service and pin its Sandbox Controller server SVID.
+App diagnostics use EnvironmentService on the same listener, without a raw-proxy grant. Dispatcher API calls retain their separate endpoint and identity.
 The Gateway registers no Runtime proxy or Executor receiver. Its obsolete credentials, network
 permissions and ignored grant settings retire after the receiver-free image is pinned and running.
 No Environments-to-Sessions edge is added.

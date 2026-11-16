@@ -78,8 +78,9 @@ incarnation-binding observer identity. Incoming callers pin the existing
 Sessions commands, Controller lifecycle calls and Executor operations. The receiver grants no bearer,
 workload Identity or delegated proxy access, and does not expose `WatchState` to callers. Its
 service-only admission needs no TokenReview resolver or `runtime_proxy.audience` setting.
-Deployment targets this [proxy implementation](runtimeproxy/SPEC.md) for App diagnostics,
-Notifications inventory, Sessions delivery, central sampler Executor and Controller lifecycle calls.
+Deployment targets this [proxy implementation](runtimeproxy/SPEC.md) for Notifications inventory,
+Sessions delivery, central sampler Executor and Controller lifecycle calls. App diagnostics use
+`EnvironmentService.GetRuntimeDiagnostics`; the App has no raw-proxy reader grant.
 The Sessions binary has no Runtime proxy or Executor receiver and makes no direct Runtime calls. Before reverting
 an image that accepts this setting, remove the setting and verify its ConfigMap and rollout.
 
