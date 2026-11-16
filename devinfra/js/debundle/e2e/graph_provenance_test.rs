@@ -6,8 +6,9 @@ use std::path::Path;
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, TreeFixture, debundler_path, run_fixture_with_graphs, run_tree_graph_fixture,
-    tree_spec_args,
+    FixtureOpts, Member, TreeFixture, assert_entry_output, debundler_path, logical_module,
+    node_module_evaluation_order, run_fixture_with_graphs, run_tree_graph_fixture, tree_spec_args,
+    unassigned_mode_inline,
 };
 use tempfile::TempDir;
 
@@ -773,4 +774,44 @@ fn env_only_run_records_replayable_absolute_argv_across_cwd() {
     .unwrap();
     assert!(replay.status.success(), "{}", stderr(&replay));
     assert!(graph.exists());
+}
+
+#[test]
+fn exported_priority_captures_the_materialized_cycle_traversal() {
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const hub = () => [a, b];
+const a = { dependency: hub, lazy: () => b };
+const b = { dependency: hub };
+console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
+"#,
+            vec![
+                logical_module("hub", &[Member::new("hub")]),
+                logical_module("a", &[Member::new("a")]),
+                logical_module("b", &[Member::new("b")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_entry_output(&fixture, "true true true\n");
+    let priority: Vec<_> = fixture
+        .dependency_graph()
+        .import_order
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let mut owners = priority.clone();
+    owners.sort();
+    assert_eq!(owners, ["a", "b", "hub"]);
+    // Every DFS of this cycle discovers all three owners on one branch.
+    // Their actual Node completion order must reverse the captured discovery.
+    let expected: Vec<_> = priority
+        .into_iter()
+        .rev()
+        .chain(std::iter::once("entry".to_string()))
+        .collect();
+    assert_eq!(
+        node_module_evaluation_order(&fixture, &["a", "b", "hub", "entry"]),
+        expected,
+    );
 }
