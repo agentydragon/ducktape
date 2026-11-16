@@ -131,10 +131,10 @@ The native gRPC listener (`rpc.listen_address`) serves `Notifications` and `grpc
 `rpc.tls` supplies its server certificate and key, and `rpc.auth` must configure SPIFFE client trust.
 The receiver admits live workload SVIDs and exact service SVID grants only; it performs no TokenReview.
 A certificate combined with bearer or delegation metadata is refused. `operator_reader_services`
-admits exact service SPIFFE IDs to the five diagnostic read methods. Legacy `token_audience`,
-`operator_reader_account` and Kubernetes bearer listener entries still decode for rollout compatibility,
-but grant no admission. CLEANUP: remove these legacy settings after manifests omit them and that rollout completes. A service SVID grants neither an
+admits exact service SPIFFE IDs to the five diagnostic read methods. A service SVID grants neither an
 agent Identity nor inbox ownership, and is not admitted to mutations or other RPCs.
+Legacy Kubernetes bearer listener entries still decode but grant no admission.
+CLEANUP: remove that shared listener variant after every receiver omits it and the rollout completes.
 The HTTP listener (`host`, `http_port`) serves only `POST /v1/webhooks/github` when GitHub is configured; all other
 paths return not found. It has no workload HTTP API or documentation routes. The generated App browser facade dials
 the gRPC listener, and the CLI embeds the workflow guides. Health checks take no bearer: service `""` is readiness (the LISTEN

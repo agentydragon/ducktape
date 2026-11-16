@@ -45,7 +45,6 @@ import (
 const (
 	processConfigEnv = "DUCKTAPE_NOTIFICATION_PROCESS_CONFIG"
 	testNamespace    = "notification-process-test"
-	testAudience     = "notification-process-test-audience"
 )
 
 // processConfig is the explicit test-only boundary between the owning fixture and the child service process.
@@ -53,7 +52,6 @@ type processConfig struct {
 	DatabaseURL      string            `json:"database_url"`
 	KubeconfigPath   string            `json:"kubeconfig_path"`
 	Namespace        string            `json:"namespace"`
-	TokenAudience    string            `json:"token_audience"`
 	ServerCertFile   string            `json:"server_cert_file"`
 	ServerKeyFile    string            `json:"server_key_file"`
 	ClientCAFile     string            `json:"client_ca_file"`
@@ -126,7 +124,6 @@ func TestProductionNotificationProcessListsOwnedSubscription(t *testing.T) {
 		DatabaseURL:    databaseURL,
 		KubeconfigPath: kubeconfigPath,
 		Namespace:      testNamespace,
-		TokenAudience:  testAudience,
 		ServerCertFile: serverTLS.CertFile,
 		ServerKeyFile:  serverTLS.KeyFile,
 		ClientCAFile:   ca.RootFile,
@@ -246,7 +243,7 @@ func TestNotificationProcessDriver(t *testing.T) {
 	}
 	for name, value := range map[string]string{
 		"database_url": input.DatabaseURL, "kubeconfig_path": input.KubeconfigPath, "namespace": input.Namespace,
-		"token_audience": input.TokenAudience, "server_cert_file": input.ServerCertFile, "server_key_file": input.ServerKeyFile,
+		"server_cert_file": input.ServerCertFile, "server_key_file": input.ServerKeyFile,
 		"client_ca_file": input.ClientCAFile, "peer_token_file": input.PeerTokenFile,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -267,13 +264,11 @@ func TestNotificationProcessDriver(t *testing.T) {
 	c := defaultConfig()
 	c.DatabaseURL = input.DatabaseURL
 	c.Namespace = input.Namespace
-	c.TokenAudience = input.TokenAudience
 	c.RPC = listener.Config{
 		ListenAddress: "127.0.0.1:0",
 		TLS:           &listener.TLS{CertFile: input.ServerCertFile, KeyFile: input.ServerKeyFile},
 		Auth: []listener.Authentication{
 			&listener.SPIFFEAuth{CAFile: input.ClientCAFile},
-			&listener.KubernetesBearerAuth{Audiences: []string{input.TokenAudience}},
 		},
 	}
 	c.Actions = actionPeer{URL: "http://127.0.0.1:1", TokenFile: input.PeerTokenFile, RequestTimeoutSeconds: 5}

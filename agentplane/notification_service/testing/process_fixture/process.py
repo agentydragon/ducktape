@@ -32,7 +32,6 @@ _DRIVER_BINARY = (
 )
 _MIGRATION_DATABASE_URL_ENV = "AGENTPLANE_NOTIFICATIONS_DATABASE_URL"
 _PROCESS_CONFIG_ENV = "DUCKTAPE_NOTIFICATION_PROCESS_CONFIG"
-_TOKEN_AUDIENCE = "agentplane-notifications"
 _STOP_GRACE_SECONDS = 10
 _DUMP_SECONDS = 5
 _STARTUP_SECONDS = 30
@@ -94,7 +93,6 @@ async def notification_process(
                 "database_url": go_database_url,
                 "kubeconfig_path": str(api.kubeconfig),
                 "namespace": sandbox.namespace,
-                "token_audience": _TOKEN_AUDIENCE,
                 "server_cert_file": str(server_cert),
                 "server_key_file": str(server_key),
                 "client_ca_file": str(client_ca),
