@@ -20,9 +20,9 @@ from constructs import Construct
 from agentplane.egress import sidecar_config
 from agentplane.egress.platform_routes import PlatformRoutes
 from agentplane.env.config import CA_BUNDLE, JAVA_TRUST_STORE
-from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s.agentplane import egress, telemetry
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.settings_file import PodWiring, SettingsFile

@@ -6,8 +6,8 @@ configuration, which only needs the names of the PolicySets it assigns.
 
 from __future__ import annotations
 
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s import agent_access_profiles
+from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT, tool_config_grant
 
 
