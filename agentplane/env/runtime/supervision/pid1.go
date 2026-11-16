@@ -5,241 +5,28 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"slices"
-	"strconv"
-	"strings"
-	"sync"
-	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/pid1"
 )
-
-var pid1Children = sync.OnceValue(func() *childReaper {
-	r := &childReaper{children: map[int]*pid1Backend{}}
-	go r.run()
-	return r
-})
 
 // NewPID1Supervisor requires PID 1 in a private container PID namespace whose
 // runtime fences the namespace before replacement. PID 1 owns every wait4,
 // including adopted orphans; exec.Cmd.Wait is never used.
 func NewPID1Supervisor() (*Supervisor, error) {
-	if os.Getpid() != 1 {
-		return nil, errors.New("Pod PID1 supervision requires Environment Runtime to be PID 1 in a private container PID namespace")
-	}
-	reaper := pid1Children()
-	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
-		return &pid1Backend{config: config, reaper: reaper, exited: make(chan nativeExit, 1)}
-	}, fenceNamespace: reaper.fenceNamespace}, nil
-}
-
-func (r *childReaper) fenceNamespace(ctx context.Context) error {
-	if os.Getpid() != 1 {
-		return errors.New("PID namespace fencing requires the caller to be PID 1")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		r.mu.Lock()
-		managed := len(r.children)
-		r.mu.Unlock()
-		if managed != 0 {
-			return fmt.Errorf("PID namespace fence started with %d managed child processes", managed)
-		}
-
-		if _, err := namespaceWorkloadPIDs(os.Getuid()); err != nil {
-			return err
-		}
-		if err := unix.Kill(-1, unix.SIGKILL); err != nil && !errors.Is(err, unix.ESRCH) {
-			return fmt.Errorf("kill PID namespace workload: %w", err)
-		}
-		remaining, err := namespaceWorkloadPIDs(os.Getuid())
-		if err != nil {
-			return err
-		}
-		if len(remaining) == 0 {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for PID namespace workload fence: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
-// namespaceWorkloadPIDs fails closed if a workload process has credentials
-// PID 1 cannot signal. Container workloads inherit PID 1's identity and cannot
-// gain privilege because the companion runs without capabilities or privilege
-// escalation.
-func namespaceWorkloadPIDs(uid int) ([]int, error) {
-	return namespaceWorkloadPIDsAt("/proc", uid, os.ReadFile)
-}
-
-func namespaceWorkloadPIDsAt(procDir string, uid int, readStatus func(string) ([]byte, error)) ([]int, error) {
-	entries, err := os.ReadDir(procDir)
-	if err != nil {
-		return nil, fmt.Errorf("read PID namespace process table: %w", err)
-	}
-	var pids []int
-	for _, entry := range entries {
-		pid, err := strconv.Atoi(entry.Name())
-		if err != nil || pid == 1 {
-			continue
-		}
-		status, err := readStatus(filepath.Join(procDir, entry.Name(), "status"))
-		// procfs can return ESRCH as well as ENOENT when a process exits
-		// between listing /proc and opening its status file.
-		if errors.Is(err, os.ErrNotExist) || errors.Is(err, unix.ESRCH) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("read PID namespace process %d credentials: %w", pid, err)
-		}
-		credentials, err := processUIDs(string(status))
-		if err != nil {
-			return nil, fmt.Errorf("read PID namespace process %d credentials: %w", pid, err)
-		}
-		if !slices.Equal(credentials, []int{uid, uid, uid, uid}) {
-			return nil, fmt.Errorf("PID namespace process %d does not share PID 1's unprivileged UID", pid)
-		}
-		pids = append(pids, pid)
-	}
-	return pids, nil
-}
-
-func processUIDs(status string) ([]int, error) {
-	for _, line := range strings.Split(status, "\n") {
-		if !strings.HasPrefix(line, "Uid:") {
-			continue
-		}
-		fields := strings.Fields(strings.TrimPrefix(line, "Uid:"))
-		if len(fields) != 4 {
-			return nil, errors.New("process status has an invalid Uid record")
-		}
-		uids := make([]int, 0, len(fields))
-		for _, field := range fields {
-			uid, err := strconv.Atoi(field)
-			if err != nil || uid < 0 {
-				return nil, errors.New("process status has an invalid Uid record")
-			}
-			uids = append(uids, uid)
-		}
-		return uids, nil
-	}
-	return nil, errors.New("process status has no Uid record")
-}
-
-type nativeExit struct {
-	status unix.WaitStatus
-	err    error
-}
-
-type childReaper struct {
-	mu       sync.Mutex
-	children map[int]*pid1Backend
-}
-
-func (r *childReaper) run() {
-	changed := make(chan os.Signal, 1)
-	signal.Notify(changed, syscall.SIGCHLD)
-	// A coalesced SIGCHLD or one delivered before Notify must not strand a zombie.
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		r.mu.Lock()
-		for pid, child := range r.children {
-			var info unix.Siginfo
-			err := unix.Waitid(unix.P_PID, pid, &info, unix.WEXITED|unix.WNOHANG|unix.WNOWAIT, nil)
-			if errors.Is(err, unix.EINTR) {
-				continue
-			}
-			if err != nil {
-				panic(fmt.Errorf("observe PID1 native child %d: %w", pid, err))
-			}
-			if info.Signo == 0 {
-				continue
-			}
-			// WNOWAIT keeps the zombie leader's PID reserved until its group is
-			// fenced. Native forks cannot reuse the group identity in this gap.
-			fenceErr := signalProcessGroup(pid, syscall.SIGKILL)
-			var status unix.WaitStatus
-			for {
-				_, err = unix.Wait4(pid, &status, 0, nil)
-				if !errors.Is(err, unix.EINTR) {
-					break
-				}
-			}
-			if err != nil {
-				panic(fmt.Errorf("reap PID1 native child %d: %w", pid, err))
-			}
-			delete(r.children, pid)
-			_ = child.cmd.Process.Release()
-			child.exited <- nativeExit{status: status, err: fenceErr}
-		}
-		// Only unregistered adopted children may go through orphan wait4.
-		// Every native Start shares this mutex with discovery and registration.
-		children, err := directChildren()
-		if err != nil {
-			panic(fmt.Errorf("discover PID1 adopted children: %w", err))
-		}
-		for _, pid := range children {
-			if r.children[pid] != nil {
-				continue
-			}
-			var status unix.WaitStatus
-			_, err := unix.Wait4(pid, &status, unix.WNOHANG, nil)
-			if err != nil && !errors.Is(err, unix.ECHILD) && !errors.Is(err, unix.EINTR) {
-				panic(fmt.Errorf("reap PID1 adopted child %d: %w", pid, err))
-			}
-		}
-		r.mu.Unlock()
-		select {
-		case <-changed:
-		case <-ticker.C:
-		}
-	}
-}
-
-// Go can start a child from any runtime thread. Looking only at the thread-group
-// leader's children file misses native processes started by another thread.
-func directChildren() ([]int, error) {
-	tasks, err := os.ReadDir("/proc/self/task")
+	reaper, err := pid1.Namespace()
 	if err != nil {
 		return nil, err
 	}
-	var children []int
-	for _, task := range tasks {
-		data, err := os.ReadFile(filepath.Join("/proc/self/task", task.Name(), "children"))
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		} // A runtime thread exited.
-		if err != nil {
-			return nil, err
-		}
-		for _, field := range strings.Fields(string(data)) {
-			pid, err := strconv.Atoi(field)
-			if err != nil || pid <= 0 {
-				return nil, fmt.Errorf("invalid child PID %q", field)
-			}
-			children = append(children, pid)
-		}
-	}
-	return children, nil
+	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
+		return &pid1Backend{config: config, reaper: reaper}
+	}, fenceNamespace: reaper.FenceNamespace}, nil
 }
 
 type pid1Backend struct {
 	config ProcessConfig
-	reaper *childReaper
-	cmd    *exec.Cmd
-	exited chan nativeExit
+	reaper *pid1.Reaper
+	child  *pid1.Child
 }
 
 func (b *pid1Backend) validate() error { return nil }
@@ -262,30 +49,25 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 		closeFiles(stdinReader, stdinWriter, stdoutReader, stdoutWriter)
 		return err
 	}
-	cmd := exec.Command(b.config.Command[0], b.config.Command[1:]...)
-	cmd.Dir, cmd.Env = b.config.Dir, environment(b.config.Env)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinReader, stdoutWriter, stderrWriter
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	// Start's failed-exec handshake may itself wait for the child. Registration
-	// and every wait4 share this lock, so neither path steals the other's status.
-	b.reaper.mu.Lock()
-	err = cmd.Start()
-	if err == nil {
-		b.cmd = cmd
-		// Process.Release sets cmd.Process.Pid=-1 as soon as the reaper runs.
-		p.setNativePID(cmd.Process.Pid)
-		b.reaper.children[p.PID()] = b
-	}
-	b.reaper.mu.Unlock()
+	child, err := b.reaper.Start(pid1.Launch{
+		Command: b.config.Command,
+		Dir:     b.config.Dir,
+		Env:     environment(b.config.Env),
+		Stdin:   stdinReader,
+		Stdout:  stdoutWriter,
+		Stderr:  stderrWriter,
+	})
 	closeFiles(stdinReader, stdoutWriter, stderrWriter)
 	if err != nil {
 		closeFiles(stdinWriter, stdoutReader, stderrReader)
-		return fmt.Errorf("start PID1 native process: %w", err)
+		return err
 	}
+	b.child = child
+	p.setNativePID(child.PID())
 	p.attachStreams(stdinWriter, stdoutReader, stderrReader)
 	go b.finish(p)
 	if err := ctx.Err(); err != nil {
-		b.signal(p, syscall.SIGKILL)
+		child.Kill()
 		_, waitErr := p.Wait(context.Background())
 		return errors.Join(err, waitErr)
 	}
@@ -293,43 +75,22 @@ func (b *pid1Backend) start(ctx context.Context, p *Process) error {
 }
 
 func (b *pid1Backend) finish(p *Process) {
-	exit := <-b.exited
+	exit, err := b.child.WaitReaped(context.Background())
+	if err != nil {
+		panic(fmt.Errorf("wait for PID1 native child %d: %w", b.child.PID(), err))
+	}
+	// Natural leader exit closes stdin before waiting for the complete process
+	// group to disappear, then publishes Process completion.
 	_ = p.CloseStdin()
-	// Adopted descendants must be reaped by the shared loop before the group is
-	// empty. A leader's exit alone cannot release the process cleanup barrier.
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-	for exit.err == nil {
-		err := unix.Kill(-p.PID(), 0)
-		if errors.Is(err, unix.ESRCH) {
-			break
-		}
-		if err != nil {
-			exit.err = err
-			break
-		}
-		<-ticker.C
-	}
-	code := exit.status.ExitStatus()
-	if exit.status.Signaled() {
-		code = 128 + int(exit.status.Signal())
-	}
-	p.completeWith(code, exit.err)
-}
-
-func (b *pid1Backend) signal(p *Process, signal syscall.Signal) {
-	b.reaper.mu.Lock()
-	defer b.reaper.mu.Unlock()
-	if b.reaper.children[p.PID()] == b {
-		_ = signalProcessGroup(p.PID(), signal)
-	}
+	err = b.child.WaitFenced(context.Background())
+	p.completeWith(exit.Code, err)
 }
 
 func (b *pid1Backend) stop(ctx context.Context, p *Process) error {
 	if err := p.CloseStdin(); err != nil && !errors.Is(err, os.ErrClosed) {
 		return err
 	}
-	b.signal(p, syscall.SIGTERM)
+	b.child.Terminate()
 	timer := time.NewTimer(b.config.StopGrace)
 	defer timer.Stop()
 	select {
@@ -337,10 +98,10 @@ func (b *pid1Backend) stop(ctx context.Context, p *Process) error {
 		_, err := p.Wait(context.Background())
 		return err
 	case <-ctx.Done():
-		b.signal(p, syscall.SIGKILL)
+		b.child.Kill()
 		return ctx.Err()
 	case <-timer.C:
-		b.signal(p, syscall.SIGKILL)
+		b.child.Kill()
 	}
 	_, err := p.Wait(ctx)
 	return err
