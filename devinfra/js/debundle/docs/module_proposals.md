@@ -14,7 +14,9 @@ Its soundness/completeness scope is the precise witness family in
 ## Workflow
 
 Start with a graph built from the intended source, spec and analysis settings.
-Keep the same graph and module tree for inspection, proposal, check and apply:
+Keep the same graph and module tree for inspection, proposal, check and apply.
+The project's wrapper or environment must supply the matching `--modules`,
+`--source-root` and `--tree-config` throughout these commands:
 
 ```bash
 # Inspect the graph and residual structure.
@@ -41,6 +43,13 @@ selector-resolution and assignment checks as apply. After
 applying, regenerate the bundle and run relevant runtime checks; graph
 acceptance alone does not prove emitted behavior. Refresh the graph before the
 next graph-backed edit.
+
+Default `modules check` preflights the actual writer for ordinary and selected
+ownership trees. Its `scope: executable_plan` report keeps `graph_accepted`
+separate from `accepted`; writer refusal returns no plan. For graph constraints
+alone, explicitly use `modules check --graph-only --batch changes.json`. That
+mode reports `scope: graph_only`, accepts no saved `--plan`, and always returns
+`plan: null`. A graph-only result cannot authorize selector writing.
 
 ### A graph corpus
 

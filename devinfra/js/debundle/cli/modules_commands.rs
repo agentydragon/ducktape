@@ -232,12 +232,28 @@ struct ModulesCheckArgs {
     /// changes the owner universe or global import priority.
     #[arg(long = "import-order", conflicts_with = "plan")]
     import_order: Option<PathBuf>,
+    /// Check graph constraints only; never synthesize selectors or return an
+    /// executable plan. The default also preflights the source writer.
+    #[arg(long, conflicts_with = "plan")]
+    graph_only: bool,
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     tree_config: Option<PathBuf>,
-    #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
+    #[arg(
+        long = "source-root",
+        env = "DEBUNDLE_SOURCE_ROOT",
+        required_unless_present = "graph_only"
+    )]
     source_root: Option<PathBuf>,
     #[arg(long, value_enum)]
     format: Option<OutputFormat>,
+}
+
+#[derive(Clone, Copy, serde::Serialize, strum::Display)]
+#[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
+enum AssignmentCheckScope {
+    GraphOnly,
+    ExecutablePlan,
 }
 
 fn run_modules_check(
@@ -301,37 +317,47 @@ fn run_modules_check(
             .as_str()
             .to_string();
     }
-    let selector_realization_error =
-        if accepted(&validation) && input.report().ownership_subset.is_some() {
-            let realization = (|| {
-                let source_root = args.source_root.as_deref().context(
-                    "selected-view check requires --source-root for executable selector preflight",
-                )?;
-                crate::source_unit_apply::run_source_unit_apply(
-                    stderr,
-                    &args.common.modules_root,
-                    &args.common.dependency_graph_path,
-                    source_root,
-                    source_context,
-                    crate::source_unit_apply::SourceUnitApplyOptions {
-                        tree_config: args.tree_config.as_deref(),
-                        assignments: changes.clone(),
-                        import_order: Some(import_order.clone()),
-                        readable_names: Default::default(),
-                        selector_overrides: Default::default(),
-                        dry_run: true,
-                        effect_assessment_context: None,
-                    },
-                )
-            })();
-            realization.err().map(|error| format!("{error:#}"))
-        } else {
-            None
-        };
-    let is_accepted = accepted(&validation) && selector_realization_error.is_none();
+    let graph_accepted = accepted(&validation);
+    let selector_realization_error = if graph_accepted && !args.graph_only {
+        let realization = (|| {
+            let source_root = args
+                .source_root
+                .as_deref()
+                .context("executable plan check requires --source-root for selector preflight")?;
+            let assignments = crate::module_apply::physical_plan_changes(
+                changes.clone(),
+                &input,
+                args.tree_config.as_deref(),
+                &args.common.modules_root,
+                source_context,
+            )?;
+            crate::source_unit_apply::run_source_unit_apply(
+                stderr,
+                &args.common.modules_root,
+                &args.common.dependency_graph_path,
+                source_root,
+                source_context,
+                crate::source_unit_apply::SourceUnitApplyOptions {
+                    tree_config: args.tree_config.as_deref(),
+                    assignments,
+                    import_order: Some(import_order.clone()),
+                    readable_names: Default::default(),
+                    selector_overrides: Default::default(),
+                    dry_run: true,
+                    effect_assessment_context: None,
+                },
+            )
+        })();
+        realization.err().map(|error| format!("{error:#}"))
+    } else {
+        None
+    };
+    let is_accepted = graph_accepted && selector_realization_error.is_none();
     #[derive(serde::Serialize)]
     struct CheckReport {
+        scope: AssignmentCheckScope,
         accepted: bool,
+        graph_accepted: bool,
         changes: Vec<SourceUnitAssignment>,
         import_order: Vec<spec::ModulePath>,
         residual_units_extracted: usize,
@@ -342,8 +368,14 @@ fn run_modules_check(
         plan: Option<AssignmentPlan>,
     }
     let report = CheckReport {
+        scope: if args.graph_only {
+            AssignmentCheckScope::GraphOnly
+        } else {
+            AssignmentCheckScope::ExecutablePlan
+        },
         accepted: is_accepted,
-        plan: if is_accepted {
+        graph_accepted,
+        plan: if is_accepted && !args.graph_only {
             Some(AssignmentPlan {
                 snapshot: AssignmentSnapshot::read(&args.common.dependency_graph_path)?,
                 changes: changes.clone(),
@@ -365,15 +397,15 @@ fn run_modules_check(
         &report,
         |report, text| {
             text.push_str(&format!(
-                "accepted={} residual_units_extracted={} existing_units_moved={}\n",
-                report.accepted, report.residual_units_extracted, report.existing_units_moved
+                "scope={} accepted={} graph_accepted={} residual_units_extracted={} existing_units_moved={}\n",
+                report.scope, report.accepted, report.graph_accepted, report.residual_units_extracted, report.existing_units_moved
             ));
             Ok(())
         },
         "writing assignment check",
     )?;
     if let Some(error) = &report.selector_realization_error {
-        anyhow::bail!("selected-view selector realization rejected the batch: {error}");
+        anyhow::bail!("selector realization rejected the batch: {error}");
     }
     ensure!(is_accepted, "complete assignment gate rejected the batch");
     Ok(())
@@ -427,20 +459,11 @@ fn search_one_graph(
     let input = analysis::DependencyGraphInput::read(graph_path)?;
     let chunk_id = input.report().chunk_id.clone();
     let problem = AssignmentProblem::new(&input)?;
-    let scope = if input.report().ownership_subset.is_none() {
-        args.tree_config
-            .as_ref()
-            .map(|config| spec_tree::ModuleTreeScope::from_config(config, &input.report().chunk_id))
-            .transpose()?
-    } else {
-        None
-    };
-    let mut into = args.into.clone();
-    if scope.is_some() {
-        for destination in &mut into {
-            *destination = spec::ModulePath::parse(destination, "")?.to_string();
-        }
-    }
+    let into = args
+        .into
+        .iter()
+        .map(|destination| spec::ModulePath::parse(destination, "").map(|path| path.to_string()))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
     let options = peel::search::SearchOptions {
         into,
         required: args.required.clone(),
@@ -463,29 +486,32 @@ fn search_one_graph(
                 .and(context)
                 .and_then(VerifiedGraphSourceContext::modules_root)
                 .unwrap_or(&args.modules_root);
-            let mut preflight_assignments = report.changes.clone();
-            if let Some(scope) = &scope {
-                for assignment in &mut preflight_assignments {
-                    let logical = spec::ModulePath::parse(&assignment.module, "")?;
-                    assignment.module = scope_destination(scope, &logical)?.to_string();
-                }
-            }
-            if let Err(error) = crate::source_unit_apply::run_source_unit_apply(
-                stderr,
-                modules_root,
-                graph_path,
-                source_root,
-                context,
-                crate::source_unit_apply::SourceUnitApplyOptions {
-                    tree_config: args.tree_config.as_deref(),
-                    assignments: preflight_assignments,
-                    import_order: Some(report.import_order.clone()),
-                    readable_names: Default::default(),
-                    selector_overrides: Default::default(),
-                    dry_run: true,
-                    effect_assessment_context: None,
-                },
-            ) {
+            let preflight = (|| {
+                let assignments = crate::module_apply::physical_plan_changes(
+                    report.changes.clone(),
+                    &input,
+                    args.tree_config.as_deref(),
+                    modules_root,
+                    context,
+                )?;
+                crate::source_unit_apply::run_source_unit_apply(
+                    stderr,
+                    modules_root,
+                    graph_path,
+                    source_root,
+                    context,
+                    crate::source_unit_apply::SourceUnitApplyOptions {
+                        tree_config: args.tree_config.as_deref(),
+                        assignments,
+                        import_order: Some(report.import_order.clone()),
+                        readable_names: Default::default(),
+                        selector_overrides: Default::default(),
+                        dry_run: true,
+                        effect_assessment_context: None,
+                    },
+                )
+            })();
+            if let Err(error) = preflight {
                 report.status = peel::search::SearchStatus::InventoryOnly;
                 report.blockers.push(format!(
                     "selected closure cannot be realized by the source-unit writer: {error:#}"
@@ -508,31 +534,6 @@ fn search_one_graph(
         None
     };
     Ok((chunk_id, report, plan))
-}
-
-/// Map a chunk-logical plan destination to the physical path under its
-/// configured module-tree root for source-writer preflight.
-fn scope_destination(
-    scope: &spec_tree::ModuleTreeScope,
-    destination: &spec::ModulePath,
-) -> Result<spec::ModulePath> {
-    if scope
-        .roots()
-        .iter()
-        .any(|root| std::path::Path::new(destination.as_str()).starts_with(root))
-    {
-        return Ok(destination.clone());
-    }
-    let root = scope
-        .roots()
-        .first()
-        .context("tree config has no module root for proposal destination")?;
-    let physical = root
-        .join(destination.as_str())
-        .to_str()
-        .context("module destination is not UTF-8")?
-        .to_string();
-    Ok(spec::ModulePath::parse(&physical, "")?)
 }
 
 fn run_graph_corpus_search(

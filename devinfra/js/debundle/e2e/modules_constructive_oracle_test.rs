@@ -57,6 +57,7 @@ fn seed_feasibility_matches_every_raw_subset_under_the_append_last_priority() {
         let output = fixture.command(&[
             "modules",
             "check",
+            "--graph-only",
             "--batch",
             &batch,
             "--import-order",
@@ -137,7 +138,14 @@ fn seed_feasibility_matches_every_raw_subset_under_the_append_last_priority() {
     );
 
     let plan_path = write_json(&fixture, "plan.json", plan);
-    fixture.assert_success(&["modules", "check", "--plan", &plan_path]);
+    fixture.assert_success(&[
+        "modules",
+        "check",
+        "--plan",
+        &plan_path,
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+    ]);
     fixture.assert_success(&[
         "modules",
         "apply",

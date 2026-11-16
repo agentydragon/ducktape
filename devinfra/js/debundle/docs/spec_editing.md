@@ -111,8 +111,8 @@ append-one-owner, baseline-preserving entry-residual policy:
 5. **Apply and run.** Apply the same plan, materialize the result, run relevant
    behavior checks and refresh the graph before another graph-backed edit.
 
-`found` is graph acceptance. Selector resolution, materialization and runtime
-behavior remain separate evidence. `exhausted_no_peel` applies only to the
+`found` includes graph acceptance and selector-writer preflight. Materialization
+and runtime behavior remain separate evidence. `exhausted_no_peel` applies only to the
 reported scope; `incomplete` and errors do not establish that no placement
 exists.
 

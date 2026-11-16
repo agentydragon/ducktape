@@ -78,6 +78,7 @@ fn all_small_raw_assignments_agree_with_materialization_and_node() {
                 let checked = fixture.command(&[
                     "modules",
                     "check",
+                    "--graph-only",
                     "--batch",
                     batch_path.to_str().unwrap(),
                     "--import-order",

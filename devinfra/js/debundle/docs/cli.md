@@ -633,7 +633,7 @@ for structural atoms, conservative effects, and the accepted lazy-cycle case.
 
 ### Residual placement
 
-Use [`modules propose`](module_proposals.md) to search its documented
+Use [`modules propose`](module_proposals.md) to construct a peel in its documented
 append-one-owner closure family. For a specific single-atom or joint move,
 provide the complete source-unit assignment and final import priority to
 `modules check --batch`; it checks the full assignment, including every atom
@@ -1288,7 +1288,7 @@ For residual discovery, use [`modules propose`](module_proposals.md), including
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,
-source context and optional `--tree-config` used by the other graph commands.
+`--source-root` and `--tree-config` used by the other graph commands.
 The batch is a JSON array of `{ "unit_id": "unit:1", "module": "helpers/value" }`
 rows; omitted units keep their current destinations. With `--tree-config`, use
 destinations under the configured physical module roots. `--batch -` reads stdin.
@@ -1300,15 +1300,24 @@ in place. Unknown or duplicate source units and invalid destinations are errors.
 A rejected starting assignment can be repaired only when the complete requested
 result passes the same gate. The command writes no spec files.
 
-JSON output reports `accepted`, the checked changes, residual units extracted,
-existing units moved and the full validation report. An accepted candidate exits
-0; a gate rejection emits `accepted: false` and exits 1. Input/preflight failures
-also fail rather than returning an acceptance result. Acceptance is for this
-exact complete graph assignment; names/selectors and emitted output still need
-their normal checks. Independently accepted batches must be checked together
-before combining them. This command does not search or prove no peel exists.
+By default the command dry-runs the same source writer as apply. Supply
+`--source-root` or `DEBUNDLE_SOURCE_ROOT`; changing priority also requires
+`--tree-config` so the checked order can be persisted. JSON output has
+`scope: executable_plan`, independent `graph_accepted`, the checked changes,
+residual units extracted, existing units moved and the full validation report.
+`accepted: true` and exit 0 require both graph and writer acceptance. A graph
+rejection or writer failure emits `accepted: false`, `plan: null` and exits 1;
+writer failure includes `selector_realization_error`. Invalid inputs and stale
+identities fail before acceptance. Emission and runtime remain separate checks.
 
-Accepted JSON output also contains `.plan`. Save that object and use
+For graph inspection or independent graph oracles, use
+`modules check --graph-only --batch changes.json`. This needs no source root and
+reports `scope: graph_only`; `accepted` equals `graph_accepted` and `.plan` is
+always null. `--graph-only` conflicts with `--plan`. Independently accepted
+batches must be checked together before combining them. Neither mode discovers
+peels or proves that none exists.
+
+Successful default JSON output contains `.plan`. Save that object and use
 `modules check --plan plan.json` or `modules apply --plan plan.json` to retain
 the checked graph/program identity. Plans use logical destinations even with a
 configured physical tree root. `--plan` and a raw batch are mutually exclusive.

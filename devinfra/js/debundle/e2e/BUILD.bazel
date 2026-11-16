@@ -1447,6 +1447,14 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "modules_check_plan_contract_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_source_unit_apply_cli_test",
     deps = [
         ":graph_support",

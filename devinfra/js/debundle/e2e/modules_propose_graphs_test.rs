@@ -188,6 +188,8 @@ fn corpus_proposes_independently_for_configured_chunks_and_plans_run_under_node(
         let check = run(&[
             "modules".into(),
             "check".into(),
+            "--source-root".into(),
+            root.join("snapshot").to_string_lossy().into_owned(),
             "--plan".into(),
             plan_path.to_string_lossy().into_owned(),
             "--graph".into(),

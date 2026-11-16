@@ -19,8 +19,10 @@ proof, graph refresh, and validation order.
 For an explicit source-unit batch, check it with `modules check --batch`, preview
 with `modules apply --assignments --dry-run`, then apply the same assignments.
 This supports residual declarations, anonymous units and existing claims together.
-Review synthesized selectors and preserved metadata; graph acceptance alone does
-not establish selector realization. Refresh the graph and run the adapter gate,
+Default checks require the matching source root and tree config and preflight
+the writer before returning a plan. `--graph-only` returns no plan. Review
+synthesized selectors and preserved metadata; graph acceptance alone does not
+establish selector realization. Refresh the graph and run the adapter gate,
 regeneration and relevant emitted behavior after the edit.
 
 Prefer the snapshot-bound `.plan` from discovery or `modules check`:

@@ -72,6 +72,7 @@ pub enum RequestedProof {
     PostEditGateRequested,
     NamesOnlyCheckRequested,
     SelectorValidationRequested,
+    ExecutablePlanCheckRequested,
     SourceValidationRequested,
     SnapshotCreationRequested,
     SnapshotVerificationRequested,
@@ -520,9 +521,12 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
 
 fn classify_proof(
     command: &[String],
-    _arguments: &[ResolvedArgument],
+    arguments: &[ResolvedArgument],
     mode: InvocationMode,
 ) -> RequestedProof {
+    if command == ["modules", "check"] && !flag_value(arguments, "graph_only") {
+        return RequestedProof::ExecutablePlanCheckRequested;
+    }
     match mode {
         InvocationMode::FreshPipeline => RequestedProof::FullPipelineRequested,
         InvocationMode::SnapshotCreation => RequestedProof::SnapshotCreationRequested,

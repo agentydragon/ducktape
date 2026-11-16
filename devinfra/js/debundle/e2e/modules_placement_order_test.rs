@@ -50,9 +50,11 @@ fn new_owner_requires_and_atomically_persists_an_explicit_priority() {
         "modules",
         "check",
         "--batch",
-        changes_path.to_str().unwrap(),
+        physical_changes.to_str().unwrap(),
         "--import-order",
         order.to_str().unwrap(),
+        "--tree-config",
+        tree_config.to_str().unwrap(),
         "--format",
         "json",
     ]);

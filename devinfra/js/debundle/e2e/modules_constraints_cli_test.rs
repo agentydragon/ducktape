@@ -45,7 +45,14 @@ fn an_unseeded_residual_finds_one_appended_owner_and_runs() {
         .join("spec_config.yaml")
         .to_string_lossy()
         .into_owned();
-    fixture.assert_success(&["modules", "check", "--plan", &plan]);
+    fixture.assert_success(&[
+        "modules",
+        "check",
+        "--plan",
+        &plan,
+        "--tree-config",
+        &config,
+    ]);
     fixture.assert_success(&[
         "modules",
         "apply",
