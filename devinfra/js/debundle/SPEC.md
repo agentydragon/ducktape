@@ -357,6 +357,15 @@ Saved graphs and snapshots retain their full executable identity and their
 source/spec checks, even when an analysis artifact can be reused. The standalone
 CLI remains one binary.
 
+A `.analysis` file starts with a four-byte little-endian header length, followed
+by that many proto3 `AnalysisArtifactHeader` bytes. Its projection field is a
+typed `analysis_projection.AnalysisSpec` message. The remaining bytes keep the
+existing zstd-compressed named MessagePack body. Readers decode the header,
+require the projection, and check engine and parser-input identity before
+decoding the body; canonical projection equality is checked after selector
+resolution. A changed compiled identity requires regenerating the artifact; no
+cross-version header fallback is provided.
+
 Default Bazel apply consumes a typed canonical spec projection. YAML comments,
 whitespace, and module-level `note` do not affect this projection. Emitted
 `comment` fields, report-relevant notes, annotation-conflict inputs, and semantic

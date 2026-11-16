@@ -639,13 +639,15 @@ impl AnalysisSpec {
         Self::from_proto(value)
     }
 
-    fn to_proto(
+    /// Convert to the generated projection message used by saved artifacts.
+    pub fn to_proto(
         &self,
     ) -> Result<analysis_projection_wire_proto::debundle::analysis_projection::AnalysisSpec> {
         wire::encode_projection(self)
     }
 
-    fn from_proto(
+    /// Restore an analysis spec from its generated projection message.
+    pub fn from_proto(
         value: analysis_projection_wire_proto::debundle::analysis_projection::AnalysisSpec,
     ) -> Result<Self> {
         wire::decode_projection(value).context("decode analysis projection")

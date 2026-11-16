@@ -5,6 +5,7 @@ use std::fs;
 
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
+use prost::Message;
 use serde_json::{Value, json};
 
 #[test]
@@ -286,7 +287,7 @@ fn bindings_assign_requested_assessment_refuses_stale_inputs_before_yaml_writes(
     let (mut header, body) =
         staged_analysis::analysis_artifact::read_header(&original_artifact).unwrap();
     header.analysis_engine_sha256 = "another-compiled-engine".to_string();
-    let encoded_header = rmp_serde::to_vec_named(&header).unwrap();
+    let encoded_header = header.encode_to_vec();
     let mut wrong_engine = Vec::new();
     wrong_engine.extend_from_slice(&u32::try_from(encoded_header.len()).unwrap().to_le_bytes());
     wrong_engine.extend_from_slice(&encoded_header);

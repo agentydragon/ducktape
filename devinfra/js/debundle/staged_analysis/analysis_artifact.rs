@@ -2,10 +2,10 @@
 //! output of a run, encoded independently of the process that computed it,
 //! behind a header naming what it was computed from (docs/bazel_integration.md).
 //!
-//! Layout: the header's byte length (`u32`, little-endian), the header as
-//! named MessagePack, then the body as `analysis_codec` output. The header
-//! reads without parsing any chunk, so a run stage can check it before it
-//! re-parses the sources the body's contexts refer to.
+//! Layout: the header's byte length (`u32`, little-endian), the proto3 header,
+//! then the body as `analysis_codec` output. The header reads without parsing
+//! any chunk, so a run stage can check it before it re-parses the sources the
+//! body's contexts refer to.
 //!
 //! The artifact holds the `ProgramSummary` once. Each chunk's
 //! `AnalysisInputs` derive from it and the source-analysis projection; storing them
@@ -18,25 +18,15 @@ use std::collections::BTreeMap;
 use analysis::facts::ChunkFactAnalysis;
 use analysis::facts::saved::SavedChunkFactAnalysis;
 use analysis::purity::saved::{PuritySnapshot, RestoredPurities};
+pub use analysis_artifact_header_proto::debundle::analysis_artifact_header::AnalysisArtifactHeader;
 use analysis_codec::ContextOrdinals;
 use anyhow::{Context, Result, ensure};
+use prost::Message;
 use serde::{Deserialize, Serialize};
 
 use super::ExportReentryReport;
 use super::program_summary::ProgramSummary;
 use super::saved_program_summary::SavedProgramSummary;
-
-/// What an artifact was computed from; a reader recomputes it and refuses an
-/// artifact whose header differs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AnalysisArtifactHeader {
-    pub analysis_engine_sha256: String,
-    /// `AnalysisSpec::encode` of the analysed projection, kept whole so a
-    /// mismatch can name what differs.
-    pub projection: Vec<u8>,
-    /// Parser-input SHA-256 of each analyzed chunk, by chunk name.
-    pub chunk_sources: BTreeMap<String, String>,
-}
 
 pub struct AnalysisArtifactBody {
     pub program_summary: ProgramSummary,
@@ -99,7 +89,11 @@ pub fn write_artifact(
     body: &AnalysisArtifactBody,
     ordinals: &ContextOrdinals,
 ) -> Result<Vec<u8>> {
-    let header = rmp_serde::to_vec_named(header)?;
+    ensure!(
+        header.projection.is_some(),
+        "analysis artifact header is missing its projection"
+    );
+    let header = header.encode_to_vec();
     let saved = SavedAnalysisBody::snapshot(body, ordinals)?;
     let body = analysis_codec::encode(&saved)?;
     let mut bytes = Vec::with_capacity(4 + header.len() + body.len());
@@ -121,7 +115,13 @@ pub fn read_header(bytes: &[u8]) -> Result<(AnalysisArtifactHeader, &[u8])> {
         rest.len()
     );
     let (header, body) = rest.split_at(length);
-    Ok((rmp_serde::from_slice(header)?, body))
+    let header =
+        AnalysisArtifactHeader::decode(header).context("decode analysis artifact header")?;
+    ensure!(
+        header.projection.is_some(),
+        "analysis artifact header is missing its projection"
+    );
+    Ok((header, body))
 }
 
 pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArtifactBody> {
@@ -311,12 +311,26 @@ mod tests {
     fn header() -> AnalysisArtifactHeader {
         AnalysisArtifactHeader {
             analysis_engine_sha256: "engine-digest-fixture".to_string(),
-            projection: b"projection-fixture".to_vec(),
+            projection: Some(Default::default()),
             chunk_sources: CHUNKS
                 .iter()
                 .map(|(name, _)| (name.to_string(), format!("{name}-digest-fixture")))
                 .collect(),
         }
+    }
+
+    #[test]
+    fn read_header_rejects_a_missing_projection() {
+        let header = AnalysisArtifactHeader {
+            analysis_engine_sha256: "engine-digest-fixture".to_string(),
+            projection: None,
+            chunk_sources: BTreeMap::new(),
+        };
+        let encoded = header.encode_to_vec();
+        let mut bytes = u32::try_from(encoded.len()).unwrap().to_le_bytes().to_vec();
+        bytes.extend(encoded);
+
+        assert!(read_header(&bytes).is_err());
     }
 
     /// The summary owns the imported verdict; both statement causes must
