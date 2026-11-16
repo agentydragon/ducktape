@@ -9638,7 +9638,7 @@
         "Specify immutable launch inputs, owned I/O handles, typed exit/unknown/fence results and explicit joins. Keep controller state publication in the outer owner.",
         "Extract the systemd backend and its fixture/race tests in a 200–3,000 changed-LOC PR, as #17054 did for PID1; retain it in supervision if the interface only exports the existing mutable internals."
       ],
-      "gate": "Do not move systemd*.go unchanged while they still rely on private Process state. Prove stop/close ordering and uncertain fence outcomes under the existing real fixtures. On 2026-11-16 the extraction worker landed the PID1 half (#17054) and deferred this one.",
+      "gate": "Do not move systemd*.go unchanged while they still rely on private Process state. Prove stop/close ordering and uncertain fence outcomes under the existing real fixtures. On 2026-11-16 the extraction worker landed the PID1 half (#17054) and deferred this one: systemd unit, scope and reference operations still couple to private Process streams, host start/stop slots and retained invocation ownership, and the contract for uncertain starts, fence outcomes and joins is unproven.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -9693,7 +9693,7 @@
         "After the map, define API/state owners; do not split methods by receiver file.",
         "Candidate transitions owner needs a small state snapshot/update API; candidate execution lifecycle owner needs explicit generation/fence and worker join interfaces. Keep COSI, session manager, and journal ownership in their existing private packages unless the map proves a different seam."
       ],
-      "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close. Candidate directories are provisional; do not create them until the state/worker/API map proves callers can use narrow interfaces without duplicating locks or worker ownership. On 2026-11-16 the extraction worker found no candidate boundary that owns the coordinator's locks and worker joins, so it stays whole for now.",
+      "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close. Candidate directories are provisional; do not create them until the state/worker/API map proves callers can use narrow interfaces without duplicating locks or worker ownership. On 2026-11-16 the extraction worker's map found no candidate boundary that owns `Runtime.mu` (admission, generations, execution owner, calls/streams and fences) together with `transitionMu` and the `lifecycleWorkers` joins: `finishClose`/`joinClose` crosses transition settlement, the execution fence (`protocol.go`), the sealed ACK (`session/controller.go` `Reconcile`) and worker joins with store closure. It stays whole for now.",
       "preserve": "Journal admission/no replay; Generation/incarnation fences; retain old owner until fence proved; Final History ACK at exact sealed cursor before Delivered; Cancel/drain/join before resources close",
       "validation": [
         "//agentplane/env/runtime/internal/coordinator:coordinator_test",
@@ -9709,7 +9709,9 @@
         "agentplane/env/runtime/internal/coordinator/session_lifecycle_controller.go",
         "agentplane/env/runtime/internal/coordinator/close_status.go",
         "agentplane/env/runtime/session/manager.go",
-        "agentplane/env/runtime/journal/journal.go"
+        "agentplane/env/runtime/journal/journal.go",
+        "agentplane/env/runtime/internal/coordinator/protocol.go",
+        "agentplane/env/runtime/session/controller.go"
       ],
       "dependencies": [],
       "priority": 11,
@@ -9893,7 +9895,7 @@
         "Define runtimecredentials inputs/results around object UID, incarnation and expected revision; it cannot independently publish reconciler status.",
         "Define VM create/update/stop/cleanup outcomes with one owner for fencing and child deletion. Extract one bounded path and its failure/rollback tests per PR."
       ],
-      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613 and the Runtime proxy and Executor in #16656. On 2026-11-16 the extraction worker found that the credential logic also writes VM state, so a cut needs a single VM-state writer first.",
+      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613 and the Runtime proxy and Executor in #16656. On 2026-11-16 the extraction worker's map found no clean cut yet. `ensureVMRuntimeCredential` writes the VM's credential annotations and RunStrategy, runs credential effects and publishes Sandbox credential status together; `finalize` couples quiescence, child disappearance and PVC/finalizer release; retry is unproven when child effects succeed and the Sandbox status write then conflicts; and `vmi` must keep the predecessor VMI visible during deletion. A cut first needs a single VM writer and typed credential outcomes, which are not released.",
       "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state.",
       "validation": [
         "//agentplane/environments/internal/controller:controller_test",
