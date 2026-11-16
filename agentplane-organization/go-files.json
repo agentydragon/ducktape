@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
-  "observed_at_utc": "2026-11-16T21:22:00Z",
+  "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+  "observed_at_utc": "2026-11-16T21:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1366,
-    "directories": 255,
-    "production": 751,
+    "files": 1367,
+    "directories": 256,
+    "production": 752,
     "tests": 615
   },
   "directories": [
@@ -1585,7 +1585,7 @@
     {
       "path": "agentplane/env/runtime/supervision",
       "production": 14,
-      "tests": 12,
+      "tests": 11,
       "files": [
         "agentplane/env/runtime/supervision/backend.go",
         "agentplane/env/runtime/supervision/controller.go",
@@ -1597,7 +1597,6 @@
         "agentplane/env/runtime/supervision/pid1.go",
         "agentplane/env/runtime/supervision/pid1_kernel_test.go",
         "agentplane/env/runtime/supervision/pid1_process_test.go",
-        "agentplane/env/runtime/supervision/pid1_test.go",
         "agentplane/env/runtime/supervision/process.go",
         "agentplane/env/runtime/supervision/process_resources.go",
         "agentplane/env/runtime/supervision/process_test.go",
@@ -1613,6 +1612,15 @@
         "agentplane/env/runtime/supervision/systemd_unit_reference_test.go",
         "agentplane/env/runtime/supervision/systemd_units.go",
         "agentplane/env/runtime/supervision/systemd_units_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+        "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go"
       ]
     },
     {
@@ -14893,8 +14901,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -14913,8 +14920,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -14933,8 +14939,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -14953,12 +14958,46 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+      "package": "pid1",
+      "test": false,
+      "generated": false,
+      "lines": 397,
+      "sha256": "8c51521dff4c358288f191b4d1290d96c8fc8bb8a9fd03dd9f6bdd4cc87b967d",
+      "planned_path": "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+      "planned_parts": [],
+      "planned_package": "pid1",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/env/runtime/supervision/internal/pid1"
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go",
+      "package": "pid1",
+      "test": true,
+      "generated": false,
+      "lines": 63,
+      "sha256": "88ccfb787ae2c306b0e3a0422cfd31449d4154c63640d2e8a527867aa9a1825d",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/env/runtime/supervision",
+        "agentplane/env/runtime/supervision/internal/systemd"
+      ],
+      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/env/runtime/supervision/internal/pid1"
     },
     {
       "path": "agentplane/env/runtime/supervision/managed_process.go",
@@ -14973,8 +15012,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -14993,8 +15031,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15005,16 +15042,15 @@
       "package": "supervision",
       "test": false,
       "generated": false,
-      "lines": 29,
-      "sha256": "53360834e4dca0ae9a01584ea2b81def019a8f760905fa67f545fc11626f102b",
+      "lines": 18,
+      "sha256": "83994361d20d6acdefe74be5cd07bf19e544507593e53de37360d01c5455a6f7",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15025,19 +15061,15 @@
       "package": "supervision",
       "test": false,
       "generated": false,
-      "lines": 347,
-      "sha256": "e1266ced3c55d786046525705b28dd5dec3ed984f525ad7e85a914cc45635dbe",
-      "planned_path": null,
+      "lines": 108,
+      "sha256": "6acee95578327604cdd29729b6e884877facfbfdc9e15ca27b6ac867ddbec0bc",
+      "planned_path": "agentplane/env/runtime/supervision/pid1.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15047,17 +15079,13 @@
       "generated": false,
       "lines": 317,
       "sha256": "8797d5d0b06627e62ed898c57813cc6420e605c41a07950b94b6885abf88733a",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/pid1_kernel_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15065,39 +15093,15 @@
       "package": "supervision",
       "test": true,
       "generated": false,
-      "lines": 130,
-      "sha256": "f33bd0f529afe84626c9239cfddf616d5ed4087921344eb06e74ddcaeda3e8cd",
-      "planned_path": null,
+      "lines": 291,
+      "sha256": "9a090ca3e7dee25add0667e5a031ac6d8f50041b1730c473215b9ec4c4d70704",
+      "planned_path": "agentplane/env/runtime/supervision/pid1_process_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/env/runtime/supervision"
-    },
-    {
-      "path": "agentplane/env/runtime/supervision/pid1_test.go",
-      "package": "supervision",
-      "test": true,
-      "generated": false,
-      "lines": 63,
-      "sha256": "e63ec7a957faa240520b5098e68b41168d0bc53b097e94471e9f701019d7849e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15113,8 +15117,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15133,8 +15136,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15153,8 +15155,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15173,8 +15174,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15193,8 +15193,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15213,8 +15212,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15233,8 +15231,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15253,8 +15250,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15273,8 +15269,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15293,8 +15288,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15313,8 +15307,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15333,8 +15326,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15353,8 +15345,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15373,8 +15364,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15393,8 +15383,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",

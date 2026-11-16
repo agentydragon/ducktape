@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
-  "observed_at_utc": "2026-11-16T21:22:00Z",
+  "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+  "observed_at_utc": "2026-11-16T21:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1366,
-    "directories": 255,
-    "production": 751,
+    "files": 1367,
+    "directories": 256,
+    "production": 752,
     "tests": 615
   },
   "legend": {
@@ -3578,8 +3578,8 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 206,
-        "directories": 30
+        "files": 207,
+        "directories": 31
       },
       "directories": [
         {
@@ -3952,7 +3952,7 @@
         {
           "path": "agentplane/env/runtime/supervision",
           "production": 14,
-          "tests": 12,
+          "tests": 11,
           "files": [
             "agentplane/env/runtime/supervision/backend.go",
             "agentplane/env/runtime/supervision/controller.go",
@@ -3964,7 +3964,6 @@
             "agentplane/env/runtime/supervision/pid1.go",
             "agentplane/env/runtime/supervision/pid1_kernel_test.go",
             "agentplane/env/runtime/supervision/pid1_process_test.go",
-            "agentplane/env/runtime/supervision/pid1_test.go",
             "agentplane/env/runtime/supervision/process.go",
             "agentplane/env/runtime/supervision/process_resources.go",
             "agentplane/env/runtime/supervision/process_test.go",
@@ -3980,6 +3979,15 @@
             "agentplane/env/runtime/supervision/systemd_unit_reference_test.go",
             "agentplane/env/runtime/supervision/systemd_units.go",
             "agentplane/env/runtime/supervision/systemd_units_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/env/runtime/supervision/internal/pid1",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+            "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go"
           ]
         },
         {
@@ -4049,6 +4057,7 @@
           "agentplane/env/runtime/session",
           "agentplane/env/runtime/stream",
           "agentplane/env/runtime/supervision",
+          "agentplane/env/runtime/supervision/internal/pid1",
           "agentplane/env/runtime/testing/adaptertest"
         ]
       },
@@ -4586,14 +4595,13 @@
         },
         {
           "path": "agentplane/env/runtime/supervision",
-          "role": "Runtime process lifecycle over managed processes, systemd scopes/units, and PID 1 helpers.",
+          "role": "Runtime process lifecycle over managed processes, systemd scopes/units, and the PID 1 adapter.",
           "decision": "design",
           "target_paths": [
             "agentplane/env/runtime/supervision",
-            "agentplane/env/runtime/supervision/internal/systemd",
-            "agentplane/env/runtime/supervision/internal/pid1"
+            "agentplane/env/runtime/supervision/internal/systemd"
           ],
-          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities. A backend extraction is useful only after those backends stop mutating shared Process state through private access.",
+          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities. #17054 moved PID1 reaping to `internal/pid1`; a systemd extraction is useful only after that backend stops mutating shared Process state through private access.",
           "gate": "Define launch, stream, exit and fence results and the controller/worker close protocol; backend packages must not receive the whole mutable Process or Supervisor.",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/backend.go",
@@ -4608,7 +4616,24 @@
           ],
           "counts": {
             "non_test": 14,
-            "tests": 12
+            "tests": 11
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/supervision/internal/pid1",
+          "role": "PID1 namespace reaper: atomic child registration, PID and process-group identity, guarded signaling, leader reaping and namespace fencing.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted by #17054 (the PID1 half of env-supervision-backends) behind `Reaper.Start(Launch) (*Child, error)`; `supervision` keeps pipe ownership, stop escalation and completion publication, and both real fixture binaries.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/supervision/internal/pid1/pid1.go"
+          ],
+          "declared_packages": ["pid1"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
           }
         },
         {
@@ -9519,7 +9544,7 @@
         "Give contentdb the caller-owned transaction and verified content values; Store owns begin/commit/rollback.",
         "Move representative content, projection and rollback coverage with the implementation."
       ],
-      "gate": "The current contentStore calls both provider codecs and uses conversation fields. Split responsibilities first; do not move the whole file unchanged. The sampler keeps its own copy of the conversation, which the open Journal service design (history-journals) may change; check that design before moving content storage. On 2026-11-16 the extraction worker left it for that design. #17050 kept content reads and writes in Store behind `providerrequest.Content`.",
+      "gate": "The current contentStore calls both provider codecs and uses conversation fields. Split responsibilities first; do not move the whole file unchanged. The sampler keeps its own copy of the conversation, which the open Journal service design (history-journals) may change; check that design before moving content storage. On 2026-11-16 the extraction worker found that content SQL, cache and hash handling share provider references and native-context checkpoints, and left it for that design. #17050 kept content reads and writes in Store behind `providerrequest.Content`.",
       "preserve": "Canonical content hashes, deterministic write ordering, bounded batched reads, verified references and rollback.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9599,22 +9624,21 @@
     },
     {
       "id": "env-supervision-backends",
-      "title": "Give systemd and PID1 process backends private owners",
+      "title": "Give the systemd process backend a private owner",
       "status": "DESIGN REQUIRED",
       "components": ["env"],
       "source_paths": ["agentplane/env/runtime/supervision"],
       "target_paths": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "summary": "Keep Supervisor/Process and their COSI controller at supervision. Candidate internal/systemd owns D-Bus unit/scope/reference operations; internal/pid1 owns namespace process/reaper mechanics. Keep one public start/stop/fence/wait contract and preserve test fixture binaries.",
+      "summary": "Keep Supervisor/Process and their COSI controller at supervision. #17054 moved the PID1 namespace process and reaper mechanics to `internal/pid1` behind a concrete child handle; the candidate `internal/systemd` would own D-Bus unit/scope/reference operations behind the same start/stop/fence/wait contract.",
       "how": [
         "Map backendFactory/processBackend access to Process fields, host start/stop slots, exit observations, retained unit references and namespace reaper workers.",
         "Specify immutable launch inputs, owned I/O handles, typed exit/unknown/fence results and explicit joins. Keep controller state publication in the outer owner.",
-        "Extract one backend and its fixture/race tests in a 200–3,000 changed-LOC PR; then reassess the other. Retain one package if the interface only exports the existing mutable internals."
+        "Extract the systemd backend and its fixture/race tests in a 200–3,000 changed-LOC PR, as #17054 did for PID1; retain it in supervision if the interface only exports the existing mutable internals."
       ],
-      "gate": "Do not move systemd*.go or pid1.go unchanged while they still rely on private Process state. Prove stop/reap/close ordering and uncertain fence outcomes under the existing real fixtures.",
+      "gate": "Do not move systemd*.go unchanged while they still rely on private Process state. Prove stop/close ordering and uncertain fence outcomes under the existing real fixtures. On 2026-11-16 the extraction worker landed the PID1 half (#17054) and deferred this one.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -9726,7 +9750,7 @@
         "Define the per-session owner inputs and terminal result; scheduler owns its registry and shutdown ordering.",
         "Extract a bounded driver path with existing recovery, interrupt, unknown-effect and drain tests."
       ],
-      "gate": "Do not distribute Runtime receiver methods across packages or pass the whole Runtime aggregate into a child package. On 2026-11-16 the extraction worker found no clean boundary yet.",
+      "gate": "Do not distribute Runtime receiver methods across packages or pass the whole Runtime aggregate into a child package. On 2026-11-16 the extraction worker found worker state sharing `Runtime.mu` with registration, recovery, capacity and drain: claim/heartbeat, cancellation/join and lease release need a new coordination contract first.",
       "preserve": "Single resident owner, lease loss fencing, durable provider progress, host-loss recovery and ordered drain.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9777,7 +9801,7 @@
         "Specify child lifetime and a typed terminal notification to logical Sessions.",
         "Extract transport or logical-session state only when the split removes mutual access; retain a single package if the probe shows the current encapsulation is tighter."
       ],
-      "gate": "A candidate hierarchy is conditional on a smaller dependency surface; a file-count reduction alone is not acceptance. On 2026-11-16 the extraction worker found no clean boundary yet.",
+      "gate": "A candidate hierarchy is conditional on a smaller dependency surface; a file-count reduction alone is not acceptance. On 2026-11-16 the extraction worker found that Manager routing and death handling need mutual private access with Session journals and delegates, and the handshake mutates Process capabilities.",
       "preserve": "Shared host identity, logical-session routing, pending response outcomes and journal-before-effect.",
       "validation": [
         "//agentplane/central_sampler/internal/codemode:codemode_test",
@@ -10548,7 +10572,7 @@
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, and #17053 the MCP edge's Action client and the Action Service's admission gate. The workers found no clean cut yet for five tracks; their gates say why."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, and #17054 the PID1 half of the supervision backends. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why."
     },
     {
       "stage": 5,
@@ -10575,12 +10599,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 255,
-    "go_files": 1366,
+    "go_packages": 256,
+    "go_files": 1367,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
+    "review_source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10633,8 +10657,8 @@
       {
         "slice": "env",
         "components": ["env"],
-        "packages": 30,
-        "go_files": 206
+        "packages": 31,
+        "go_files": 207
       },
       {
         "slice": "environments",
