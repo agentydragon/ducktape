@@ -375,7 +375,7 @@ _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
     GrafanaComDashboard("authentik", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 14837, 2),
     GrafanaComDashboard("cloudnative-pg", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 20417, 3),
     GrafanaComDashboard("cilium-agent", "Network", (("DS_PROMETHEUS", "Mimir"),), 16611, 1),
-    GrafanaComDashboard("etcd", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 3070, 3),
+    LocalDashboard("etcd", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "etcd.json"),
     # NVIDIA DCGM Exporter dashboard (power/temp/clocks, PCIe, XID), backed by dcgm_exporter metrics.
     GrafanaComDashboard("gpu", "Nodes & Hardware", (("DS_PROMETHEUS", "Mimir"),), 12239, 2),
     # Node Exporter Full includes hwmon thresholds and fan-speed panels for every node-exporter target.

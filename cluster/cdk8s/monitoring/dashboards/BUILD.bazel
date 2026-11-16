@@ -250,3 +250,12 @@ grafana_dashboard(
         "@pypi//grafana_foundation_sdk",
     ],
 )
+
+grafana_dashboard(
+    name = "etcd",
+    srcs = ["etcd.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
