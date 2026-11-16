@@ -428,12 +428,12 @@ fn analyze_chunk_with_policy_and_sync(
     } = structural;
     let plain_array_bindings = super::abstract_domain::heap::plain_array_bindings(&body, &shadowed);
     let mut prepared_sync_index =
-        super::sync_effects::interpreter::prepare_synchronous_call_index_with_source_facts(
+        super::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
             &body,
             &value_flow,
             hints,
             &plain_array_bindings,
-            super::sync_effects::interpreter::PreparedSyncShapeInputs {
+            super::sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
                 local_class_construction: &local_class_shapes,
                 set_iterable_shapes,
                 stable_array_spread_shapes,
@@ -594,9 +594,9 @@ fn analyze_chunk_with_policy_and_sync(
     // discharge. Vendor pruning finalizes the same classifier without execution.
     let purities = match synchronous_calls {
         SynchronousCallAnalysis::Include => {
-            super::sync_effects::interpreter::annotate_synchronous_calls(
+            super::sync_effects::interpreter::synchronous_calls::annotate_synchronous_calls(
                 &value_flow,
-                super::sync_effects::interpreter::SynchronousCallProofs {
+                super::sync_effects::interpreter::synchronous_calls::SynchronousCallProofs {
                     set_iterable: &set_iterable_proof,
                     graph: &graph,
                     purity: &purity_context,
