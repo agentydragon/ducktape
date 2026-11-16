@@ -183,11 +183,13 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
-reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 00:35 UTC.
+reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 03:05 UTC.
 
-| Track                      | Operator release (UTC) | Node                         | State                                                                                                             |
-| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released |
+| Track                      | Operator release (UTC) | Node                                  | State                                                                                                                                                                              |
+| -------------------------- | ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`          | App Runtime diagnostics moved behind EnvironmentService (#16819, #16825); the App raw-proxy grant retires after that App image rolls. The other dispositions await operator review |
+| Per-Session delivery lease | 2026-11-16 02:57       | `DISPATCHER_PERSISTENCE_MODEL_DESIGN` | Build plan in review; no PR yet                                                                                                                                                    |
+| Gateway-era Go names       | 2026-11-16 02:57       | `GATEWAY_ERA_NAMES`                   | Renames in progress, one PR per binary                                                                                                                                             |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
@@ -203,6 +205,8 @@ removed). Not released:
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[In flight: per-Session delivery lease, section 13]
+    GATEWAY_ERA_NAMES[In flight: Gateway-era Go names, section 17]
 ```
 
 ### Sandbox-free central Sessions
@@ -2417,7 +2421,7 @@ beyond the transport track nodes the operator dispatched.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build in flight]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: live Session status ownership]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
@@ -2520,8 +2524,8 @@ requeue that Session's in-flight work, as `RecoverSandbox` does today for a Sand
   one is queued or delivering). The Runtime's command-ID dedupe still makes a late duplicate
   harmless; no lease fences an RPC already in flight.
 
-**Build: not released.** It lands later as its own change, after the Sessions binary directory move
-(landed in #16785), with a system test in which a replica dies mid-delivery and another takes over. Its rollout keeps old
+**Build released (operator, 2026-11-16 02:57 UTC, card "Lease and renames"), in flight.** It lands
+as its own change, after the Sessions binary directory move (landed in #16785), with a system test in which a replica dies mid-delivery and another takes over. Its rollout keeps old
 (Kubernetes Lease) and new replicas from both delivering to one Session. It then drops the
 `dispatcher-<sandbox UID>` Leases and Sessions' Lease RBAC; controller leader election is
 unaffected.
@@ -3762,7 +3766,7 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build not released, section 13] -->|lease build| DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Delivery ownership selected; build in flight, section 13] -->|lease build| DISPATCHER_KEYED_DELIVERY[Blocked: keyed Dispatcher delivery]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN -->|lease build| DISPATCHER_WATCH_VERSIONS[Blocked: versioned dispatch watch]
 ```
 
@@ -3774,7 +3778,7 @@ raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decis
 ### Blocked
 
 `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` wait for the per-Session delivery lease
-build in `DISPATCHER_PERSISTENCE_MODEL_DESIGN` (selected 2026-11-15, not released): keyed
+build in `DISPATCHER_PERSISTENCE_MODEL_DESIGN` (selected 2026-11-15, build released 2026-11-16): keyed
 reconciliation replaces the per-Sandbox scans that build removes, and the watch's terminal notices
 commit under the `sandbox_ownership` row lock it replaces (`dispatcher/terminal.go`).
 
@@ -3816,7 +3820,7 @@ the live Identity landed in #16373.
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GATEWAY_ERA_NAMES[Unscheduled: Gateway-era Go names, Go plan stage 2]
+    GATEWAY_ERA_NAMES[In flight: Gateway-era Go names, Go plan stage 2]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
@@ -3836,9 +3840,9 @@ move: the operator also released the Runtime diagnostics API and App cutover to 
 transport migration, which has landed; Session activity and Sandbox-independent Notifications
 remain their separately tracked contracts.
 
-**In flight, operator release 2026-11-16:** the Runtime diagnostics receiver is implemented;
-move App status reads after its accepting Environments image is pinned and running, then retire
-the App raw-proxy grant only after its last caller rolls. Archive safety retains its conservative live check pending
+**In flight, operator release 2026-11-16:** the Runtime diagnostics receiver runs on staging
+(#16819) and App status reads moved to it (#16825); retire the App raw-proxy grant only after that
+App image rolls. Archive safety retains its conservative live check pending
 `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`; this migration does not choose canonical Session status.
 
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the
@@ -3847,7 +3851,8 @@ move, authorize new grants or require a Sandbox/single attachment on a Session.
 
 ### `GATEWAY_ERA_NAMES` — Gateway-era Go names after the Gateway dissolved
 
-**Unscheduled; Go plan stage 2 (gh-pages #16794, merged 2026-11-16), not released.** Private Go
+**In flight; released by the operator 2026-11-16 02:57 UTC (card "Lease and renames"); Go plan
+stage 2 (gh-pages #16794).** Private Go
 names still describe the Runner Gateway: the Runtime proxy's `Gateway` type and runner identifiers
 in `environments/runtimeproxy`, the `RunnerProxy*MetadataKey` constants in `sandboxes/api`, and the
 Dispatcher's `ProxyRunner`, `RoutingRunner`, `DeliveryRunner` and `RunnerCommands`. Settings keys,
