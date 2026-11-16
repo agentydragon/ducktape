@@ -17,7 +17,7 @@ from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
-from ai_session_archive.snapshot_inventory import HarnessRoot
+from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.usage_observations import UsageCounterKind
 from ai_session_archive.version_queries import list_events, list_versions

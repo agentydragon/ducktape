@@ -8,11 +8,13 @@ import pytest_bazel
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import ResticSnapshotRow
-from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor, _extract_session_metadata, _remember_session_kind
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness, SessionKind
+from ai_session_archive.record_interpretation import extract_session_metadata, remember_session_kind
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.restic import ResticChange, ResticRepository, ResticSnapshot
-from ai_session_archive.snapshot_inventory import HarnessRoot, assert_snapshot_identity
+from ai_session_archive.snapshot_inventory import assert_snapshot_identity
+from ai_session_archive.source_paths import HarnessRoot
 
 SNAPSHOT = ResticSnapshot(
     id="snapshot-test",
@@ -82,7 +84,7 @@ def test_unit_timezone_naive_or_invalid_record_timestamps_are_unknown(timestamp:
 
 def test_unit_codex_parent_id_requires_session_meta_record() -> None:
     metadata: dict[str, object] = {}
-    _extract_session_metadata(
+    extract_session_metadata(
         {"type": "response_item", "payload": {"parent_thread_id": "not-a-parent", "id": "not-a-session"}},
         metadata,
         timestamp=None,
@@ -116,20 +118,20 @@ def test_unit_session_kind_uses_harness_metadata(
     harness: Harness, record: dict[str, object], expected: SessionKind
 ) -> None:
     metadata: dict[str, object] = {}
-    _extract_session_metadata(record, metadata, timestamp=None, harness=harness)
+    extract_session_metadata(record, metadata, timestamp=None, harness=harness)
     assert metadata.get("session_kind", SessionKind.UNKNOWN.value) == expected.value
 
 
 def test_unit_unrecognized_later_source_does_not_erase_known_session_kind() -> None:
     metadata: dict[str, object] = {"session_kind": SessionKind.MAIN.value}
-    _remember_session_kind(metadata, SessionKind.UNKNOWN)
+    remember_session_kind(metadata, SessionKind.UNKNOWN)
     assert metadata["session_kind"] == SessionKind.MAIN.value
 
 
 def test_unit_unrecognized_source_can_be_refined_by_later_known_source() -> None:
     metadata: dict[str, object] = {}
-    _remember_session_kind(metadata, SessionKind.UNKNOWN)
-    _remember_session_kind(metadata, SessionKind.SUBAGENT)
+    remember_session_kind(metadata, SessionKind.UNKNOWN)
+    remember_session_kind(metadata, SessionKind.SUBAGENT)
     assert metadata["session_kind"] == SessionKind.SUBAGENT.value
 
 

@@ -38,7 +38,7 @@ from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
-from ai_session_archive.snapshot_inventory import HarnessRoot
+from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.version_queries import get_version, list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
