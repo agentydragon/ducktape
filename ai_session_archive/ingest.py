@@ -31,9 +31,10 @@ from ai_session_archive.database import (
     SessionRow,
     SnapshotFileRow,
 )
+from ai_session_archive.file_staging import FileStaging
 from ai_session_archive.models import Harness, SessionKind
-from ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
-from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord, store_payloads
+from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
+from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.statuses import (
     CodexMetadataStatus,
@@ -43,7 +44,7 @@ from ai_session_archive.statuses import (
     SnapshotProcessingStatus,
 )
 from ai_session_archive.usage_observations import usage_observations_for_record
-from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage
+from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, effective_payload_ids, version_lineage
 
 CLAUDE_TITLE_PROJECTION_VERSION = 1
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
@@ -141,6 +142,7 @@ class SnapshotIngestor:
 
     def __init__(self, session_factory: Callable[[], DbSession], source: ArchiveSource):
         self._session_factory = session_factory
+        self._staging = FileStaging(session_factory)
         self._source = source
         self._roots = tuple(sorted(source.roots, key=lambda root: len(root.path.parts), reverse=True))
 
@@ -922,7 +924,7 @@ class SnapshotIngestor:
         if existing is None:
             # Parsing, usage projection and metadata extraction run without a database transaction.
             while batch := _read_record_batch(contents, metadata, limit=500, harness=location.harness):
-                self._store_record_batch(version_id, ordinal, batch, parent=parent, parent_ranks=parent_ranks)
+                self._staging.store_record_batch(version_id, ordinal, batch, parent=parent, parent_ranks=parent_ranks)
                 ordinal += len(batch)
             if ordinal != record_count:
                 raise RuntimeError(f"file changed while parsing: expected {record_count} JSONL records, read {ordinal}")
@@ -941,77 +943,6 @@ class SnapshotIngestor:
             inventory_status=inventory_status,
             comparison_snapshot_id=comparison_snapshot_id,
         )
-
-    def _store_record_batch(
-        self,
-        version_id: UUID,
-        start: int,
-        records: list[ParsedRecord],
-        *,
-        parent: FileVersionRow | None,
-        parent_ranks: Mapping[UUID, int],
-    ) -> None:
-        with self._session_factory() as db, db.begin():
-            stage = db.get(FileVersionImportRow, version_id, with_for_update=True)
-            if stage is None:
-                # Another importer published this content after our initial check.
-                if db.get(FileVersionRow, version_id) is None:
-                    raise RuntimeError(f"missing file import: {version_id}")
-                return
-            if start > stage.imported_record_count:
-                raise RuntimeError(f"file import {version_id} is missing records before {start}")
-            payloads = store_payloads(db, records)
-            committed = min(len(records), stage.imported_record_count - start)
-            if committed:
-                inherited = min(committed, max(0, stage.shared_prefix_record_count - start))
-                if inherited and (
-                    parent is None
-                    or _effective_payload_ids(db, parent, parent_ranks, start, start + inherited)
-                    != [payload.id for payload in payloads[:inherited]]
-                ):
-                    raise RuntimeError("file content hash collides with staged prefix")
-                stored = list(
-                    db.execute(
-                        select(FileVersionImportRecordRow.payload_id, FileVersionImportRecordRow.byte_offset)
-                        .where(
-                            FileVersionImportRecordRow.import_id == version_id,
-                            FileVersionImportRecordRow.ordinal >= start + inherited,
-                            FileVersionImportRecordRow.ordinal < start + committed,
-                        )
-                        .order_by(FileVersionImportRecordRow.ordinal)
-                    ).tuples()
-                )
-                expected = [
-                    (payload.id, record.byte_offset)
-                    for record, payload in zip(records[inherited:committed], payloads[inherited:committed], strict=True)
-                ]
-                if stored != expected:
-                    raise RuntimeError("file content hash collides with staged records")
-            matching_prefix = parent is not None and stage.shared_prefix_record_count == stage.imported_record_count
-            parent_ids = (
-                _effective_payload_ids(db, parent, parent_ranks, start + committed, start + len(records))
-                if matching_prefix and parent is not None
-                else []
-            )
-            for index in range(committed, len(records)):
-                record, payload = records[index], payloads[index]
-                if isinstance(record.json, RecordJsonParseError):
-                    stage.parse_issue_count += 1
-                if matching_prefix:
-                    parent_index = index - committed
-                    if parent_index < len(parent_ids) and parent_ids[parent_index] == payload.id:
-                        stage.shared_prefix_record_count += 1
-                        continue
-                    matching_prefix = False
-                db.add(
-                    FileVersionImportRecordRow(
-                        import_id=version_id,
-                        ordinal=start + index,
-                        byte_offset=record.byte_offset,
-                        payload_id=payload.id,
-                    )
-                )
-            stage.imported_record_count = max(stage.imported_record_count, start + len(records))
 
     def _publish_version(
         self,
@@ -1326,7 +1257,7 @@ class SnapshotIngestor:
                 title: ClaudeTitle | None = None
                 ranks = _version_lineage_ranks(db, version_row)
                 for start in range(0, version_row.record_count, 500):
-                    batch_ids = _effective_payload_ids(
+                    batch_ids = effective_payload_ids(
                         db, version_row, ranks, start, min(start + 500, version_row.record_count)
                     )
                     raw_by_id: dict[UUID, bytes] = dict(
@@ -1582,28 +1513,3 @@ def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> 
 def _version_lineage_ranks(db: DbSession, version: FileVersionRow) -> dict[UUID, int]:
     # Preserve the importer's existing limit, one edge more than the read API's.
     return {row.id: rank for rank, row in enumerate(version_lineage(db, version, max_delta_depth=CHECKPOINT_INTERVAL))}
-
-
-def _effective_payload_ids(
-    db: DbSession, version: FileVersionRow, ranks: Mapping[UUID, int], start: int, end: int
-) -> list[UUID]:
-    end = min(end, version.record_count)
-    if start >= end:
-        return []
-    rows = db.execute(
-        select(FileVersionRecordRow.file_version_id, FileVersionRecordRow.ordinal, FileVersionRecordRow.payload_id)
-        .where(FileVersionRecordRow.file_version_id.in_(ranks))
-        .where(FileVersionRecordRow.ordinal >= start, FileVersionRecordRow.ordinal < end)
-        .order_by(FileVersionRecordRow.ordinal, FileVersionRecordRow.file_version_id)
-    )
-    resolved: dict[int, tuple[int, UUID]] = {}
-    for version_id, ordinal, payload_id in rows:
-        rank = ranks[version_id]
-        if ordinal not in resolved or rank < resolved[ordinal][0]:
-            resolved[ordinal] = (rank, payload_id)
-    result = []
-    for ordinal in range(start, end):
-        if ordinal not in resolved:
-            raise RuntimeError(f"file version {version.id} is missing record {ordinal}")
-        result.append(resolved[ordinal][1])
-    return result

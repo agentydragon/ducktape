@@ -157,6 +157,7 @@ py_library(
         ":claude_titles",
         ":codex_metadata",
         ":database",
+        ":file_staging",
         ":models",
         ":record_json",
         ":record_payloads",
@@ -783,6 +784,18 @@ py_library(
         ":database",
         ":record_json",
         ":usage_observations",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "file_staging",
+    srcs = ["file_staging.py"],
+    deps = [
+        ":database",
+        ":record_json",
+        ":record_payloads",
+        ":version_lineage",
         "@pypi//sqlalchemy",
     ],
 )
