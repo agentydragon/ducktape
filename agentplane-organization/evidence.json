@@ -1,24 +1,35 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
-  "observed_at_utc": "2026-11-16T03:05:00Z",
+  "source_sha": "85eed7057f692cf12e9c5499d91ed7470cab1b73",
+  "observed_at_utc": "2026-11-16T05:56:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
-    "checked_at_utc": "2026-11-16T03:05:00+00:00",
-    "previous_pin": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
-    "go_or_proto_delta": "Since db6664d6ad, #16819 added EnvironmentService's App-only Runtime diagnostics (`environments/internal/service/diagnostics.go`, `environments/runtimeproxy/diagnostics.go`) and #16825 replaced the app's `sessionclient/environment_runtime.go` with `runtime_diagnostics.go`. Stage 5 authentication changes (#16807, #16808, #16810, #16811, #16812) edited code only.",
-    "landed": [],
-    "interpretation": "No track landed. The operator released gateway-era-names and the per-Session Postgres lease (gateway-replica-ownership) on 2026-11-16 at 02:57 UTC."
+    "checked_origin_devel": "85eed7057f692cf12e9c5499d91ed7470cab1b73",
+    "checked_at_utc": "2026-11-16T05:56:00+00:00",
+    "previous_pin": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
+    "go_or_proto_delta": "Since 75ead1cf19, #16846 renamed six `environments/runtimeproxy` files (`gateway.go` to `server.go`, `runner_observer*.go` to `runtime_observer*.go`, `queue_runner_integration*` to `queue_runtime_integration*`, and the test main), #16852 added `session_dispatcher/dispatcher/session_lease.go` with its integration test, and #16858 deleted `dispatcher/ownership.go`. #16847 and #16826 edited code only.",
+    "landed": [
+      {
+        "track": "gateway-era-names",
+        "pr": 16846,
+        "result": "The Dispatcher's delivery types (#16847) and the Runtime proxy's server type, files and identifiers with the `sandboxes/api` metadata key constants (#16846) are renamed; settings keys, wire, stored and deployed names are unchanged."
+      },
+      {
+        "track": "privileged-auth",
+        "pr": 16826,
+        "result": "Every receiver authenticates service or workload SVIDs; bearer admission, the TokenReview RBAC (#16784), the shared bearer listener mode (#16812) and the shared TokenReview resolver (#16826) are gone. The DAG closed the cutover in #16827."
+      }
+    ],
+    "interpretation": "Landed work items are removed, not listed as done. Stage 2 lost its last track and is dropped again; stage 6 keeps only protobuf contracts; stage numbers stay."
   },
   "inventory": {
-    "source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
+    "source_sha": "85eed7057f692cf12e9c5499d91ed7470cab1b73",
     "counts": {
-      "files": 1343,
+      "files": 1344,
       "directories": 249,
       "production": 743,
-      "tests": 600
+      "tests": 601
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"
