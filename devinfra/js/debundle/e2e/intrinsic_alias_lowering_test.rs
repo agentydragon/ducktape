@@ -76,43 +76,50 @@ fn intrinsic_alias_pins_companions_by_referencing_helper() {
         "{}console.log(new C().greet());\nexport {{ C }};\n",
         trio("0", "C", "greet", "hi", "!")
     );
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module(
-                "model",
-                &[Member::source_alpha(
-                    "DecoratedClass",
-                    r#"class C {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "model",
+                    &[Member::source_alpha(
+                        "DecoratedClass",
+                        r#"class C {
   greet() {
     STMT_LIST;
   }
 }"#,
-                )],
-            ),
-            logical_module(
-                "decorate_runtime",
-                &[
-                    // The helper is pinned by the class it decorates — the keystone
-                    // `makes_decorate_call` primitive, never by the minified `d0`.
-                    Member::makes_decorate_call(
-                        "decorateClassMember",
-                        "DecoratedClass",
-                        None,
-                        None,
-                    ),
-                    // Each companion is pinned by the helper that references it +
-                    // the intrinsic property — never by the minified `p0` / `g0`.
-                    Member::intrinsic_alias("defineProp", "defineProperty", "decorateClassMember"),
-                    Member::intrinsic_alias(
-                        "getOwnPropDesc",
-                        "getOwnPropertyDescriptor",
-                        "decorateClassMember",
-                    ),
-                ],
-            ),
-        ],
-    ));
+                    )],
+                ),
+                logical_module(
+                    "decorate_runtime",
+                    &[
+                        // The helper is pinned by the class it decorates — the keystone
+                        // `makes_decorate_call` primitive, never by the minified `d0`.
+                        Member::makes_decorate_call(
+                            "decorateClassMember",
+                            "DecoratedClass",
+                            None,
+                            None,
+                        ),
+                        // Each companion is pinned by the helper that references it +
+                        // the intrinsic property — never by the minified `p0` / `g0`.
+                        Member::intrinsic_alias(
+                            "defineProp",
+                            "defineProperty",
+                            "decorateClassMember",
+                        ),
+                        Member::intrinsic_alias(
+                            "getOwnPropDesc",
+                            "getOwnPropertyDescriptor",
+                            "decorateClassMember",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        .with_import_order(&["model", "decorate_runtime", "residual"]),
+    );
 
     // The helper + both companions resolved to their minified bindings (`d0`, `p0`,
     // `g0`) and live in the `decorate_runtime` module under their readable export
@@ -153,43 +160,54 @@ fn intrinsic_alias_referenced_by_generic_helper_name_resolves_per_module() {
         trio("a", "Alpha", "alphaLabel", "a", "A"),
         trio("b", "Beta", "betaLabel", "b", "B"),
     );
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module(
-                "alpha",
-                &[
-                    Member::source_alpha(
-                        "Alpha",
-                        r#"class Alpha {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module(
+                    "alpha",
+                    &[
+                        Member::source_alpha(
+                            "Alpha",
+                            r#"class Alpha {
   alphaLabel() {
     STMT_LIST;
   }
 }"#,
-                    ),
-                    // Both helpers carry the SAME readable name `applyDecorators` —
-                    // a chunk-global anchor map would collapse it to ambiguous.
-                    Member::makes_decorate_call("applyDecorators", "Alpha", None, None),
-                    Member::intrinsic_alias("alphaDefineProp", "defineProperty", "applyDecorators"),
-                ],
-            ),
-            logical_module(
-                "beta",
-                &[
-                    Member::source_alpha(
-                        "Beta",
-                        r#"class Beta {
+                        ),
+                        // Both helpers carry the SAME readable name `applyDecorators` —
+                        // a chunk-global anchor map would collapse it to ambiguous.
+                        Member::makes_decorate_call("applyDecorators", "Alpha", None, None),
+                        Member::intrinsic_alias(
+                            "alphaDefineProp",
+                            "defineProperty",
+                            "applyDecorators",
+                        ),
+                    ],
+                ),
+                logical_module(
+                    "beta",
+                    &[
+                        Member::source_alpha(
+                            "Beta",
+                            r#"class Beta {
   betaLabel() {
     STMT_LIST;
   }
 }"#,
-                    ),
-                    Member::makes_decorate_call("applyDecorators", "Beta", None, None),
-                    Member::intrinsic_alias("betaDefineProp", "defineProperty", "applyDecorators"),
-                ],
-            ),
-        ],
-    ));
+                        ),
+                        Member::makes_decorate_call("applyDecorators", "Beta", None, None),
+                        Member::intrinsic_alias(
+                            "betaDefineProp",
+                            "defineProperty",
+                            "applyDecorators",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        .with_import_order(&["alpha", "beta", "residual"]),
+    );
 
     // Each companion resolved against its own module's `applyDecorators` helper: `pa`
     // to the Alpha module, `pb` to the Beta module — distinct bindings, never crossing
@@ -240,40 +258,48 @@ decorateHelper([tag], targetClass.prototype, "greet", 1);
 console.log(new targetClass().greet(), firstValue);
 export { targetClass };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "model",
-                &[Member::source_alpha_target(
-                    "DecoratedClass",
-                    "DecoratedClass",
-                    r#"const DECLARATORS_BEFORE = null,
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "model",
+                    &[Member::source_alpha_target(
+                        "DecoratedClass",
+                        "DecoratedClass",
+                        r#"const DECLARATORS_BEFORE = null,
   DecoratedClass = class ReadableWidget {
     greet() {
       STMT_LIST;
     }
   };"#,
-                )],
-            ),
-            logical_module(
-                "decorate_runtime",
-                &[
-                    Member::makes_decorate_call("applyDecorators", "DecoratedClass", None, None),
-                    Member::intrinsic_alias(
-                        "definePropertyAlias",
-                        "defineProperty",
-                        "applyDecorators",
-                    ),
-                    Member::intrinsic_alias(
-                        "descriptorAlias",
-                        "getOwnPropertyDescriptor",
-                        "applyDecorators",
-                    ),
-                ],
-            ),
-        ],
-    ));
+                    )],
+                ),
+                logical_module(
+                    "decorate_runtime",
+                    &[
+                        Member::makes_decorate_call(
+                            "applyDecorators",
+                            "DecoratedClass",
+                            None,
+                            None,
+                        ),
+                        Member::intrinsic_alias(
+                            "definePropertyAlias",
+                            "defineProperty",
+                            "applyDecorators",
+                        ),
+                        Member::intrinsic_alias(
+                            "descriptorAlias",
+                            "getOwnPropertyDescriptor",
+                            "applyDecorators",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        .with_import_order(&["model", "decorate_runtime", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,

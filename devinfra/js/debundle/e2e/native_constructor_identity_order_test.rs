@@ -14,7 +14,7 @@ const instance = new Registry();
 const observed = globalThis.marker + setup;
 console.log(observed);
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "43\n");
     expect_sequenced_cycle_rejection(
         FixtureOpts::new(
@@ -23,7 +23,8 @@ console.log(observed);
                 "instance",
                 &[Member::new("Registry"), Member::new("instance")],
             )],
-        ),
+        )
+        .with_import_order(&["instance", "residual"]),
         &["instance", "residual"],
     );
 }
@@ -43,7 +44,7 @@ const later = 42;
 console.log(instance.value.marker);
 "#
     );
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
@@ -77,7 +78,8 @@ fn class_field_native_premises_include_other_analyzed_chunks() {
                     &[Member::new("Registry"), Member::new("b")],
                 )],
             )
-            .with_extra_chunks(&[("static/replacement", replacement)]),
+            .with_extra_chunks(&[("static/replacement", replacement)])
+            .with_import_order(&["registry", "residual"]),
             &["registry", "residual"],
         );
     }
@@ -99,6 +101,7 @@ fn global_slot_read_back_write_reaches_its_key_on_every_native() {
             )],
         )
         .with_extra_chunks(holder)
+        .with_import_order(&["registry", "residual"])
     }
     for holder in [
         "const box = {};\nexport function mutate() { box.add = function () { return this; }; }\n",

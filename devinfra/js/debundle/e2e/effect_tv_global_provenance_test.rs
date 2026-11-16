@@ -8,10 +8,13 @@ use serde_json::Value;
 
 #[test]
 fn linkage_export_does_not_add_runtime_havoc_to_relocation() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const first = 1;\nexport { first };\nconst second = 2;\nconsole.log(first, second);\n",
-        vec![logical_module("second", &[Member::new("second")])],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const first = 1;\nexport { first };\nconst second = 2;\nconsole.log(first, second);\n",
+            vec![logical_module("second", &[Member::new("second")])],
+        )
+        .with_import_order(&["second", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "1 2\n");
     let report = fixture.effect_translation_validation();
     assert!(report["swapped_pairs"].as_u64().unwrap() > 0, "{report}");
@@ -45,7 +48,7 @@ fn linkage_reexports_keep_dependency_evaluation_coverage_open() {
 #[test]
 fn composed_global_cells_keep_sites_dependencies_and_may_provenance() {
     let fixture = run_rejection_fixture_with_args(
-        composed_global_access_fixture(),
+        composed_global_access_fixture().with_import_order(&["inner", "outer"]),
         &["--effect-conflicts-jsonl"],
         1,
     );
@@ -241,7 +244,7 @@ fn opaque_callback_accesses_retain_their_assumption_without_contaminating_other_
         "const tail = nested() + first;",
         "const tail = JSON.parse(\"[1]\").map(peek);",
     );
-    let mut opts = composed_global_access_fixture();
+    let mut opts = composed_global_access_fixture().with_import_order(&["inner", "outer"]);
     opts.source = &source;
     let fixture = run_rejection_fixture_with_args(opts, &["--effect-conflicts-jsonl"], 1);
     let rows = read_jsonl(
@@ -307,6 +310,7 @@ fn default_export_value_evaluation_keeps_child_global_effects() {
                 logical_module("inner", &[Member::new("gap")]),
             ],
         )
+        .with_import_order(&["inner", "outer"])
         .with_unassigned_mode(unassigned_mode_inline()),
         &["--effect-conflicts-jsonl"],
         1,
@@ -374,6 +378,7 @@ fn default_cell_provenance_is_bounded_but_full_stream_keeps_every_site() {
                 logical_module("inner", &[Member::new("second")]),
             ],
         )
+        .with_import_order(&["inner", "outer"])
         .with_unassigned_mode(unassigned_mode_inline()),
         &["--effect-conflicts-jsonl"],
         1,

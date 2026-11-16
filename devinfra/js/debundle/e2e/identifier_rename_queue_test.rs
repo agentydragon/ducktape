@@ -19,16 +19,19 @@ fn emits_rename_queue_manifest() {
     //     identifier shape.
     //   - `URL` is a builtin acronym shape, but it's a reference to the
     //     global, NOT a top-level binding, so it just doesn't show up.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const aH = "scrambled-most-referenced";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const aH = "scrambled-most-referenced";
 function bC() { return aH + aH; }
 const dE = bC() + aH + aH;
 function getUserData() { return aH; }
 console.log(dE, bC(), getUserData());
 export { aH, bC, dE };
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     let queue = read_queue(&fixture.out_root);
     let entries = queue["entries"]
@@ -66,17 +69,20 @@ export { aH, bC, dE };
 
 #[test]
 fn renamed_members_leave_queue() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const aH = "renamed";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const aH = "renamed";
 const bC = aH + aH;
 console.log(aH, bC);
 export { aH, bC };
 "#,
-        vec![logical_module(
-            "domain/readable",
-            &[Member::renamed("readableThing", "aH")],
-        )],
-    ));
+            vec![logical_module(
+                "domain/readable",
+                &[Member::renamed("readableThing", "aH")],
+            )],
+        )
+        .with_import_order(&["domain/readable", "residual"]),
+    );
 
     let queue = read_queue(&fixture.out_root);
     let entries = queue["entries"]
@@ -105,24 +111,30 @@ fn entries_stay_stable_across_runs() {
     // Stable-selector test: re-running the pipeline against the same
     // synthetic bundle must yield byte-identical `entries` payloads
     // (selectors don't drift, sort is deterministic).
-    let first = read_entries_payload(run_fixture(FixtureOpts::new(
-        r#"const aH = "stable";
+    let first = read_entries_payload(run_fixture(
+        FixtureOpts::new(
+            r#"const aH = "stable";
 function bC() { return aH; }
 const dE = bC();
 console.log(dE);
 export { aH, bC, dE };
 "#,
-        vec![],
-    )));
-    let second = read_entries_payload(run_fixture(FixtureOpts::new(
-        r#"const aH = "stable";
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    ));
+    let second = read_entries_payload(run_fixture(
+        FixtureOpts::new(
+            r#"const aH = "stable";
 function bC() { return aH; }
 const dE = bC();
 console.log(dE);
 export { aH, bC, dE };
 "#,
-        vec![],
-    )));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    ));
     assert_eq!(
         first, second,
         "entries payload must be byte-identical across runs",

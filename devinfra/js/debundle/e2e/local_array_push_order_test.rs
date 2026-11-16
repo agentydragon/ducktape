@@ -588,7 +588,7 @@ fn eager_native_array_input_does_not_inherit_pre_allocation_heap_barrier() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const before = (() => 1)();\nconst keys = Object.keys([10]);\nconsole.log(keys.length + before);\n",
         vec![logical_module("keys", &[Member::new("keys")])],
-    ));
+    ).with_import_order(&["keys", "residual"]));
     assert_preserved_entry_output(&fixture, "2\n");
     assert_no_sequenced_edge(&fixture.dependency_graph(), 1, 0);
 }
@@ -621,7 +621,7 @@ fn fresh_allocation_still_preserves_an_earlier_binding_tdz_observation() {
         &["reader", "values"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
 }
 
@@ -708,7 +708,9 @@ fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
         let source = format!(
             "function make() {{ return []; }}\nconst values = make();\n{extra}function append() {{ return values.push(1); }}\nconst result = append();\nconsole.log(result, values.join(','));\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "1 1\n");
         let graph = fixture.dependency_graph();
         let execution = node_declaring(&graph, "result")
@@ -756,6 +758,13 @@ fn dense_array_push_retains_mutation_argument_and_escape_guards() {
                     ),
                     logical_module("later", &[Member::new("Later")]),
                 ],
+            )
+            .with_import_order(
+                if operation.starts_with("const alias") || operation.starts_with("const argument") {
+                    &["values", "later", "residual"]
+                } else {
+                    &["values", "later"]
+                },
             ),
             &[],
             &[],

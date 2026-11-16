@@ -330,7 +330,8 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
                 Member::new("later"),
             ],
         )],
-    ));
+    )
+    .with_import_order(&["values"]));
     assert_preserved_entry_output(&effectful_sibling, "1 2 3 1\n");
     let report = effectful_sibling.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
@@ -354,7 +355,8 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
                 Member::new("later"),
             ],
         )],
-    ));
+    )
+    .with_import_order(&["values"]));
     assert_preserved_entry_output(&getter, "4 5 1\n");
     let report = getter.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
@@ -378,7 +380,8 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
                 Member::new("later"),
             ],
         )],
-    ));
+    )
+    .with_import_order(&["values", "residual"]));
     assert_preserved_entry_output(&callback, "4 5 7\n");
     let report = callback.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
@@ -392,17 +395,20 @@ fn split_declarator_coverage_stays_local_and_requires_completed_initialization()
         "the call initializer remains outside the literal proof: {report:#}"
     );
 
-    let tdz = run_fixture(FixtureOpts::new(
-        "const first = later, middle = 2, later = 3;\nconsole.log(first, middle, later);\n",
-        vec![logical_module(
-            "values",
-            &[
-                Member::new("first"),
-                Member::new("middle"),
-                Member::new("later"),
-            ],
-        )],
-    ));
+    let tdz = run_fixture(
+        FixtureOpts::new(
+            "const first = later, middle = 2, later = 3;\nconsole.log(first, middle, later);\n",
+            vec![logical_module(
+                "values",
+                &[
+                    Member::new("first"),
+                    Member::new("middle"),
+                    Member::new("later"),
+                ],
+            )],
+        )
+        .with_import_order(&["values"]),
+    );
     assert_preserved_entry_error(&tdz, "ReferenceError");
     let report = tdz.effect_translation_validation();
     for domain in ["global_properties", "general_heap", "host_effects"] {
@@ -422,7 +428,7 @@ fn deferred_callable_creation_coverage_composes_through_calls_and_exact_owners()
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "function factory() { return () => 3; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result);\n",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "3\n");
     for (binding, owner, call_count) in [("selected", 2, 2), ("result", 3, 1)] {
         let execution = binding_execution_report(&fixture, binding);
@@ -474,7 +480,9 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
         let source = format!(
             "globalThis.read = () => 3;\nglobalThis.reenter = () => undefined;\n{prefix}function factory() {{ return () => {{ {body} }}; }}\nconst selected = factory();\nconst result = selected();\nconsole.log(result);\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_output(&fixture, "3\n");
         let execution = binding_execution_report(&fixture, "result");
         assert_ne!(
@@ -498,15 +506,17 @@ fn deferred_callable_creation_does_not_cover_unknown_getter_or_reentry_invocatio
 fn deferred_callable_operation_receipts_preserve_exact_native_prefix_dependencies() {
     const SOURCE: &str = "const cache = new Map();\nfunction factory() { return () => cache; }\nfunction nested() { return factory(); }\nconst selected = nested();\nconst result = selected();\nconsole.log(result === cache);\n";
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, vec![]).with_native_operation_inputs(
-            "static/app",
-            vec![native_constructor_input(
-                SOURCE,
-                "const cache = new Map();",
-                "cache",
-                NativeOperationKind::MapEmpty,
-            )],
-        ),
+        FixtureOpts::new(SOURCE, vec![])
+            .with_import_order(&["residual"])
+            .with_native_operation_inputs(
+                "static/app",
+                vec![native_constructor_input(
+                    SOURCE,
+                    "const cache = new Map();",
+                    "cache",
+                    NativeOperationKind::MapEmpty,
+                )],
+            ),
     );
     assert_preserved_entry_output(&fixture, "true\n");
     let dependencies = serde_json::json!({

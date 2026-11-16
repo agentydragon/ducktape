@@ -40,16 +40,30 @@ fn modules(with_write: bool) -> Vec<LogicalModuleEntry> {
 fn exact_freeze_site_restores_complete_synchronous_call_under_opaque_write() {
     let control = SOURCE.replace("startupTarget.freeze = 1;\n", "");
     assert_preserved_entry_output(
-        &run_fixture_with_graphs(FixtureOpts::new(&control, modules(false))),
+        &run_fixture_with_graphs(
+            FixtureOpts::new(&control, modules(false)).with_import_order(&[
+                "records/early",
+                "values/later",
+                "residual",
+            ]),
+        ),
         "first later\n",
     );
-    let unproved = run_rejection_fixture_with_graphs(FixtureOpts::new(SOURCE, modules(true)));
+    let unproved = run_rejection_fixture_with_graphs(
+        FixtureOpts::new(SOURCE, modules(true)).with_import_order(&[
+            "records/early",
+            "values/later",
+            "residual",
+        ]),
+    );
     assert!(!unproved.atomic_group_conflicts().is_empty());
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(SOURCE, modules(true)).with_native_call_identity_inputs(
-            "static/app",
-            vec![input(SOURCE, "makeRecord", FUNCTION)],
-        ),
+        FixtureOpts::new(SOURCE, modules(true))
+            .with_import_order(&["records/early", "values/later", "residual"])
+            .with_native_call_identity_inputs(
+                "static/app",
+                vec![input(SOURCE, "makeRecord", FUNCTION)],
+            ),
     );
     assert_preserved_entry_output(&fixture, "first later\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -130,6 +144,7 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
                 logical_module("records/b", &[Member::new("frozen")]),
             ],
         )
+        .with_import_order(&["heap/a", "records/b", "residual"])
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
@@ -177,6 +192,7 @@ fn freeze_heap_proof_requires_a_fresh_plain_data_record() {
                     logical_module("records/b", &[Member::new("frozen")]),
                 ],
             )
+            .with_import_order(&["heap/a", "records/b", "residual"])
             .with_native_call_identity_inputs(
                 "static/app",
                 vec![input(&source, "makeRecord", function)],
@@ -211,6 +227,7 @@ fn freeze_heap_proof_retains_nested_array_mutation() {
                 logical_module("records/b", &[Member::new("frozen")]),
             ],
         )
+        .with_import_order(&["heap/a", "records/b", "residual"])
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
@@ -291,6 +308,7 @@ fn returned_record_with_live_array_descendant_stays_ordered_conservatively() {
                 ),
             ],
         )
+        .with_import_order(&["heap/a", "records/b", "residual"])
         .with_native_call_identity_inputs(
             "static/app",
             vec![input(&source, "makeRecord", function)],
@@ -358,10 +376,12 @@ fn known_sibling_object_write_does_not_contradict_exact_freeze_slot() {
         logical_module("values/later", &[Member::new("later")]),
     ];
     let fixture = run_fixture(
-        FixtureOpts::new(&source, modules).with_native_call_identity_inputs(
-            "static/app",
-            vec![input(&source, "makeRecord", FUNCTION)],
-        ),
+        FixtureOpts::new(&source, modules)
+            .with_import_order(&["records/early", "values/later", "residual"])
+            .with_native_call_identity_inputs(
+                "static/app",
+                vec![input(&source, "makeRecord", FUNCTION)],
+            ),
     );
     assert_preserved_entry_output(&fixture, "first later\n");
 }
@@ -416,6 +436,7 @@ fn selected_identity_does_not_certify_proxy_or_getter_arguments() {
                     logical_module("values/later", &[Member::new("later")]),
                 ],
             )
+            .with_import_order(&["records/early", "values/later", "residual"])
             .with_native_call_identity_inputs(
                 "static/app",
                 vec![input(source, "makeRecord", function)],
@@ -445,10 +466,12 @@ fn an_unselected_freeze_call_keeps_the_opaque_barrier() {
         )
         .replace("const early = makeRecord(", "const early = other(");
     let rejected = run_rejection_fixture_with_graphs(
-        FixtureOpts::new(&source, modules(true)).with_native_call_identity_inputs(
-            "static/app",
-            vec![input(&source, "makeRecord", FUNCTION)],
-        ),
+        FixtureOpts::new(&source, modules(true))
+            .with_import_order(&["records/early", "values/later", "residual"])
+            .with_native_call_identity_inputs(
+                "static/app",
+                vec![input(&source, "makeRecord", FUNCTION)],
+            ),
     );
     assert!(!rejected.atomic_group_conflicts().is_empty());
 }
