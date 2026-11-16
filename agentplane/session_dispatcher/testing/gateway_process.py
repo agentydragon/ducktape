@@ -136,7 +136,6 @@ async def run_gateway(
     *,
     database_url: str,
     namespace: str,
-    pod_name: str = "gateway",
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
     dispatcher_audience: str,
@@ -149,8 +148,8 @@ async def run_gateway(
     await asyncio.to_thread(_migrate, binary, database_url, migration_log)
 
     log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
-    # The database URL and Pod fields stay out of the file, as in deployment, where they come from
-    # runtime sources. Exact service roles exercise the authoring schema and Go loader contract.
+    # The database URL stays out of the file, as in deployment, where it comes from a runtime source.
+    # Exact service roles exercise the authoring schema and Go loader contract.
     if environment_runtime_ca is None:
         environment_runtime_ca = make_ca("Environment Runtime transport test CA")
     async with run_environment_service(
@@ -204,7 +203,6 @@ async def run_gateway(
                     **os.environ,
                     Settings.config_file_env: str(settings_path),
                     Settings.dispatcher_database_url_env: _wire_database_url(database_url),
-                    Settings.pod_name_env: pod_name,
                 }
                 credentials = grpc.ssl_channel_credentials(root_certificates=environment_runtime_ca_file.read_bytes())
 

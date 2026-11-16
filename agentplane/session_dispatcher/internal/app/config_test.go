@@ -2,7 +2,6 @@ package app
 
 import (
 	"math"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -304,27 +303,6 @@ func TestSettingsFilePathIsRequiredAndMustBeReadable(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t,
 		settingPrefix+"CONFIG_FILE="+configtest.WriteSettings(t, requiredFile+"---\n"))); err == nil {
 		t.Fatal("accepted more than one YAML document")
-	}
-}
-
-func TestPodNameDefaultsToTheHostname(t *testing.T) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := configtest.Load(t, settingPrefix, loadConfig, required(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.PodName != hostname {
-		t.Fatalf("pod name %q, hostname %q", c.PodName, hostname)
-	}
-	c, err = configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"POD_NAME=runner-gateway-0"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.PodName != "runner-gateway-0" {
-		t.Fatalf("explicit pod name ignored: %q", c.PodName)
 	}
 }
 
