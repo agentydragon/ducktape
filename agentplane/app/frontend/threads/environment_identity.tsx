@@ -1,7 +1,7 @@
 import { Alert, Stack, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import { BindingsTable } from "../bindings/table";
+import { BindingsTable } from "../policy/table";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 
 /** Read-only identity and grants attached to the selected Sandbox. */

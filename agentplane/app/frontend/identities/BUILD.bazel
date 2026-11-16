@@ -180,7 +180,7 @@ ts_library(
         "//agentplane/app/frontend:icons",
         "//agentplane/app/frontend:topbar",
         "//agentplane/app/frontend/bindings:credential_watch",
-        "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:table",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/policy/v1:policy_service_pb",
         "//util/frontend:help_tooltip",

@@ -4,7 +4,7 @@ import { type JSX, useState } from "react";
 import type { Identity } from "../../../policy/v1/policy_service_pb";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { useCredentialMetadata } from "../bindings/credential_watch";
-import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
+import { BINDING_GRANT_HELP, BindingsTable } from "../policy/table";
 import { IconArrowLeft } from "../icons";
 import { useIdentities, usePolicyResources } from "../policy/watch";
 import { TopbarTitle } from "../topbar";
