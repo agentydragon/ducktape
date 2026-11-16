@@ -162,6 +162,7 @@ py_library(
         ":record_json",
         ":record_payloads",
         ":restic",
+        ":session_projection",
         ":statuses",
         ":usage_observations",
         ":version_lineage",
@@ -680,6 +681,7 @@ py_test(
         ":database",
         ":ingest",
         ":models",
+        ":session_projection",
         ":testing",
         "//:conftest",
         "//util/testing:postgres_fixtures",
@@ -808,6 +810,17 @@ py_library(
         ":database",
         ":models",
         ":statuses",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_projection",
+    srcs = ["session_projection.py"],
+    deps = [
+        ":claude_titles",
+        ":database",
+        ":models",
         "@pypi//sqlalchemy",
     ],
 )

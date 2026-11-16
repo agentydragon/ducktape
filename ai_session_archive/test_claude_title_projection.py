@@ -10,8 +10,9 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import SessionRow
-from ai_session_archive.ingest import CLAUDE_TITLE_PROJECTION_VERSION, ArchiveSource, HarnessRoot, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from ai_session_archive.models import Harness
+from ai_session_archive.session_projection import CLAUDE_TITLE_PROJECTION_VERSION
 from ai_session_archive.testing import _backup, _new_repository
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
