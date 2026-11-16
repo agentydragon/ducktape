@@ -504,10 +504,10 @@ no direct service-reader or bearer role, and its effective Identity still needs 
 PolicyBinding. This receiver setting defaults to disabled. Release and pin the receiver image before
 enabling it or deploying a sampler client that calls these methods.
 
-These settings require the listener's SPIFFE client trust and default to no service grants;
-production settings follow receiver image pins. Legacy `reader_accounts`,
-`connection_delegation_actor`, and listener `kubernetes_bearer` entries remain decodable but grant no
-admission. Remove them only after generated manifests omit them and the receiver rollout completes.
+These settings require the listener's SPIFFE client trust and default to no service grants.
+Receiver settings no longer accept `reader_accounts` or `connection_delegation_actor`; Connection
+delegation is configured by `connection_delegation_service`. Listener `kubernetes_bearer` entries
+remain decodable but grant no admission.
 Mixed service/bearer credentials fail closed except the explicit service-plus-operator-OIDC
 path. The listener verifies every presented certificate before method authorization.
 

@@ -92,6 +92,11 @@ def test_tls_application_listener_is_required_and_plaintext_listener_is_unknown(
         Settings.model_validate(without_tls)
 
 
+def test_retired_kubeconfig_setting_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        Settings.model_validate(settings_data() | {"kubeconfig": "/unused/kubeconfig"})
+
+
 def test_provider_phase_budgets_are_optional_and_independent() -> None:
     settings = Settings(**settings_data())
     assert settings.gateway_tls is not None

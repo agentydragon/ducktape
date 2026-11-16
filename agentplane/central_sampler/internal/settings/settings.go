@@ -46,9 +46,7 @@ type Settings struct {
 	ShutdownBudgetSeconds                *int                        `json:"shutdown_budget_seconds,omitempty"`
 	LeaseSeconds                         int                         `json:"lease_seconds"`
 	AutoCompactTokens                    *int                        `json:"auto_compact_tokens"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit kubeconfig and that rollout completes. Ignored.
-	Kubeconfig          string `json:"kubeconfig"`
-	SetupTimeoutSeconds *int   `json:"setup_timeout_seconds,omitempty"`
+	SetupTimeoutSeconds                  *int                        `json:"setup_timeout_seconds,omitempty"`
 }
 
 const defaultHealthListen = ":8081"

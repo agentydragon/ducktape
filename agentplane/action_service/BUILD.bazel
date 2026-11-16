@@ -81,7 +81,6 @@ py_library(
         ":catalog",
         ":mcp_settings",
         ":push_settings",
-        "//agentplane:subjects",
         "//agentplane/action_service/orchestration_v1:binding",
         "//agentplane/action_service/session_delegation:binding",
         "//agentplane/identity/auth:listener",

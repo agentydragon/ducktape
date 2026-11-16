@@ -85,8 +85,9 @@ certificate resolves to the live Identity incarnation named by its WorkloadCrede
 a live PolicyBinding. Owned workloads retain their existing incarnation checks; a standing workload
 requires no Sandbox or Pod. Service certificates supply no workload, ServiceAccount or Pod proof.
 Kubernetes bearer tokens are refused, including valid tokens for the former audience. No TokenReview
-client is constructed for receiver admission. The legacy reader, delegation-actor and listener bearer
-settings remain decodable but ignored until generated manifests omit them and rollout completes.
+client is constructed for receiver admission. `reader_accounts` and `connection_delegation_actor` are
+not accepted receiver settings. Listener `kubernetes_bearer` entries remain decodable but grant no
+admission.
 Operator RPCs retain their separately verified OIDC contract and explicit service-plus-OIDC exception.
 Linkage callbacks retain their single-use state authorization.
 

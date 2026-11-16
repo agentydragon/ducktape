@@ -320,11 +320,6 @@ class Actions(Construct):
         self.mcp_oauth = mcp_oauth_secret(env.namespace)
 
         props = env.actions
-        if (
-            props.connection_delegation_actor is not None
-            and props.connection_delegation_actor.namespace not in props.caller_service_account_namespaces
-        ):
-            raise ValueError("connection_delegation_actor namespace must be an Action caller namespace")
         web_push = (
             WebPushSettings(
                 subject=props.web_push.subject,
@@ -412,7 +407,7 @@ class Actions(Construct):
                     history_service=history_peer,
                     session_delegation_dispatcher=delegated_dispatcher_peer,
                     session_delegation_history=delegated_history_peer,
-                ).model_dump(mode="json", exclude={"reader_accounts", "connection_delegation_actor"})
+                )
             ),
             path="/etc/agentplane-actions/settings.yaml",
         )

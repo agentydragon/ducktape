@@ -14,11 +14,10 @@ from constructs import Construct
 from more_itertools import one
 
 from agentplane.mcp_edge.oauth_settings import OAuthSettings, OperatorPrincipal
-from agentplane.subjects import ServiceAccountRef
 from agentplane.system_tests.deployment import dex, fixture_chart, mcp_fixture_servers, mcp_servers
 from agentplane.system_tests.deployment.rendered_fixture import DexPasswordGrant, McpInputs
 from agentplane.system_tests.k3s.namespaces import NAMESPACE
-from cluster.cdk8s.agentplane import actions, mcp_edge
+from cluster.cdk8s.agentplane import actions
 from cluster.cdk8s.agentplane.environment import ActionsProps, SessionDelegationProps
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf
@@ -54,7 +53,6 @@ def mcp_actions_props(actions: ActionsProps, mcp: McpInputs) -> ActionsProps:
     mcp_linkage = fixture_chart.linkage_client(mcp.app_origin)
     return replace(
         actions,
-        connection_delegation_actor=ServiceAccountRef(namespace=NAMESPACE, name=mcp_edge.NAME),
         mcp_servers={
             server_id: mcp_fixture_servers.oauth_fixture_server(
                 server_id, client_id=mcp_linkage.id, redirect_uri=mcp_linkage.redirect_uri
