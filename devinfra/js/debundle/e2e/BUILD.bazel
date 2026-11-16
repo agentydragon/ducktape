@@ -932,6 +932,8 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "class_callback_reachability_test")
 
+debundle_e2e_test(name = "opaque_iteration_receiver_test")
+
 # These synthetic scale regressions are opt-in: `manual` keeps them out of CI,
 # while `scale` groups them for targeted runs. Unoptimized RBE runs approach a
 # minute even without a regression, so larger cases need a moderate timeout.

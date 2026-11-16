@@ -250,6 +250,88 @@ In a may-analysis, stores through summary objects/captured cells use weak update
 A strong-update transfer requires a sound singleton proof and a monotone rule
 when that proof is lost; otherwise keep the weak update.
 
+### Next bounded callback slice
+
+The [November 16 checkpoint](../debug/2026_11_14_excalidraw_pipeline_performance.md#november-16-consolidation-checkpoint)
+finds substantial remaining callback/getter cost, but does not establish a
+speedup or attribute all of that cost to one source shape. Start with
+`e2e/opaque_iteration_receiver_test.rs`: preserve a confined dense receiver's
+own slots when a selected `forEach` callback passes only primitives to opaque
+code. Change its safe refusal to an accepted extraction with the same Node
+output. Keep the escaping-receiver refusal. This is one capability migration,
+not a prerequisite to finish the entire callback engine.
+
+Admission must establish all of the following from shared prepared facts and
+operation transfers, without another AST recognizer or evaluator:
+
+- A fresh, singleton ordinary dense receiver has the queried own data slot;
+  its allocation/multiplicity, descriptors and current-prefix identity are
+  proved. The native method is selected before invocation and has a supported
+  row. Initially support `forEach`, which constructs no species-dependent
+  result array; other rows and nested/recursive execution remain conservative.
+- The complete callback operation graph covers every reachable branch and
+  call. An opaque operation's explicit operands are primitive. Its global,
+  throwing and reentry effects remain represented. Unused implicit receiver
+  operands do not become values supplied to that operation merely because the
+  interpreter placed them in the callback's parameter environment.
+- Neither those operands nor existing escaped/exported/reentry roots reach the
+  receiver, its aliases or a callable that can access it. Resolve live captures,
+  parameter aliases, `arguments`, rest, `this`, returned values and foreign
+  surfaces, or refuse. A missing edge in an incomplete may-graph is not a proof
+  of confinement; dynamic scope and unknown hidden private reach refuse it.
+- Every write, escape, deletion, descriptor/receiver-prototype change and
+  uncovered operation that may touch the receiver invalidates the proof before
+  reuse. A separate intrinsic mutation may still invalidate a native-row
+  prerequisite: preserving an own slot does not preserve all native premises.
+
+Represent a successful result as a typed capability with the receiver, semantic
+cut, protected slots and consumed dependencies. The shared operation semantics
+owns the effect of the opaque operation and the native row; the existing
+`IterativeInference` owns their dependencies. Keep an incomplete normal-execution
+receipt incomplete. Preserve the slot only after proving that _all_ unexecuted
+remainder effects are disjoint from it; do not skip a statement and resume its
+old world on the strength of a read summary. Apply the same boundary to fallback
+reach, so an unused implicit receiver cannot publish its stored callbacks.
+
+For a concrete first implementation, bound contexts to the existing source
+cuts and canonical source allocation/callable/binding identities. Refuse shapes
+that require new dynamically generated contexts. Let `P` be the number of such
+cuts, `R` the protected receiver candidates, and `V,E` the nodes and edges of
+the completed fixed-arity capability graph at a cut. All are polynomial in the
+explicit input; pin the exact tuple inventory in the implementation review.
+Reach and invalidation are graph problems: dense-bitset propagation can compute
+all `R` receiver reach sets in `O(R(V+E))` time per cut and `O(RV+E)` space.
+This deliberately loose upper bound gives `O(P R(V+E))` total time. Boolean
+receiver-validity facts change at most once at each cut. Effects and provenance
+must use the existing bounded atom/witness domains, not path lists or subsets
+as context keys. This bound excludes ESM schedule/placement search.
+
+Share the immutable graph and body operation summaries. Index every consumed
+cell, capture, surface and wildcard guard; delta propagation wakes only affected
+receiver queries. A new edge receives existing reach bits as well as future
+deltas. Sealed cut results live until their last downstream consumer, then can
+be retired; do not retain resulting worlds in a cache or copy a transitive
+closure into every caller. The whole-graph bound above is a ceiling, not a
+reason to rescan the graph on every operation or use an LRU.
+
+The preservation argument is local: fresh own-slot evidence establishes the
+invariant; each covered operation either preserves it by its shared transfer
+or invalidates the capability. Opaque code cannot access a confined receiver
+without a capability path; all such paths and reentry roots are overapproximated
+by the completed graph. Thus a retained capability proves the slot unchanged
+on every continuation reaching the later read, regardless of whether the call
+normally completes. Unknown reach invalidates that argument and keeps the
+current fallback. This is the proof obligation for the proposed slice, not a
+claim that the current implementation meets it.
+
+Add unsafe controls for lexical/parameter aliases, earlier escaped/exported
+callbacks, actual receiver writes and descriptor/prototype changes, getters,
+replaced methods, recursion and truncation; test fresh/saved analysis parity.
+Re-run the identical full-pipeline checkpoint. Do not broaden accepted shapes
+or claim Excalidraw savings from the small case alone. If the existing shared
+facts cannot establish confinement within this slice, document the precise
+missing relation and stop instead of turning it into a whole-engine rewrite.
+
 ### 4. Keep prefixes and ordered proofs explicit
 
 A whole-program potential-call graph is useful infrastructure, but must not
