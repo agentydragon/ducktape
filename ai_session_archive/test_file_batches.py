@@ -35,8 +35,9 @@ from ai_session_archive.database import (
 )
 from ai_session_archive.ingest import ArchiveSource, HarnessRoot, IngestReport, SnapshotIngestor
 from ai_session_archive.models import Harness
-from ai_session_archive.queries import get_version, list_events, list_sessions, list_versions
+from ai_session_archive.queries import list_sessions
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from ai_session_archive.version_queries import get_version, list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]

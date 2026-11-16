@@ -106,9 +106,7 @@ py_library(
     deps = [
         ":database",
         ":models",
-        ":record_json",
         ":statuses",
-        ":version_lineage",
         "@pypi//sqlalchemy",
     ],
 )
@@ -285,6 +283,7 @@ py_test(
         ":record_json",
         ":testing",
         ":usage_observations",
+        ":version_queries",
         ":web",
         ":web_settings",
         "//:conftest",
@@ -321,6 +320,7 @@ py_test(
         ":models",
         ":queries",
         ":testing",
+        ":version_queries",
         "//:conftest",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
@@ -341,6 +341,7 @@ py_test(
         ":models",
         ":queries",
         ":testing",
+        ":version_queries",
         "//:conftest",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
@@ -361,6 +362,7 @@ py_test(
         ":models",
         ":queries",
         ":testing",
+        ":version_queries",
         "//:conftest",
         "//util/testing:postgres_fixtures",
         "@pypi//pytest_bazel",
@@ -481,6 +483,7 @@ py_library(
         ":database",
         ":models",
         ":queries",
+        ":version_queries",
         ":web_settings",
         "//util:oidc_login",
         "@pypi//fastapi",
@@ -727,6 +730,7 @@ py_test(
         ":queries",
         ":restic",
         ":testing",
+        ":version_queries",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "//util/testing:postgres_fixtures",
@@ -754,6 +758,18 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "version_queries",
+    srcs = ["version_queries.py"],
+    deps = [
+        ":database",
+        ":models",
+        ":record_json",
+        ":version_lineage",
         "@pypi//sqlalchemy",
     ],
 )

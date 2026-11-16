@@ -15,10 +15,11 @@ from sqlalchemy.orm import sessionmaker
 from ai_session_archive.database import RecordPayloadRow, SessionRow, SnapshotFileRow, UsageObservationRow
 from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
 from ai_session_archive.models import Harness
-from ai_session_archive.queries import list_events, list_sessions, list_versions
+from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.usage_observations import UsageCounterKind
+from ai_session_archive.version_queries import list_events, list_versions
 from ai_session_archive.web import create_app
 from ai_session_archive.web_settings import WebSettings
 
