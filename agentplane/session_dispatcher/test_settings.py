@@ -227,10 +227,8 @@ def test_static_settings_reject_runtime_inputs_and_legacy_namespace_authority() 
 
 def test_runtime_inputs_are_not_settings_fields() -> None:
     assert "dispatcher_database_url" not in Settings.model_fields
-    assert "pod_name" not in Settings.model_fields
     assert Settings.config_file_env == "AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE"
     assert Settings.dispatcher_database_url_env == "AGENTPLANE_RUNNER_GATEWAY_DISPATCHER_DATABASE_URL"
-    assert Settings.pod_name_env == "AGENTPLANE_RUNNER_GATEWAY_POD_NAME"
 
 
 def test_settings_ignore_static_environment_overrides(monkeypatch: pytest.MonkeyPatch) -> None:

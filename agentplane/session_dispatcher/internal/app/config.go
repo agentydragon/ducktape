@@ -23,22 +23,16 @@ import (
 const (
 	settingPrefix            = "AGENTPLANE_RUNNER_GATEWAY_"
 	dispatcherDatabaseURLEnv = settingPrefix + "DISPATCHER_DATABASE_URL"
-	runnerGatewayPodNameEnv  = settingPrefix + "POD_NAME"
 )
 
 // config is the Gateway's deployment contract: static settings come from the YAML file named by
-// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL and Pod name are explicit runtime inputs.
+// AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE. The database URL is an explicit runtime input.
 // Service caller grants contain exact SPIFFE IDs.
-//
-// The database URL is a Secret environment value. Kubernetes sets the Pod hostname to its name unless an
-// explicit hostname is configured.
 type config struct {
 	Namespace string `mapstructure:"sandbox_namespace"`
 	// PolicyNamespace holds the Identities a workload SVID may name.
-	PolicyNamespace       string `mapstructure:"policy_namespace"`
-	DispatcherDatabaseURL string `mapstructure:"-"`
-	// CLEANUP(2026-11-15, stage 5): the legacy own-Pod input is ignored after receiver retirement.
-	PodName                     string                   `mapstructure:"-"`
+	PolicyNamespace             string                   `mapstructure:"policy_namespace"`
+	DispatcherDatabaseURL       string                   `mapstructure:"-"`
 	RunnerTokenFile             string                   `mapstructure:"runner_token_file"`
 	Kubeconfig                  string                   `mapstructure:"kubeconfig"`
 	KubernetesClientQPS         float32                  `mapstructure:"kubernetes_client_qps"`
@@ -105,13 +99,6 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("invalid Runner Gateway settings")
 	}
 	c.DispatcherDatabaseURL = os.Getenv(dispatcherDatabaseURLEnv)
-	c.PodName = os.Getenv(runnerGatewayPodNameEnv)
-	if strings.TrimSpace(c.PodName) == "" {
-		var err error
-		if c.PodName, err = os.Hostname(); err != nil {
-			return config{}, err
-		}
-	}
 	if err := c.validate(); err != nil {
 		return config{}, err
 	}
