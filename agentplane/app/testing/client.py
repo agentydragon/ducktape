@@ -55,7 +55,7 @@ def _no_app_answered(response: httpx.Response) -> bool:
 
 
 def _thread_not_found(error: BaseException) -> bool:
-    """History has not projected the Thread row yet."""
+    """The App metadata or History summary needed for the Thread view is not available yet."""
     return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND
 
 
@@ -327,7 +327,7 @@ class Client:
         return thread
 
     async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
-        """Wait for History's projection after runner admission; only a missing row is retried."""
+        """Wait for the App metadata and History summary needed for a Thread view; only 404 is retried."""
         return await AsyncRetrying(
             stop=stop_after_delay(timeout_s),
             wait=wait_fixed(0.2),
@@ -341,7 +341,7 @@ class Client:
         return ThreadMetadata.model_validate(data)
 
     async def threads(self, *, sandbox_uid: str) -> AsyncGenerator[ThreadView]:
-        """Every retained Thread of this Sandbox incarnation, including archived Threads."""
+        """Compose App metadata with History summaries for this Sandbox incarnation, including archived Threads."""
         params = {"include_archived": "true", "limit": "200"}
         while True:
             page = await self._json("GET", "/upstream/app/v1/threads", params=params)
@@ -362,7 +362,7 @@ class Client:
             params["page_token"] = page_token
 
     async def thread(self, thread_id: UUID) -> ThreadView:
-        """The persistent Thread of a created Session; its ID is the Session's public ID."""
+        """Compose App-owned metadata and the History summary for a Session's public ID."""
         metadata = await self._json("GET", f"/upstream/app/v1/threads/{thread_id}")
         summary = await self._json("GET", f"/upstream/history/v1/sessions/{thread_id}/summary")
         return thread_view_from_proto_json(metadata, summary)

@@ -533,7 +533,6 @@ export async function listThreadWindow(
   const tokens = new Set<string>();
   let token = "";
   for (;;) {
-    // Do not apply History-derived Sandbox membership in the legacy metadata endpoint.
     const query = new URLSearchParams({ include_archived: "true", limit: "200" });
     if (token) query.set("page_token", token);
     const page = await fetchProto(

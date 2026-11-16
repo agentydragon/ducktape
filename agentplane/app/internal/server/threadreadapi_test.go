@@ -111,80 +111,49 @@ func (f *threadReadStoreFake) Unarchive(_ context.Context, id uuid.UUID) (thread
 }
 
 type threadReadHistoryFake struct {
-	summaries   map[uuid.UUID]*historypb.SessionSummary
-	sandboxes   map[uuid.UUID]string
-	sandboxUIDs map[uuid.UUID]string
-	err         error
+	summaries map[uuid.UUID]*historypb.SessionSummary
+	err       error
+	calls     int
 }
 
-func TestListThreadMetadataScopesPagesAndArchiveCountToSandboxUID(t *testing.T) {
-	const oldUID = "11111111-1111-4111-8111-111111111111"
-	const currentUID = "22222222-2222-4222-8222-222222222222"
-	ids := []uuid.UUID{
-		uuid.MustParse("00000000-0000-4000-8000-000000000001"),
-		uuid.MustParse("00000000-0000-4000-8000-000000000002"),
-		uuid.MustParse("00000000-0000-4000-8000-000000000003"),
-		uuid.MustParse("00000000-0000-4000-8000-000000000004"),
-		uuid.MustParse("00000000-0000-4000-8000-000000000005"),
-		uuid.MustParse("00000000-0000-4000-8000-000000000006"),
-	}
-	unknownTurnStatus := eventpb.TurnStatus(999)
+func TestListThreadMetadataPagesAppRowsWithoutHistory(t *testing.T) {
+	ids := []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}
 	store := &threadReadStoreFake{rows: []threads.Thread{
-		{ID: ids[0], CreatedAt: time.Unix(4, 0), Archived: true},
-		{ID: ids[1], CreatedAt: time.Unix(3, 0)},
-		{ID: ids[2], CreatedAt: time.Unix(2, 0)},
-		{ID: ids[5], CreatedAt: time.Unix(1, 500_000_000), Archived: true},
-		{ID: ids[3], CreatedAt: time.Unix(1, 0), Archived: true},
-		{ID: ids[4], CreatedAt: time.Unix(0, 0), Archived: true},
+		{ID: ids[0], CreatedAt: time.Unix(3, 0), Archived: true},
+		{ID: ids[1], CreatedAt: time.Unix(2, 0), Name: proto.String("test-title")},
+		{ID: ids[2], CreatedAt: time.Unix(1, 0)},
 	}}
-	history := &threadReadHistoryFake{
-		summaries: map[uuid.UUID]*historypb.SessionSummary{
-			ids[0]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(oldUID)}},
-			ids[1]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}, LastTurnStatus: &unknownTurnStatus},
-			ids[2]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}},
-			ids[3]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(currentUID)}},
-			ids[5]: {Sandbox: &historypb.SandboxRef{Name: "reused", Uid: proto.String(oldUID)}},
-		},
-		sandboxes:   map[uuid.UUID]string{ids[0]: "reused", ids[1]: "reused", ids[2]: "reused", ids[3]: "reused", ids[4]: "reused", ids[5]: "reused"},
-		sandboxUIDs: map[uuid.UUID]string{ids[0]: oldUID, ids[1]: currentUID, ids[2]: currentUID, ids[3]: currentUID, ids[4]: currentUID, ids[5]: currentUID},
-	}
+	history := &threadReadHistoryFake{err: errors.New("test History unavailable")}
 	handler := threadhttp.NewHandler(threadhttp.Dependencies{Store: store, History: history})
-	first, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true})
+	token := ""
+	for index, id := range ids {
+		page, err := handler.ListThreadMetadata(t.Context(), &apppb.ListThreadMetadataRequest{Limit: 1, IncludeArchived: true, PageToken: token})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Threads) != 1 || page.Threads[0].GetThreadId() != id.String() || page.ArchivedCount != 1 {
+			t.Fatalf("page %d = %v", index, page)
+		}
+		if (page.NextPageToken != "") != (index < len(ids)-1) {
+			t.Fatalf("page %d token = %q", index, page.NextPageToken)
+		}
+		if index == 0 {
+			_, err := handler.ListThreadMetadata(t.Context(), &apppb.ListThreadMetadataRequest{PageToken: page.NextPageToken})
+			if status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("token with changed archive filter = %v", err)
+			}
+		}
+		token = page.NextPageToken
+	}
+	page, err := handler.ListThreadMetadata(t.Context(), &apppb.ListThreadMetadataRequest{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(first.Threads) != 1 || first.Threads[0].ThreadId != ids[1].String() || first.NextPageToken == "" || first.ArchivedCount != 1 {
-		t.Fatalf("first current-incarnation page = %+v", first)
+	if len(page.Threads) != 2 || page.Threads[0].GetThreadId() != ids[1].String() || page.Threads[0].GetName() != "test-title" || page.ArchivedCount != 1 {
+		t.Fatalf("default page = %v", page)
 	}
-	second, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(second.Threads) != 1 || second.Threads[0].ThreadId != ids[2].String() || second.ArchivedCount != 1 {
-		t.Fatalf("second current-incarnation page = %+v", second)
-	}
-	third, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1, IncludeArchived: true, PageToken: second.NextPageToken})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(third.Threads) != 1 || third.Threads[0].ThreadId != ids[3].String() || third.NextPageToken != "" || third.ArchivedCount != 1 {
-		t.Fatalf("third current-incarnation page = %+v, want the matching archived Thread only", third)
-	}
-	_, err = handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: oldUID, Limit: 1, IncludeArchived: true, PageToken: first.NextPageToken})
-	if status.Code(err) != codes.InvalidArgument {
-		t.Fatalf("cross-incarnation page token = %v", err)
-	}
-	defaultPage, err := handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID, Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if defaultPage.ArchivedCount != 1 || defaultPage.Threads[0].ThreadId != ids[1].String() {
-		t.Fatalf("default current-incarnation page = %+v", defaultPage)
-	}
-	history.err = errors.New("History unavailable")
-	_, err = handler.ListThreadMetadata(context.Background(), &apppb.ListThreadMetadataRequest{SandboxUid: currentUID})
-	if status.Code(err) != codes.Unavailable {
-		t.Fatalf("History failure = %v", err)
+	if history.calls != 0 {
+		t.Fatalf("listing called History %d times", history.calls)
 	}
 }
 
@@ -293,33 +262,8 @@ func (f *threadReadInventoryFake) GetEnvironment(_ context.Context, request *env
 }
 
 func (f *threadReadHistoryFake) GetSummary(_ context.Context, id uuid.UUID) (*historypb.SessionSummary, error) {
-	return f.summaries[id], nil
-}
-
-func (f *threadReadHistoryFake) BatchGetSummaries(_ context.Context, ids []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	result := make(map[uuid.UUID]*historypb.SessionSummary, len(ids))
-	for _, id := range ids {
-		result[id] = f.summaries[id]
-	}
-	return result, nil
-}
-
-func (f *threadReadHistoryFake) FindSessions(_ context.Context, _, _, sandboxUID *string) (map[uuid.UUID]string, error) {
-	if f.err != nil {
-		return nil, f.err
-	}
-	result := make(map[uuid.UUID]string)
-	if sandboxUID != nil {
-		for id, uid := range f.sandboxUIDs {
-			if uid == *sandboxUID {
-				result[id] = f.sandboxes[id]
-			}
-		}
-	}
-	return result, nil
+	f.calls++
+	return f.summaries[id], f.err
 }
 
 func TestThreadMutationsWithoutHistorySession(t *testing.T) {

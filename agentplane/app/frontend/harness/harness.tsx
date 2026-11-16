@@ -3429,10 +3429,7 @@ routes.push(
     "GET",
     /^\/upstream\/app\/v1\/threads$/,
     (_match, query) => {
-      const sandboxUID = query.get("sandbox_uid");
-      const all = THREADS_WITH_SANDBOXES.map(mapThread).filter(
-        (thread) => sandboxUID === null || thread.summary.sandbox?.uid === sandboxUID
-      );
+      const all = THREADS_WITH_SANDBOXES.map(mapThread);
       const archivedCount = all.filter((thread) => thread.metadata.archived).length;
       const includeArchived = query.get("include_archived") === "true";
       const listed = all.filter((thread) => includeArchived || !thread.metadata.archived);

@@ -1,7 +1,5 @@
-// Package threads owns app-browser Thread metadata over the app's retained-history projection. It
-// consumes app metadata storage and History summaries, returns generated AppService responses, and
-// streams Thread changes through the generated ProtoJSON encoder. The caller registrar enforces
-// browser authentication; History owns events and the Dispatcher owns Session delivery.
+// Package threads serves App-owned titles and archived state. Browsers join Session inventory
+// and History summaries through the owning services' HTTP facades.
 package threads
 
 import (
@@ -10,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,7 +31,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -51,11 +47,9 @@ type Store interface {
 	Unarchive(context.Context, uuid.UUID) (threadstore.Thread, error)
 }
 
-// History provides the Session identity needed to interpret Thread metadata.
+// History provides the Environment identity needed to guard archiving active Sessions.
 type History interface {
 	GetSummary(context.Context, uuid.UUID) (*historypb.SessionSummary, error)
-	BatchGetSummaries(context.Context, []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error)
-	FindSessions(context.Context, *string, *string, *string) (map[uuid.UUID]string, error)
 }
 
 // RuntimeStatusReader reads the status used to prevent archiving active Threads.
@@ -113,8 +107,7 @@ func NewHandler(dependencies Dependencies) *Handler {
 }
 
 type threadListing struct {
-	SandboxUID      *string `json:"sandbox_uid"`
-	IncludeArchived bool    `json:"include_archived"`
+	IncludeArchived bool `json:"include_archived"`
 }
 
 type threadPageToken struct {
@@ -228,71 +221,10 @@ func (h *Handler) ListThreadMetadata(ctx context.Context, request *apppb.ListThr
 		return nil, status.Errorf(codes.InvalidArgument, "limit must be between 1 and %d", threadMaxPageSize)
 	}
 	listing := threadListing{IncludeArchived: request.GetIncludeArchived()}
-	if request.GetSandboxUid() != "" {
-		listing.SandboxUID = stringPointer(request.GetSandboxUid())
-	}
 	var token *string
 	if request.GetPageToken() != "" {
 		value := request.GetPageToken()
 		token = &value
-	}
-	if listing.SandboxUID != nil {
-		if h.history == nil {
-			return nil, status.Error(codes.Unavailable, "Thread history is unavailable")
-		}
-		page, err := listEnvironmentThreads(ctx, h.store, h.history, listing, limit, token)
-		if err != nil {
-			if errors.Is(err, errMalformedThreadPageToken) || errors.Is(err, errMismatchedThreadListing) {
-				return nil, status.Error(codes.InvalidArgument, err.Error())
-			}
-			return nil, status.Error(codes.Unavailable, "list Environment Threads")
-		}
-		response := &apppb.ListThreadMetadataResponse{Threads: make([]*apppb.ThreadMetadata, 0, len(page.Threads))}
-		for _, thread := range page.Threads {
-			response.Threads = append(response.Threads, threadMetadataProto(thread))
-		}
-		if page.Next != nil {
-			response.NextPageToken, err = encodeThreadPageToken(listing, page.Next.CreatedAt, page.Next.ID)
-			if err != nil {
-				return nil, status.Error(codes.Unavailable, "list Environment Threads")
-			}
-		}
-		// ArchivedCount follows the same Sandbox UID filter, independent of whether this page
-		// includes archived Threads. Do not report the unrelated namespace-wide count.
-		matching, err := h.history.FindSessions(ctx, nil, nil, listing.SandboxUID)
-		if err != nil {
-			return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
-		}
-		var cursor *threadstore.PageCursor
-		for {
-			countPage, err := h.store.ListPage(ctx, threadMaxPageSize, cursor, true)
-			if err != nil {
-				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
-			}
-			ids := make([]uuid.UUID, 0, len(countPage.Threads))
-			for _, row := range countPage.Threads {
-				if _, belongs := matching[row.ID]; belongs && row.Archived {
-					ids = append(ids, row.ID)
-				}
-			}
-			summaries, err := h.history.BatchGetSummaries(ctx, ids)
-			if err != nil {
-				return nil, status.Error(codes.Unavailable, "count archived Environment Threads")
-			}
-			for _, id := range ids {
-				if summary := summaries[id]; summary != nil && summary.GetSandbox().GetUid() == *listing.SandboxUID {
-					response.ArchivedCount++
-				}
-			}
-			if countPage.Next == nil {
-				break
-			}
-			if cursor != nil && !cursorBefore(cursor, countPage.Next) {
-				return nil, status.Error(codes.Internal, "Thread metadata page cursor did not advance")
-			}
-			cursor = countPage.Next
-		}
-		return response, nil
 	}
 	after, err := decodeThreadPageToken(token, listing)
 	if err != nil {
@@ -363,62 +295,6 @@ func threadMetadataProto(thread threadstore.Thread) *apppb.ThreadMetadata {
 	}
 }
 
-func listEnvironmentThreads(ctx context.Context, store Store, history History, listing threadListing, limit int, token *string) (threadstore.Page, error) {
-	if limit < 1 || limit > threadMaxPageSize {
-		return threadstore.Page{}, fmt.Errorf("page size must be between 1 and %d", threadMaxPageSize)
-	}
-	after, err := decodeThreadPageToken(token, listing)
-	if err != nil {
-		return threadstore.Page{}, err
-	}
-	if listing.SandboxUID == nil {
-		return threadstore.Page{}, errors.New("Environment Thread listing requires a Sandbox UID")
-	}
-	sandboxUIDMatches, err := history.FindSessions(ctx, nil, nil, listing.SandboxUID)
-	if err != nil {
-		return threadstore.Page{}, err
-	}
-	page := threadstore.Page{Threads: make([]threadstore.Thread, 0, limit)}
-	for {
-		stored, err := store.ListPage(ctx, threadstore.MaxPage, after, listing.IncludeArchived)
-		if err != nil {
-			return threadstore.Page{}, err
-		}
-		ids := make([]uuid.UUID, 0, len(stored.Threads))
-		for _, thread := range stored.Threads {
-			ids = append(ids, thread.ID)
-		}
-		summaries, err := history.BatchGetSummaries(ctx, ids)
-		if err != nil {
-			return threadstore.Page{}, err
-		}
-		for _, thread := range stored.Threads {
-			summary := summaries[thread.ID]
-			_, matchesSandboxUID := sandboxUIDMatches[thread.ID]
-			if summary == nil || !matchesSandboxUID || summary.GetSandbox().GetUid() != *listing.SandboxUID {
-				continue
-			}
-			if len(page.Threads) == limit {
-				last := page.Threads[len(page.Threads)-1]
-				page.Next = &threadstore.PageCursor{CreatedAt: last.CreatedAt, ID: last.ID}
-				return page, nil
-			}
-			page.Threads = append(page.Threads, thread)
-		}
-		if stored.Next == nil {
-			return page, nil
-		}
-		if after != nil && !cursorBefore(after, stored.Next) {
-			return threadstore.Page{}, errors.New("Thread metadata page cursor did not advance")
-		}
-		after = stored.Next
-	}
-}
-
-func cursorBefore(left, right *threadstore.PageCursor) bool {
-	return left.CreatedAt.After(right.CreatedAt) || (left.CreatedAt.Equal(right.CreatedAt) && left.ID.String() > right.ID.String())
-}
-
 var (
 	errMalformedThreadPageToken = errors.New("malformed Thread page token")
 	errMismatchedThreadListing  = errors.New("Thread page token was issued for another listing")
@@ -453,7 +329,7 @@ func decodeThreadPageToken(token *string, listing threadListing) (*threadstore.P
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return nil, errMalformedThreadPageToken
 	}
-	if !sameThreadListing(value.Listing, listing) {
+	if value.Listing != listing {
 		return nil, errMismatchedThreadListing
 	}
 	return &threadstore.PageCursor{CreatedAt: value.CreatedAt, ID: value.ID}, nil
@@ -466,12 +342,6 @@ func encodeThreadPageToken(listing threadListing, created time.Time, id uuid.UUI
 	}
 	return base64.URLEncoding.EncodeToString(data), nil
 }
-
-func sameThreadListing(left, right threadListing) bool {
-	return ptr.Equal(left.SandboxUID, right.SandboxUID) && left.IncludeArchived == right.IncludeArchived
-}
-
-func stringPointer(value string) *string { return &value }
 
 func ensureThreadArchivable(ctx context.Context, namespace string, thread threadstore.Thread, summary *historypb.SessionSummary, inventory EnvironmentReader, environmentRuntime RuntimeStatusReader) error {
 	sandboxRef := summary.GetSandbox()
@@ -528,7 +398,7 @@ func threadMutationRPCError(err error) error {
 		return status.Error(codes.FailedPrecondition, err.Error())
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.Error(codes.DeadlineExceeded, "Upstream deadline expired")
-	case errors.Is(err, historydata.ErrInvalidPage), errors.Is(err, historydata.ErrInvalidSessionID), isHistoryConnectionError(err):
+	case errors.Is(err, historydata.ErrInvalidPage), isHistoryConnectionError(err):
 		return status.Error(codes.Unavailable, "Upstream service unavailable")
 	default:
 		switch status.Code(err) {

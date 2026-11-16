@@ -1,4 +1,4 @@
-// Package threads stores the app-owned metadata for each History Session.
+// Package threads stores the App-owned titles and archived state for Sessions.
 package threads
 
 import (
@@ -16,8 +16,7 @@ const (
 	MaxPage        = 200
 )
 
-// Thread is the app-owned metadata for one History Session. The History Service remains the authority
-// for its Sandbox identity and folded activity.
+// Thread is App-owned metadata for one Session.
 type Thread struct {
 	ID        uuid.UUID
 	CreatedAt time.Time
@@ -31,8 +30,7 @@ type PageCursor struct {
 	ID        uuid.UUID
 }
 
-// Page contains app-owned metadata and a cursor when another page may exist. Callers join History
-// summaries separately and can apply History-owned filters without coupling this store to that service.
+// Page contains App-owned metadata and a cursor when another page may exist.
 type Page struct {
 	Threads []Thread
 	Next    *PageCursor
@@ -47,7 +45,7 @@ type Store struct {
 // NewStore creates a thread metadata store.
 func NewStore(db *sql.DB) *Store { return &Store{db: db, now: time.Now} }
 
-// OpenThread creates the row before a newly opened History Session can receive a user message.
+// OpenThread creates metadata for a Session opened through the App.
 // Reopening the same ID leaves the existing row unchanged.
 func (s *Store) OpenThread(ctx context.Context, id uuid.UUID) error {
 	return withTx(ctx, s.db, func(tx *sql.Tx) error {
@@ -68,7 +66,7 @@ func (s *Store) OpenThread(ctx context.Context, id uuid.UUID) error {
 	})
 }
 
-// GetThread returns the metadata row, or nil when the History Session has not been opened by the app.
+// GetThread returns the metadata row, or nil when the App has no metadata for this Session.
 func (s *Store) GetThread(ctx context.Context, id uuid.UUID) (*Thread, error) {
 	thread, err := scanThread(s.db.QueryRowContext(ctx, `
 		SELECT id, created_at, name, archived
@@ -83,8 +81,7 @@ func (s *Store) GetThread(ctx context.Context, id uuid.UUID) (*Thread, error) {
 	return &thread, nil
 }
 
-// ListPage returns newest-first app metadata. The cursor and archive filter are applied in PostgreSQL;
-// History-backed sandbox and activity fields are joined by the caller.
+// ListPage returns newest-first App metadata using the cursor and archive filter.
 func (s *Store) ListPage(ctx context.Context, limit int, after *PageCursor, includeArchived bool) (Page, error) {
 	if limit < 1 || limit > MaxPage {
 		return Page{}, fmt.Errorf("thread page size must be between 1 and %d: %d", MaxPage, limit)

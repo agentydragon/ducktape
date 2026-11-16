@@ -58,7 +58,8 @@ service AppService {
     option (google.api.http) = {post: "/v1/threads/{thread_id}/unarchive" body: "*"};
   }
 
-  // List app-owned Thread metadata newest first.
+  // List App-owned titles and archived state by metadata creation time, newest first.
+  // Session membership and Environment placement come from Dispatcher, not this list.
   rpc ListThreadMetadata(ListThreadMetadataRequest) returns (ListThreadMetadataResponse) {
     option (google.api.http) = {
       get: "/v1/threads"
@@ -211,8 +212,8 @@ message ListThreadMetadataRequest {
   uint32 limit = 2;
   // Opaque cursor returned by the prior page.
   string page_token = 3;
-  // Restrict the listing to one exact Sandbox incarnation.
-  string sandbox_uid = 4;
+  reserved 4;
+  reserved "sandbox_uid";
 }
 
 message ListThreadMetadataResponse {

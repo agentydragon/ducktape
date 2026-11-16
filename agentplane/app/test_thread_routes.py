@@ -23,14 +23,14 @@ pytest_plugins = ("agentplane.app.integration_fixtures", "agentplane.app.testing
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 
 
-async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
+async def test_history_openings_do_not_create_app_thread_metadata(
     sandbox: SandboxCluster,
     session_dispatcher: SessionDispatcherClient,
     runner: RunningRunner,
     http: httpx.AsyncClient,
     spec: session_pb2.SessionSpec,
 ) -> None:
-    # No app HTTP request created this Session; History's first ingress creates its row.
+    # No app HTTP request created this Session; History owns its record independently of App metadata.
     session_id = uuid4()
     exact_spec = session_pb2.SessionSpec()
     exact_spec.CopyFrom(spec)
@@ -41,17 +41,15 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         session_dispatcher_pb2.CreateSessionRequest(session_id=str(session_id), spec=exact_spec),
     )
     await accepted_session(session_dispatcher, session_id)
-    # The app's production History watcher creates the Thread row; no command or SSE request ran.
+    # History records the Session, while the App has no metadata row for this History-only Session.
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
     ):
         with attempt:
-            metadata = await http.get(f"/upstream/app/v1/threads/{session_id}")
-            assert metadata.status_code == 200, metadata.text
-            assert metadata.json()["threadId"] == str(session_id)
             summary = await http.get(f"/upstream/history/v1/sessions/{session_id}/summary")
             assert summary.status_code == 200, summary.text
             assert summary.json()["sandbox"]["name"] == SANDBOX
+    assert (await http.get(f"/upstream/app/v1/threads/{session_id}")).status_code == 404
 
 
 async def test_app_session_route_records_the_exact_dispatcher_session_and_thread(

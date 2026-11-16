@@ -28,7 +28,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historyclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/historydata"
-	"github.com/agentydragon/ducktape/agentplane/app/internal/historywatch"
 	apphttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
 	sessionhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/sessions"
 	streamhttp "github.com/agentydragon/ducktape/agentplane/app/internal/httpapi/streams"
@@ -102,28 +101,14 @@ func Run(ctx context.Context, config settings.Config) error {
 		return fmt.Errorf("configure Connection Service gRPC client: %w", err)
 	}
 
-	newHistory := func() (*historyclient.Client, error) {
-		return historyclient.New(historyclient.Config{
-			TLS: config.HistoryServiceTLS, Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
-			Timeout: time.Duration(config.HistoryServiceRequestTimeoutSeconds * float64(time.Second)),
-		})
-	}
-	historyReaderClient, err := newHistory()
+	historyReaderClient, err := historyclient.New(historyclient.Config{
+		TLS: config.HistoryServiceTLS, Target: config.HistoryServiceTarget, TokenFile: config.HistoryServiceTokenFile,
+		Timeout: time.Duration(config.HistoryServiceRequestTimeoutSeconds * float64(time.Second)),
+	})
 	if err != nil {
 		return fmt.Errorf("configure History Service reader: %w", err)
 	}
 	defer historyReaderClient.Close()
-	historyWatchClient, err := newHistory()
-	if err != nil {
-		return fmt.Errorf("configure History Service watcher: %w", err)
-	}
-	defer historyWatchClient.Close()
-	historySessionClient, err := newHistory()
-	if err != nil {
-		return fmt.Errorf("configure Sessions watcher: %w", err)
-	}
-	defer historySessionClient.Close()
-
 	history, err := historydata.New(historyReaderClient)
 	if err != nil {
 		return err
@@ -192,22 +177,6 @@ func Run(ctx context.Context, config settings.Config) error {
 	})
 	if err != nil {
 		return fmt.Errorf("configure app authentication: %w", err)
-	}
-
-	historyWatchClientAdapter := historyWatchAdapter{historyWatchClient}
-	historyWatch, err := historywatch.NewHistoryWatch(historyWatchClientAdapter, func() {
-		if _, notifyErr := db.ExecContext(ctx, `SELECT pg_notify($1, '')`, threads.UpdatesChannel); notifyErr != nil {
-			logger.WarnContext(ctx, "publish History update wakeup", "error", notifyErr)
-		}
-	}, historywatch.Options{RetryInterval: time.Second})
-	if err != nil {
-		return fmt.Errorf("configure History summary watch: %w", err)
-	}
-	historySessionClientAdapter := historyWatchAdapter{historySessionClient}
-	historySessions, err := historywatch.NewSessions(historySessionClientAdapter, threadStore,
-		historywatch.Options{RetryInterval: time.Second})
-	if err != nil {
-		return fmt.Errorf("configure Sessions worker: %w", err)
 	}
 
 	actionTarget, err := grpcTargetFromHTTPURL(config.ActionFederation.ServiceURL)
@@ -356,26 +325,8 @@ func Run(ctx context.Context, config settings.Config) error {
 	}); err != nil {
 		return err
 	}
-	workers := []processWorker{
-		{name: "history-watch", run: historyWatch.Run},
-		{name: "history-sessions", run: historySessions.Run},
-	}
-	return serve(ctx, config, server, appAuth, workers)
+	return serve(ctx, config, server, appAuth, nil)
 }
-
-// historyWatchAdapter narrows the generated streaming client to the local worker interface.
-// Go method return types are invariant, so this small wrapper preserves the generated stream
-// while allowing the worker package to depend on its minimal Recv surface.
-type historyWatchAdapter struct{ client *historyclient.Client }
-
-func (c historyWatchAdapter) WatchSessionSummaries(
-	ctx context.Context,
-	request *historypb.WatchSessionSummariesRequest,
-) (historywatch.Stream, error) {
-	return c.client.WatchSessionSummaries(ctx, request)
-}
-
-func (c historyWatchAdapter) Redial() { c.client.Redial() }
 
 type threadEpochStore struct {
 	history *historydata.Store
