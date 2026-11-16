@@ -11826,8 +11826,10 @@ pub(crate) struct InferredForeignCall {
 
 impl InferredForeignCall {
     pub(crate) fn permits_foreign_summary(&self) -> bool {
-        self.declaration
-            .permits_foreign_summary(self.derived.retained_provider_captures.is_empty())
+        self.declaration.permits_foreign_summary(
+            self.derived.retained_provider_captures.is_empty()
+                && self.derived.provider_cell_reads.is_empty(),
+        )
     }
 }
 

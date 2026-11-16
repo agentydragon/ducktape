@@ -956,8 +956,12 @@ fn a_vendor_marked_provider_keeps_its_summary() {
 }
 
 #[test]
-fn initializer_call_and_record_summary_requires_an_isolated_provider() {
-    for (prefix, available) in [("", true), ("const unrelated = 0;\n", false)] {
+fn initializer_call_and_record_summary_requires_a_passive_provider() {
+    for (prefix, available) in [
+        ("", true),
+        ("const unrelated = 0;\n", true),
+        ("globalThis.ready = true;\n", false),
+    ] {
         let provider = format!(
             "{prefix}export const make = function () {{ const state = new Map(); return {{ get size() {{ return state.size; }} }}; }};\n"
         );

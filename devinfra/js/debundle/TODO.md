@@ -150,12 +150,13 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   specialized paths. Source initialization sites and summary eligibility share
   the flow census (<docs/inference.md>); reached-prefix readiness remains
   separate ordered evidence.
-  The isolated-initializer recognizer excludes providers with other statements.
+  Closed passive providers admit multiple inert declarations; providers with
+  imports or active initialization still lack a reached-prefix readiness proof.
   Reuse the shared interpreter to compose these independent facts through
   canonical import, alias, namespace and reexport identities; prove availability
   under emitted initialization order before broadening provider shapes. Close
   with local/imported equivalent-shape controls, initialized providers beyond
-  isolated leaves, and mutation, capture and early-cycle negatives, preserving
+  closed passive groups, and mutation, capture and early-cycle negatives, preserving
   exact dependencies through saved analysis. Extend the lifetime obligations in
   <plans/native_receiver_identity.md>; new recognizers need explicit checked
   preconditions rather than declaration-form shortcuts.

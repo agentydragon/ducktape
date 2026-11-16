@@ -809,20 +809,20 @@ Two consumers read the completed census:
   its existing conservative bypass. A source guard is not an observation
   that initialization completed.
 - Foreign-call preparation gets direct function/class/initializer candidates
-  and isolated-initializer eligibility from the same records. Function and
+  and passive-provider eligibility from the same records. Function and
   class declarations remain distinct. Publishing their body summaries does
   not prove class readiness or the readiness of captured cells. A callable
-  initializer is eligible only when its module contains that one `const`
-  declaration and local exports of the same binding, and the derived body
-  retains no provider captures. Other providers keep their existing fallback.
+  initializer is eligible when its closed provider has passive initialization
+  and the derived body reads and retains no provider cells. Other providers
+  keep their existing fallback. The availability proof below is independent of
+  the body summary and does not import future values into a caller's prefix.
 
 **Preservation.** Preparation records every owner previously counted by the
 statement census. A lexical guard's source shape implies the removed direct
 lexical/definite-initializer checks; uniqueness excludes hoisted/`var`
 redeclarations and imported bindings cannot satisfy the local declaration
-shape. The callable candidates and isolated-module conditions retain their
-previous exact source categories. All derived-body, stability, native-integrity
-and captured-cell checks still apply. Uniqueness and isolation are queried
+shape. All derived-body, stability, native-integrity and captured-cell checks
+still apply. Uniqueness and passive-provider eligibility are queried
 only after the census closes; an intermediate singleton is never a certificate.
 No value rule reads initialization facts, so their insertion changes no
 possible-value result or parameter-readiness activation.
@@ -838,6 +838,41 @@ there is no whole-module scan per callable candidate. The shared store retires
 these facts into source views during projection, and those views own them for
 their existing analysis lifetime. Saved artifacts retain the derived chunk
 facts and callable obligations, with no new persisted declaration graph.
+
+#### Closed passive provider availability
+
+The same source visit checks that every item is an ordinary simple `const`
+initialized by a function, arrow, or primitive literal; a function declaration;
+an empty statement; or a local named export. No initializer reads a binding,
+accesses a property, calls, coerces, destructures or executes a function body.
+Imports, reexports, mutable declarations and every other executable shape
+refuse the certificate. The completed census marks direct callable initializer
+sites only after all source items have been checked. Callable inference still
+requires one stable function value, no dynamic scope, a successful shared body
+derivation, and no read or retained provider cell. A passive provider does not
+make an invoking or effectful body eligible.
+
+**Availability under emission.** Every emitted provider owner contains only
+these inert source items. Generated imports and export forwards point to other
+owners of the same source: no source item imports an external module. Such
+owners can form cycles through deferred body references, but no owner's body
+calls user code or reads another owner's lexical cell during initialization.
+Consider the DFS induced by any admitted emitted import priority. A provider
+SCC has no edge back to an external consumer. Its inert bodies run to completion
+before the DFS returns to that consumer; in particular the owner of the imported
+function initializes it first. Export forwarding stays inside this closed
+subgraph and preserves the same conclusion. Thus the body summary can be used
+without dropping a possible preinitialization call. Existing local graph and
+ordering validation remains required. Hoisted declarations and classes retain
+their separate readiness rules; active/cyclic external providers gain none.
+
+**Cost and lifetime.** Passive admission inspects each source item and each
+local export specifier once, testing only the initializer's outer AST node.
+Finalization marks each existing declaration record once. For `n` source bytes
+and `D` declaration records this adds `O(n+D)` time, one census bit and one bit
+per callable initializer record. No body or transitive graph is rescanned per
+export, and no runtime request, context, cache or relation universe is added.
+The existing initialization census's polynomial bounds and retirement apply.
 
 ### Read-only opaque callback pools
 

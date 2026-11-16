@@ -1582,9 +1582,7 @@ impl FlowProgram {
             collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
-        collector
-            .events
-            .extend(initialization.finish(&mut collector.symbols));
+        collector.events.extend(initialization.finish());
         collector.origins.extend(candidate_objects.iter().copied());
         collector.origins.extend(
             native_set_allocations

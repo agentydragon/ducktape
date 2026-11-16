@@ -9,7 +9,7 @@ use super::*;
 pub(crate) enum CallableDeclaration {
     Function(u32),
     Class(u32),
-    Initializer { start: u32, isolated: bool },
+    Initializer { start: u32, passive_provider: bool },
 }
 
 impl CallableDeclaration {
@@ -26,7 +26,9 @@ impl CallableDeclaration {
     pub(crate) fn permits_foreign_summary(self, captures_empty: bool) -> bool {
         match self {
             Self::Function(_) | Self::Class(_) => true,
-            Self::Initializer { isolated, .. } => isolated && captures_empty,
+            Self::Initializer {
+                passive_provider, ..
+            } => passive_provider && captures_empty,
         }
     }
 
@@ -85,9 +87,10 @@ impl InitializationSites {
 #[derive(Default)]
 pub(super) struct InitializationCensus {
     declarations: BTreeMap<BindingSlot, InitializationSites>,
-    const_bindings: Vec<Id>,
-    local_exports: BTreeSet<Id>,
-    other_items: bool,
+    /// Every emitted owner contains only inert declarations and imports of
+    /// this provider's other owners. No owner can reenter an importer before
+    /// its imported callable has initialized, even inside a provider-local SCC.
+    active_provider: bool,
 }
 
 impl InitializationCensus {
@@ -134,7 +137,7 @@ impl InitializationCensus {
                 };
                 Some(CallableDeclaration::Initializer {
                     start,
-                    isolated: false,
+                    passive_provider: false,
                 })
             }),
             _ => None,
@@ -158,40 +161,57 @@ impl InitializationCensus {
                 decl: Decl::Var(_),
                 ..
             })) => {
-                if let Some((variable, _, binding)) = single_variable
-                    && variable.kind == VarDeclKind::Const
-                {
-                    self.const_bindings.push(binding);
-                } else {
-                    self.other_items = true;
-                }
+                self.active_provider |=
+                    !single_variable.is_some_and(|(variable, declarator, _)| {
+                        variable.kind == VarDeclKind::Const
+                            && !variable.declare
+                            && declarator.init.as_deref().is_some_and(|initializer| {
+                                matches!(
+                                    initializer.unwrap_parens(),
+                                    Expr::Fn(_)
+                                        | Expr::Arrow(_)
+                                        | Expr::Lit(
+                                            Lit::Str(_)
+                                                | Lit::Bool(_)
+                                                | Lit::Null(_)
+                                                | Lit::Num(_)
+                                                | Lit::BigInt(_)
+                                        )
+                                )
+                            })
+                    });
             }
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export)) if export.src.is_none() => {
                 for specifier in &export.specifiers {
-                    if let ExportSpecifier::Named(named) = specifier
-                        && let ModuleExportName::Ident(binding) = &named.orig
+                    if !matches!(specifier, ExportSpecifier::Named(named)
+                        if matches!(named.orig, ModuleExportName::Ident(_)))
                     {
-                        self.local_exports.insert(binding.to_id());
-                    } else {
-                        self.other_items = true;
+                        self.active_provider = true;
                     }
                 }
             }
-            _ => self.other_items = true,
+            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(_)))
+            | ModuleItem::Stmt(Stmt::Empty(_))
+            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
+                decl: Decl::Fn(_),
+                ..
+            })) => {}
+            _ => self.active_provider = true,
         }
     }
 
-    pub(super) fn finish(mut self, symbols: &mut FlowSymbols) -> Vec<FlowEvent> {
-        if !self.other_items
-            && let [binding] = self.const_bindings.as_slice()
-            && self.local_exports.iter().all(|export| export == binding)
-            && let Some(sites) = self.declarations.get_mut(&symbols.binding(binding.clone()))
-        {
-            for declaration in sites.0.values_mut() {
-                if let Some(CallableDeclaration::Initializer { isolated, .. }) =
-                    &mut declaration.callable
+    pub(super) fn finish(mut self) -> Vec<FlowEvent> {
+        if !self.active_provider {
+            for declaration in self
+                .declarations
+                .values_mut()
+                .flat_map(|sites| sites.0.values_mut())
+            {
+                if let Some(CallableDeclaration::Initializer {
+                    passive_provider, ..
+                }) = &mut declaration.callable
                 {
-                    *isolated = true;
+                    *passive_provider = true;
                 }
             }
         }
