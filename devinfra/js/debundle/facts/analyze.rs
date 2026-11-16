@@ -223,25 +223,6 @@ pub fn complete_chunk_structural(
     complete_chunk_structural_with_inputs(source, &[], &BTreeMap::new(), &[])
 }
 
-/// The canonical value flow `complete_chunk_structural_with_inputs` solves for
-/// `body` under these native-operation inputs.
-pub(crate) fn structural_value_flow(
-    body: &[TopLevelItemView<'_>],
-    native_operation_inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
-    inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
-) -> ChunkValueFlow {
-    let mut candidate_roots = super::abstract_domain::heap::tracked_allocation_roots(body);
-    candidate_roots.extend(super::heap_contents::array_candidate_roots(body));
-    ChunkValueFlow::analyze_with_native_set_allocations(
-        body,
-        &candidate_roots,
-        &super::value_flow::native_set_allocation_roots(
-            native_operation_inputs,
-            inferred_set_constructions,
-        ),
-    )
-}
-
 /// Complete the source census with selected native-operation and argument
 /// inputs before deriving plain-data, Set, and synchronous-call facts.
 /// The argument analysis and native allocation roots share one canonical flow.
@@ -251,20 +232,20 @@ pub fn complete_chunk_structural_with_inputs<'a>(
     inferred_set_constructions: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
 ) -> StructuralChunkAnalysis<'a> {
-    let value_flow = structural_value_flow(
+    let value_flow = ChunkValueFlow::analyze_structural(
         &source.body,
         native_operation_inputs,
         inferred_set_constructions,
     );
-    complete_chunk_structural_with_flow(source, argument_inputs, value_flow)
+    complete_chunk_structural_with_flow(source, argument_inputs, std::sync::Arc::new(value_flow))
 }
 
 /// `complete_chunk_structural_with_inputs` reusing a flow that
-/// `structural_value_flow` already solved for the same body and inputs.
+/// the program value flow already solved for the same body and inputs.
 pub(crate) fn complete_chunk_structural_with_flow<'a>(
     source: StructuralChunkSourceFacts<'a>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
-    value_flow: ChunkValueFlow,
+    value_flow: std::sync::Arc<ChunkValueFlow>,
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,

@@ -319,6 +319,7 @@ impl<'a> SavedProgramSummary<'a> {
             })
             .collect::<Result<_>>()?;
         Ok(ProgramSummary {
+            structural_flows: Default::default(),
             bindings,
             value_inputs,
             values: self.values.into_owned(),
@@ -649,6 +650,7 @@ mod tests {
             )]),
         )]);
         let summary = ProgramSummary {
+            structural_flows: Default::default(),
             bindings: BTreeMap::new(),
             values: BTreeMap::new(),
             primitive_reads: primitive_reads.clone(),

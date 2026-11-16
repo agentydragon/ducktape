@@ -1026,7 +1026,7 @@ pub(crate) struct ConstructorFacts {
 pub struct StructuralChunkAnalysis<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) imported_bindings: BTreeSet<Id>,
-    pub(crate) value_flow: super::ChunkValueFlow,
+    pub(crate) value_flow: std::sync::Arc<super::ChunkValueFlow>,
     pub(crate) dynamic_scope: super::DynamicScopeFact,
     pub(crate) set_iterable_shapes: super::SetIterableShapes,
     pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,

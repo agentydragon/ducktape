@@ -84,6 +84,8 @@ pub struct ReparsedEntry {
 
 /// Program-wide analysis summaries, keyed by source chunk name.
 pub struct ProgramSummary {
+    /// Fresh source analysis only; saved summaries restore derived chunk facts.
+    pub structural_flows: analysis::facts::ProgramValueFlows,
     /// Per-chunk imported-binding verdicts (`AnalysisInputs::imported_purities`).
     pub bindings: BTreeMap<String, BTreeMap<String, Arc<Purity>>>,
     /// Per-chunk imports of never-rebound provider cells
@@ -892,6 +894,7 @@ pub fn collect_program_summary(
         };
     }
     Ok(ProgramSummary {
+        structural_flows: callable_summaries.structural_flows,
         no_reentry_callback_exports: members!(
             no_reentry_callback_exports,
             NoReentryCallbackExports

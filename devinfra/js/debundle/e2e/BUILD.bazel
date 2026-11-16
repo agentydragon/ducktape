@@ -1752,3 +1752,13 @@ debundle_e2e_test(
         "@crates//:serde_yaml",
     ],
 )
+
+debundle_e2e_test(
+    name = "program_value_flow_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:analysis_model",
+    ],
+)

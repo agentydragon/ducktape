@@ -1,11 +1,16 @@
-//! Monotone, intra-chunk value identities for local calls and object aliases.
+//! Monotone value identities for calls and object aliases.
 //!
 //! The sets deliberately over-approximate: an unsupported expression yields
 //! `Unknown`, and every assignment adds possible values rather than replacing
 //! them. The same facts feed at-init call promotion and PlainData's escape
 //! check, so an alias/return cannot be understood by one pass and invisible to
-//! the other. This is context-insensitive; it makes no claim about values from
-//! other chunks.
+//! the other. `program` qualifies source identities and joins these same rules
+//! across imports. The relation is context-insensitive and supplies no proof
+//! of call effects, initialization availability or normal completion.
+
+mod program;
+pub use program::ProgramValueFlows;
+pub(crate) use program::{ProgramFlowModule, program_value_flows};
 
 use source_identity::SourceUnitOrdinal;
 #[cfg(test)]
@@ -502,6 +507,7 @@ impl CandidateObjectIndex<'_> {
 #[cfg_attr(test, derive(PartialEq, Eq))]
 pub(crate) struct ChunkValueFlow {
     origin_table: Arc<OriginTable>,
+    program: Option<program::ChunkProgramFlow>,
     declared_ids: BTreeSet<Id>,
     bindings: BTreeMap<Id, Values>,
     properties: BTreeMap<u32, HashMap<String, Values>>,
@@ -692,21 +698,12 @@ impl ChunkValueFlow {
         FlowProgram::collect(body, candidates).solve().0
     }
 
-    pub(crate) fn analyze_with_native_set_allocations(
+    pub(crate) fn analyze_structural(
         body: &[TopLevelItemView<'_>],
-        candidates: &BTreeSet<Value>,
-        allocations: &BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
+        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
     ) -> Self {
-        let mut candidates = candidates.clone();
-        candidates.extend(
-            allocations
-                .keys()
-                .copied()
-                .map(|site| Value::Alloc(Kind::Set, site)),
-        );
-        FlowProgram::collect_with_native_set_allocations(body, &candidates, allocations)
-            .solve()
-            .0
+        FlowProgram::structural(body, inputs, inferred).solve().0
     }
 
     pub(crate) fn native_set_allocations(
@@ -844,6 +841,9 @@ impl ChunkValueFlow {
     }
 
     pub(crate) fn values_of_expr(&self, expr: &Expr) -> Values {
+        if let Some(program) = &self.program {
+            return program.values_of_expr(expr, self);
+        }
         match expr.unwrap_parens() {
             Expr::Ident(ident) => self.values_of_binding(&ident.to_id()),
             Expr::Fn(function) => {
@@ -1435,6 +1435,8 @@ enum CandidateRule {
 }
 
 struct FlowProgram {
+    module_bindings: BTreeMap<String, BindingSlot>,
+    imports: Vec<BindingSlot>,
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
@@ -1447,6 +1449,22 @@ struct FlowProgram {
 }
 
 impl FlowProgram {
+    fn structural(
+        body: &[TopLevelItemView<'_>],
+        inputs: &[crate::analysis_inputs::ResolvedNativeOperationInput],
+        inferred: &BTreeMap<u32, crate::analysis_inputs::InferredSetConstruction>,
+    ) -> Self {
+        let mut candidates = super::abstract_domain::heap::tracked_allocation_roots(body);
+        candidates.extend(super::heap_contents::array_candidate_roots(body));
+        let allocations = native_set_allocation_roots(inputs, inferred);
+        candidates.extend(
+            allocations
+                .keys()
+                .map(|site| Value::Alloc(Kind::Set, *site)),
+        );
+        Self::collect_with_native_set_allocations(body, &candidates, &allocations)
+    }
+
     fn collect(body: &[TopLevelItemView<'_>], candidate_objects: &BTreeSet<Value>) -> Self {
         Self::collect_with_native_set_allocations(body, candidate_objects, &BTreeMap::new())
     }
@@ -1468,7 +1486,20 @@ impl FlowProgram {
             native_set_allocations: native_set_allocations.clone(),
             fresh_returned_record_keys: BTreeMap::new(),
         };
+        let mut module_bindings = BTreeMap::new();
+        let mut imports = Vec::new();
         for (ordinal, item) in body.iter().enumerate() {
+            for id in super::item_views::collect_declared_names(item.as_module_item()) {
+                module_bindings.insert(id.0.to_string(), collector.symbols.binding(id));
+            }
+            if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item.as_module_item() {
+                for specifier in &import.specifiers {
+                    let local = specifier.local().to_id();
+                    let slot = collector.symbols.binding(local.clone());
+                    module_bindings.insert(local.0.to_string(), slot);
+                    imports.push(slot);
+                }
+            }
             collector.source_unit = SourceUnitOrdinal(ordinal);
             item.as_module_item().visit_with(&mut collector);
         }
@@ -1480,6 +1511,8 @@ impl FlowProgram {
                 .map(|site| Value::Alloc(Kind::Set, site)),
         );
         Self {
+            module_bindings,
+            imports,
             declared_ids: collector.declared_ids,
             symbols: collector.symbols,
             events: collector.events,
@@ -1494,6 +1527,8 @@ impl FlowProgram {
 
     fn solve(self) -> (ChunkValueFlow, usize, usize) {
         let Self {
+            module_bindings: _,
+            imports: _,
             declared_ids,
             symbols,
             events,
@@ -1504,45 +1539,14 @@ impl FlowProgram {
             native_set_allocations,
             fresh_returned_record_keys,
         } = self;
-        let producer_count = events.len();
-        #[cfg(test)]
-        let argument_evaluations = Rc::new(Cell::new(0));
-        #[cfg(test)]
-        let event_executions = Rc::new(Cell::new(0));
-        let rules = FlowRules {
+        let (facts, evaluations, argument_evaluations) = solve_flow(
             events,
-            declared: symbols.declared(&declared_ids),
-            origin_table: origin_table.clone(),
-            #[cfg(test)]
-            argument_evaluations: argument_evaluations.clone(),
-            #[cfg(test)]
-            event_executions: event_executions.clone(),
-        };
-        let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
-        let facts = if candidate_objects.is_empty() {
-            values.into_values()
-        } else {
-            let rules = CandidateRules::new(
-                origin_table.clone(),
-                native_set_allocations.keys().copied().collect(),
-                values.keys(),
-                &candidate_objects,
-            );
-            let mut inference = IterativeInference::from_completed(rules, values);
-            for (index, object) in candidate_objects.iter().copied().enumerate() {
-                let mut bits = RoaringBitmap::new();
-                bits.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
-                inference.seed(
-                    FlowKey::CandidateReachable(origin_table.id(object)),
-                    FlowFact::CandidateReachability(Arc::new(bits)),
-                );
-            }
-            inference.solve_values([])
-        };
-        #[cfg(test)]
-        let evaluations = event_executions.get();
-        #[cfg(not(test))]
-        let evaluations = 0;
+            symbols.declared(&declared_ids),
+            origin_table.clone(),
+            &candidate_objects,
+            native_set_allocations.keys().copied().collect(),
+        );
+
         let mut flow = ChunkValueFlow {
             candidate_objects,
             origin_table,
@@ -1592,12 +1596,59 @@ impl FlowProgram {
                 _ => unreachable!("flow key and fact variants must agree"),
             }
         }
-        #[cfg(test)]
-        let argument_evaluations = argument_evaluations.get();
-        #[cfg(not(test))]
-        let argument_evaluations = 0;
         (flow, evaluations, argument_evaluations)
     }
+}
+
+/// The shared value and completed-candidate strata, independent of the source
+/// coordinate system used to prepare their constraints.
+fn solve_flow(
+    events: Vec<FlowEvent>,
+    declared: Vec<bool>,
+    origin_table: Arc<OriginTable>,
+    candidate_objects: &[Value],
+    native_set_allocations: BTreeSet<u32>,
+) -> (BTreeMap<FlowKey, FlowFact>, usize, usize) {
+    let producer_count = events.len();
+    #[cfg(test)]
+    let argument_evaluations = Rc::new(Cell::new(0));
+    #[cfg(test)]
+    let event_executions = Rc::new(Cell::new(0));
+    let rules = FlowRules {
+        events,
+        declared,
+        origin_table: origin_table.clone(),
+        #[cfg(test)]
+        argument_evaluations: argument_evaluations.clone(),
+        #[cfg(test)]
+        event_executions: event_executions.clone(),
+    };
+    let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
+    let facts = if candidate_objects.is_empty() {
+        values.into_values()
+    } else {
+        let rules = CandidateRules::new(
+            origin_table.clone(),
+            native_set_allocations,
+            values.keys(),
+            candidate_objects,
+        );
+        let mut inference = IterativeInference::from_completed(rules, values);
+        for (index, object) in candidate_objects.iter().copied().enumerate() {
+            let mut bits = RoaringBitmap::new();
+            bits.insert(u32::try_from(index).expect("candidate object count exceeds u32"));
+            inference.seed(
+                FlowKey::CandidateReachable(origin_table.id(object)),
+                FlowFact::CandidateReachability(Arc::new(bits)),
+            );
+        }
+        inference.solve_values([])
+    };
+    #[cfg(test)]
+    let counts = (event_executions.get(), argument_evaluations.get());
+    #[cfg(not(test))]
+    let counts = (0, 0);
+    (facts, counts.0, counts.1)
 }
 
 struct FlowProgramCollector {
