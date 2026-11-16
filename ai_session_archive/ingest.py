@@ -43,10 +43,10 @@ from ai_session_archive.statuses import (
     SnapshotProcessingStatus,
 )
 from ai_session_archive.usage_observations import UsageObservation, usage_observations_for_record
+from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage
 
 PARSER_VERSION = "jsonl-v1"
 CLAUDE_TITLE_PROJECTION_VERSION = 1
-CHECKPOINT_INTERVAL = 64
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
 _KNOWN_DIFF_MODIFIERS = frozenset(("+", "-", "M", "T", "?", "U"))
 
@@ -1637,16 +1637,8 @@ def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> 
 
 
 def _version_lineage_ranks(db: DbSession, version: FileVersionRow) -> dict[UUID, int]:
-    lineage = [version]
-    while not lineage[-1].is_checkpoint:
-        parent_id = lineage[-1].parent_version_id
-        if parent_id is None or len(lineage) > CHECKPOINT_INTERVAL:
-            raise RuntimeError(f"invalid file version delta chain at {lineage[-1].id}")
-        parent = db.get(FileVersionRow, parent_id)
-        if parent is None or parent.session_id != version.session_id:
-            raise RuntimeError(f"file version has an invalid parent: {lineage[-1].id}")
-        lineage.append(parent)
-    return {row.id: rank for rank, row in enumerate(lineage)}
+    # Preserve the importer's existing limit, one edge more than the read API's.
+    return {row.id: rank for rank, row in enumerate(version_lineage(db, version, max_delta_depth=CHECKPOINT_INTERVAL))}
 
 
 def _effective_payload_ids(
