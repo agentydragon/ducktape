@@ -126,6 +126,15 @@ grafana_dashboard(
 )
 
 grafana_dashboard(
+    name = "authentik",
+    srcs = ["authentik.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+grafana_dashboard(
     name = "zot_cache_image_pulls",
     srcs = ["zot_cache_image_pulls.py"],
     deps = [

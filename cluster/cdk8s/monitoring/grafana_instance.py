@@ -337,6 +337,7 @@ type Dashboard = LocalDashboard | GrafanaComDashboard
 
 
 _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
+    LocalDashboard("authentik", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "authentik.json"),
     LocalDashboard("buildbuddy-executor-pool", "CI", (("DS_MIMIR", "mimir"),), "buildbuddy-executor-pool.json"),
     LocalDashboard(
         "zot-cache-image-pulls",
@@ -372,7 +373,6 @@ _DASHBOARD_DEFINITIONS: tuple[Dashboard, ...] = (
     LocalDashboard("flux-cluster", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "flux-cluster.json"),
     LocalDashboard("rugged-power", "Nodes & Hardware", (("DS_MIMIR", "mimir"),), "rugged-power.json"),
     GrafanaComDashboard("cert-manager", "Cluster & Platform", (("datasource", "Mimir"),), 20842, 3),
-    GrafanaComDashboard("authentik", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 14837, 2),
     GrafanaComDashboard("cloudnative-pg", "Cluster & Platform", (("DS_PROMETHEUS", "Mimir"),), 20417, 3),
     GrafanaComDashboard("cilium-agent", "Network", (("DS_PROMETHEUS", "Mimir"),), 16611, 1),
     LocalDashboard("etcd", "Cluster & Platform", (("DS_MIMIR", "mimir"),), "etcd.json"),
