@@ -13,10 +13,11 @@ from pathlib import Path
 import yaml
 
 from ai_session_archive.database import make_engine, make_session_factory
-from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.migrate_cli import main as migrate_database
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticRepository
+from ai_session_archive.snapshot_inventory import HarnessRoot
 
 
 def _configured_roots(cli_values: list[str], archive_env: str) -> list[str]:

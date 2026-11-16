@@ -33,11 +33,12 @@ from ai_session_archive.database import (
     SnapshotFileRow,
     UsageObservationRow,
 )
-from ai_session_archive.ingest import ArchiveSource, HarnessRoot, IngestReport, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, IngestReport, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from ai_session_archive.snapshot_inventory import HarnessRoot
 from ai_session_archive.version_queries import get_version, list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -266,18 +267,18 @@ def test_failed_inventory_cannot_overwrite_concurrent_success(postgres_engine: E
     importer = _ingestor(postgres_engine, _contents())
     winner = _ingestor(postgres_engine, _contents())
     importer._ensure_source()
-    importer._discover_snapshots([SNAPSHOT])
-    mark_failed = importer._mark_inventory_failed
+    importer._inventory.discover([SNAPSHOT])
+    mark_failed = importer._inventory.mark_failed
 
     def finish_inventory_before_failure_marker(snapshot: ResticSnapshot, error: Exception) -> None:
-        winner._prepare_snapshot(snapshot, {snapshot.id})
+        winner._inventory.prepare(snapshot, {snapshot.id})
         mark_failed(snapshot, error)
 
     with (
         patch.object(importer._source.restic, "list_files", side_effect=RuntimeError("injected inventory failure")),
-        patch.object(importer, "_mark_inventory_failed", side_effect=finish_inventory_before_failure_marker),
+        patch.object(importer._inventory, "mark_failed", side_effect=finish_inventory_before_failure_marker),
     ):
-        importer._prepare_snapshot(SNAPSHOT, {SNAPSHOT.id})
+        importer._inventory.prepare(SNAPSHOT, {SNAPSHOT.id})
     with sessionmaker(postgres_engine)() as db:
         snapshot = db.get(ResticSnapshotRow, ("batch-test", SNAPSHOT.id))
         assert snapshot is not None

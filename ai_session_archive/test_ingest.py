@@ -8,17 +8,11 @@ import pytest_bazel
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import ResticSnapshotRow
-from ai_session_archive.ingest import (
-    ArchiveSource,
-    HarnessRoot,
-    SnapshotIngestor,
-    _assert_snapshot_identity,
-    _extract_session_metadata,
-    _remember_session_kind,
-)
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor, _extract_session_metadata, _remember_session_kind
 from ai_session_archive.models import Harness, SessionKind
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.restic import ResticChange, ResticRepository, ResticSnapshot
+from ai_session_archive.snapshot_inventory import HarnessRoot, assert_snapshot_identity
 
 SNAPSHOT = ResticSnapshot(
     id="snapshot-test",
@@ -51,9 +45,9 @@ def test_snapshot_identity_rejects_metadata_drift(changed_snapshot: ResticSnapsh
         inventory_status="complete",
         processing_status="failed",
     )
-    _assert_snapshot_identity(snapshot_row, SNAPSHOT)
+    assert_snapshot_identity(snapshot_row, SNAPSHOT)
     with pytest.raises(RuntimeError, match="Restic metadata changed"):
-        _assert_snapshot_identity(snapshot_row, changed_snapshot)
+        assert_snapshot_identity(snapshot_row, changed_snapshot)
 
 
 def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:
@@ -74,7 +68,7 @@ def test_unit_restic_question_modifier_is_an_indexable_content_change() -> None:
         roots=(HarnessRoot(Harness.CLAUDE, "/home/archive/.claude"),),
     )
     ingestor = SnapshotIngestor(sessionmaker(), source)
-    entries = ingestor._changed_entries(changes)
+    entries = ingestor._inventory.changed_entries(changes)
     assert entries[0][5] == "pending"
     assert entries[0][1] == "?"
 

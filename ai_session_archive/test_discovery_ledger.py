@@ -11,9 +11,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import FileVersionRow, ResticSnapshotRow, SnapshotFileRow
-from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from ai_session_archive.snapshot_inventory import HarnessRoot
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
 
@@ -151,7 +152,7 @@ def test_repeated_ingest_skips_completed_snapshot_work(postgres_engine: Engine) 
     assert repository.dumped == [snapshot.id]
 
     with (
-        patch.object(ingestor, "_prepare_snapshot", wraps=ingestor._prepare_snapshot) as prepare_snapshot,
+        patch.object(ingestor._inventory, "prepare", wraps=ingestor._inventory.prepare) as prepare_snapshot,
         patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
         patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
     ):

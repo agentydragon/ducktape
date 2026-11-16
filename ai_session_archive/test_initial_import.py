@@ -17,9 +17,10 @@ from ai_session_archive.database import (
     SessionRow,
     SnapshotFileRow,
 )
-from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import get_session, list_sessions
+from ai_session_archive.snapshot_inventory import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.version_queries import list_events, list_versions
 

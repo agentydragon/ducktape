@@ -12,9 +12,10 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 
 from ai_session_archive.database import FileVersionRow, RecordPayloadRow, ResticSnapshotRow, SnapshotFileRow
-from ai_session_archive.ingest import ArchiveSource, HarnessRoot, SnapshotIngestor
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from ai_session_archive.snapshot_inventory import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
@@ -124,14 +125,14 @@ def test_inventory_rechecks_diff_parent_after_restic_read(postgres_engine: Engin
     )
     ingestor = SnapshotIngestor(factory, source)
     ingestor._ensure_source()
-    ingestor._discover_snapshots([parent, child])
+    ingestor._inventory.discover([parent, child])
     with factory() as db, db.begin():
         parent_row = db.get(ResticSnapshotRow, ("parent-change-test", parent.id))
         assert parent_row is not None
         parent_row.inventory_status = "complete"
         parent_row.processing_status = "complete"
 
-    ingestor._prepare_snapshot(child, {parent.id, child.id})
+    ingestor._inventory.prepare(child, {parent.id, child.id})
 
     with factory() as db:
         child_row = db.get(ResticSnapshotRow, ("parent-change-test", child.id))
