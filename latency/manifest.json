@@ -1,23 +1,23 @@
 {
-  "source_devel_commit": "e229ebb73134b6dab67badb727c6d3b46eaf2263",
-  "window_start_utc": "2026-11-13T00:00:00Z",
-  "window_end_utc": "2026-11-15T13:55:00Z",
+  "source_devel_commit": "ad2ddb7b9a45bfe1e8b1e90d9e87d40ed8d75f39",
+  "window_start_utc": "2026-11-10T00:00:00Z",
+  "window_end_utc": "2026-11-16T10:45:00Z",
   "published_at_utc": null,
   "attribution": "not collected",
-  "snapshot_prepared_at_utc": "2026-11-15T14:12:47.369043+00:00",
-  "audited_at_utc": "2026-11-15T14:12:47.369043+00:00",
+  "snapshot_prepared_at_utc": "2026-11-16T11:30:10.027160+00:00",
+  "audited_at_utc": "2026-11-16T11:22:53.649014+00:00",
   "publication_status": "Prepared for gh-pages PR; deployment follows merge",
-  "previous_report_commit": "5552e805f1550fbca773583a07192c8ecb2c191a",
-  "population": "144 sampled latest heads; backend production59 (58 green,1 failed); paths and day balanced, not traffic weighted",
-  "feedback_clock": "First exact-head PR workflow creation to latest required success; push and actual auto-merge eligibility not observed",
+  "previous_report_commit": "69a428562003abb6df71e72c2a9f3c7c2dd8b235",
+  "history_base_gh_pages_commit": "73f2a736861ab4fdaf60bd33962a09d2235bfe11",
+  "population": "136 balanced exact latest heads, 10-16Nov; new backend subset12green/13heads",
+  "feedback_clock": "Exact-head first PR workflow creation to latest required success; push and historical auto-merge eligibility unobserved",
+  "report_sha256": "11c32b6aaf8b1378de8df4b56b010db59d656b52210b5e03870c773ce513d619",
+  "evidence_sha256": "f2481655b98298849005728a282bed9c0ae0df023328147efc8f65e77f011f32",
   "visual_validation": "visual-validation.json",
-  "report_sha256": "b9087334f9b2cf466884fd0bec70739c0b4ddf32d639e046683e0b342307ff7a",
-  "evidence_sha256": "24be321cb50a474f14789166445677ea978f46832d3e2871c576fb7f78e1c2ca",
-  "visual_invocation": "7f3112be-d448-4de5-9055-f975e00f0f0b",
-  "collection_window_utc": [
-    "2026-11-15T13:55:36.631732Z",
-    "2026-11-15T13:59:53.149154Z"
+  "visual_invocation": "08fde914-bf02-4be2-a1eb-9773e9bdac8d",
+  "experiment_window_utc": [
+    "2026-11-16T10:58:11.934Z",
+    "2026-11-16T11:11:20.708Z"
   ],
-  "history_base_gh_pages_commit": "5552e805f1550fbca773583a07192c8ecb2c191a",
-  "publication_base_gh_pages_commit": "34fc462409c2504d21ba16bee4ec9793fe4d4763"
+  "window_note": "Primary window describes the PR cohort. The separate bounded resource experiment is timestamped above."
 }
