@@ -4,13 +4,134 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
+	"io/fs"
+	"path"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	_ "github.com/lib/pq"
 )
 
 const gooseTable = "runner_gateway_dispatcher_goose_version"
+
+func TestDispatchVersionUpgradePreservesRows(t *testing.T) {
+	db := openMigrationDatabase(t)
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 23); err != nil {
+		t.Fatal("create pre-version schema:", err)
+	}
+	insertRetainedEvidence(t, db)
+	const uid = "00000000-0000-0000-0000-000000000001"
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO dispatch
+		(command_id,session_id,sandbox_name,sandbox_uid,operation,command,state,created_at,updated_at,
+		 actor_account_namespace,actor_account_name,actor_account_uid,
+		 effective_caller_account_namespace,effective_caller_account_name,effective_caller_account_uid)
+		VALUES ('test-version-retained-second-command','retained-session','deleted-environment',$1,
+		 'submit_input',$2,'QUEUED_IN_DISPATCHER',now(),now(),
+		 'test','owner','old-service-account-uid','test','owner','old-service-account-uid')`, uid, []byte{0x08, 0x03}); err != nil {
+		t.Fatal("insert second pre-version dispatch:", err)
+	}
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal("apply dispatch version migration:", err)
+	}
+	assertRetainedEvidence(t, db)
+	rows, err := db.QueryContext(t.Context(), `SELECT command_id,version FROM dispatch
+		WHERE command_id IN ('uncertain-command','test-version-retained-second-command') ORDER BY command_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions := map[string]int64{}
+	for rows.Next() {
+		var commandID string
+		var version int64
+		if err := rows.Scan(&commandID, &version); err != nil {
+			rows.Close()
+			t.Fatal(err)
+		}
+		versions[commandID] = version
+	}
+	if err := rows.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 2 || versions["uncertain-command"] <= 0 || versions["test-version-retained-second-command"] <= 0 || versions["uncertain-command"] == versions["test-version-retained-second-command"] {
+		t.Fatalf("backfilled dispatch versions = %v, want two positive distinct values", versions)
+	}
+	var tombstones int
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*) FROM dispatch_tombstone").Scan(&tombstones); err != nil {
+		t.Fatal(err)
+	}
+	if tombstones != 0 {
+		t.Fatalf("backfill made %d tombstones from retained rows", tombstones)
+	}
+}
+
+func TestPreviousImageStartupAndSQLWritesRemainCompatible(t *testing.T) {
+	db := openMigrationDatabase(t)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	legacySchema := schema
+	legacySchema.Files = migrationFilesThrough(t, 23)
+	legacyProvider, err := legacySchema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacyProvider.Up(t.Context()); err != nil {
+		t.Fatalf("previous image migrations could not start against version 24 schema: %v", err)
+	}
+	insertRetainedEvidence(t, db)
+	var beforeUpdate int64
+	if err := db.QueryRowContext(t.Context(), "SELECT version FROM dispatch WHERE command_id='uncertain-command'").Scan(&beforeUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), "UPDATE dispatch SET state='FAILED' WHERE command_id='uncertain-command'"); err != nil {
+		t.Fatal("previous image update omitted version column:", err)
+	}
+	var afterUpdate int64
+	if err := db.QueryRowContext(t.Context(), "SELECT version FROM dispatch WHERE command_id='uncertain-command'").Scan(&afterUpdate); err != nil {
+		t.Fatal(err)
+	}
+	if afterUpdate <= beforeUpdate {
+		t.Fatalf("previous image update version = %d, prior = %d", afterUpdate, beforeUpdate)
+	}
+	if _, err := db.ExecContext(t.Context(), "DELETE FROM dispatch WHERE command_id='uncertain-command'"); err != nil {
+		t.Fatal("previous image delete:", err)
+	}
+	var tombstoneVersion int64
+	var state string
+	if err := db.QueryRowContext(t.Context(), `SELECT version,state FROM dispatch_tombstone
+		WHERE command_id='uncertain-command'`).Scan(&tombstoneVersion, &state); err != nil {
+		t.Fatal("read previous image tombstone:", err)
+	}
+	if tombstoneVersion <= afterUpdate || state != "FAILED" {
+		t.Fatalf("previous image tombstone version/state = %d/%q, after update %d", tombstoneVersion, state, afterUpdate)
+	}
+}
+
+func migrationFilesThrough(t *testing.T, version int) fstest.MapFS {
+	t.Helper()
+	entries, err := fs.ReadDir(scripts, "dispatcher")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := fstest.MapFS{}
+	for _, entry := range entries {
+		if entry.Name() >= fmt.Sprintf("%05d_", version+1) {
+			continue
+		}
+		name := path.Join("dispatcher", entry.Name())
+		content, err := fs.ReadFile(scripts, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: content, Mode: 0o644}
+	}
+	return files
+}
 
 func TestSessionLeaseUpgradePreservesEvidence(t *testing.T) {
 	db := openMigrationDatabase(t)
