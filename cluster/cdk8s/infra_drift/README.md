@@ -119,7 +119,7 @@ Two failure modes to expect:
 The shared `flux-system` GitRepository sparse-checks-out only deployment paths:
 
 ```text
-sparseCheckout: [cluster/k8s/, x/loom/wayback/deploy/, props/deploy/, tf/gitops/]
+sparseCheckout: [cluster/k8s/, props/deploy/, tf/gitops/]
 ```
 
 `cluster/terraform/` is not among them, so the runner's checkout has no such
