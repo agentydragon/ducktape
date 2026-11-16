@@ -8,10 +8,9 @@ use debundle_e2e_support::*;
 
 const ALIASES: usize = 512;
 const PROPERTIES: usize = 512;
-// The base analyzer measured 279 MiB in opt and 325 MiB in fastbuild; the
-// compact-storage build measured 161 MiB in opt and 213 MiB in fastbuild.
-// This shared ceiling separates those builds with margin in both modes.
-const MAX_CHILD_RSS_KIB: u64 = 256 * 1024;
+// Bound the normal CLI and Node children together. This guards against both
+// per-judgment empty metadata and a second per-source property-cell table.
+const MAX_CHILD_RSS_KIB: u64 = 200 * 1024;
 
 fn alias_property_matrix() -> String {
     let mut source = String::new();

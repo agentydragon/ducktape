@@ -154,7 +154,6 @@ struct ProgramFlowFacts {
     values: BTreeMap<FlowKey, Values>,
     reachability: BTreeMap<OriginId, Arc<RoaringBitmap>>,
     property_slots: HashMap<String, PropertySlot>,
-    property_names: Vec<String>,
     declared: Vec<bool>,
 }
 
@@ -276,6 +275,13 @@ impl ChunkProgramFlow {
             self.shared.values.get(&key).cloned()
         });
         self.project(&result.finish(), flow)
+    }
+
+    pub(super) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
+        let site = *self.sites.get(&object)?;
+        let property = *self.shared.property_slots.get(property)?;
+        let values = self.shared.values.get(&FlowKey::Property(site, property))?;
+        self.projected.get(&CompletedSet::of(values))
     }
 }
 
@@ -609,7 +615,6 @@ pub(crate) fn program_value_flows<'a>(
         values,
         reachability,
         property_slots: property_names.property_slots,
-        property_names: property_names.properties,
         declared,
     });
     let mut outputs = BTreeMap::new();
@@ -683,21 +688,21 @@ pub(crate) fn program_value_flows<'a>(
                 );
             }
         }
-        for (offset, site) in &local_sites {
+        for site in local_sites.values() {
             // Ordered range lookup projects existing property facts only;
             // there is no source-count x program-fact scan or sites x names table.
             for (key, values) in shared.values.range(
                 FlowKey::Property(*site, PropertySlot(0))
                     ..=FlowKey::Property(*site, PropertySlot(u32::MAX)),
             ) {
-                let FlowKey::Property(_, property) = key else {
+                let FlowKey::Property(_, _) = key else {
                     unreachable!("property range");
                 };
-                let projected = view.prepare_projection(values, &flow);
-                flow.properties.entry(*offset).or_default().insert(
-                    shared.property_names[property.0 as usize].clone(),
-                    projected,
-                );
+                // Keep the translated value in the shared projection cache;
+                // property reads resolve their slot through the source view
+                // instead of duplicating every property name/value row in a
+                // per-chunk HashMap.
+                let _ = view.prepare_projection(values, &flow);
             }
         }
         for origin in &flow.origin_table.origins {

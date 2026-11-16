@@ -141,3 +141,26 @@ fn completed_aliases_share_one_local_translation() {
         "one completed shared set requires one translation, regardless of alias count"
     );
 }
+
+#[test]
+fn property_reads_use_the_shared_local_projection() {
+    let flow = flow("const callback = () => 1;\nconst receiver = { callback };\n");
+    let [Value::Alloc(Kind::Object, receiver)] = flow
+        .values_of_binding(&id("receiver"))
+        .iter()
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("receiver should have one object identity");
+    };
+
+    let callback = flow.values_of_binding(&id("callback"));
+    assert_eq!(
+        flow.values_of_property(receiver, "callback"),
+        Some(&callback)
+    );
+    assert!(flow.values_of_property(receiver, "missing").is_none());
+    assert!(
+        flow.properties.is_empty(),
+        "program-backed property rows must stay in the shared projection cache"
+    );
+}
