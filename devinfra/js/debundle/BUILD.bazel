@@ -725,6 +725,7 @@ rust_library(
         "facts/sync_effects/execution_index/bundle_globals.rs",
         "facts/sync_effects/execution_index/callback_arguments.rs",
         "facts/sync_effects/execution_index/native_write_census.rs",
+        "facts/sync_effects/execution_index/property_keys.rs",
         "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",
         "facts/sync_effects/kernel.rs",
