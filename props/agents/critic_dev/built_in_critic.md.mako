@@ -29,7 +29,7 @@ if __name__ == "__main__":
     sys.exit(asyncio.run(main()))
 ```
 
-You do NOT need to set up `sys.path` — the launcher already did that. All bundled Python modules (the full `props` library, `agent_core`, `openai_utils`, etc.) are importable.
+You do NOT need to set up `sys.path` — the launcher already did that. Bundled Python modules, including `props.agents.af` and `openai_utils`, are importable.
 
 ## Runfiles Layout
 
@@ -39,6 +39,7 @@ All code lives under the runfiles tree, which mirrors the Bazel workspace:
 /props/agents/critic/critic_bin.runfiles/_main/
 ├── props/
 │   ├── agents/
+│   │   ├── af/                      ← built-in agent loop and tools
 │   │   ├── critic/
 │   │   │   ├── main.py              ← agent entrypoint (override this)
 │   │   │   ├── prompt.md.mako       ← system prompt template
@@ -52,9 +53,8 @@ All code lives under the runfiles tree, which mirrors the Bazel workspace:
 │   ├── db/                          ← database layer (models, queries)
 │   │   └── models.py                ← all ORM table/view definitions
 │   └── core/                        ← core models
-├── agent_core/                      ← agent loop machinery
-├── mcp_infra/                       ← exec tool implementation
-└── openai_utils/                    ← LLM client utilities
+├── openai_utils/                    ← LLM client utilities
+└── util/exec/                       ← exec tool implementation
 ```
 
 ## What the Built-in Critic Does
