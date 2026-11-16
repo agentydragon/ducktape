@@ -713,6 +713,12 @@ pub struct FixtureOpts<'a> {
     pub raw_spec_keys: Vec<(&'a str, serde_json::Value)>,
     pub source: &'a str,
     pub logical_modules: Vec<LogicalModuleEntry>,
+    /// Fixture-authored priority overrides keyed by chunk. Without a main
+    /// chunk override, `build_spec` uses the order in which `logical_modules`
+    /// were authored. Catchall and generated atomic owners must be named
+    /// explicitly in the complete priority; the helper never guesses whether
+    /// they are emitted or consults a graph or gate to invent positions.
+    pub import_order: BTreeMap<String, Vec<spec::ModulePath>>,
     /// Optional `chunk_renames` entry for this chunk. When set, the
     /// spec's top-level `chunk_renames` map carries the rename
     /// members; the materializer applies them in-place to bindings
@@ -793,8 +799,9 @@ pub struct FixtureOpts<'a> {
 impl<'a> FixtureOpts<'a> {
     pub fn new(source: &'a str, logical_modules: Vec<LogicalModuleEntry>) -> Self {
         // Default mode is `catchall_file` — most fixtures exercise the
-        // residual-module emission path and rely on
-        // `static/app/modules/residual/unhandled.js` being written.
+        // residual-module emission path and rely on a residual file being
+        // written. If that owner is emitted, name its actual module path in
+        // `with_import_order`; the default path is not itself the owner path.
         // Tests that exercise `InlineInEntry` semantics override with
         // [`unassigned_mode_inline`]; tests that exercise per-group modules
         // override with [`unassigned_mode_per_atomic_group`] or
@@ -806,6 +813,7 @@ impl<'a> FixtureOpts<'a> {
             raw_spec_keys: Vec::new(),
             source,
             logical_modules,
+            import_order: BTreeMap::new(),
             chunk_renames: None,
             chunk_id: "static/app",
             unassigned_mode: unassigned_mode_catchall_file(None),
@@ -1021,6 +1029,22 @@ impl<'a> FixtureOpts<'a> {
     /// Override the default `unassigned_mode` of `catchall_file`.
     pub fn with_unassigned_mode(mut self, mode: UnassignedMode) -> Self {
         self.unassigned_mode = mode;
+        self
+    }
+
+    /// Set the complete explicit priority for this fixture's main chunk.
+    /// Generated owners (for example `__auto/residual_groups/0000`) belong
+    /// here when the fixture selects an atomic-group residual mode.
+    pub fn with_import_order(mut self, priority: &[&str]) -> Self {
+        self.import_order
+            .insert(self.chunk_id.to_string(), fixture_module_paths(priority));
+        self
+    }
+
+    /// Override another materialized chunk's complete explicit priority.
+    pub fn with_chunk_import_order(mut self, chunk_id: &str, priority: &[&str]) -> Self {
+        self.import_order
+            .insert(chunk_id.to_string(), fixture_module_paths(priority));
         self
     }
 
@@ -1334,6 +1358,14 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             unassigned_mode_catchall_file(None),
         );
     }
+    let mut import_order = BTreeMap::from([(
+        chunk_id.to_string(),
+        authored_import_order(&opts.logical_modules),
+    )]);
+    for (extra_chunk, modules) in opts.extra_chunk_logical_modules {
+        import_order.insert((*extra_chunk).to_string(), authored_import_order(modules));
+    }
+    import_order.extend(opts.import_order.clone());
     let mut chunk_analysis_options = if opts.dataflow_aware_s_chain
         || opts.trusted_dataflow_summaries
         || opts.local_property_effects
@@ -1475,7 +1507,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .map(|(chunk_id, mark)| ((*chunk_id).to_string(), mark.clone()))
             .collect(),
         logical_modules,
-        import_order: BTreeMap::new(),
+        import_order,
         chunk_renames,
         unassigned_mode,
         chunk_analysis_options,
@@ -1502,6 +1534,25 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             }
         }),
     }
+}
+
+fn fixture_module_paths(paths: &[&str]) -> Vec<spec::ModulePath> {
+    paths
+        .iter()
+        .map(|path| {
+            spec::ModulePath::parse(path, "")
+                .expect("fixture import order paths are valid ModulePaths")
+        })
+        .collect()
+}
+
+fn authored_import_order(modules: &[LogicalModuleEntry]) -> Vec<spec::ModulePath> {
+    modules
+        .iter()
+        .map(|(path, _)| {
+            spec::ModulePath::parse(path, "").expect("fixture module paths are valid ModulePaths")
+        })
+        .collect()
 }
 
 /// A single-member chunk-renames spec mapping the binding `from_binding` to the

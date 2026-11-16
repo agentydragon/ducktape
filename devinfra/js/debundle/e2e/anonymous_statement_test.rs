@@ -40,23 +40,26 @@ fn acyclic_import_chains_prefer_source_order_between_independent_arrays() {
 
 #[test]
 fn anonymous_context_selects_only_final_statement() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const first = "first";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const first = "first";
 console.log("same");
 const second = "second";
 console.log("same");
 export { first, second };
 "#,
-        vec![
-            logical_module("context", &[Member::new("first")]),
-            logical_module_with_anon_alpha(
-                "selected",
-                &[],
-                &[r#"const anchor = "first";
+            vec![
+                logical_module("context", &[Member::new("first")]),
+                logical_module_with_anon_alpha(
+                    "selected",
+                    &[],
+                    &[r#"const anchor = "first";
 console.log("same");"#],
-            ),
-        ],
-    ));
+                ),
+            ],
+        )
+        .with_import_order(&["context", "selected", "residual"]),
+    );
 
     assert_module_exports(
         &fixture.out_root,
@@ -127,8 +130,9 @@ console.log("same");"#],
 
 #[test]
 fn context_only_reference_constrains_identical_final_calls() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function first() {}
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function first() {}
 function second() {}
 const before = first;
 console.log("same");
@@ -137,13 +141,15 @@ const after = second;
 console.log("same");
 export { first, second, before, middle, after };
 "#,
-        vec![logical_module_with_anon_alpha(
-            "selected",
-            &[Member::renamed("Store", "first"), Member::new("middle")],
-            &[r#"const anchor = Store;
+            vec![logical_module_with_anon_alpha(
+                "selected",
+                &[Member::renamed("Store", "first"), Member::new("middle")],
+                &[r#"const anchor = Store;
 console.log("same");"#],
-        )],
-    ));
+            )],
+        )
+        .with_import_order(&["selected", "residual"]),
+    );
 
     let selected = fs::read_to_string(fixture.out_root.join("static/app/modules/selected.js"))
         .expect("read selected module");
@@ -328,19 +334,22 @@ fn round_trip_peels_anon_statement_with_named_member() {
     // is the closure {console.log("a"), X}, which the materializer
     // can only emit if the spec carries an anon-statement entry
     // pointing at the leading console.log.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log("a");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log("a");
 var X = (() => "x")();
 const Existing = "existing";
 console.log(Existing);
 export { X, Existing };
 "#,
-        vec![logical_module_with_anon(
-            "x_module",
-            &[Member::new("X")],
-            &[r#"console.log("a");"#],
-        )],
-    ));
+            vec![logical_module_with_anon(
+                "x_module",
+                &[Member::new("X")],
+                &[r#"console.log("a");"#],
+            )],
+        )
+        .with_import_order(&["x_module", "residual"]),
+    );
 
     // End-to-end behavior: console.log("a") then console.log(Existing).
     // x_module body runs first via ESM import order; residual second.
@@ -373,17 +382,20 @@ export { X, Existing };
 // ordering as every other entry import — or its side effects never run.
 #[test]
 fn anonymous_only_module_side_effects_still_run() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const keep = "k";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const keep = "k";
 console.log("anon-side-effect");
 export { keep };
 "#,
-        vec![logical_module_with_anon(
-            "anon_only",
-            &[],
-            &[r#"console.log("anon-side-effect");"#],
-        )],
-    ));
+            vec![logical_module_with_anon(
+                "anon_only",
+                &[],
+                &[r#"console.log("anon-side-effect");"#],
+            )],
+        )
+        .with_import_order(&["anon_only", "residual"]),
+    );
 
     // The module file carries the claimed statement...
     assert_module_source(
@@ -518,8 +530,9 @@ fn anon_statements_emit_in_chunk_source_order_alongside_named_members() {
     //   4. const B = 2
     //   5. console.log("after")
     //   6. const Existing = "existing"          (residual)
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log("before");
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log("before");
 const A = 1;
 console.log("between");
 const B = 2;
@@ -527,16 +540,18 @@ console.log("after");
 const Existing = "existing";
 export { A, B, Existing };
 "#,
-        vec![logical_module_with_anon(
-            "ab_module",
-            &[Member::new("A"), Member::new("B")],
-            &[
-                r#"console.log("before");"#,
-                r#"console.log("between");"#,
-                r#"console.log("after");"#,
-            ],
-        )],
-    ));
+            vec![logical_module_with_anon(
+                "ab_module",
+                &[Member::new("A"), Member::new("B")],
+                &[
+                    r#"console.log("before");"#,
+                    r#"console.log("between");"#,
+                    r#"console.log("after");"#,
+                ],
+            )],
+        )
+        .with_import_order(&["ab_module", "residual"]),
+    );
 
     // Emitted ab_module body must preserve source order:
     //   console.log("before")  →  const A = 1  →  console.log("between")
@@ -647,7 +662,7 @@ export { X, Existing };
     } catch (e) {}
 })();"#],
         )],
-    ));
+    ).with_import_order(&["x_module", "residual"]));
 
     // The peeled module carries the IIFE alongside the var X
     // declaration.
@@ -709,20 +724,23 @@ fn anon_statement_after_comma_list_resolves_correct_source_unit() {
     //   (a) the module dep graph would have a fake cycle, or
     //   (b) the named-member assertion would catch a non-X
     //       binding in x_module's exports.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var a = 1, b = 2;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var a = 1, b = 2;
 console.log("between");
 var X = (() => "x")();
 const Existing = "existing";
 console.log(Existing);
 export { a, b, X, Existing };
 "#,
-        vec![logical_module_with_anon(
-            "x_module",
-            &[Member::new("X")],
-            &[r#"console.log("between");"#],
-        )],
-    ));
+            vec![logical_module_with_anon(
+                "x_module",
+                &[Member::new("X")],
+                &[r#"console.log("between");"#],
+            )],
+        )
+        .with_import_order(&["x_module", "residual"]),
+    );
 
     // x_module owns X and the anon `console.log("between");`.
     assert_module_source(
@@ -748,8 +766,9 @@ export { a, b, X, Existing };
 
 #[test]
 fn alpha_anonymous_statement_selector_survives_identifier_drift() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function applyMetadata(args, target, prop) {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function applyMetadata(args, target, prop) {
   console.log(`${prop}:${target.constructor.name}:${args.length}`);
 }
 const RuntimeToken = Symbol("runtime-token");
@@ -759,16 +778,18 @@ const Existing = "existing";
 console.log(Existing);
 export { RuntimeSubject, Existing };
 "#,
-        vec![logical_module_with_anon_alpha(
-            "decorated_runtime",
-            &[
-                Member::new("applyMetadata"),
-                Member::new("RuntimeToken"),
-                Member::new("RuntimeSubject"),
-            ],
-            &[r#"decorate([token], Subject.prototype, "statusFlag");"#],
-        )],
-    ));
+            vec![logical_module_with_anon_alpha(
+                "decorated_runtime",
+                &[
+                    Member::new("applyMetadata"),
+                    Member::new("RuntimeToken"),
+                    Member::new("RuntimeSubject"),
+                ],
+                &[r#"decorate([token], Subject.prototype, "statusFlag");"#],
+            )],
+        )
+        .with_import_order(&["decorated_runtime", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -835,21 +856,24 @@ export { selectedValue, existingValue };
 
 #[test]
 fn source_matches_single_declarator_survives_binding_name_drift() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeBinding = { kind: "selected", enabled: true },
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const runtimeBinding = { kind: "selected", enabled: true },
   siblingBinding = { kind: "other", enabled: false };
 const Existing = "existing";
 console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
 export { runtimeBinding, siblingBinding, Existing };
 "#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha(
-                "selectedConfig",
-                r#"const oldBinding = { kind: "selected", enabled: true };"#,
+            vec![logical_module(
+                "selected_config",
+                &[Member::source_alpha(
+                    "selectedConfig",
+                    r#"const oldBinding = { kind: "selected", enabled: true };"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_config", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -868,26 +892,29 @@ export { runtimeBinding, siblingBinding, Existing };
 
 #[test]
 fn multi_statement_native_source_match_resolves() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimePrefix = "OK:";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const runtimePrefix = "OK:";
 function runtimeFormat(value) {
   return runtimePrefix + value.trim().toUpperCase();
 }
 console.log(runtimeFormat(" ok "));
 export { runtimePrefix, runtimeFormat };
 "#,
-        vec![logical_module(
-            "format",
-            &[Member::source_alpha_target(
-                "formatValue",
-                "formatValue",
-                r#"const prefix = "OK:";
+            vec![logical_module(
+                "format",
+                &[Member::source_alpha_target(
+                    "formatValue",
+                    "formatValue",
+                    r#"const prefix = "OK:";
 function formatValue(value) {
   return prefix + value.trim().toUpperCase();
 }"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["format", "residual"]),
+    );
 
     assert_entry_output(&fixture, "OK:OK\n");
 }
@@ -969,25 +996,28 @@ export { RuntimeWidget };
 
 #[test]
 fn source_matches_binding_projection_uses_multideclarator_context() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeLocalPart = "primary",
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const runtimeLocalPart = "primary",
   runtimeDomain = "example.test",
   runtimeAddress = `${runtimeLocalPart}@${runtimeDomain}`;
 const duplicateLocalPart = "primary";
 console.log(runtimeLocalPart, duplicateLocalPart, runtimeAddress);
 export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 "#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha_target(
-                "selectedLocalPart",
-                "localPart",
-                r#"const localPart = "primary",
+            vec![logical_module(
+                "selected_config",
+                &[Member::source_alpha_target(
+                    "selectedLocalPart",
+                    "localPart",
+                    r#"const localPart = "primary",
   domain = "example.test",
   address = `${localPart}@${domain}`;"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_config", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -1006,25 +1036,28 @@ export { runtimeLocalPart, runtimeDomain, runtimeAddress, duplicateLocalPart };
 
 #[test]
 fn source_matches_extract_multiple_bindings_from_multideclarator() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"let runtimeA = 100,
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"let runtimeA = 100,
   runtimeB = null,
   runtimeC = `${runtimeA}:${runtimeB === null}:bar`;
 const Existing = "existing";
 console.log(runtimeA, runtimeB === null, runtimeC, Existing);
 export { runtimeA, runtimeB, runtimeC, Existing };
 "#,
-        vec![logical_module_with_binding_groups(
-            "selected_values",
-            &[],
-            &[BindingGroup::source_alpha(
-                r#"let a = 100,
+            vec![logical_module_with_binding_groups(
+                "selected_values",
+                &[],
+                &[BindingGroup::source_alpha(
+                    r#"let a = 100,
   b = null,
   c = `${a}:${b === null}:bar`;"#,
-                &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+                    &[("a", "NameA"), ("b", "NameB"), ("c", "NameC")],
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_values", "residual"]),
+    );
 
     let mut exports =
         list_module_exports(&fixture.out_root, "static/app/modules/selected_values.js");
@@ -1052,22 +1085,25 @@ export { runtimeA, runtimeB, runtimeC, Existing };
 
 #[test]
 fn source_matches_binding_projection_selects_single_declarator_from_comma_list() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const siblingBinding = { kind: "other", enabled: false },
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const siblingBinding = { kind: "other", enabled: false },
   runtimeBinding = { kind: "selected", enabled: true };
 const Existing = "existing";
 console.log(runtimeBinding.kind, siblingBinding.kind, Existing);
 export { siblingBinding, runtimeBinding, Existing };
 "#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha_target(
-                "selectedConfig",
-                "config",
-                r#"const config = { kind: "selected", enabled: true };"#,
+            vec![logical_module(
+                "selected_config",
+                &[Member::source_alpha_target(
+                    "selectedConfig",
+                    "config",
+                    r#"const config = { kind: "selected", enabled: true };"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_config", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -1086,8 +1122,9 @@ export { siblingBinding, runtimeBinding, Existing };
 
 #[test]
 fn source_matches_binding_projection_context_selects_single_declarator_from_comma_list() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const helperBinding = { kind: "helper" },
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const helperBinding = { kind: "helper" },
   runtimeBinding = { kind: "selected", enabled: true },
   trailingBinding = { kind: "trailing" };
 function runtimeReader() {
@@ -1096,18 +1133,20 @@ function runtimeReader() {
 console.log(runtimeReader(), helperBinding.kind, trailingBinding.kind);
 export { helperBinding, runtimeBinding, trailingBinding, runtimeReader };
 "#,
-        vec![logical_module(
-            "selected_config",
-            &[Member::source_alpha_target(
-                "selectedConfig",
-                "config",
-                r#"const config = { kind: "selected", enabled: true };
+            vec![logical_module(
+                "selected_config",
+                &[Member::source_alpha_target(
+                    "selectedConfig",
+                    "config",
+                    r#"const config = { kind: "selected", enabled: true };
 function readConfig() {
   return config.kind;
 }"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_config", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -1155,8 +1194,9 @@ export { firstA, firstB, firstC, secondA, secondB, secondC };
 
 #[test]
 fn source_matches_binding_projection_uses_following_statement_context() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const traceContexts = ["load"];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const traceContexts = ["load"];
 const selectedRegistry = {};
 for (const context of traceContexts)
   selectedRegistry[context] = () => context;
@@ -1164,17 +1204,19 @@ const duplicateRegistry = {};
 console.log(selectedRegistry !== duplicateRegistry, Object.keys(duplicateRegistry).length);
 export { traceContexts, selectedRegistry, duplicateRegistry };
 "#,
-        vec![logical_module(
-            "selected_registry",
-            &[Member::source_alpha_target(
-                "traceCommandRegistry",
-                "registry",
-                r#"const registry = {};
+            vec![logical_module(
+                "selected_registry",
+                &[Member::source_alpha_target(
+                    "traceCommandRegistry",
+                    "registry",
+                    r#"const registry = {};
 for (const context of traceContexts)
   registry[context] = () => context;"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["selected_registry", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,
@@ -1193,8 +1235,9 @@ for (const context of traceContexts)
 
 #[test]
 fn source_matches_binding_projection_uses_adjacent_function_consumers_as_context() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const runtimeRecordSessions = new Map([["main", "record"]]);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const runtimeRecordSessions = new Map([["main", "record"]]);
 function closeRecordSessions() {
   return runtimeRecordSessions.clear();
 }
@@ -1211,21 +1254,23 @@ function getReplaySession(name) {
 console.log(getRecordSession("main"), getReplaySession("main"));
 export { runtimeRecordSessions, runtimeReplaySessions };
 "#,
-        vec![logical_module(
-            "sessions",
-            &[Member::source_alpha_target(
-                "recordSessions",
+            vec![logical_module(
                 "sessions",
-                r#"const sessions = new Map(EXPR);
+                &[Member::source_alpha_target(
+                    "recordSessions",
+                    "sessions",
+                    r#"const sessions = new Map(EXPR);
 function closeSessions() {
   return sessions.clear();
 }
 function getSession(name) {
   return sessions.get(name);
 }"#,
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["sessions", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,

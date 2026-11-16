@@ -218,7 +218,8 @@ export { Command, factory, command, later };
     ] {
         let source = template.replace("CONFIG", config);
         expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, command_later_split_modules()),
+            FixtureOpts::new(&source, command_later_split_modules())
+                .with_import_order(&["command", "value", "residual"]),
             &["command", "value"],
             &[],
         );
@@ -435,7 +436,8 @@ export {{ saved, Checker, Command, create, command, later }};
 "#
                 ),
                 command_later_split_modules(),
-            ),
+            )
+            .with_import_order(&["command", "value", "residual"]),
             &["command", "value"],
             &[],
         );
@@ -460,7 +462,8 @@ const later = 7;
 export { saved, Checker, Command, create, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -481,7 +484,8 @@ const later = 7;
 export { Checker, Command, create, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -500,7 +504,8 @@ const later = 7;
 export { Command, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -524,7 +529,8 @@ export {{ Command, command, later }};
 "#
                 ),
                 command_later_split_modules(),
-            ),
+            )
+            .with_import_order(&["command", "value", "residual"]),
             &["command", "value"],
             &[],
         );
@@ -544,7 +550,8 @@ const later = 7;
 export { Command, factory, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -564,7 +571,8 @@ const later = 7;
 export { Command, factory, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -582,7 +590,8 @@ const later = 7;
 export { Command, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -602,7 +611,8 @@ const later = 7;
 export { Base, Command, factory, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -610,16 +620,19 @@ export { Base, Command, factory, command, later };
 
 #[test]
 fn instance_field_initializer_runs_when_constructed() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const later = 7;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const later = 7;
 function execute() { return later; }
 class Command { result = execute(); }
 const command = new Command();
 console.log(command.result);
 export { Command, execute, command, later };
 "#,
-        command_later_split_modules(),
-    ));
+            command_later_split_modules(),
+        )
+        .with_import_order(&["command", "value", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "7\n");
 }
 
@@ -634,7 +647,8 @@ const later = 7;
 export { Command, execute, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -673,7 +687,8 @@ const later = 7;
 export { Command, factory, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["command", "value"],
         &[],
     );
@@ -692,7 +707,8 @@ const later = 7;
 export { Command, factory, command, later };
 "#,
             command_later_split_modules(),
-        ),
+        )
+        .with_import_order(&["command", "value", "residual"]),
         &["anon_residual_sentinel", "value"],
         &[],
     );
@@ -1249,35 +1265,41 @@ export { a, b, foo, bar, result };
 
 #[test]
 fn uninstantiated_constructor_does_not_create_an_eager_cycle() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class Foo { constructor() { bar(); } }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Foo { constructor() { bar(); } }
 function bar() { return b; }
 const b = Foo.name;
 console.log(b);
 export { Foo, bar, b };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+                logical_module("mod_b", &[Member::new("b")]),
+            ],
+        )
+        .with_import_order(&["mod_b", "mod_a"]),
+    );
     assert_preserved_entry_output(&fixture, "Foo\n");
 }
 
 #[test]
 fn uninstantiated_instance_field_does_not_create_an_eager_cycle() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class Foo { value = bar(); }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class Foo { value = bar(); }
 function bar() { return b; }
 const b = Foo.name;
 console.log(b);
 export { Foo, bar, b };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("Foo"), Member::new("bar")]),
+                logical_module("mod_b", &[Member::new("b")]),
+            ],
+        )
+        .with_import_order(&["mod_b", "mod_a"]),
+    );
     assert_preserved_entry_output(&fixture, "Foo\n");
 }
 
@@ -2167,7 +2189,8 @@ fn bounded_callback_fallback_keeps_deferred_writer_colocated() {
                 logical_module("callbacks/writer", &[Member::new("deferred")]),
                 logical_module("value/state", &[Member::new("state")]),
             ],
-        ),
+        )
+        .with_import_order(&["callbacks/writer", "value/state", "residual"]),
         &["callbacks/writer", "value/state"],
         &["deferred_rebind"],
     );

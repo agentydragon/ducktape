@@ -31,26 +31,29 @@ use debundle_e2e_support::*;
 // A gate that modeled residual's DFS fan-out as only the modules residual's
 // statements reference would enter the SCC at `mod_schemas`, follow the
 // emitted lazy-read import to `mod_ids`, and flag a TDZ. The emitted entry,
-// however, imports EVERY plan in Lemma 2's source-import order — `mod_ids`
+// however, imports EVERY plan in the supplied priority — `mod_ids`
 // (the dependent) first — so the runtime DFS unwinds through `mod_schemas`
 // and evaluates it before `mod_ids`. If the order were wrong, `ids_val`'s
 // initializer would throw a TDZ ReferenceError during loading and the
 // asserted stdout would never be produced.
 #[test]
 fn dependency_only_residual_reference_into_asymmetric_cycle_runs_under_node() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const schemas_target = "v";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const schemas_target = "v";
 function lazy_back() { return ids_val; }
 const ids_val = schemas_target;
 console.log(schemas_target);
 "#,
-        vec![
-            logical_module(
-                "mod_schemas",
-                &[Member::new("schemas_target"), Member::new("lazy_back")],
-            ),
-            logical_module("mod_ids", &[Member::new("ids_val")]),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "mod_schemas",
+                    &[Member::new("schemas_target"), Member::new("lazy_back")],
+                ),
+                logical_module("mod_ids", &[Member::new("ids_val")]),
+            ],
+        )
+        .with_import_order(&["mod_ids", "mod_schemas"]),
+    );
     assert_entry_output(&fixture, "v\n");
 }

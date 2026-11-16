@@ -168,7 +168,7 @@ fn descriptor_inspection_preserves_eager_argument_effects() {
 #[test]
 fn descriptor_inspection_preserves_argument_throws() {
     let source = "let observed;\ntry { Object.getOwnPropertyDescriptors({ field: (() => { throw new Error('argument'); })(), get value() { return later; } }); } catch (error) { observed = error.message; }\nconst later = 42;\nconsole.log(observed, later);\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "argument 42\n");
 }
 
@@ -421,7 +421,7 @@ fn copied_accessor_reads_and_opaque_target_consumption_retain_dependencies() {
 #[test]
 fn conflicting_descriptor_carrier_self_reference_terminates() {
     let source = "function capture(record) { return Object.getOwnPropertyDescriptors(record); }\nconst first = capture({});\nconst second = capture({ first });\nObject.freeze(second);\nconsole.log('done');\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "done\n");
 }
 
@@ -641,7 +641,7 @@ fn descriptor_carrier_retains_getter_and_method_parameter_captures() {
 #[test]
 fn descriptor_data_values_retain_later_nested_object_mutations() {
     let caught = "const holder = {};\nfunction consume(record) { return record.holder.value.read(); }\nconst descriptors = Object.getOwnPropertyDescriptors({ holder });\nholder.read = () => later;\nlet observed;\ntry { consume(descriptors); } catch (error) { observed = error.name; }\nconst later = 42;\nconsole.log(observed, later);\n";
-    let fixture = run_fixture(FixtureOpts::new(caught, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(caught, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
     let source = "const holder = {};\nfunction consume(record) { return record.holder.value.read(); }\nconst descriptors = Object.getOwnPropertyDescriptors({ holder });\nholder.read = () => later;\nconst before = consume(descriptors);\nconst later = 42;\n";
     expect_atomic_conflict_rejection(

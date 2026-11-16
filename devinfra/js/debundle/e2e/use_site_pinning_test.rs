@@ -45,33 +45,36 @@ export { Alpha, Beta };
 /// it.
 #[test]
 fn identical_helper_copies_are_pinned_through_their_call_sites() {
-    let fixture = run_fixture(FixtureOpts::new(
-        TWO_HELPER_COPIES,
-        vec![
-            logical_module_with_binding_groups(
-                "alpha",
-                &[Member::source_alpha(
-                    "Alpha",
-                    "class Alpha {\n  alphaLabel() {\n    STMT_LIST;\n  }\n}",
-                )],
-                &[BindingGroup::source_alpha(
-                    r#"decorate([mark("A")], Alpha.prototype, "alphaLabel", 1);"#,
-                    &[("decorate", "alphaDecorator")],
-                )],
-            ),
-            logical_module_with_binding_groups(
-                "beta",
-                &[Member::source_alpha(
-                    "Beta",
-                    "class Beta {\n  betaLabel() {\n    STMT_LIST;\n  }\n}",
-                )],
-                &[BindingGroup::source_alpha(
-                    r#"decorate([mark("B")], Beta.prototype, "betaLabel", 1);"#,
-                    &[("decorate", "betaDecorator")],
-                )],
-            ),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            TWO_HELPER_COPIES,
+            vec![
+                logical_module_with_binding_groups(
+                    "alpha",
+                    &[Member::source_alpha(
+                        "Alpha",
+                        "class Alpha {\n  alphaLabel() {\n    STMT_LIST;\n  }\n}",
+                    )],
+                    &[BindingGroup::source_alpha(
+                        r#"decorate([mark("A")], Alpha.prototype, "alphaLabel", 1);"#,
+                        &[("decorate", "alphaDecorator")],
+                    )],
+                ),
+                logical_module_with_binding_groups(
+                    "beta",
+                    &[Member::source_alpha(
+                        "Beta",
+                        "class Beta {\n  betaLabel() {\n    STMT_LIST;\n  }\n}",
+                    )],
+                    &[BindingGroup::source_alpha(
+                        r#"decorate([mark("B")], Beta.prototype, "betaLabel", 1);"#,
+                        &[("decorate", "betaDecorator")],
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["alpha", "beta", "residual"]),
+    );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/alpha.js",
@@ -90,8 +93,9 @@ fn identical_helper_copies_are_pinned_through_their_call_sites() {
 /// One template claims both a declaration it makes and the helper it calls.
 #[test]
 fn template_claims_its_declaration_and_a_helper_it_uses() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function h(n) {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function h(n) {
   return n + 1;
 }
 function k(n) {
@@ -100,15 +104,17 @@ function k(n) {
 const x = h(1);
 console.log(x, k(2));
 "#,
-        vec![logical_module_with_binding_groups(
-            "counter",
-            &[],
-            &[BindingGroup::source_alpha(
-                "const value = increment(1);",
-                &[("value", "value"), ("increment", "increment")],
+            vec![logical_module_with_binding_groups(
+                "counter",
+                &[],
+                &[BindingGroup::source_alpha(
+                    "const value = increment(1);",
+                    &[("value", "value"), ("increment", "increment")],
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["counter", "residual"]),
+    );
     assert_module_source(
         &fixture.out_root,
         "static/app/modules/counter.js",

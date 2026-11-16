@@ -60,6 +60,7 @@ export { CardsView, TreeView };
                 )],
             )],
         )
+        .with_import_order(&["accessors", "residual"])
         .with_extra_files(&[("static/app/accessors.js", ACCESSORS_CHUNK)]),
     );
 

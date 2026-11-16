@@ -12,13 +12,16 @@ export { seed, result, readValue, value };
 
 #[test]
 fn cross_module_at_init_call_preserves_initialized_body_read() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        INITIALIZED_SOURCE,
-        vec![
-            logical_module("readers", &[Member::new("readValue")]),
-            logical_module("values", &[Member::new("value")]),
-        ],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            INITIALIZED_SOURCE,
+            vec![
+                logical_module("readers", &[Member::new("readValue")]),
+                logical_module("values", &[Member::new("value")]),
+            ],
+        )
+        .with_import_order(&["readers", "values", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "49\n");
     assert_module_exports(
         &fixture.out_root,
@@ -49,7 +52,8 @@ export { seed, result, readValue, value };
                 logical_module("readers", &[Member::new("readValue")]),
                 logical_module("values", &[Member::new("value")]),
             ],
-        ),
+        )
+        .with_import_order(&["readers", "values", "residual"]),
         &["residual", "values"],
         &["eager_use", "sequenced"],
     );
@@ -74,10 +78,13 @@ export { state, setState };
 
 #[test]
 fn intra_module_at_init_call_preserves_initialized_body_read() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        INITIALIZED_SOURCE,
-        vec![logical_module("values", &[Member::new("value")])],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            INITIALIZED_SOURCE,
+            vec![logical_module("values", &[Member::new("value")])],
+        )
+        .with_import_order(&["values", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "49\n");
     assert_module_exports(
         &fixture.out_root,

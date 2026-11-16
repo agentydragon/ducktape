@@ -71,36 +71,39 @@ export { gen, ls };
 /// binding) fails this test.
 #[test]
 fn reads_member_object_constraint_disambiguates() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const ctx = { id: "ctx-1" };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const ctx = { id: "ctx-1" };
 const node = { id: "node-1" };
 function ctxId() { return ctx.id; }
 function nodeId() { return node.id; }
 console.log(ctxId(), nodeId());
 export { ctx, node, ctxId, nodeId };
 "#,
-        vec![
-            logical_module(
-                "context",
-                // The object anchor is selected structurally — its readable name
-                // `CodegenContext` maps to the source binding `ctx`, never written
-                // in the spec as a target pin.
-                &[Member::source_alpha(
-                    "CodegenContext",
-                    r#"const $a = { id: "ctx-1" };"#,
-                )],
-            ),
-            logical_module(
-                "helpers",
-                &[Member::reads_member(
-                    "readContextId",
-                    "id",
-                    Some("CodegenContext"),
-                    Some("function_declaration"),
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "context",
+                    // The object anchor is selected structurally — its readable name
+                    // `CodegenContext` maps to the source binding `ctx`, never written
+                    // in the spec as a target pin.
+                    &[Member::source_alpha(
+                        "CodegenContext",
+                        r#"const $a = { id: "ctx-1" };"#,
+                    )],
+                ),
+                logical_module(
+                    "helpers",
+                    &[Member::reads_member(
+                        "readContextId",
+                        "id",
+                        Some("CodegenContext"),
+                        Some("function_declaration"),
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["context", "helpers", "residual"]),
+    );
 
     // The context object was selected structurally: its source binding is `ctx`.
     assert_module_source(

@@ -133,6 +133,7 @@ export { p as h, q as readable };
     )];
     let extra_modules = [("static/provider", provider_modules)];
     opts.extra_chunk_logical_modules = &extra_modules;
+    opts = opts.with_chunk_import_order("static/provider", &["provider", "residual"]);
     let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "4\n");
@@ -169,6 +170,7 @@ export { x, guard };
     let provider_modules = vec![logical_module("provider", &[Member::new("q")])];
     let extra_modules = [("static/provider", provider_modules)];
     opts.extra_chunk_logical_modules = &extra_modules;
+    opts = opts.with_chunk_import_order("static/provider", &["provider", "residual"]);
     let fixture = run_fixture(opts);
 
     assert_entry_output(&fixture, "5\n");

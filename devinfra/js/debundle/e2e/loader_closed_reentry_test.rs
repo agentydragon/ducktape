@@ -61,9 +61,24 @@ fn rejected_loader_derivation(
     extra_chunks: &[(&'static str, &'static str)],
     host: HostBehavior,
 ) -> Value {
+    rejected_loader_derivation_with_priority(
+        provider,
+        extra_chunks,
+        host,
+        &["values/dynamic", "values/later"],
+    )
+}
+
+fn rejected_loader_derivation_with_priority(
+    provider: &'static str,
+    extra_chunks: &[(&'static str, &'static str)],
+    host: HostBehavior,
+    priority: &[&str],
+) -> Value {
     let rejected = run_rejection_fixture_with_graphs(
         FixtureOpts::new(provider, provider_modules())
             .with_chunk_id(PROVIDER_CHUNK)
+            .with_import_order(priority)
             .with_extra_chunks(extra_chunks)
             .with_host_behavior(host),
     );
@@ -288,10 +303,11 @@ fn loaded_module_calling_back_into_the_requester_at_load_keeps_it_open() {
         "const helper = (() => import.meta.require(\"./helper.js\"))();\nexport function loadHelper() { return helper; }\n",
     );
     let helper = "const provider = import.meta.require(\"./provider.js\");\nexports.seen = provider.readLater();\n";
-    let derivation = rejected_loader_derivation(
+    let derivation = rejected_loader_derivation_with_priority(
         Box::leak(provider.into_boxed_str()),
         &[("static/helper", helper)],
         audited_host(),
+        &["values/dynamic", "values/later", "residual"],
     );
     assert_eq!(
         failure(&derivation, "loader_request_reaches_target")["first"]["site"]["source_chunk"],
@@ -1021,6 +1037,10 @@ fn reach_back_reenters_only_through_the_names_the_window_imports() {
     let fixture = run_fixture(
         FixtureOpts::new(CONSUMER, vec![])
             .with_chunk_id("static/consumer")
+            .with_chunk_import_order(
+                PROVIDER_CHUNK,
+                &["values/dynamic", "values/later", "residual"],
+            )
             .with_extra_chunks(&extra_chunks)
             .with_extra_chunk_logical_modules(&provider_modules)
             .with_host_behavior(audited_host()),
@@ -1056,6 +1076,7 @@ fn a_window_importing_the_bound_export_or_the_namespace_keeps_it_bound() {
         let rejected = run_rejection_fixture(
             FixtureOpts::new(reentry_provider(), provider_modules())
                 .with_chunk_id(PROVIDER_CHUNK)
+                .with_import_order(&["values/dynamic", "values/later", "residual"])
                 .with_extra_chunks(&[("static/helper", HELPER), ("static/window", window)])
                 .with_host_behavior(audited_host()),
         );

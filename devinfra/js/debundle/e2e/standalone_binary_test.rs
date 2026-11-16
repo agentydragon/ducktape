@@ -56,6 +56,7 @@ export { route0, route1 };
             ),
         ],
     )
+    .with_import_order(&["routes/mod_a", "routes/mod_b", "residual"])
 }
 
 fn assert_quiet_success(command: &str, result: &CommandResult) {

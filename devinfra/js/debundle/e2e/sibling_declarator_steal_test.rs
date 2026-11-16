@@ -26,7 +26,8 @@ export { a, b, c };
             logical_module("mod_x", &[Member::renamed("readableA", "a")]),
             logical_module("mod_y", &[Member::renamed("readableC", "c")]),
         ],
-    );
+    )
+    .with_import_order(&["mod_x", "mod_y", "residual"]);
     let fixture = run_fixture(opts);
 
     // mod_x must own `a`'s decl + its export.

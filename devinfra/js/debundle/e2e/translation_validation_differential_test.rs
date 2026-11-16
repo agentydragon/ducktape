@@ -14,10 +14,13 @@ fn edges(report: &Value, key: &str) -> usize {
 
 #[test]
 fn backward_reads_in_source_order_swap_nothing() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const a = 1;\nconst b = a + 1;\nconsole.log(b);\nexport { a, b };\n",
-        vec![logical_module("mod_a", &[Member::new("a")])],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const a = 1;\nconst b = a + 1;\nconsole.log(b);\nexport { a, b };\n",
+            vec![logical_module("mod_a", &[Member::new("a")])],
+        )
+        .with_import_order(&["mod_a", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "2\n");
     let report = fixture.translation_validation();
     assert_eq!(report["gate_accepts"], true, "{report:#}");
@@ -55,17 +58,26 @@ fn constraining_module_cycle_is_a_swapped_conflict() {
 /// both verdicts keep the pair in one module.
 #[test]
 fn forward_var_read_split_is_rejected() {
-    for source in [
-        "const seen = String(later);\nvar later = \"set\";\nconsole.log(seen);\nexport { seen, later };\n",
-        "const seen = readLater();\nfunction readLater() { return String(later); }\nvar later = \"set\";\nconsole.log(seen);\nexport { seen, readLater, later };\n",
+    for (source, priority) in [
+        (
+            "const seen = String(later);\nvar later = \"set\";\nconsole.log(seen);\nexport { seen, later };\n",
+            &["reader", "values"][..],
+        ),
+        (
+            "const seen = readLater();\nfunction readLater() { return String(later); }\nvar later = \"set\";\nconsole.log(seen);\nexport { seen, readLater, later };\n",
+            &["reader", "values", "residual"][..],
+        ),
     ] {
-        let report = run_rejection_fixture(FixtureOpts::new(
-            source,
-            vec![
-                logical_module("reader", &[Member::new("seen")]),
-                logical_module("values", &[Member::new("later")]),
-            ],
-        ))
+        let report = run_rejection_fixture(
+            FixtureOpts::new(
+                source,
+                vec![
+                    logical_module("reader", &[Member::new("seen")]),
+                    logical_module("values", &[Member::new("later")]),
+                ],
+            )
+            .with_import_order(priority),
+        )
         .translation_validation();
         assert_eq!(report["gate_accepts"], false, "{report:#}");
         assert_eq!(report["accepts"], false, "{report:#}");
@@ -85,7 +97,7 @@ fn forward_at_init_read_kept_in_source_order_is_reported() {
             logical_module("readers", &[Member::new("readValue")]),
             logical_module("values", &[Member::new("value")]),
         ],
-    ))
+    ).with_import_order(&["readers", "values", "residual"]))
     .translation_validation();
     assert_eq!(report["gate_accepts"], false, "{report:#}");
     assert_eq!(report["accepts"], false, "{report:#}");
@@ -227,7 +239,8 @@ fn bounded_conflict_examples_preserve_all_checks_and_complete_export() {
 #[test]
 fn accepted_full_report_is_explicit_and_does_not_change_runtime() {
     let fixture = run_fixture_with_args(
-        FixtureOpts::new("export const value = 7;\nconsole.log(value);\n", vec![]),
+        FixtureOpts::new("export const value = 7;\nconsole.log(value);\n", vec![])
+            .with_import_order(&["residual"]),
         &[
             "--full-report",
             "translation_validation",
@@ -249,8 +262,9 @@ fn accepted_full_report_is_explicit_and_does_not_change_runtime() {
 
 #[test]
 fn full_report_selection_errors_remain_failures() {
-    let fixture =
-        write_validate_fixture_spec(FixtureOpts::new("export const value = 7;\n", vec![]));
+    let fixture = write_validate_fixture_spec(
+        FixtureOpts::new("export const value = 7;\n", vec![]).with_import_order(&["residual"]),
+    );
     for (flags, diagnostic) in [
         (vec!["--full-report-chunk", "static/app"], "--full-report"),
         (vec!["--full-report", "unknown"], "invalid value"),

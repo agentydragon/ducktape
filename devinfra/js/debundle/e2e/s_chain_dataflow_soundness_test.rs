@@ -236,6 +236,7 @@ export { got };
                 logical_module("mod_read", &[Member::new("got")]),
             ],
         )
+        .with_import_order(&["mod_boot", "mod_read", "residual"])
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "ready\n");
@@ -332,6 +333,7 @@ export { g, got };
                 logical_module("mod_read", &[Member::new("got")]),
             ],
         )
+        .with_import_order(&["mod_w", "mod_read", "residual"])
         .with_dataflow_aware_s_chain(),
     );
     assert_entry_output(&fixture, "x\n");
@@ -364,7 +366,7 @@ fn settled_global_alias_member_read_is_a_precise_cell() {
                     logical_module_with_anon("mod_o", &[], &[r#"globalThis.other = "y";"#]),
                     logical_module("mod_read", &[Member::new("got")]),
                 ],
-            )
+            ).with_import_order(&["mod_w", "mod_o", "mod_read", "residual"])
             .with_dataflow_aware_s_chain(),
         );
         let graph = fixture.dependency_graph();
