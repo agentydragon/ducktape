@@ -974,7 +974,7 @@ console.log(value);
                 ],
             )],
         )
-        .with_import_order(&["features/placed", "residual"])
+        .with_import_order(&["features/placed"])
         .with_extra_chunks(&[("static/peer", "export function make() { return 42; }\n")]),
     );
 
