@@ -43,6 +43,12 @@ func (c *tlsConnections) NewStream(ctx context.Context, desc *grpc.StreamDesc, m
 // Requests without a Caller selector use server-authenticated TLS without a client leaf.
 func ServeTLS(t *testing.T, serverURI string, methods auth.Methods, register func(*grpc.Server), callers ...string) grpc.ClientConnInterface {
 	t.Helper()
+	return ServeTLSWithTimeout(t, 5*time.Second, serverURI, methods, register, callers...)
+}
+
+// ServeTLSWithTimeout serves with the given method-admission timeout, including zero.
+func ServeTLSWithTimeout(t *testing.T, admissionTimeout time.Duration, serverURI string, methods auth.Methods, register func(*grpc.Server), callers ...string) grpc.ClientConnInterface {
+	t.Helper()
 	ca := peertlstesting.NewCA(t)
 	serving := ca.Issue(t, serverURI)
 	serverTLS, err := serving.WorkloadServerTLSConfigWithServices(serverURI, true)
@@ -53,7 +59,7 @@ func ServeTLS(t *testing.T, serverURI string, methods auth.Methods, register fun
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(append(methods.ServerOptions(5*time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
+	server := grpc.NewServer(append(methods.ServerOptions(admissionTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	register(server)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)

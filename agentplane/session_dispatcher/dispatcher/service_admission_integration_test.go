@@ -2,7 +2,6 @@ package dispatcher
 
 import (
 	"context"
-	"net"
 	"testing"
 	"time"
 
@@ -10,17 +9,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,35 +67,15 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := transporttesting.NewCA(t)
-	files := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := files.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	rules := access.NewIndex()
 	ownerObject := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Name: owner.Name, UID: types.UID(owner.Uid)}}
 	rules.PutIdentity(ownerObject)
-	dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
+		dispatcherpb.RegisterSessionDispatcherServer(server, &Service{Store: store, Sandboxes: inventory, DispatcherServices: sets.New(peertls.AppURI), EnvironmentRules: rules, PolicyReady: func() error { return nil }})
+	}, peertls.AppURI, peertls.ActionsURI, peertls.SessionDispatcherURI)
 	client := func(serviceID string) dispatcherpb.SessionDispatcherClient {
 		t.Helper()
-		config, err := ca.Issue(t, serviceID).ClientTLSConfig(peertls.SessionDispatcherURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return dispatcherpb.NewSessionDispatcherClient(conn)
+		return dispatcherpb.NewSessionDispatcherClient(grpcmethods.AsCaller(connection, serviceID))
 	}
 	app, actions, denied := client(peertls.AppURI), client(peertls.ActionsURI), client(peertls.SessionDispatcherURI)
 	if _, err := app.GetSession(t.Context(), &dispatcherpb.GetSessionRequest{SessionId: foreign}); err != nil {

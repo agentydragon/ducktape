@@ -102,35 +102,12 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := transporttesting.NewCA(t)
-	serverSVID := ca.Issue(t, peertls.PolicyControllerURI)
-	serverCredentials, err := (peertls.ServerTLSListener{
-		Listen: ":0", CertFile: serverSVID.CertFile, KeyFile: serverSVID.KeyFile, ClientCAFile: ca.RootFile,
-	}).Credentials(peertls.PolicyControllerURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
-	policypb.RegisterPolicyServiceServer(server, service)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.PolicyControllerURI, methods, func(server *grpc.Server) {
+		policypb.RegisterPolicyServiceServer(server, service)
+	}, peertls.AppURI, peertls.NotificationsURI)
 	clients := policyClients{}
 	for name, uri := range map[string]string{"app": peertls.AppURI, "unlisted": peertls.NotificationsURI} {
-		svid := ca.Issue(t, uri)
-		config, err := svid.ClientTLSConfig(peertls.PolicyControllerURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		clients[name] = policypb.NewPolicyServiceClient(conn)
+		clients[name] = policypb.NewPolicyServiceClient(grpcmethods.AsCaller(connection, uri))
 	}
 	return clients, kube
 }
