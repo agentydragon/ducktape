@@ -359,7 +359,7 @@ fn verdict_from_canonical_scheduled(
     schedule: &EsmImportSchedule,
 ) -> RealizabilityVerdict {
     let mut verdict = RealizabilityVerdict {
-        unrealizable_sccs: Vec::new(),
+        unrealizable_sccs: constraining_cycles(&canonical),
         cross_rebinds,
     };
     if canonical.edges.is_empty() {
@@ -370,33 +370,11 @@ fn verdict_from_canonical_scheduled(
     // **mutual** constraining cycles (both sides eager-read each
     // other; no source order can satisfy both). Pass 2 below applies
     // the simulator only to SCCs not already flagged here.
-    let mut con_graph: DiGraphMap<ModuleId, ()> = DiGraphMap::new();
-    for (from, to) in canonical.pairs() {
-        con_graph.add_edge(from, to, ());
-    }
-    let mut reported: BTreeSet<BTreeSet<ModuleId>> = BTreeSet::new();
-    let sccs = tarjan_scc(&con_graph);
-    for scc in &sccs {
-        if scc.len() < 2 {
-            continue;
-        }
-        let modules: BTreeSet<ModuleId> = scc.iter().copied().collect();
-        let mut dependency_edges: Vec<DependencyEdgeId> = Vec::new();
-        for ((from, to), edges) in &canonical.edges {
-            if modules.contains(from) && modules.contains(to) {
-                dependency_edges.extend_from_slice(edges);
-            }
-        }
-        dependency_edges.sort();
-        reported.insert(modules.clone());
-        verdict.unrealizable_sccs.push(SccDiagnosis {
-            core: SccCore {
-                modules,
-                constraining_dependency_edges: dependency_edges,
-            },
-            rejection: SccRejection::MutualConstrainingCycle,
-        });
-    }
+    let reported: BTreeSet<_> = verdict
+        .unrealizable_sccs
+        .iter()
+        .map(|diagnosis| diagnosis.core.modules.clone())
+        .collect();
 
     // Pass 2: Tarjan over the full I-graph (canonical
     // `i_successors`, which includes lazy back-edges). Multi-module
@@ -491,6 +469,57 @@ fn verdict_from_canonical_scheduled(
     }
 
     verdict
+}
+
+/// Order-independent Pass-1 diagnoses for generated-layout construction.
+/// This is not a realizability verdict: no import order is inferred or checked.
+pub fn assignment_constraining_cycles(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+) -> Vec<SccDiagnosis> {
+    constraining_cycles(&chunk_constraining_module_edges(
+        dependency_graph,
+        assignment,
+    ))
+}
+
+fn constraining_cycles(canonical: &ChunkConstrainingEdgeSet) -> Vec<SccDiagnosis> {
+    let mut graph = DiGraphMap::<ModuleId, ()>::new();
+    for (from, to) in canonical.pairs() {
+        graph.add_edge(from, to, ());
+    }
+    let mut by_module = FxHashMap::default();
+    let mut diagnoses = Vec::new();
+    for component in tarjan_scc(&graph)
+        .into_iter()
+        .filter(|component| component.len() > 1)
+    {
+        let index = diagnoses.len();
+        for &module in &component {
+            by_module.insert(module, index);
+        }
+        diagnoses.push(SccDiagnosis {
+            core: SccCore {
+                modules: component.into_iter().collect(),
+                constraining_dependency_edges: Vec::new(),
+            },
+            rejection: SccRejection::MutualConstrainingCycle,
+        });
+    }
+    for (&(from, to), edges) in &canonical.edges {
+        if let Some(&index) = by_module.get(&from)
+            && by_module.get(&to) == Some(&index)
+        {
+            diagnoses[index]
+                .core
+                .constraining_dependency_edges
+                .extend_from_slice(edges);
+        }
+    }
+    for diagnosis in &mut diagnoses {
+        diagnosis.core.constraining_dependency_edges.sort_unstable();
+    }
+    diagnoses
 }
 
 /// Touching-filtered form of [`check_realizability`]: the same pure
