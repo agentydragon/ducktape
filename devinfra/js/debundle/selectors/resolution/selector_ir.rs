@@ -83,6 +83,11 @@ pub enum SelectorAtom {
         variables: Vec<SelectorVariableId>,
         rows: Vec<Vec<SelectorProjectedValue>>,
     },
+    /// A source-unit variable cannot claim any of these already-owned units.
+    SourceUnitNotIn {
+        source_unit: SourceUnitTerm,
+        excluded: Vec<SourceUnitId>,
+    },
     SourceUnitReferencesSourceUnit {
         source_unit: SourceUnitTerm,
         referenced: SourceUnitTerm,
@@ -147,6 +152,9 @@ impl SelectorAtom {
                 ..
             } => {
                 variables.extend(projected.iter().copied());
+            }
+            Self::SourceUnitNotIn { source_unit, .. } => {
+                collect_source_unit_term_variables(source_unit, &mut variables);
             }
             Self::SourceUnitReferencesSourceUnit {
                 source_unit,
@@ -247,6 +255,13 @@ impl SelectorAtom {
                     .map(|variable| remap_variable_id(*variable, variable_map))
                     .collect(),
                 rows: rows.clone(),
+            },
+            Self::SourceUnitNotIn {
+                source_unit,
+                excluded,
+            } => Self::SourceUnitNotIn {
+                source_unit: remap_source_unit_term(source_unit, variable_map),
+                excluded: excluded.clone(),
             },
             Self::SourceUnitReferencesSourceUnit {
                 source_unit,
@@ -617,6 +632,9 @@ impl SelectorProgram {
                     }
                 }
                 Ok(())
+            }
+            SelectorAtom::SourceUnitNotIn { source_unit, .. } => {
+                self.validate_source_unit_term(source_unit, "source_unit_not_in.source unit")
             }
             SelectorAtom::SourceUnitReferencesSourceUnit {
                 source_unit,

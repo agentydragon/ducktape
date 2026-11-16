@@ -34,7 +34,7 @@ pub struct MemberSelectorProgramBuilder {
     /// Each projected anonymous statement's source unit variable, by logical module
     /// and statement index.
     projected_anonymous_source_units: BTreeMap<(String, usize), SelectorVariableId>,
-    global_source_unit_by_export: BTreeMap<String, Option<SelectorVariableId>>,
+    global_source_unit_by_export: BTreeMap<String, GlobalSourceUnit>,
     targeted_source_units: BTreeMap<SelectorVariableId, String>,
     injective_targeted_source_units: BTreeSet<SelectorVariableId>,
     source_unit_injectivity_classes: BTreeMap<SelectorVariableId, String>,
@@ -44,6 +44,14 @@ pub struct MemberSelectorProgramBuilder {
 enum SourceUnitInjectivityClass {
     SourceUnit(SelectorVariableId),
     Shared(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlobalSourceUnit {
+    Target(SelectorVariableId),
+    Fixed(source_identity::SourceUnitId),
+    Unresolved,
+    Ambiguous,
 }
 
 impl MemberSelectorProgramBuilder {
@@ -114,12 +122,51 @@ impl MemberSelectorProgramBuilder {
         self.global_source_unit_by_export
             .entry(export_name.to_string())
             .and_modify(|slot| {
-                if *slot != Some(source_unit) {
-                    *slot = None;
+                if *slot != GlobalSourceUnit::Target(source_unit) {
+                    *slot = GlobalSourceUnit::Ambiguous;
                 }
             })
-            .or_insert(Some(source_unit));
+            .or_insert(GlobalSourceUnit::Target(source_unit));
         Ok(self.program.add_target(source_unit, logical_module, claim))
+    }
+
+    /// Adds an export owned by the frozen base assignment. It contributes to
+    /// name resolution, but does not create a selector target or join
+    /// `all_different`.
+    pub fn declare_frozen_export_anchor(
+        &mut self,
+        export_name: &str,
+        source_unit: Option<source_identity::SourceUnitId>,
+    ) {
+        let anchor = source_unit.map_or(GlobalSourceUnit::Unresolved, GlobalSourceUnit::Fixed);
+        self.global_source_unit_by_export
+            .entry(export_name.to_string())
+            .and_modify(|slot| *slot = GlobalSourceUnit::Ambiguous)
+            .or_insert(anchor);
+    }
+
+    /// Prevents every placement target from reusing a source unit already
+    /// owned by the retained base assignment.
+    pub fn exclude_occupied_source_units(
+        &mut self,
+        occupied: &BTreeSet<source_identity::SourceUnitId>,
+    ) {
+        if occupied.is_empty() {
+            return;
+        }
+        let targets = self
+            .program
+            .targets
+            .iter()
+            .map(|target| target.source_unit)
+            .collect::<BTreeSet<_>>();
+        let excluded = occupied.iter().copied().collect::<Vec<_>>();
+        for source_unit in targets {
+            self.program.add_atom(SelectorAtom::SourceUnitNotIn {
+                source_unit: source_unit_term(source_unit),
+                excluded: excluded.clone(),
+            });
+        }
     }
 
     pub fn declare_projected_anonymous_statement_target_in_module(
@@ -378,19 +425,18 @@ impl MemberSelectorProgramBuilder {
     fn source_unit_for_global_export(
         &mut self,
         export_name: &str,
-    ) -> Result<SelectorVariableId, SelectorIrLoweringError> {
-        match self
-            .global_source_unit_by_export
-            .get(export_name)
-            .copied()
-            .flatten()
-        {
-            Some(source_unit) => Ok(source_unit),
-            None if self.global_source_unit_by_export.contains_key(export_name) => {
-                Err(SelectorIrLoweringError::AmbiguousAnchor {
-                    export_name: export_name.to_string(),
-                })
+    ) -> Result<SourceUnitTerm, SelectorIrLoweringError> {
+        match self.global_source_unit_by_export.get(export_name).copied() {
+            Some(GlobalSourceUnit::Target(source_unit)) => {
+                Ok(SourceUnitTerm::Var { id: source_unit })
             }
+            Some(GlobalSourceUnit::Fixed(source_unit)) => Ok(SourceUnitTerm::Const { source_unit }),
+            Some(GlobalSourceUnit::Ambiguous) => Err(SelectorIrLoweringError::AmbiguousAnchor {
+                export_name: export_name.to_string(),
+            }),
+            Some(GlobalSourceUnit::Unresolved) => Err(SelectorIrLoweringError::UnresolvedAnchor {
+                export_name: export_name.to_string(),
+            }),
             None => {
                 let source_unit = self
                     .program
@@ -399,7 +445,7 @@ impl MemberSelectorProgramBuilder {
                     ("<global>".to_string(), export_name.to_string()),
                     source_unit,
                 );
-                Ok(source_unit)
+                Ok(SourceUnitTerm::Var { id: source_unit })
             }
         }
     }
@@ -419,7 +465,7 @@ impl MemberSelectorProgramBuilder {
                 self.program
                     .add_atom(SelectorAtom::SourceUnitReferencesSourceUnit {
                         source_unit: source_unit_term(source_unit),
-                        referenced: source_unit_term(anchor),
+                        referenced: anchor,
                     });
                 self.add_kind_atom(source_unit, target.kind);
                 Ok(())
@@ -430,7 +476,7 @@ impl MemberSelectorProgramBuilder {
                     self.program
                         .add_atom(SelectorAtom::ReadsMemberOfSourceUnit {
                             source_unit: source_unit_term(source_unit),
-                            object: source_unit_term(object),
+                            object,
                             member: const_str(&target.member),
                         });
                 } else {
@@ -458,7 +504,7 @@ impl MemberSelectorProgramBuilder {
                     self.program
                         .add_atom(SelectorAtom::PassedToCallOfSourceUnit {
                             source_unit: source_unit_term(source_unit),
-                            callee_object: source_unit_term(object),
+                            callee_object: object,
                             callee_member: const_str(&target.callee_member),
                             arg_index,
                         });
@@ -477,7 +523,7 @@ impl MemberSelectorProgramBuilder {
                 self.program
                     .add_atom(SelectorAtom::MakesDecorateCallForSourceUnit {
                         source_unit: source_unit_term(source_unit),
-                        class_anchor: source_unit_term(class_anchor),
+                        class_anchor,
                         member: target.member.as_deref().map(const_str),
                     });
                 self.add_kind_atom(source_unit, target.kind);
@@ -583,6 +629,10 @@ pub enum SelectorIrLoweringError {
                  selector anchor `@{export_name}` is ambiguous across lowered members"
     )]
     AmbiguousAnchor { export_name: String },
+    #[error(
+        "relational selector anchor `@{export_name}` has no resolved source unit in the frozen base"
+    )]
+    UnresolvedAnchor { export_name: String },
     #[error("invalid selector IR program: {0}")]
     InvalidProgram(selector_ir::SelectorProgramError),
 }
