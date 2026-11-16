@@ -146,7 +146,7 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
     );
 }
 
-fn assert_accepted_actual_inversion(fixture: &Fixture, operation: &str) {
+fn assert_accepted_actual_inversion(fixture: &Fixture, operation: &str, moved_binding: &str) {
     let assessment = fixture.effect_translation_validation();
     assert_eq!(
         assessment["decision"]["status"], "accepted",
@@ -174,7 +174,7 @@ fn assert_accepted_actual_inversion(fixture: &Fixture, operation: &str) {
             .unwrap()
     };
     assert!(
-        position("computed") < position("before") || position("after") < position("computed"),
+        position(moved_binding) < position("before") || position("after") < position(moved_binding),
         "{operation} must cross an executable anchor: {assessment:#}"
     );
 }
@@ -187,36 +187,7 @@ fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
             .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 2 1\n");
-    let assessment = fixture.effect_translation_validation();
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "the primitive read must participate in an actual inversion: {assessment:#}"
-    );
-    let graph = fixture.dependency_graph();
-    let position = |binding| {
-        let unit = source_unit_for_binding(&graph, binding);
-        let ordinal = graph
-            .nodes
-            .iter()
-            .find(|node| node.id == unit)
-            .unwrap()
-            .statement_ordinal
-            .0;
-        assessment["emitted_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|row| row.as_u64() == Some(ordinal as u64))
-            .unwrap()
-    };
-    assert!(
-        position("computed") < position("before") || position("after") < position("computed"),
-        "the computed initializer must cross an executable anchor, beyond static linkage: {assessment:#}"
-    );
+    assert_accepted_actual_inversion(&fixture, "the primitive read", "computed");
     assert_root_read_receipt(&fixture, "computed");
 }
 
@@ -301,7 +272,7 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
             .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 258 1\n");
-    assert_accepted_actual_inversion(&fixture, "the called primitive operation");
+    assert_accepted_actual_inversion(&fixture, "the called primitive operation", "computed");
     assert_called_operation_receipt(&fixture, "computed", "add");
 }
 
@@ -318,7 +289,7 @@ fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
             .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 bytes:2 1\n");
-    assert_accepted_actual_inversion(&fixture, "the template return");
+    assert_accepted_actual_inversion(&fixture, "the template return", "computed");
     assert_called_operation_receipt(&fixture, "computed", "render");
 }
 
@@ -523,36 +494,7 @@ fn split_binding_copies_have_receipts_for_an_actual_inversion() {
         .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 2 2 1\n");
-    let assessment = fixture.effect_translation_validation();
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "the binding copies must participate in an actual inversion: {assessment:#}"
-    );
-    let graph = fixture.dependency_graph();
-    let position = |binding| {
-        let unit = source_unit_for_binding(&graph, binding);
-        let ordinal = graph
-            .nodes
-            .iter()
-            .find(|node| node.id == unit)
-            .unwrap()
-            .statement_ordinal
-            .0;
-        assessment["emitted_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|row| row.as_u64() == Some(ordinal as u64))
-            .unwrap()
-    };
-    assert!(
-        position("first") < position("before") || position("after") < position("first"),
-        "the binding copy must cross an executable anchor: {assessment:#}"
-    );
+    assert_accepted_actual_inversion(&fixture, "the binding copy", "first");
     assert_root_read_receipt(&fixture, "first");
     assert_root_read_receipt(&fixture, "second");
 }
