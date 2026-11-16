@@ -198,6 +198,7 @@ py_library(
         "//cluster/cdk8s/monitoring/dashboards:cluster-disk-usage.json",
         "//cluster/cdk8s/monitoring/dashboards:cluster-storage-io.json",
         "//cluster/cdk8s/monitoring/dashboards:cpap-gateway-disk.json",
+        "//cluster/cdk8s/monitoring/dashboards:etcd.json",
         "//cluster/cdk8s/monitoring/dashboards:flux-cluster.json",
         "//cluster/cdk8s/monitoring/dashboards:home-network-overview.json",
         "//cluster/cdk8s/monitoring/dashboards:interface-flap-frequency.json",
