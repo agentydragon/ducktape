@@ -86,6 +86,7 @@ Operator review is the scarce resource. Split into small, independently approvab
 
 ## Conventions
 
+- **Plans are active work only.** Follow <README.md#plans> and <STYLE.md#documentation>. Consolidate overlapping plans into one active owner; remove completed or superseded plans after moving enduring contracts, proofs and useful failed-approach lessons into maintained docs. Never retain a plan as a historical record or cite it as a stable reference. `TODO.md` may point to an active plan for dispatch.
 - Investigation notes go in the owning project's `debug/` (<README.md#debug>), not comments or PR text.
 - Update a component's `SPEC.md` when its contract changes (example: <devinfra/claude/claude_hook/SPEC.md>).
 

@@ -10,9 +10,11 @@ placement with the global canonical realizability gate. Its result is a graph
 placement witness or a scoped no-placement decision. Select `--strategy auto`
 only for the advisory atomic-DAG inventory.
 
-The constructive coverage and scheduler proofs live in
-[module placement](module_placement.md). This guide covers the CLI and author
-workflow.
+The [scheduling complexity proof](polynomial_esm_scheduling.md) explains the
+cost of the current general operation. The
+[explicit-order graph model](placement_algorithm.md) defines the scoped target
+constructor and its guarantee; it does not establish that this CLI already
+implements that replacement. This guide covers the current CLI and workflow.
 
 ## Workflow
 

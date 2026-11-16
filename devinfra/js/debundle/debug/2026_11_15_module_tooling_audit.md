@@ -3,7 +3,7 @@
 Historical evidence pinned to the revisions below. This inventory predates the
 common batch checker, exact application and exhaustive reference implementation;
 it does not describe the current engine. The active design is
-[constructive module placement](../plans/module_placement.md).
+[constructive module placement](../docs/placement_algorithm.md).
 
 The audit distinguishes inspected contracts and tests, fresh neutral CLI probes,
 and architectural inferences. Executable observations belong to the pinned

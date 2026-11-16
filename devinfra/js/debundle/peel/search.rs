@@ -1,6 +1,7 @@
 //! Constructive residual placement over owner coarsenings.
 //!
-//! See docs/module_placement.md for the obstruction clauses and coverage proof.
+//! General owner coarsening can branch exponentially. The scoped replacement
+//! contract and its proof are in docs/placement_algorithm.md.
 
 use std::time::Duration;
 

@@ -1009,7 +1009,8 @@ object. Missing canonical targets are emitted as phantom side-effect imports,
 including deferred closure dependencies. Accepted output verifies exact target
 equality. Rejected reading-only output under `--emit-on-rejection` has no valid
 schedule and preserves preferred diagnostic ordering without certification. See
-the [exact scheduler and placement proof](module_placement.md).
+the [certificate verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
+and [schedule-existence complexity boundary](polynomial_esm_scheduling.md).
 
 The predicate has two forms:
 
@@ -2090,8 +2091,9 @@ reifies and verifies those ordered target lists. If they expose a TDZ, the exact
 constructor searches the complete `I` and `C` relations for another set of
 actual ordered target lists. It preserves successful DFS subtrees and explores
 only choices among currently unvisited actual imports; it does not treat a failed
-preferred traversal as proof that all schedules fail. Its completeness argument
-is in the [exact scheduler and placement proof](module_placement.md).
+preferred traversal as proof that all schedules fail. The
+[exact trial argument](polynomial_esm_scheduling.md#exact-trial-completeness)
+proves completeness without a polynomial running-time bound.
 
 The true entry imports every emitted module, including binding-less and empty
 authored modules. A constraining dependency into entry is unschedulable because
@@ -2589,8 +2591,9 @@ constraining graphs. `AssignmentAnalysis` retains the resulting schedule, and
 the gate independently checks its exact target sets. Lowering orders entry's
 complete fanout and every module's merged intra-chunk import list from those
 retained lists, so emission cannot silently choose a different traversal. The
-constructor's completeness proof and the target-list verifier are documented
-in the [exact scheduler and placement proof](module_placement.md).
+[exact trial argument](polynomial_esm_scheduling.md#exact-trial-completeness)
+and [target-list verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
+separate completeness from the cost of finding a witness.
 
 A constraining edge into entry is always impossible to schedule: entry is the
 ESM DFS root and evaluates last. Other cycles involving entry are assessed by
@@ -2653,8 +2656,9 @@ for lazy reads regardless of which member the DFS enters first (Lemma 4). A
 cycle that also carries constraining edges is accepted only when the exact
 scheduler constructs concrete imports whose ESM post-order satisfies every
 constraining dependency; the independent target-list verifier checks that
-result. The scheduling construction and completeness argument are given in
-the [exact scheduler and placement proof](module_placement.md). By Lemmas 3
+result. The concrete scheduling obligations are given in
+the [certificate verifier](placement_algorithm.md#one-prepared-context-and-certificate-verifier)
+and [schedule-existence complexity boundary](polynomial_esm_scheduling.md). By Lemmas 3
 and 4 every binding read in the emitted bundle sees an initialized value
 identical to the input chunk's read at the same source ordinal. By Lemma 5 every side-effecting
 statement fires in the same relative order as in the input chunk. By the
@@ -2666,7 +2670,7 @@ Scope of the argument: Lemmas 3–5 are stated for evaluation orders `L`
 respecting `I`. An I-SCC that carries both constraining and lazy edges has no
 such `L`; the exact scheduler instead constructs ordered import lists and
 the verifier checks their ESM post-order against the constraining dependencies.
-The scheduler proof is linked above; `e2e/simulator_node_differential_sweep_test`
+The certificate checks and scheduling boundary are linked above; `e2e/simulator_node_differential_sweep_test`
 compares the simulated evaluation order with Node for its covered fixtures.
 
 ### Coverage gaps (what the proof does NOT cover)

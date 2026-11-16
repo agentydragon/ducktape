@@ -1,18 +1,15 @@
-# Polynomial ESM schedule construction
+# ESM schedule feasibility and bounded construction
 
-Status: proposed design, not the behavior of the current exact constructor.
+Deciding whether arbitrary canonical import lists can be ordered to satisfy
+finish constraints is NP-complete. Checking supplied ordered lists is
+polynomial. The proof below explains the boundary and why SCC decomposition or
+successful-subtree commitment does not remove it.
 
-Ordinary validation and emission should use a polynomial, sound, incomplete
-constructor. It returns a verified schedule, a proved obstruction, or `unknown`.
-An `unknown` result refuses runnable emission and remains distinguishable from a
-proof that no schedule exists. This fits Debundle's soundness-over-completeness
-contract. It does change the current scheduler's completeness contract.
-
-There is a fundamental reason for this distinction: deciding whether an arbitrary
-canonical import graph admits a valid schedule is NP-complete. The reduction below
-uses an acyclic constraining graph, so checking constraining cycles first does not
-remove the difficulty. This document gives both that proof and a polynomial
-construction with explicit correctness and space/time bounds.
+The explicit-order contract verifies the priority supplied with the spec; its
+complete residual constructor uses the restricted family proved in
+<placement_algorithm.md>. It does not call the optional bounded constructor
+described below. That separate algorithm can return a verified schedule, a
+proved obstruction or `unknown`; failure to find an order is not impossibility.
 
 ## Problem and scope
 
@@ -31,7 +28,7 @@ imports, then mark it black and assign its finish index. A gray target is an
 ancestor; a black target has already finished. All modules must be reached.
 
 This problem is exactly the graph-level scheduling obligation in
-[module placement](module_placement.md#exact-scheduler-with-successful-subtree-commitment). It does
+[module placement](polynomial_esm_scheduling.md#why-successful-subtree-commitment-does-not-bound-retries). It does
 not establish the semantic sufficiency of the supplied `C` edges. That remains
 the responsibility of whole-program effect and availability inference and the
 other gate checks. Async modules and arbitrary alternate entry roots require
@@ -89,7 +86,43 @@ Use loop-free graphs with at least two vertices for this reduction.
 
 Consequently, a general exact polynomial scheduler would imply `P = NP`. A
 polynomial design must expose incompleteness, restrict its supported inputs, or
-change the emission problem. This design exposes incompleteness.
+change the emission problem. The optional construction below exposes incompleteness.
+
+### Exact trial completeness
+
+A recursive exact constructor can commit successful DFS subtrees without
+backtracking over their sibling order. This proves completeness, not a
+polynomial running-time bound. Let R be the vertices reachable from a candidate
+v in the current white-induced import graph. Reject a trial if a vertex in R
+has a C dependency on v or an active ancestor; those dependencies cannot finish
+first. Subject to that entry check:
+
+Any DFS subtree starting at v visits exactly R, independently of successor order:
+all its initial white I-reachable vertices are visited before it returns, and it
+cannot enter an initially white vertex outside R. Thus the entry rejection is
+necessary: every w in R must finish before v and every active ancestor, violating
+w -> a when a has not finished.
+
+The key commitment lemma is stronger than mere necessary root constraints. A
+successful valid subtree on R cannot destroy the existence of a valid completion
+of its parent frame. R is successor-closed among the initial white vertices. If
+a valid completion existed before this subtree, run the successful R traversal
+first, then use that completion with visits to R omitted. No edge out of R can
+have been needed to enter an outside white vertex. Visits into R now skip black
+vertices. Relative finish order of outside vertices is preserved. Constraints
+from outside into R become satisfied earlier; constraints from R to outside
+white vertices do not exist; constraints from R to active ancestors were rejected;
+and constraints within R are satisfied by the successful trial. The modified
+execution is therefore a valid DFS completion.
+
+Induct on the number of white vertices to prove frame completeness. If a valid
+completion exists, its next white child has a valid subtree and its completion
+trial will succeed. Trying other children first either fails without state change or
+commits a successful subtree, which preserves existence by the lemma. Each
+success reduces the white set. Consequently failure after all currently possible
+children fail is exact, and there is no need to backtrack over previously
+successful sibling subtrees. The returned target lists are still checked by the
+independent schedule verifier.
 
 ### Why successful-subtree commitment does not bound retries
 
@@ -277,40 +310,22 @@ it cannot provide the absent scheduling witness. An author may revise module
 boundaries and rerun validation, but this constructor does not silently change
 the authored assignment.
 
-## Integration and behavioral coverage
+## Boundary and validation obligations
 
-This is a replacement design for ordinary scheduling, not an implemented repair
-and not a claim that the current Excalidraw CPU profile is caused by scheduling.
-That profile is dominated by callback promotion during analysis.
+The bounded algorithm above is a separate mathematical construction, not the
+ordinary materialization policy. Adopting it as a named heuristic would require
+typed verified/obstructed/unknown results and explicit caller opt-in. It cannot
+silently repair a rejected supplied priority or restore unrestricted placement
+completeness. The initial supported residual operation uses the explicit-order
+family and proof in <placement_algorithm.md>.
 
-Implementation must replace ordinary constructor calls in `assignment_analysis`,
-`realizability`, its incremental simulator, and emission-facing prediction.
-Carry `Unknown` through typed results to a distinct CLI refusal. Existing
-`unwrap_or_else` policy fallbacks must not erase it. The legacy complete placement
-search needs an explicit decision: remain a separately named exponential mode
-outside polynomial runs, or propagate unknown and forgo exhaustive/no-peel
-claims. It cannot retain both guarantees unchanged.
+Independent raw import-list permutations on tiny graphs can check acceptance
+and distinguish a genuine obstruction from a valid-but-unfound schedule. Useful
+regressions include the hub reduction, the clique-plus-isolated-vertex retry
+family, gray ancestors cutting white reachability, and acyclic C inside a cyclic
+I component. A deterministic operation bound must count graph work, including
+failed trials; a timeout or a finite passing corpus is not a complexity proof.
 
-Required real-CLI tests, using bundle + spec as input:
-
-- Preserve accepted preferred schedules, emitted target sets, module exports,
-  and original/emitted Node output.
-- Accept a nonentry DAG and a cyclic graph whose preferred order fails but the
-  monotone constructor succeeds; execute the emitted modules.
-- Refuse a genuine constraining cycle and a constraint into entry with their
-  checkable certificates; keep their error kind separate from `Unknown`.
-- Refuse the valid-but-unfound `a → b` hub example as `Unknown`, with no runnable
-  output. A supplied valid schedule for the same input must independently pass
-  verification, proving the refusal is incomplete rather than impossible.
-- Run increasing instances of the clique-plus-isolated-vertex family. Assert a
-  deterministic operation-count bound `K·nN`, using graph-operation counters in
-  focused pure-algorithm tests, with real CLI refusal and output checks as the
-  external contract. Use no wall-clock pass/fail threshold.
-- Preserve direct/saved analysis parity, incremental/from-scratch gate parity,
-  and complete placement interruption semantics. Neither an interrupted run nor
-  `Unknown` may establish `exhausted_no_peel`.
-
-Tiny raw-permutation oracles may remain separate fixed-size test oracles. They
-are not part of ordinary validation or the polynomial construction. Before
-claiming a polynomial CLI, separately resolve the selector and placement-search
-boundaries and prove bounds for the remaining inference and reporting passes.
+These graph bounds exclude selector resolution and source analysis. A supplied
+schedule must still pass the shared verifier and the remaining semantic gates
+before emission.
