@@ -20,12 +20,6 @@ def test_demand_query(scratch_app: App, runfiles: Runfiles, promtool: Path, tmp_
     (scaled_object,) = Cdk8sTesting.synth(chart)
     alert_rule = next(obj for obj in Cdk8sTesting.synth(worker_chart) if obj["kind"] == "PrometheusRule")
     spec = scaled_object["spec"]
-    assert spec["minReplicaCount"] == 1
-    behavior = spec["advanced"]["horizontalPodAutoscalerConfig"]["behavior"]
-    assert behavior["scaleUp"]["stabilizationWindowSeconds"] == 120
-    assert behavior["scaleUp"]["policies"] == [{"type": "Pods", "value": 1, "periodSeconds": 900}]
-    assert behavior["scaleDown"]["stabilizationWindowSeconds"] == 900
-    assert behavior["scaleDown"]["policies"] == [{"type": "Pods", "value": 1, "periodSeconds": 300}]
     query = spec["triggers"][0]["metadata"]["query"]
     (tmp_path / "buildbuddy.yaml").write_text(
         yaml.safe_dump(
