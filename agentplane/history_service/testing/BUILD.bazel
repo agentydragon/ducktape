@@ -142,6 +142,7 @@ py_library(
         "//agentplane/testing:go_process",
         "//agentplane/testing:kubernetes_apiserver",
         "//agentplane/testing:tls",
+        "//devinfra/testing:undeclared_outputs",
         "//util:db_url",
         "//util:net",
         "//util/testing:postgres",
