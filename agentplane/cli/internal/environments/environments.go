@@ -104,14 +104,14 @@ func resumeFailure(ctx context.Context, err error) error {
 			for _, detail := range converted.Details() {
 				switch typed := detail.(type) {
 				case *environmentlifecyclepb.ResumeEligibility:
-					encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
+					encoded, marshalErr := invocation.ProtoJSONWithOptions(typed, protojson.MarshalOptions{UseProtoNames: true})
 					if marshalErr != nil {
 						detailError = errors.Join(detailError, fmt.Errorf("encode resume eligibility: %w", marshalErr))
 					} else {
 						failure.ResumeEligibility = encoded
 					}
 				case *environmentlifecyclepb.WakeAssessment:
-					encoded, marshalErr := protojson.MarshalOptions{UseProtoNames: true}.Marshal(typed)
+					encoded, marshalErr := invocation.ProtoJSONWithOptions(typed, protojson.MarshalOptions{UseProtoNames: true})
 					if marshalErr != nil {
 						detailError = errors.Join(detailError, fmt.Errorf("encode wake assessment: %w", marshalErr))
 					} else {
@@ -219,14 +219,7 @@ func (a *commands) showEnvironment(environment *environmentpb.EnvironmentDescrip
 }
 
 func (a *commands) writeProtoJSON(message proto.Message) error {
-	encoded, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(message)
-	if err != nil {
-		return invocation.InvalidResponse("marshal discovery response: %v", err)
-	}
-	if _, err := fmt.Fprintln(a.Stdout(), string(encoded)); err != nil {
-		return invocation.ClientFailure(invocation.ExitRefused, "INTERNAL", "write stdout: %v", err)
-	}
-	return nil
+	return invocation.ShowProto(a.Invocation, []proto.Message{message}, nil, protojson.MarshalOptions{UseProtoNames: true})
 }
 
 func environmentText(environment *environmentpb.EnvironmentDescriptor) string {

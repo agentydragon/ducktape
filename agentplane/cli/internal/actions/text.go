@@ -9,11 +9,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func indented(raw json.RawMessage) (string, error) {
+func indented(message proto.Message) (string, error) {
+	raw, err := invocation.ProtoJSON(message)
+	if err != nil {
+		return "", err
+	}
 	var out bytes.Buffer
 	if err := json.Indent(&out, raw, "", "  "); err != nil {
 		return "", invocation.InvalidResponse("%v", err)
@@ -21,22 +25,11 @@ func indented(raw json.RawMessage) (string, error) {
 	return out.String(), nil
 }
 
-func unmarshalActionJSON(raw json.RawMessage, message proto.Message) error {
-	if err := protojson.Unmarshal(raw, message); err != nil {
-		return invocation.InvalidResponse("%v", err)
-	}
-	return nil
-}
-
 func actionEnumText(value string, prefix string) string {
 	return strings.ToLower(strings.TrimPrefix(value, prefix))
 }
 
-func groupLine(raw json.RawMessage) (string, error) {
-	group := &action_servicepb.ActionGroup{}
-	if err := unmarshalActionJSON(raw, group); err != nil {
-		return "", err
-	}
+func groupLine(group *action_servicepb.ActionGroup) (string, error) {
 	status := strconv.Itoa(len(group.GetActions())) + " actions"
 	if !group.GetAvailable() {
 		status += " (unavailable)"
@@ -45,39 +38,19 @@ func groupLine(raw json.RawMessage) (string, error) {
 	return invocation.Fields(group.GetKey(), kind, status, group.GetTitle()), nil
 }
 
-func actionLine(raw json.RawMessage) (string, error) {
-	action := &action_servicepb.Action{}
-	if err := unmarshalActionJSON(raw, action); err != nil {
-		return "", err
-	}
+func actionLine(action *action_servicepb.Action) (string, error) {
 	return invocation.Fields(action.GetGroup()+"/"+action.GetName(), invocation.FirstLine(action.GetDescription())), nil
 }
 
-func actionDetail(raw json.RawMessage) (string, error) {
-	action := &action_servicepb.Action{}
-	if err := unmarshalActionJSON(raw, action); err != nil {
-		return "", err
-	}
-	schema := []byte("{}")
-	if action.GetInputSchema() != nil {
-		var err error
-		schema, err = protojson.Marshal(action.GetInputSchema())
-		if err != nil {
-			return "", invocation.InvalidResponse("input schema: %v", err)
-		}
-	}
-	formatted, err := indented(schema)
+func actionDetail(action *action_servicepb.Action) (string, error) {
+	formatted, err := indented(action.GetInputSchema())
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%s/%s\n%s\ninput schema:\n%s", action.GetGroup(), action.GetName(), action.GetDescription(), formatted), nil
 }
 
-func policyText(raw json.RawMessage) (string, error) {
-	policy := &action_servicepb.CallerActionPolicy{}
-	if err := unmarshalActionJSON(raw, policy); err != nil {
-		return "", err
-	}
+func policyText(policy *action_servicepb.CallerActionPolicy) (string, error) {
 	lines := []string{fmt.Sprintf("subject %s/%s  synced %t", policy.GetSubject().GetNamespace(), policy.GetSubject().GetName(), policy.GetSynced())}
 	for _, binding := range policy.GetBindings() {
 		var sets []string
@@ -86,6 +59,9 @@ func policyText(raw json.RawMessage) (string, error) {
 		}
 		line := invocation.Fields("binding "+binding.GetName(), "sets "+strings.Join(sets, ","))
 		if binding.GetExpiresAt() != nil {
+			if err := binding.GetExpiresAt().CheckValid(); err != nil {
+				return "", invocation.InvalidResponse("expires_at: %v", err)
+			}
 			line += "  expires " + binding.GetExpiresAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
 		}
 		lines = append(lines, line)
@@ -118,9 +94,8 @@ func policyText(raw json.RawMessage) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-func receiptLine(raw json.RawMessage) (string, error) {
-	r, err := parseReceipt(raw)
-	if err != nil {
+func receiptLine(r *action_servicepb.ActionRequest) (string, error) {
+	if err := validateActionRequest(r); err != nil {
 		return "", err
 	}
 	state := actionEnumText(r.GetState().String(), "ACTION_STATE_")
@@ -138,9 +113,9 @@ func receiptLine(raw json.RawMessage) (string, error) {
 		}
 	}
 	if execution := r.GetExecution(); execution != nil && execution.GetError() != nil {
-		errorJSON, err := protojson.Marshal(execution.GetError())
+		errorJSON, err := invocation.ProtoJSON(execution.GetError())
 		if err != nil {
-			return "", invocation.InvalidResponse("execution error: %v", err)
+			return "", err
 		}
 		line += "  error: " + string(errorJSON)
 	}
@@ -148,57 +123,54 @@ func receiptLine(raw json.RawMessage) (string, error) {
 }
 
 // resultText prints the text blocks of a CallToolResult, and any other result as indented JSON.
-func resultText(raw json.RawMessage) (string, error) {
-	var tool struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
+func resultText(result *structpb.Value) (string, error) {
 	var texts []string
-	// A result that is not an object has no content blocks; that is the other form, not an error.
-	if json.Unmarshal(raw, &tool) == nil {
-		for _, block := range tool.Content {
-			if block.Type == "text" {
-				texts = append(texts, block.Text)
+	for _, value := range result.GetStructValue().GetFields()["content"].GetListValue().GetValues() {
+		block := value.GetStructValue()
+		if block == nil {
+			if _, null := value.GetKind().(*structpb.Value_NullValue); null {
+				continue
 			}
+			return indented(result)
+		}
+		// A malformed text block leaves the whole result visible as JSON.
+		for _, key := range []string{"type", "text"} {
+			switch block.GetFields()[key].GetKind().(type) {
+			case nil, *structpb.Value_NullValue, *structpb.Value_StringValue:
+			default:
+				return indented(result)
+			}
+		}
+		if block.GetFields()["type"].GetStringValue() == "text" {
+			texts = append(texts, block.GetFields()["text"].GetStringValue())
 		}
 	}
 	if len(texts) > 0 {
 		return strings.Join(texts, "\n"), nil
 	}
-	return indented(raw)
+	return indented(result)
 }
 
-func eventLine(raw json.RawMessage) (string, error) {
-	event := &action_servicepb.ActionEvent{}
-	if err := unmarshalActionJSON(raw, event); err != nil {
-		return "", err
-	}
+func eventLine(event *action_servicepb.ActionEvent) (string, error) {
 	line := invocation.Fields(strconv.Itoa(int(event.GetSequence())), actionEnumText(event.GetState().String(), "ACTION_STATE_"))
 	if event.GetAt() != nil {
+		if err := event.GetAt().CheckValid(); err != nil {
+			return "", invocation.InvalidResponse("at: %v", err)
+		}
 		line += "  " + event.GetAt().AsTime().Format("2006-01-02T15:04:05.999999999Z07:00")
 	}
 	if event.GetActor() != nil {
-		actor, err := protojson.Marshal(event.GetActor())
+		actor, err := invocation.ProtoJSON(event.GetActor())
 		if err != nil {
-			return "", invocation.InvalidResponse("event actor: %v", err)
+			return "", err
 		}
 		line += "  actor " + string(actor)
 	}
 	return line, nil
 }
 
-func cancellationLine(raw json.RawMessage) (string, error) {
-	cancellation := &action_servicepb.CancelActionRequestResponse{}
-	if err := unmarshalActionJSON(raw, cancellation); err != nil {
-		return "", err
-	}
-	request, err := invocation.ProtoJSON(cancellation.GetActionRequest())
-	if err != nil {
-		return "", err
-	}
-	requestLine, err := receiptLine(request)
+func cancellationLine(cancellation *action_servicepb.CancelActionRequestResponse) (string, error) {
+	requestLine, err := receiptLine(cancellation.GetActionRequest())
 	if err != nil {
 		return "", err
 	}

@@ -11,7 +11,6 @@ import (
 	"github.com/sethvargo/go-retry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // receipt is the ActionRequest as the Action Service returned it.
@@ -44,17 +43,6 @@ func validateActionRequest(message *action_servicepb.ActionRequest) error {
 		return invocation.InvalidResponse("unrecognized Action state %q", message.GetState())
 	}
 	return nil
-}
-
-func parseReceipt(raw []byte) (*action_servicepb.ActionRequest, error) {
-	message := &action_servicepb.ActionRequest{}
-	if err := protojson.Unmarshal(raw, message); err != nil {
-		return nil, invocation.InvalidResponse("%v", err)
-	}
-	if err := validateActionRequest(message); err != nil {
-		return nil, err
-	}
-	return message, nil
 }
 
 // waitUntil is a condition on a receipt, in the Action Service's own terms.

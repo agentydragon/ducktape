@@ -57,13 +57,17 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 			"Authorization: Bearer agentplane-credential-test-credential  or  X-Test-Key: agentplane-credential-test-credential",
 		},
 		{
-			"a method from a newer service is named", `[{"method":"METHOD_FUTURE"}]`,
-			"METHOD_FUTURE agentplane-credential-test-credential (see --json)",
+			"a method from a newer service is named", `[{"method":99}]`,
+			"99 agentplane-credential-test-credential (see --json)",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stdout, err := rulesText([]byte(rulesWith(tc.targets)))
+			rules := &egressrulespb.GetRulesResponse{}
+			if err := protojson.Unmarshal([]byte(rulesWith(tc.targets)), rules); err != nil {
+				t.Fatal(err)
+			}
+			stdout, err := rulesText(rules)
 			want := "subject test-ns/test-sandbox\n" + rule + tc.want + "  d\n" + openRule
 			if err != nil || strings.TrimSpace(stdout) != want {
 				t.Errorf("stdout %q, error %v; want %q", stdout, err, want)
@@ -73,7 +77,10 @@ func TestRulesTextShowsHowToPresentTheCredential(t *testing.T) {
 }
 
 func TestRulesTextNamesAnIdentityCaller(t *testing.T) {
-	stdout, err := rulesText([]byte(`{"identity":{"name":"test-agent"},"policies":[{"name":"test-policy","rules":[{"hosts":["open.example.test"]}]}]}`))
+	stdout, err := rulesText(&egressrulespb.GetRulesResponse{
+		Caller:   &egressrulespb.GetRulesResponse_Identity{Identity: &egressrulespb.IdentitySubject{Name: "test-agent"}},
+		Policies: []*egressrulespb.Policy{{Name: "test-policy", Rules: []*egressrulespb.Rule{{Hosts: []string{"open.example.test"}}}}},
+	})
 	if want := "identity test-agent\ntest-policy  open.example.test  *  *"; err != nil || strings.TrimSpace(stdout) != want {
 		t.Errorf("stdout %q, error %v; want %q", stdout, err, want)
 	}

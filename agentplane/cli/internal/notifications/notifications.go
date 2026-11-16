@@ -713,9 +713,9 @@ func subscriptionLine(subscription *notificationspb.Subscription) (string, error
 		line += "  error " + invocation.EnumSuffix(subscription.ErrorKind.String(), failureKindPrefix)
 	}
 	if github := subscription.GetGithub(); github != nil {
-		status, err := protojson.Marshal(github)
+		status, err := invocation.ProtoJSON(github)
 		if err != nil {
-			return "", invocation.InvalidResponse("GitHub status: %v", err)
+			return "", err
 		}
 		line = invocation.Fields(line, "github status "+string(status))
 	}
