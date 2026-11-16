@@ -428,7 +428,7 @@ def test_failed_shards_are_grouped_and_linked_in_comment_and_gallery(
     bundle = build_bundle(tests, tmp_path / "site", commit_sha="b" * 40, repository="owner/repo", base_sha="a" * 40)
     test = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text()).tests[0]
     comment = success_comment_body(
-        review_tests=[test], repository="owner/repo", commit_sha="b" * 40, url="https://visuals/", base_sha="a" * 40
+        repository="owner/repo", commit_sha="b" * 40, url="https://visuals/", review_tests=[test], base_sha="a" * 40
     )
     page = (bundle / "tests" / test.slug / "index.html").read_text()
     for rendered in (comment, page):
@@ -582,10 +582,10 @@ def test_unstable_variant_provenance_groups_shards_and_uses_distinguishable_link
     metadata = ReviewBundleMetadata.model_validate_json((bundle / "metadata.json").read_text())
     page = (bundle / "tests" / test.slug / "index.html").read_text()
     comment = success_comment_body(
-        review_tests=metadata.tests,
         repository="owner/repo",
         commit_sha="b" * 40,
         url="https://visuals/commits/head/",
+        review_tests=metadata.tests,
         base_sha=base_sha,
     )
 
@@ -636,10 +636,10 @@ def test_fallback_target_title_is_not_repeated_in_gallery_or_comment(tmp_path: P
     asset = metadata.tests[0].assets[0].model_copy(update={"classification": "new"})
     comment_test = metadata.tests[0].model_copy(update={"assets": [asset], "summary": ClassificationCounts(new=1)})
     comment = success_comment_body(
-        review_tests=[comment_test],
         repository="owner/repo",
         commit_sha="b" * 40,
         url="https://visuals/commits/head/",
+        review_tests=[comment_test],
         base_sha=base_sha,
         ci_details_url="https://github.test/runs/123",
     )
@@ -854,18 +854,18 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
         _review_test(
-            "//example:visuals",
-            target_slug("//example:visuals", repository="agentydragon/ducktape"),
-            "Example UI",
             ReviewAsset(path="screen.png", label="Screen", case_id="ui/test_visual.py::test_screen"),
+            target_label="//example:visuals",
+            slug=target_slug("//example:visuals", repository="agentydragon/ducktape"),
+            title="Example UI",
         )
     ]
 
     success = success_comment_body(
-        review_tests=review_tests,
         repository="agentydragon/ducktape",
         commit_sha=sha,
         url="https://visuals/commits/sha/",
+        review_tests=review_tests,
     )
     failure = error_comment_body(
         repository="agentydragon/ducktape",
@@ -879,10 +879,10 @@ def test_comment_bodies_link_commit_targets_and_report_errors() -> None:
     assert "missing artifact screen.png" in failure
 
     warning = success_comment_body(
-        review_tests=review_tests,
         repository="agentydragon/ducktape",
         commit_sha=sha,
         url="https://visuals/commits/sha/",
+        review_tests=review_tests,
         ci_conclusion="failure",
         ci_failures=["//haku/console:x_test"],
     )
@@ -906,7 +906,7 @@ REPOSITORY = "agentydragon/ducktape"
 def _success_comment(commit_sha: str) -> str:
     return CommentUpdate(
         body=success_comment_body(
-            review_tests=[], repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/"
+            repository=REPOSITORY, commit_sha=commit_sha, url="https://visuals/commits/sha/", review_tests=[]
         ),
         state=CommentState(commit_sha=commit_sha, kind="published", ci_conclusion="success"),
     ).render()
@@ -2255,7 +2255,7 @@ def test_write_baseline_pointers_puts_mutable_json() -> None:
 
 def test_diff_check_conclusions() -> None:
     def review_test(summary: ClassificationCounts | None) -> ReviewTest:
-        return _review_test("//t:a", "s", "T", summary=summary)
+        return _review_test(target_label="//t:a", slug="s", title="T", summary=summary)
 
     assert diff_check([review_test(None)]) is None
 
@@ -2281,10 +2281,10 @@ COMMENT_URL = "https://v/commits/sha/"
 
 
 def _review_test(
-    target_label: str,
-    slug: str,
-    title: str,
     *assets: ReviewAsset,
+    target_label: str = "//ex:visuals",
+    slug: str = "ex-visuals-abcdef",
+    title: str = "Ex",
     issues: list[ReviewIssue] | None = None,
     summary: ClassificationCounts | None = None,
     base_sha: str | None = None,
@@ -2307,22 +2307,16 @@ def _review_test(
 def _comment_body(
     review_tests: list[ReviewTest],
     *,
-    repository: str = "r",
     commit_sha: str = HEAD_SHA,
-    url: str = COMMENT_URL,
-    base_sha: str | None = COMMENT_BASE_SHA,
-    ci_conclusion: str = "success",
-    ci_failures: list[str] | None = None,
+    base_sha: str = COMMENT_BASE_SHA,
     ci_details_url: str | None = None,
 ) -> str:
     return success_comment_body(
-        repository=repository,
+        repository="r",
         commit_sha=commit_sha,
-        url=url,
+        url=COMMENT_URL,
         review_tests=review_tests,
         base_sha=base_sha,
-        ci_conclusion=ci_conclusion,
-        ci_failures=ci_failures,
         ci_details_url=ci_details_url,
     )
 
@@ -2362,9 +2356,6 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
         _review_test(
-            "//ex:visuals",
-            "ex-visuals-abcdef",
-            "Ex",
             _comment_asset(path="a.png", label="a", classification="modified", changed_fraction=0.5, changed_pixels=10),
             _comment_asset(path="b.png", label="b", classification="modified", changed_fraction=0.2, changed_pixels=4),
             _comment_asset(path="c.png", label="c", classification="new"),
@@ -2385,18 +2376,18 @@ def test_success_comment_body_reports_counts_and_previews() -> None:
 
 def test_comment_template_escapes_html_and_preserves_table_structure() -> None:
     test = _review_test(
-        "//ex:visual",
-        "s",
-        '<script>alert("x")</script>',
         _comment_asset(path="a.png", label='<b title="x">a|b</b>', classification="modified", changed_fraction=0.5),
+        target_label="//ex:visual",
+        slug="s",
+        title='<script>alert("x")</script>',
         issues=[ReviewIssue(message="bad <script>")],
         summary=ClassificationCounts(modified=1),
     )
     body = success_comment_body(
-        review_tests=[test],
         repository="r",
         commit_sha="a" * 40,
         url="https://v/",
+        review_tests=[test],
         base_sha="b" * 40,
         ci_details_url="https://example.com/run?a=1&b=2",
     )
@@ -2413,16 +2404,15 @@ def test_comment_template_escapes_html_and_preserves_table_structure() -> None:
 
 def test_comment_budget_skips_an_oversized_screenshot_and_keeps_target_summary() -> None:
     test = _review_test(
-        "//ex:visual",
-        "s",
-        "Ex",
         _comment_asset(
             path=f"{'x' * COMMENT_BUDGET}.png", label="oversized image", classification="modified", changed_fraction=0.5
         ),
+        target_label="//ex:visual",
+        slug="s",
         summary=ClassificationCounts(modified=1),
     )
     body = success_comment_body(
-        review_tests=[test], repository="r", commit_sha="a" * 40, url="https://v/", base_sha="b" * 40
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=[test], base_sha="b" * 40
     )
     assert '<a href="https://v/tests/s/index.html"><code>//ex:visual</code></a>' in body
     assert "1 screenshot comparison omitted for length" in body
@@ -2436,24 +2426,24 @@ def test_comment_budget_skips_an_oversized_screenshot_and_keeps_target_summary()
 def test_comment_budget_lets_smaller_comparisons_follow_an_oversized_screenshot() -> None:
     review_tests = [
         _review_test(
-            "//a:large",
-            "large",
-            "Large target",
             _comment_asset(
                 path=f"{'x' * COMMENT_BUDGET}.png", label="too large", classification="modified", changed_fraction=0.95
             ),
+            target_label="//a:large",
+            slug="large",
+            title="Large target",
             summary=ClassificationCounts(modified=1),
         ),
         _review_test(
-            "//b:small",
-            "small",
-            "Small target",
             _comment_asset(path="small.png", label="small view", classification="modified", changed_fraction=0.4),
+            target_label="//b:small",
+            slug="small",
+            title="Small target",
             summary=ClassificationCounts(modified=1),
         ),
     ]
     body = success_comment_body(
-        review_tests=review_tests, repository="r", commit_sha="a" * 40, url="https://v/", base_sha="b" * 40
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=review_tests, base_sha="b" * 40
     )
 
     assert '<a href="https://v/tests/large/index.html"><code>//a:large</code></a>' in body
@@ -2480,20 +2470,20 @@ def test_comment_budget_keeps_prioritized_previews_for_a_large_visual_target() -
         for index in range(79)
     ]
     test = _review_test(
-        "//aiquota/frontend:screenshots",
-        "aiquota-frontend-screenshots-3e9d0f23d39af287",
-        "aiquota dashboard",
         *assets,
+        target_label="//aiquota/frontend:screenshots",
+        slug="aiquota-frontend-screenshots-3e9d0f23d39af287",
+        title="aiquota dashboard",
         base_sha="0a13d8cabfa551075af7d01481624d1c",
         merge_base_sha="bd410610477e1a714a7fa2ef5eb41d89",
         baseline_fallback=True,
         summary=ClassificationCounts(modified=79),
     )
     body = success_comment_body(
-        review_tests=[test],
         repository="agentydragon/ducktape",
         commit_sha=commit_sha,
         url=f"https://s3.allegedly.works/pr-visuals/reviews-test-outputs/{commit_sha}/",
+        review_tests=[test],
         base_sha="f" * 40,
         ci_details_url="https://github.com/agentydragon/ducktape/actions/runs/43351224120",
     )
@@ -2522,12 +2512,12 @@ def test_comment_budget_bounds_pathological_labels_and_keeps_html_well_formed() 
     target_label = "//" + "target" * 1_000
     asset_label = "state " + "label" * 1_000
     test = _review_test(
-        target_label,
-        "bounded-labels",
-        "Title " + "text" * 1_000,
         _comment_asset(
             path="state.png", label=asset_label, classification="modified", changed_fraction=0.6, baseline_stale=True
         ),
+        target_label=target_label,
+        slug="bounded-labels",
+        title="Title " + "text" * 1_000,
         base_sha="b" * 40,
         merge_base_sha="c" * 40,
         issues=[
@@ -2540,7 +2530,7 @@ def test_comment_budget_bounds_pathological_labels_and_keeps_html_well_formed() 
         summary=ClassificationCounts(modified=1),
     )
     body = success_comment_body(
-        review_tests=[test], repository="r", commit_sha="a" * 40, url="https://v/", base_sha="b" * 40
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=[test], base_sha="b" * 40
     )
     parser = _CommentHtmlChecker()
     parser.feed(body)
@@ -2571,9 +2561,6 @@ def test_comment_budget_distributes_comparisons_round_robin_across_targets() -> 
     assets_per_target = 20
     review_tests = [
         _review_test(
-            f"//target-{target_index:02d}:screenshots",
-            f"target-{target_index:02d}",
-            f"Target {target_index:02d}",
             *[
                 _comment_asset(
                     path=f"target-{target_index:02d}/shot-{asset_index:02d}.png",
@@ -2583,12 +2570,15 @@ def test_comment_budget_distributes_comparisons_round_robin_across_targets() -> 
                 )
                 for asset_index in range(assets_per_target)
             ],
+            target_label=f"//target-{target_index:02d}:screenshots",
+            slug=f"target-{target_index:02d}",
+            title=f"Target {target_index:02d}",
             summary=ClassificationCounts(modified=assets_per_target),
         )
         for target_index in range(target_count)
     ]
     body = success_comment_body(
-        review_tests=review_tests, repository="r", commit_sha="a" * 40, url="https://v/", base_sha="b" * 40
+        repository="r", commit_sha="a" * 40, url="https://v/", review_tests=review_tests, base_sha="b" * 40
     )
 
     positions = [
@@ -2605,8 +2595,8 @@ def test_comment_budget_distributes_comparisons_round_robin_across_targets() -> 
 
 
 def test_comment_template_escapes_html_code_and_link_destinations() -> None:
-    test = _review_test("//ex:has`tick", "s", "Ex")
-    body = success_comment_body(review_tests=[test], repository="r", commit_sha="a" * 40, url="https://v/(branch)/")
+    test = _review_test(target_label="//ex:has`tick", slug="s")
+    body = success_comment_body(repository="r", commit_sha="a" * 40, url="https://v/(branch)/", review_tests=[test])
     assert '<a href="https://v/(branch)/tests/s/index.html"><code>//ex:has`tick</code></a>' in body
     assert '<a href="https://v/(branch)/index.html">Open visual review</a>' in body
 
@@ -2629,9 +2619,7 @@ def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> 
     body = _comment_body(
         [
             _review_test(
-                "//ex:visuals",
-                "ex-visuals-abcdef",
-                "Example UI",
+                title="Example UI",
                 base_sha="fedcba9876543210fedcba9876543210fedcba98",
                 baseline_fallback=True,
                 summary=ClassificationCounts(modified=1),
@@ -2652,13 +2640,11 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
     body = _comment_body(
         [
             _review_test(
-                "//ex:visuals",
-                "ex-visuals-abcdef",
-                "Example UI",
                 asset("a.png", stale=True),
                 asset("b.png", stale=None),
                 asset("c.png", stale=None),
                 asset("d.png", stale=None),
+                title="Example UI",
                 base_sha="fedcba9876543210fedcba9876543210fedcba98",
                 merge_base_sha="1111111122222222333333334444444455555555",
                 baseline_fallback=True,
@@ -2679,8 +2665,10 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
 
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
     review_tests = [
-        _review_test("//a:x", "a", "A", summary=ClassificationCounts(modified=4, new=12, unchanged=2)),
-        _review_test("//b:y", "b", "B", summary=ClassificationCounts(unchanged=5)),
+        _review_test(
+            target_label="//a:x", slug="a", title="A", summary=ClassificationCounts(modified=4, new=12, unchanged=2)
+        ),
+        _review_test(target_label="//b:y", slug="b", title="B", summary=ClassificationCounts(unchanged=5)),
     ]
     body = _comment_body(review_tests)
     # The target disclosure omits zero-count buckets from its summary.
@@ -2696,8 +2684,8 @@ def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
 def test_success_comment_body_is_compact_when_every_affected_test_is_unchanged() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     review_tests = [
-        _review_test("//a:x", "a", "A", summary=ClassificationCounts(unchanged=3)),
-        _review_test("//b:y", "b", "B", summary=ClassificationCounts(unchanged=5)),
+        _review_test(target_label="//a:x", slug="a", title="A", summary=ClassificationCounts(unchanged=3)),
+        _review_test(target_label="//b:y", slug="b", title="B", summary=ClassificationCounts(unchanged=5)),
     ]
 
     body = _comment_body(review_tests, commit_sha=sha)
@@ -2718,9 +2706,6 @@ def test_success_comment_body_shows_new_previews_when_nothing_modified() -> None
     only ever collected `modified` assets and bailed out with no previews at all otherwise."""
     review_tests = [
         _review_test(
-            "//ex:visuals",
-            "ex-visuals-abcdef",
-            "Ex",
             _comment_asset(path="a.png", label="a", classification="new"),
             _comment_asset(path="b.png", label="b", classification="new"),
             _comment_asset(path="c.png", label="c", classification="unchanged"),
@@ -2737,20 +2722,16 @@ def test_success_comment_body_groups_changed_tests_and_folds_unchanged_targets()
     """Changed tests get their own disclosure and the unchanged list stays compact."""
     review_tests = [
         _review_test(
-            f"//untouched{index}:visuals",
-            f"untouched-{index}",
-            f"Untouched {index}",
             _comment_asset(path="a.png", label="a", classification="unchanged"),
+            target_label=f"//untouched{index}:visuals",
+            slug=f"untouched-{index}",
+            title=f"Untouched {index}",
             summary=ClassificationCounts(unchanged=4),
         )
         for index in range(22)
     ] + [
         _review_test(
-            "//ex:visuals",
-            "ex-visuals-abcdef",
-            "Ex",
-            _comment_asset(path="fresh.png", label="fresh", classification="new"),
-            summary=ClassificationCounts(new=1),
+            _comment_asset(path="fresh.png", label="fresh", classification="new"), summary=ClassificationCounts(new=1)
         )
     ]
     body = _comment_body(review_tests, ci_details_url="https://github/actions/runs/123")
@@ -2771,9 +2752,6 @@ def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
     """No diff overlay exists when dimensions changed — the Diff cell is text."""
     review_tests = [
         _review_test(
-            "//t:a",
-            "s",
-            "T",
             _comment_asset(
                 path="a.png",
                 label="a",
@@ -2784,6 +2762,9 @@ def test_success_comment_body_dimension_change_degrades_diff_cell() -> None:
                 baseline_dimensions=[16, 16],
                 dimension_changed=True,
             ),
+            target_label="//t:a",
+            slug="s",
+            title="T",
             summary=ClassificationCounts(modified=1),
         )
     ]
@@ -2796,11 +2777,11 @@ def test_success_comment_body_uses_more_of_the_comment_budget_for_previews() -> 
     big = "x" * 3500
     review_tests = [
         _review_test(
-            "//t:a",
-            "s",
-            "T",
             _comment_asset(path="a.png", label=big, classification="modified", changed_fraction=0.9, changed_pixels=1),
             _comment_asset(path="b.png", label=big, classification="modified", changed_fraction=0.1, changed_pixels=1),
+            target_label="//t:a",
+            slug="s",
+            title="T",
             summary=ClassificationCounts(modified=2),
         )
     ]
