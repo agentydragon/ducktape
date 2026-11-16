@@ -871,3 +871,17 @@ spec:
     matchLabels:
       app.kubernetes.io/component: server
       app.kubernetes.io/name: authentik
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: worker
+  namespace: authentik
+spec:
+  podMetricsEndpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      app.kubernetes.io/name: authentik
