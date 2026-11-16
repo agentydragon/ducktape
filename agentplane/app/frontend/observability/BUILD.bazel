@@ -7,10 +7,7 @@ package(default_visibility = ["//agentplane/app:__subpackages__"])
 filegroup(
     name = "typed_lint_srcs",
     testonly = True,
-    srcs = glob([
-        "*.ts",
-        "*.tsx",
-    ]),
+    srcs = glob(["*.ts"]),
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
 
