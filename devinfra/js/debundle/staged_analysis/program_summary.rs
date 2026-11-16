@@ -21,10 +21,11 @@ use analysis::analysis_inputs::{
 };
 use analysis::cross_module_purity::{
     CallableSummaryInputs, ExportValueSource, ModulePurityFacts, ResolvedCallableSummaries,
-    ResolvedImport, resolve_export_primitives, resolve_imported_callable_summaries,
-    resolve_imported_purities, resolve_stable_imports,
+    resolve_export_primitives, resolve_imported_callable_summaries, resolve_imported_purities,
+    resolve_stable_imports,
 };
 use analysis::facts::abstract_domain::value::Value;
+use analysis::program_bindings::{ProgramBindings, ResolvedImport};
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
 use artifact::reports::{
@@ -589,7 +590,19 @@ pub fn collect_program_summary(
             );
         }
     }
-    let export_primitives = resolve_export_primitives(export_value_sources);
+    let bindings = ProgramBindings::new(
+        modules.iter().map(|(module, facts)| facts.bindings(module)),
+        export_value_sources
+            .keys()
+            .cloned()
+            .chain(export_value_sources.values().flat_map(|source| {
+                source
+                    .copies
+                    .iter()
+                    .map(|copy| (copy.module.clone(), copy.export.clone()))
+            })),
+    );
+    let export_primitives = resolve_export_primitives(&bindings, export_value_sources);
     let export_values: BTreeMap<_, _> = export_primitives
         .iter()
         .map(|(export, primitive)| (export.clone(), Value::Prim(primitive.kinds)))
@@ -738,6 +751,7 @@ pub fn collect_program_summary(
         .map(|input| (input.provider_chunk.clone(), input.provider_export.clone()))
         .collect();
     let mut callable_summaries = resolve_imported_callable_summaries(
+        &bindings,
         &modules,
         &scoped(chunk_export_purity, &modules, |p| {
             &p.callback_factory_exports
@@ -805,7 +819,9 @@ pub fn collect_program_summary(
         }
     }
     let asserted_pure = scoped(chunk_export_purity, &modules, |p| &p.pure_exports);
-    let bindings = resolve_imported_purities(
+    let mut stable_imports = resolve_stable_imports(&bindings, &modules, &asserted_pure);
+    let imported_purities = resolve_imported_purities(
+        &stable_imports,
         &modules,
         &asserted_pure,
         &mut callable_summaries,
@@ -813,7 +829,6 @@ pub fn collect_program_summary(
     )?;
     // A proved imported primitive read names a provider binding declared once
     // and never written (`StableExportValue`).
-    let mut stable_imports = resolve_stable_imports(&modules, &asserted_pure);
     for (chunk, reads) in &primitive_reads {
         stable_imports
             .entry(chunk.clone())
@@ -895,7 +910,7 @@ pub fn collect_program_summary(
         ),
         values,
         primitive_reads,
-        bindings,
+        bindings: imported_purities,
         stable_imports,
         fluent: exports!(fluent_exports, FluentExports),
         constructors,

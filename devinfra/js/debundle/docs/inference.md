@@ -334,6 +334,59 @@ families, including cross-module function effects and recursive purity, still
 run to closure in their worklist. Only a completed closure is exposed outside
 a producer.
 
+### Shared source binding graph
+
+`program_bindings::ProgramBindings` is prepared once by program-summary
+construction from the existing resolved named/default imports and local export
+maps. It borrows that prepared linkage during construction and performs no AST
+census or path resolution. Primitive-value sources contribute any additional
+export references they consume. Stability, primitive-export propagation and both
+callable-summary projections use this same graph; purity classification consumes
+the already completed stability result instead of solving it again.
+
+The graph interns two distinct identity spaces:
+
+- `ExportId` names one source-qualified `(module, public export)` reference,
+  including an unresolved provider reference.
+- `BindingId` names one source-qualified `(module, local)` cell. Local export
+  aliases share that cell. An imported local has an edge to its provider export;
+  a local initialized from an import has its own cell instead.
+
+Import targets, local export cells and reverse importer lists are prepared once.
+They supply linkage only: an ID is not evidence of a value, stable binding,
+initialized cell, purity or callable capability. Primitive copy dependencies
+remain value-flow edges, with their existing source-cell provenance; they never
+become live-alias edges. Stability still follows only local re-exports of
+imports, and callable projection still requires the provider's existing proof.
+Direct source re-exports, namespace members and unresolved routes gain no new
+stability or callable certificate.
+
+**Preservation.** Export interning is injective in the old `(module, export)`
+keys; local interning is injective in `(module, local)`. Every primitive copy
+read and callable import edge is relabeled with the corresponding ID, without
+changing its rule, proof dependencies or join. The stability rule uses exactly
+the previous local-export/import edge and immutable/asserted seeds. Extra
+unresolved identities have no producer, and unreferenced assertions cannot
+affect a projected importer. Thus relabeling rule firings in either direction
+gives the same completed judgments and name-based outputs. Sharing the closed
+stability result preserves the classifier's original inputs; primitive read
+capabilities are added to the caller's stable-import set afterward, as before.
+
+**Preparation bound.** Let `R` count explicit module, import, export and extra
+reference records, and `L` bound their name lengths in bytes. Construction makes
+`O(R)` ordered-map operations, each costing `O(L log(R + 2))`, and stores
+`O(R)` graph/index records with `O(RL)` copied name bytes. It therefore takes
+`O(RL log(R + 2))` time and `O(RL)` space. It traverses no paths, expands no
+alias closure and creates no identities during solving. ID edge reads are
+constant time; a complete traversal of module imports scans the indexed local
+bindings once. Semantic domains and rule contributions retain their existing
+bounds; this preparation claim does not bound arbitrary placement search.
+
+IDs live only for this analysis. Final summaries project back to source names,
+so saved-analysis DTOs, binding restoration and source/projection compatibility
+checks remain unchanged. The graph is released after program-summary
+construction; no graph cache or second serialized representation is retained.
+
 ### Stable imported bindings
 
 `cross_module_purity::resolve_stable_imports` assigns one Boolean fact to each
@@ -355,9 +408,11 @@ seeds, and otherwise ends at a missing identity, mutable binding, or repeated
 identity. The same import-to-identity projection therefore yields the same
 stable local import set, including false unseeded cycles.
 
-Preparation runs the existing immutable-declaration census once per module,
-indexes the export, import-target, and asserted identities once, and builds
-reverse import projections. Solving starts one rule for each of `V` identities.
+Preparation runs the existing immutable-declaration census once per module and
+reads the shared graph's export, import-target and reverse importer indexes.
+Assertions seed the graph identities they name; an unreferenced missing export
+needs no rule because it has no consumer. Solving starts one rule for each of
+`V` identities.
 Each rule reads at most one re-export dependency, each of the `E` dependency
 edges can wake its consumer at most once, and each Boolean fact grows only once
 from absent/false to true. Thus closure has at most `V + E` rule evaluations,

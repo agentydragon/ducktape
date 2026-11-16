@@ -56,27 +56,10 @@ use crate::execution_evidence::SourceLocator;
 use crate::facts::abstract_domain::value::Value;
 use crate::facts::{ChunkValueFlow, TopLevelItemView, top_level_item_views};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
+use crate::program_bindings::{
+    BindingId, ExportId, ModuleBindings, ProgramBindings, ResolvedImport, SourceModuleKey,
+};
 use crate::purity::{ChunkCodeGraph, Purity, PurityEffectRules, PurityMode};
-
-/// Source chunk name used as a key in program-summary maps; report
-/// [`crate::reports::schema::ModuleKey`] identifies a destination module.
-pub type SourceModuleKey = String;
-
-/// An import of a single named/default binding, already resolved to the
-/// module that defines it and the export read. Namespace imports
-/// (`import * as ns`) are intentionally not represented: their call sites are
-/// member calls (`ns.foo()`), not the bare-`Ident` callee the imported-purity
-/// arm handles.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedImport {
-    /// The module that defines the imported binding.
-    pub module: SourceModuleKey,
-    /// The export name read from that module.
-    pub export: String,
-    /// Original source specifier for the import binding. Static read
-    /// capabilities match this to the corresponding ordinary ESM request.
-    pub source_specifier: String,
-}
 
 /// A stable export after its imports resolved: its own types and the exports
 /// it copies.
@@ -98,16 +81,41 @@ pub struct ExportPrimitiveValue {
 /// Close stable export values over copied imports while preserving all local
 /// module-cell provenance along re-export and copy chains.
 pub fn resolve_export_primitives(
+    bindings: &ProgramBindings,
     sources: BTreeMap<(SourceModuleKey, String), ExportValueSource>,
 ) -> BTreeMap<(SourceModuleKey, String), ExportPrimitiveValue> {
-    let rules = ExportPrimitiveRules(sources.into_iter().collect());
+    let rules = ExportPrimitiveRules(
+        sources
+            .into_iter()
+            .map(|((module, export), source)| {
+                (
+                    bindings
+                        .export_id(&module, &export)
+                        .expect("prepared primitive export"),
+                    PrimitiveSource {
+                        kinds: source.kinds,
+                        copies: source
+                            .copies
+                            .into_iter()
+                            .map(|copy| {
+                                bindings
+                                    .export_id(&copy.module, &copy.export)
+                                    .expect("prepared primitive dependency")
+                            })
+                            .collect(),
+                        cell: source.cell,
+                    },
+                )
+            })
+            .collect(),
+    );
     let count = rules.0.len();
     IterativeInference::new(rules)
         .solve_values(0..count)
         .into_iter()
         .map(|(export, fact)| {
             (
-                export,
+                bindings.export_name(export).clone(),
                 ExportPrimitiveValue {
                     kinds: fact.kinds,
                     source_cells: fact.source_cells,
@@ -123,10 +131,16 @@ struct ExportPrimitiveFact {
     source_cells: BTreeSet<PrimitiveExportCell>,
 }
 
-struct ExportPrimitiveRules(Vec<((SourceModuleKey, String), ExportValueSource)>);
+struct PrimitiveSource {
+    kinds: PrimKinds,
+    copies: Vec<ExportId>,
+    cell: Option<PrimitiveExportCell>,
+}
+
+struct ExportPrimitiveRules(Vec<(ExportId, PrimitiveSource)>);
 
 impl IterativeRules for ExportPrimitiveRules {
-    type Key = (SourceModuleKey, String);
+    type Key = ExportId;
     type Fact = ExportPrimitiveFact;
     type Rule = usize;
 
@@ -137,7 +151,7 @@ impl IterativeRules for ExportPrimitiveRules {
             source_cells: source.cell.iter().cloned().collect(),
         };
         for copy in &source.copies {
-            let Some(copied) = context.read((copy.module.clone(), copy.export.clone())) else {
+            let Some(copied) = context.read(*copy) else {
                 return;
             };
             fact.kinds = fact.kinds.union(copied.kinds);
@@ -145,7 +159,7 @@ impl IterativeRules for ExportPrimitiveRules {
                 .extend(copied.source_cells.iter().cloned());
         }
         context.propose(
-            export.clone(),
+            *export,
             ExportPrimitiveFact {
                 kinds: fact.kinds,
                 source_cells: fact.source_cells,
@@ -508,6 +522,14 @@ fn resolve_imported_primitive_array_spread_inputs(
 }
 
 impl<'a> ModulePurityFacts<'a> {
+    pub fn bindings<'b>(&'b self, module: &'b str) -> ModuleBindings<'b> {
+        ModuleBindings {
+            module,
+            imports: &self.imports,
+            exports: &self.exports,
+        }
+    }
+
     fn locator(&self) -> Option<SourceLocator<'_>> {
         self.source
             .as_ref()
@@ -700,6 +722,7 @@ impl<'a> ModulePurityFacts<'a> {
 /// naming a module or export the program does not have records a diagnostic
 /// as a dangling assertion (likely a typo or a stale entry) and ignored.
 pub fn resolve_imported_purities(
+    stable_imports: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     callable_summaries: &mut ResolvedCallableSummaries,
@@ -864,7 +887,6 @@ pub fn resolve_imported_purities(
             &callable_summaries.selected_imported_primitive_array_spread_inputs,
         )?;
 
-    let stable_imports = resolve_stable_imports(modules, asserted_pure);
     let mut bodies = BTreeMap::new();
     let no_declared_pure = BTreeSet::new();
     let no_declared_pure_members = BTreeMap::new();
@@ -937,51 +959,79 @@ pub fn resolve_imported_purities(
 /// Every other import, including one of a module outside the program, stays
 /// a cell its provider can change.
 pub fn resolve_stable_imports(
+    bindings: &ProgramBindings,
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
-    let StableImportProblem { importers, rules } = StableImportProblem::new(modules, asserted_pure);
-    let solved = IterativeInference::new(rules).solve_values(0..importers.len());
-    let mut stable_imports: BTreeMap<_, BTreeSet<_>> = modules
-        .keys()
+    let never_rebound: BTreeMap<_, BTreeSet<_>> = modules
+        .iter()
+        .map(|(module, facts)| {
+            (
+                module,
+                crate::purity::immutable_declarations(facts.body, |_| true)
+                    .into_iter()
+                    .map(|(name, _)| name.to_string())
+                    .collect(),
+            )
+        })
+        .collect();
+    let asserted_or_immutable = bindings
+        .exports()
+        .filter(|export| {
+            let (module, name) = bindings.export_name(*export);
+            asserted_pure
+                .get(module)
+                .is_some_and(|exports| exports.contains(name))
+                || bindings.local_export(*export).is_some_and(|local| {
+                    let (module, local) = bindings.binding_name(local);
+                    never_rebound
+                        .get(module)
+                        .is_some_and(|names| names.contains(local))
+                })
+        })
+        .collect();
+    let rules = StableImportRules {
+        bindings,
+        asserted_or_immutable,
+    };
+    let solved = IterativeInference::new(rules).solve_values(bindings.exports());
+    let mut stable_imports: BTreeMap<_, BTreeSet<_>> = bindings
+        .modules()
         .map(|module| (module.clone(), BTreeSet::new()))
         .collect();
     for (export, stable) in solved {
-        if !stable {
-            continue;
-        }
-        for (module, local) in &importers[export] {
-            stable_imports
-                .get_mut(module)
-                .expect("importer belongs to the analyzed module set")
-                .insert(local.clone());
+        if stable {
+            for local in bindings.importers(export) {
+                let (module, name) = bindings.binding_name(*local);
+                stable_imports
+                    .get_mut(module)
+                    .expect("prepared importer")
+                    .insert(name.clone());
+            }
         }
     }
     stable_imports
 }
 
-type StableExportKey = (SourceModuleKey, String);
-
-/// One rule per canonical module-qualified export. Missing facts are false;
-/// true grows monotonically when an export is asserted or its re-export target
-/// is proved stable.
-#[derive(Clone)]
-struct StableImportRules {
-    asserted_or_immutable: Vec<bool>,
-    reexports: Vec<Option<usize>>,
+/// Stability is a separate growing judgment over shared source identities.
+/// Missing facts are false; only an assertion, immutable cell or stable local
+/// re-export can establish it. Direct source re-exports remain unsupported.
+struct StableImportRules<'a> {
+    bindings: &'a ProgramBindings,
+    asserted_or_immutable: BTreeSet<ExportId>,
 }
 
-impl IterativeRules for StableImportRules {
-    type Key = usize;
+impl IterativeRules for StableImportRules<'_> {
+    type Key = ExportId;
     type Fact = bool;
-    type Rule = usize;
+    type Rule = ExportId;
 
-    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
-        if self.asserted_or_immutable[*rule] {
+    fn evaluate(&self, rule: &ExportId, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        if self.asserted_or_immutable.contains(rule) {
             context.propose(*rule, true);
             return;
         }
-        let Some(provider) = self.reexports[*rule] else {
+        let Some(provider) = self.bindings.reexport_target(*rule) else {
             return;
         };
         if context.read(provider).copied().unwrap_or(false) {
@@ -993,84 +1043,6 @@ impl IterativeRules for StableImportRules {
         let changed = !*current && contribution;
         *current |= contribution;
         changed
-    }
-}
-
-struct StableImportProblem {
-    /// Provider export ID → importer-local bindings that project its verdict.
-    importers: Vec<Vec<(SourceModuleKey, String)>>,
-    rules: StableImportRules,
-}
-
-impl StableImportProblem {
-    fn new(
-        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
-        asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
-    ) -> Self {
-        let mut keys = BTreeSet::<StableExportKey>::new();
-        for (module, facts) in modules {
-            keys.extend(
-                facts
-                    .exports
-                    .keys()
-                    .map(|export| (module.clone(), export.clone())),
-            );
-            keys.extend(
-                facts
-                    .imports
-                    .values()
-                    .map(|import| (import.module.clone(), import.export.clone())),
-            );
-        }
-        keys.extend(asserted_pure.iter().flat_map(|(module, exports)| {
-            exports
-                .iter()
-                .map(|export| (module.clone(), export.clone()))
-        }));
-        let key_ids: BTreeMap<_, _> = keys
-            .into_iter()
-            .enumerate()
-            .map(|(id, key)| (key, id))
-            .collect();
-        let mut asserted_or_immutable = vec![false; key_ids.len()];
-        let mut reexports = vec![None; key_ids.len()];
-        let mut importers = vec![Vec::new(); key_ids.len()];
-
-        for (module, exports) in asserted_pure {
-            for export in exports {
-                asserted_or_immutable[key_ids[&(module.clone(), export.clone())]] = true;
-            }
-        }
-        for (module, facts) in modules {
-            let never_rebound: BTreeSet<String> =
-                crate::purity::immutable_declarations(facts.body, |_| true)
-                    .into_iter()
-                    .map(|(name, _)| name.to_string())
-                    .collect();
-            for (export, local) in &facts.exports {
-                let export_id = key_ids[&(module.clone(), export.clone())];
-                if never_rebound.contains(local) {
-                    asserted_or_immutable[export_id] = true;
-                    continue;
-                }
-                if let Some(import) = facts.imports.get(local) {
-                    reexports[export_id] =
-                        Some(key_ids[&(import.module.clone(), import.export.clone())]);
-                }
-            }
-            for (local, import) in &facts.imports {
-                let provider_id = key_ids[&(import.module.clone(), import.export.clone())];
-                importers[provider_id].push((module.clone(), local.clone()));
-            }
-        }
-
-        Self {
-            importers,
-            rules: StableImportRules {
-                asserted_or_immutable,
-                reexports,
-            },
-        }
     }
 }
 
@@ -1117,28 +1089,10 @@ impl ResolvedCallableSummaries {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CallableExportKey {
-    module: SourceModuleKey,
-    export: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CallableImportKey {
-    module: SourceModuleKey,
-    local: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CallableFactKey {
-    Export(CallableExportKey),
-    Import(CallableImportKey),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct CallableImportProjection {
-    imported: CallableImportKey,
-    provider: CallableExportKey,
+    Export(ExportId),
+    Import(BindingId),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1154,59 +1108,34 @@ impl CallableExportProof {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum CallableProjectionRule {
-    Export(CallableExportKey),
-    Import(CallableImportProjection),
+    Export(ExportId),
+    Import(BindingId),
 }
 
-struct CallableProjectionRules {
-    exports: BTreeMap<CallableExportKey, CallableExportProof>,
-    imports: Vec<CallableImportProjection>,
+struct CallableProjectionRules<'a> {
+    bindings: &'a ProgramBindings,
+    exports: BTreeMap<ExportId, CallableExportProof>,
 }
 
-impl CallableProjectionRules {
-    fn new(
-        exports: BTreeMap<CallableExportKey, CallableExportProof>,
-        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
-    ) -> Self {
-        let imports = modules
-            .iter()
-            .flat_map(|(module, facts)| {
-                facts
-                    .imports
-                    .iter()
-                    .map(|(local, target)| CallableImportProjection {
-                        imported: CallableImportKey {
-                            module: module.clone(),
-                            local: local.clone(),
-                        },
-                        provider: CallableExportKey {
-                            module: target.module.clone(),
-                            export: target.export.clone(),
-                        },
-                    })
-            })
-            .collect();
-        Self { exports, imports }
-    }
-
+impl CallableProjectionRules<'_> {
     fn producers(&self) -> BTreeSet<CallableProjectionRule> {
         self.exports
             .keys()
-            .cloned()
+            .copied()
             .map(CallableProjectionRule::Export)
             .chain(
-                self.imports
-                    .iter()
-                    .cloned()
-                    .map(CallableProjectionRule::Import),
+                self.bindings
+                    .modules()
+                    .flat_map(|module| self.bindings.imports(module))
+                    .map(|(local, _)| CallableProjectionRule::Import(local)),
             )
             .collect()
     }
 }
 
-impl IterativeRules for CallableProjectionRules {
+impl IterativeRules for CallableProjectionRules<'_> {
     type Key = CallableFactKey;
     type Fact = CallableSummary;
     type Rule = CallableProjectionRule;
@@ -1218,17 +1147,17 @@ impl IterativeRules for CallableProjectionRules {
                     return;
                 };
                 context.assume(&proof.dependencies);
-                context.propose(CallableFactKey::Export(key.clone()), proof.summary.clone());
+                context.propose(CallableFactKey::Export(*key), proof.summary.clone());
             }
-            CallableProjectionRule::Import(projection) => {
-                let provider = CallableFactKey::Export(projection.provider.clone());
-                let Some(summary) = context.read(provider).cloned() else {
+            CallableProjectionRule::Import(local) => {
+                let provider = self
+                    .bindings
+                    .import_target(*local)
+                    .expect("prepared import");
+                let Some(summary) = context.read(CallableFactKey::Export(provider)).cloned() else {
                     return;
                 };
-                context.propose(
-                    CallableFactKey::Import(projection.imported.clone()),
-                    summary,
-                );
+                context.propose(CallableFactKey::Import(*local), summary);
             }
         }
     }
@@ -1241,29 +1170,26 @@ impl IterativeRules for CallableProjectionRules {
 }
 
 fn solve_callable_import_projections(
-    modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
-    exports: BTreeMap<CallableExportKey, CallableExportProof>,
+    bindings: &ProgramBindings,
+    exports: BTreeMap<ExportId, CallableExportProof>,
 ) -> BTreeMap<SourceModuleKey, BTreeMap<String, CallableSummary>> {
-    let rules = CallableProjectionRules::new(exports, modules);
+    let rules = CallableProjectionRules { bindings, exports };
     let producers = rules.producers();
     let solved = IterativeInference::new(rules).solve(producers);
-    modules
-        .iter()
-        .map(|(module, facts)| {
-            let bindings = facts
-                .imports
-                .keys()
-                .filter_map(|local| {
-                    let key = CallableFactKey::Import(CallableImportKey {
-                        module: module.clone(),
-                        local: local.clone(),
-                    });
-                    solved
-                        .get(&key)
-                        .map(|judgment| (local.clone(), judgment.value().clone()))
+    bindings
+        .modules()
+        .map(|module| {
+            let imports = bindings
+                .imports(module)
+                .filter_map(|(local, _)| {
+                    let summary = solved.get(&CallableFactKey::Import(local))?;
+                    Some((
+                        bindings.binding_name(local).1.clone(),
+                        summary.value().clone(),
+                    ))
                 })
                 .collect();
-            (module.clone(), bindings)
+            (module.clone(), imports)
         })
         .collect()
 }
@@ -1290,6 +1216,7 @@ pub struct CallableSummaryInputs<'a> {
 }
 
 pub fn resolve_imported_callable_summaries(
+    bindings: &ProgramBindings,
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
     descriptor_copy_asserted: &BTreeMap<
@@ -1309,15 +1236,11 @@ pub fn resolve_imported_callable_summaries(
         no_accessor_install_callables,
         intrinsics_never_written,
     } = inputs;
-    let required: BTreeSet<_> = modules
-        .values()
-        .flat_map(|facts| facts.imports.values())
-        .map(|target| CallableExportKey {
-            module: target.module.clone(),
-            export: target.export.clone(),
-        })
+    let required: BTreeSet<_> = bindings
+        .modules()
+        .flat_map(|module| bindings.imports(module).map(|(_, export)| export))
         .collect();
-    let mut export_summaries: BTreeMap<CallableExportKey, CallableExportProof> = BTreeMap::new();
+    let mut export_summaries: BTreeMap<ExportId, CallableExportProof> = BTreeMap::new();
     for (module, exports) in asserted {
         for export in exports {
             if modules
@@ -1325,10 +1248,11 @@ pub fn resolve_imported_callable_summaries(
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
                 export_summaries
-                    .entry(CallableExportKey {
-                        module: module.clone(),
-                        export: export.clone(),
-                    })
+                    .entry(
+                        bindings
+                            .export_id(module, export)
+                            .expect("prepared callable export"),
+                    )
                     .or_default()
                     .add(
                         CallableSummary::callback_factory(
@@ -1361,10 +1285,11 @@ pub fn resolve_imported_callable_summaries(
                 .exports
                 .iter()
                 .filter(|(export, _)| {
-                    required.contains(&CallableExportKey {
-                        module: module.clone(),
-                        export: (*export).clone(),
-                    })
+                    required.contains(
+                        &bindings
+                            .export_id(module, export)
+                            .expect("prepared callable export"),
+                    )
                 })
                 .map(|(_, local)| local.clone())
                 .collect();
@@ -1626,10 +1551,11 @@ pub fn resolve_imported_callable_summaries(
                 object_arguments: objects.clone(),
             });
             export_summaries
-                .entry(CallableExportKey {
-                    module: module.clone(),
-                    export: export.clone(),
-                })
+                .entry(
+                    bindings
+                        .export_id(module, export)
+                        .expect("prepared callable export"),
+                )
                 .or_default()
                 .add(summary, ProofDependencies::default());
         }
@@ -1637,7 +1563,7 @@ pub fn resolve_imported_callable_summaries(
     // This projection is the source-only input to native branch refinement.
     // Generic inferred callback factories are deliberately added after the
     // completed all-module native census and cannot flow back into it.
-    let source_only_imports = solve_callable_import_projections(modules, export_summaries.clone());
+    let source_only_imports = solve_callable_import_projections(bindings, export_summaries.clone());
     for (module, facts) in &mut prepared {
         facts.refine_native_branches(
             source_only_imports
@@ -1664,10 +1590,11 @@ pub fn resolve_imported_callable_summaries(
     }
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
-            if !required.contains(&CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            }) || !modules
+            if !required.contains(
+                &bindings
+                    .export_id(module, export)
+                    .expect("prepared callable export"),
+            ) || !modules
                 .get(module)
                 .is_some_and(|facts| facts.exports.contains_key(export))
             {
@@ -1757,10 +1684,11 @@ pub fn resolve_imported_callable_summaries(
                     &native_integrity,
                     &required_stable_providers,
                     modules[module].exports.keys().any(|export| {
-                        required.contains(&CallableExportKey {
-                            module: module.clone(),
-                            export: export.clone(),
-                        })
+                        required.contains(
+                            &bindings
+                                .export_id(module, export)
+                                .expect("prepared callable export"),
+                        )
                     }),
                     || structural_flow(module, &views),
                 ),
@@ -1769,10 +1697,9 @@ pub fn resolve_imported_callable_summaries(
         .collect();
     for (module, exports) in descriptor_copy_asserted {
         for (export, signatures) in exports {
-            let key = CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            };
+            let key = bindings
+                .export_id(module, export)
+                .expect("prepared callable export");
             if !required.contains(&key) {
                 continue;
             }
@@ -1817,10 +1744,9 @@ pub fn resolve_imported_callable_summaries(
             continue;
         };
         for (export, local) in &facts.exports {
-            let key = CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            };
+            let key = bindings
+                .export_id(module, export)
+                .expect("prepared callable export");
             if !required.contains(&key) || export_summaries.contains_key(&key) {
                 continue;
             }
@@ -1853,10 +1779,9 @@ pub fn resolve_imported_callable_summaries(
             continue;
         };
         for (export, local) in &facts.exports {
-            let key = CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            };
+            let key = bindings
+                .export_id(module, export)
+                .expect("prepared callable export");
             // Publish only after proving availability for the resolved import.
             // Isolated initializer providers stay leaves under every assignment;
             // general initialized bindings still require a use/order proof.
@@ -1881,7 +1806,7 @@ pub fn resolve_imported_callable_summaries(
                     .and_then(|locator| locator.pos(BytePos(start)))
             };
             if let Some(record) = &call.record {
-                export_summaries.entry(key.clone()).or_default().add(
+                export_summaries.entry(key).or_default().add(
                     CallableSummary::returned_record(ReturnedRecordSummary {
                         defining_module: module.clone(),
                         export: export.clone(),
@@ -1923,10 +1848,9 @@ pub fn resolve_imported_callable_summaries(
     }
     for (module, facts) in modules {
         for (export, local) in &facts.exports {
-            let key = CallableExportKey {
-                module: module.clone(),
-                export: export.clone(),
-            };
+            let key = bindings
+                .export_id(module, export)
+                .expect("prepared callable export");
             if !required.contains(&key) {
                 continue;
             }
@@ -1949,7 +1873,7 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    let imported_callables = solve_callable_import_projections(modules, export_summaries);
+    let imported_callables = solve_callable_import_projections(bindings, export_summaries);
     let structural_flows = structural_flows
         .into_iter()
         .filter_map(|(module, flow)| Some((module.clone(), flow.into_inner()?)))
@@ -2052,7 +1976,19 @@ mod tests {
             ),
         ]);
 
-        let resolved = resolve_export_primitives(sources.clone());
+        let bindings = ProgramBindings::new(
+            [],
+            sources
+                .keys()
+                .cloned()
+                .chain(sources.values().flat_map(|source| {
+                    source
+                        .copies
+                        .iter()
+                        .map(|copy| (copy.module.clone(), copy.export.clone()))
+                })),
+        );
+        let resolved = resolve_export_primitives(&bindings, sources.clone());
         assert_eq!(
             resolved[&("bridge".to_string(), "forwarded".to_string())].kinds,
             PrimKinds::NUMBER
@@ -2100,17 +2036,72 @@ mod tests {
         }
     }
 
+    fn imported_purities(
+        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+        asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+        callables: &mut ResolvedCallableSummaries,
+        diagnostics: &Diagnostics,
+    ) -> Result<BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>>> {
+        let bindings = binding_graph(modules);
+        let stable = resolve_stable_imports(&bindings, modules, asserted);
+        resolve_imported_purities(&stable, modules, asserted, callables, diagnostics)
+    }
+
+    fn binding_graph(
+        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+    ) -> ProgramBindings {
+        ProgramBindings::new(
+            modules.iter().map(|(module, facts)| facts.bindings(module)),
+            [],
+        )
+    }
+
+    // Pure graph fixtures exercise solver work, not semantic body classification.
+    fn stable_graph(reexports: &[Option<usize>]) -> ProgramBindings {
+        let imports = reexports
+            .iter()
+            .enumerate()
+            .filter_map(|(node, target)| {
+                Some((
+                    format!("link{node}"),
+                    ResolvedImport {
+                        module: "graph".to_string(),
+                        export: format!("node{}", (*target)?),
+                        source_specifier: "./graph.js".to_string(),
+                    },
+                ))
+            })
+            .collect();
+        let exports = reexports
+            .iter()
+            .enumerate()
+            .map(|(node, target)| {
+                (
+                    format!("node{node}"),
+                    if target.is_some() {
+                        format!("link{node}")
+                    } else {
+                        format!("local{node}")
+                    },
+                )
+            })
+            .collect();
+        ProgramBindings::new(
+            [ModuleBindings {
+                module: "graph",
+                imports: &imports,
+                exports: &exports,
+            }],
+            [],
+        )
+    }
+
     #[test]
     fn stable_import_inference_work_scales_with_shared_tail_and_unseeded_cycle_size() {
         for width in [8, 16, 32, 64] {
-            // Many heads share a single tail. Every export identity has one
-            // rule, and the assertion seeds only the tail end.
-            let tail_width = width;
-            let node_count = width + tail_width;
+            let node_count = width * 2;
             let mut reexports = vec![None; node_count];
-            for provider in reexports.iter_mut().take(width) {
-                *provider = Some(width);
-            }
+            reexports[..width].fill(Some(width));
             for (node, provider) in reexports
                 .iter_mut()
                 .enumerate()
@@ -2119,29 +2110,32 @@ mod tests {
             {
                 *provider = Some(node + 1);
             }
-            let mut asserted_or_immutable = vec![false; node_count];
-            asserted_or_immutable[node_count - 1] = true;
+            let bindings = stable_graph(&reexports);
             let rules = StableImportRules {
-                asserted_or_immutable,
-                reexports,
+                bindings: &bindings,
+                asserted_or_immutable: BTreeSet::from([bindings
+                    .export_id("graph", &format!("node{}", node_count - 1))
+                    .unwrap()]),
             };
-            let solved = IterativeInference::new(rules).solve_values_resumable(0..node_count);
+            let solved = IterativeInference::new(rules).solve_values_resumable(bindings.exports());
             assert_eq!(solved.keys().count(), node_count, "width={width}");
             assert!(
                 solved.evaluations() <= 2 * node_count,
-                "width={width}: {} evaluations for {node_count} export identities",
-                solved.evaluations(),
+                "width={width}: {} evaluations for {node_count} exports",
+                solved.evaluations()
             );
         }
-
         for node_count in [8, 16, 32, 64, 128] {
-            let rules = StableImportRules {
-                asserted_or_immutable: vec![false; node_count],
-                reexports: (0..node_count)
+            let bindings = stable_graph(
+                &(0..node_count)
                     .map(|node| Some((node + 1) % node_count))
-                    .collect(),
+                    .collect::<Vec<_>>(),
+            );
+            let rules = StableImportRules {
+                bindings: &bindings,
+                asserted_or_immutable: BTreeSet::new(),
             };
-            let solved = IterativeInference::new(rules).solve_values_resumable(0..node_count);
+            let solved = IterativeInference::new(rules).solve_values_resumable(bindings.exports());
             assert_eq!(solved.keys().count(), 0);
             assert_eq!(solved.evaluations(), node_count);
         }
@@ -2217,21 +2211,16 @@ mod tests {
         let trusted_dependencies = value_input_dependencies("provider-values.js", 0);
         let mut export = CallableExportProof::default();
         export.add(summary.clone(), trusted_dependencies.clone());
-        let exports = BTreeMap::from([(
-            CallableExportKey {
-                module: "provider".to_string(),
-                export: "build".to_string(),
-            },
-            export,
-        )]);
-        let rules = CallableProjectionRules::new(exports, &modules);
+        let bindings = binding_graph(&modules);
+        let exports = BTreeMap::from([(bindings.export_id("provider", "build").unwrap(), export)]);
+        let rules = CallableProjectionRules {
+            bindings: &bindings,
+            exports,
+        };
         let producers = rules.producers();
         let solved = IterativeInference::new(rules).solve(producers);
 
-        let import_key = CallableFactKey::Import(CallableImportKey {
-            module: "app".to_string(),
-            local: "build".to_string(),
-        });
+        let import_key = CallableFactKey::Import(bindings.imports("app").next().unwrap().0);
         let judgment = solved
             .get(&import_key)
             .expect("provider summary projects onto the resolved importer");
@@ -2278,7 +2267,7 @@ mod tests {
         let diagnostics = Diagnostics::with_progress(&observer);
         std::thread::scope(|scope| {
             let operation = scope.spawn(|| {
-                let result = resolve_imported_purities(
+                let result = imported_purities(
                     &modules,
                     &BTreeMap::new(),
                     &mut ResolvedCallableSummaries::default(),
@@ -2319,7 +2308,7 @@ mod tests {
             ),
             ("c".to_string(), facts(&c, &[], &[("base", "base")])),
         ]);
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
@@ -2344,7 +2333,7 @@ mod tests {
             ),
         ]);
 
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
@@ -2372,7 +2361,7 @@ mod tests {
             ),
         ]);
 
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
@@ -2424,7 +2413,7 @@ mod tests {
             "app".to_string(),
             facts(&app, &[("ext", "vendor", "ext")], &[]),
         )]);
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
@@ -2446,7 +2435,7 @@ mod tests {
             ),
             ("lib".to_string(), facts(&lib, &[], &[("table", "table")])),
         ]);
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &BTreeMap::new(),
             &mut ResolvedCallableSummaries::default(),
@@ -2508,7 +2497,7 @@ mod tests {
         ]);
         // Without the assertion: impure.
         assert!(
-            !resolve_imported_purities(
+            !imported_purities(
                 &modules,
                 &BTreeMap::new(),
                 &mut ResolvedCallableSummaries::default(),
@@ -2520,7 +2509,7 @@ mod tests {
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        let resolved = resolve_imported_purities(
+        let resolved = imported_purities(
             &modules,
             &asserted,
             &mut ResolvedCallableSummaries::default(),
@@ -2568,7 +2557,7 @@ mod tests {
             ),
         ]);
         assert!(
-            !resolve_imported_purities(
+            !imported_purities(
                 &modules,
                 &BTreeMap::new(),
                 &mut ResolvedCallableSummaries::default(),
@@ -2582,7 +2571,7 @@ mod tests {
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
         assert!(
-            resolve_imported_purities(
+            imported_purities(
                 &modules,
                 &asserted,
                 &mut ResolvedCallableSummaries::default(),
@@ -2626,6 +2615,7 @@ mod tests {
             ("vendor".to_string(), BTreeSet::from(["wrap".to_string()])),
         ]);
         let resolved = resolve_imported_callable_summaries(
+            &binding_graph(&modules),
             &modules,
             &asserted,
             &BTreeMap::new(),

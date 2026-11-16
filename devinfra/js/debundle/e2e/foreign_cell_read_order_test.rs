@@ -4,6 +4,7 @@
 //! other effect.
 
 use debundle_e2e_graph_support::effect_validation::*;
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 
 const COUNTER: &str = "let count = 0;\n\
@@ -288,4 +289,70 @@ console.log(first, second);\n";
     assert_node_output(&refused.entry_path(), "1 0\n", "");
     let assessment = refused.candidate_relocation_assessment();
     assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+}
+
+const ALIAS_AND_COPY_PEERS: &[(&str, &str)] = &[
+    (
+        "static/provider",
+        "let value = 1;\n\
+         export { value as default };\n\
+         export function next() { return ++value; }\n",
+    ),
+    (
+        "static/bridge",
+        "import original from './provider.js';\n\
+         export { original as live };\n\
+         const value = original;\n\
+         export { value as copied };\n",
+    ),
+    ("static/unrelated", "export const value = 99;\n"),
+];
+
+fn assert_alias_copy_split(source: &str, original: &str, emitted: &str, exit: i32) {
+    let (staged, _fixture) = staged(second_first(source, ALIAS_AND_COPY_PEERS));
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    for invocation in [&direct, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(exit),
+            "{}",
+            invocation.result.stderr
+        );
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            emitted,
+            "",
+        );
+    }
+    assert_same_invocation_trees(&direct, &saved);
+}
+
+/// A copied value has its own immutable cell even when its initializer reads
+/// a mutable default import. The same local spelling in another chunk must
+/// retain a different identity as well.
+#[test]
+fn copied_default_import_and_unrelated_names_keep_distinct_cells() {
+    let source = "import { next } from './provider.js';\n\
+                  import { live, copied } from './bridge.js';\n\
+                  import { value } from './unrelated.js';\n\
+                  const first = next();\n\
+                  const second = copied;\n\
+                  console.log(first, second, live, value);\n";
+    assert_alias_copy_split(source, "2 1 2 99\n", "2 1 2 99\n", 0);
+}
+
+/// Changing only the selected read to the live alias must retain its ordering
+/// against the provider's writer. The emitted rejected tree makes the unsafe
+/// relocation observable independently of analysis reports.
+#[test]
+fn mutable_default_reexport_is_not_the_immutable_copy() {
+    let source = "import { next } from './provider.js';\n\
+                  import { live, copied } from './bridge.js';\n\
+                  import { value } from './unrelated.js';\n\
+                  const first = next();\n\
+                  const second = live;\n\
+                  console.log(first, second, copied, value);\n";
+    assert_alias_copy_split(source, "2 2 1 99\n", "2 1 1 99\n", 3);
 }
