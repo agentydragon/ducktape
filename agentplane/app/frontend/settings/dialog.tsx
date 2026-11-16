@@ -3,7 +3,7 @@ import { Modal, Tabs } from "@mantine/core";
 
 import { Connections } from "../connections/management";
 import { McpServers } from "../actions/mcp/mcp_servers";
-import { PushSettings } from "./push";
+import { PushSettings } from "../actions/push/settings";
 
 export type SettingsTab = "oauth-clients" | "mcp-servers" | "notifications";
 

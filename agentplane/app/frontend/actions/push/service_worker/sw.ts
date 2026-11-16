@@ -1,7 +1,7 @@
-import { ActionState, Verdict, type ActionRequest } from "../../../action_service/api/contracts/action_service_pb";
-import { decideActionById, listActionRequests } from "../actions/client";
-import { actionIdentity } from "../actions/presentation";
-import { formatActionNotification } from "../actions/notifications";
+import { ActionState, Verdict, type ActionRequest } from "../../../../action_service/api/contracts/action_service_pb";
+import { decideActionById, listActionRequests } from "../../client";
+import { actionIdentity } from "../../presentation";
+import { formatActionNotification } from "../../notifications";
 
 interface PushShow {
   kind: "show";
