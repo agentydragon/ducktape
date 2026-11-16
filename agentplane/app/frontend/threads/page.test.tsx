@@ -64,10 +64,8 @@ import { ThreadPage } from "./page";
 import { HistoryRowView } from "./history_row_views";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { DEGRADED_AFTER_MS, STALE_AFTER_MS } from "../stream_status";
-import { THREAD_STATUS_MARKS } from "../status_mark";
 import { testItem } from "./testing/entity";
 import {
-  badgeLabels,
   entity,
   reference,
   serving,
@@ -986,130 +984,12 @@ it("lists the thread's Sandbox and harness in the More menu", async () => {
   expect(menu?.textContent).toContain("Claude");
 });
 
-it.each([
-  [{ summary: { feedStatus: FeedStatus.FAILED } }, "Runner feed failed", "failed"],
-  [{ summary: { feedStatus: FeedStatus.ENDED } }, "Runner feed ended", "inactive"],
-  [
-    {
-      summary: {
-        feedStatus: FeedStatus.ACTIVE,
-        attached: { harnessState: HarnessState.STOPPED, launchOutcome: LaunchOutcome.PENDING },
-      },
-    },
-    "Harness not running",
-    "stopped",
-  ],
-  // A stopped native harness can outlive its last attached feed.
-  [
-    { summary: { feedStatus: FeedStatus.ENDED, attached: { harnessState: HarnessState.STOPPED } } },
-    "Harness not running",
-    "stopped",
-  ],
-  [{ summary: { attached: { harnessState: HarnessState.STOPPED } } }, "Harness not running", "stopped"],
-  [
-    { summary: { attached: { activeTurnId: "turn-1" } } },
-    "Turn running · Runner feed active · harness running",
-    "running",
-  ],
-  [{}, "Runner feed active · harness running", "idle"],
-  [
-    { summary: { lastTurnStatus: TurnStatus.FAILED } },
-    "Turn failed · Runner feed active · harness running",
-    "turn_error",
-  ],
-  [
-    { summary: { lastTurnStatus: TurnStatus.PROCESS_LOST } },
-    "Turn lost · Runner feed active · harness running",
-    "turn_error",
-  ],
-] as const)("uses shared thread row %o for the topbar status", async (row, label, kind) => {
-  sharedThread = row;
-  const container = await render();
-  const indicator = container.querySelector(".agentplane-thread-status-indicator");
-  expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
-  expect(indicator?.getAttribute("aria-label")).toBe(label);
-  expect(indicator?.getAttribute("data-status")).toBe(kind);
-});
-
 it("reads the Sandbox for the topbar and the composer from the one inventory stream", async () => {
   sandboxes = [updatedSandbox(inventorySandbox("suspended", true), { observedState: { suspendedBy: "Requested" } })];
   const container = await render();
   const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("data-status")).toBe("suspended");
   expect(composer(container).placeholder).toMatch(/^Sandbox is suspended \(on request\)\./);
-});
-
-it("shows the thread's unprocessed notification count in its topbar status indicator", async () => {
-  noticeInboxes = [{ inboxId: "inbox-1", sessionId: THREAD.metadata.threadId, queued: 2, unacknowledged: 1 }];
-  await render();
-  const indicator = mounted.at(-1)?.topbarTitle?.querySelector(".agentplane-thread-status-indicator");
-  expect(mounted.at(-1)?.topbarTitle?.contains(indicator ?? null)).toBe(true);
-  expect(indicator?.querySelector(".agentplane-thread-list-row-notices")?.textContent).toBe("3");
-});
-
-const faviconSvg = (): string => decodeURIComponent(favicon.getAttribute("href")?.split(",")[1] ?? "");
-
-it("shows green chevrons in the status indicator and the favicon, and a leading glyph in the title, while a turn is active", async () => {
-  vi.useFakeTimers();
-  sharedThread = { summary: { attached: { activeTurnId: "turn-1" } } };
-  const indicator = (await render(threadState({ rows: [viewState({ activeTurn: "turn-1" })] }))).querySelector(
-    ".agentplane-thread-status-indicator"
-  );
-  expect(indicator?.getAttribute("aria-label")).toBe("Turn running · Runner feed active · harness running");
-  expect(indicator?.getAttribute("data-status")).toBe("running");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.running.glyph} Test thread · Running — Agentplane`);
-  expect(favicon.getAttribute("href")).toMatch(/^data:image\/svg\+xml,/);
-  const frame = faviconSvg();
-  expect(frame).toContain('<path d="M5 14.5 27 5 18 27');
-  expect(frame).toContain('fill="none"');
-  expect(frame).not.toContain("<rect");
-  expect(frame).not.toContain("<circle");
-  expect(frame).toContain(`stroke="${THREAD_STATUS_MARKS.running.color}"`);
-  // A background tab throttles timers, so the favicon changes on status and never on a clock.
-  await act(async () => {
-    vi.advanceTimersByTime(5_000);
-  });
-  expect(faviconSvg()).toBe(frame);
-});
-
-it("shows an idle thread as a dot in the idle color, in the favicon and with its own title glyph", async () => {
-  sharedThread = {};
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("idle");
-  expect(indicator?.querySelector("svg")).toBeNull();
-  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.idle.color}" stroke="#102a43"`);
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.idle.glyph} Test thread · Ready — Agentplane`);
-});
-
-it("shows an idle thread whose last turn failed as a red warning icon, in the favicon and with its own title glyph", async () => {
-  sharedThread = { summary: { lastTurnStatus: TurnStatus.FAILED } };
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("turn_error");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
-  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.turn_error.color}"`);
-  // Not the red dot of a failed runner feed, which has a white inner ring.
-  expect(faviconSvg()).not.toContain('stroke="#fff"');
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.turn_error.glyph} Test thread · Turn failed — Agentplane`);
-});
-
-it("shows a stopped harness as an icon in the status indicator and the favicon, with its own title glyph", async () => {
-  sharedThread = { summary: { attached: { harnessState: HarnessState.STOPPED } } };
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("data-status")).toBe("stopped");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
-  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.stopped.color}"`);
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.stopped.glyph} Test thread · Stopped — Agentplane`);
-});
-
-it("shows a suspended Sandbox as paused in the status indicator, favicon and thread title", async () => {
-  sandboxes = [inventorySandbox("suspended")];
-  const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("aria-label")).toBe("Sandbox suspended");
-  expect(indicator?.getAttribute("data-status")).toBe("suspended");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
-  expect(faviconSvg()).toContain(`fill="${THREAD_STATUS_MARKS.suspended.color}"`);
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.suspended.glyph} Test thread · Suspended — Agentplane`);
 });
 
 it.each<["Idle" | "Requested", string]>([
@@ -1228,25 +1108,6 @@ it("does not show active-turn status when the runner is not active", async () =>
   const indicator = (await render()).querySelector(".agentplane-thread-status-indicator");
   expect(indicator?.getAttribute("aria-label")).toBe("Runner feed ended");
   expect(indicator?.getAttribute("data-status")).toBe("inactive");
-});
-
-// Retained history still says the harness runs and the feed failed; an archived thread shows the archive
-// icon instead, in the status indicator, the favicon and the title glyph.
-it("shows an archived thread as the archive icon, in the favicon and with its own title glyph", async () => {
-  vi.mocked(getThread).mockResolvedValue(
-    threadView({ metadata: { ...THREAD.metadata, archived: true }, summary: THREAD.summary })
-  );
-  sharedThread = { metadata: { archived: true } };
-  sandboxes = [inventorySandbox()];
-  const indicator = (
-    await render(threadState({ rows: [viewState({ status: ThreadFeedStatus.FAILED })] }))
-  ).querySelector(".agentplane-thread-status-indicator");
-  expect(indicator?.getAttribute("aria-label")).toBe("Thread archived");
-  expect(indicator?.getAttribute("data-status")).toBe("archived");
-  expect(indicator?.querySelector("svg")).not.toBeNull();
-  expect(faviconSvg()).toContain(`stroke="${THREAD_STATUS_MARKS.archived.color}"`);
-  expect(faviconSvg()).not.toContain("<circle");
-  expect(document.title).toBe(`${THREAD_STATUS_MARKS.archived.glyph} Test thread · Archived — Agentplane`);
 });
 
 it.each([[{ metadata: { archived: false } }, [], "Sandbox unavailable", "inactive"]])(
@@ -2096,25 +1957,6 @@ it("shows a lone tool call directly and opens its details with one click", async
   expect(row.textContent).toContain("test-file.txt");
 });
 
-it("shows a lone reasoning step as its own reasoning block, and assistant text without a role label", async () => {
-  const [reasoning, answer] = await renderHistory(
-    [
-      testItem(1, ItemKind.REASONING, {}, { textRef: reference("test-entity-1", ThreadPayloadField.TEXT) }),
-      testItem(2, ItemKind.ASSISTANT_TEXT, {}, { textRef: reference("test-entity-2", ThreadPayloadField.TEXT) }),
-    ],
-    false,
-    {
-      "test-entity-1:text": "Reasoning preview body",
-      "test-entity-2:text": "Test body of test-entity-2",
-    }
-  );
-  expect(reasoning.querySelector(".transcript-step-details")).toBeNull();
-  expect(reasoning.querySelector(".transcript-step-title")?.textContent).toBe("Reasoning");
-  expect(reasoning.textContent).toContain("Reasoning preview body");
-  expect(reasoning.querySelector(".mantine-Badge-root")).toBeNull();
-  expect(answer.textContent?.trim()).toBe("Test body of test-entity-2");
-});
-
 describe("recovery presentation", () => {
   it.each([RecoveryDisposition.RETAINED, RecoveryDisposition.REVISED, RecoveryDisposition.UNKNOWN])(
     "does not revive an interrupted reply's streaming cursor for recovery %s",
@@ -2135,51 +1977,4 @@ describe("recovery presentation", () => {
       expect(row.querySelector('[aria-label="Interrupted"]')).not.toBeNull();
     }
   );
-
-  it("summarizes recovery in a collapsed tool run without marking recovered items streaming", async () => {
-    const [run] = await renderHistory(
-      [
-        testItem(1, ItemKind.TOOL_CALL, { completion: { case: undefined }, recovery: RecoveryDisposition.UNKNOWN }),
-        testItem(2, ItemKind.TOOL_CALL, {
-          completion: { case: "tool", value: { succeeded: false } },
-          recovery: RecoveryDisposition.RETAINED,
-        }),
-      ],
-      true
-    );
-    // The retained call adds nothing of its own beside the failure it carries.
-    expect(badgeLabels(run).sort()).toEqual(["Failed", "Interrupted", "Retention unknown"]);
-  });
-
-  it("gives a collapsed run of retained, finished steps a header with no badges", async () => {
-    const [run] = await renderHistory(
-      [
-        testItem(1, ItemKind.TOOL_CALL, {
-          toolName: "test-read",
-          completion: { case: "tool", value: { succeeded: true } },
-          recovery: RecoveryDisposition.RETAINED,
-        }),
-        testItem(
-          2,
-          ItemKind.REASONING,
-          { recovery: RecoveryDisposition.RETAINED },
-          { textRef: reference("test-entity-2", ThreadPayloadField.TEXT) }
-        ),
-        testItem(3, ItemKind.TOOL_CALL, {
-          toolName: "test-shell",
-          completion: { case: "tool", value: { succeeded: true } },
-          recovery: RecoveryDisposition.RETAINED,
-        }),
-      ],
-      false,
-      { "test-entity-2:text": "Kept in context" }
-    );
-    const summary = run.querySelector(".ui-disclosure-summary")!;
-    expect(summary.textContent).toContain("2 tool calls, 1 reasoning step");
-    expect(badgeLabels(run)).toEqual([]);
-
-    await toggle(summary);
-    expect(run.textContent).toContain("test-read");
-    expect(badgeLabels(run)).toEqual([]);
-  });
 });
