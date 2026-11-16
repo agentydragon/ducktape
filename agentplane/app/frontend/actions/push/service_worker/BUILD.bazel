@@ -12,8 +12,6 @@ filegroup(
         [
             "*.ts",
             "*.tsx",
-            "**/*.ts",
-            "**/*.tsx",
         ],
         allow_empty = True,
     ),

@@ -75,7 +75,7 @@ covers a streaming update during a small upward gesture.
 
 A candidate implementation is evaluated the way agentydragon/ducktape#7841 evaluated
 `react-virtuoso`: each variant run 3× against the tests above plus
-the `visual_*` targets under `//agentplane/app/frontend`, `//agentplane/app/frontend/service_worker:sw_test`, and the vitest specs (`*_test` under `//agentplane/app/frontend/...`), against a control run the same
+the `visual_*` targets under `//agentplane/app/frontend`, `//agentplane/app/frontend/actions/push/service_worker:sw_test`, and the vitest specs (`*_test` under `//agentplane/app/frontend/...`), against a control run the same
 way on unmodified `devel`. A guarantee counts as met only at 3/3, not on a majority — and a test
 setup that avoids exercising the guarantee (nothing mounted above the viewport, no rows present to
 grow) doesn't count as meeting it.

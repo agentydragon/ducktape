@@ -232,7 +232,7 @@ const (
 )
 
 // show and retract are the payloads the integration app's service worker reads
-// (agentplane/app/frontend/service_worker/sw.ts). They invalidate its view; the worker fetches current requests
+// (agentplane/app/frontend/actions/push/service_worker/sw.ts). They invalidate its view; the worker fetches current requests
 // before presenting them because pushes can arrive late or out of order.
 type show struct {
 	Kind        string `json:"kind"`

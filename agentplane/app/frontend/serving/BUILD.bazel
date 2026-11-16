@@ -14,7 +14,7 @@ pkg_files(
 
 pkg_files(
     name = "service_worker_files",
-    srcs = ["//agentplane/app/frontend/service_worker:service_worker_js"],
+    srcs = ["//agentplane/app/frontend/actions/push/service_worker:service_worker_js"],
     prefix = "/usr/share/nginx/html/dist",
     strip_prefix = strip_prefix.files_only(),
 )

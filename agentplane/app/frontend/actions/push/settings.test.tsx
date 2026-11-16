@@ -4,8 +4,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { ServedWatch } from "../testing/watch";
-import { PushSettings } from "./push";
+import { ServedWatch } from "../../testing/watch";
+import { PushSettings } from "./settings";
 
 const PUSH_PATH = "/upstream/actions/v1/operator/push";
 const mounts: { container: HTMLDivElement; root?: Root }[] = [];

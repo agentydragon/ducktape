@@ -5,12 +5,12 @@ import {
   ListPushSubscriptionsResponseSchema,
   WatchPushSubscriptionsResponseSchema,
   type PushSubscription,
-} from "../../../action_service/api/web_push/web_push_service_pb";
+} from "../../../../action_service/api/web_push/web_push_service_pb";
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
-import { displayableError, fetchJson, HttpError } from "../transport/client";
-import { type StreamConnection } from "../transport/stream_reader";
-import { followWatch } from "../transport/watch_stream";
+import { displayableError, fetchJson, HttpError } from "../../transport/client";
+import { type StreamConnection } from "../../transport/stream_reader";
+import { followWatch } from "../../transport/watch_stream";
 
 const PUSH_PATH = "/upstream/actions/v1/operator/push";
 
