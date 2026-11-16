@@ -7,7 +7,7 @@ import { useCredentialMetadata } from "../bindings/credential_watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../policy/table";
 import { IconArrowLeft } from "../icons";
 import { useIdentities, usePolicyResources } from "../policy/watch";
-import { TopbarTitle } from "../topbar";
+import { TopbarTitle } from "../shell/topbar";
 import { kubernetesAccounts } from "./accounts";
 import { deleteIdentity, type DeleteOutcome, type Reference } from "./client";
 import { identityOrigin } from "./origin";

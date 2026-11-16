@@ -49,8 +49,8 @@ import { useThreadsLive } from "../threads/live";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
-import { useFrontendConfig } from "../frontend_config";
-import { TopbarActions, TopbarTitle } from "../topbar";
+import { useFrontendConfig } from "../shell/frontend_config";
+import { TopbarActions, TopbarTitle } from "../shell/topbar";
 import type { SessionSpec } from "../../../proto/session_pb";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 

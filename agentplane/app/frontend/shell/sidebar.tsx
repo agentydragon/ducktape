@@ -1,15 +1,15 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "./icons";
+import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "../icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 
-import { ActionsSidebarSection } from "./actions/sidebar";
-import { HistoryRecorderTools } from "../../../util/frontend/transcript/history_recorder_tools";
-import { ResizeHandle, usePaneSize } from "../../../util/frontend/resize_handle";
+import { ActionsSidebarSection } from "../actions/sidebar";
+import { HistoryRecorderTools } from "../../../../util/frontend/transcript/history_recorder_tools";
+import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
 import "./sidebar.css";
-import { ThreadList } from "./threads/thread_list";
-import { threadViewRecorder } from "./threads/thread_view_recorder";
+import { ThreadList } from "../threads/thread_list";
+import { threadViewRecorder } from "../threads/thread_view_recorder";
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";

@@ -1,4 +1,4 @@
-import type * as ThreadClientModule from "./threads/client";
+import type * as ThreadClientModule from "../threads/client";
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
 import {
@@ -10,29 +10,29 @@ import {
   type EnvironmentDescriptor,
   type EnvironmentObservedState,
   type KubernetesDiagnostics,
-} from "../../environments/v1/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
-import { readySandbox } from "./testing/sandbox";
+import { readySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
 import { type JSX, act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { listThreadWindow } from "./threads/client";
-import { FeedStatus } from "../../history_service/api/history/history_service_pb";
-import { HarnessState, LaunchOutcome, SetupState } from "../../proto/session_pb";
-import { RoutedThreadsLiveProvider } from "./threads/live";
-import { SandboxesLiveProvider } from "./sandboxes/live";
+import { listThreadWindow } from "../threads/client";
+import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
+import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
+import { RoutedThreadsLiveProvider } from "../threads/live";
+import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "./sidebar";
-import { threadViewRecorder } from "./threads/thread_view_recorder";
-import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
-import { latestOn, reconnected, ServedWatch, serveEventStreams } from "./testing/watch";
-import { threadView, type ThreadViewInit } from "./threads/testing/state";
+import { threadViewRecorder } from "../threads/thread_view_recorder";
+import { ConnectionIndicator, DEGRADED_AFTER_MS } from "../stream_status";
+import { latestOn, reconnected, ServedWatch, serveEventStreams } from "../testing/watch";
+import { threadView, type ThreadViewInit } from "../threads/testing/state";
 
 type ThreadView = ThreadClientModule.ThreadView;
 
-vi.mock("./threads/client", async (importOriginal) => ({
+vi.mock("../threads/client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
   listThreadWindow: vi.fn(),
 }));

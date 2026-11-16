@@ -33,9 +33,9 @@ import { isoTime } from "../format_time";
 import { TimeAgo } from "../time_ago";
 import { AUTOSUSPEND_BLOCKER_LABELS, autosuspendHint } from "./sandbox_autosuspend";
 import { NotificationStatus } from "../notifications/notification_status";
-import { TopbarActions } from "../topbar";
+import { TopbarActions } from "../shell/topbar";
 
-import { type ThreadTabTitleStatus } from "../tab_metadata";
+import { type ThreadTabTitleStatus } from "../shell/tab_metadata";
 import { ThreadComposer } from "./composer";
 import { VirtualizedHistory } from "./virtualized_history";
 

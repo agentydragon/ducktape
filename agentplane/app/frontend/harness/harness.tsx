@@ -88,7 +88,7 @@ import { clone, create, fromJson, toJson, type JsonValue, type MessageInitShape 
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
-import App from "../app";
+import App from "../shell/app";
 import {
   actionGroupsSnapshotCompleteProtoJson,
   actionGroupsSnapshotProtoJson,
@@ -159,7 +159,7 @@ import { LocalCommands } from "../threads/local_commands";
 import { electricEntityVariant } from "../threads/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
 import { streamRegistry } from "../stream_status";
-import { ThemeProvider } from "../theme";
+import { ThemeProvider } from "../shell/theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";
 

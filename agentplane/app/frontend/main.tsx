@@ -4,9 +4,9 @@ import { createRoot } from "react-dom/client";
 
 import { restoreRouteAfterLogin } from "./operator_login";
 import { initializeBrowserTracing } from "./tracing";
-import { ThemeProvider } from "./theme";
+import { ThemeProvider } from "./shell/theme";
 
-import App from "./app";
+import App from "./shell/app";
 
 const container = document.getElementById("root");
 if (!container) throw new Error("missing #root");

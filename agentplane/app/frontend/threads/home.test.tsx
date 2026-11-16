@@ -13,7 +13,7 @@ import { listThreadWindow } from "./client";
 import { Home } from "./home";
 import { RoutedThreadsLiveProvider } from "./live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
-import { Sidebar } from "../sidebar";
+import { Sidebar } from "../shell/sidebar";
 import { ServedWatch, serveEventStreams } from "../testing/watch";
 import { threadView } from "./testing/state";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
