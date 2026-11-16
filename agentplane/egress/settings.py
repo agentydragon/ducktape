@@ -66,18 +66,6 @@ class Settings(BaseModel):
         default="0.0.0.0:8081",
         description="Shared gRPC listener address serving rules, health and, when configured, EgressAdmin.",
     )
-    # CLEANUP(added 2026-11-15): Remove legacy bearer fields after generated manifests
-    # omit these keys and that configuration has rolled out.
-    admin_grpc_audience: str | None = Field(
-        default=None,
-        min_length=1,
-        description="Ignored legacy bearer audience retained until manifest keys are removed and rolled out.",
-    )
-    admin_grpc_callers: list[str] | None = Field(
-        default=None,
-        min_length=1,
-        description="Ignored legacy bearer accounts retained until manifest keys are removed and rolled out.",
-    )
     admin_grpc_service_callers: frozenset[ServiceSPIFFEID] = Field(
         exclude_if=lambda value: not value,
         default_factory=frozenset,

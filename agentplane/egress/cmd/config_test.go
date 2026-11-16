@@ -186,20 +186,13 @@ func TestAdminGRPCIsOffUnlessItsSettingsAreSet(t *testing.T) {
 	}
 }
 
-func TestAdminGRPCSettingsUseServiceCallersAndAcceptLegacyKeys(t *testing.T) {
-	contents := validSettings + "admin_grpc_audience: file-audience\nadmin_grpc_callers: [test-ns/test-app, test-ns/test-other]\nadmin_grpc_service_callers: [spiffe://agentplane/actions]\n"
-	c, err := configtest.Load(
-		t,
-		"AGENTPLANE_EGRESS_",
-		loadConfig,
-		environment(t, contents, "AGENTPLANE_EGRESS_ADMIN_GRPC_AUDIENCE=environment-audience"),
-	)
+func TestAdminGRPCSettingsUseServiceCallers(t *testing.T) {
+	contents := validSettings + "admin_grpc_service_callers: [spiffe://agentplane/actions]\n"
+	c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, contents))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.adminGRPCEnabled() || c.AdminGRPCAudience != "file-audience" ||
-		!slices.Equal(c.AdminGRPCCallers, []string{"test-ns/test-app", "test-ns/test-other"}) ||
-		!slices.Equal(c.AdminGRPCServiceCallers, []string{"spiffe://agentplane/actions"}) {
+	if !c.adminGRPCEnabled() || !slices.Equal(c.AdminGRPCServiceCallers, []string{"spiffe://agentplane/actions"}) {
 		t.Fatalf("unexpected file settings: %+v", c)
 	}
 	serviceOnly := validSettings + "admin_grpc_service_callers: [spiffe://agentplane/app]\n"
@@ -208,10 +201,6 @@ func TestAdminGRPCSettingsUseServiceCallersAndAcceptLegacyKeys(t *testing.T) {
 	}
 	if _, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, validSettings+"admin_grpc_service_callers: [spiffe://agentplane/agents/worker]\n")); err == nil {
 		t.Fatal("accepted a non-service admin caller")
-	}
-	legacyOnly := validSettings + "admin_grpc_audience: test-audience\nadmin_grpc_callers: [test-ns/test-app]\n"
-	if c, err := configtest.Load(t, "AGENTPLANE_EGRESS_", loadConfig, environment(t, legacyOnly)); err != nil || c.adminGRPCEnabled() {
-		t.Fatalf("legacy settings enabled administration: %+v, %v", c, err)
 	}
 }
 

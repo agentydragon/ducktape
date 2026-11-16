@@ -200,8 +200,6 @@ callers are admitted afresh. See <../docs/grpc_services.md>.
 
 The health service is always mounted. `EgressAdmin` is mounted only when
 `admin_grpc_service_callers` is nonempty; Rules admission follows the workload transport policy above.
-`admin_grpc_audience` and `admin_grpc_callers` are ignored compatibility settings until the generated
-manifests omit them and that configuration has rolled out.
 
 ## ServiceAccount permissions
 

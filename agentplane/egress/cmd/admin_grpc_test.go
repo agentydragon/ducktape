@@ -166,8 +166,6 @@ func TestAdminServicePeerTLSIsMethodScopedAndRejectsBearerAccess(t *testing.T) {
 	}
 	index := policy.NewIndex()
 	server, err := newAdminServer(config{
-		AdminGRPCAudience:       testAudience,
-		AdminGRPCCallers:        []string{"test-ns/test-app"},
 		AdminGRPCServiceCallers: []string{peertls.ActionsURI},
 		Forward:                 forward,
 	}, admin.ServiceOptions{

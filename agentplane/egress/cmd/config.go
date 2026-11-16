@@ -49,11 +49,6 @@ type config struct {
 	DecisionBatchSize               int               `mapstructure:"decision_batch_size"`
 	ExemptNetworks                  []netip.Prefix    `mapstructure:"exempt_networks"`
 	LocalAPIServer                  *apiServerConfig  `mapstructure:"local_api_server"`
-
-	// CLEANUP(added 2026-11-15): Remove legacy bearer fields after generated manifests
-	// omit admin_grpc_audience/admin_grpc_callers and that configuration has rolled out.
-	AdminGRPCAudience string   `mapstructure:"admin_grpc_audience"`
-	AdminGRPCCallers  []string `mapstructure:"admin_grpc_callers"`
 }
 
 // apiServerConfig is an API server the proxy impersonates ServiceAccounts on: the host and port
