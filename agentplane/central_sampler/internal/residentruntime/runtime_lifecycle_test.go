@@ -1,13 +1,22 @@
 package residentruntime
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	runtimepkg "runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -247,15 +257,210 @@ func TestRuntimeDrainDeadlineCancelsUnsettledEffect(t *testing.T) {
 // exec_command on startGate, and the fake provider answers its one sampling request with a wait
 // on the live cell once providerRespond closes.
 type drainFixture struct {
-	store           *sessionstore.Store
-	session         *sessionstore.Session
-	runtime         *Runtime
-	peers           func() []*fakeCodeModePeer
-	startGate       chan struct{}
-	providerCalled  chan struct{}
-	providerRespond chan struct{}
+	store            *sessionstore.Store
+	session          *sessionstore.Session
+	runtime          *Runtime
+	peers            func() []*fakeCodeModePeer
+	hostLogDirectory string
+	bindingMu        sync.Mutex
+	binding          *CodeMode
+	bindingOpenErr   string
+	startGate        chan struct{}
+	providerCalled   chan struct{}
+	providerRespond  chan struct{}
 	// released carries the live work the lease release observed under the owner fence.
 	released chan sessionstore.LiveWork
+}
+
+type drainLogCapture struct {
+	mu  sync.Mutex
+	log bytes.Buffer
+}
+
+func (c *drainLogCapture) Write(data []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.log.Write(data)
+}
+
+func (c *drainLogCapture) snapshot() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return bytes.Clone(c.log.Bytes())
+}
+
+func captureDrainRuntimeLogs(t *testing.T) *drainLogCapture {
+	t.Helper()
+	capture := &drainLogCapture{}
+	previous := slog.Default()
+	standardWriter, standardFlags, standardPrefix := log.Writer(), log.Flags(), log.Prefix()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(capture, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(previous)
+		log.SetOutput(standardWriter)
+		log.SetFlags(standardFlags)
+		log.SetPrefix(standardPrefix)
+	})
+	return capture
+}
+
+type capturedDrainLog struct {
+	Message   string `json:"msg"`
+	SessionID string `json:"session_id"`
+	LiveCells int64  `json:"live_cells"`
+}
+
+func findDrainLog(t *testing.T, logs *drainLogCapture, message string) capturedDrainLog {
+	t.Helper()
+	scanner := bufio.NewScanner(bytes.NewReader(logs.snapshot()))
+	for scanner.Scan() {
+		var record capturedDrainLog
+		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
+			t.Fatalf("decode runtime log record: %v", err)
+		}
+		if record.Message == message {
+			return record
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read runtime log records: %v", err)
+	}
+	t.Fatalf("no runtime log record %q", message)
+	return capturedDrainLog{}
+}
+
+type drainOwnerSnapshot struct {
+	ConversationID string `json:"conversation_id"`
+	Generation     int    `json:"generation"`
+}
+
+type drainFailureSnapshot struct {
+	CapturedAt       time.Time                    `json:"captured_at"`
+	Reason           string                       `json:"reason"`
+	SessionID        string                       `json:"session_id"`
+	Owner            *drainOwnerSnapshot          `json:"owner,omitempty"`
+	BindingError     string                       `json:"binding_error,omitempty"`
+	BindingOpenError string                       `json:"binding_open_error,omitempty"`
+	Database         map[string][]json.RawMessage `json:"database"`
+	Errors           []string                     `json:"capture_errors,omitempty"`
+}
+
+// captureFailureDiagnostics runs from a test defer registered after defer cancel, so it retains
+// the live binding, database rows, host stderr, and goroutines before deferred runtime cleanup.
+func (f *drainFixture) captureFailureDiagnostics(t *testing.T, logs *drainLogCapture) {
+	t.Helper()
+	if !t.Failed() {
+		return
+	}
+	f.writeDrainDiagnostics(t, logs)
+}
+
+func (f *drainFixture) writeDrainDiagnostics(t *testing.T, logs *drainLogCapture) string {
+	t.Helper()
+	outputDirectory := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if outputDirectory == "" {
+		outputDirectory = t.TempDir()
+	}
+	if err := os.MkdirAll(outputDirectory, 0o750); err != nil {
+		t.Errorf("create diagnostics output directory: %v", err)
+		return outputDirectory
+	}
+	testName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	write := func(suffix string, data []byte) {
+		path := filepath.Join(outputDirectory, testName+suffix)
+		if err := os.WriteFile(path, data, 0o640); err != nil {
+			t.Errorf("write drain diagnostics artifact %s: %v", path, err)
+		}
+	}
+	write("-runtime.jsonl", logs.snapshot())
+	captureErrors := []string{}
+	if hostLog, err := os.ReadFile(filepath.Join(f.hostLogDirectory, "code-mode-host.log")); err != nil {
+		// The host can fail before it creates stderr output; retain that fact in the snapshot.
+		captureErrors = append(captureErrors, fmt.Sprintf("read Code Mode host log: %v", err))
+	} else {
+		write("-code-mode-host.log", hostLog)
+	}
+	stack := make([]byte, 4<<20)
+	stackSize := runtimepkg.Stack(stack, true)
+	write("-goroutines.txt", stack[:stackSize])
+
+	snapshot := drainFailureSnapshot{
+		CapturedAt: time.Now().UTC(), Reason: "captured before deferred runtime cleanup", SessionID: f.session.ID,
+		Database: map[string][]json.RawMessage{},
+	}
+	f.captureState(t, &snapshot)
+	snapshot.Errors = append(snapshot.Errors, captureErrors...)
+	encoded, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		t.Errorf("marshal drain failure snapshot: %v", err)
+		return outputDirectory
+	}
+	write("-database.json", encoded)
+	return outputDirectory
+}
+
+func (f *drainFixture) captureState(t *testing.T, snapshot *drainFailureSnapshot) {
+	f.runtime.mu.Lock()
+	var owner *sessionstore.Owner
+	if task := f.runtime.tasks[f.session.ID]; task != nil && task.owner != nil {
+		value := *task.owner
+		owner = &value
+	}
+	f.runtime.mu.Unlock()
+	f.bindingMu.Lock()
+	binding := f.binding
+	snapshot.BindingOpenError = f.bindingOpenErr
+	f.bindingMu.Unlock()
+	if binding != nil {
+		if err := binding.Err(); err != nil {
+			snapshot.BindingError = err.Error()
+		}
+	}
+	if owner != nil {
+		snapshot.Owner = &drainOwnerSnapshot{ConversationID: owner.ConversationID, Generation: owner.Generation}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	queries := []struct {
+		name  string
+		query string
+		args  []any
+	}{
+		{"conversation", `SELECT to_jsonb(c) FROM sampler_conversation c WHERE c.id=$1`, []any{f.session.ConversationID}},
+		{"session", `SELECT to_jsonb(s) FROM sampler_session s WHERE s.id=$1`, []any{f.session.ID}},
+		{"intents", `SELECT to_jsonb(i) FROM sampler_intent i WHERE i.conversation_id=$1 ORDER BY i.id LIMIT 100`, []any{f.session.ConversationID}},
+		{"cells", `SELECT to_jsonb(c) FROM sampler_cell c WHERE c.conversation_id=$1 ORDER BY c.generation,c.id LIMIT 100`, []any{f.session.ConversationID}},
+		{"processes", `SELECT to_jsonb(p) FROM sampler_process p WHERE p.conversation_id=$1 ORDER BY p.generation,p.id LIMIT 100`, []any{f.session.ConversationID}},
+		{"commands", `SELECT to_jsonb(c) FROM sampler_command c WHERE c.session_id=$1 ORDER BY c.id LIMIT 100`, []any{f.session.ID}},
+		{"events", `SELECT to_jsonb(e) FROM (SELECT * FROM sampler_event WHERE session_id=$1 ORDER BY sequence DESC LIMIT 100) e ORDER BY sequence`, []any{f.session.ID}},
+		{"model_requests", `SELECT to_jsonb(r) FROM sampler_model_request r WHERE r.conversation_id=$1 ORDER BY r.position DESC LIMIT 20`, []any{f.session.ConversationID}},
+		// Each fixture has an isolated database; include referenced content, not only context nodes.
+		{"contexts", `SELECT to_jsonb(c) FROM sampler_context c ORDER BY c.item_count,c.id LIMIT 100`, nil},
+		{"context_content", `SELECT to_jsonb(c) FROM sampler_content c ORDER BY c.id LIMIT 1000`, nil},
+	}
+	for _, query := range queries {
+		f.captureRows(ctx, snapshot, query.name, query.query, query.args...)
+	}
+}
+
+func (f *drainFixture) captureRows(ctx context.Context, snapshot *drainFailureSnapshot, name, query string, args ...any) {
+	rows, err := f.store.DB().QueryContext(ctx, query, args...)
+	if err != nil {
+		snapshot.Errors = append(snapshot.Errors, fmt.Sprintf("query %s rows: %v", name, err))
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var wire []byte
+		if err := rows.Scan(&wire); err != nil {
+			snapshot.Errors = append(snapshot.Errors, fmt.Sprintf("scan %s row: %v", name, err))
+			return
+		}
+		snapshot.Database[name] = append(snapshot.Database[name], bytes.Clone(wire))
+	}
+	if err := rows.Err(); err != nil {
+		snapshot.Errors = append(snapshot.Errors, fmt.Sprintf("iterate %s rows: %v", name, err))
+	}
 }
 
 type drainExecutorServer struct {
@@ -381,10 +586,24 @@ func newDrainFixture(t *testing.T, drainSeconds int) *drainFixture {
 			ExecEncoding: protocol.ExecEncodingJSON, ReasoningEfforts: []string{""},
 		}},
 	}
-	manager, peers := newFakeCodeModeManager(t)
+	manager, peers, hostLogDirectory := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second)
 	manager.store = store
 	f.runtime = New(store, settings, manager)
 	f.peers = peers
+	f.hostLogDirectory = hostLogDirectory
+	openCodeSession := f.runtime.openCodeSession
+	f.runtime.openCodeSession = func(ctx context.Context, conversationID string, owner sessionstore.Owner, executor *executor.Executor) (*CodeMode, error) {
+		code, err := openCodeSession(ctx, conversationID, owner, executor)
+		f.bindingMu.Lock()
+		defer f.bindingMu.Unlock()
+		if err != nil && f.bindingOpenErr == "" {
+			f.bindingOpenErr = err.Error()
+		}
+		if code != nil {
+			f.binding = code
+		}
+		return code, err
+	}
 	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
 		work, err := store.LiveWork(ctx, owner)
 		if err != nil {
@@ -499,9 +718,10 @@ func (f *drainFixture) drainWithDispatchedNestedCommand(t *testing.T, cancel con
 
 func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	f := newDrainFixture(t, 20)
-	logged := testsupport.CaptureLogs(t)
+	logs := captureDrainRuntimeLogs(t)
 	cancel, done := startRuntimeForTest(t, f.runtime)
 	defer cancel()
+	defer f.captureFailureDiagnostics(t, logs)
 	peer, codeSession, waitID := f.drainWithDispatchedNestedCommand(t, cancel)
 	close(f.startGate)
 	receiveDelegateResponse(t, peer, 9001)
@@ -512,8 +732,8 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 	if released != (sessionstore.LiveWork{}) {
 		t.Fatalf("drain released the Session with live work: %+v", released)
 	}
-	continued := logged("central sampler drain keeps serving Session with live work")
-	if continued["session_id"] != f.session.ID || continued["live_cells"] != int64(1) {
+	continued := findDrainLog(t, logs, "central sampler drain keeps serving Session with live work")
+	if continued.SessionID != f.session.ID || continued.LiveCells != int64(1) {
 		t.Fatalf("drain continuation record=%v", continued)
 	}
 	successor, err := f.store.Claim(t.Context(), f.session.ConversationID, time.Minute)
@@ -532,8 +752,10 @@ func TestRuntimeDrainServesLiveCellUntilNestedCommandSettles(t *testing.T) {
 
 func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.T) {
 	f := newDrainFixture(t, 1)
+	logs := captureDrainRuntimeLogs(t)
 	cancel, done := startRuntimeForTest(t, f.runtime)
 	defer cancel()
+	defer f.captureFailureDiagnostics(t, logs)
 	// Neither the nested exec_command nor the wait on the cell ever completes.
 	f.drainWithDispatchedNestedCommand(t, cancel)
 	waitRuntimeDone(t, done)
@@ -571,5 +793,97 @@ func TestRuntimeDrainDeadlineCancelsUnsettledCellAndSuccessorSettles(t *testing.
 	command, err := f.store.NextCommand(t.Context(), successor, f.session.ID)
 	if err != nil || command == nil || command.ID != "turn" {
 		t.Fatalf("successor cannot continue the turn: command=%+v err=%v", command, err)
+	}
+}
+
+func TestDrainDiagnosticsRetainBindingAndDatabaseAfterDriverRelease(t *testing.T) {
+	f := newDrainFixture(t, 1)
+	outputs := t.TempDir()
+	t.Setenv("TEST_UNDECLARED_OUTPUTS_DIR", outputs)
+	logs := captureDrainRuntimeLogs(t)
+	// Keep the failed binding available for inspection instead of starting a successor driver.
+	var claimed atomic.Bool
+	claim := f.runtime.claimLease
+	f.runtime.claimLease = func(ctx context.Context, conversationID string, lease time.Duration) (sessionstore.Owner, error) {
+		if !claimed.CompareAndSwap(false, true) {
+			return sessionstore.Owner{}, context.Canceled
+		}
+		return claim(ctx, conversationID, lease)
+	}
+	releaseCompleted := make(chan struct{})
+	release := f.runtime.releaseLease
+	f.runtime.releaseLease = func(ctx context.Context, owner sessionstore.Owner) error {
+		err := release(ctx, owner)
+		close(releaseCompleted)
+		return err
+	}
+	cancel, done := startRuntimeForTest(t, f.runtime)
+	defer cancel()
+	f.runtime.Wake(f.session.ID)
+	peer := f.peer(t)
+	receiveCodeOperationRequest(t, peer, "", "session/execute")
+	if err := peer.close(); err != nil {
+		t.Fatalf("close fake Code Mode peer: %v", err)
+	}
+	select {
+	case <-f.released:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runtime did not release the failed binding")
+	}
+	select {
+	case <-releaseCompleted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("runtime did not complete the owner release")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("runtime stopped before diagnostic capture: %v", err)
+	default:
+	}
+
+	outputDirectory := f.writeDrainDiagnostics(t, logs)
+	cancel()
+	waitRuntimeDone(t, done)
+	testName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	readArtifact := func(suffix string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(outputDirectory, testName+suffix))
+		if err != nil {
+			t.Fatalf("read diagnostic artifact %s: %v", suffix, err)
+		}
+		return data
+	}
+	if got := string(readArtifact("-runtime.jsonl")); !strings.Contains(got, `"msg":"central sampler execution stopped"`) {
+		t.Fatal("runtime log artifact omitted the driver error")
+	}
+	_ = readArtifact("-code-mode-host.log")
+	if got := string(readArtifact("-goroutines.txt")); !strings.Contains(got, "goroutine ") {
+		t.Fatal("goroutine stack artifact has no goroutine records")
+	}
+	var snapshot struct {
+		BindingError string                       `json:"binding_error"`
+		Database     map[string][]json.RawMessage `json:"database"`
+		Errors       []string                     `json:"capture_errors"`
+	}
+	if err := json.Unmarshal(readArtifact("-database.json"), &snapshot); err != nil {
+		t.Fatalf("decode database snapshot: %v", err)
+	}
+	if len(snapshot.Errors) != 0 {
+		t.Fatalf("database snapshot had capture errors: %v", snapshot.Errors)
+	}
+	if snapshot.BindingError == "" {
+		t.Fatal("database snapshot omitted the Code Mode binding error")
+	}
+	for _, table := range []string{"conversation", "session", "intents", "events"} {
+		if len(snapshot.Database[table]) == 0 {
+			t.Fatalf("database snapshot artifact has no %s rows", table)
+		}
+	}
+	var conversation map[string]any
+	if err := json.Unmarshal(snapshot.Database["conversation"][0], &conversation); err != nil {
+		t.Fatalf("decode conversation row: %v", err)
+	}
+	if conversation["owner"] != nil {
+		t.Fatalf("conversation owner is still set after driver release: %v", conversation["owner"])
 	}
 }

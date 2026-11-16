@@ -12,11 +12,12 @@ import (
 )
 
 type Runtime struct {
-	store        *sessionstore.Store
-	settings     samplersettings.Settings
-	claimLease   func(context.Context, string, time.Duration) (sessionstore.Owner, error)
-	releaseLease func(context.Context, sessionstore.Owner) error
-	newExecutor  func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
+	store           *sessionstore.Store
+	settings        samplersettings.Settings
+	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)
+	releaseLease    func(context.Context, sessionstore.Owner) error
+	newExecutor     func(context.Context, *sessionstore.Store, sessionstore.Owner, *sessionstore.Session, samplersettings.Settings) (*executor.Executor, func() error, error)
+	openCodeSession func(context.Context, string, sessionstore.Owner, *executor.Executor) (*CodeMode, error)
 
 	mu               sync.Mutex
 	runCtx           context.Context
@@ -51,7 +52,8 @@ func (s *residentSession) signal() {
 func New(store *sessionstore.Store, settings samplersettings.Settings, codeHost *CodeModeHost) *Runtime {
 	return &Runtime{
 		store: store, settings: settings, codeHost: codeHost, claimLease: store.Claim, releaseLease: store.Release, newExecutor: executor.New,
-		tasks: map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
+		openCodeSession: codeHost.OpenSession,
+		tasks:           map[string]*residentSession{}, executing: make(chan struct{}, settings.MaxLiveSessions),
 		changed: make(chan struct{}, 1), draining: make(chan struct{}),
 	}
 }

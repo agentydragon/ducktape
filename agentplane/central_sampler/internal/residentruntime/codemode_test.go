@@ -233,10 +233,17 @@ func (p *fakeCodeModePeer) close() error {
 
 func newFakeCodeModeManager(t *testing.T, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
 	t.Helper()
-	return newFakeCodeModeManagerWithBudgets(t, 2*time.Second, 300*time.Second, acknowledge...)
+	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, 2*time.Second, 300*time.Second, acknowledge...)
+	return manager, peers
 }
 
 func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer) {
+	t.Helper()
+	manager, peers, _ := newFakeCodeModeManagerWithLogDirectory(t, rpcTimeout, observationTimeout, acknowledge...)
+	return manager, peers
+}
+
+func newFakeCodeModeManagerWithLogDirectory(t *testing.T, rpcTimeout, observationTimeout time.Duration, acknowledge ...string) (*CodeModeHost, func() []*fakeCodeModePeer, string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -286,7 +293,7 @@ func newFakeCodeModeManagerWithBudgets(t *testing.T, rpcTimeout, observationTime
 		mu.Lock()
 		defer mu.Unlock()
 		return append([]*fakeCodeModePeer(nil), peers...)
-	}
+	}, directory
 }
 
 func retainFailedCodeModeHostLog(t *testing.T, directory string) {

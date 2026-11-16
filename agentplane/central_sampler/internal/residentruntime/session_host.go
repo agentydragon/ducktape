@@ -54,7 +54,7 @@ func (r *Runtime) connectHost(ctx context.Context, sessionID string, owner sessi
 			return nil, err
 		}
 	}
-	code, err := r.codeHost.OpenSession(ctx, owner.ConversationID, owner, executor)
+	code, err := r.openCodeSession(ctx, owner.ConversationID, owner, executor)
 	if err != nil {
 		_ = closeTransport()
 		return nil, err
