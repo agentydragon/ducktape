@@ -115,15 +115,15 @@ the repository's existing mount-renaming procedure treats that as a data migrati
 
 Repository sources:
 
-- [OVH disk ownership](../../cluster/terraform/main/ovh-nodes.tf)
-- [OptiPlex machine configuration](../../cluster/terraform/main/home-nodes.tf)
+- [OVH disk ownership](../../terraform/main/ovh-nodes.tf)
+- [OptiPlex machine configuration](../../terraform/main/home-nodes.tf)
 - [Last local-path provisioner source before retirement](https://github.com/agentydragon/ducktape/blob/2c8ccaac0d5e85e27294181e07eb68363c230ae9/cluster/cdk8s/local_path_provisioner.py)
-- [`wyrm2` mounts and LVM setup](../../nix/nixos/hosts/wyrm2/default.nix)
-- [`wyrm2` VM disks](../../cluster/terraform/main/proxmox-vms.tf) and
-  [default datastore](../../cluster/terraform/main/variables.tf)
-- [`rugged` filesystems](../../nix/nixos/hosts/rugged/hardware-configuration.nix)
-- [`iguana` filesystems](../../nix/nixos/hosts/iguana/hardware-configuration.nix)
-- [Prior thin-pool exhaustion](../../cluster/docs/lessons_learned/2026_07_17_lvm_thinpool_exhaustion_emergency_ro.md)
+- [`wyrm2` mounts and LVM setup](../../../nix/nixos/hosts/wyrm2/default.nix)
+- [`wyrm2` VM disks](../../terraform/main/proxmox-vms.tf) and
+  [default datastore](../../terraform/main/variables.tf)
+- [`rugged` filesystems](../../../nix/nixos/hosts/rugged/hardware-configuration.nix)
+- [`iguana` filesystems](../../../nix/nixos/hosts/iguana/hardware-configuration.nix)
+- [Prior thin-pool exhaustion](../../docs/lessons_learned/2026_07_17_lvm_thinpool_exhaustion_emergency_ro.md)
 
 Inventory can be refreshed with `kubectl get nodes -o wide`, per-node
 `talosctl --endpoints=<ip> --nodes=<ip> get disks`, `get volumestatus`,
