@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -21,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -32,7 +30,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -96,31 +93,10 @@ func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testS
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(requestTimeout), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	historypb.RegisterHistoryServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	clientFiles := ca.Issue(t, peertls.AppURI)
-	clientTLS, err := clientFiles.ClientTLSConfig(peertls.HistoryIngressURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
-	return testServer{service: service, hub: hub, client: historypb.NewHistoryServiceClient(connection), history: history, db: db}
+	connection := grpcmethods.ServeTLSWithTimeout(t, requestTimeout, peertls.HistoryIngressURI, methods, func(server *grpc.Server) {
+		historypb.RegisterHistoryServiceServer(server, service)
+	}, peertls.AppURI)
+	return testServer{service: service, hub: hub, client: historypb.NewHistoryServiceClient(grpcmethods.AsCaller(connection, peertls.AppURI)), history: history, db: db}
 }
 
 func newServiceAccessServer(
@@ -154,33 +130,16 @@ func newServiceAccessServer(
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := transporttesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.HistoryIngressURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.HistoryIngressURI, true)
-	if err != nil {
-		t.Fatal(err)
+	callerURIs := append([]string{peertls.AppURI}, directCallers...)
+	for _, delegator := range serviceDelegators {
+		callerURIs = append(callerURIs, delegator.SPIFFEID)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(callDeadline), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	historypb.RegisterHistoryServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	connection := grpcmethods.ServeTLSWithTimeout(t, callDeadline, peertls.HistoryIngressURI, methods, func(server *grpc.Server) {
+		historypb.RegisterHistoryServiceServer(server, service)
+	}, callerURIs...)
 	connect := func(t *testing.T, caller string) historypb.HistoryServiceClient {
 		t.Helper()
-		clientFiles := ca.Issue(t, caller)
-		clientTLS, err := clientFiles.ClientTLSConfig(peertls.HistoryIngressURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = connection.Close() })
-		return historypb.NewHistoryServiceClient(connection)
+		return historypb.NewHistoryServiceClient(grpcmethods.AsCaller(connection, caller))
 	}
 	return testServer{service: service, hub: hub, history: history, db: db}, connect
 }

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"testing"
 	"time"
 
@@ -12,16 +11,15 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -73,34 +71,13 @@ func TestEnvironmentServiceServiceRolesStayMethodScoped(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := peertlstesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	}, readerID, managerID, operatorID, launcherID)
 
 	dial := func(serviceID string) environmentpb.EnvironmentServiceClient {
 		t.Helper()
-		files := ca.Issue(t, serviceID)
-		clientTLS, err := files.ClientTLSConfig(peertls.SessionDispatcherURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = connection.Close() })
-		return environmentpb.NewEnvironmentServiceClient(connection)
+		return environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, serviceID))
 	}
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 	reader := dial(readerID)
@@ -233,31 +210,10 @@ func TestEnvironmentServiceActionDelegationKeepsIdentityScopeAndNoLifecycleAutho
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := peertlstesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	files := ca.Issue(t, actionsID)
-	clientTLS, err := files.ClientTLSConfig(peertls.SessionDispatcherURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = connection.Close() })
-	client := environmentpb.NewEnvironmentServiceClient(connection)
+	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	}, actionsID)
+	client := environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, actionsID))
 	target := &identitypb.EnvironmentTarget{Namespace: discoveryNamespace, Name: sandboxName, Uid: sandboxUID}
 
 	direct, err := client.ListEnvironments(t.Context(), &environmentpb.ListEnvironmentsRequest{Limit: 10})

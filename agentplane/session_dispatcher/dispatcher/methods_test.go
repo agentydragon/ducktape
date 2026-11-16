@@ -3,18 +3,15 @@ package dispatcher
 import (
 	"context"
 	"maps"
-	"net"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
@@ -39,45 +36,16 @@ func TestEveryRPCAdmitsOnlyConfiguredServiceSVIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 	methods := Methods(rule)
-	ca := transporttesting.NewCA(t)
-	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serve := func(methods auth.Methods) string {
+	serve := func(methods auth.Methods) grpc.ClientConnInterface {
 		t.Helper()
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		server := grpc.NewServer(append(methods.ServerOptions(0), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-		registerStandIn(server)
-		go func() { _ = server.Serve(listener) }()
-		t.Cleanup(server.Stop)
-		return listener.Addr().String()
+		return grpcmethods.ServeTLSWithTimeout(t, 0, peertls.SessionDispatcherURI, methods, registerStandIn,
+			peertls.AppURI, peertls.NotificationsURI, peertls.ActionsURI)
 	}
-	connect := func(address, uri string, presentCertificate bool) *grpc.ClientConn {
-		t.Helper()
-		config, err := ca.Issue(t, uri).ClientTLSConfig(peertls.SessionDispatcherURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !presentCertificate {
-			config.Certificates = nil
-			config.GetClientCertificate = nil
-		}
-		conn, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(config)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return conn
-	}
-	address := serve(methods)
-	app := connect(address, peertls.AppURI, true)
-	notifications := connect(address, peertls.NotificationsURI, true)
-	stranger := connect(address, peertls.ActionsURI, true)
-	anonymous := connect(address, peertls.SessionDispatcherURI, false)
+	connection := serve(methods)
+	app := grpcmethods.AsCaller(connection, peertls.AppURI)
+	notifications := grpcmethods.AsCaller(connection, peertls.NotificationsURI)
+	stranger := grpcmethods.AsCaller(connection, peertls.ActionsURI)
+	anonymous := grpcmethods.AsCaller(connection, "")
 	for _, method := range grpcmethods.Of(dispatcherpb.SessionDispatcher_ServiceDesc) {
 		t.Run(method.Name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -87,7 +55,7 @@ func TestEveryRPCAdmitsOnlyConfiguredServiceSVIDs(t *testing.T) {
 			for _, test := range []struct {
 				name string
 				ctx  context.Context
-				conn *grpc.ClientConn
+				conn grpc.ClientConnInterface
 				want codes.Code
 			}{
 				{"app", ctx, app, codes.Unimplemented},
@@ -103,7 +71,7 @@ func TestEveryRPCAdmitsOnlyConfiguredServiceSVIDs(t *testing.T) {
 			}
 			unlisted := maps.Clone(methods)
 			delete(unlisted, method.Name)
-			if got := status.Code(method.Call(ctx, connect(serve(unlisted), peertls.AppURI, true))); got != codes.PermissionDenied {
+			if got := status.Code(method.Call(ctx, grpcmethods.AsCaller(serve(unlisted), peertls.AppURI))); got != codes.PermissionDenied {
 				t.Errorf("unlisted method, configured service got %v", got)
 			}
 		})

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"net"
 	"testing"
 	"time"
 
@@ -11,16 +10,15 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
@@ -137,30 +135,9 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ca := peertlstesting.NewCA(t)
-			serverFiles := ca.Issue(t, peertls.SessionDispatcherURI)
-			serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-			if err != nil {
-				t.Fatal(err)
-			}
-			listener, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				t.Fatal(err)
-			}
-			server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-			environmentpb.RegisterEnvironmentServiceServer(server, service)
-			go func() { _ = server.Serve(listener) }()
-			t.Cleanup(server.Stop)
-			files := ca.Issue(t, peertls.ActionsURI)
-			clientTLS, err := files.ClientTLSConfig(peertls.SessionDispatcherURI)
-			if err != nil {
-				t.Fatal(err)
-			}
-			connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = connection.Close() })
+			connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
+				environmentpb.RegisterEnvironmentServiceServer(server, service)
+			}, peertls.ActionsURI)
 			target := &identitypb.EnvironmentTarget{Namespace: namespace, Name: sandbox.Name, Uid: string(sandbox.UID)}
 			// Automatic wake has a separate policy: matching execution Identity plus opt-in.
 			// Explicit resume below continues to require its current environment grant.
@@ -183,7 +160,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 			if tc.token {
 				request.ResumeToken = lifecycle.NewResumeToken(target, 3)
 			}
-			response, err := environmentpb.NewEnvironmentServiceClient(connection).ResumeEnvironment(
+			response, err := environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, peertls.ActionsURI)).ResumeEnvironment(
 				serviceDelegationContext(t, auth.Identity{Name: caller.Name, UID: string(caller.UID)}), request,
 			)
 			if status.Code(err) != tc.wantCode {
@@ -241,33 +218,12 @@ func TestServiceManagerCreateAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ca := peertlstesting.NewCA(t)
-	serverFiles := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverTLS, err := serverFiles.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
-	environmentpb.RegisterEnvironmentServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.SessionDispatcherURI, methods, func(server *grpc.Server) {
+		environmentpb.RegisterEnvironmentServiceServer(server, service)
+	}, peertls.AppURI, peertls.ActionsURI, peertls.NotificationsURI, peertls.CentralSamplerURI)
 	dial := func(serviceID string) environmentpb.EnvironmentServiceClient {
 		t.Helper()
-		files := ca.Issue(t, serviceID)
-		tlsConfig, err := files.ClientTLSConfig(peertls.SessionDispatcherURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return environmentpb.NewEnvironmentServiceClient(conn)
+		return environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, serviceID))
 	}
 	for _, tc := range []struct {
 		name, actor string
