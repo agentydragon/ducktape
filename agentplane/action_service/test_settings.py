@@ -42,7 +42,7 @@ def test_session_delegation_service_is_optional_and_only_trusts_the_central_samp
     assert settings.session_delegation_service == ""
     assert "session_delegation_service" not in settings.model_dump(mode="json")
 
-    with pytest.raises(ValidationError, match="rpc must configure TLS and spiffe client trust"):
+    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
         Settings.model_validate(
             source
             | {
@@ -56,10 +56,7 @@ def test_session_delegation_service_is_optional_and_only_trusts_the_central_samp
     source["rpc"] = {
         "listen_address": "0.0.0.0:8080",
         "tls": {"cert_file": "/etc/actions/cert", "key_file": "/etc/actions/key"},
-        "auth": [
-            {"mode": "kubernetes_bearer", "audiences": ["test-actions"]},
-            {"mode": "spiffe", "ca_file": "/etc/actions/ca"},
-        ],
+        "auth": [{"mode": "spiffe", "ca_file": "/etc/actions/ca"}],
     }
     settings = Settings.model_validate(source | {"session_delegation_service": CENTRAL_SAMPLER_URI})
     assert settings.session_delegation_service == CENTRAL_SAMPLER_URI

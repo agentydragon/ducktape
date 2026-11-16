@@ -161,7 +161,7 @@ def test_service_settings_require_spiffe_listener_authentication() -> None:
     source = _settings().model_dump(mode="json")
     source["rpc"]["auth"] = [{"mode": "kubernetes_bearer", "audiences": ["unused"]}]
     source["dispatcher_service_callers"] = ["spiffe://agentplane/actions"]
-    with pytest.raises(ValidationError, match=r"service caller settings require rpc\.auth to include spiffe"):
+    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
         Settings.model_validate(source)
 
 

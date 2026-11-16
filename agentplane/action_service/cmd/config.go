@@ -142,8 +142,6 @@ func (c *config) validate() error {
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
 	}
-	// CLEANUP(2026-11-15, stage 5): legacy kubernetes_bearer entries remain decodable
-	// until manifests omit them and rollout completes, but grant no admission.
 	if !c.RPC.Has(listener.SPIFFE) {
 		return errors.New("rpc must configure TLS and spiffe client trust")
 	}

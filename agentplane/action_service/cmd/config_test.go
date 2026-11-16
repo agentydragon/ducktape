@@ -31,8 +31,6 @@ const requiredRPC = `rpc:
   auth:
     - mode: spiffe
       ca_file: /test/workload-ca.crt
-    - mode: kubernetes_bearer
-      audiences: [test-actions]
 `
 
 const requiredFile = requiredRPC + `policy_namespace: test-agentplane
@@ -54,13 +52,6 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	}
 	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
-	}
-}
-
-func TestListenerNeedsNoLegacyBearerMode(t *testing.T) {
-	source := strings.Replace(requiredFile, "    - mode: kubernetes_bearer\n      audiences: [test-actions]\n", "", 1)
-	if _, err := loadTestConfig(t, source); err != nil {
-		t.Fatal(err)
 	}
 }
 
@@ -287,7 +278,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"unknown key":                    requiredFile + "test_unknown_setting: never-print-this\n",
 		"unknown listener key":           strings.Replace(requiredFile, "  listen_address: \"0.0.0.0:8080\"", "  unknown: never-print-this", 1),
 		"missing listener":               strings.Replace(requiredFile, requiredRPC, "", 1),
-		"no audience":                    strings.Replace(requiredFile, "      audiences: [test-actions]\n", "      audiences: []\n", 1),
 		"no caller namespaces":           strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":            strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
 		"database Secret in static file": requiredFile + "database_url: never-print-this\n",
