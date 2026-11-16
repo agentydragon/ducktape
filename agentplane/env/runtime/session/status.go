@@ -110,7 +110,11 @@ func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProce
 	if o.failure != nil {
 		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_FAILED
 	}
-	row := &sessionpb.SessionStatus{SessionId: o.id, ExecutionState: execution, NativeSessionId: copied(o.nativeSession), FailureCursor: copied(o.failure), Busy: len(o.AutosuspendBlockers()) > 0}
+	blockers := o.AutosuspendBlockers()
+	row := &sessionpb.SessionStatus{
+		SessionId: o.id, ExecutionState: execution, NativeSessionId: copied(o.nativeSession),
+		FailureCursor: copied(o.failure), Busy: len(blockers) > 0, BusyBlockers: blockers,
+	}
 	if o.activeTurn != "" {
 		row.ActiveTurnId = copied(&o.activeTurn)
 	}

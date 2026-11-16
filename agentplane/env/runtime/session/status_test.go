@@ -8,6 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
 
 func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
@@ -19,7 +20,8 @@ func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
 	observed := s.Observe()
 	attached := observed.Attached()
 	status, _ := observed.Status()
-	if attached.ActiveTurnId != status.GetActiveTurnId() || !status.Busy || len(observed.AutosuspendBlockers()) != 1 {
+	if attached.ActiveTurnId != status.GetActiveTurnId() || !status.Busy || len(observed.AutosuspendBlockers()) != 1 ||
+		len(status.GetBusyBlockers()) != 1 || status.GetBusyBlockers()[0].GetReason() != autosuspendActiveTurn {
 		t.Fatalf("inconsistent projection: %v, %v", attached, status)
 	}
 	attached.Spec.Model = "mutated"
@@ -42,6 +44,10 @@ func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
 	if _, err := s.Admit(ctx, &commandpb.Command{CommandId: "command", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}, false); err != nil {
 		t.Fatal(err)
+	}
+	pending, _ := s.Status()
+	if !pending.GetBusy() || pending.ActiveTurnId != nil || !hasBusyReason(pending, autosuspendPendingCommand) {
+		t.Fatalf("pending command status = %v, want a pending-command reason without an active turn", pending)
 	}
 	before := s.journal.LastCursor()
 	translated, release := make(chan struct{}), make(chan struct{})
@@ -76,7 +82,8 @@ func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.
 		t.Fatalf("uncommitted turn escaped attachment history: %v, %v", attached, status)
 	}
 	blockers := observed.AutosuspendBlockers()
-	if !status.Busy || len(blockers) != 1 || blockers[0].Reason != autosuspendActiveTurn {
+	if !status.Busy || len(blockers) != 1 || blockers[0].Reason != autosuspendActiveTurn ||
+		len(status.GetBusyBlockers()) != 1 || status.GetBusyBlockers()[0].GetReason() != autosuspendActiveTurn {
 		t.Fatalf("pending-to-active transition lost idle barrier: %v, %v", status, blockers)
 	}
 	// Release the batch; the deferred close also unblocks it if an assertion fails.
@@ -94,4 +101,13 @@ func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.
 	if committed.Attached().LastCursor <= before || status.GetActiveTurnId() != "turn" || !status.Busy {
 		t.Fatalf("committed turn absent: %v", status)
 	}
+}
+
+func hasBusyReason(status *sessionpb.SessionStatus, reason string) bool {
+	for _, blocker := range status.GetBusyBlockers() {
+		if blocker.GetReason() == reason {
+			return true
+		}
+	}
+	return false
 }
