@@ -805,6 +805,11 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "provider_initialization_test",
+    saved_analysis_tools = True,
+)
+
+debundle_e2e_test(
     name = "initializer_call_effect_input_test",
     deps = [
         ":graph_support",

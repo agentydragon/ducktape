@@ -1787,8 +1787,9 @@ pub fn resolve_imported_callable_summaries(
                 .export_id(module, export)
                 .expect("prepared callable export");
             // Summary eligibility does not establish readiness at an importer's
-            // execution point. Isolated initializer providers remain leaves;
-            // class and captured-cell TDZs retain the ordered/gate obligations.
+            // execution point. Passive providers prove that their emitted
+            // owners cannot reenter an importer during initialization; class
+            // and captured-cell TDZs retain the ordered/gate obligations.
             let Some(call) = capabilities
                 .foreign_calls
                 .get(local)

@@ -571,16 +571,20 @@ standard `source_location` (`source_path`, `start_line`, `end_line`,
 call purity. The field is omitted when no bare imported callable was resolved.
 
 General imported call and returned-record summaries require a separate
-availability proof. Besides existing declaration summaries, a direct const
-function/arrow initializer is supported when its provider contains exactly that
-one declaration and local export aliases, with no retained provider captures.
-After splitting, the initializer destination remains a dependency leaf, so the
-resolved importing binding reaches an initialized value. This proof is independent
-of the callable body's invocation, return, and callback timing proofs. Imports,
-reexports, namespace/member aliases, additional executable statements and mutable
-initializers remain unsupported for this initialized-provider case. Their calls
-keep conservative dependencies; source-module acyclicity alone is insufficient
-because splitting may change the evaluation graph.
+availability proof. Besides existing declaration summaries, a direct `const`
+function/arrow initializer is supported in a closed passive provider: every
+source item is a simple `const` initialized with a function, arrow or primitive
+literal, a function declaration, an empty statement, or a local named export.
+The derived call summary must carry no provider-cell read or retained-capture
+obligations. Split provider owners may have lazy-reference cycles, but contain
+no executable initializer that can
+reenter an importer; every dependency stays inside the provider. The imported
+initializer therefore finishes before its consuming module executes.
+This proof is independent of the callable body's invocation, return and callback
+timing proofs. Imports, reexports, namespace/member aliases, active or mutable
+initializers, destructuring and other executable statements retain conservative
+handling. Source-module acyclicity alone is insufficient because splitting may
+change the evaluation graph.
 
 Source-certified immutable wrappers may also supply `callback_object_arguments`:
 ordinary allocated argument positions and checked direct callback uses. An
