@@ -33,7 +33,8 @@ def _history_panel() -> timeseries.Panel:
 def _resource_readiness(id: int, kind: str, *, ready: bool = True) -> stat.Panel:
     plural = "GitRepositories" if kind == "GitRepository" else f"{kind}s"
     status = 'status="True"' if ready else 'status!="True"'
-    aggregate = "count" if ready else "sum"
+    expression = f'kube_customresource_flux_{kind.lower()}_ready{{namespace=~"$namespace",{status}}}'
+    expression = f"count({expression} == 1)" if ready else f"sum({expression})"
     return (
         (_readiness_stat() if ready else _readiness_stat("green", "red"))
         .id(id)
@@ -44,12 +45,7 @@ def _resource_readiness(id: int, kind: str, *, ready: bool = True) -> stat.Panel
             else f"{plural} whose current Ready condition is False or Unknown."
         )
         .grid_pos(dashboard.GridPos(h=5, w=6, x=(id - 1) * 6))
-        .with_target(
-            mimir_query(
-                f'{aggregate}(kube_customresource_flux_{kind.lower()}_ready{{namespace=~"$namespace",{status}}})',
-                "ready" if ready else "not ready",
-            ).instant()
-        )
+        .with_target(mimir_query(expression, "ready" if ready else "not ready").instant())
     )
 
 
