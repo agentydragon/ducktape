@@ -144,11 +144,11 @@ func TestOptionalCertificateTLSStillVerifiesEveryPresentedLeaf(t *testing.T) {
 	withoutCertificate := clientTLS.Clone()
 	withoutCertificate.GetClientCertificate = nil
 	withoutCertificate.Certificates = nil
-	optional, err := server.WorkloadServerTLSConfigWithBearer(peertls.EgressProxyURI)
+	optional, err := server.WorkloadServerTLSConfigWithPublicHealth(peertls.EgressProxyURI)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, config := range map[string]*tls.Config{"certificate": clientTLS, "bearer transport": withoutCertificate} {
+	for name, config := range map[string]*tls.Config{"certificate": clientTLS, "public health transport": withoutCertificate} {
 		t.Run(name, func(t *testing.T) {
 			if _, _, err := tlsHandshake(t, config, optional); err != nil {
 				t.Fatal(err)

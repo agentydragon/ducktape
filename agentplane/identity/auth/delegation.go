@@ -73,7 +73,7 @@ func (r kubernetesIdentityUIDs) GetIdentityUID(ctx context.Context, name string)
 // Identity.
 func (r Rule) admitsIdentityCallers() bool {
 	switch r.kind {
-	case ruleReviewedServiceAccountOrIdentity, ruleAnySubject, ruleSVIDOrAccounts:
+	case ruleAnySubject:
 		return true
 	default:
 		return false

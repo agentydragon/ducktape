@@ -67,7 +67,6 @@ func TestIdentitySVIDCannotClaimSameNamedAccountRequest(t *testing.T) {
 			TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
 			Auth: []listener.Authentication{
 				&listener.SPIFFEAuth{CAFile: serving.CAFile},
-				&listener.KubernetesBearerAuth{Audiences: []string{testAudience}},
 			},
 		}
 	})
@@ -219,7 +218,6 @@ func TestSVIDIdentityCallerActsByItsIdentityBindings(t *testing.T) {
 			TLS:           &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile},
 			Auth: []listener.Authentication{
 				&listener.SPIFFEAuth{CAFile: serving.CAFile},
-				&listener.KubernetesBearerAuth{Audiences: []string{testAudience}},
 			},
 		}
 	})
@@ -468,7 +466,7 @@ func TestServiceReaderAdmissionIsReadOnlyAndNotAnOperator(t *testing.T) {
 	serving := ca.Issue(t, peertls.ActionsURI)
 	service := startConfigured(t, kube.Config, &catalog.Catalog{}, func(c *config, _ *deps) {
 		c.ServiceReaders = []string{peertls.NotificationsURI}
-		c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}, &listener.KubernetesBearerAuth{Audiences: []string{testAudience}}}}
+		c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: serving.CAFile}}}
 	})
 	waitReady(t, service)
 	for _, actor := range []string{peertls.NotificationsURI, peertls.MCPEdgeURI} {

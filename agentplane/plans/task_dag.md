@@ -3734,11 +3734,10 @@ Receiver bearer admission and the listener audiences retire one receiver at a ti
 of `PRIVILEGED_BACKEND_AUTH_DESIGN`, sequenced in the
 [cutover readiness plan](service_svid_stage5_readiness.md).
 
-- **EnvironmentService:** List, Watch, Get and WatchEnvironment use
-  `ReviewedServiceAccountOrIdentity` and exact Identity self-read. `ResumeEnvironment`, suspend,
-  delete and settings mutations still use `ReviewedServiceAccount`; direct resume is limited to the
-  configured Pod-bound operator. Automatic Identity wake uses the current target
-  `resumePolicy.allowOwnServiceAccount` and is not an environment-rule operation.
+- **EnvironmentService:** workload SVIDs resolve through `AnySubject` for exact Identity self-read
+  and Identity resume; component roles and typed service delegation have separate service-SVID
+  grants. Automatic Identity wake uses the current target `resumePolicy.allowOwnServiceAccount`
+  and is not an environment-rule operation.
 - **Workload and component boundaries:** issued workload credentials name Identities, and retained
   ServiceAccount-subject records fail closed. Replace direct component TokenReview; keep component
   reader/management/writer/waker allowlists with service SVIDs, Kubernetes-account impersonation and historical

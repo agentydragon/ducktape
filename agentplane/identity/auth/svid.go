@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -104,95 +103,6 @@ func svidStatus(ctx context.Context, err error) error {
 	default:
 		return status.Error(codes.Unauthenticated, "invalid workload SVID")
 	}
-}
-
-// WithListenerAuthentication binds this resolver to the explicit authentication modes on one
-// listener. A bearer mode must use this Resolver's audience; certificate authentication requires
-// a live WorkloadCredential resolver. Callers and methods remain the responsibility of the existing Rules.
-func (r *Resolver) WithListenerAuthentication(config listener.Config, svid *SVIDResolver) (*Resolver, error) {
-	if err := config.Validate(); err != nil {
-		return nil, fmt.Errorf("listener authentication: %w", err)
-	}
-	if config.Has(listener.SPIFFE) && svid == nil {
-		return nil, errors.New("SVID resolver is required when SPIFFE authentication is enabled")
-	}
-	if config.Has(listener.KubernetesBearer) && !config.AllowsBearerAudience(r.audience) {
-		return nil, errors.New("listener bearer audiences must include the TokenReview resolver audience")
-	}
-	copy := *r
-	config.Auth = append([]listener.Authentication(nil), config.Auth...)
-	if config.TLS != nil {
-		tlsConfig := *config.TLS
-		config.TLS = &tlsConfig
-	}
-	copy.listenerAuth = &config
-	copy.svid = svid
-	return &copy, nil
-}
-
-func (r *Resolver) usesSVID(ctx context.Context) bool {
-	if r.listenerAuth == nil {
-		return false
-	}
-	remote, ok := peer.FromContext(ctx)
-	if !ok {
-		return false
-	}
-	info, ok := remote.AuthInfo.(credentials.TLSInfo)
-	if !ok {
-		return false
-	}
-	return len(info.State.PeerCertificates) > 0
-}
-
-// resolveSVID is the ServiceAccount-only path for Rules that still admit TokenReview principals.
-// An SVID subject is an Identity and requires an Identity-admitting Rule.
-func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {
-	subject, secured, err := r.resolveSVIDSubject(ctx)
-	if !secured || err != nil {
-		return Principal{}, secured, err
-	}
-	principal, ok := subject.(Principal)
-	if !ok {
-		return Principal{}, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	return principal, true, nil
-}
-
-func (r *Resolver) resolveSVIDSubject(ctx context.Context) (Subject, bool, error) {
-	if r.listenerAuth == nil {
-		return nil, false, nil
-	}
-	remote, ok := peer.FromContext(ctx)
-	var info credentials.TLSInfo
-	if ok {
-		info, ok = remote.AuthInfo.(credentials.TLSInfo)
-	}
-	if hasDelegationCredential(ctx) {
-		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	hasCertificate := ok && len(info.State.PeerCertificates) > 0
-	mode, err := r.listenerAuth.Select(hasCertificate, hasDirectBearerCredential(ctx))
-	if err != nil {
-		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	if mode != listener.SPIFFE {
-		return nil, false, nil
-	}
-	if r.svid == nil {
-		return nil, true, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	subject, err := r.svid.ResolveSubject(ctx)
-	return subject, true, err
-}
-
-// ResolveSubject is Resolve for a destination that also serves Identity callers: an SVID yields
-// its record's subject, a bearer the ServiceAccount Principal TokenReview proves.
-func (r *Resolver) ResolveSubject(ctx context.Context) (Subject, error) {
-	if subject, secured, err := r.resolveSVIDSubject(ctx); secured {
-		return subject, err
-	}
-	return r.Resolve(ctx)
 }
 
 // requestContext carries an HTTP request's credentials as the gRPC middleware reads them. The
