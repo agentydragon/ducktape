@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -24,12 +23,5 @@ func TestDispatchLineMapsUnknownStateToNamedUnknown(t *testing.T) {
 	line, err := dispatchLine(&dispatcherpb.Dispatch{CommandId: "command", State: dispatcherpb.DeliveryState(99)})
 	if err != nil || !strings.Contains(line, "unknown") || strings.Contains(line, "99") {
 		t.Fatalf("dispatchLine() = %q, error %v; want the normalized unknown state", line, err)
-	}
-}
-
-func TestInputObservationMapsFutureJSONStateToNamedUnknown(t *testing.T) {
-	line, err := inputObservationLine(json.RawMessage(`{"dispatch":{"value":{"commandId":"command","state":"DELIVERY_STATE_FUTURE"}}}`))
-	if err != nil || !strings.Contains(line, "unknown") {
-		t.Fatalf("inputObservationLine() = %q, error %v; want the normalized unknown state", line, err)
 	}
 }

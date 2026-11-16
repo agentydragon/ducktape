@@ -15,7 +15,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -166,10 +165,7 @@ func TestObserveInputReturnsWakeDenialFromQueuedWatchUpdate(t *testing.T) {
 	if history.calls != 0 || got.Dispatch.Kind != "observed" {
 		t.Fatalf("wake denial was not returned before History: dispatch=%#v History calls=%d", got.Dispatch, history.calls)
 	}
-	observed := &dispatcherpb.Dispatch{}
-	if err := protojson.Unmarshal(got.Dispatch.Value, observed); err != nil {
-		t.Fatalf("decode observed Dispatcher receipt: %v", err)
-	}
+	observed := got.Dispatch.Value
 	if observed.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER ||
 		observed.GetDeliveryBlocker().GetKind() != environmentlifecyclepb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED ||
 		observed.GetWakeAssessment().GetState() != environmentlifecyclepb.WakeState_WAKE_STATE_DENIED ||
@@ -301,10 +297,7 @@ func TestObserveInputStopsWatchingWhenDispatcherCancelsQueuedCommand(t *testing.
 	if got.Observation.Kind != ObservationNotObserved || history.calls != 0 {
 		t.Fatalf("observation = %#v, History calls = %d; canceled input must not be inferred as a turn", got.Observation, history.calls)
 	}
-	var receipt dispatcherpb.Dispatch
-	if err := protojson.Unmarshal(got.Dispatch.Value, &receipt); err != nil {
-		t.Fatalf("unmarshal Dispatcher receipt: %v", err)
-	}
+	receipt := got.Dispatch.Value
 	if receipt.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER {
 		t.Fatalf("Dispatcher state = %s, want cancelled", receipt.GetState())
 	}
@@ -328,6 +321,9 @@ func TestObserveInputDoesNotInferHistoryCommandOutcomeFromDispatcherState(t *tes
 	}
 	if got.Dispatch.Kind != "observed" || got.Observation.Kind != ObservationNotObserved || history.calls != 0 {
 		t.Fatalf("dispatch/observation/History calls = %#v / %#v / %d", got.Dispatch, got.Observation, history.calls)
+	}
+	if got.Dispatch.Value.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_UNKNOWN {
+		t.Fatalf("future delivery state was not normalized: %s", got.Dispatch.Value.GetState())
 	}
 }
 

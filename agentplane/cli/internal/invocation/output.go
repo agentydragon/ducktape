@@ -71,6 +71,18 @@ func (a *Invocation) ShowOne(raw []byte, line func(json.RawMessage) (string, err
 	return a.Show([]json.RawMessage{raw}, line)
 }
 
+func ShowValue[T any](a *Invocation, value T, line func(T) (string, error)) error {
+	var encoded []byte
+	if a.JSON() {
+		var err error
+		encoded, err = json.Marshal(value)
+		if err != nil {
+			return InvalidResponse("marshal output: %v", err)
+		}
+	}
+	return a.ShowOne(encoded, func(json.RawMessage) (string, error) { return line(value) })
+}
+
 func (a *Invocation) AnnounceKey(key string) {
 	if a.JSON() {
 		fmt.Fprintf(a.Stderr(), "{\"idempotency_key\": %q}\n", key)

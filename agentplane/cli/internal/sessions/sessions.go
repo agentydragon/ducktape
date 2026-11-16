@@ -2,7 +2,6 @@ package sessions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -73,11 +72,7 @@ Both backends authorize this caller independently.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := json.Marshal(result)
-			if err != nil {
-				return invocation.InvalidResponse("marshal Session snapshot: %v", err)
-			}
-			return a.ShowOne(body, sessionSnapshotLine)
+			return invocation.ShowValue(a.Invocation, result, sessionSnapshotLine)
 		},
 	}
 }
@@ -116,11 +111,7 @@ The page cursor is opaque, Session-scoped and carries no authority.`,
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := json.Marshal(result)
-			if err != nil {
-				return invocation.InvalidResponse("marshal retained turns: %v", err)
-			}
-			return a.ShowOne(body, turnPageLine)
+			return invocation.ShowValue(a.Invocation, result, turnPageLine)
 		},
 	}
 	command.Flags().Uint32Var(&count, "count", count, "maximum completed turns to return (1-100)")
@@ -169,22 +160,14 @@ coverage facts. Both backends authorize this caller independently.`,
 			)
 			if err != nil {
 				if invocation.DeadlineElapsed(ctx) {
-					body, marshalErr := json.Marshal(result)
-					if marshalErr != nil {
-						return invocation.InvalidResponse("marshal input observation: %v", marshalErr)
-					}
-					if showErr := a.ShowOne(body, inputObservationLine); showErr != nil {
+					if showErr := invocation.ShowValue(a.Invocation, result, inputObservationLine); showErr != nil {
 						return showErr
 					}
 					return invocation.ExitWith(invocation.ExitDeadline)
 				}
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := json.Marshal(result)
-			if err != nil {
-				return invocation.InvalidResponse("marshal input observation: %v", err)
-			}
-			if err := a.ShowOne(body, inputObservationLine); err != nil {
+			if err := invocation.ShowValue(a.Invocation, result, inputObservationLine); err != nil {
 				return err
 			}
 			if invocation.DeadlineElapsed(ctx) && result.Observation.Kind == sessionclient.ObservationNotObserved {
@@ -509,26 +492,13 @@ func dispatchLine(dispatch *dispatcherpb.Dispatch) (string, error) {
 	return line, nil
 }
 
-func inputObservationLine(raw json.RawMessage) (string, error) {
-	var observation sessionclient.InputObservation
-	if err := json.Unmarshal(raw, &observation); err != nil {
-		return "", invocation.InvalidResponse("%v", err)
-	}
+func inputObservationLine(observation sessionclient.InputObservation) (string, error) {
 	line := invocation.Fields(observation.SessionID, observation.CommandID, string(observation.Observation.Kind))
 	if observation.Dispatch.Kind != "" {
-		line += invocation.Fields("dispatcher " + observation.Dispatch.Kind)
+		line += invocation.Fields("dispatcher " + string(observation.Dispatch.Kind))
 	}
-	if len(observation.Dispatch.Value) > 0 {
-		normalized, err := normalizeDispatchStateJSON(observation.Dispatch.Value)
-		if err != nil {
-			return "", invocation.InvalidResponse("dispatcher receipt: %v", err)
-		}
-		dispatch := &dispatcherpb.Dispatch{}
-		if err := protojson.Unmarshal(normalized, dispatch); err != nil {
-			return "", invocation.InvalidResponse("dispatcher receipt: %v", err)
-		}
-		dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
-		line += invocation.Fields(invocation.EnumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"), invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
+	if dispatch := observation.Dispatch.Value; dispatch != nil {
+		line += invocation.Fields(invocation.EnumSuffix(dispatchstate.NormalizeDeliveryState(dispatch.GetState()).String(), "DELIVERY_STATE_"), invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
 	}
 	if observation.Observation.TurnID != nil {
 		line += invocation.Fields("turn " + *observation.Observation.TurnID)
@@ -559,47 +529,7 @@ func inputObservationLine(raw json.RawMessage) (string, error) {
 	return line, nil
 }
 
-func normalizeDispatchStateJSON(raw json.RawMessage) (json.RawMessage, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return nil, err
-	}
-	state, ok := fields["state"]
-	if !ok {
-		return raw, nil
-	}
-	encodedState := strings.TrimSpace(string(state))
-	switch {
-	case strings.HasPrefix(encodedState, `"`):
-		var name string
-		if err := json.Unmarshal(state, &name); err != nil {
-			return nil, err
-		}
-		value, ok := dispatcherpb.DeliveryState_value[name]
-		if !ok {
-			value = int32(dispatcherpb.DeliveryState_DELIVERY_STATE_UNSPECIFIED)
-		}
-		normalized := dispatchstate.NormalizeDeliveryState(dispatcherpb.DeliveryState(value))
-		if normalized != dispatcherpb.DeliveryState(value) {
-			fields["state"] = json.RawMessage(strconv.Quote(normalized.String()))
-		}
-	case encodedState != "":
-		var number int32
-		if err := json.Unmarshal(state, &number); err == nil {
-			normalized := dispatchstate.NormalizeDeliveryState(dispatcherpb.DeliveryState(number))
-			if normalized != dispatcherpb.DeliveryState(number) {
-				fields["state"] = json.RawMessage(strconv.Quote(normalized.String()))
-			}
-		}
-	}
-	return json.Marshal(fields)
-}
-
-func sessionSnapshotLine(raw json.RawMessage) (string, error) {
-	snapshot, err := invocation.Decode[sessionclient.SessionSnapshot](raw)
-	if err != nil {
-		return "", err
-	}
+func sessionSnapshotLine(snapshot sessionclient.SessionSnapshot) (string, error) {
 	line := invocation.Fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Session.Kind), "history "+string(snapshot.History.Kind))
 	if snapshot.Session.Error != nil {
 		line += invocation.Fields("dispatcher error " + snapshot.Session.Error.Code)
@@ -607,21 +537,13 @@ func sessionSnapshotLine(raw json.RawMessage) (string, error) {
 	if snapshot.History.Error != nil {
 		line += invocation.Fields("history error " + snapshot.History.Error.Code)
 	}
-	if len(snapshot.History.Value) > 0 {
-		summary := &historypb.SessionSummary{}
-		if err := protojson.Unmarshal(snapshot.History.Value, summary); err != nil {
-			return "", invocation.InvalidResponse("History summary: %v", err)
-		}
+	if summary := snapshot.History.Value; summary != nil {
 		line += invocation.Fields("history cursor "+strconv.FormatUint(summary.GetCommittedCursor(), 10), invocation.EnumSuffix(summary.GetFeedStatus().String(), "FEED_STATUS_"))
 	}
 	return line, nil
 }
 
-func turnPageLine(raw json.RawMessage) (string, error) {
-	page, err := invocation.Decode[sessionclient.TurnPage](raw)
-	if err != nil {
-		return "", err
-	}
+func turnPageLine(page sessionclient.TurnPage) (string, error) {
 	line := invocation.Fields(page.SessionID.String(), "history through "+page.ThroughCursor, fmt.Sprintf("%d turns", len(page.Turns)))
 	if page.NextCursor != "" {
 		line += invocation.Fields("more turns available")
