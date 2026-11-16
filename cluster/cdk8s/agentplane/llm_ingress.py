@@ -22,8 +22,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from pydantic import AnyHttpUrl
 
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.identity.auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
 from cluster.cdk8s import cilium, node_scheduling
@@ -203,13 +202,7 @@ class LlmIngress(Construct):
             rpc=Listener(
                 listen_address=f"0.0.0.0:{self.service.pod_port}",
                 tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                # CLEANUP(added 2026-11-16): Remove the ignored bearer declaration after an image
-                # with certificate-free public health TLS is pinned. The current HTTP TLS builder
-                # otherwise requires a certificate before the health handler can run (#16793).
-                auth=[
-                    SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                    KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-                ],
+                auth=[SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
         )
         settings = SettingsFile(
