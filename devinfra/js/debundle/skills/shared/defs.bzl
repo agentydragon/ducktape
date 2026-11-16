@@ -91,6 +91,7 @@ DEBUNDLE_REFERENCES = [
             "//devinfra/js/debundle/docs:module_placement.md",
             "//devinfra/js/debundle/docs:naming.md",
             "//devinfra/js/debundle/docs:planning.md",
+            "//devinfra/js/debundle/docs:polynomial_esm_scheduling.md",
             "//devinfra/js/debundle/docs:selectors.md",
             "//devinfra/js/debundle/docs:spec_editing.md",
             "//devinfra/js/debundle/docs:wire_format.md",
