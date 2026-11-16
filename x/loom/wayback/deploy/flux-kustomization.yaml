@@ -1,0 +1,54 @@
+# Wayback is intentionally parked. Keep this control object with the deployment
+# package, but out of the active root Flux bundle, so the archived service and
+# its stale health status are not reconciled into the cluster.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: wayback-cache
+  namespace: ducktape-flux
+spec:
+  # Set false only to deliberately restore the complete package.
+  suspend: true
+  interval: 10m
+  retryInterval: 1m
+  timeout: 10m
+  path: ./x/loom/wayback/deploy
+  prune: true
+  wait: true
+  deletionPolicy: WaitForTermination
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
+  dependsOn:
+    - name: external-secrets-config
+      namespace: ducktape-flux
+    - name: forgejo-images
+      namespace: ducktape-flux
+    - name: cnpg
+      namespace: ducktape-flux
+    - name: gateway
+      namespace: ducktape-flux
+    - name: reflector
+      namespace: ducktape-flux
+    - name: claude-rbac
+      namespace: ducktape-flux
+    - name: monitoring-stack
+      namespace: ducktape-flux
+  healthChecks:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: wayback-archive-db
+      namespace: wayback-cache
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: wayback-cache
+      namespace: wayback-cache
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: wayback-cache-filler-workers
+      namespace: wayback-cache

@@ -126,7 +126,7 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 - Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
   manifests still name the retired `local-path` StorageClass — re-point to
   `piraeus-ssd-local` when reviving.
-- `wayback-archive-db` (<../../loom/wayback/deploy/>): OVH-HA shape,
+- `wayback-archive-db` (<../../x/loom/wayback/deploy/>): OVH-HA shape,
   retained in the parked Wayback package, outside the active Flux root.
 
 The retired Haku dispatch database source has been removed. Its Flux owner remains

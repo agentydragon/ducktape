@@ -445,15 +445,15 @@ applications").
   repository provisioning and Flux package. The repository and credentials are retained;
   the market roster is kept at `finance/scraper/market-roster.yaml` for a future revival.
 - **docker-ci**: `cluster/parked/docker-ci/` — decommissioned despite backing
-  `loom/gym`'s on-demand forecasting-eval Job (`loom/gym/k8s/eval-job.yaml`); parked at
+  `x/loom/gym`'s on-demand forecasting-eval Job (`x/loom/gym/k8s/eval-job.yaml`); parked at
   operator request, accepting that an eval run needs reviving it first.
 - **haku-dispatch**: the dispatch and worker-zone source and Flux owner were removed
   after a targeted read-only inspection found no Flux inventory, component namespaces,
   matching PVC/PVs, or named zone policies to clean up. The zone package had no active
   Flux owner. No cluster mutation was needed.
 
-**Wayback cache**: `loom/wayback/deploy/` — decommissioned by operator request, but this
-is ducktape-owned code (`loom/wayback/cache/`), so its parked Flux declaration stays
+**Wayback cache**: `x/loom/wayback/deploy/` — decommissioned by operator request, but this
+is ducktape-owned code (`x/loom/wayback/cache/`), so its parked Flux declaration stays
 colocated with its source rather than moving to `cluster/parked/`. Same for
 **props**: `props/deploy/` — suspended 2026-08-20 for a temporary teardown, ducktape-owned
 code, not part of this convention.

@@ -6,7 +6,7 @@
 #   - postgresql-client (psql) for the Plaid ledger
 # Python + the app come from the rules_py image layers, and the fastmcp MCP-client CLI from the
 # `agent-haku` Python devshell output — neither from apt. kubectl is NOT in trixie main: if the
-# shell route needs it, add an upstream static binary (cf. loom/gym's docker CLI), not here.
+# shell route needs it, add an upstream static binary (cf. x/loom/gym's docker CLI), not here.
 #
 # TODO: decide whether this image should also carry `tea`. The Nix-built agent surfaces
 # (`.#agent-haku`, agent-box, codex-pod, haku-managed-agent) include it for Forgejo/Gitea workflows;

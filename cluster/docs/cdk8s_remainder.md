@@ -69,7 +69,7 @@ concrete authoring seam.
 - **SOPS and image automation:** ciphertext stays with SOPS/key holders or its rotator;
   `image-pins` and Haku's `{image,static}-metadata.yaml` stay bot-owned. cdk8s owns
   references/composition. Zero hand-written YAML is not an appropriate target for them.
-- **Project-owned deployments:** `props/deploy` and `loom/wayback/deploy` retain raw
+- **Project-owned deployments:** `props/deploy` and `x/loom/wayback/deploy` retain raw
   resources and suspended, unwired Flux declarations. Haku's managed-agent package has a
   suspended node in the generated chart. Keep it in the adoption inventory and convert as
   part of deliberate revival; do not reactivate to measure coverage. Other raw packages

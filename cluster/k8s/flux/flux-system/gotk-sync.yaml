@@ -14,7 +14,7 @@ spec:
     branch: devel
   sparseCheckout:
     - cluster/k8s/
-    - loom/wayback/deploy/
+    - x/loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/
   # 5m, because a clone of this repository does not fit the 60 seconds that

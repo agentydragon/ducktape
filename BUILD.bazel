@@ -48,7 +48,7 @@
 # gazelle:resolve py devinfra.x.github_proxy.central.github_api_proxy_image //devinfra/x/github_proxy/central:github_api_proxy_image
 # gazelle:resolve py gnome.test_image.gnome_shell_test //gnome/test_image:gnome_shell_test
 # gazelle:resolve py haku.console.static_test_image //haku/console:static_test_image
-# gazelle:resolve py loom.wayback.proxy.wayback_proxy_image //loom/wayback/proxy:wayback_proxy_image
+# gazelle:resolve py x.loom.wayback.proxy.wayback_proxy_image //x/loom/wayback/proxy:wayback_proxy_image
 # gazelle:resolve py skills.freecad.eval.freecad_test_image //skills/freecad/eval:freecad_test_image
 # gazelle:resolve py third_party.cli_proxy_api_tests.cli_proxy_api_image //third_party/cli_proxy_api_tests:cli_proxy_api_image
 # gazelle:resolve py third_party.containers.blackbox_exporter //third_party/containers:blackbox_exporter

@@ -20,8 +20,8 @@ on:
     paths:
       # keep-sorted start
       - ".github/workflows/container-images.yml"
-      - "loom/gym/sandbox/**"
       - "skills/freecad/Dockerfile.test"
+      - "x/loom/gym/sandbox/**"
       - "x/rtl_tcp/Dockerfile"
       # keep-sorted end
   workflow_dispatch:
@@ -109,7 +109,7 @@ jobs:
       - uses: ./.github/actions/ghcr-build-push
         with:
           image: ghcr.io/${{ github.repository_owner }}/loom-gym-sandbox
-          context: loom/gym/sandbox
+          context: x/loom/gym/sandbox
 
   # `pin-digests` pushes via the ducktape-automation GitHub App so the commit
   # bypasses the main-protection ruleset (github-actions can't bypass on

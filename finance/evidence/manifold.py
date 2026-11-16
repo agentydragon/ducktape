@@ -2,7 +2,7 @@
 
 The mirror stores Manifold's responses as served (camelCase JSON). This loader
 parses `market.json` for current calibration; deep bet and comment history remains
-in the evidence mirror for the planned market harvest (loom/plans/market_harvest.md).
+in the evidence mirror for the planned market harvest (x/loom/plans/market_harvest.md).
 """
 
 from __future__ import annotations

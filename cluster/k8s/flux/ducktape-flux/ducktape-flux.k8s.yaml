@@ -170,7 +170,7 @@ spec:
     - secrets/shared/
     - agentplane/crds/manifests/
     - cluster/charts/browsertrix/
-    - loom/wayback/deploy/
+    - x/loom/wayback/deploy/
     - props/deploy/
     - tf/gitops/
   timeout: 5m

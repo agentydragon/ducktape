@@ -10,7 +10,7 @@ through the ClusterIP Service `docker-ci.docker-ci.svc.cluster.local:2376`
 (`service.yaml`). Nothing routes it through the Gateway.
 
 ```text
-in-cluster eval Job (loom/gym, claude-sandbox ns)
+in-cluster eval Job (x/loom/gym, claude-sandbox ns)
   │  mounts the cert-manager Secret docker-ci-client (ca/cert/key)
   │  DOCKER_HOST=tcp://docker-ci.docker-ci.svc.cluster.local:2376
   ▼
