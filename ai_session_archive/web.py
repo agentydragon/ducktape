@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette import status
 
-from ai_session_archive import queries
+from ai_session_archive import queries, version_queries
 from ai_session_archive.database import make_session_factory
 from ai_session_archive.models import (
     EventDirection,
@@ -106,7 +106,7 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
     def versions(session_id: UUID, db: ArchiveSession) -> Versions:
         if queries.get_session(db, session_id=session_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
-        return Versions(data=queries.list_versions(db, session_id=session_id))
+        return Versions(data=version_queries.list_versions(db, session_id=session_id))
 
     @api.get("/sessions/{session_id}/versions/{version_id}/events")
     def events(
@@ -117,7 +117,7 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
         limit: Annotated[int, Query(ge=1, le=500)] = 100,
         direction: EventDirection = EventDirection.FORWARD,
     ) -> EventPage:
-        page = queries.list_events(
+        page = version_queries.list_events(
             db, session_id=session_id, version_id=version_id, cursor=cursor, limit=limit, direction=direction
         )
         if page is None:
