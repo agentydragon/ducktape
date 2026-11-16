@@ -1056,9 +1056,10 @@ impl ChunkValueFlow {
     }
 
     pub(crate) fn values_of_property(&self, object: u32, property: &str) -> Option<&Values> {
-        self.properties
-            .get(&object)
-            .and_then(|properties| properties.get(property))
+        if let Some(program) = &self.program {
+            return program.values_of_property(object, property);
+        }
+        self.properties.get(&object)?.get(property)
     }
 
     pub(crate) fn aliases_by_object(
