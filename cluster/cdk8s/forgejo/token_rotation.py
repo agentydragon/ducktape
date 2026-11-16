@@ -24,6 +24,7 @@ from cluster.cdk8s.forgejo import namespace, secret_copy
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.reflector import mirror_annotations
+from cluster.cdk8s.rotator_cron_job import RotatorCronJob, secret_mount
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.rotators.forgejo_token_rotation.config import Config, Rotation, TeaSecretOutput
 
@@ -32,8 +33,6 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agents/forgejo-token-rotation"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/forgejo-token-rotation-image-pins"
 _NAMESPACE = "agents-infra"  # owned by authentik-jwt-rotation
 _IMAGE = "git.allegedly.works/ducktape-ci/forgejo-token-rotation:unset"
-_GITHUB_PAT = "github-secrets-sync-pat"
-_CONFIG_DIR = "/config"
 _CONFIG_FILE = "tokens.yaml"
 
 
@@ -111,14 +110,6 @@ CONFIG_MAP = ConfigMapArgs(
 )
 
 
-def _secret_volume(name: str, secret: str) -> k8s.Volume:
-    return k8s.Volume(name=name, secret=k8s.SecretVolumeSource(secret_name=secret))
-
-
-def _mount(name: str, path: str) -> k8s.VolumeMount:
-    return k8s.VolumeMount(name=name, mount_path=path, read_only=True)
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     reader = secret_copy.reader(chart, _NAMESPACE)
@@ -128,7 +119,7 @@ def chart(app: App) -> Chart:
             secret_copy.secret_copy(chart, credential.secret.name, reader=reader)
         elif credential.secret.namespace != _NAMESPACE:
             raise ValueError(f"unsupported Forgejo credential source namespace: {credential.secret.namespace}")
-    k8s.KubeCronJob(
+    RotatorCronJob(
         chart,
         "cronjob",
         metadata=k8s.ObjectMeta(
@@ -142,82 +133,17 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        spec=k8s.CronJobSpec(
-            schedule="35 * * * *",
-            successful_jobs_history_limit=3,
-            failed_jobs_history_limit=3,
-            job_template=k8s.JobTemplateSpec(
-                spec=k8s.JobSpec(
-                    # A Job whose pod can never start (e.g. it pins a kustomize-hashed
-                    # ConfigMap that a newer generation pruned) stays active forever --
-                    # history limits and TTL apply only to finished Jobs. The deadline
-                    # fails it; the TTL then garbage-collects it.
-                    active_deadline_seconds=1800,
-                    ttl_seconds_after_finished=86400,
-                    backoff_limit=2,
-                    template=k8s.PodTemplateSpec(
-                        spec=k8s.PodSpec(
-                            # No Kubernetes API access; all source credentials arrive as mounted Secrets.
-                            service_account_name="",
-                            automount_service_account_token=False,
-                            image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                            restart_policy="OnFailure",
-                            volumes=[
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
-                                k8s.Volume(
-                                    name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
-                                ),
-                                _secret_volume("github-pat", _GITHUB_PAT),
-                                *(
-                                    _secret_volume(credential.volume_name, credential.secret.name)
-                                    for credential in credentials
-                                ),
-                            ],
-                            security_context=k8s.PodSecurityContext(
-                                run_as_non_root=True,
-                                run_as_user=65534,
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                            ),
-                            containers=[
-                                k8s.Container(
-                                    name="rotate",
-                                    image=_IMAGE,
-                                    args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
-                                    env=[
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                        k8s.EnvVar(
-                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                    ],
-                                    security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                                    ),
-                                    volume_mounts=[
-                                        _mount("public-web-pki", "/var/run/public-web-pki"),
-                                        _mount("rotations-config", _CONFIG_DIR),
-                                        _mount("github-pat", "/var/run/secrets/github-pat"),
-                                        *(
-                                            _mount(credential.volume_name, str(credential.mount_directory))
-                                            for credential in credentials
-                                        ),
-                                    ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("128Mi"),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string("256Mi")},
-                                    ),
-                                )
-                            ],
-                        )
-                    ),
-                )
-            ),
+        schedule="35 * * * *",
+        image=_IMAGE,
+        config_map_name=CONFIG_MAP.name,
+        config_file=_CONFIG_FILE,
+        # No Kubernetes API access; all source credentials arrive as mounted Secrets.
+        service_account_name="",
+        automount_service_account_token=False,
+        image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
+        credential_mounts=tuple(
+            secret_mount(credential.volume_name, credential.secret.name, str(credential.mount_directory))
+            for credential in credentials
         ),
     )
     return chart
