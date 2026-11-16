@@ -1,0 +1,51 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    testonly = True,
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/transport:app_service_client",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "client_test",
+    srcs = ["client.test.ts"],
+    deps = [
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/app_config:client",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+ts_library(
+    name = "frontend_config",
+    srcs = ["frontend_config.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/app_config:client",
+    ],
+)
+
+check_vitest_specs()

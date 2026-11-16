@@ -6,7 +6,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import * as sandboxClient from "./client";
-import * as appConfigClient from "../app_config_client";
+import * as appConfigClient from "../app_config/client";
 import {
   GetSandboxFormResponseSchema,
   NewSandboxDefaultsSchema,
@@ -17,7 +17,7 @@ import { Harness } from "../../../proto/session_pb";
 import { SandboxList } from "./list";
 import { SandboxesLiveProvider } from "./live";
 import { deletable, SuspendResume } from "./lifecycle";
-import { sandboxSummary } from "../sandbox_status";
+import { sandboxSummary } from "./sandbox_status";
 import { clone, create, toJson } from "@bufbuild/protobuf";
 import { DurationSchema } from "@bufbuild/protobuf/wkt";
 import { testSandbox } from "../testing/sandbox";

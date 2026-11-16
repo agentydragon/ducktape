@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { create } from "@bufbuild/protobuf";
 
-import { TraceSearchSettingsSchema } from "../app_service_pb";
+import { TraceSearchSettingsSchema } from "../../app_service_pb";
 import { traceSearchUrl } from "./trace_search";
 
 const settings = create(TraceSearchSettingsSchema, {

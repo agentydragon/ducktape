@@ -7,7 +7,7 @@ import type { JSX } from "react";
 
 import { harnessLabel } from "./model_catalog";
 import { attachedHarness } from "./harness_behavior";
-import { traceSearchUrl } from "../trace_search";
+import { traceSearchUrl } from "../observability/trace_search";
 
 import { TimeAgo } from "../ui/time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";

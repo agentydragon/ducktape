@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 
-import { getFrontendConfig, getSandboxForm, listModels, listSandboxPresets } from "./app_config_client";
-import { Harness } from "../../proto/session_pb";
+import { getFrontendConfig, getSandboxForm, listModels, listSandboxPresets } from "./client";
+import { Harness } from "../../../proto/session_pb";
 
 afterEach(() => {
   vi.unstubAllGlobals();

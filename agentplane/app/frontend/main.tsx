@@ -3,7 +3,7 @@ import "@mantine/core/styles.css";
 import { createRoot } from "react-dom/client";
 
 import { restoreRouteAfterLogin } from "./transport/operator_login";
-import { initializeBrowserTracing } from "./tracing";
+import { initializeBrowserTracing } from "./observability/tracing";
 import { ThemeProvider } from "./shell/theme";
 
 import App from "./shell/app";

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getFrontendConfig } from "../app_config_client";
+import { getFrontendConfig } from "./client";
 import type { FrontendConfig } from "../../app_service_pb";
 
 /** Load browser-safe app settings once per page. An unavailable endpoint hides optional features. */

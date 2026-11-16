@@ -2,7 +2,7 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { sandboxIdleSuspendAfterSeconds } from "../sandbox_status";
+import { sandboxIdleSuspendAfterSeconds } from "./sandbox_status";
 import { displayableError } from "../transport/client";
 import { setEnvironmentIdleSuspend } from "./client";
 

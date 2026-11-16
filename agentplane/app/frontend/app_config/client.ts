@@ -1,6 +1,6 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 
-import { createAppServiceClient } from "./transport/app_service_client";
+import { createAppServiceClient } from "../transport/app_service_client";
 import {
   FrontendConfigSchema,
   GetFrontendConfigResponseSchema,
@@ -12,8 +12,8 @@ import {
   type ListModelsResponse,
   type NewSandboxDefaults,
   type SandboxPreset,
-} from "../app_service_pb";
-import { Harness } from "../../proto/session_pb";
+} from "../../app_service_pb";
+import { Harness } from "../../../proto/session_pb";
 
 const APP_CONFIG_PATH = "/upstream/app-config/v1";
 const appConfigClient = createAppServiceClient(APP_CONFIG_PATH);

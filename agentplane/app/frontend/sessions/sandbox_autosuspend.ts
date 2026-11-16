@@ -3,7 +3,7 @@ import { durationMs, timestampDate } from "@bufbuild/protobuf/wkt";
 import type { AutosuspendBlocker } from "../../../proto/environment_lifecycle_pb";
 import { SandboxPhase, type EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
-import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandbox_status";
+import { sandboxReady, sandboxStarting, sandboxSuspended } from "../sandboxes/sandbox_status";
 
 export interface AutosuspendHint {
   text: string;
