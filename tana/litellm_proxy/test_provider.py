@@ -54,27 +54,45 @@ def _handler_with_test_client(client: Any) -> TanaLiteLLM:
     return _TanaLiteLLMWithTestClient(client)
 
 
-async def test_client_maps_basic_chat_request() -> None:
+def _refresh_token_response() -> httpx.Response:
+    return httpx.Response(200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"})
+
+
+def _mock_tana_transport(
+    expected_url: str,
+    response: httpx.Response,
+    *,
+    expected_authorization: str | None = None,
+) -> tuple[httpx.MockTransport, list[httpx.Request], list[dict[str, Any]]]:
     seen_requests: list[httpx.Request] = []
     seen_bodies: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen_requests.append(request)
         if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxy"
+            return _refresh_token_response()
+        assert request.url == expected_url
+        if expected_authorization is not None:
+            assert request.headers["authorization"] == expected_authorization
         seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        assert request.headers["authorization"] == "Bearer id-token-1"
-        return httpx.Response(
+        return response
+
+    return httpx.MockTransport(handler), seen_requests, seen_bodies
+
+
+async def test_client_maps_basic_chat_request() -> None:
+    transport, seen_requests, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxy",
+        response=httpx.Response(
             200,
             headers={"content-type": "application/json"},
             json={"text": "hello from tana", "usage": {"inputTokens": 2, "outputTokens": 3}},
-        )
+        ),
+        expected_authorization="Bearer id-token-1",
+    )
 
     async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with httpx.AsyncClient(transport=transport) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "tana/claude-test",
@@ -116,19 +134,13 @@ async def test_client_maps_basic_chat_request() -> None:
 
 
 async def test_client_maps_message_envelopes_without_prompt_collapsing() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxy"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxy",
+        response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
+    )
 
     async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with httpx.AsyncClient(transport=transport) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-test",
@@ -220,17 +232,9 @@ async def test_client_maps_message_envelopes_without_prompt_collapsing() -> None
 
 
 async def test_client_maps_tool_request_to_llm_proxy_next() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        assert request.headers["authorization"] == "Bearer id-token-1"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(
             200,
             headers={"content-type": "application/json"},
             json={
@@ -240,10 +244,12 @@ async def test_client_maps_tool_request_to_llm_proxy_next() -> None:
                 ],
                 "usage": {"promptTokens": 4, "completionTokens": 5},
             },
-        )
+        ),
+        expected_authorization="Bearer id-token-1",
+    )
 
     async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with httpx.AsyncClient(transport=transport) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-test",
@@ -300,19 +306,13 @@ async def test_client_maps_tool_request_to_llm_proxy_next() -> None:
 
 
 async def test_client_maps_claude_code_style_tool_request_to_llm_proxy_next() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
+    )
 
     async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with httpx.AsyncClient(transport=transport) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-sonnet-4-20250514",
@@ -366,19 +366,13 @@ async def test_client_maps_claude_code_style_tool_request_to_llm_proxy_next() ->
 
 
 async def test_client_maps_anthropic_tool_transcript_to_tana_messages() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"})
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(200, headers={"content-type": "application/json"}, json={"text": "ok"}),
+    )
 
     async def run() -> TanaChatResult:
-        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with httpx.AsyncClient(transport=transport) as http:
             client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
             return await client.chat_completion(
                 "claude-sonnet-4-20250514",
@@ -433,17 +427,9 @@ async def test_client_maps_anthropic_tool_transcript_to_tana_messages() -> None:
 
 
 def test_client_streams_text_chunks_from_llm_proxy() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxy"
-        assert request.headers["authorization"] == "Bearer id-token-1"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxy",
+        response=httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=(
@@ -452,9 +438,11 @@ def test_client_streams_text_chunks_from_llm_proxy() -> None:
                 b'data: {"type":"finish","finishReason":"stop",'
                 b'"messageMetadata":{"usage":{"promptTokens":2,"completionTokens":3}}}\n'
             ),
-        )
+        ),
+        expected_authorization="Bearer id-token-1",
+    )
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=transport) as http:
         client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
         chunks = list(
             client.stream_completion(
@@ -485,16 +473,9 @@ def test_client_streams_text_chunks_from_llm_proxy() -> None:
 
 
 def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
-    seen_bodies: list[dict[str, Any]] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        seen_bodies.append(json.loads(request.content.decode("utf-8")))
-        return httpx.Response(
+    transport, _, seen_bodies = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=(
@@ -505,9 +486,10 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
                 b'data: {"type":"finish","messageMetadata":{"finishReason":"stop",'
                 b'"usage":{"inputTokens":4,"outputTokens":5}}}\n'
             ),
-        )
+        ),
+    )
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=transport) as http:
         client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
         chunks = list(
             client.stream_completion(
@@ -547,13 +529,9 @@ def test_client_streams_tool_calls_from_llm_proxy_next() -> None:
 
 
 def test_client_streams_zero_arg_tool_call_from_llm_proxy_next() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        return httpx.Response(
+    transport, _, _ = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(
             200,
             headers={"content-type": "text/event-stream"},
             content=(
@@ -561,9 +539,10 @@ def test_client_streams_zero_arg_tool_call_from_llm_proxy_next() -> None:
                 b'"toolName":"list_projects","input":{}}\n'
                 b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n'
             ),
-        )
+        ),
+    )
 
-    with httpx.Client(transport=httpx.MockTransport(handler)) as http:
+    with httpx.Client(transport=transport) as http:
         client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), sync_http_client=http)
         chunks = list(
             client.stream_completion(
@@ -658,15 +637,12 @@ def _assert_single_merged_echo_tool_block(events: list[dict[str, Any]]) -> None:
 async def test_anthropic_messages_stream_has_single_merged_tool_block(
     isolated_litellm_provider, sse_body: bytes
 ) -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
-        assert request.url == "https://app.tana.inc/functions/llmProxyNext"
-        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse_body)
+    transport, _, _ = _mock_tana_transport(
+        expected_url="https://app.tana.inc/functions/llmProxyNext",
+        response=httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse_body),
+    )
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+    async with httpx.AsyncClient(transport=transport) as http:
         client = TanaProxyClient(TanaProxyConfig(refresh_token="refresh-1"), http_client=http)
         events = await _anthropic_echo_tool_stream_events(client)
 
@@ -1014,9 +990,7 @@ async def test_registered_tana_provider_handles_async_litellm_completion(isolate
 def _upstream_error_handler(status: int) -> Callable[[httpx.Request], httpx.Response]:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "securetoken.googleapis.com":
-            return httpx.Response(
-                200, json={"id_token": "id-token-1", "refresh_token": "refresh-2", "expires_in": "3600"}
-            )
+            return _refresh_token_response()
         return httpx.Response(status, json={"error": f"upstream returned {status}"})
 
     return handler
