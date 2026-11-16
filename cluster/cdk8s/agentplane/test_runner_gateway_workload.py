@@ -47,7 +47,7 @@ def _gateway_settings(documents: list[dict[str, Any]], container: dict[str, Any]
         dict[str, Any],
         yaml.safe_load(_resource(documents, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]),
     )
-    allowed_runtime_envs = {Settings.config_file_env, Settings.dispatcher_database_url_env, Settings.pod_name_env}
+    allowed_runtime_envs = {Settings.config_file_env, Settings.dispatcher_database_url_env}
     gateway_envs = {
         entry["name"] for entry in container["env"] if entry["name"].startswith("AGENTPLANE_RUNNER_GATEWAY_")
     }
