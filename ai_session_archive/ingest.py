@@ -10,9 +10,9 @@ from datetime import datetime
 from typing import Any, BinaryIO, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
-from sqlalchemy import and_, delete, exists, literal, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session as DbSession, aliased
+from sqlalchemy.orm import Session as DbSession
 
 from ai_session_archive import file_publication
 from ai_session_archive.claude_title_refresh import refresh_claude_titles
@@ -21,10 +21,8 @@ from ai_session_archive.database import (
     CodexTitleCandidateRow,
     CodexTitleObservationRow,
     FileVersionImportRow,
-    FileVersionRecordRow,
     FileVersionRow,
     MachineRow,
-    RecordPayloadRow,
     ResticSnapshotRow,
     SessionRootRow,
     SessionRow,
@@ -33,10 +31,11 @@ from ai_session_archive.database import (
 from ai_session_archive.file_publication import SnapshotFileIdentity
 from ai_session_archive.file_staging import FileStaging
 from ai_session_archive.models import Harness, SessionKind
-from ai_session_archive.record_interpretation import extract_session_metadata, session_kind_from_record
+from ai_session_archive.record_interpretation import extract_session_metadata
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticRepository, ResticSnapshot
+from ai_session_archive.session_kind_projection import project_missing_session_kinds
 from ai_session_archive.snapshot_inventory import (
     KNOWN_DIFF_MODIFIERS,
     SnapshotInventory,
@@ -103,7 +102,7 @@ class SnapshotIngestor:
         snapshots = sorted(self._source.restic.list_snapshots(), key=lambda row: (row.captured_at, row.id))
         self._ensure_source()
         self._inventory.discover(snapshots)
-        self._project_missing_session_kinds()
+        project_missing_session_kinds(self._session_factory, self._source.machine_id)
         available_snapshot_ids = {snapshot.id for snapshot in snapshots}
         if snapshots:
             # Make the latest names visible before a potentially long historical transcript import.
@@ -376,79 +375,6 @@ class SnapshotIngestor:
                     row.codex_title_from_metadata = False
                 if row.id in latest_kinds:
                     row.session_kind = latest_kinds[row.id][2]
-
-    def _project_missing_session_kinds(self) -> None:
-        with self._session_factory() as db, db.begin():
-            latest_version_id = (
-                select(FileVersionRow.id)
-                .where(FileVersionRow.session_id == SessionRow.id)
-                .order_by(FileVersionRow.last_seen_at.desc(), FileVersionRow.id.desc())
-                .limit(1)
-                .scalar_subquery()
-            )
-
-            missing_sessions = (
-                select(SessionRow.id.label("session_id"), latest_version_id.label("latest_version_id"))
-                .where(SessionRow.machine_id == self._source.machine_id, SessionRow.session_kind.is_(None))
-                .cte("missing_session_kinds")
-            )
-            lineage = (
-                select(
-                    missing_sessions.c.session_id,
-                    FileVersionRow.id.label("version_id"),
-                    FileVersionRow.parent_version_id,
-                    FileVersionRow.shared_prefix_record_count,
-                    literal(0).label("depth"),
-                )
-                .select_from(missing_sessions)
-                .join(FileVersionRow, FileVersionRow.id == missing_sessions.c.latest_version_id)
-                .cte("session_kind_version_lineage", recursive=True)
-            )
-            parent_version = aliased(FileVersionRow)
-            lineage = lineage.union_all(
-                select(
-                    lineage.c.session_id,
-                    parent_version.id,
-                    parent_version.parent_version_id,
-                    parent_version.shared_prefix_record_count,
-                    lineage.c.depth + 1,
-                )
-                .join(parent_version, parent_version.id == lineage.c.parent_version_id)
-                .where(lineage.c.shared_prefix_record_count > 0, lineage.c.depth < CHECKPOINT_INTERVAL - 1)
-            )
-            first_payloads = (
-                select(lineage.c.session_id, FileVersionRecordRow.payload_id)
-                .select_from(lineage)
-                .join(
-                    FileVersionRecordRow,
-                    and_(
-                        FileVersionRecordRow.file_version_id == lineage.c.version_id, FileVersionRecordRow.ordinal == 0
-                    ),
-                )
-                .where(lineage.c.shared_prefix_record_count == 0)
-                .cte("session_kind_first_payloads")
-            )
-            rows = db.execute(
-                select(SessionRow, RecordPayloadRow.raw_bytes)
-                .select_from(SessionRow)
-                .outerjoin(first_payloads, first_payloads.c.session_id == SessionRow.id)
-                .outerjoin(RecordPayloadRow, RecordPayloadRow.id == first_payloads.c.payload_id)
-                .where(SessionRow.machine_id == self._source.machine_id, SessionRow.session_kind.is_(None))
-                .order_by(SessionRow.id)
-            )
-            for row, raw_bytes in rows.yield_per(32):
-                kind = None
-                if raw_bytes is not None:
-                    parsed = parse_record_json(raw_bytes)
-                    if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-                        kind = session_kind_from_record(Harness(row.harness), parsed.parsed)
-                if (
-                    kind is None
-                    and row.harness == Harness.CLAUDE.value
-                    and row.parent_link_kind == "claude_path_inferred"
-                ):
-                    kind = SessionKind.SUBAGENT
-                row.session_kind = (kind or SessionKind.UNKNOWN).value
 
     def _process_file(self, snapshot: ResticSnapshot, path: str) -> None:
         try:
