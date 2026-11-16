@@ -114,7 +114,7 @@ new Environments hop or Notification Runtime grant is needed for the recommended
 
 ### Sessions/Dispatcher: privileged native delivery
 
-[`ProxyRunner`](../session_dispatcher/dispatcher/runtime_client.go) calls `CreateSession` and the four
+[`RuntimeProxyClient`](../session_dispatcher/dispatcher/runtime_client.go) calls `CreateSession` and the four
 command RPCs under the Sessions SVID after durable Dispatcher admission. Creation forwards the
 recorded execution Identity; commands carry the retained command ID. The client replaces outgoing
 metadata, so an original caller's credentials cannot leak into this component-only transport.

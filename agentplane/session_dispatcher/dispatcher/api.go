@@ -51,7 +51,7 @@ type EnvironmentReader interface {
 
 type SandboxSnapshot struct {
 	Name, Namespace, UID string
-	// Blocker is the current dispatch reason, empty only when the runner is Ready.
+	// Blocker is the current dispatch reason, empty only when the Runtime is Ready.
 	Blocker        string
 	WakeOnSend     bool
 	WakeGeneration int64
@@ -61,8 +61,8 @@ type SandboxSnapshot struct {
 	ReadyDetail    string
 }
 
-// RunnerCommands delivers durable commands through the Gateway or central sampler.
-type RunnerCommands interface {
+// SessionCommandDelivery delivers durable Session commands to the Runtime proxy or central sampler.
+type SessionCommandDelivery interface {
 	Deliver(context.Context, SandboxSnapshot, string, *commandpb.Command) (*eventlogpb.EventEntry, error)
 }
 

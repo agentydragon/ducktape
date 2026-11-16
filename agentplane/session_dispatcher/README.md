@@ -114,7 +114,7 @@ Omitting it disables central Session admission. `SessionSpec.placement` records 
 native environment and harness (`environment_hosted`) or the exact required central executor
 environment (`central_sampler_v1`); callers do not choose a service endpoint. The Dispatcher sends
 central creation requests and commands to the configured sampler; wrapped native Sessions continue through
-ProxyRunner. Central controls bypass executor readiness/wake checks after Session creation.
+[`RuntimeProxyClient`](dispatcher/runtime_client.go). Central controls bypass executor readiness/wake checks after Session creation.
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 

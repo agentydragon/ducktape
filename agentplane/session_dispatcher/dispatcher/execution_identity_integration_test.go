@@ -41,7 +41,7 @@ func (c *identityCatalog) GetExecutionIdentity(context.Context, SandboxSnapshot)
 	return c.identity, true, nil
 }
 
-// placingRunner records who each placed Session executes as.
+// placingRuntime records who each placed Session executes as.
 type placingRuntime struct {
 	acceptingRuntime
 	placed chan SessionExecution
@@ -143,7 +143,7 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, identity: named}
 	runtime := &placingRuntime{placed: make(chan SessionExecution, 2)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Runner: runtime}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	lease, err := worker.Leases.Acquire(ctx, snapshot.Name, snapshot.UID)
@@ -318,7 +318,7 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: sandbox}, identity: named}
 	runtime := &placingRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 2)}, placed: make(chan SessionExecution, 1)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Runner: runtime}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	lease, err := worker.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)

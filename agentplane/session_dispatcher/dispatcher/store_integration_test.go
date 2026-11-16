@@ -1209,7 +1209,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Runner: runtime, Catalog: testCatalog{}}
+	worker := &DeliveryWorker{Store: store, Delivery: runtime, Catalog: testCatalog{}}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
@@ -1856,7 +1856,7 @@ func TestWorkerNotificationPreservesFailureBackoff(t *testing.T) {
 	leases := testLease{store: store}
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-rpc-backoff", Namespace: "agentplane", UID: uid, Incarnation: "pod-1",
-	}}, Wake: testWake{}, Leases: leases, Runner: runtime}
+	}}, Wake: testWake{}, Leases: leases, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	recorded := &recordingDelayQueue{TypedRateLimitingInterface: worker.queue}
@@ -1899,7 +1899,7 @@ func TestWorkerRequiresFreshLeaseBeforeDelivery(t *testing.T) {
 	leases := &unreliableLease{testLease: testLease{store: store}, live: true}
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-fenced", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
-	}}, Wake: testWake{}, Leases: leases, Runner: runtime}
+	}}, Wake: testWake{}, Leases: leases, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if err := worker.reconcile(ctx, true); err != nil {
@@ -1971,7 +1971,7 @@ func TestWorkerRetriesUncertainRunnerReplyUnderCurrentOwner(t *testing.T) {
 	runtime := &retryRuntime{}
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-worker", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
-	}}, Wake: testWake{}, Leases: testLease{store}, Runner: runtime}
+	}}, Wake: testWake{}, Leases: testLease{store}, Delivery: runtime}
 	worker.init()
 	workerCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -2052,7 +2052,7 @@ func TestWorkerSerializesCommandsPerSession(t *testing.T) {
 	leases := &countingLease{testLease: testLease{store: store}}
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{SandboxSnapshot{
 		Name: "sandbox-ordered", Namespace: "agentplane", UID: sandboxUID, Incarnation: "pod-1",
-	}}, Wake: testWake{}, Leases: leases, Runner: runtime}
+	}}, Wake: testWake{}, Leases: leases, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	go worker.runQueue(ctx)
@@ -2456,7 +2456,7 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 				t.Fatal(err)
 			}
 			runtime := &openingOutcomeRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 3)}, err: status.Error(test.code, "test owner response")}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Runner: runtime}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if err := worker.reconcile(ctx, true); err != nil {
@@ -2538,7 +2538,7 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 				t.Fatal(err)
 			}
 			runtime := &acceptingRuntime{calls: make(chan string, 1)}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Runner: runtime}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{sandbox: sandbox}, Leases: testLease{store: store}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if err := worker.reconcile(ctx, true); err != nil {
@@ -2879,7 +2879,7 @@ func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T)
 	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
 	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
 	runtime := &acceptingRuntime{calls: make(chan string, 2)}
-	worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Runner: runtime}
+	worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if err := worker.reconcile(ctx, true); err != nil {
@@ -3073,7 +3073,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: &attemptProbeRuntime{retryRuntime: &retryRuntime{}, before: func() {
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: &attemptProbeRuntime{retryRuntime: &retryRuntime{}, before: func() {
 		row, err := store.GetDispatch(ctx, head.CommandID)
 		if err != nil || !row.DeliveryAttempted || row.State != DeliveringState {
 			t.Fatalf("RPC preceded durable marker: %+v, %v", row, err)
@@ -3231,7 +3231,7 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
+	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
 	worker.init()
 	defer worker.queue.ShutDown()
 	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
@@ -3271,7 +3271,7 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Runner: runtime}
+			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
 			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
