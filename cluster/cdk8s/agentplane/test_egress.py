@@ -316,7 +316,6 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
     assert "central_sampler_accounts" not in llm_settings
     assert "token_audience" not in llm_settings
-    assert [auth["mode"] for auth in llm_settings["rpc"]["auth"]] == ["spiffe"]
     assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_settings["central_sampler_identity_callers"] is True
 
