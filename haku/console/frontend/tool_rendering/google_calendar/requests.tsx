@@ -224,6 +224,35 @@ function CalendarField({ calendarId }: { calendarId: string }) {
   );
 }
 
+type EventDetailsArgs = Pick<
+  CreateCalendarEventArgs,
+  "location" | "description" | "calendar_id" | "reminders" | "attendees"
+>;
+
+function EventDetails({ args }: { args: EventDetailsArgs | Pick<UpdateCalendarEventArgs, keyof EventDetailsArgs> }) {
+  return (
+    <>
+      {args.location && (
+        <Field icon={<MapPinIcon size={15} />} label="Location">
+          {args.location}
+        </Field>
+      )}
+      {args.description && <PreviewText c="dimmed">{args.description}</PreviewText>}
+      {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
+      {args.reminders && args.reminders.length > 0 && (
+        <Field icon={<BellIcon size={15} />} label="Reminders">
+          {args.reminders.map(formatReminder).join(" · ")}
+        </Field>
+      )}
+      {args.attendees && args.attendees.length > 0 && (
+        <Field icon={<UsersIcon size={15} />} label="Attendees">
+          {args.attendees.join(", ")}
+        </Field>
+      )}
+    </>
+  );
+}
+
 // Exported for google_calendar/calls.tsx's combined create_event widget, which renders this
 // pre-execution and CalendarEventResultView (responses.tsx) once the call has finished.
 export function CreateCalendarEventPreview({ args, variant }: PreviewProps<CreateCalendarEventArgs>): JSX.Element {
@@ -239,27 +268,7 @@ export function CreateCalendarEventPreview({ args, variant }: PreviewProps<Creat
       {args.recurrence && args.recurrence.length > 0 && (
         <RecurrenceField recurrence={args.recurrence} variant={variant} />
       )}
-      {variant === "detailed" && (
-        <>
-          {args.location && (
-            <Field icon={<MapPinIcon size={15} />} label="Location">
-              {args.location}
-            </Field>
-          )}
-          {args.description && <PreviewText c="dimmed">{args.description}</PreviewText>}
-          {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
-          {args.reminders && args.reminders.length > 0 && (
-            <Field icon={<BellIcon size={15} />} label="Reminders">
-              {args.reminders.map(formatReminder).join(" · ")}
-            </Field>
-          )}
-          {args.attendees && args.attendees.length > 0 && (
-            <Field icon={<UsersIcon size={15} />} label="Attendees">
-              {args.attendees.join(", ")}
-            </Field>
-          )}
-        </>
-      )}
+      {variant === "detailed" && <EventDetails args={args} />}
     </Stack>
   );
 }
@@ -287,27 +296,7 @@ export function UpdateCalendarEventPreview({ args, variant }: PreviewProps<Updat
       {args.recurrence && args.recurrence.length > 0 && (
         <RecurrenceField recurrence={args.recurrence} variant={variant} />
       )}
-      {variant === "detailed" && (
-        <>
-          {args.location && (
-            <Field icon={<MapPinIcon size={15} />} label="Location">
-              {args.location}
-            </Field>
-          )}
-          {args.description && <PreviewText c="dimmed">{args.description}</PreviewText>}
-          {args.calendar_id && args.calendar_id !== "primary" && <CalendarField calendarId={args.calendar_id} />}
-          {args.reminders && args.reminders.length > 0 && (
-            <Field icon={<BellIcon size={15} />} label="Reminders">
-              {args.reminders.map(formatReminder).join(" · ")}
-            </Field>
-          )}
-          {args.attendees && args.attendees.length > 0 && (
-            <Field icon={<UsersIcon size={15} />} label="Attendees">
-              {args.attendees.join(", ")}
-            </Field>
-          )}
-        </>
-      )}
+      {variant === "detailed" && <EventDetails args={args} />}
     </Stack>
   );
 }

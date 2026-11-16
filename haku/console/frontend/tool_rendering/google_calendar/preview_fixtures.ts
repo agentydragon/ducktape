@@ -5,7 +5,26 @@
 // type error.
 import type { RegisteredToolPreviewFixture } from "../index";
 
+const EVENT_DETAILS = {
+  location: "Mission Bay gym",
+  description: "Progressive overload session.",
+  calendar_id: "family@group.calendar.google.com",
+  reminders: [{ method: "popup" as const, minutes_before_start: 30 }],
+  attendees: ["training@example.com"],
+};
+
 export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string })[] = [
+  {
+    title: "Schedule a strength training session",
+    serverId: "google_calendar",
+    toolName: "create_event",
+    args: {
+      summary: "Strength training",
+      start: { date_time: "2026-07-21T18:00:00-07:00", time_zone: "America/Los_Angeles" },
+      end: { date_time: "2026-07-21T19:00:00-07:00", time_zone: "America/Los_Angeles" },
+      ...EVENT_DETAILS,
+    },
+  },
   {
     title: "Create recurring training sessions",
     serverId: "google_calendar",
@@ -14,11 +33,7 @@ export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string }
       summary: "Strength training",
       start: { date_time: "2026-07-21T18:00:00-07:00", time_zone: "America/Los_Angeles" },
       end: { date_time: "2026-07-21T19:00:00-07:00", time_zone: "America/Los_Angeles" },
-      location: "Mission Bay gym",
-      description: "Progressive overload session.",
-      calendar_id: "family@group.calendar.google.com",
-      reminders: [{ method: "popup", minutes_before_start: 30 }],
-      attendees: ["training@example.com"],
+      ...EVENT_DETAILS,
       recurrence: ["RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH;COUNT=12"],
     },
     result: {
@@ -57,6 +72,15 @@ export const PREVIEW_FIXTURES: (RegisteredToolPreviewFixture & { title: string }
       start: { date_time: "2026-07-20T10:00:00-07:00", time_zone: "America/Los_Angeles" },
       end: { date_time: "2026-07-20T10:15:00-07:00", time_zone: "America/Los_Angeles" },
       recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"],
+    },
+  },
+  {
+    title: "Update venue and guest details",
+    serverId: "google_calendar",
+    toolName: "update_event",
+    args: {
+      event_id: "conference-dinner",
+      ...EVENT_DETAILS,
     },
   },
   {
