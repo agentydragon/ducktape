@@ -11,7 +11,7 @@ func TestActionsGuideReadsBundledGuidesWithoutServiceCredentials(t *testing.T) {
 		want []string
 	}{
 		{name: "index", want: []string{"# Agentplane Actions", "`action_lifecycle`", "get_guide(name=\"index\")"}},
-		{name: "session_delegation", want: []string{"# Delegate work to a Session", "agentplane sessions create", "get_guide({\"name\":\"recovery\"})"}},
+		{name: "session_delegation", want: []string{"# Delegate work to a Session", "agentplane actions submit sessions/create", "get_guide({\"name\":\"recovery\"})"}},
 		{name: "action_lifecycle", want: []string{"# Submit an Action and establish its result", "agentplane actions submit", "An allow decision is not execution success"}},
 		{name: "recovery", want: []string{"# Action recovery and cancellation", "never resubmit", "too_late"}},
 		{name: "kubernetes", want: []string{"# Kubernetes access and temporary grants", "kubectl --server <host> --token <placeholder>", "PolicyBinding"}},

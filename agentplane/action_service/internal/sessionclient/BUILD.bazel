@@ -1,15 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane:__subpackages__"])
+package(default_visibility = ["//agentplane/action_service:__subpackages__"])
 
 go_library(
-    name = "session_client",
+    name = "sessionclient",
     srcs = [
         "observe_input.go",
         "results.go",
         "turns.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/session_client",
+    importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/sessionclient",
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/proto:command_go_proto",
@@ -28,12 +28,12 @@ go_library(
 )
 
 go_test(
-    name = "session_client_test",
+    name = "sessionclient_test",
     srcs = [
         "observe_input_test.go",
         "results_test.go",
     ],
-    embed = [":session_client"],
+    embed = [":sessionclient"],
     race = "on",
     deps = [
         "//agentplane/history_service/api/history:history_service_go_proto",

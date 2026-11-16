@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "history",
+    srcs = ["history.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/cli/internal/history",
+    visibility = ["//agentplane/cli:__subpackages__"],
+    deps = [
+        "//agentplane/cli/internal/invocation",
+        "//agentplane/history_service/api/history:history_service_go_proto",
+        "@com_github_spf13_cobra//:cobra",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

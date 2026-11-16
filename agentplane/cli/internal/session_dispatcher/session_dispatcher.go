@@ -1,17 +1,14 @@
-package sessions
+package sessiondispatcher
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
-	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/dispatchstate"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
@@ -19,168 +16,16 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-const sessionsHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL; optional AGENTPLANE_SESSIONS_CREDENTIAL bearer).
-get and observe-input also read retained History (AGENTPLANE_HISTORY_URL; optional AGENTPLANE_HISTORY_CREDENTIAL bearer).
-read-turns reads retained History only.
-
-This group creates and directs Sessions in an existing Sandbox and can observe an input's correlated
-History result or snapshot. It does not provision an environment or read a live environment. The caller
-must already be authorized by each backend it reads.`
+const dispatcherHelp = `Calls the SessionDispatcher gRPC API (AGENTPLANE_SESSIONS_URL; optional AGENTPLANE_SESSIONS_CREDENTIAL bearer).
+These commands operate on existing Environments and use the Dispatcher's caller authorization.
+For combined Dispatcher and History reads, use agentplane actions guide session_delegation.`
 
 type sessionCall func(context.Context, dispatcherpb.SessionDispatcherClient, []string) error
 
-func (a *commands) sessionsCommand() *cobra.Command {
-	return invocation.Group("sessions", "Create and direct Sessions in an existing Sandbox", sessionsHelp,
-		a.createSessionCommand(), a.listSessionsCommand(), a.submitInputCommand(), a.getSessionCommand(), a.getDispatchCommand(),
-		a.cancelInputCommand(), a.interruptTurnCommand(), a.readTurnsCommand(), a.observeInputCommand())
-}
-
-func (a *commands) getSessionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "get SESSION_ID",
-		Short: "Read a Session and retained History summary",
-		Long: `Reads SessionDispatcher.GetSession and HistoryService.GetSessionSummary independently.
-The result keeps missing and unavailable sources distinct; it does not query a live environment.
-Both backends authorize this caller independently.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			if args[0] == "" {
-				return invocation.UsageFailure("SESSION_ID must not be empty")
-			}
-			sessionID, err := uuid.Parse(args[0])
-			if err != nil {
-				return invocation.UsageFailure("SESSION_ID must be a UUID")
-			}
-			dispatcherConnection, err := a.ConnectGRPC("SESSIONS")
-			if err != nil {
-				return err
-			}
-			defer dispatcherConnection.Close()
-			historyConnection, err := a.ConnectGRPC("HISTORY")
-			if err != nil {
-				return err
-			}
-			defer historyConnection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			result, err := sessionclient.GetSession(
-				ctx,
-				dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
-				historypb.NewHistoryServiceClient(historyConnection),
-				sessionID,
-			)
-			if err != nil {
-				return invocation.GRPCFailure(ctx, err)
-			}
-			return invocation.ShowValue(a.Invocation, result, sessionSnapshotLine)
-		},
-	}
-}
-
-func (a *commands) readTurnsCommand() *cobra.Command {
-	var count uint32 = 20
-	var pageCursor string
-	command := &cobra.Command{
-		Use:   "read-turns SESSION_ID [--count N] [--page-cursor TOKEN]",
-		Short: "Read a bounded page of retained Session turns",
-		Long: `Reads retained History only, through a pinned cursor snapshot. Pages resume after complete turns;
-an unfinished final turn is returned without a terminal status. Gaps and source errors remain explicit.
-The page cursor is opaque, Session-scoped and carries no authority.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			if args[0] == "" {
-				return invocation.UsageFailure("SESSION_ID must not be empty")
-			}
-			sessionID, err := uuid.Parse(args[0])
-			if err != nil {
-				return invocation.UsageFailure("SESSION_ID must be a UUID")
-			}
-			if count < 1 || count > 100 {
-				return invocation.UsageFailure("--count must be between 1 and 100")
-			}
-			connection, err := a.ConnectGRPC("HISTORY")
-			if err != nil {
-				return err
-			}
-			defer connection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			result, err := sessionclient.ReadTurns(ctx, historypb.NewHistoryServiceClient(connection), sessionclient.ReadTurnsRequest{
-				SessionID: sessionID, Count: count, PageCursor: pageCursor,
-			})
-			if err != nil {
-				return invocation.GRPCFailure(ctx, err)
-			}
-			return invocation.ShowValue(a.Invocation, result, turnPageLine)
-		},
-	}
-	command.Flags().Uint32Var(&count, "count", count, "maximum completed turns to return (1-100)")
-	command.Flags().StringVar(&pageCursor, "page-cursor", "", "opaque cursor returned by the prior page for this Session")
-	return command
-}
-
-func (a *commands) observeInputCommand() *cobra.Command {
-	var waitSeconds int
-	var resumeToken string
-	var commandID string
-	command := &cobra.Command{
-		Use:   "observe-input SESSION_ID --command-id ID [--wait-seconds N] [--resume-token TOKEN]",
-		Short: "Read one input's Dispatcher receipt and correlated History result",
-		Long: `Reads the caller-held input command from SessionDispatcher, then follows retained History from its
-admission cursor. It does not submit or retry input. A returned not_observed result is not evidence that
-the command failed or that a turn completed. History gaps and source errors are returned as structured
-coverage facts. Both backends authorize this caller independently.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			if args[0] == "" || commandID == "" {
-				return invocation.UsageFailure("SESSION_ID and --command-id must be non-empty")
-			}
-			if waitSeconds < 0 || waitSeconds > 30 {
-				return invocation.UsageFailure("--wait-seconds must be between 0 and 30")
-			}
-			dispatcherConnection, err := a.ConnectGRPC("SESSIONS")
-			if err != nil {
-				return err
-			}
-			defer dispatcherConnection.Close()
-			historyConnection, err := a.ConnectGRPC("HISTORY")
-			if err != nil {
-				return err
-			}
-			defer historyConnection.Close()
-			ctx, cancel := a.Deadline()
-			defer cancel()
-			result, err := sessionclient.ObserveInput(
-				ctx,
-				dispatcherpb.NewSessionDispatcherClient(dispatcherConnection),
-				historypb.NewHistoryServiceClient(historyConnection),
-				sessionclient.ObserveInputRequest{
-					SessionID: args[0], CommandID: commandID, WaitSeconds: waitSeconds, ResumeToken: resumeToken,
-				},
-			)
-			if err != nil {
-				if invocation.DeadlineElapsed(ctx) {
-					if showErr := invocation.ShowValue(a.Invocation, result, inputObservationLine); showErr != nil {
-						return showErr
-					}
-					return invocation.ExitWith(invocation.ExitDeadline)
-				}
-				return invocation.GRPCFailure(ctx, err)
-			}
-			if err := invocation.ShowValue(a.Invocation, result, inputObservationLine); err != nil {
-				return err
-			}
-			if invocation.DeadlineElapsed(ctx) && result.Observation.Kind == sessionclient.ObservationNotObserved {
-				return invocation.ExitWith(invocation.ExitDeadline)
-			}
-			return nil
-		},
-	}
-	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key used by submit-input")
-	command.Flags().IntVar(&waitSeconds, "wait-seconds", 0, "maximum time to wait for a correlated result (0 reads once; max 30)")
-	command.Flags().StringVar(&resumeToken, "resume-token", "", "resume token returned by a prior observation for this Session and command")
-	_ = command.MarkFlagRequired("command-id")
-	return command
+func (a *commands) dispatcherCommand() *cobra.Command {
+	return invocation.Group("session-dispatcher", "Call the Session Dispatcher", dispatcherHelp,
+		a.createSessionCommand(), a.listSessionsCommand(), a.submitInputCommand(), a.getDispatchCommand(),
+		a.cancelInputCommand(), a.interruptTurnCommand())
 }
 
 func (a *commands) sessionCommand(fn sessionCall) func(*cobra.Command, []string) error {
@@ -206,7 +51,7 @@ func (a *commands) createSessionCommand() *cobra.Command {
 --spec is a SessionSpec in ProtoJSON. --additional-instructions appends standing context to any
 instructions in the spec, separated by a blank line. Creating a Session does not create a model turn:
 the caller must send it separately with submit-input. A setup script may execute during materialization, but
-is not model input. After an unknown outcome, use get with the same SESSION_ID. The command
+is not model input. After an unknown outcome, use the sessions/get Action with the same SESSION_ID. The command
 prints the Dispatcher Session resource; it does not wait for History.`,
 		Args: cobra.ExactArgs(1),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
@@ -492,83 +337,8 @@ func dispatchLine(dispatch *dispatcherpb.Dispatch) (string, error) {
 	return line, nil
 }
 
-func inputObservationLine(observation sessionclient.InputObservation) (string, error) {
-	line := invocation.Fields(observation.SessionID, observation.CommandID, string(observation.Observation.Kind))
-	if observation.Dispatch.Kind != "" {
-		line += invocation.Fields("dispatcher " + string(observation.Dispatch.Kind))
-	}
-	if dispatch := observation.Dispatch.Value; dispatch != nil {
-		line += invocation.Fields(invocation.EnumSuffix(dispatchstate.NormalizeDeliveryState(dispatch.GetState()).String(), "DELIVERY_STATE_"), invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"))
-	}
-	if observation.Observation.TurnID != nil {
-		line += invocation.Fields("turn " + *observation.Observation.TurnID)
-	}
-	if observation.Observation.Turn != nil {
-		turn := observation.Observation.Turn
-		line += invocation.Fields("turn " + turn.TurnID)
-		line += invocation.Fields("status " + turn.Status)
-		if turn.FinalAssistantMessage != nil {
-			line += invocation.Fields("message", strconv.Quote(invocation.FirstLine(*turn.FinalAssistantMessage)))
-		}
-	}
-	if observation.Observation.Reason != nil {
-		line += invocation.Fields("reason", strconv.Quote(*observation.Observation.Reason))
-	}
-	if observation.Observation.ThroughCursor != "" {
-		line += invocation.Fields("history through " + observation.Observation.ThroughCursor)
-	}
-	if len(observation.Observation.Gaps) > 0 {
-		line += fmt.Sprintf("  history gaps %d", len(observation.Observation.Gaps))
-	}
-	if observation.Dispatch.Error != nil {
-		line += invocation.Fields("dispatcher error", observation.Dispatch.Error.Code)
-	}
-	if observation.Observation.Error != nil {
-		line += invocation.Fields("history error", observation.Observation.Error.Code)
-	}
-	return line, nil
-}
-
-func sessionSnapshotLine(snapshot sessionclient.SessionSnapshot) (string, error) {
-	line := invocation.Fields(snapshot.SessionID.String(), "dispatcher "+string(snapshot.Session.Kind), "history "+string(snapshot.History.Kind))
-	if snapshot.Session.Error != nil {
-		line += invocation.Fields("dispatcher error " + snapshot.Session.Error.Code)
-	}
-	if snapshot.History.Error != nil {
-		line += invocation.Fields("history error " + snapshot.History.Error.Code)
-	}
-	if summary := snapshot.History.Value; summary != nil {
-		line += invocation.Fields("history cursor "+strconv.FormatUint(summary.GetCommittedCursor(), 10), invocation.EnumSuffix(summary.GetFeedStatus().String(), "FEED_STATUS_"))
-	}
-	return line, nil
-}
-
-func turnPageLine(page sessionclient.TurnPage) (string, error) {
-	line := invocation.Fields(page.SessionID.String(), "history through "+page.ThroughCursor, fmt.Sprintf("%d turns", len(page.Turns)))
-	if page.NextCursor != "" {
-		line += invocation.Fields("more turns available")
-	}
-	if len(page.Gaps) > 0 {
-		line += invocation.Fields(fmt.Sprintf("history gaps %d", len(page.Gaps)))
-	}
-	if page.Error != nil {
-		line += invocation.Fields("history error " + page.Error.Code)
-	}
-	for _, turn := range page.Turns {
-		statusText := "status not observed"
-		if turn.Status != nil {
-			statusText = string(*turn.Status)
-		}
-		line += "\n" + invocation.Fields(string(turn.TurnID), statusText, fmt.Sprintf("%d inputs", len(turn.Input)), fmt.Sprintf("%d tool calls", len(turn.ToolCalls)))
-		if turn.FinalAssistantMessage != nil {
-			line += invocation.Fields("message", strconv.Quote(invocation.FirstLine(*turn.FinalAssistantMessage)))
-		}
-	}
-	return line, nil
-}
-
 type commands struct{ *invocation.Invocation }
 
 func Command(in *invocation.Invocation) *cobra.Command {
-	return (&commands{Invocation: in}).sessionsCommand()
+	return (&commands{Invocation: in}).dispatcherCommand()
 }

@@ -90,16 +90,16 @@ order with the Runtime's own writes. The per-kind packages are about 2,800 lines
 
 ### Who reads the neutral forms
 
-| Consumer                                                                                                      | Reads                                                                                            | Needs content?         |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------- |
-| Runtime itself ([journal](../env/runtime/journal/journal.go), [status](../env/runtime/session/status.go))     | active turn, model and effort in the checkpoint; `idle_since` for autosuspend; interrupt fencing | no                     |
-| Dispatcher                                                                                                    | only the admission receipt a delivery RPC returns                                                | no                     |
-| Wake and suspend                                                                                              | Dispatcher wakes on queued work; the Sandbox Controller suspends on the Runtime's `idle_since`   | no                     |
-| [Notification inbox](../notification_service/internal/store/notices.go)                                       | admitted, confirmed, failed or no-op per notice                                                  | no                     |
-| [`ObserveInput`](../session_client/observe_input.go) (`observe_input`, CLI)                                   | confirmation, failure, turn status                                                               | final text             |
-| [`TurnProjection`](../session_client/turns.go) (`read_turns` in session_delegation and orchestration_v1, CLI) | turns and their inputs                                                                           | tool names, final text |
-| History [fold](../history_service/internal/threadfold/fold.go), synced to the app's conversation view         | everything                                                                                       | yes                    |
-| History [summaries](../history_service/internal/projection/summary.go) (sidebar)                              | last turn status, `idle_since`; "model activity" recency from content Events                     | yes                    |
+| Consumer                                                                                                                        | Reads                                                                                            | Needs content?         |
+| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------- |
+| Runtime itself ([journal](../env/runtime/journal/journal.go), [status](../env/runtime/session/status.go))                       | active turn, model and effort in the checkpoint; `idle_since` for autosuspend; interrupt fencing | no                     |
+| Dispatcher                                                                                                                      | only the admission receipt a delivery RPC returns                                                | no                     |
+| Wake and suspend                                                                                                                | Dispatcher wakes on queued work; the Sandbox Controller suspends on the Runtime's `idle_since`   | no                     |
+| [Notification inbox](../notification_service/internal/store/notices.go)                                                         | admitted, confirmed, failed or no-op per notice                                                  | no                     |
+| [`ObserveInput`](../action_service/internal/sessionclient/observe_input.go) (`observe_input`)                                   | confirmation, failure, turn status                                                               | final text             |
+| [`TurnProjection`](../action_service/internal/sessionclient/turns.go) (`read_turns` in session_delegation and orchestration_v1) | turns and their inputs                                                                           | tool names, final text |
+| History [fold](../history_service/internal/threadfold/fold.go), synced to the app's conversation view                           | everything                                                                                       | yes                    |
+| History [summaries](../history_service/internal/projection/summary.go) (sidebar)                                                | last turn status, `idle_since`; "model activity" recency from content Events                     | yes                    |
 
 The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; its unused confirmation
 states were deleted rather than given a writer.

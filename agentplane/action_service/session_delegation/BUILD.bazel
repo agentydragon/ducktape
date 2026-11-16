@@ -20,6 +20,7 @@ go_library(
     deps = [
         "//agentplane/action_service/api/contracts:action_service_go_proto",
         "//agentplane/action_service/internal/admission/catalog",
+        "//agentplane/action_service/internal/sessionclient",
         "//agentplane/action_service/internal/store",
         "//agentplane/action_service/internal/worker",
         "//agentplane/action_service/session_delegation/contract",
@@ -31,7 +32,6 @@ go_library(
         "//agentplane/proto:environment_lifecycle_go_proto",
         "//agentplane/proto:identity_go_proto",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/session_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_rpc//code",

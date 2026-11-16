@@ -36,12 +36,12 @@ The server step does not wait for a staging image pin: the storage migration run
 serving-binary startup lifecycle, and this step adds no migration. The client cutover remains blocked
 until the operator confirms that the serving image is pinned on staging. Only then enable the App
 browser watch (`app/frontend/sessions/dispatch_watch.ts`, through the generated facade) and
-`session_client/observe_input.go` with resume tokens. Clients must surface coverage loss before taking a
+`action_service/internal/sessionclient/observe_input.go` with resume tokens. Clients must surface coverage loss before taking a
 fresh snapshot. Update `session_dispatcher/dispatcher/testing_client.py`,
 `session_dispatcher/dispatcher/store_integration_test.go`, facade/auth mocks, and
 `system_tests/scenarios/{dispatcher,central_sampler}.py` with that client change. Notifications has no
 `WatchDispatches` client; it consumes SubmitInput receipts and reconciles through History. The App and
-`session_client/observe_input.go` do not send resume tokens in this server change.
+`action_service/internal/sessionclient/observe_input.go` do not send resume tokens in this server change.
 
 Continue sending chunked terminal notices for older serving replicas. **CLEANUP:** remove the chunked
 terminal-notice sender and encoder only after every serving replica uses durable versioned watches and

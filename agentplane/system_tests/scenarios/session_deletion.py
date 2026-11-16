@@ -840,28 +840,41 @@ async def managed_cli_reads_retained_history_with_identity_uid_scope(
                         page: dict[str, Any] = json.loads(output)
                         return page
 
-                    snapshot = await run_cli("sessions", "get", current_session)
-                    assert snapshot.get("session_id") == current_session, snapshot
-                    assert snapshot.get("session", {}).get("source") == "dispatcher", snapshot
-                    assert snapshot.get("session", {}).get("kind") == "observed", snapshot
-                    assert snapshot.get("history", {}).get("source") == "history", snapshot
-                    assert snapshot.get("history", {}).get("kind") == "observed", snapshot
+                    summary = await run_cli("history", "get-session-summary", current_session)
+                    assert summary.get("sessionId") == current_session, summary
+                    own_page = await run_cli("history", "read-session-events", current_session, "--limit", "1000")
+                    assert current_marker in json.dumps(own_page), own_page
+                    assert own_page.get("entries"), own_page
 
-                    own_page = await run_cli("sessions", "read-turns", current_session, "--count", "1")
-                    own_turns = own_page.get("turns", [])
-                    assert len(own_turns) == 1, own_page
-                    assert own_turns[0].get("final_assistant_message") == current_marker, own_page
-                    assert own_page.get("error") is None, own_page
-                    other_page = await run_cli("sessions", "read-turns", other_session, "--count", "1")
-                    old_page = await run_cli("sessions", "read-turns", old_session, "--count", "1")
+                    async def refused_history(session_id: str) -> dict[str, Any]:
+                        output = await cluster.kubectl(
+                            "exec",
+                            current_pod,
+                            "-c",
+                            ENVIRONMENT_RUNTIME_CONTAINER,
+                            "--",
+                            "sh",
+                            "-c",
+                            '"$@" 2>&1 || true',
+                            "history-client",
+                            "/run/agentplane/environment/bin/agentplane",
+                            "--json",
+                            "history",
+                            "read-session-events",
+                            session_id,
+                        )
+                        result: dict[str, Any] = json.loads(output)
+                        return result
+
+                    other_page = await refused_history(other_session)
+                    old_page = await refused_history(old_session)
                     for target_session, page in ((other_session, other_page), (old_session, old_page)):
-                        assert page.get("source") == "history", page
-                        assert page.get("error", {}).get("code") == "NotFound", (target_session, page)
-                        assert page.get("turns") == [], (target_session, page)
+                        assert page.get("error", {}).get("code") == "NOT_FOUND", (target_session, page)
+                        assert page.get("error", {}).get("source") == "service", (target_session, page)
                     evidence.update(
                         {
                             "app_ready_replicas_after_scale_down": 0,
-                            "current_identity_session_get": snapshot,
+                            "current_identity_history_summary": summary,
                             "current_identity_own_read": own_page,
                             "other_identity_read_refusal": other_page,
                             "old_identity_uid_read_refusal": old_page,

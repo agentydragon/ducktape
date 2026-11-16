@@ -55,7 +55,7 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
         [
             _CLI,
             "--json",
-            "sessions",
+            "session-dispatcher",
             "create",
             session_id,
             "--sandbox",
@@ -66,7 +66,7 @@ async def sandbox_cli_denies_create_but_lists_its_identity_session(
             json_format.MessageToJson(spec),
         ]
     )
-    list_sessions = shlex.join([_CLI, "--json", "sessions", "list"])
+    list_sessions = shlex.join([_CLI, "--json", "session-dispatcher", "list"])
     command = "\n".join(
         (
             "set -eu",

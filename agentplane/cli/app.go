@@ -5,9 +5,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/actions"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/environments"
+	"github.com/agentydragon/ducktape/agentplane/cli/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/notifications"
-	"github.com/agentydragon/ducktape/agentplane/cli/internal/sessions"
+	sessiondispatcher "github.com/agentydragon/ducktape/agentplane/cli/internal/session_dispatcher"
 	"github.com/spf13/cobra"
 )
 
@@ -23,8 +24,7 @@ func Execute(args []string, getenv func(string) string, stdin io.Reader, stdout,
 }
 func (a *app) execute(args []string) int { return a.Execute(a.root(), args) }
 
-const rootHelp = `agentplane calls the Action Service and Session Dispatcher APIs, reads History for sessions get, read-turns,
-and observe-input. Notifications and egress rules use gRPC through local sidecar routes.
+const rootHelp = `agentplane calls the Action Service, Session Dispatcher and History Service APIs. Notifications and egress rules use gRPC through local sidecar routes.
 The environments group reads the EnvironmentService discovery API. It adds no authority and keeps
 no state. The 'agentplane actions guide' command prints Action workflow guides bundled in this
 image without a service call. Each live group reads its AGENTPLANE_*_URL; when a
@@ -69,6 +69,6 @@ func (a *app) root() *cobra.Command {
 	root.SetErr(a.Stderr())
 	root.CompletionOptions.DisableDefaultCmd = true
 	a.BindFlags(root)
-	root.AddCommand(actions.Command(a.Invocation), sessions.Command(a.Invocation), notifications.Command(a.Invocation), a.egressCommand(), environments.Command(a.Invocation))
+	root.AddCommand(actions.Command(a.Invocation), sessiondispatcher.Command(a.Invocation), history.Command(a.Invocation), notifications.Command(a.Invocation), a.egressCommand(), environments.Command(a.Invocation))
 	return root
 }
