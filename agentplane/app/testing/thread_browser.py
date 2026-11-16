@@ -181,6 +181,7 @@ async def scripted_runner(
             sandbox.environment_runtime_identity_uri, tmp_path / "environment-runtime-transport"
         ),
         partial(add_replication_source, source),
+        boot_id=source.boot_id,
     ):
         await gateway_service.environment_service.wait_for_runner(sandbox_control, sandbox.destination)
         yield

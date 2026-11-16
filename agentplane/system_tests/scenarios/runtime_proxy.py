@@ -5,8 +5,9 @@ import asyncio
 import grpc
 import pytest
 
+from agentplane.app.testing.client import Client
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
-from agentplane.environments.v1 import environment_service_pb2
+from agentplane.environments.v1 import environment_service_pb2, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.api import (
@@ -25,7 +26,7 @@ from agentplane.system_tests.driver.tls import service_svid_credentials
 
 
 async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
-    cluster: Cluster, sandbox: environment_service_pb2.EnvironmentDescriptor
+    cluster: Cluster, client: Client, sandbox: environment_service_pb2.EnvironmentDescriptor
 ) -> None:
     target = sandbox.target
     assert sandbox.kubernetes_diagnostics.HasField("pod")
@@ -72,6 +73,16 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
                         raise
                     await asyncio.sleep(0.1)
         assert status.environment_runtime_boot_id
+        environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
+        diagnostics = await environments.GetRuntimeDiagnostics(
+            environment_service_pb2.GetRuntimeDiagnosticsRequest(target=target), timeout=5
+        )
+        assert diagnostics.target == target
+        assert diagnostics.incarnation_uid == incarnation
+        assert diagnostics.HasField("observed_at")
+        assert diagnostics.status.environment_runtime_boot_id == status.environment_runtime_boot_id
+        app_status = await client.runner_status(target.name, target.uid)
+        assert app_status.environment_runtime_boot_id == status.environment_runtime_boot_id
         with pytest.raises(grpc.aio.AioRpcError) as stale:
             await runtime.GetStatus(
                 session_pb2.GetStatusRequest(),

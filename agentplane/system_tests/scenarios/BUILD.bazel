@@ -472,8 +472,10 @@ py_library(
     name = "runtime_proxy",
     srcs = ["runtime_proxy.py"],
     deps = [
+        "//agentplane/app/testing:client",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/environments/v1:environment_service_pb2",
+        "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher:api",

@@ -3904,9 +3904,9 @@ move: the operator also released the Runtime diagnostics API and App cutover to 
 transport migration, which has landed; Session activity and Sandbox-independent Notifications
 remain their separately tracked contracts.
 
-**In flight, operator release 2026-11-16:** implement the Runtime diagnostics receiver, then move
-App status reads after its accepting Environments image is pinned; retire the App raw-proxy grant
-only after its last caller rolls. Archive safety retains its conservative live check pending
+**In flight, operator release 2026-11-16:** the Runtime diagnostics receiver is implemented;
+move App status reads after its accepting Environments image is pinned and running, then retire
+the App raw-proxy grant only after its last caller rolls. Archive safety retains its conservative live check pending
 `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`; this migration does not choose canonical Session status.
 
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the

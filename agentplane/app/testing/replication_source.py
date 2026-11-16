@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import override
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import grpc
 
@@ -42,6 +42,7 @@ class ReplicationSource:
     """One scripted Runner Session whose operations append admissions to retained history."""
 
     def __init__(self) -> None:
+        self.boot_id = str(uuid4())
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = session_pb2.Attached(
@@ -123,11 +124,12 @@ class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
         self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
     ) -> session_pb2.EnvironmentRuntimeStatus:
         return session_pb2.EnvironmentRuntimeStatus(
+            environment_runtime_boot_id=self.source.boot_id,
             sessions=[
                 session_pb2.SessionStatus(
                     session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
                 )
-            ]
+            ],
         )
 
     @override
