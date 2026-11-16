@@ -72,7 +72,8 @@ fn linkage_export_effects_survive_saved_analysis() {
         FixtureOpts::new(
             "const first = 1;\nexport { first };\nconst second = 2;\nconsole.log(first, second);\n",
             vec![logical_module("second", &[Member::new("second")])],
-        ),
+        )
+        .with_import_order(&["second", "residual"]),
         &[],
     );
 }
@@ -593,10 +594,12 @@ fn callback_factory_privacy_decision_matches_saved_analysis() {
              const wrapped = {initializer};\nconst later = 42;\nconsole.log(wrapped());\n"
         );
         assert_staged_run_matches(
-            FixtureOpts::new(&source, vec![]).with_extra_chunks(&[(
-                "static/peer",
-                "export function factory(callback) { return () => callback(); }\n",
-            )]),
+            FixtureOpts::new(&source, vec![])
+                .with_import_order(&["residual"])
+                .with_extra_chunks(&[(
+                    "static/peer",
+                    "export function factory(callback) { return () => callback(); }\n",
+                )]),
             &["--effect-conflicts-jsonl"],
         );
     }
@@ -643,10 +646,13 @@ fn destructuring_split_refusal_matches_with_saved_facts() {
     // Build a matching analysis artifact while the source has one explicit
     // destructuring owner, then change only the module assignment to create the
     // conflicting request. Assignment edits do not change these saved facts.
-    let (staged, _fixture) = staged(FixtureOpts::new(
-        source,
-        vec![logical_module("left_module", &[Member::new("left")])],
-    ));
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("left_module", &[Member::new("left")])],
+        )
+        .with_import_order(&["left_module", "residual"]),
+    );
     let mut spec: serde_yaml::Value =
         serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
     let right_module = serde_yaml::from_str(
@@ -660,6 +666,10 @@ fn destructuring_split_refusal_matches_with_saved_facts() {
             serde_yaml::Value::String("right_module".into()),
             right_module,
         );
+    spec["import_order"]["static/app"]
+        .as_sequence_mut()
+        .unwrap()
+        .push(serde_yaml::Value::String("right_module".into()));
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
     let direct = staged.run(&[]);
     let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
@@ -728,6 +738,10 @@ console.log(left, right);\nexport { left, right };\n";
         )
         .unwrap(),
     );
+    spec["import_order"]["static/app"]
+        .as_sequence_mut()
+        .unwrap()
+        .push(serde_yaml::Value::String("right_module".into()));
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
 
     let direct = staged.run(&[]);

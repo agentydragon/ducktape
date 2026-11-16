@@ -73,13 +73,16 @@ fn broad_alpha_all_selector_resolves_to_remaining_global_target() {
         route_selector(None),
     )];
 
-    let fixture = run_fixture(FixtureOpts::new(
-        &source,
-        vec![
-            logical_module("routes/specific", &specific_members),
-            logical_module("routes/remainder", &remainder_members),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            &source,
+            vec![
+                logical_module("routes/specific", &specific_members),
+                logical_module("routes/remainder", &remainder_members),
+            ],
+        )
+        .with_import_order(&["routes/specific", "routes/remainder", "residual"]),
+    );
 
     assert_module_exports(
         &fixture.out_root,

@@ -63,6 +63,7 @@ fn widget_fixture(source: &str) -> FixtureOpts<'_> {
             ),
         ],
     )
+    .with_import_order(&["widgets/widget", "widgets/default", "residual"])
 }
 
 /// `new Widget(1)` matches both instances; only `d` constructs the class the
@@ -95,8 +96,9 @@ fn no_match_agreeing_with_a_reference_is_a_conflict_with_it() {
 /// where its free name is that binding.
 #[test]
 fn reference_to_a_name_pin_matches_only_the_pinned_binding() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const L = { log(m) { console.log("L" + m); } };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const L = { log(m) { console.log("L" + m); } };
 const M = { log(m) { console.log("M" + m); } };
 function f() {
   L.log("x");
@@ -107,17 +109,19 @@ function g() {
 f();
 g();
 "#,
-        vec![
-            logical_module("logging/logger", &[Member::renamed("logger", "L")]),
-            logical_module(
-                "logging/use",
-                &[Member::source_alpha(
-                    "UseLogger",
-                    "function useLogger() {\n  logger.log(\"x\");\n}",
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module("logging/logger", &[Member::renamed("logger", "L")]),
+                logical_module(
+                    "logging/use",
+                    &[Member::source_alpha(
+                        "UseLogger",
+                        "function useLogger() {\n  logger.log(\"x\");\n}",
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["logging/logger", "logging/use", "residual"]),
+    );
     assert_no_outcomes(&fixture);
     assert_module_source(
         &fixture.out_root,
@@ -141,6 +145,7 @@ fn logger_boot_fixture() -> FixtureOpts<'static> {
             logical_module_with_anon_alpha("logging/boot", &[], &["logger.log(\"x\");"]),
         ],
     )
+    .with_import_order(&["logging/logger", "logging/boot", "residual"])
 }
 
 /// Anonymous statements take references like members: of the two
@@ -177,8 +182,9 @@ fn anonymous_statement_reference_picks_the_agreeing_statement() {
 /// matches where its free name is the binding `generateId` takes there.
 #[test]
 fn reference_to_a_relational_entity_constrains_the_solve() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const s = { nextUniqueId: 0 };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const s = { nextUniqueId: 0 };
 function g() {
   return s.nextUniqueId++;
 }
@@ -189,25 +195,27 @@ const a = () => g();
 const b = () => h();
 console.log(a(), b());
 "#,
-        vec![
-            logical_module(
-                "ids/generate",
-                &[Member::reads_member(
-                    "generateId",
-                    "nextUniqueId",
-                    None,
-                    Some("function_declaration"),
-                )],
-            ),
-            logical_module(
-                "ids/use",
-                &[Member::source_alpha(
-                    "useId",
-                    "const useId = () => generateId();",
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "ids/generate",
+                    &[Member::reads_member(
+                        "generateId",
+                        "nextUniqueId",
+                        None,
+                        Some("function_declaration"),
+                    )],
+                ),
+                logical_module(
+                    "ids/use",
+                    &[Member::source_alpha(
+                        "useId",
+                        "const useId = () => generateId();",
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["ids/generate", "ids/use", "residual"]),
+    );
     assert_no_outcomes(&fixture);
     assert_module_source(
         &fixture.out_root,
@@ -222,8 +230,9 @@ console.log(a(), b());
 /// fragile as elimination, so it warns and names the referrer.
 #[test]
 fn entity_unique_only_through_a_referrer_warns() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class a {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class a {
   open() {
     return 1;
   }
@@ -236,20 +245,22 @@ class b {
 const c = new a(1);
 console.log(c.open(), new b().open());
 "#,
-        vec![
-            logical_module(
-                "widgets/widget",
-                &[Member::source_alpha(
-                    "Widget",
-                    "class Widget {\n  open() {\n    STMT_LIST;\n  }\n}",
-                )],
-            ),
-            logical_module(
-                "widgets/default",
-                &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
-            ),
-        ],
-    ));
+            vec![
+                logical_module(
+                    "widgets/widget",
+                    &[Member::source_alpha(
+                        "Widget",
+                        "class Widget {\n  open() {\n    STMT_LIST;\n  }\n}",
+                    )],
+                ),
+                logical_module(
+                    "widgets/default",
+                    &[Member::source_alpha("DefaultWidget", DEFAULT_WIDGET)],
+                ),
+            ],
+        )
+        .with_import_order(&["widgets/widget", "widgets/default", "residual"]),
+    );
     let outcomes = read_selector_outcomes(&fixture.report_root);
     let widget = find_outcome(&outcomes, "resolved", "Widget");
     assert_eq!(widget["severity"], "warning", "{widget:#}");
@@ -298,19 +309,22 @@ fn name_exported_by_several_other_modules_is_invalid() {
 /// does not make the name ambiguous.
 #[test]
 fn own_module_export_wins_over_other_modules() {
-    let fixture = run_fixture(FixtureOpts::new(
-        TWO_CLASSES,
-        vec![
-            logical_module(
-                "widgets/a",
-                &[
-                    Member::renamed("Widget", "a"),
-                    Member::source_alpha("DefaultWidget", DEFAULT_WIDGET),
-                ],
-            ),
-            logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            TWO_CLASSES,
+            vec![
+                logical_module(
+                    "widgets/a",
+                    &[
+                        Member::renamed("Widget", "a"),
+                        Member::source_alpha("DefaultWidget", DEFAULT_WIDGET),
+                    ],
+                ),
+                logical_module("widgets/b", &[Member::renamed("Widget", "b")]),
+            ],
+        )
+        .with_import_order(&["widgets/a", "widgets/b", "residual"]),
+    );
     assert_no_outcomes(&fixture);
     assert_module_source(
         &fixture.out_root,
@@ -325,8 +339,9 @@ fn own_module_export_wins_over_other_modules() {
 /// twice.
 #[test]
 fn match_binding_a_reference_to_two_identifiers_is_dropped() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class a {}
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class a {}
 class b {}
 function p() {
   return [() => a, () => b];
@@ -336,17 +351,19 @@ function q() {
 }
 console.log(p().length, q().length);
 "#,
-        vec![
-            logical_module("widgets/widget", &[Member::renamed("Widget", "a")]),
-            logical_module(
-                "widgets/pair",
-                &[Member::source_alpha(
-                    "Pair",
-                    "function pair() {\n  return [() => Widget, () => Widget];\n}",
-                )],
-            ),
-        ],
-    ));
+            vec![
+                logical_module("widgets/widget", &[Member::renamed("Widget", "a")]),
+                logical_module(
+                    "widgets/pair",
+                    &[Member::source_alpha(
+                        "Pair",
+                        "function pair() {\n  return [() => Widget, () => Widget];\n}",
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["widgets/widget", "widgets/pair", "residual"]),
+    );
     assert_no_outcomes(&fixture);
     assert_module_source(
         &fixture.out_root,
@@ -370,16 +387,19 @@ console.log(f({ x: 1 }), g({}));
 /// only `Object`, not the chunk's `e`.
 #[test]
 fn unshadowed_global_keeps_its_spelling() {
-    let fixture = run_fixture(FixtureOpts::new(
-        KEYS_CHUNK,
-        vec![logical_module(
-            "keys/of",
-            &[Member::source_alpha(
-                "keysOf",
-                "function keysOf(o) {\n  return Object.keys(o);\n}",
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            KEYS_CHUNK,
+            vec![logical_module(
+                "keys/of",
+                &[Member::source_alpha(
+                    "keysOf",
+                    "function keysOf(o) {\n  return Object.keys(o);\n}",
+                )],
             )],
-        )],
-    ));
+        )
+        .with_import_order(&["keys/of", "residual"]),
+    );
     assert_no_outcomes(&fixture);
     assert_module_source(
         &fixture.out_root,

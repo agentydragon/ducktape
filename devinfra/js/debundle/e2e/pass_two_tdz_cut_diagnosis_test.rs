@@ -130,6 +130,10 @@ export { read_c };
             logical_module("mod_c", &[Member::new("c_value")]),
         ],
     )
+    // After contracting mod_a/mod_b, enter mod_c before the contracted
+    // owner so DFS finishes its dependency first. Pass 1 still rejects
+    // the original split without adding an unrelated priority failure.
+    .with_import_order(&["mod_c", "mod_a", "mod_b"])
 }
 
 fn cycle_kinds(fixture: FixtureOpts<'_>) -> Vec<(usize, String)> {

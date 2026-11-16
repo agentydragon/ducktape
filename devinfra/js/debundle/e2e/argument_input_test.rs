@@ -21,7 +21,7 @@ fn input(source: &str, declaration: &str) -> ArgumentInputContract {
 }
 
 fn opts(source: &str, input: Option<ArgumentInputContract>) -> FixtureOpts<'_> {
-    let opts = FixtureOpts::new(source, vec![]);
+    let opts = FixtureOpts::new(source, vec![]).with_import_order(&["residual"]);
     match input {
         Some(input) => opts.with_argument_inputs("static/app", vec![input]),
         None => opts,
@@ -95,7 +95,9 @@ fn two_annotated_parameters_of_one_helper_are_both_protected() {
     let mut second = first.clone();
     second.parameter_index = 1;
     let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(&source, vec![]).with_argument_inputs("static/app", vec![first, second]),
+        FixtureOpts::new(&source, vec![])
+            .with_import_order(&["residual"])
+            .with_argument_inputs("static/app", vec![first, second]),
     );
     assert_eq!(purity(&fixture, "preferences"), "pure");
 }

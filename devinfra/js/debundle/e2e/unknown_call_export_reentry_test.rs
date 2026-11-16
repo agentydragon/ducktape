@@ -17,7 +17,13 @@ fn expect_provider_conflict(
     extra_chunks: &[(&'static str, &'static str)],
     extra_files: &[(&'static str, &'static str)],
 ) {
-    expect_provider_conflict_with_overrides(provider, extra_chunks, extra_files, &[]);
+    expect_provider_conflict_with_overrides(
+        provider,
+        extra_chunks,
+        extra_files,
+        &[],
+        &["values/dynamic", "values/later"],
+    );
 }
 
 fn expect_provider_conflict_with_overrides(
@@ -25,6 +31,7 @@ fn expect_provider_conflict_with_overrides(
     extra_chunks: &[(&'static str, &'static str)],
     extra_files: &[(&'static str, &'static str)],
     admission_overrides: &'static [&'static str],
+    priority: &[&str],
 ) {
     let provider_modules = vec![
         logical_module(
@@ -42,6 +49,7 @@ fn expect_provider_conflict_with_overrides(
     ];
     let opts = FixtureOpts::new(provider, provider_modules)
         .with_chunk_id("static/provider")
+        .with_import_order(priority)
         .with_extra_chunks(extra_chunks)
         .with_extra_files(extra_files)
         .with_admission_overrides(admission_overrides);
@@ -292,7 +300,13 @@ export function readLater() { return Registry.current; }
     let consumer = r#"import { readLater } from "./provider.js";
 export { readLater };
 "#;
-    expect_provider_conflict(provider, &[("static/consumer", consumer)], &[]);
+    expect_provider_conflict_with_overrides(
+        provider,
+        &[("static/consumer", consumer)],
+        &[],
+        &[],
+        &["values/dynamic", "values/later", "residual"],
+    );
 }
 
 #[test]
@@ -316,5 +330,6 @@ export { readLater };
         &[("static/consumer", consumer)],
         &[],
         &["a5_import_meta"],
+        &["values/dynamic", "values/later", "residual"],
     );
 }

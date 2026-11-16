@@ -6,7 +6,9 @@ use debundle_e2e_support::*;
 fn cross_chunk_read_keeps_catchall_export_unique() {
     let extra_chunks = [("static/consumer", "import { a } from './app.js';\na;\n")];
     let fixture = run_fixture(
-        FixtureOpts::new("const a = 1;\nexport { a };\n", vec![]).with_extra_chunks(&extra_chunks),
+        FixtureOpts::new("const a = 1;\nexport { a };\n", vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&extra_chunks),
     );
     assert_module_source(
         &fixture.out_root,
@@ -30,10 +32,10 @@ fn cross_chunk_read_keeps_catchall_export_unique() {
 
 #[test]
 fn catchall_keeps_aliased_public_export_without_known_consumer() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const a = 1;\nexport { a as foo, a as 'x-y' };\n",
-        vec![],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new("const a = 1;\nexport { a as foo, a as 'x-y' };\n", vec![])
+            .with_import_order(&["residual"]),
+    );
     assert_module_exports(
         &fixture.out_root,
         "static/app/entry.js",

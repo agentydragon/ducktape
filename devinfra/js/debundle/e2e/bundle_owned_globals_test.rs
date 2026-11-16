@@ -146,7 +146,7 @@ fn a_slot_holding_the_global_object_can_replace_map() {
         &["values/native", "values/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
 }
 

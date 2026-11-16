@@ -805,6 +805,7 @@ fn class_split_fixture(source: &'static str) -> Fixture {
     run_fixture(
         FixtureOpts::new(source, class_split_modules())
             .with_chunk_id("static/provider")
+            .with_import_order(&["values/dynamic", "values/later", "residual"])
             .with_extra_chunks(&peer_chunks),
     )
 }
@@ -875,6 +876,7 @@ fn expect_independent_later_alias_conflict(source: &'static str) {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(source, independent_later_modules())
             .with_chunk_id("static/provider")
+            .with_import_order(&["values/dynamic", "values/later", "residual"])
             .with_extra_chunks(&peer_chunks),
         &["values/dynamic", "values/later"],
         &[],
@@ -945,6 +947,7 @@ fn expect_class_split_conflict(source: &'static str) {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(source, class_split_modules())
             .with_chunk_id("static/provider")
+            .with_import_order(&["values/dynamic", "values/later", "residual"])
             .with_extra_chunks(&peer_chunks),
         &["values/dynamic", "values/later"],
         &[],

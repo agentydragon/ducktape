@@ -4,42 +4,51 @@ use debundle_e2e_support::*;
 
 #[test]
 fn repeated_var_loop_counter_preserves_execution() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"for (var i = 0; i < 2; i++) console.log(i);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"for (var i = 0; i < 2; i++) console.log(i);
 for (var i = 3; i < 5; i++) console.log(i);
 console.log(i);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     // Both initializers run in order; `var` leaves one shared binding after the loops.
     assert_entry_output(&fixture, "0\n1\n3\n4\n5\n");
 }
 
 #[test]
 fn bare_redeclaration_does_not_reset_an_existing_value() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var value = "initial";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var value = "initial";
 value = "assigned";
 var value;
 console.log(value);
 export { value };
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(&fixture, "assigned\n");
 }
 
 #[test]
 fn repeated_initializers_stay_around_intervening_reads_in_source_order() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var value = (console.log("first initializer"), 1);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var value = (console.log("first initializer"), 1);
 console.log("between", value);
 var value = (console.log("second initializer"), value + 1);
 console.log("after", value);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(
         &fixture,
@@ -49,8 +58,9 @@ console.log("after", value);
 
 #[test]
 fn conditional_var_initializers_only_update_the_shared_binding_when_run() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var value = "initial";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var value = "initial";
 if (false) {
   var value = "skipped";
 }
@@ -60,23 +70,28 @@ if (true) {
 }
 console.log(value);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(&fixture, "initial\nselected\n");
 }
 
 #[test]
 fn closure_reads_the_binding_updated_by_a_later_redeclaration() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var count = 1;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var count = 1;
 var readCount = () => count;
 console.log(readCount());
 var count = count + 1;
 console.log(readCount());
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(&fixture, "1\n2\n");
 }
@@ -126,7 +141,8 @@ console.log(a, seen);
 export { a, seen };
 "#,
             vec![logical_module("state", &[Member::new("a")])],
-        ),
+        )
+        .with_import_order(&["state", "residual"]),
         &["state"],
         &[],
     );
@@ -157,28 +173,34 @@ export { seen, value };
 
 #[test]
 fn read_before_first_initializer_observes_undefined() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"console.log(value);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"console.log(value);
 var value = "first";
 var value = "second";
 console.log(value);
 export { value };
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(&fixture, "undefined\nsecond\n");
 }
 
 #[test]
 fn consecutive_for_in_and_for_of_var_heads_share_the_binding() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"for (var value in { first: 1, second: 2 }) console.log("in", value);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"for (var value in { first: 1, second: 2 }) console.log("in", value);
 for (var value of ["third", "fourth"]) console.log("of", value);
 console.log("final", value);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
 
     assert_entry_output(
         &fixture,
@@ -227,7 +249,11 @@ console.log(seen, x);
 export { seen, x };
 "#;
 
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_dataflow_aware_s_chain());
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
+            .with_dataflow_aware_s_chain(),
+    );
     assert_entry_output(&fixture, "1 2\n");
 
     // The optimized S-chain must retain the sequencing constraints too:
@@ -235,6 +261,7 @@ export { seen, x };
     // make `seen` observe 2 instead of 1, so this split is rejected.
     expect_atomic_conflict_rejection(
         FixtureOpts::new(source, vec![logical_module("state", &[Member::new("x")])])
+            .with_import_order(&["state", "residual"])
             .with_dataflow_aware_s_chain(),
         &["state"],
         &[],
@@ -276,7 +303,8 @@ export { a, b };
                 logical_module("left", &[Member::new("a")]),
                 logical_module("right", &[Member::new("b")]),
             ],
-        ),
+        )
+        .with_import_order(&["left", "right", "residual"]),
         &[
             "atomic-group conflict",
             "Shared var declaration",
@@ -295,19 +323,22 @@ console.log(answer);
 export { read, late, answer };
 "#;
 
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_entry_output(&fixture, "2\n");
 
     // With the default catchall mode, `late` is in the residual module.
     // The reader module imports it, so ESM evaluates the residual module
     // before the at-init call and preserves the input's value.
-    let extracted = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "reader",
-            &[Member::new("read"), Member::new("answer")],
-        )],
-    ));
+    let extracted = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "reader",
+                &[Member::new("read"), Member::new("answer")],
+            )],
+        )
+        .with_import_order(&["reader", "residual"]),
+    );
     assert_entry_output(&extracted, "2\n");
 
     // Inline residual statements stay in entry. Entry imports `reader`

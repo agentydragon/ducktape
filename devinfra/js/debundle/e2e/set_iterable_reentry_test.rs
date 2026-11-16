@@ -167,7 +167,11 @@ fn assert_real_callback_keeps_split_rejected(
         rejected.stderr,
     );
 
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_chunk_id("static/provider"));
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_chunk_id("static/provider")
+            .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, expected);
 }
 
@@ -246,8 +250,11 @@ fn shadowed_set_callback_still_blocks_split() {
         &["values/collection", "values/later"],
         &[],
     );
-    let fixture =
-        run_fixture(FixtureOpts::new(SHADOWED_SET_SOURCE, vec![]).with_chunk_id("static/provider"));
+    let fixture = run_fixture(
+        FixtureOpts::new(SHADOWED_SET_SOURCE, vec![])
+            .with_chunk_id("static/provider")
+            .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
 }
 

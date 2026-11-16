@@ -18,7 +18,8 @@ fn assert_freeze_callback_split_rejected(source: &str, colocated_members: &[Memb
                 logical_module("records/early", &[Member::new("early")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["records/early", "values/later", "residual"]),
         &["records/early", "values/later"],
         &[],
     );
@@ -36,13 +37,16 @@ const later = 'later';
 console.log(early.name, globalThis.peek());
 export { early, later };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("records/early", &[Member::new("early")]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("records/early", &[Member::new("early")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["records/early", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "first later\n");
 }
 
@@ -56,13 +60,16 @@ const later = 'later';
 console.log(early.callback());
 export { early, later };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("records/early", &[Member::new("early")]),
-            logical_module("values/later", &[Member::new("later")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("records/early", &[Member::new("early")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        )
+        .with_import_order(&["records/early", "values/later", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "later\n");
 }
 

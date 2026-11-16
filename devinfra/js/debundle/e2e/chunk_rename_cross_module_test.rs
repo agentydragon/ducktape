@@ -37,6 +37,7 @@ export { a, b, c };
 "#,
         vec![logical_module("b_module", &[Member::new("b")])],
     )
+    .with_import_order(&["b_module", "residual"])
     .with_chunk_renames(chunk_rename_with_purity(
         "getMobxGlobalState",
         "cx",

@@ -35,7 +35,7 @@ fn assert_round_reentry(source: &str, members: &[Member], anonymous: &[&str]) {
         &["values/rounded", "values/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 2\n");
 }
 

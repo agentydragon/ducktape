@@ -8,7 +8,7 @@ use debundle_e2e_support::*;
 #[test]
 fn settled_single_spread_preserves_order_and_identity() {
     let source = "let later = 0;\nconst original = () => later;\nconst source = { 10: original, 2: original, alpha: original, [\"__proto__\"]: original };\nconst copied = { ...source };\nsource.alpha = () => -1;\nlater = 42;\nconsole.log(Object.keys(copied).join(\",\"), copied[\"__proto__\"] === original, copied.alpha());\n";
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "2,10,alpha,__proto__ true 42\n");
 }
 
@@ -32,7 +32,8 @@ fn own_data_stores_before_a_spread_keep_node_parity() {
             "beta 2\n",
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, expected);
     }
 }
@@ -57,7 +58,8 @@ fn pooled_spread_sites_keep_node_parity() {
             "1 1\n",
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, expected);
     }
 }
@@ -150,7 +152,8 @@ fn changed_or_nondata_enumerability_keeps_node_parity() {
     ];
 
     for (source, expected_output) in cases {
-        let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, expected_output);
     }
 }
