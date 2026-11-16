@@ -187,9 +187,8 @@ py_test(
 
 py_test(
     name = "test_matchable_occurrences",
-    # Belt and braces, not a diagnosis: these timed out because concurrent container starts
-    # wedged (<../../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>), which the image-load lock
-    # fixes. Can go back to `small` once that is proven under a full `//...`.
+    # The August full-run timeout did not locate the blocked step. The per-image lock addresses
+    # duplicate loads; container starts remain unbounded (<../../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>).
     size = "medium",
     srcs = ["test_matchable_occurrences.py"],
     exec_properties = POSTGRES_IMAGE_EXEC_PROPERTIES,

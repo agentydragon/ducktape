@@ -111,16 +111,12 @@ def _lock_path(tag: str) -> Path:
 def _one_loader_at_a_time(tag: str) -> Iterator[None]:
     """Hold a machine-wide lock on *tag* for the length of a load.
 
-    **Why this is not paranoia.** A Bazel test target is its own process, and a full `//...` runs
-    as many `requires_docker` targets at once as there are job slots — 143 of them declare the tag
-    — against one daemon per worker. Without this they all find the image missing at the same
-    moment and push the same layers into the same storage driver simultaneously, and what should be
-    one ~30s load becomes a thundering herd that wedges container startup for minutes
-    (<../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>).
+    Concurrent test processes can load the same image into one Docker daemon. The per-tag lock
+    serializes those imports; the post-lock check skips work already done by another process.
+    The timeout report describes a plausible herd, but does not prove that the affected CI actions
+    shared a daemon (<../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>).
 
-    A file lock rather than anything cleverer because the thing being serialised is per machine and
-    the processes share nothing else. `flock` is released when the fd closes, so a loader that dies
-    mid-push does not strand the others.
+    `flock` is released when the fd closes, so a loader that dies mid-push does not strand others.
     """
     with _lock_path(tag).open("w") as lock:
         waited_from = time.monotonic()
@@ -154,12 +150,9 @@ def _already_loaded(tag: str, wanted: str) -> bool:
     whether what was loaded is still present and still the same image, which is what catches a
     prune or an out-of-band retag and stops the marker from being believed on its own.
 
-    **Why not just compare the daemon's id to the layout's config digest.** Because they are not
-    the same number: Docker's classic image store rewrites an OCI config on load, so `.Id` is the
-    digest of its rewritten config. Comparing them would never match, and "never matches" here does
-    not fail visibly — it silently reloads every image on every target, which is slower than doing
-    nothing at all. So the daemon's id is recorded rather than predicted, and only ever compared
-    against itself.
+    Docker's classic image store rewrites an OCI config on load, so the daemon's `.Id` differs from
+    the layout config digest. Record the daemon's ID after loading and compare it with its current
+    ID instead of predicting it from the layout.
     """
     marker = _loaded_marker(tag)
     if not marker.exists():
