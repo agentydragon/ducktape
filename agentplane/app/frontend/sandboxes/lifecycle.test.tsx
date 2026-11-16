@@ -28,9 +28,9 @@ vi.mock("../policy/watch", () => ({
   usePolicyResources: () => ({ resources: mocks.policy, error: null }),
 }));
 vi.mock("../identities/client", () => ({
-  listIdentitySessions: mocks.sessions,
   deleteIdentity: mocks.deleteIdentity,
 }));
+vi.mock("../sessions/session_client", () => ({ listIdentitySessions: mocks.sessions }));
 vi.mock("./client", () => ({ deleteEnvironment: mocks.deleteEnvironment }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

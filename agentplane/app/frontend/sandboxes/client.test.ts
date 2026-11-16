@@ -1,24 +1,13 @@
 import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { HttpError } from "../transport/client";
-import {
-  EnvironmentRuntimeLifecycleBlockerKind,
-  EnvironmentRuntimeLifecycleMode,
-  Harness,
-  SessionSpecSchema,
-} from "../../../proto/session_pb";
-import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { EnvironmentRuntimeLifecycleBlockerKind, EnvironmentRuntimeLifecycleMode } from "../../../proto/session_pb";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import { CreateEnvironmentRequestSchema } from "../../../environments/v1/environment_service_pb";
 
 import {
   launchEnvironment,
   getEnvironmentRuntimeStatus,
-  createSession,
-  getSession,
-  sessionCreateRejected,
-  sessionNotVisible,
   resumeSandbox,
   suspendEnvironment,
   deleteEnvironment,
@@ -27,8 +16,6 @@ import {
   setEnvironmentIdleSuspend,
 } from "./client";
 
-const id = "b351b316-fdc4-4f50-a642-758992ae3323";
-const target = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "uid" });
 afterEach(() => vi.unstubAllGlobals());
 
 it("launches through the operator APIs with the exact picked PolicySets and Identity", async () => {
@@ -194,106 +181,6 @@ it("reads the current credential and patches an exact stopped Environment identi
   });
 });
 
-it.each([undefined, null, "", "setup"])(
-  "sends the typed CreateSession request and projected Session for setup %s",
-  async (setup) => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json(
-        {
-          sessionId: id,
-          status: { materialization: "SESSION_MATERIALIZATION_WAITING" },
-          placement: {
-            environmentHosted: {
-              environment: { name: "test", uid: "uid" },
-              harness: "HARNESS_CODEX",
-            },
-          },
-        },
-        { status: 201 }
-      )
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const session = await createSession(
-      target,
-      id,
-      create(SessionSpecSchema, {
-        placement: {
-          kind: {
-            case: "environmentHosted",
-            value: { environment: { name: target.name, uid: target.uid }, harness: Harness.CODEX },
-          },
-        },
-        model: "test-model",
-      }),
-      setup
-    );
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("/sandboxes/test/sessions");
-    expect(JSON.parse(init.body)).toEqual({
-      session_id: id,
-      sandbox_uid: "uid",
-      spec: {
-        placement: {
-          environmentHosted: {
-            environment: { name: "test", uid: "uid" },
-            harness: "HARNESS_CODEX",
-          },
-        },
-        model: "test-model",
-      },
-      ...(setup === undefined ? {} : { setup_script: setup }),
-    });
-    expect(session.sessionId).toBe(id);
-    expect(session.status?.materialization).toBe(SessionStatus_Materialization.SESSION_MATERIALIZATION_WAITING);
-  }
-);
-
-it("looks up the same Session identity without repeating an uncertain Create", async () => {
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce(Response.json({ code: 4, message: "uncertain", detail: "uncertain" }, { status: 504 }))
-    .mockResolvedValueOnce(
-      Response.json({
-        session: {
-          sessionId: id,
-          status: { materialization: "SESSION_MATERIALIZATION_ACCEPTED" },
-          placement: {
-            environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
-          },
-        },
-      })
-    );
-  vi.stubGlobal("fetch", fetchMock);
-  await expect(createSession(target, id, create(SessionSpecSchema))).rejects.toMatchObject({ code: 4 });
-  const session = await getSession(id);
-  expect(session.status?.materialization).toBe(SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED);
-  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-    "/sandboxes/test/sessions",
-    `/upstream/dispatcher/v1/sessions/${id}`,
-  ]);
-});
-
-it("rejects a different Session ID in the Dispatcher response", async () => {
-  const fetchMock = vi.fn().mockResolvedValue(
-    Response.json({
-      session: {
-        sessionId: "different-session",
-        placement: {
-          environmentHosted: { environment: { name: "test", uid: "uid" }, harness: "HARNESS_CODEX" },
-        },
-      },
-    })
-  );
-  vi.stubGlobal("fetch", fetchMock);
-
-  await expect(getSession(id)).rejects.toThrow(
-    `Dispatcher returned Session different-session for requested Session ${id}`
-  );
-  expect(fetchMock).toHaveBeenCalledTimes(1);
-  expect(fetchMock.mock.calls[0]![0]).toBe(`/upstream/dispatcher/v1/sessions/${id}`);
-});
-
 it("reads the AppService runner status as the existing generated EnvironmentRuntimeStatus", async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     Response.json({
@@ -340,18 +227,4 @@ it("keeps runner status errors readable across old and generated AppService resp
   const statusTarget = create(EnvironmentTargetSchema, { namespace: "team", name: "test", uid: "sandbox-uid" });
   await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503 });
   await expect(getEnvironmentRuntimeStatus(statusTarget)).rejects.toMatchObject({ status: 503, code: 14 });
-});
-
-it.each([1, 2, 4, 8, 13, 14, 15])("keeps gRPC outcome %s uncertain", (code) => {
-  expect(sessionCreateRejected(new HttpError(new Response(null, { status: 400 }), { code }))).toBe(false);
-});
-
-it.each([
-  [5, 404],
-  [14, 503],
-])("recognizes an unobserved Session from gRPC %s or HTTP %s", (code, httpStatus) => {
-  expect(sessionNotVisible(new HttpError(new Response(null, { status: httpStatus }), { code }))).toBe(true);
-  expect(sessionNotVisible(new HttpError(new Response(null, { status: httpStatus }), { detail: "unobserved" }))).toBe(
-    true
-  );
 });

@@ -1,4 +1,4 @@
-# Thread frontend
+# Session frontend
 
 `home.tsx` owns the Threads landing page, and `thread_list.tsx` owns the grouped
 Thread list used there and in the sidebar. `sandbox_threads.tsx` and `new_thread_form.tsx`
@@ -21,12 +21,10 @@ outcomes. `thread_sync.ts`
 defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
 owns their lazy evidence paging. History rows, local commands, Thread
-status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The application shell lives in `../shell/`; the Sandbox status model stays in the parent frontend package. Shared HTTP and watch transport live in `../transport/`. Generic transcript rendering lives in `util/frontend/transcript`.
+status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The Session create/get/rejection and identity inventory helpers live in `session_client.ts`; the harness behavior and model catalog helpers live alongside the Thread UI because that UI owns their consumers. The sidebar shell lives in `../shell/`; HTTP transport lives in `../transport/`, and the Sandbox status model stays in the parent frontend package. Generic transcript rendering lives in `util/frontend/transcript`.
 
-The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
-declarations are local copies of `../ui/tabler_icons.d.ts`: each TypeScript
-target compiles its own sources, and the Bazel rule cannot list a source from another
-package. Keep those declarations in sync when changing them. The feature
+The Bazel targets live in `BUILD.bazel`. Shared icon imports and ambient Tabler declarations
+are owned by `../ui/`. The feature
 extractions do not change the thread sync or scrolling contracts; see `../SPEC.md` for reader-facing scroll
 guarantees, `scrolling_verification.md` for engineering checks, and
 `../../../docs/thread_view_sync.md` for sync design.

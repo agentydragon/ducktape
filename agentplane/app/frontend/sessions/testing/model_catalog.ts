@@ -6,8 +6,8 @@ import {
   type ListModelsResponse,
   type ModelOptionSchema,
   type SandboxPreset,
-} from "../../app_service_pb";
-import { Harness } from "../../../proto/session_pb";
+} from "../../../app_service_pb";
+import { Harness } from "../../../../proto/session_pb";
 
 /** Shared model metadata for UI tests that are not specifically testing effort availability. */
 export const TEST_REASONING_EFFORTS: string[] = ["low", "medium", "high"];

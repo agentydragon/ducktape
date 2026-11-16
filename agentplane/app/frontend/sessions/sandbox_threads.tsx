@@ -5,8 +5,8 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import { IconDotsVertical } from "../ui/icons";
 import type { JSX } from "react";
 
-import { harnessLabel } from "../model_catalog";
-import { attachedHarness } from "../harness_behavior";
+import { harnessLabel } from "./model_catalog";
+import { attachedHarness } from "./harness_behavior";
 import { traceSearchUrl } from "../trace_search";
 
 import { TimeAgo } from "../ui/time_ago";

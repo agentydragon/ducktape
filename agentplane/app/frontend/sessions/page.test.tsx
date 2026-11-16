@@ -29,7 +29,7 @@ import {
   type LangfuseSearchSettings,
   type TraceSearchSettings,
 } from "../../app_service_pb";
-import { TEST_REASONING_EFFORTS, testModelCatalog } from "../testing/model_catalog";
+import { TEST_REASONING_EFFORTS, testModelCatalog } from "./testing/model_catalog";
 import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
 import { createRoot } from "react-dom/client";

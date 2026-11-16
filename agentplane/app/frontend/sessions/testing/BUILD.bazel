@@ -8,6 +8,17 @@ package(
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
+    name = "model_catalog",
+    srcs = ["model_catalog.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app:app_service_pb",
+        "//agentplane/proto:session_pb",
+    ],
+)
+
+ts_library(
     name = "electric_entity",
     srcs = ["electric_entity.ts"],
     tsconfig = TSCONFIG,
@@ -38,8 +49,8 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app:app_service_pb",
         "//agentplane/app/frontend:schema",
-        "//agentplane/app/frontend/threads:client",
-        "//agentplane/app/frontend/threads:thread_sync",
+        "//agentplane/app/frontend/sessions:client",
+        "//agentplane/app/frontend/sessions:thread_sync",
         "//agentplane/history_service/api/history:history_service_pb",
         "//agentplane/proto:session_pb",
     ],
@@ -50,6 +61,7 @@ filegroup(
     srcs = [
         "electric_entity.ts",
         "entity.ts",
+        "model_catalog.ts",
         "state.tsx",
     ],
     visibility = ["//agentplane/app/frontend:__pkg__"],

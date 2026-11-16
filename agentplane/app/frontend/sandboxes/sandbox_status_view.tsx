@@ -3,7 +3,7 @@ import { create, toJson } from "@bufbuild/protobuf";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, type ReactNode, useEffect, useMemo, useState } from "react";
 
-import type { ThreadView } from "../threads/client";
+import type { ThreadView } from "../sessions/client";
 import { EnvironmentTargetSchema } from "../../../proto/identity_pb";
 import {
   EnvironmentDescriptorSchema,
@@ -14,7 +14,7 @@ import {
 
 import { displayableError } from "../transport/client";
 import { getEnvironmentRuntimeStatus } from "./client";
-import { harnessLabel } from "../model_catalog";
+import { harnessLabel } from "../sessions/model_catalog";
 import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,

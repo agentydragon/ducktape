@@ -10,8 +10,8 @@ import { Link, useMatch, useNavigate } from "react-router";
 
 import { type ThreadView, archiveThread } from "./client";
 import { displayableError } from "../transport/client";
-import { harnessLabel } from "../model_catalog";
-import { attachedHarness } from "../harness_behavior";
+import { harnessLabel } from "./model_catalog";
+import { attachedHarness } from "./harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../ui/mark_glyph";

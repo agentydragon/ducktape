@@ -16,13 +16,13 @@ import { FeedStatus, SessionSummarySchema } from "../../../history_service/api/h
 
 import { readySandbox as makeReadySandbox } from "../testing/sandbox";
 import { MantineProvider } from "@mantine/core";
-import type { ThreadView } from "../threads/client";
+import type { ThreadView } from "../sessions/client";
 import {
   TEST_REASONING_EFFORTS,
   testModelCatalog,
   testModelCatalogProtoJSON,
   testSandboxPresetsProtoJSON,
-} from "../testing/model_catalog";
+} from "../sessions/testing/model_catalog";
 import { serveEventStreams } from "../testing/watch";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -46,7 +46,7 @@ import {
   SetupState,
   SessionExecutionState,
 } from "../../../proto/session_pb";
-import { threadView } from "../threads/testing/state";
+import { threadView } from "../sessions/testing/state";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>();
@@ -86,7 +86,7 @@ vi.mock("../policy/watch", () => ({
   useIdentities: () => ({ identities: [], error: null }),
 }));
 
-vi.mock("../threads/live", () => ({
+vi.mock("../sessions/live", () => ({
   useThreadsLive: (listing: { sandboxUID: string } | null) => ({
     snapshot: Array.isArray(live.snapshot.threads)
       ? {
