@@ -232,7 +232,6 @@ def fixture_config() -> dict[str, object]:
             },
         },
         "runner_gateway_target": "127.0.0.1:1",
-        "runner_gateway_control_target": "127.0.0.1:1",
         "session_dispatcher_target": "127.0.0.1:1",
         "history_service_target": "127.0.0.1:1",
         "notifications_url": unused,
@@ -639,7 +638,6 @@ async def app_process(
                 settings.update(
                     {
                         "runner_gateway_target": environments.target,
-                        "runner_gateway_control_target": environments.target,
                         "session_dispatcher_target": gateway.target,
                         "runner_gateway_token_file": str(gateway.token_file) if gateway.token_file else "",
                         "session_dispatcher_token_file": str(gateway.token_file) if gateway.token_file else "",
