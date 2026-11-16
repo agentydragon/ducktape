@@ -550,6 +550,73 @@ fn assignment_edit_keeps_the_projection_and_the_artifact() {
 }
 
 #[test]
+fn order_edits_reuse_the_analysis_but_recheck_the_supplied_priority() {
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            r#"const hub = () => [a, b];
+const a = { dependency: hub, lazy: () => b };
+const b = { dependency: hub };
+console.log(a.dependency === hub, a.lazy() === b, b.dependency === hub);
+"#,
+            vec![
+                logical_module("hub", &[Member::new("hub")]),
+                logical_module("a", &[Member::new("a")]),
+                logical_module("b", &[Member::new("b")]),
+            ],
+        )
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["a", "b", "hub"])
+        .with_browser_harness(),
+    );
+    let projection = fs::read(&staged.projection).unwrap();
+    let artifact = fs::read(&staged.artifact).unwrap();
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_slice(&fs::read(&staged.spec).unwrap()).unwrap();
+    let edited_projection = staged.root().join("order-edited.projection");
+
+    for (priority, accepted) in [
+        (["a", "b", "hub"], true),
+        (["b", "a", "hub"], false),
+        (["a", "b", "hub"], true),
+    ] {
+        spec["import_order"]["static/app"] = serde_yaml::to_value(priority).unwrap();
+        write_yaml_file(&staged.spec, &spec);
+        assert_ok(
+            &staged.project(&edited_projection),
+            "project order-only edit",
+        );
+        assert_eq!(fs::read(&edited_projection).unwrap(), projection);
+
+        let replay = staged.run(&["--analysis", path(&staged.artifact)]);
+        if accepted {
+            assert_ok(&replay.result, "replay valid priority with saved facts");
+            assert!(replay.harness_root().unwrap().exists());
+            assert_node_output(
+                &replay.output_root().join("app/static/app/entry.js"),
+                "true true true\n",
+                "",
+            );
+        } else {
+            assert!(!replay.result.status.success(), "{}", replay.result.stderr);
+            let cycles: Vec<serde_json::Value> = read_json(
+                &replay
+                    .output_root()
+                    .join("reports/tree/static/app/cycles.json"),
+            );
+            assert!(
+                cycles
+                    .iter()
+                    .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
+                "{cycles:#?}",
+            );
+            assert!(!replay.output_root().join("app").exists());
+            assert!(!replay.harness_root().unwrap().exists());
+        }
+        assert_eq!(fs::read(&staged.artifact).unwrap(), artifact);
+    }
+}
+
+#[test]
 fn graph_options_survive_the_source_only_analysis_boundary() {
     let (staged, _fixture) = staged(FixtureOpts::new(
         "const a = (globalThis.left = 1, 1);\nconst b = (globalThis.right = 2, 2);\nconsole.log(a, b);\n",

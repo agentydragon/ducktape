@@ -204,6 +204,7 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis_projection",
         "//devinfra/js/debundle:staged_analysis",
         "@crates//:rmp-serde",
+        "@crates//:serde_json",
         "@crates//:serde_yaml",
     ],
 )
