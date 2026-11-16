@@ -447,7 +447,7 @@ console.log(selected[0]);
                 logical_module("enum", &[Member::new("Status")]),
             ],
         )
-        .with_import_order(&["early", "enum", "residual"]),
+        .with_import_order(&["early", "enum"]),
         &["early", "enum"],
         &["eager_use"],
     );

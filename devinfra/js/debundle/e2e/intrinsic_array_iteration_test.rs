@@ -56,7 +56,7 @@ fn assert_early_iteration_rejected_with_executor(
     assert_preserved_entry_output(&fixture, "0\n");
     expect_atomic_conflict_rejection(
         FixtureOpts::new(&source, split)
-            .with_import_order(&["registry", "values/later", "residual"])
+            .with_import_order(&["values/later", "registry"])
             .with_extra_chunks(&peers),
         &["registry", "values/later"],
         &[],
@@ -98,7 +98,7 @@ fn assert_iteration_split_accepted_after(
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"]),
+        .with_import_order(&["values/later", "registry"]),
     );
     assert_preserved_entry_output(&fixture, expected);
 }
@@ -432,7 +432,7 @@ fn empty_builtin_iteration_never_invokes_its_callback() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"]),
+        .with_import_order(&["values/later", "registry"]),
     );
     assert_preserved_entry_output(&fixture, "0\n");
 }
@@ -470,7 +470,7 @@ fn object_spread_getters_run_during_map_even_without_a_result_consumer() {
                     ),
                 ],
             )
-            .with_import_order(&["registry", "values/later", "residual"]),
+            .with_import_order(&["values/later", "registry"]),
             &["registry", "values/later"],
             &[],
         );
@@ -497,7 +497,7 @@ fn ordinary_spread_copy_fields_retain_referenced_callback_identity() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"]),
+        .with_import_order(&["values/later", "registry"]),
         &["registry", "values/later"],
         &[],
     );
@@ -514,7 +514,7 @@ fn iterating_function_values_stores_them_without_invoking_them() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"]),
+        .with_import_order(&["values/later", "registry"]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -549,7 +549,7 @@ fn prior_unknown_call_does_not_make_fresh_primitive_cache_writes_run_unrelated_g
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"])
+        .with_import_order(&["values/later", "registry"])
         .with_extra_chunks(&peers),
     );
     assert_preserved_entry_output(&fixture, "tool 42\n");
@@ -688,7 +688,7 @@ fn default_instanceof_does_not_execute_unused_constructor_methods() {
                     ),
                 ],
             )
-            .with_import_order(&["registry", "values/later", "residual"])
+            .with_import_order(&["values/later", "registry"])
             .with_extra_chunks(&peers),
         );
         assert_preserved_entry_output(&fixture, "false\n");
@@ -744,11 +744,7 @@ fn copy_contexts_retain_missing_fields_for_default_consumers() {
             logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
         ];
         expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, split).with_import_order(&[
-                "registry",
-                "values/later",
-                "residual",
-            ]),
+            FixtureOpts::new(&source, split).with_import_order(&["values/later", "registry"]),
             &["registry", "values/later"],
             &[],
         );
@@ -775,7 +771,7 @@ fn getter_triggered_async_work_keeps_future_reads_after_await() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"]),
+        .with_import_order(&["values/later", "registry"]),
     );
     assert_preserved_entry_output(&fixture, "0\n42\n");
 }
@@ -809,7 +805,7 @@ fn installed_getters_can_invoke_returned_escaped_callbacks() {
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
-        .with_import_order(&["registry", "values/later", "residual"])
+        .with_import_order(&["values/later", "registry"])
         .with_extra_chunks(&peers),
         &["registry", "values/later"],
         &[],
