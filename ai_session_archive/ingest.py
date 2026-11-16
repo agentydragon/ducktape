@@ -44,7 +44,7 @@ from ai_session_archive.statuses import (
     SnapshotProcessingStatus,
 )
 from ai_session_archive.usage_observations import usage_observations_for_record
-from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, effective_payload_ids, version_lineage
+from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, effective_payload_ids, version_lineage_ranks
 
 CLAUDE_TITLE_PROJECTION_VERSION = 1
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
@@ -918,7 +918,7 @@ class SnapshotIngestor:
                         parent = None
                     else:
                         # Published lineage is immutable; avoid traversing it again for every batch.
-                        parent_ranks = _version_lineage_ranks(db, parent)
+                        parent_ranks = version_lineage_ranks(db, parent)
         metadata: dict[str, Any] = {}
         ordinal = 0
         if existing is None:
@@ -1026,7 +1026,7 @@ class SnapshotIngestor:
                         staged_parent = db.get(FileVersionRow, stage.parent_version_id)
                         if staged_parent is None or staged_parent.session_id != session_id:
                             raise RuntimeError(f"invalid staged parent for {version_id}")
-                        ranks = _version_lineage_ranks(db, staged_parent)
+                        ranks = version_lineage_ranks(db, staged_parent)
                         db.execute(
                             insert(FileVersionRecordRow).from_select(
                                 ["file_version_id", "ordinal", "byte_offset", "payload_id"],
@@ -1255,7 +1255,7 @@ class SnapshotIngestor:
             )
             for session_row, version_row in rows.yield_per(8):
                 title: ClaudeTitle | None = None
-                ranks = _version_lineage_ranks(db, version_row)
+                ranks = version_lineage_ranks(db, version_row)
                 for start in range(0, version_row.record_count, 500):
                     batch_ids = effective_payload_ids(
                         db, version_row, ranks, start, min(start + 500, version_row.record_count)
@@ -1508,8 +1508,3 @@ def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> 
     if len(candidates) > 1:
         metadata[f"{key}_conflict"] = True
     metadata.setdefault(key, value)
-
-
-def _version_lineage_ranks(db: DbSession, version: FileVersionRow) -> dict[UUID, int]:
-    # Preserve the importer's existing limit, one edge more than the read API's.
-    return {row.id: rank for rank, row in enumerate(version_lineage(db, version, max_delta_depth=CHECKPOINT_INTERVAL))}
