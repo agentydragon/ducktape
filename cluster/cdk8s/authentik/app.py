@@ -1,5 +1,5 @@
 """Authentik itself, rendered into `cluster/k8s/authentik/app`: the Helm release, its host
-ConfigMap, the public HTTPRoute, the server's ingress policy and its PodMonitor.
+ConfigMap, the public HTTPRoute, the server's ingress policy and both PodMonitors.
 
 Also its `kustomization.yaml`, listing this file beside the hand-written SOPS Secrets and
 rendering every hand-written `blueprints/*.yaml` into the `sso-blueprints` ConfigMap.
@@ -51,6 +51,7 @@ _SOPS_SECRETS = (
     "auragon-google-email",
 )
 _SERVER_LABELS = {"app.kubernetes.io/component": "server", "app.kubernetes.io/name": NAME}
+_WORKER_LABELS = {"app.kubernetes.io/component": "worker", "app.kubernetes.io/name": NAME}
 # Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 _HTTP, _HTTPS, _METRICS = 9000, 9443, 9300
 # The chart's server Service, which also serves the embedded proxy outpost.
@@ -294,6 +295,15 @@ def _pod_monitor(chart: Chart) -> None:
         spec=PodMonitorSpec(
             selector=PodMonitorSpecSelector(match_labels=_SERVER_LABELS),
             # TODO: Consider adding bearer token auth if Authentik metrics require authentication.
+            pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
+        ),
+    )
+    PodMonitor(
+        chart,
+        "worker-podmonitor",
+        metadata=ApiObjectMetadata(name="worker", namespace=NAMESPACE),
+        spec=PodMonitorSpec(
+            selector=PodMonitorSpecSelector(match_labels=_WORKER_LABELS),
             pod_metrics_endpoints=[Endpoint.plain(port="metrics")],
         ),
     )
