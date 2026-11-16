@@ -26,18 +26,13 @@ Bazel publishes files such as command.profile.gz as build tool logs, not as
 test artifacts. Patterns containing '*' use glob matching; otherwise substring
 match against "invocation-id/name".`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
 			}
 			return printToolLogs(logs)
-		},
+		}),
 	}
 	cmd.AddCommand(toolLogListCmd())
 	cmd.AddCommand(toolLogCatCmd())
@@ -51,18 +46,13 @@ func toolLogListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List build tool logs for an invocation",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
 			}
 			return printToolLogs(logs)
-		},
+		}),
 	}
 }
 
@@ -71,12 +61,7 @@ func toolLogCatCmd() *cobra.Command {
 		Use:   "cat <invocation-id> <name-pattern>",
 		Short: "Stream a build tool log to stdout",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -91,7 +76,7 @@ func toolLogCatCmd() *cobra.Command {
 			}
 			_, err = os.Stdout.Write(data)
 			return err
-		},
+		}),
 	}
 }
 
@@ -109,12 +94,7 @@ the invocation ID to avoid collisions.
   bbapi tool-log download <id> command.profile.gz
   bbapi tool-log download <runner-id> command.profile.gz --all -o profiles`,
 		Args: cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			logs, err := listToolLogsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -143,7 +123,7 @@ the invocation ID to avoid collisions.
 				output = filepath.Base(match.GetFile().GetName())
 			}
 			return saveToolLog(c, match, output)
-		},
+		}),
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory for --all, or file path for single download")
 	cmd.Flags().BoolVar(&all, "all", false, "download all matching logs (default: first match only)")

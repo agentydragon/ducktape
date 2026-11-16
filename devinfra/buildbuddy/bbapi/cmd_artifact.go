@@ -137,12 +137,7 @@ Prefer the explicit subcommands:
   bbapi artifact cat  <id> <substr>     stream to stdout
   bbapi artifact download <id> <substr> save to file`,
 		Args: cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -151,7 +146,7 @@ Prefer the explicit subcommands:
 				return printArtifacts(artifacts)
 			}
 			return catArtifact(c, artifacts, args[1])
-		},
+		}),
 	}
 	cmd.PersistentFlags().StringVar(&artifactKind, "kind", "",
 		fmt.Sprintf("only %q or %q artifacts (default: both)", kindTest, kindBuild))
@@ -168,18 +163,13 @@ func artifactListCmd() *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List artifacts for an invocation",
 		Args:    cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
 			}
 			return printArtifacts(artifacts)
-		},
+		}),
 	}
 }
 
@@ -188,18 +178,13 @@ func artifactCatCmd() *cobra.Command {
 		Use:   "cat <invocation-id> <name-substr>",
 		Short: "Stream artifact content to stdout",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
 			}
 			return catArtifact(c, artifacts, args[1])
-		},
+		}),
 	}
 }
 
@@ -219,12 +204,7 @@ Patterns containing '*' use glob matching; otherwise substring match against
   bbapi artifact download <id> --all           # all undeclared test outputs
   bbapi artifact download <id> '*.ambr' --all  # all glob matches`,
 		Args: cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -246,7 +226,7 @@ Patterns containing '*' use glob matching; otherwise substring match against
 				return downloadAllArtifacts(c, matches, output)
 			}
 			return downloadArtifactToFile(c, artifacts, args[1], output)
-		},
+		}),
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory for --all, or file path for single download")
 	cmd.Flags().BoolVar(&all, "all", false, "download all matching artifacts (default: first match only)")

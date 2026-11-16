@@ -89,27 +89,17 @@ func downloadBlobs(c *client, items []blobDownload) error {
 func blobCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "blob", Short: "Read blobs by their advertised URI without re-reading invocation events"}
 	var invocationID string
-	cat := &cobra.Command{Use: "cat <uri>", Short: "Write a blob to stdout", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	cat := &cobra.Command{Use: "cat <uri>", Short: "Write a blob to stdout", Args: cobra.ExactArgs(1), RunE: withClient(func(c *client, args []string) error {
 		body, err := c.fetchURL(c.bytestreamDownloadURL(invocationID, args[0]))
 		if err != nil {
 			return err
 		}
 		_, err = os.Stdout.Write(body)
 		return err
-	}}
+	})}
 	cat.Flags().StringVar(&invocationID, "invocation", "", "Invocation ID for legacy artifact fallback")
 	var manifest string
-	download := &cobra.Command{Use: "download --manifest <file>", Short: "Download a JSON array of {uri, destination, invocation_id} entries concurrently", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	download := &cobra.Command{Use: "download --manifest <file>", Short: "Download a JSON array of {uri, destination, invocation_id} entries concurrently", Args: cobra.NoArgs, RunE: withClient(func(c *client, _ []string) error {
 		raw, err := os.ReadFile(manifest)
 		if err != nil {
 			return err
@@ -119,7 +109,7 @@ func blobCmd() *cobra.Command {
 			return err
 		}
 		return downloadBlobs(c, items)
-	}}
+	})}
 	download.Flags().StringVar(&manifest, "manifest", "", "JSON download manifest")
 	_ = download.MarkFlagRequired("manifest")
 	cmd.AddCommand(cat, download)

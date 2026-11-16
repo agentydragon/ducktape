@@ -15,6 +15,7 @@ import (
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	"github.com/spf13/cobra"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -46,6 +47,17 @@ func newClient() (*client, error) {
 		return nil, err
 	}
 	return &client{baseURL: base, apiKey: key, http: &http.Client{Timeout: requestTimeout}, retries: 3, conn: conn, rpc: bbspb.NewBuildBuddyServiceClient(conn)}, nil
+}
+
+func withClient(run func(*client, []string) error) func(*cobra.Command, []string) error {
+	return func(_ *cobra.Command, args []string) error {
+		c, err := newClient()
+		if err != nil {
+			return err
+		}
+		defer c.close()
+		return run(c, args)
+	}
 }
 
 func (c *client) close() {

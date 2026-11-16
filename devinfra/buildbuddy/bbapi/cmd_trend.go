@@ -17,12 +17,8 @@ func trendCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "trend",
 		Short: "Show build performance trends over time",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
+			var err error
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -69,7 +65,7 @@ func trendCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().IntVar(&days, "days", 7, "Number of days to look back")

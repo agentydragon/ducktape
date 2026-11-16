@@ -27,12 +27,7 @@ func invocationCmd() *cobra.Command {
 		Use:   "invocation <invocation-id>",
 		Short: "Show invocation details (default), or use subcommands",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			req := &invocationpb.GetInvocationRequest{
 				Lookup: &invocationpb.InvocationLookup{
 					InvocationId: args[0],
@@ -89,7 +84,7 @@ func invocationCmd() *cobra.Command {
 				}
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.AddCommand(invocationListCmd())
 	cmd.AddCommand(invocationStatSubCmd())
@@ -341,12 +336,8 @@ func invocationStatSubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stat",
 		Short: "Show aggregated invocation statistics",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
+			var err error
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -400,7 +391,7 @@ func invocationStatSubCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().StringVar(&aggType, "agg-type", "branch", "Aggregation type: user, host, repo, commit, date (broken), branch, pattern")

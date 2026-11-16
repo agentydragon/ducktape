@@ -13,12 +13,7 @@ func askCmd() *cobra.Command {
 		Use:   "ask <invocation-id>",
 		Short: "Get AI analysis of a build/test failure",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			req := &suggestionpb.GetSuggestionRequest{
 				Type:         suggestionpb.SuggestionType_FIX_ERROR,
 				InvocationId: args[0],
@@ -39,7 +34,7 @@ func askCmd() *cobra.Command {
 				fmt.Println("No suggestions returned")
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&prompt, "prompt", "", "Custom prompt for the AI analysis")
 	return cmd

@@ -16,12 +16,7 @@ func executionCmd() *cobra.Command {
 		Use:   "execution <invocation-id>",
 		Short: "List executions for an invocation (default), or use subcommands",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			req := &executionpb.GetExecutionRequest{
 				ExecutionLookup: &executionpb.ExecutionLookup{
 					InvocationId: args[0],
@@ -45,7 +40,7 @@ func executionCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.AddCommand(executionSearchCmd())
 	cmd.AddCommand(executionFilesCmd())
@@ -59,12 +54,8 @@ func executionSearchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "search",
 		Short: "Search remote executions across invocations",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
+			var err error
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -97,7 +88,7 @@ func executionSearchCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 20, "Number of results to return")
@@ -114,12 +105,7 @@ func executionFilesCmd() *cobra.Command {
 			"than the 100-page safety limit. The execution ID is the one shown by " +
 			"`bbapi execution <invocation-id>`.",
 		Args: cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			out := &cachepb.GetExecutionDownloadsResponse{}
 			var pageToken string
 			for i := 0; i < 100; i++ { // bound pagination as a safety cap
@@ -159,7 +145,7 @@ func executionFilesCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().Int32Var(&pageSize, "page-size", 0, "Results per page (0 = server default)")
 	return cmd
