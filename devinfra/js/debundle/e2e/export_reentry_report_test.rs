@@ -49,6 +49,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(builtin_policy(&[
             NodeBuiltinModule::Path,
             NodeBuiltinModule::FsPromises,
@@ -108,6 +109,7 @@ fn declared_bun_modules_and_node_builtins_are_static_leaves() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(HostBehavior {
             reentry_free_bun_modules: [BunModule::Ws, BunModule::Undici].into_iter().collect(),
             ..builtin_policy(&[NodeBuiltinModule::Querystring, NodeBuiltinModule::Assert])
@@ -145,6 +147,7 @@ fn unselected_bare_and_replacement_packages_remain_unresolved() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
@@ -171,6 +174,7 @@ fn attributed_builtin_request_remains_unsupported() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
@@ -197,6 +201,7 @@ fn builtin_leaf_set_is_closed_and_unused_assertion_is_not_evidence() {
     let fixture = run_fixture(
         FixtureOpts::new("export const value = 1;", vec![])
             .with_chunk_id(CHUNK_ID)
+            .with_chunk_import_order(CHUNK_ID, &["residual"])
             .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
@@ -215,6 +220,7 @@ fn builtin_leaf_does_not_remove_application_require_or_static_cycle_blockers() {
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_extra_chunks(&extra_chunks)
         .with_admission_overrides(&["a5_import_meta"])
         .with_host_behavior(builtin_policy(&[NodeBuiltinModule::Path])),
@@ -245,7 +251,8 @@ fn supported_case_reports_no_static_importer_reentry() {
             "export const value = 1;\n",
             vec![logical_module("values", &[Member::new("value")])],
         )
-        .with_chunk_id(CHUNK_ID),
+        .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["values"]),
     );
     let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
 
@@ -275,6 +282,7 @@ fn static_import_of_empty_source_does_not_block_export_reentry_proof() {
                 vec![logical_module("values", &[Member::new("value")])],
             )
             .with_chunk_id(CHUNK_ID)
+            .with_chunk_import_order(CHUNK_ID, &["values"])
             .with_extra_chunks(&extra_chunks),
         );
         let report: Value = read_json(&report_path(&fixture.report_root, CHUNK_ID));
@@ -322,6 +330,7 @@ export const value = 1;
             vec![],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["residual"])
         .with_extra_chunks(&extra_chunks)
         .with_extra_files(&extra_files)
         .with_vendor_marks(&vendor_marks),
@@ -378,6 +387,7 @@ fn incomplete_artifact_is_reported_for_selected_chunk() {
             vec![logical_module("values", &[Member::new("value")])],
         )
         .with_chunk_id(CHUNK_ID)
+        .with_chunk_import_order(CHUNK_ID, &["values"])
         .with_extra_chunks(&extra_chunks)
         .with_prune_other_chunks(),
     );
@@ -394,19 +404,22 @@ fn incomplete_artifact_is_reported_for_selected_chunk() {
 
 #[test]
 fn dry_run_rejection_keeps_report_and_accept_path_stays_silent() {
-    let rejected = run_dry_run_rejection_fixture_with_graphs(FixtureOpts::new(
-        r#"function wrap(x) { return { ref: x }; }
+    let rejected = run_dry_run_rejection_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"function wrap(x) { return { ref: x }; }
 const a = "a";
 const b = wrap(a);
 const c = "c";
 const d = wrap(c);
 export { a, b, c, d };
 "#,
-        vec![
-            logical_module("mod_x", &[Member::new("a"), Member::new("d")]),
-            logical_module("mod_y", &[Member::new("b"), Member::new("c")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_x", &[Member::new("a"), Member::new("d")]),
+                logical_module("mod_y", &[Member::new("b"), Member::new("c")]),
+            ],
+        )
+        .with_import_order(&["mod_x", "mod_y", "residual"]),
+    );
     assert!(!rejected.cycles().is_empty());
     let rejection_report: Value = read_json(&report_path(&rejected.report_root, "static/app"));
     assert_eq!(rejection_report["policy"], "no_static_importer_reentry");
@@ -445,6 +458,7 @@ fn bounded_loader_evidence_keeps_complete_explicit_export() {
     let opts = || {
         FixtureOpts::new(&source, vec![])
             .with_chunk_id(CHUNK_ID)
+            .with_chunk_import_order(CHUNK_ID, &["residual"])
             .with_extra_chunks(&chunks)
             .with_host_behavior(HostBehavior {
                 loader_result_for_evaluating_module: Some(LoaderResultForEvaluatingModule::Throws),

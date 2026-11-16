@@ -15,13 +15,16 @@ fn construction_source(class: &str, construction: &str, print: &str) -> String {
 }
 
 fn construction_fixture(source: &str) -> Fixture {
-    run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "registry",
-            &[Member::new("Registry"), Member::new("registry")],
-        )],
-    ))
+    run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "registry",
+                &[Member::new("Registry"), Member::new("registry")],
+            )],
+        )
+        .with_import_order(&["registry", "residual"]),
+    )
 }
 
 fn assert_construction_proved(fixture: &Fixture, case: &str) {
@@ -189,17 +192,20 @@ fn a_class_used_outside_construction_keeps_its_refusal() {
 #[test]
 fn a_factory_construction_is_pending_callable_construct_admission() {
     let source = "class Registry { limit = 0; }\nfunction create() { return new Registry(); }\nconst independent = 7;\nvar registry = create();\nconsole.log(independent, registry.limit);\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "registry",
-            &[
-                Member::new("Registry"),
-                Member::new("create"),
-                Member::new("registry"),
-            ],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "registry",
+                &[
+                    Member::new("Registry"),
+                    Member::new("create"),
+                    Member::new("registry"),
+                ],
+            )],
+        )
+        .with_import_order(&["registry", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "7 0\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "factory construction");
 }

@@ -68,7 +68,8 @@ fn assert_refused(
         .find(|node| node["declared_bindings"][0]["binding"] == member)
         .expect("native source unit");
     assert_eq!(node["synchronous_execution"]["complete"], false, "{node}");
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+    let fixture =
+        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, stdout);
 }
 

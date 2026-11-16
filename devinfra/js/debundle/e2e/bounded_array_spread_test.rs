@@ -69,7 +69,8 @@ fn source_spread_overflow_stays_runtime_correct() {
     let source = format!(
         "const expanded = [...[{items}]];\nconsole.log(expanded.length, expanded[4096]);\n"
     );
-    let fixture = run_fixture(FixtureOpts::new(&source, Vec::new()));
+    let fixture =
+        run_fixture(FixtureOpts::new(&source, Vec::new()).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "4097 4096\n");
 }
 
@@ -83,7 +84,8 @@ fn combined_target_overflow_with_small_spreads_stays_runtime_correct() {
         "const seed = [7];\nconst expanded = [{operands}];\n\
          console.log(expanded.length, expanded[4096]);\n"
     );
-    let fixture = run_fixture(FixtureOpts::new(&source, Vec::new()));
+    let fixture =
+        run_fixture(FixtureOpts::new(&source, Vec::new()).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "4097 7\n");
 }
 
