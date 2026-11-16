@@ -322,6 +322,10 @@ pub fn materialize_logical_modules(
     let selected_chunk_ids = normalized_chunk_ids(&options.chunk_ids)?;
     if let Some(subset) = &options.ownership_subset {
         subset.validate(logical_modules, &selected_chunk_ids)?;
+        ensure!(
+            subset.placements.is_empty(),
+            "ownership subset placements are not yet supported by materialization"
+        );
         diagnostics.record_invocation(analysis::diagnostics::InvocationDiagnostic::OwnershipSubset);
     }
     let seen: BTreeSet<&str> = selected_chunk_ids.iter().map(String::as_str).collect();
