@@ -607,7 +607,8 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 	if err != nil || lease == nil {
 		t.Fatalf("claim: %+v %v", lease, err)
 	}
-	if row, err := store.SettleSession(t.Context(), failedID, *lease, []string{SessionWaitingState}, SessionFailedState, "runner_rejected"); err != nil || row == nil {
+	deliveryOwner := claimSessionOwner(t, store, *lease, failedID)
+	if row, err := store.SettleSession(t.Context(), failedID, deliveryOwner, []string{SessionWaitingState}, SessionFailedState, "runner_rejected"); err != nil || row == nil {
 		t.Fatalf("reject opening: %+v %v", row, err)
 	}
 	inventory := &authorityInventory{sandboxErr: errors.New("sandbox inventory unavailable")}

@@ -310,3 +310,23 @@ logical Session, not that a harness is ready, a turn completed or History projec
 **Gotcha:** the current migration baselines assume Dispatcher migration 11, central sampler
 migration 10 and History migration 8 have run; a database restored from before them must run an
 image that still carries those migrations first.
+
+## Session delivery lease
+
+A head step holds one PostgreSQL lease keyed by Session ID, beginning before wake or Session
+materialization and ending after settlement or a durably recorded deferral. Its expiry uses
+`clock_timestamp()`; each acquisition names a fresh holder UUID. Each worker mutation fences the
+live holder in the mutation transaction. Renewal cannot revive an expired or superseded holder.
+No transaction stays open across an external RPC. Loss cancels local step work; an RPC already
+in flight can still arrive, so Runtime command-ID deduplication remains required.
+
+A new holder requeues only its Session's in-flight materialization and commands. It preserves the
+committed `delivery_attempted` fact and command IDs. Pending-work scans include in-flight work
+with no runnable queued head. The head rule continues to serialize commands within a Session.
+Acquiring a lease requires only the Session ID, including when no Environment exists; this does
+not change current Session admission or Environment attachment contracts.
+
+During the compatibility release, worker writes also require the Sandbox Kubernetes Lease's
+committed generation fence. Deletion and terminal notices still lock `sandbox_ownership` before
+worker lease/delivery rows, preserving serialization with `MarkDeliveryAttempt`. The
+[rollout gates and rollback](README.md#delivery-lease-rollout) constrain removing that fence.

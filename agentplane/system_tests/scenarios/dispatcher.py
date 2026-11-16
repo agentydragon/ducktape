@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+import re
+import signal
 import sqlite3
 import sys
 import tarfile
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, closing
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import grpc
@@ -19,7 +22,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.environments.v1 import environment_service_pb2 as environments_pb, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
-from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, identity_pb2, session_pb2
+from agentplane.proto import environment_lifecycle_pb2 as lifecycle_pb, event_log_pb2, identity_pb2, session_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from agentplane.session_dispatcher.dispatcher.api.session import (
     session_dispatcher_pb2 as pb,
@@ -134,9 +137,214 @@ def _normalize_delivery_state(dispatch: pb.Dispatch) -> None:
         dispatch.state = pb.DELIVERY_STATE_UNKNOWN
 
 
+async def _dispatcher_sql(cluster: Cluster, statement: str) -> str:
+    return await cluster.kubectl(
+        "exec",
+        "deployment/postgres",
+        "--",
+        "psql",
+        "--host=/tmp",
+        "--username=fixture_admin",
+        "--dbname=session_dispatcher",
+        "--no-psqlrc",
+        "--tuples-only",
+        "--no-align",
+        "--set=ON_ERROR_STOP=1",
+        "--command",
+        statement,
+    )
+
+
+@asynccontextmanager
+async def _held_delivery_settlement(cluster: Cluster, command: str) -> AsyncIterator[None]:
+    # The test gates the real post-admission settlement; no serving-image fault switch is needed.
+    command = str(UUID(command))
+    process = await asyncio.create_subprocess_exec(
+        *cluster.command(
+            "exec",
+            "--stdin",
+            "deployment/postgres",
+            "--",
+            "psql",
+            "--host=/tmp",
+            "--username=fixture_admin",
+            "--dbname=session_dispatcher",
+            "--no-psqlrc",
+            "--tuples-only",
+            "--no-align",
+            "--set=ON_ERROR_STOP=1",
+        ),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    setup = f"""
+CREATE FUNCTION test_hold_delivery_settlement() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.command_id=TG_ARGV[0] AND NEW.state='RUNNER_ADMITTED' THEN
+        PERFORM pg_advisory_xact_lock(16422, 1);
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER test_hold_delivery_settlement BEFORE UPDATE ON dispatch
+FOR EACH ROW EXECUTE FUNCTION test_hold_delivery_settlement('{command}');
+SELECT pg_advisory_lock(16422, 1);
+SELECT 'test-settlement-held';
+"""
+    try:
+        process.stdin.write(setup.encode())
+        await process.stdin.drain()
+        async with asyncio.timeout(30):
+            while True:
+                line = await process.stdout.readline()
+                assert line, "test settlement gate exited before acquiring its lock"
+                if line.strip() == b"test-settlement-held":
+                    break
+        yield
+    finally:
+        if process.returncode is None:
+            process.stdin.write(
+                b"SELECT pg_advisory_unlock(16422, 1);\nDROP TRIGGER IF EXISTS test_hold_delivery_settlement ON dispatch;\nDROP FUNCTION IF EXISTS test_hold_delivery_settlement();\n"
+            )
+            await process.stdin.drain()
+            try:
+                _, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
+            except BaseException:
+                if process.returncode is None:
+                    process.kill()
+                await process.wait()
+                raise
+            assert process.returncode == 0, stderr.decode()
+
+
+async def _wait_for_blocked_settlement(cluster: Cluster, command: str) -> dict[str, object]:
+    command = str(UUID(command))
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(BOUND_SECONDS),
+        wait=wait_fixed(0.1),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            result = await _dispatcher_sql(
+                cluster,
+                f"""
+SELECT json_build_object('state', d.state, 'attempted', d.delivery_attempted,
+    'session_holder', l.holder,
+    'settlement_blocked', EXISTS (SELECT 1 FROM pg_locks
+        WHERE locktype='advisory' AND classid=16422 AND objid=1 AND NOT granted))
+FROM dispatch d JOIN session_delivery_lease l USING (session_id)
+WHERE d.command_id='{command}'
+""",
+            )
+            assert result.strip(), "Session step has not acquired its lease yet"
+            row: dict[str, object] = json.loads(result)
+            assert row["state"] == "DELIVERING_TO_RUNNER"
+            assert row["attempted"] is True
+            assert row["settlement_blocked"] is True
+            return row
+    raise AssertionError("settlement never blocked")
+
+
+@asynccontextmanager
+async def _crashed_dispatcher_process(
+    cluster: Cluster, pod: dict[str, Any], crictl_command: tuple[str, ...]
+) -> AsyncIterator[None]:
+    (container,) = [status for status in pod["status"]["containerStatuses"] if status["name"] == WORKLOAD]
+    container_id = container["containerID"].removeprefix("containerd://")
+    crictl_config = undeclared_outputs_dir() / "dispatcher-crash-crictl.yaml"
+    crictl_config.write_text("runtime-endpoint: unix:///run/k3s/containerd/containerd.sock\ntimeout: 15\n")
+    inspect = await asyncio.create_subprocess_exec(
+        *crictl_command,
+        "--config",
+        str(crictl_config),
+        "inspect",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(inspect.communicate(), timeout=15)
+    assert inspect.returncode == 0, stderr.decode()
+    inspected = json.loads(stdout)
+    assert inspected["status"]["id"] == container_id
+    pid = inspected["info"]["pid"]
+    assert isinstance(pid, int)
+    assert pid > 1
+    executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
+    assert executable.name == WORKLOAD, executable
+
+    async def send_signal(name: str) -> None:
+        command = await asyncio.create_subprocess_exec(
+            crictl_command[0],
+            "ctr",
+            "--address",
+            "/run/k3s/containerd/containerd.sock",
+            "-n",
+            "k8s.io",
+            "tasks",
+            "kill",
+            "--signal",
+            name,
+            container_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(command.communicate(), timeout=15)
+        assert command.returncode == 0, stderr.decode()
+
+    # Keep the proc file open so PID reuse cannot change which task is observed.
+    with await asyncio.to_thread(Path(f"/proc/{pid}/status").open) as process_status:
+
+        def read_status() -> str:
+            process_status.seek(0)
+            return process_status.read()
+
+        try:
+            await send_signal("SIGSTOP")
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(5),
+                wait=wait_fixed(0.01),
+                retry=retry_if_exception_type(AssertionError),
+                reraise=True,
+            ):
+                with attempt:
+                    assert re.search(r"^State:\s+T ", await asyncio.to_thread(read_status), re.MULTILINE)
+            yield
+            # Kubelet must observe deletion before SIGKILL, so it does not restart this container.
+            async with asyncio.timeout(15):
+                while True:
+                    status = await asyncio.to_thread(read_status)
+                    assert re.search(r"^State:\s+T ", status, re.MULTILINE), status
+                    pending = re.findall(r"^(?:SigPnd|ShdPnd):\s+([0-9a-f]+)", status, re.MULTILINE)
+                    if any(int(mask, 16) & (1 << (signal.SIGTERM - 1)) for mask in pending):
+                        break
+                    await asyncio.sleep(0.01)
+            (undeclared_outputs_dir() / "dispatcher-mid-delivery-crash.json").write_text(
+                json.dumps(
+                    {
+                        "pod_uid": pod["metadata"]["uid"],
+                        "container_id": container_id,
+                        "pid": pid,
+                        "pending_sigterm_status": status,
+                    },
+                    indent=2,
+                )
+                + "\n"
+            )
+        finally:
+            await send_signal("SIGKILL")
+
+
 @asynccontextmanager
 async def _replace_owner_with_peer(
-    cluster: Cluster, sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
+    cluster: Cluster,
+    sandbox_uid: str,
+    deployment_uid: str,
+    evidence: dict[str, object],
+    *,
+    crictl_command: tuple[str, ...] | None = None,
 ) -> AsyncIterator[str]:
     with tracer.start_as_current_span("system_test.dispatcher.peer_lifetime"):
         pods = json.loads(
@@ -172,7 +380,16 @@ async def _replace_owner_with_peer(
                 await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
             )
             (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
-            await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
+            if crictl_command is None:
+                await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
+            else:
+                async with _crashed_dispatcher_process(cluster, original, crictl_command), cluster.api_client() as api:
+                    await k8s.CoreV1Api(api).delete_namespaced_pod(
+                        original["metadata"]["name"],
+                        cluster.namespace,
+                        body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original["metadata"]["uid"])),
+                    )
+                await cluster.kubectl("wait", f"pod/{original['metadata']['name']}", "--for=delete", "--timeout=120s")
             async with cluster.api_client() as api, k8s_watch.Watch() as watch:
                 coordination = k8s.CoordinationV1Api(api)
                 current = await coordination.read_namespaced_lease(lease_name, cluster.namespace)
@@ -212,7 +429,7 @@ async def _replace_owner_with_peer(
 
 
 async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
-    crictl_command: tuple[str, ...], cluster: Cluster, replica_failover: bool
+    crictl_command: tuple[str, ...], cluster: Cluster, replica_failover: bool, *, crash_mid_delivery: bool = False
 ) -> None:
     deployment = json.loads(await cluster.kubectl("get", "deployment", WORKLOAD, "-o", "json"))
     assert deployment["status"].get("readyReplicas") == 1, "the Dispatcher is not Ready"
@@ -372,6 +589,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             assert retained.dispatch.created_at == queued.dispatch.created_at
             assert retained.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
 
+        settlement_gate = AsyncExitStack()
+        await stack.enter_async_context(settlement_gate)
+        if crash_mid_delivery:
+            await settlement_gate.enter_async_context(_held_delivery_settlement(cluster, command))
         await cluster.kubectl(
             "patch",
             "sandbox.agentplane.allegedly.works",
@@ -380,6 +601,24 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             "-p",
             json.dumps({"metadata": {"uid": uid}, "spec": {"running": True, "wakeGeneration": 1}}),
         )
+        if crash_mid_delivery:
+            evidence["blocked_settlement"] = await _wait_for_blocked_settlement(cluster, command)
+            peer = await stack.enter_async_context(
+                _replace_owner_with_peer(
+                    cluster, uid, deployment["metadata"]["uid"], evidence, crictl_command=crictl_command
+                )
+            )
+            await settlement_gate.aclose()
+            peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
+            peer_channel = await stack.enter_async_context(
+                dial(
+                    peer_target,
+                    channel_credentials=server_credentials,
+                    server_name=f"session-dispatcher.{cluster.namespace}.svc.cluster.local",
+                )
+            )
+            stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
+
         try:
             admitted = await _dispatch_until(
                 stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
@@ -405,6 +644,53 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
             pb.GetSessionRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
         assert session_status.session.status.materialization == pb.SessionStatus.SESSION_MATERIALIZATION_ACCEPTED
+        if crash_mid_delivery:
+            # Runtime dedupe returns the original admission after the pre-crash reply was lost.
+            receipt = json.loads(
+                await _dispatcher_sql(
+                    cluster,
+                    f"""
+SELECT json_build_object('attempted',delivery_attempted,'created_at',created_at,
+    'reason',reason) FROM dispatch WHERE command_id='{UUID(command)!s}'
+""",
+                )
+            )
+            assert receipt["attempted"] is True
+            next_command = str(uuid4())
+            await stub.ChangeReasoningEffort(
+                pb.ChangeReasoningEffortRequest(session_id=session, command_id=next_command, effort="low"),
+                metadata=authentication.metadata,
+                timeout=15,
+            )
+            next_admitted = await _dispatch_until(
+                stub,
+                authentication,
+                session,
+                lambda row: row.command_id == next_command and row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
+            )
+            assert next_admitted.admission.cursor > admitted.admission.cursor
+            # The real Runtime journal retains one reservation and one admission for the replayed ID.
+            archive_dir = undeclared_outputs_dir() / "dispatcher-crash-journal"
+            archive_dir.mkdir()
+            sources = await container_mount_sources(crictl_command, cluster, sandbox, archive_dir)
+            archive = await archive_runner_data(
+                crictl_command, cluster, sandbox, [session], archive_dir, mount_sources=sources
+            )
+            with closing(sqlite3.connect(f"file:{archive['backups'][session]['path']}?mode=ro", uri=True)) as journal:
+                admissions = [
+                    event_log_pb2.EventEntry.FromString(payload)
+                    for (payload,) in journal.execute("SELECT payload FROM event_entry")
+                ]
+            command_admissions = [
+                entry
+                for entry in admissions
+                if entry.event.HasField("command_admitted")
+                and entry.event.command_admitted.command.command_id == command
+            ]
+            assert len(command_admissions) == 1
+            assert command_admissions[0] == admitted.admission
+            evidence["next_command"] = next_command
+            evidence["replayed_admission_cursor"] = admitted.admission.cursor
         if replica_failover:
             await cluster.kubectl(
                 "patch",

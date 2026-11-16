@@ -6,7 +6,8 @@ Session Dispatcher gRPC contract; the stable Dispatcher Service maps port `8080`
 shared TLS listener. The credential-holding Sandbox relay reaches that same listener through
 central-proxy CONNECT and presents its Runner SVID. Dispatcher methods retain their caller rules,
 exact service grants and typed delegation policy. EnvironmentService has its own listener. The worker
-delivers through the Runner proxy once the exact Sandbox is ready, with a per-Sandbox delivery Lease and PostgreSQL generation fencing.
+delivers through the Runner proxy once the exact Sandbox is ready, with a per-Session PostgreSQL delivery lease. During the compatibility rollout, it also retains
+the per-Sandbox Kubernetes Lease and generation fence.
 
 The manual queue, replica and wake probes are documented in the
 [system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
@@ -104,13 +105,15 @@ The manual queue, replica and wake probes are documented in the
   This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
   [the deletion contract](SPEC.md#deletion-admission-fence).
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
-- **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership while the Sandbox
-  has a `QUEUED_IN_DISPATCHER` or `DELIVERING_TO_RUNNER` Dispatch or Session creation. Its PostgreSQL
-  generation fences stale claims, settlements and recovery. A Sandbox without such work is no longer
-  renewed and its Lease lapses; the next work reacquires it. Gateway replicas independently observe
-  the Controller-bound Runtime and can serve calls through the stable `runner-gateway` Service;
-  Gateway routing does not use or publish a connection Lease. A new Dispatcher owner requeues
-  only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
+- **Delivery leases**: each head step acquires its Session's PostgreSQL lease before wake or
+  materialization, renews it while the step runs, and releases it after settlement or a persisted
+  deferral. The database clock decides expiry; each acquisition has a fresh holder UUID. Every
+  worker write locks and checks that live token. A successor requeues only that Session's
+  in-flight work and preserves `delivery_attempted` and command IDs. The lease key needs no
+  Environment. Current Session creation still requires an Environment.
+  During the compatibility rollout, the worker additionally requires the Sandbox's Kubernetes
+  Lease and database generation. Environment deletion and terminal notices still serialize with
+  worker attempts and settlements under that generation row lock.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
@@ -138,8 +141,31 @@ The manual queue, replica and wake probes are documented in the
   while the execution environment is suspended.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
-Sandboxes) or a retry deadline. Every ten seconds each replica also renews its owned Leases and retries
-the Sandboxes with pending work that it does not own.
+Sandboxes) or a retry deadline. Every ten seconds each replica also renews its compatibility Kubernetes Leases and rescans
+pending Sessions, including stranded in-flight work. Active steps renew their Session lease every
+ten seconds; both kinds of lease last thirty seconds.
+
+## Delivery lease rollout
+
+This image is the expand/compatibility release. Its new Goose migration only adds
+`session_delivery_lease`; it retains `sandbox_ownership` and the Sessions Kubernetes Lease grant.
+Original replicas and this image share the Kubernetes fence. This image and a later Postgres-only
+image share the Session lease. No compatibility replica performs Sandbox-wide recovery.
+
+The coordinator must confirm that this image is pinned on staging and **every** Sessions replica
+runs it before the Postgres-only follow-up PR (PR 2) opens. Never overlap an original image with
+Postgres-only replicas. That follow-up must replace the terminal-notice/attempt-marker
+serialization in `terminal.go` before removing the generation lock.
+
+Rollback this release by restoring the previous image pin and leaving the additive table and Goose
+history intact. The migration integration test exercises the previous embedded migration set against
+the expanded schema; it does not run two image versions. The k3s tests run replicas of this image;
+version overlap is checked by the coordinator during staged pins.
+
+A later, separately approved PR may drop `sandbox_ownership` only after no pinned image reads it,
+the compatibility rollback window has closed, and the operator has agreed through the coordinator.
+Remove Sessions' Lease RBAC last, after the image making no Lease calls is pinned and running.
+Leftover staging `dispatcher-*` objects require an operator deletion request through the coordinator.
 
 ## Deviations and gaps
 

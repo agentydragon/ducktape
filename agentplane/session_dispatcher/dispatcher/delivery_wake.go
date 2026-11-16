@@ -49,7 +49,7 @@ func (barrier *wakeBarrier) other(id string, session bool) *environmentpb.WakeAs
 	return barrier.assessment
 }
 
-func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
 	session, err := w.Store.GetSession(ctx, row.SessionID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return false, err
@@ -65,7 +65,7 @@ func (w *DeliveryWorker) prepareDispatch(ctx context.Context, row *Dispatch, san
 	return w.prepareCommand(ctx, row, session, sandbox, owner, pendingWake(session, commands, sandbox.WakeGeneration))
 }
 
-func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, session *Session, sandbox SandboxSnapshot, owner Owner, barrier *wakeBarrier) (bool, error) {
+func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, session *Session, sandbox SandboxSnapshot, owner SessionOwner, barrier *wakeBarrier) (bool, error) {
 	work := queuedWork{
 		id: row.CommandID, key: row.SessionID, attribution: row.Attribution,
 		wakeFrom: row.WakeFromIncarnation, wakeRequestedAt: row.WakeRequestedAt, wakeAssessment: row.WakeAssessment,
@@ -77,7 +77,7 @@ func (w *DeliveryWorker) prepareCommand(ctx context.Context, row *Dispatch, sess
 	return w.prepare(ctx, work, sandbox, owner)
 }
 
-func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+func (w *DeliveryWorker) prepareSession(ctx context.Context, row *Session, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
 	work := queuedWork{
 		id: row.SessionID, key: row.SessionID, session: true,
 		attribution: row.Attribution,
@@ -156,7 +156,7 @@ func (w *DeliveryWorker) scheduleWakeRetry(key string, assessment *environmentpb
 	}
 }
 
-func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+func (w *DeliveryWorker) prepareCentral(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
 	assessment := assessmentFor(sandbox, work.wakeAssessment, environmentpb.WakeState_WAKE_STATE_NOT_NEEDED, 0, nil)
 	if err := w.recordAssessment(ctx, work, owner, nil, assessment); err != nil {
 		return false, err
@@ -179,14 +179,14 @@ func (work queuedWork) workID() string {
 	return work.id
 }
 
-func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner Owner, reason string) error {
+func (w *DeliveryWorker) noteWaiting(ctx context.Context, work queuedWork, owner SessionOwner, reason string) error {
 	if work.session {
 		return w.Store.NoteSessionWaiting(ctx, work.id, owner, reason)
 	}
 	return w.Store.NoteWaiting(ctx, work.id, owner, reason)
 }
 
-func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner Owner) (bool, error) {
+func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox SandboxSnapshot, owner SessionOwner) (bool, error) {
 	if sandbox.Deleting {
 		return false, w.noteWaiting(ctx, work, owner, "sandbox_deleted")
 	}
@@ -280,7 +280,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if w.Wake == nil {
 		return false, errors.New("lifecycle wake service is unavailable")
 	}
-	if stillOwns, err := w.Leases.StillOwns(ctx, owner); err != nil || !stillOwns {
+	if stillOwns, err := w.stillOwns(ctx, owner); err != nil || !stillOwns {
 		return false, err
 	}
 	uncertain := assessmentFor(sandbox, nil, environmentpb.WakeState_WAKE_STATE_OUTCOME_UNKNOWN,
@@ -289,7 +289,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 	if err != nil || !stillQueued {
 		return false, err
 	}
-	stillOwns, err := w.Leases.StillOwns(ctx, owner)
+	stillOwns, err := w.stillOwns(ctx, owner)
 	if err != nil || !stillOwns {
 		return false, err
 	}
@@ -381,7 +381,7 @@ func optionalIncarnation(incarnation string) *string {
 func (w *DeliveryWorker) waitForRequestedWake(
 	ctx context.Context,
 	work queuedWork,
-	owner Owner,
+	owner SessionOwner,
 	sandbox SandboxSnapshot,
 	blocker *environmentpb.DeliveryBlocker,
 ) (bool, error) {
@@ -472,7 +472,7 @@ func preserveObservationTime(previous, current *environmentpb.WakeAssessment) *e
 func (w *DeliveryWorker) recordAssessment(
 	ctx context.Context,
 	work queuedWork,
-	owner Owner,
+	owner SessionOwner,
 	blocker *environmentpb.DeliveryBlocker,
 	assessment *environmentpb.WakeAssessment,
 ) error {

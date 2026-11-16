@@ -184,6 +184,12 @@ and Notification submissions share a wake generation ([`dispatcher.py`](scenario
 Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
 runner mount inspection, archives and cleanup evidence capture live in
 [`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
+The mid-delivery crash case gates the real database settlement after Runtime admission, stops
+and kills the exact delivering process after kubelet observes Pod deletion, and lets a peer
+recover using natural lease expiry. It checks the retained attempt fact, one Runtime journal
+admission for the replayed command ID, and a subsequent admitted command. All replicas use the
+same image; this does not establish mixed-image overlap safety.
+
 The [Dispatcher guide](../session_dispatcher/dispatcher/README.md) owns the command delivery contract.
 
 ## Phase tracing

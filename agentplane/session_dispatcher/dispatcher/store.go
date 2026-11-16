@@ -464,6 +464,8 @@ type Session struct {
 	EnvironmentDeletedAt *time.Time
 }
 
+// CLEANUP(added 2026-11-16): Remove this Kubernetes Lease/generation proof in PR 2,
+// after the coordinator confirms the compatibility image runs on every staging Sessions replica.
 // Owner is a fresh Kubernetes Lease proof paired with the committed DB generation.
 // Every worker transition locks and compares this full token before changing work.
 type Owner struct {
@@ -1354,25 +1356,8 @@ func (s *Store) ListSessionsForCaller(ctx context.Context, after string, limit i
 	return result, rows.Err()
 }
 
-func (s *Store) SessionHeads(ctx context.Context) ([]*Session, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT "+sessionColumns+" FROM session WHERE state=$1 ORDER BY created_at", SessionWaitingState)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []*Session
-	for rows.Next() {
-		o, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, o)
-	}
-	return result, rows.Err()
-}
-
 // SessionHead reads the durable head after a queue key becomes runnable. The
-// in-process queue never decides ordering or whether an session is complete.
+// in-process queue never decides ordering or whether a Session is complete.
 func (s *Store) SessionHead(ctx context.Context, sessionID string) (*Session, *Dispatch, error) {
 	session, err := scanSession(s.DB.QueryRowContext(ctx,
 		"SELECT "+sessionColumns+" FROM session WHERE session_id=$1 AND state=$2", sessionID, SessionWaitingState))
@@ -1413,31 +1398,7 @@ func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandbo
 	return result, rows.Err()
 }
 
-func (s *Store) Heads(ctx context.Context) ([]*Dispatch, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT `+dispatchColumns+` FROM dispatch d WHERE d.state=$1
-		AND NOT EXISTS (SELECT 1 FROM dispatch earlier WHERE earlier.session_id=d.session_id
-			AND earlier.position<d.position AND earlier.state IN ($1,$2))
-		AND NOT EXISTS (SELECT 1 FROM session o WHERE o.session_id=d.session_id
-			AND o.state IN ($3,$4)) ORDER BY d.position`, QueueState, DeliveringState, SessionWaitingState, SessionInProgressState)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var result []*Dispatch
-	for rows.Next() {
-		d, err := scanDispatch(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, d)
-	}
-	return result, rows.Err()
-}
-
-// SandboxesWithPendingWork lists the Sandboxes owning a QUEUED or DELIVERING
-// dispatch or session, the only rows an owner changes. Unlike Heads, it counts
-// a DELIVERING row and the QUEUED rows blocked behind it, which a successor
-// must requeue after the previous owner dies.
+// SandboxesWithPendingWork includes in-flight work a successor must requeue.
 func (s *Store) SandboxesWithPendingWork(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch WHERE state = ANY($1)
 		UNION SELECT sandbox_uid::text FROM session WHERE state = ANY($2)`,
@@ -1457,6 +1418,26 @@ func (s *Store) SandboxesWithPendingWork(ctx context.Context) (map[string]struct
 	return result, rows.Err()
 }
 
+func (s *Store) SessionsWithPendingWork(ctx context.Context) ([]*Session, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session o
+		WHERE o.state = ANY($1) OR EXISTS (
+			SELECT 1 FROM dispatch d WHERE d.session_id=o.session_id AND d.state = ANY($2))`,
+		pq.Array([]string{SessionWaitingState, SessionInProgressState}), pq.Array([]string{QueueState, DeliveringState}))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*Session
+	for rows.Next() {
+		row, err := scanSession(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
+}
+
 func (s *Store) OwnershipGeneration(ctx context.Context, sandboxUID string) (int64, error) {
 	var generation int64
 	err := s.DB.QueryRowContext(ctx, "SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID).Scan(&generation)
@@ -1466,7 +1447,7 @@ func (s *Store) OwnershipGeneration(ctx context.Context, sandboxUID string) (int
 	return generation, err
 }
 
-func ownerMatch(ctx context.Context, tx *sql.Tx, owner Owner) (bool, error) {
+func sandboxOwnerMatch(ctx context.Context, tx *sql.Tx, owner Owner) (bool, error) {
 	var generation int64
 	var leaseUID, holder string
 	var transitions int
@@ -1553,7 +1534,7 @@ func (s *Store) ClaimSandboxOwner(ctx context.Context, sandboxUID, leaseUID stri
 
 // MarkDeliveryAttempt commits possible forwarding before issuing the external RPC.
 // Requeue, restart and lease handoff must never turn it back into known-unsent work.
-func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Owner) (bool, error) {
+func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner SessionOwner) (bool, error) {
 	marked := false
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
@@ -1561,7 +1542,7 @@ func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Owner)
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE dispatch SET delivery_attempted=true
-			WHERE command_id=$1 AND sandbox_uid=$2 AND state=$3`, id, owner.SandboxUID, DeliveringState)
+			WHERE command_id=$1 AND session_id=$2 AND state=$3`, id, owner.SessionID, DeliveringState)
 		if err != nil {
 			return err
 		}
@@ -1572,7 +1553,7 @@ func (s *Store) MarkDeliveryAttempt(ctx context.Context, id string, owner Owner)
 	return marked, err
 }
 
-func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []string, to, reason string, admission *eventlogpb.EventEntry) (*Dispatch, error) {
+func (s *Store) Settle(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string, admission *eventlogpb.EventEntry) (*Dispatch, error) {
 	var result *Dispatch
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
@@ -1589,8 +1570,8 @@ func (s *Store) Settle(ctx context.Context, id string, owner Owner, from []strin
 			}
 		}
 		result, err = scanDispatch(tx.QueryRowContext(ctx, `UPDATE dispatch SET state=CASE WHEN $3='FAILED' AND state='QUEUED_IN_DISPATCHER' AND delivery_attempted THEN 'UNKNOWN' ELSE $3 END, reason=$4, admission=$5, updated_at=now()
-			WHERE command_id=$1 AND sandbox_uid=$2 AND state = ANY($6) RETURNING `+dispatchColumns,
-			id, owner.SandboxUID, to, nullIfEmpty(reason), payload, pq.Array(from)))
+			WHERE command_id=$1 AND session_id=$2 AND state = ANY($6) RETURNING `+dispatchColumns,
+			id, owner.SessionID, to, nullIfEmpty(reason), payload, pq.Array(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -1612,17 +1593,17 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-func (s *Store) SettleSession(ctx context.Context, id string, owner Owner, from []string, to, reason string) (*Session, error) {
+func (s *Store) SettleSession(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, to, reason, false)
 }
 
 // RejectSession records a proven native rejection and fails only commands that have
 // not left the queue. An older FAILED row alone cannot supply this evidence.
-func (s *Store) RejectSession(ctx context.Context, id string, owner Owner, from []string, reason string) (*Session, error) {
+func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner, from []string, reason string) (*Session, error) {
 	return s.settleSession(ctx, id, owner, from, SessionFailedState, reason, true)
 }
 
-func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from []string, to, reason string, rejectQueued bool) (*Session, error) {
+func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string, rejectQueued bool) (*Session, error) {
 	var result *Session
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		// Enqueue holds the same Session lock, so it either precedes rejection and
@@ -1635,8 +1616,8 @@ func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from 
 			return err
 		}
 		result, err = scanSession(tx.QueryRowContext(ctx, `UPDATE session SET state=$3,reason=$4,updated_at=now()
-			WHERE session_id=$1 AND sandbox_uid=$2 AND state = ANY($5) RETURNING `+sessionColumns,
-			id, owner.SandboxUID, to, nullIfEmpty(reason), pq.Array(from)))
+			WHERE session_id=$1 AND session_id=$2 AND state = ANY($5) RETURNING `+sessionColumns,
+			id, owner.SessionID, to, nullIfEmpty(reason), pq.Array(from)))
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
 		}
@@ -1645,7 +1626,7 @@ func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from 
 		}
 		if rejectQueued {
 			if _, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=CASE WHEN delivery_attempted THEN 'UNKNOWN' ELSE $3 END,reason='session_rejected',updated_at=now()
-				WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4`, id, owner.SandboxUID, FailedState, QueueState); err != nil {
+				WHERE session_id=$1 AND session_id=$2 AND state=$4`, id, owner.SessionID, FailedState, QueueState); err != nil {
 				return err
 			}
 		}
@@ -1654,9 +1635,9 @@ func (s *Store) settleSession(ctx context.Context, id string, owner Owner, from 
 	return result, err
 }
 
-// RecoverSandbox requeues uncertain in-flight work after taking the successor's
-// owner fence. The runner's command/session IDs make replay safe after a lost reply.
-func (s *Store) RecoverSandbox(ctx context.Context, owner Owner) (bool, error) {
+// RecoverSession requeues only this Session's uncertain in-flight work under its lease.
+// Runtime command/session IDs make replay safe after a lost reply.
+func (s *Store) RecoverSession(ctx context.Context, owner SessionOwner) (bool, error) {
 	current := false
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		var err error
@@ -1664,14 +1645,22 @@ func (s *Store) RecoverSandbox(ctx context.Context, owner Owner) (bool, error) {
 		if err != nil || !current {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE dispatch SET state=$2, reason='dispatcher_restarted', updated_at=now()
-			WHERE sandbox_uid=$1 AND state=$3`, owner.SandboxUID, QueueState, DeliveringState)
+		dispatches, err := tx.ExecContext(ctx, `UPDATE dispatch SET state=$2, reason='dispatcher_restarted', updated_at=now()
+			WHERE session_id=$1 AND state=$3`, owner.SessionID, QueueState, DeliveringState)
 		if err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE session SET state=$2, reason='dispatcher_restarted', updated_at=now()
-			WHERE sandbox_uid=$1 AND state=$3`, owner.SandboxUID, SessionWaitingState, SessionInProgressState)
+		sessions, err := tx.ExecContext(ctx, `UPDATE session SET state=$2, reason='dispatcher_restarted', updated_at=now()
+			WHERE session_id=$1 AND state=$3`, owner.SessionID, SessionWaitingState, SessionInProgressState)
 		if err != nil {
+			return err
+		}
+		dispatchCount, err := dispatches.RowsAffected()
+		if err != nil {
+			return err
+		}
+		sessionCount, err := sessions.RowsAffected()
+		if err != nil || dispatchCount+sessionCount == 0 {
 			return err
 		}
 		return notify(ctx, tx)
@@ -1680,15 +1669,15 @@ func (s *Store) RecoverSandbox(ctx context.Context, owner Owner) (bool, error) {
 }
 
 // NoteWaiting changes only a still-queued row under the current Sandbox fence.
-func (s *Store) NoteWaiting(ctx context.Context, id string, owner Owner, reason string) error {
+func (s *Store) NoteWaiting(ctx context.Context, id string, owner SessionOwner, reason string) error {
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE dispatch SET reason=$3,updated_at=now()
-			WHERE command_id=$1 AND sandbox_uid=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
-			id, owner.SandboxUID, reason, QueueState)
+			WHERE command_id=$1 AND session_id=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
+			id, owner.SessionID, reason, QueueState)
 		if err != nil {
 			return err
 		}
@@ -1703,15 +1692,15 @@ func (s *Store) NoteWaiting(ctx context.Context, id string, owner Owner, reason 
 	})
 }
 
-func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner Owner, reason string) error {
+func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner SessionOwner, reason string) error {
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE session SET reason=$3,updated_at=now()
-			WHERE session_id=$1 AND sandbox_uid=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
-			id, owner.SandboxUID, reason, SessionWaitingState)
+			WHERE session_id=$1 AND session_id=$2 AND state=$4 AND reason IS DISTINCT FROM $3`,
+			id, owner.SessionID, reason, SessionWaitingState)
 		if err != nil {
 			return err
 		}
@@ -1732,7 +1721,7 @@ func (s *Store) NoteSessionWaiting(ctx context.Context, id string, owner Owner, 
 func (s *Store) SetDeliveryAssessment(
 	ctx context.Context,
 	id string,
-	owner Owner,
+	owner SessionOwner,
 	session bool,
 	blocker *environmentpb.DeliveryBlocker,
 	assessment *environmentpb.WakeAssessment,
@@ -1756,9 +1745,9 @@ func (s *Store) SetDeliveryAssessment(
 			return err
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE `+table+` SET delivery_blocker=$3,wake_assessment=$4,updated_at=now()
-			WHERE `+key+`=$1 AND sandbox_uid=$2 AND state=$5
+			WHERE `+key+`=$1 AND session_id=$2 AND state=$5
 			AND (delivery_blocker IS DISTINCT FROM $3 OR wake_assessment IS DISTINCT FROM $4)`,
-			id, owner.SandboxUID, blockerBytes, assessmentBytes, waiting)
+			id, owner.SessionID, blockerBytes, assessmentBytes, waiting)
 		if err != nil {
 			return err
 		}

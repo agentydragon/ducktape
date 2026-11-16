@@ -179,6 +179,21 @@ func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
 	return NewStore(db, cap), databaseURL
 }
 
+func claimSessionOwner(t *testing.T, store *Store, legacy Owner, sessionID string) SessionOwner {
+	t.Helper()
+	owner, err := store.AcquireSessionLease(t.Context(), sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.Owner = legacy
+	t.Cleanup(func() {
+		if err := store.ReleaseSessionLease(context.Background(), *owner); err != nil {
+			t.Error(err)
+		}
+	})
+	return *owner
+}
+
 func input(id, value string) *commandpb.Command {
 	return &commandpb.Command{CommandId: id, Operation: &commandpb.Command_SubmitInput{
 		SubmitInput: &commandpb.SubmitInput{Text: value},
@@ -265,16 +280,18 @@ func TestWakeAssessmentRoundTripsForDispatchAndSession(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
+	dispatchOwner := claimSessionOwner(t, store, *owner, dispatch.SessionID)
+	openingOwner := claimSessionOwner(t, store, *owner, opening.SessionID)
 	blocker := &environmentpb.DeliveryBlocker{Kind: environmentpb.DeliveryBlockerKind_DELIVERY_BLOCKER_KIND_ENVIRONMENT_SUSPENDED}
 	assessment := &environmentpb.WakeAssessment{
 		State:      environmentpb.WakeState_WAKE_STATE_DENIED,
 		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(7),
 	}
-	if err := store.SetDeliveryAssessment(ctx, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
+	if err := store.SetDeliveryAssessment(ctx, dispatch.CommandID, dispatchOwner, false, blocker, assessment); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SetDeliveryAssessment(ctx, opening.SessionID, *owner, true, blocker, assessment); err != nil {
+	if err := store.SetDeliveryAssessment(ctx, opening.SessionID, openingOwner, true, blocker, assessment); err != nil {
 		t.Fatal(err)
 	}
 	gotDispatch, err := store.GetDispatch(ctx, dispatch.CommandID)
@@ -324,8 +341,9 @@ func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, dispatch.SessionID)
 	requestedAt := time.Now().Add(-WakeDeadline - time.Second)
-	if _, err := store.NoteWakeRequestedAt(ctx, dispatch.CommandID, *owner, false, requestedAt); err != nil {
+	if _, err := store.NoteWakeRequestedAt(ctx, dispatch.CommandID, deliveryOwner, false, requestedAt); err != nil {
 		t.Fatal(err)
 	}
 	assessment := &environmentpb.WakeAssessment{
@@ -334,7 +352,7 @@ func TestExpiredWakeFailureStoresTypedAssessmentWithTerminalDelivery(t *testing.
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(5),
 		Error: status.New(codes.DeadlineExceeded, "Sandbox did not become Ready before the wake deadline").Proto(),
 	}
-	failed, _, remaining, err := store.FailExpiredWake(ctx, dispatch.CommandID, *owner, false,
+	failed, _, remaining, err := store.FailExpiredWake(ctx, dispatch.CommandID, deliveryOwner, false,
 		"wake_deadline_expired", nil, assessment)
 	if err != nil || remaining != 0 || failed == nil {
 		t.Fatalf("expired wake: row=%+v remaining=%v error=%v", failed, remaining, err)
@@ -377,13 +395,16 @@ func TestSessionAndOwnershipFence(t *testing.T) {
 	if err != nil || successor == nil || successor.Generation != 2 {
 		t.Fatalf("successor: %+v %v", successor, err)
 	}
-	if row, err := store.SettleSession(ctx, "session-b", *owner, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row != nil {
+	deliveryOwner := claimSessionOwner(t, store, *owner, "session-b")
+	successorDelivery := deliveryOwner
+	successorDelivery.Owner = *successor
+	if row, err := store.SettleSession(ctx, "session-b", deliveryOwner, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row != nil {
 		t.Fatalf("old owner settled: %+v %v", row, err)
 	}
-	if row, err := store.SettleSession(ctx, "session-b", *successor, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
+	if row, err := store.SettleSession(ctx, "session-b", successorDelivery, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
 		t.Fatalf("new owner could not settle: %+v %v", row, err)
 	}
-	if ok, err := store.RecoverSandbox(ctx, *successor); err != nil || !ok {
+	if ok, err := store.RecoverSession(ctx, successorDelivery); err != nil || !ok {
 		t.Fatalf("recovery: %v %v", ok, err)
 	}
 	if row, err := store.GetSession(ctx, "session-b"); err != nil || row.State != SessionWaitingState || row.Reason != "dispatcher_restarted" {
@@ -695,12 +716,13 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
-	claimed, err := store.Settle(ctx, "admission-input", *owner, []string{QueueState}, DeliveringState, "", nil)
+	deliveryOwner := claimSessionOwner(t, store, *owner, "admission-session")
+	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{QueueState}, DeliveringState, "", nil)
 	if err != nil || claimed == nil || claimed.Admission != nil {
 		t.Fatalf("claimed row carries an admission: %+v %v", claimed, err)
 	}
 	admission := &eventlogpb.EventEntry{Cursor: 7, Origin: &eventlogpb.EventOrigin{SourceId: "runner", Sequence: 7}}
-	if _, err := store.Settle(ctx, "admission-input", *owner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	if row, err := store.GetDispatch(ctx, "admission-input"); err != nil || !proto.Equal(row.Admission, admission) {
@@ -722,10 +744,11 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
-	if row, err := store.Settle(ctx, "deleted-delivering", *owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+	deliveryOwner := claimSessionOwner(t, store, *owner, "session-deleted")
+	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
 	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", *owner); err != nil || !marked {
+	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
 		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
 	}
 	// Two Dispatcher replicas must both receive the committed terminal snapshots:
@@ -1015,6 +1038,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim Sandbox owner: %+v %v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, dispatch.SessionID)
 	hub := NewWatchHub(databaseURL)
 	listenerCtx, cancelListener := context.WithCancel(context.Background())
 	listenerDone := make(chan error, 1)
@@ -1076,7 +1100,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 		Reason:     environmentpb.WakeReason_WAKE_REASON_CALLER_NOT_AUTHORIZED,
 		ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(11),
 	}
-	if err := store.SetDeliveryAssessment(base, dispatch.CommandID, *owner, false, blocker, assessment); err != nil {
+	if err := store.SetDeliveryAssessment(base, dispatch.CommandID, deliveryOwner, false, blocker, assessment); err != nil {
 		t.Fatal(err)
 	}
 	updated := receive().GetDispatch()
@@ -1204,6 +1228,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, request.SessionId)
 	runtime := &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "turn is no longer current")}
 	session, err := store.GetSession(ctx, request.SessionId)
 	if err != nil {
@@ -1212,7 +1237,7 @@ func TestInterruptTurnQueuesAndReconcilesExactTurn(t *testing.T) {
 	worker := &DeliveryWorker{Store: store, Delivery: runtime, Catalog: testCatalog{}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
 		t.Fatal("worker did not attempt interrupt")
 	}
 	row, err := store.GetDispatch(ctx, request.CommandId)
@@ -1314,7 +1339,7 @@ type wakeWorkerFixture struct {
 	store    *Store
 	opening  *Session
 	dispatch *Dispatch
-	owner    Owner
+	owner    SessionOwner
 	sandbox  SandboxSnapshot
 	caller   *lifecycle.ServiceAccountIdentity
 	worker   *DeliveryWorker
@@ -1352,7 +1377,7 @@ func newWakeWorkerFixture(t *testing.T, spec *sessionpb.SessionSpec, wake WakeRe
 	worker.init()
 	t.Cleanup(worker.queue.ShutDown)
 	return wakeWorkerFixture{
-		store: store, opening: opening, dispatch: dispatch, owner: *owner, caller: caller,
+		store: store, opening: opening, dispatch: dispatch, owner: claimSessionOwner(t, store, *owner, sessionID), caller: caller,
 		sandbox: SandboxSnapshot{
 			Name: sandboxName, Namespace: "agentplane", UID: sandboxUID, Incarnation: "before-wake",
 			Blocker: "sandbox_suspended", WakeOnSend: true, WakeGeneration: 7,
@@ -1476,7 +1501,8 @@ func TestWorkerLeasesOnlySandboxesWithQueuedOrDeliveringWork(t *testing.T) {
 	if !owned(busyUID) || owned(idleUID) {
 		t.Fatalf("owned busy=%v idle=%v, want only the Sandbox with queued work", owned(busyUID), owned(idleUID))
 	}
-	owner, _ := worker.ownerFor(busyUID)
+	legacy, _ := worker.ownerFor(busyUID)
+	owner := claimSessionOwner(t, store, legacy, "lease-busy-session")
 	if row, err := store.Settle(ctx, "lease-busy-input", owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("claim: %+v %v", row, err)
 	}
@@ -1514,9 +1540,11 @@ func TestWorkerAdoptsDeliveringWorkOfDeadOwner(t *testing.T) {
 	if err != nil || dead == nil {
 		t.Fatalf("dead owner: %+v %v", dead, err)
 	}
-	if row, err := store.Settle(ctx, "dead-owner-input", *dead, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+	owner := claimSessionOwner(t, store, *dead, "dead-owner-session")
+	if row, err := store.Settle(ctx, "dead-owner-input", owner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("claim: %+v %v", row, err)
 	}
+	expireSessionLease(t, store, owner)
 	worker := &DeliveryWorker{
 		Store: store, Catalog: testCatalog{SandboxSnapshot{Name: "sandbox-dead-owner", UID: uid}},
 		Leases: testLease{store},
@@ -1525,6 +1553,11 @@ func TestWorkerAdoptsDeliveringWorkOfDeadOwner(t *testing.T) {
 	defer worker.queue.ShutDown()
 	if err := worker.reconcile(ctx, true); err != nil {
 		t.Fatal(err)
+	}
+	legacy, _ := worker.ownerFor(uid)
+	successor := claimSessionOwner(t, store, legacy, "dead-owner-session")
+	if ok, err := store.RecoverSession(ctx, successor); err != nil || !ok {
+		t.Fatalf("recover Session: %t %v", ok, err)
 	}
 	if row, err := store.GetDispatch(ctx, "dead-owner-input"); err != nil || row.State != QueueState || row.Reason != "dispatcher_restarted" {
 		t.Fatalf("successor did not requeue the dead owner's command: %+v %v", row, err)
@@ -2112,10 +2145,11 @@ func TestCentralCommandsAndInterruptIgnoreExecutorReadiness(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim central Sandbox owner: %+v %v", owner, err)
 	}
-	if ready, err := worker.prepareSession(ctx, opening, sandbox, *owner); err != nil || !ready {
+	deliveryOwner := claimSessionOwner(t, store, *owner, opening.SessionID)
+	if ready, err := worker.prepareSession(ctx, opening, sandbox, deliveryOwner); err != nil || !ready {
 		t.Fatalf("central opening readiness %v %v", ready, err)
 	}
-	if ready, err := worker.prepareDispatch(ctx, row, sandbox, *owner); err != nil || !ready {
+	if ready, err := worker.prepareDispatch(ctx, row, sandbox, deliveryOwner); err != nil || !ready {
 		t.Fatalf("central command readiness %v %v", ready, err)
 	}
 	service := &Service{Store: store, DispatcherServices: sets.New(peertls.AppURI), Sandboxes: blockedSandbox{}}
@@ -2481,7 +2515,11 @@ func TestNativeSessionOutcomesFenceQueuedWork(t *testing.T) {
 				if !ok {
 					t.Fatal("worker lost owner")
 				}
-				if _, err := store.RecoverSandbox(ctx, owner); err != nil {
+				deliveryOwner := claimSessionOwner(t, store, owner, sessionID)
+				if _, err := store.RecoverSession(ctx, deliveryOwner); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
 					t.Fatal(err)
 				}
 				// A later suspended environment must not cause wake or redelivery.
@@ -2548,7 +2586,11 @@ func TestUnprovenSessionFailureHoldsCommandsAndPreservesOtherPaths(t *testing.T)
 			if !ok {
 				t.Fatal("worker has no owner")
 			}
-			if _, err := store.SettleSession(ctx, sessionID, owner, []string{SessionWaitingState}, SessionFailedState, "old unproven outcome"); err != nil {
+			deliveryOwner := claimSessionOwner(t, store, owner, sessionID)
+			if _, err := store.SettleSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, SessionFailedState, "old unproven outcome"); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.ReleaseSessionLease(ctx, deliveryOwner); err != nil {
 				t.Fatal(err)
 			}
 			if err := worker.processSession(ctx, sessionID); err != nil {
@@ -2588,7 +2630,10 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("new owner: %+v %v", owner, err)
 	}
-	if row, err := store.RejectSession(ctx, sessionID, *oldOwner, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
+	deliveryOwner := claimSessionOwner(t, store, *owner, sessionID)
+	staleDelivery := deliveryOwner
+	staleDelivery.Owner = *oldOwner
+	if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
 		t.Fatalf("stale owner settled opening: %+v %v", row, err)
 	}
 	gate, err := store.DB.BeginTx(ctx, nil)
@@ -2641,7 +2686,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 	waitBlocked(admitterPID, gatePID)
 	rejected := make(chan error, 1)
 	go func() {
-		_, err := rejecter.RejectSession(ctx, sessionID, *owner, []string{SessionWaitingState}, "proven rejection")
+		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
 		rejected <- err
 	}()
 	// Admission has the Session lock but has not inserted the command yet.
@@ -2661,7 +2706,7 @@ func TestSessionRejectionSerializesWithAdmissionAndFencesOwners(t *testing.T) {
 	if _, err := store.EndSandbox(ctx, uid); err != nil {
 		t.Fatal(err)
 	}
-	if row, err := store.RejectSession(ctx, sessionID, *owner, []string{FailedState}, "late rejection"); err != nil || row != nil {
+	if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
 		t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
 	}
 }
@@ -2878,6 +2923,9 @@ func TestQueuedSessionAllowsNotificationWakeWithoutBorrowingCaller(t *testing.T)
 	}
 	wake.assessments = append(wake.assessments, &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_REQUESTED, ObservedAt: timestamppb.Now(), TargetGeneration: proto.Int64(fixture.sandbox.WakeGeneration + 1)})
 	catalog := &executionAccountCatalog{growingCatalog: &growingCatalog{sandboxes: []SandboxSnapshot{fixture.sandbox}}, accountUID: fixture.caller.GetUid()}
+	if err := fixture.store.ReleaseSessionLease(ctx, fixture.owner); err != nil {
+		t.Fatal(err)
+	}
 	runtime := &acceptingRuntime{calls: make(chan string, 2)}
 	worker := &DeliveryWorker{Store: fixture.store, Wake: wake, Catalog: catalog, Leases: testLease{store: fixture.store}, Delivery: runtime}
 	worker.init()
@@ -3069,6 +3117,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, head.SessionID)
 	session, err := store.GetSession(ctx, head.SessionID)
 	if err != nil {
 		t.Fatal(err)
@@ -3081,7 +3130,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	}}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, *owner, session) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{Name: "sandbox-worker", UID: sandboxUID, Incarnation: "pod-1"}, deliveryOwner, session) {
 		t.Fatal("worker did not attempt delivery")
 	}
 	queued, err := store.GetDispatch(ctx, head.CommandID)
@@ -3091,7 +3140,7 @@ func TestDeletionAfterLostCommandReplyRemainsUnknown(t *testing.T) {
 	if _, err := store.Cancel(ctx, head.CommandID); !errors.Is(err, ErrNotCancellable) {
 		t.Fatalf("uncertain attempt cancelled as unsent: %v", err)
 	}
-	if _, err := store.RecoverSandbox(ctx, *owner); err != nil {
+	if _, err := store.RecoverSession(ctx, deliveryOwner); err != nil {
 		t.Fatal(err)
 	}
 	events, err := store.EndSandbox(ctx, sandboxUID)
@@ -3114,7 +3163,8 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if err != nil || owner == nil {
 				t.Fatalf("owner: %+v %v", owner, err)
 			}
-			if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+			deliveryOwner := claimSessionOwner(t, store, *owner, head.SessionID)
+			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
 				t.Fatal(err)
 			}
 			connect := func() (*Store, int) {
@@ -3160,7 +3210,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			deleted := make(chan []terminalnotice.Event, 1)
 			errors := make(chan error, 2)
 			mark := func() {
-				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, *owner)
+				value, err := marker.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner)
 				marked <- value
 				errors <- err
 			}
@@ -3196,7 +3246,7 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if len(events) != 1 || events[0].Dispatch.GetState() != want {
 				t.Fatalf("ordered deletion: %+v; want %s", events, want)
 			}
-			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || marked {
+			if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || marked {
 				t.Fatalf("deleted worker gained permission to forward: %t, %v", marked, err)
 			}
 		})
@@ -3214,13 +3264,14 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
-	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+	deliveryOwner := claimSessionOwner(t, store, *owner, head.SessionID)
+	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
 		t.Fatal(err)
 	}
-	if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, *owner); err != nil || !marked {
+	if marked, err := store.MarkDeliveryAttempt(ctx, head.CommandID, deliveryOwner); err != nil || !marked {
 		t.Fatalf("marker: %t, %v", marked, err)
 	}
-	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{DeliveringState}, QueueState, "lost_reply", nil); err != nil {
+	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{DeliveringState}, QueueState, "lost_reply", nil); err != nil {
 		t.Fatal(err)
 	}
 	head, err = store.GetDispatch(ctx, head.CommandID)
@@ -3234,7 +3285,7 @@ func TestUncertainAttemptCannotBecomeKnownFailedOnRetryRefusal(t *testing.T) {
 	worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: &rejectingRuntime{err: status.Error(codes.FailedPrecondition, "receiver sealed")}}
 	worker.init()
 	defer worker.queue.ShutDown()
-	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
+	if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
 		t.Fatal("retry did not run")
 	}
 	row, err := store.GetDispatch(ctx, head.CommandID)
@@ -3265,6 +3316,7 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 			if err != nil || owner == nil {
 				t.Fatalf("owner: %+v %v", owner, err)
 			}
+			deliveryOwner := claimSessionOwner(t, store, *owner, head.SessionID)
 			// The fake external owner commits before returning an error code.
 			runtime := &rejectingRuntime{err: status.Error(test.code, "response unavailable"), admitted: map[string]bool{}}
 			session, err := store.GetSession(ctx, head.SessionID)
@@ -3274,7 +3326,7 @@ func TestFirstCommandAttemptDoesNotInferNonAdmissionFromRPCCode(t *testing.T) {
 			worker := &DeliveryWorker{Store: store, Catalog: testCatalog{}, Delivery: runtime}
 			worker.init()
 			defer worker.queue.ShutDown()
-			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, *owner, session) {
+			if !worker.deliverCommand(ctx, head, SandboxSnapshot{UID: sandboxUID}, deliveryOwner, session) {
 				t.Fatal("worker did not attempt delivery")
 			}
 			if !runtime.admitted[head.CommandID] {
@@ -3299,8 +3351,9 @@ func TestDeletedAdmittedInputKeepsKnownAdmissionInUnknownEffectSnapshot(t *testi
 	if err != nil || owner == nil {
 		t.Fatalf("owner: %+v %v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, head.SessionID)
 	admission := &eventlogpb.EventEntry{Cursor: 17}
-	if _, err := store.Settle(ctx, head.CommandID, *owner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	events, err := store.EndSandbox(ctx, sandboxUID)

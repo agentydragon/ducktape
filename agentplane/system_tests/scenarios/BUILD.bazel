@@ -110,6 +110,7 @@ py_library(
         "//agentplane/environments/v1:environment_service_pb2_grpc",
         "//agentplane/grpc:calls",
         "//agentplane/proto:environment_lifecycle_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:identity_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",

@@ -28,6 +28,8 @@ type LeaseOperations interface {
 	Update(context.Context, *coordinationv1.Lease, metav1.UpdateOptions) (*coordinationv1.Lease, error)
 }
 
+// CLEANUP(added 2026-11-16): Remove Kubernetes delivery Leases in PR 2 after the
+// coordinator confirms every staging Sessions replica runs the compatibility image.
 type OwnershipLeases struct {
 	Leases                    LeaseOperations
 	Store                     *Store

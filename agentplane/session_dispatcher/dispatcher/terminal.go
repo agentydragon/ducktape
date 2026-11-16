@@ -25,7 +25,10 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 		if _, err := tx.ExecContext(ctx, "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1) ON CONFLICT DO NOTHING", sandboxUID); err != nil {
 			return err
 		}
-		// Match worker settlement's lock order: ownership row before delivery rows.
+		// CLEANUP(added 2026-11-16): PR 2 must replace this compatibility lock with
+		// Session lease serialization of terminal notices and MarkDeliveryAttempt before
+		// removing the generation fence. PR 3 may drop the table only after its last reader rolls.
+		// Match worker settlement's lock order: ownership row before Session lease and delivery rows.
 		var generation int64
 		err := tx.QueryRowContext(ctx, `SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE`, sandboxUID).Scan(&generation)
 		if err != nil && err != sql.ErrNoRows {
