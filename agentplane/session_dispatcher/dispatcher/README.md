@@ -69,12 +69,19 @@ The manual queue, replica and wake probes are documented in the
   any Runtime or History record exists. It uses the same retained-owner read scope as
   `GetSession`, without contacting a live environment or History. `limit` defaults to 50 and
   is capped at 100; `page_token` continues in ascending Session UUID order. A cursor grants no
-  authority and remains usable if its last record was deleted. Pages are current reads, not a frozen
-  snapshot: concurrent creation before the cursor is seen on a fresh listing, and cleanup removes
-  records. This includes today's environment-bound central Sessions without defining environment-free
+  authority. Pages are current reads, not a frozen snapshot: concurrent creation before the cursor
+  is seen on a fresh listing. Session rows remain after Environment deletion. This includes today's
+  environment-bound central Sessions without defining environment-free
   central Sessions. The CLI exposes it as `agentplane sessions list`; `agentplane sessions create`
   creates one and `agentplane sessions get` reads the Session alongside its independent History
   summary.
+- **Watching Sessions**: `WatchSessions` streams the same authorized records, including Sessions
+  History has not recorded, then `CaughtUp` and changed current records. Its opaque `resume_token`
+  binds the version to the effective read scope; another scope is `INVALID_ARGUMENT`. Retained
+  rows allow tokens to resume without expiry. A PostgreSQL listener reconnect replays a full
+  snapshot. The generated JSON route is `GET /v1/sessions:watch`; see the
+  [watch contract](SPEC.md#session-watch). Materialization and required-Environment state do not
+  assert running or idle status.
 - **Wire and data cutover**: this cutover moves placement into the `SessionSpec` oneof; the flat
   harness field and Dispatcher-level placement fields are retired. Coordinate the Dispatcher,
   sampler, app/CLI and other logical Session callers with the matching environment/runtime images.

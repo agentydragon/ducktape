@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
@@ -77,6 +78,7 @@ type Service struct {
 	EnvironmentRules   *reader.Index[access.Rule]
 	PolicyReady        func() error
 	Hub                *WatchHub
+	SessionHub         *wakeups.Hub
 	WatchLease         time.Duration
 	CentralTarget      *CentralTarget
 }
@@ -232,6 +234,7 @@ func Methods(rule auth.Rule) auth.Methods {
 		dispatcherpb.SessionDispatcher_CreateSession_FullMethodName:         rule,
 		dispatcherpb.SessionDispatcher_GetSession_FullMethodName:            rule,
 		dispatcherpb.SessionDispatcher_ListSessions_FullMethodName:          rule,
+		dispatcherpb.SessionDispatcher_WatchSessions_FullMethodName:         rule,
 		dispatcherpb.SessionDispatcher_GetDispatch_FullMethodName:           rule,
 		dispatcherpb.SessionDispatcher_WatchDispatches_FullMethodName:       rule,
 		dispatcherpb.SessionDispatcher_ListDispatches_FullMethodName:        rule,

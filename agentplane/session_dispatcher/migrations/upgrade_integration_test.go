@@ -153,6 +153,54 @@ func TestSessionLeaseUpgradePreservesEvidence(t *testing.T) {
 	}
 }
 
+func TestSessionWatchUpgradeBackfillsAndVersionsOldWriters(t *testing.T) {
+	db := openMigrationDatabase(t)
+	provider, err := schema.Provider(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(t.Context(), 24); err != nil {
+		t.Fatal(err)
+	}
+	insertRetainedEvidence(t, db)
+	if err := Up(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	assertRetainedEvidence(t, db)
+	var backfilled, updated int64
+	if err := db.QueryRowContext(t.Context(), "SELECT version FROM session WHERE session_id='retained-session'").Scan(&backfilled); err != nil {
+		t.Fatal(err)
+	}
+	if backfilled <= 0 {
+		t.Fatalf("backfill version = %d", backfilled)
+	}
+	// An old binary does not supply version; the trigger must still advance the watch.
+	if err := db.QueryRowContext(t.Context(), "UPDATE session SET reason='test-old-writer' WHERE session_id='retained-session' RETURNING version").Scan(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated <= backfilled {
+		t.Fatalf("old writer version %d did not advance %d", updated, backfilled)
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(t.Context(), "UPDATE session SET reason='test-rolled-back' WHERE session_id='retained-session'"); err != nil {
+		tx.Rollback()
+		t.Fatal(err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	var committed int64
+	if err := db.QueryRowContext(t.Context(), "SELECT version FROM session_watch_version WHERE singleton").Scan(&committed); err != nil {
+		t.Fatal(err)
+	}
+	if committed != updated {
+		t.Fatalf("rolled-back writer advanced counter: got %d want %d", committed, updated)
+	}
+}
+
 func TestBaselineCreatesFinalSchema(t *testing.T) {
 	db := openMigrationDatabase(t)
 	if err := Up(t.Context(), db); err != nil {

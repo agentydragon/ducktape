@@ -22,6 +22,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
@@ -169,6 +170,11 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err := waitForListener(ctx, hub, failed); err != nil {
 		return err
 	}
+	sessionHub, err := wakeups.Listen(ctx, c.DispatcherDatabaseURL, dispatcher.SessionNotifyChannel)
+	if err != nil {
+		return err
+	}
+	defer sessionHub.Close()
 	nativeRuntime := &dispatcher.RuntimeProxyClient{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		GatewayTLS:     c.GatewayTLS,
@@ -208,7 +214,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		Store: store, DispatcherServices: sets.New(c.DispatcherServiceCallers...),
 		Sandboxes:        catalog,
 		EnvironmentRules: dispatchEnvironmentRules, PolicyReady: dispatchPolicyReady,
-		CentralTarget: c.CentralSampler, Hub: hub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
+		CentralTarget: c.CentralSampler, Hub: hub, SessionHub: sessionHub, WatchLease: time.Duration(c.WatchLeaseSeconds) * time.Second,
 	}
 	dispatcherRule, err := auth.AnySubject(dispatcherSVIDs).AllowServiceCallers(c.DispatcherServiceCallers)
 	if err != nil {

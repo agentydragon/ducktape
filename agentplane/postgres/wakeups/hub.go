@@ -18,9 +18,10 @@ import (
 
 // Hub follows NOTIFY channels on one LISTEN connection and fans each out to its subscribers.
 type Hub struct {
-	listener  *pq.Listener
-	connected atomic.Bool
-	mu        sync.Mutex
+	listener   *pq.Listener
+	connected  atomic.Bool
+	generation atomic.Uint64
+	mu         sync.Mutex
 	// subscribers holds each listened channel's subscribers' signals.
 	subscribers map[string]map[chan struct{}]struct{}
 	keyed       map[string]map[string]map[chan struct{}]struct{}
@@ -94,9 +95,11 @@ func (h *Hub) SubscribeKey(channel, key string) (<-chan struct{}, func(), error)
 func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
 	switch event {
 	case pq.ListenerEventConnected, pq.ListenerEventReconnected:
+		h.generation.Add(1)
 		h.connected.Store(true)
 	case pq.ListenerEventDisconnected, pq.ListenerEventConnectionAttemptFailed:
 		h.connected.Store(false)
+		h.generation.Add(1)
 		// Readers must show that their view may be stale during the reconnect gap,
 		// rather than waiting for lib/pq's post-reconnect notification.
 		h.wakeAll()
@@ -106,6 +109,10 @@ func (h *Hub) observeConnectionEvent(event pq.ListenerEventType) {
 // Connected reports the last connection state reported by lib/pq. It is suitable for live status
 // frames, while Ping provides an active health check when a caller needs one.
 func (h *Hub) Connected() bool { return h.connected.Load() }
+
+// Generation changes on connection loss and establishment. A reader compares it before each
+// read to distinguish ordinary keyed wakeups from a reconnect requiring a full snapshot.
+func (h *Hub) Generation() uint64 { return h.generation.Load() }
 
 func sqlState(err error) string {
 	if failure, ok := err.(*pq.Error); ok {
