@@ -10,7 +10,7 @@ package(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    deps = ["//agentplane/sandboxes:launch"],
+    deps = ["//agentplane/sandboxes/testing:identity"],
 )
 
 py_library(
@@ -95,7 +95,7 @@ py_library(
         "//agentplane/native/claude/testing:model",
         "//agentplane/native/codex/testing:model",
         "//agentplane/proto:session_pb2",
-        "//agentplane/sandboxes:launch",
+        "//agentplane/sandboxes/testing:identity",
         "@pypi//protobuf",
         "@rules_python//python/runfiles",
     ],

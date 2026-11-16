@@ -24,7 +24,7 @@ from agentplane.env.e2e.testing.config import NativeLaunch, RunnerTestConfig, Sa
 from agentplane.native.claude.testing import model as claude_model
 from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import session_pb2
-from agentplane.sandboxes.launch import SandboxIdentity
+from agentplane.sandboxes.testing.identity import SandboxIdentity
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

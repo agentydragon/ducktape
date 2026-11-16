@@ -1,4 +1,4 @@
-"""Sandbox identity shared with the runner and its test helpers."""
+"""Exact Sandbox identity shared by integration test helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SandboxIdentity(BaseModel):
-    """The Sandbox as the Notification Service addresses it."""
+    """The Sandbox namespace, name and immutable UID used by test fixtures."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 

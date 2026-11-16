@@ -16,7 +16,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.proto.identity_pb2 import EnvironmentTarget, SandboxDestination, ServiceAccount
-from agentplane.sandboxes.launch import SandboxIdentity
+from agentplane.sandboxes.testing.identity import SandboxIdentity
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes import CustomObjectsClient
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
