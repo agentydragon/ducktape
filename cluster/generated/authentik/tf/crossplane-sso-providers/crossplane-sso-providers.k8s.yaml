@@ -599,27 +599,6 @@ spec:
         managed = "goauthentik.io/providers/oauth2/scope-offline_access"
       }
 
-      moved {
-        from = authentik_provider_oauth2.forgejo
-        to   = authentik_provider_oauth2.confidential["forgejo"]
-      }
-      moved {
-        from = authentik_provider_oauth2.grafana
-        to   = authentik_provider_oauth2.confidential["grafana"]
-      }
-      moved {
-        from = authentik_provider_oauth2.langfuse
-        to   = authentik_provider_oauth2.confidential["langfuse"]
-      }
-      moved {
-        from = authentik_provider_oauth2.matrix
-        to   = authentik_provider_oauth2.confidential["matrix"]
-      }
-      moved {
-        from = authentik_provider_oauth2.props
-        to   = authentik_provider_oauth2.confidential["props"]
-      }
-
 
       # Action-only JWT-bearer target. See agentplane/docs/operator_federation.md for
       # the pinned Authentik/provider source proving the shared subject mode and grant.
