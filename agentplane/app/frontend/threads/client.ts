@@ -1,6 +1,6 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { displayableError, fetchJson, fetchText, fetchWithLogin, HttpError } from "../client";
+import { displayableError, fetchJson, fetchText, fetchWithLogin, HttpError } from "../transport/client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import {
   Harness,

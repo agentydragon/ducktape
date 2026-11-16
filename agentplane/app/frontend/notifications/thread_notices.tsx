@@ -5,7 +5,7 @@ import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
 
 import { clockTime } from "../format_time";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 import { WatchInboxResponseSchema, type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 
 export interface ThreadNotices {

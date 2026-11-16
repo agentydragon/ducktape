@@ -21,11 +21,11 @@ import { durationLabel } from "../format_time";
 import { IconArrowRight } from "../icons";
 import { RawSwitch } from "../raw_switch";
 import { TimeAgo } from "../time_ago";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
 import { JsonBlock } from "../text_block";
-import { useOptionalStreamStatus } from "../stream_status";
-import type { StreamConnection } from "../stream_reader";
+import { useOptionalStreamStatus } from "../transport/stream_status";
+import type { StreamConnection } from "../transport/stream_reader";
 import { ActionCall } from "./call";
 import { CallToolResultView, parseCallToolResult, type CallToolResult } from "./call_tool_result";
 import {

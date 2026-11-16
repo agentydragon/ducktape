@@ -6,9 +6,9 @@ import { useSearchParams } from "react-router";
 import { WatchDecisionsResponseSchema, type Decision } from "../../../egress/api/admin/egress_admin_pb";
 import { TimeAgo } from "../time_ago";
 import { decisionAt, decisionOutcome, decisionReason, type DecisionGroup, groupDecisions } from "./decision_groups";
-import { followWatch } from "../watch_stream";
-import { type StreamConnection } from "../stream_reader";
-import { useStreamStatus } from "../stream_status";
+import { followWatch } from "../transport/watch_stream";
+import { type StreamConnection } from "../transport/stream_reader";
+import { useStreamStatus } from "../transport/stream_status";
 import type { ServiceAccount } from "../../../proto/identity_pb";
 
 /** The groups whose requests are listed, comma-separated; a group key has no comma in it. */

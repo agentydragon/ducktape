@@ -12,7 +12,7 @@ import {
   SandboxPhase,
 } from "../../../environments/v1/environment_service_pb";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { getEnvironmentRuntimeStatus } from "./client";
 import { harnessLabel } from "../model_catalog";
 import {

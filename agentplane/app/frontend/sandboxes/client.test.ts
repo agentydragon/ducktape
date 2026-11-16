@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { HttpError } from "../client";
+import { HttpError } from "../transport/client";
 import {
   EnvironmentRuntimeLifecycleBlockerKind,
   EnvironmentRuntimeLifecycleMode,

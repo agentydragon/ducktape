@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { followResponse, type StreamConnection } from "./stream_reader";
-import { type ServedWatch, stubWatchFetch } from "./testing/watch";
+import { type ServedWatch, stubWatchFetch } from "../testing/watch";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
 let frames: string[] = [];

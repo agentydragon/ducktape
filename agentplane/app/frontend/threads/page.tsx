@@ -2,7 +2,7 @@ import { Box, Group, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { type ThreadView, getThread } from "./client";
 import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { harnessLabel } from "../model_catalog";

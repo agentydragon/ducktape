@@ -3,7 +3,7 @@ import { NumberInput } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
 import { sandboxIdleSuspendAfterSeconds } from "../sandbox_status";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { setEnvironmentIdleSuspend } from "./client";
 
 const SECONDS_PER_MINUTE = 60;

@@ -1,7 +1,7 @@
 /** Browser adapters for ConnectionService's generated HTTP/JSON facade. */
 import { create, fromJson, fromJsonString, toJson, type JsonValue } from "@bufbuild/protobuf";
 
-import { fetchText } from "../client";
+import { fetchText } from "../transport/client";
 import {
   DecideConnectionEnrollmentRequestSchema,
   DecideConnectionEnrollmentResponseSchema,

@@ -6,8 +6,8 @@ import { afterEach, vi } from "vitest";
 import { create, fromJson, type JsonObject } from "@bufbuild/protobuf";
 import { TimestampSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
-import { api } from "../../client";
-import { createAppQueryClient } from "../../query";
+import { api } from "../../transport/client";
+import { createAppQueryClient } from "../../transport/query";
 import {
   ActionRequestSchema,
   ActionState,

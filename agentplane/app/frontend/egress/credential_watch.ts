@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 import { WatchCredentialsResponseSchema } from "../../../egress/api/admin/egress_admin_pb";
 import type { Credential } from "../../../egress/api/rules/egress_rules_pb";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 
 /** Public metadata is independent of the policy resources and may be unavailable. */
 export function useCredentialMetadata(): Map<string, Credential> | null {

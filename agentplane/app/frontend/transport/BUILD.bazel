@@ -1,0 +1,160 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    testonly = True,
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
+)
+
+ts_library(
+    name = "client",
+    srcs = ["client.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":operator_login",
+        ":parsed_json",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/openapi-fetch",
+        "//agentplane/app/frontend:schema",
+    ],
+)
+
+ts_library(
+    name = "app_service_client",
+    srcs = ["app_service_client.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "client_test",
+    srcs = ["client.test.ts"],
+    deps = [
+        ":client",
+        ":operator_login",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "operator_login",
+    srcs = ["operator_login.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
+    name = "query",
+    srcs = ["query.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = ["//:node_modules/@tanstack/react-query"],
+)
+
+ts_library(
+    name = "parsed_json",
+    srcs = ["parsed_json.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
+    name = "stream_reader",
+    srcs = ["stream_reader.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "stream_reader_test",
+    srcs = ["stream_reader.test.ts"],
+    deps = [
+        ":stream_reader",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
+    name = "live_stream",
+    srcs = ["live_stream.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":stream_reader",
+        "//:node_modules/eventsource-parser",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "live_stream_test",
+    srcs = ["live_stream.test.ts"],
+    deps = [
+        ":live_stream",
+        ":stream_reader",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
+    name = "watch_stream",
+    srcs = ["watch_stream.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":stream_reader",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/zod",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "watch_stream_test",
+    srcs = ["watch_stream.test.ts"],
+    deps = [
+        ":stream_reader",
+        ":watch_stream",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
+    name = "stream_status",
+    srcs = ["stream_status.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":stream_reader",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:format_time",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "stream_status_test",
+    srcs = ["stream_status.test.tsx"],
+    deps = [
+        ":stream_reader",
+        ":stream_status",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "live",
+    srcs = ["live.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [":stream_status"],
+)
+
+check_vitest_specs()

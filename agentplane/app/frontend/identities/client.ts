@@ -8,7 +8,7 @@ import {
   ListSessionsResponseSchema,
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { displayableError, fetchJson, fetchText, HttpError } from "../client";
+import { displayableError, fetchJson, fetchText, HttpError } from "../transport/client";
 
 const PRECONDITION_FAILURE = "type.googleapis.com/google.rpc.PreconditionFailure";
 

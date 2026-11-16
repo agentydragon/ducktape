@@ -3,7 +3,7 @@ import { Code, ScrollArea, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useRef, useState } from "react";
 
 import { consoleText } from "./console_text";
-import { followStream } from "../live_stream";
+import { followStream } from "../transport/live_stream";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
 
 export function SandboxConsole({ target }: { target: EnvironmentTarget }): JSX.Element {

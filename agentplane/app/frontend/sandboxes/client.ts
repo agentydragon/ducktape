@@ -1,7 +1,7 @@
 import { create, fromJson, toJson, type JsonObject } from "@bufbuild/protobuf";
 import { DurationSchema, ValueSchema } from "@bufbuild/protobuf/wkt";
 
-import { fetchJson, HttpError } from "../client";
+import { fetchJson, HttpError } from "../transport/client";
 import { createIdentity, deleteIdentity, grantIdentityPolicyBinding } from "../identities/client";
 import { EnvironmentTargetSchema, type EnvironmentTarget } from "../../../proto/identity_pb";
 import {

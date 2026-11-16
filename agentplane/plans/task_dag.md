@@ -2394,7 +2394,7 @@ Electric replicates two History tables, `thread_entity` and `thread_payload_chun
 projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
 the thread view alone ([`electric_sync.tsx`](../app/frontend/threads/electric_sync.tsx)). Every
 other live browser view already follows gRPC watches through the app facade
-([`watch_stream.ts`](../app/frontend/watch_stream.ts)). Its costs are:
+([`watch_stream.ts`](../app/frontend/transport/watch_stream.ts)). Its costs are:
 
 - a single-replica `Recreate` Deployment with a 5 GiB `emptyDir` ([exception](../docs/electric_single_replica.md));
 - a logical replication slot on the History database;

@@ -2,9 +2,9 @@ import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/c
 import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
 import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
-import { type StreamConnection } from "../../stream_reader";
+import { type StreamConnection } from "../../transport/stream_reader";
 
-import { displayableError } from "../../client";
+import { displayableError } from "../../transport/client";
 import {
   ExecutorKind,
   McpLifecycle,

@@ -8,7 +8,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
 import { ChronologicalDebugProvider } from "./chronological_debug";
-import { createAppQueryClient } from "../query";
+import { createAppQueryClient } from "../transport/query";
 import { testItem } from "./testing/entity";
 import { ItemKind } from "../../../proto/event_pb";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";

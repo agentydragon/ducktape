@@ -20,7 +20,7 @@ import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
 import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
 import {
   getSession,

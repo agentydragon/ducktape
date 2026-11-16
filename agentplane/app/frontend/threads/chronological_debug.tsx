@@ -4,7 +4,7 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { IconHistory } from "../icons";
 
 import { nextStored, threadObservationEntry, threadObservations } from "./client";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";
 import { EventEntrySchema } from "../../../proto/event_log_pb";

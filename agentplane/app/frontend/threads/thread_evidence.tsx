@@ -4,7 +4,7 @@ import { type InfiniteData, infiniteQueryOptions, useInfiniteQuery, useQueryClie
 import { EventEntrySchema } from "../../../proto/event_log_pb";
 import type { CSSProperties, JSX, MouseEvent } from "react";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { threadEvidence, threadNativeFrames } from "./client";
 import { DisclosureBody } from "../../../../util/frontend/disclosure";
 import { JsonView } from "../../../../util/frontend/json_view";

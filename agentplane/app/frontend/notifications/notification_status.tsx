@@ -21,7 +21,7 @@ import {
   type Subscription,
 } from "../../../notification_service/api/notifications/notifications_pb";
 import { clockTime, isoTime, timeAgo } from "../format_time";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 import { inboxWatchUrl } from "./thread_notices";
 
 type SubscriptionFilter = "not-cancelled" | "active" | "expired" | "cancelled" | "all";

@@ -8,7 +8,7 @@ import {
   type EffectivePolicy,
 } from "../../../action_service/api/contracts/action_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 
 /** The Action Service's own auto-approval policy, in evaluation order. */
 export function ActionPolicySection({

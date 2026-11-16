@@ -158,7 +158,7 @@ import { OperationPresentationVisual } from "./operation_presentation_visual";
 import { LocalCommands } from "../threads/local_commands";
 import { electricEntityVariant } from "../threads/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
-import { streamRegistry } from "../stream_status";
+import { streamRegistry } from "../transport/stream_status";
 import { ThemeProvider } from "../shell/theme";
 import rollout from "./realistic_rollout.json";
 import reportedRollout from "./reported_rollout.json";

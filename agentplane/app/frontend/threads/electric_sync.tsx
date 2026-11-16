@@ -30,10 +30,10 @@ import { createContext, type JSX, type ReactNode, useContext, useEffect, useStat
 import { create, fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { z } from "zod";
 
-import { displayableError, fetchWithLogin } from "../client";
+import { displayableError, fetchWithLogin } from "../transport/client";
 import { threadScope } from "./client";
-import { backoff, type StreamConnection } from "../stream_reader";
-import { followWatch } from "../watch_stream";
+import { backoff, type StreamConnection } from "../transport/stream_reader";
+import { followWatch } from "../transport/watch_stream";
 import {
   ThreadCommandOutcome,
   ThreadCommandSchema,

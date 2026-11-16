@@ -2,7 +2,7 @@ import { Alert, Anchor, Button, Group, Select, Stack, Text, Title } from "@manti
 import { type JSX, useEffect, useState } from "react";
 
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
-import { displayableError, HttpError } from "../client";
+import { displayableError, HttpError } from "../transport/client";
 import { useIdentities } from "../policy/watch";
 import { getEnvironmentIdentityRecord, setEnvironmentIdentity } from "./client";
 
