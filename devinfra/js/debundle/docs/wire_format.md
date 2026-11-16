@@ -33,6 +33,15 @@ retains none. Anonymous selector indices refer to the original module's
 requested ownership selection, while final module contents show any bindings
 co-located by ordinary placement rules.
 
+When full graphs are requested, `dependency_graph.json.gz` also carries this
+normalized selection in its top-level `ownership_subset` field. The matching
+`program_graph.json.gz` provenance repeats the per-chunk normalized selection,
+records the subset file under a distinct relocatable input root, and fingerprints
+the exact bytes parsed by the run. Graph readers reject a chunk graph whose
+selection differs from program provenance and graph queries verify the subset
+fingerprint. This permits selected-baseline inspection; it does not make the
+selected owner map an editable overlay on the canonical authored tree.
+
 The staged per-chunk `SynchronousCalls` fact now carries
 `non_assumed_heap_accesses` as typed `reads` and `writes` sets of heap-content
 cells. It is analysis input to the commuting-premise check, not a new public

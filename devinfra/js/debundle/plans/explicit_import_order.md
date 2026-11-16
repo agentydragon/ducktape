@@ -27,25 +27,48 @@ priorities is separately deferred as AR10 there.
   verified propose/check/preview/apply behavior while trimming independently
   merged preparation from the activation diff. Complete the downstream guidance
   audit with its engine-pin migration.
-- Ownership-subset materializations currently reject full graph export, so their
-  bounded diagnostic reports cannot feed the constructor. Before claiming the
-  extraction workflow covers such a consumer, provide an independently authored
-  passing tree or support a selected ownership overlay through graph provenance
-  and selector-plan application together. A rejected canonical graph cannot
-  stand in for the passing subset's baseline. Track this separately from merely
-  giving each ownership variant a valid import priority.
+- Selected ownership graph export is now a provenance-bound inspection
+  foundation: the exact subset bytes and normalized per-chunk choice are
+  recorded with each graph. The selected graph is not a canonical editable
+  base. Complete a separate placement-overlay writer before claiming a passing
+  partial-spec extraction loop: keep the full authored tree as the sole owner of
+  semantic premises and selector anchors; resolve its base claims once, then
+  project retained claims plus new placement claims without putting omitted
+  base claims in the placement solve's global `all_different` target set. Keep
+  omitted claims' contracts and reference anchors available, including when a
+  new placement targets a unit claimed by an omitted owner. Do not persist dense
+  `unit:<SourceUnitId>` values as spec coordinates; selector-backed placement
+  claims must be re-resolved against the canonical source-unit manifest. A
+  proposal must construct the actual overlay, prove its complete selected
+  assignment matches the graph-checked candidate, and bind preview/apply to the
+  graph, program and selection snapshot. Stage the selected view and final
+  priority before writes; preserve inactive base claims and metadata. Test an
+  omitted owner's necessary purity/callback premise, omitted selector anchors,
+  relocation from an omitted claim without a duplicate, stable retained selector
+  identity, imports, anonymous units, multi-binding atoms, stale base/selection,
+  failed order and ambiguous selectors with no writes, then a real CLI-to-Node
+  extraction. The selected baseline must be a genuinely passing configuration;
+  a rejected canonical graph or graph-only inventory is not executable
+  acceptance. Writer preflight must reuse the normal materializer's full-base
+  frontend, retained/placement claim builder and structural projection against
+  the captured source and graph. Report-backed graphs omit hygienic declaration
+  identities, so join declarations from that same parsed source census using a
+  checked source-unit layout and ordinal before applying AST placement rules.
+  Keep this in the shared materializer path, not command-local selector
+  reinterpretation or per-seed full-pipeline work; run selected-plan preflight
+  once after constructing the candidate.
 
-The integration rehearsal discovers an executable 380-unit peel unseeded in
-6.98 seconds, checks it in 0.84 seconds, previews in 6.68 seconds, applies in
-6.53 seconds and materializes in 5.39 seconds. Preview changes no spec files;
-all seven reviewed service names survive. Entry residual drops from 825 to 445
-source units and from 2,119,089 to 165,722 bytes. Both whole-chunk Chromium and
-Node declaration/eval controls
-[pass on the applied strict-engine rehearsal](https://app.buildbuddy.io/invocation/6f57170a-3731-4d3f-a536-99e8aca798ca).
-Cold source analysis is separate preparation (9m42s); the extraction reuses it.
-The committed formatted spec emits the same 76-file app. Both packaged recipes
-pass, and all nine built skill archives match the current 51-file source
-payloads. Retain these controls through landing and final pin adoption.
+The fresh `fc0a` integration rehearsal discovers a useful 380-unit peel
+unseeded in 6.17 seconds, checks it in 0.81 seconds, previews in 6.42 seconds,
+applies in 6.36 seconds and rematerializes in 5.05 seconds. Preview changes no
+spec files; all seven reviewed service names survive. Entry residual drops from
+825 to 445 source units and from 2,119,089 to 165,722 bytes. Cold source
+analysis is separate preparation (8m41.44s); the prepared query reuses it. The
+formatted spec emits all 76 app files byte-for-byte identically. Node (10.218s),
+Chromium (39.948s), and four pytest cases (31.54s) pass in the
+[strict-engine rehearsal](https://app.buildbuddy.io/invocation/4649e7e7-a660-4d22-8471-10da0e7ee59e)
+(886.451s total Bazel time). This is still rehearsal evidence, not final landed
+pin acceptance. Retain these controls through final adoption.
 
 Remove each gap when its acceptance evidence exists; keep enduring contracts and
 lessons in `docs/`.

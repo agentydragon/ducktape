@@ -169,6 +169,7 @@ pub(crate) fn run_captured_pass(
             &cli,
             TransformRunOptions {
                 ownership_subset: None,
+                ownership_subset_input: None,
                 output: RunOutput::DryRun,
                 artifacts: pipeline::RunArtifacts::Program,
                 graph_reports: lowering::GraphReportSelection::None,

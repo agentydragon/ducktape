@@ -1,8 +1,8 @@
 # Residual proposals with explicit import order
 
-Target CLI contract for the consolidated workflow. The graph model and proof
-are in <placement_algorithm.md>; implementation and consumer acceptance must be
-verified separately.
+Supported workflow on the active explicit-order engine. The graph model and
+proof are in <placement_algorithm.md>; consumer adoption and behavior acceptance
+are tracked separately in the active delivery plan.
 
 `debundle modules propose` constructs a group from the current entry residual.
 Existing assignments and their shared import priority stay fixed. One fresh
@@ -92,6 +92,16 @@ permitted by that family. Inventory summaries cover all seeds in one graph pass;
 they need not expand every overlapping companion closure. Interruption is
 inconclusive. Input/witness/certification errors are not no-peel results, and
 selector-writer failure cannot become graph exhaustion.
+
+Graphs exported from `run --ownership-subset` record the normalized selected
+claims in each chunk graph and in the program graph's provenance. The exact
+subset-file bytes are fingerprinted and verified with the other graph inputs.
+These graphs support inspection of the selected baseline. Until selected-view
+overlay authoring is implemented, `modules propose` reports `inventory_only`
+without a plan, `modules check` refuses to create one, and source-backed edits
+refuse the selected graph before writing. Do not apply a selected graph's unit
+IDs to the full authored tree or treat its selected assignment as a canonical
+base assignment.
 
 | Constructor status             | Meaning                                                                                         |
 | ------------------------------ | ----------------------------------------------------------------------------------------------- |

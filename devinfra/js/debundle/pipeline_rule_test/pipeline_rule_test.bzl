@@ -3,6 +3,15 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
 _BaselineActions = provider(fields = ["actions"])
+_DebundleCliContract = provider(fields = ["args", "runfiles"])
+
+def _debundle_cli_contract_aspect_impl(target, ctx):
+    return [_DebundleCliContract(
+        args = ctx.rule.attr.args,
+        runfiles = target[DefaultInfo].default_runfiles.files,
+    )]
+
+_debundle_cli_contract_aspect = aspect(implementation = _debundle_cli_contract_aspect_impl)
 
 def _package_root_fixture_impl(ctx):
     package_root = ctx.actions.declare_directory(ctx.label.name)
@@ -14,6 +23,42 @@ def _package_root_fixture_impl(ctx):
     return [DefaultInfo(files = depset([package_root]))]
 
 package_root_fixture = rule(implementation = _package_root_fixture_impl)
+
+def _source_tree_fixture_impl(ctx):
+    source_tree = ctx.actions.declare_directory(ctx.label.name)
+    arguments = [source_tree.path]
+    inputs = []
+    for relative_path, target in ctx.attr.srcs.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("{} must provide exactly one source file".format(target.label))
+        inputs.append(files[0])
+        arguments.extend([files[0].path, relative_path])
+    ctx.actions.run_shell(
+        inputs = inputs,
+        outputs = [source_tree],
+        arguments = arguments,
+        command = """
+set -eu
+out="$1"
+shift
+mkdir -p "$out"
+while (($#)); do
+  source="$1"
+  relative_path="$2"
+  shift 2
+  destination="$out/$relative_path"
+  mkdir -p "$(dirname "$destination")"
+  cp "$source" "$destination"
+done
+""",
+    )
+    return [DefaultInfo(files = depset([source_tree]))]
+
+source_tree_fixture = rule(
+    implementation = _source_tree_fixture_impl,
+    attrs = {"srcs": attr.string_keyed_label_dict(allow_files = True, mandatory = True)},
+)
 
 def _baseline_actions_impl(target, _ctx):
     return [_BaselineActions(actions = target.actions)]
@@ -129,6 +174,45 @@ pipeline_report_flags_test = analysistest.make(
         "baseline": attr.label(aspects = [_baseline_actions], mandatory = True),
         "expected_flags": attr.string(),
         "readable": attr.bool(),
+    },
+)
+
+def _ownership_subset_split_graphs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = {action.mnemonic: action for action in analysistest.target_actions(env)}
+    asserts.equals(env, ["DebundleApply", "DebundleExportGraphs"], sorted(actions))
+    for mnemonic in actions:
+        action = actions[mnemonic]
+        asserts.true(env, "--ownership-subset" in action.argv[-1])
+        asserts.true(
+            env,
+            any([file.basename == "ownership_subset.json" for file in action.inputs.to_list()]),
+            "{} must declare the exact ownership subset as an action input".format(mnemonic),
+        )
+    graphs = target[OutputGroupInfo].dependency_graphs.to_list()
+    asserts.equals(env, ["subset_graphs.dependency_graphs"], [file.basename for file in graphs])
+    return analysistest.end(env)
+
+ownership_subset_split_graphs_test = analysistest.make(_ownership_subset_split_graphs_test_impl)
+
+def _selected_subset_cli_contract_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    contract = ctx.attr.cli_target[_DebundleCliContract]
+    asserts.true(env, any(["--ownership-subset-root" in arg for arg in contract.args]), "subset flag missing from {}".format(contract.args))
+    asserts.true(env, any(["ownership_subset.json" in arg for arg in contract.args]), "subset runfile missing from {}".format(contract.args))
+    asserts.true(env, any(["--graph-source-root" in arg for arg in contract.args]), "graph source flag missing from {}".format(contract.args))
+    asserts.true(env, any(["relocatable_source" in arg for arg in contract.args]), "source tree missing from {}".format(contract.args))
+    runfile_basenames = [file.basename for file in contract.runfiles.to_list()]
+    asserts.true(env, "ownership_subset.json" in runfile_basenames, "subset runfile missing from {}".format(runfile_basenames))
+    asserts.true(env, "subset_graphs.dependency_graphs" in runfile_basenames, "graph tree missing from {}".format(runfile_basenames))
+    asserts.true(env, "relocatable_source" in runfile_basenames, "source tree missing from {}".format(runfile_basenames))
+    return analysistest.end(env)
+
+selected_subset_cli_contract_test = analysistest.make(
+    _selected_subset_cli_contract_test_impl,
+    attrs = {
+        "cli_target": attr.label(aspects = [_debundle_cli_contract_aspect], mandatory = True),
     },
 )
 

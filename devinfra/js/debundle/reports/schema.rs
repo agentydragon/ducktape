@@ -73,6 +73,10 @@ pub struct DependencyGraphReport {
     pub chunk_id: String,
     /// Concrete nonentry module priority used by this materialization.
     pub import_order: Vec<spec::ModulePath>,
+    /// Normalized ownership subset used to produce this selected graph. The
+    /// matching program provenance contains the exact input-file fingerprint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ownership_subset: Option<Vec<graph_provenance::SelectedOwnershipModule>>,
     /// The run's [`ProgramGraphReport`], relative to this file's directory.
     /// Resolve with [`graph_provenance::program_graph_path`].
     pub program_graph: std::path::PathBuf,

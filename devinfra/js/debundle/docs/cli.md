@@ -769,18 +769,25 @@ fail even when their modules are omitted.
 Normal gates, translation validation, reconstruction and emission run on the
 selected assignment. `graph_summary.json` and `modules.json` carry its
 `ownership_subset` module paths and optional binding and anonymous-selector
-index lists, preserving omitted fields versus empty selections. This is partial output;
-it does not validate the full canonical assignment. Full graph export remains
-unsupported with this option. An omitted explicit catchall claim can be recreated
-as ordinary residual ownership without its authored renames. Use the same
-full projection and matching analysis artifact across selection edits; an
-engine, source or analysis-contract change still requires a matching fresh
-analysis.
+index lists, preserving omitted fields versus empty selections. This is partial
+output; it does not validate the full canonical assignment. Full graph export
+is available with `--graphs`; the dependency graph records the normalized
+selection and its program provenance fingerprints the exact subset-file bytes.
+The saved graph can be inspected, but selected-view overlay authoring is not
+implemented: `modules propose` returns `inventory_only` without a plan,
+`modules check` refuses to create one, and source-backed edit commands refuse
+the graph before writing. Do not treat selected graph unit IDs as durable spec
+coordinates. An omitted explicit catchall claim can be recreated as ordinary
+residual ownership without its authored renames. Use the same full projection
+and matching analysis artifact across selection edits; an engine, source or
+analysis-contract change still requires a matching fresh analysis.
 
 Bazel's `debundle_apply` accepts `ownership_subset = "retained.json"`.
-Keep `tree_modules` and its declared inputs complete. Only the Pipeline action
-reads this manifest; changing it leaves the projection and Analyze inputs
-unchanged. The attribute cannot be combined with `split_dependency_graphs`.
+Keep `tree_modules` and its declared inputs complete. Pipeline and split graph
+export actions both declare and read this manifest; changing it leaves the
+projection and Analyze inputs unchanged. A graph-backed `debundle_cli` runner
+for that output must pass the same label through its `ownership_subset` argument
+so the launcher relocates the captured subset root.
 
 ### Reusing analysis across runs
 

@@ -105,6 +105,7 @@ pub(crate) fn build_dependency_graph_report(
     DependencyGraphReport {
         chunk_id: assignment_analysis.inputs().chunk_id().to_string(),
         import_order: assignment_analysis.import_priority().to_vec(),
+        ownership_subset: None,
         program_graph,
         nodes,
         purity_causes,

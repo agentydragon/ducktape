@@ -127,6 +127,10 @@ pub fn run_source_unit_apply(
     let graph_input =
         std::sync::Arc::new(analysis::DependencyGraphInput::read(dependency_graph_path)?);
     let dependency_graph = graph_input.report();
+    anyhow::ensure!(
+        dependency_graph.ownership_subset.is_none(),
+        "source-backed edits are refused for selected-ownership graphs until selected-view overlay authoring is supported"
+    );
     let scope = tree_config
         .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
         .transpose()?;

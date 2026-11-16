@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 pub enum InputRoot {
     Spec,
     Source,
+    OwnershipSubset,
     Package(String),
     Absolute,
 }
@@ -57,7 +58,22 @@ pub struct YamlMembership {
 pub struct ProvenanceRoots {
     pub spec: PathBuf,
     pub source: PathBuf,
+    /// Parent directory for the exact `--ownership-subset` input, when used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ownership_subset: Option<PathBuf>,
     pub packages: BTreeMap<String, PathBuf>,
+}
+
+/// Normalized selected ownership claims recorded in both graph and provenance.
+/// Module paths are chunk-local strings; report `unit:N` identifiers are never
+/// persisted as authoring coordinates.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+pub struct SelectedOwnershipModule {
+    pub module: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bindings: Option<std::collections::BTreeSet<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anonymous_statements: Option<std::collections::BTreeSet<usize>>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -67,6 +83,10 @@ pub struct GraphProvenance {
     pub modules_directory: Option<PathBuf>,
     pub config_path: Option<PathBuf>,
     pub module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
+    /// Normalized selection used for each materialized chunk. Its exact input
+    /// file bytes are independently fingerprinted in `files`.
+    #[serde(default)]
+    pub selected_ownership_by_chunk: BTreeMap<String, Vec<SelectedOwnershipModule>>,
     pub files: Vec<InputFile>,
     /// Package subpaths whose existence as a directory affects analysis.
     /// Snapshot replay recreates these directories without copying their contents.
@@ -87,6 +107,7 @@ pub struct GraphHeader {
     pub chunk_id: String,
     pub program_graph: PathBuf,
     pub provenance: Option<GraphProvenance>,
+    pub selected_ownership: Option<Vec<SelectedOwnershipModule>>,
 }
 
 /// Header projections that skip graph nodes/edges and the program census
@@ -96,6 +117,8 @@ pub struct GraphHeader {
 struct ChunkGraphHeader {
     chunk_id: String,
     program_graph: PathBuf,
+    #[serde(default)]
+    ownership_subset: Option<Vec<SelectedOwnershipModule>>,
 }
 
 #[derive(Deserialize)]
@@ -121,7 +144,21 @@ pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
     let graph: ChunkGraphHeader = read_json_header(path)?;
     let program: ProgramGraphHeader =
         read_json_header(&program_graph_path(path, &graph.program_graph))?;
+    if let Some(provenance) = &program.provenance {
+        let expected = provenance.selected_ownership_by_chunk.get(&graph.chunk_id);
+        anyhow::ensure!(
+            graph.ownership_subset.as_ref() == expected,
+            "dependency graph selected ownership for chunk {} does not match its program provenance",
+            graph.chunk_id
+        );
+    } else {
+        anyhow::ensure!(
+            graph.ownership_subset.is_none(),
+            "dependency graph selected ownership has no program provenance"
+        );
+    }
     Ok(GraphHeader {
+        selected_ownership: graph.ownership_subset,
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,
         provenance: program.provenance,
@@ -132,6 +169,7 @@ pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
 pub struct CurrentRoots {
     pub spec: Option<PathBuf>,
     pub source: Option<PathBuf>,
+    pub ownership_subset: Option<PathBuf>,
     pub packages: BTreeMap<String, PathBuf>,
 }
 
@@ -148,6 +186,7 @@ pub struct VerifiedGraphSourceContext {
     source: Arc<str>,
     tree_config: Option<Arc<[u8]>>,
     tree_config_path: Option<PathBuf>,
+    selected_ownership: Option<Vec<SelectedOwnershipModule>>,
 }
 
 impl VerifiedGraphSourceContext {
@@ -179,6 +218,10 @@ impl VerifiedGraphSourceContext {
     /// Physical path corresponding to the retained, fingerprint-verified bytes.
     pub fn tree_config_path(&self) -> Option<&Path> {
         self.tree_config_path.as_deref()
+    }
+
+    pub fn selected_ownership(&self) -> Option<&[SelectedOwnershipModule]> {
+        self.selected_ownership.as_deref()
     }
 
     pub fn sha256(&self) -> &str {
@@ -354,6 +397,7 @@ impl InputCapture {
             modules_directory,
             config_path: None,
             module_roots_by_chunk: BTreeMap::new(),
+            selected_ownership_by_chunk: BTreeMap::new(),
             files: Vec::new(),
             present_directories: Vec::new(),
             absent_files: Vec::new(),
@@ -382,6 +426,43 @@ impl InputCapture {
             .expect("capture started")
             .roots
             .source = path;
+        Ok(())
+    }
+
+    /// Record bytes already read by the caller so capture and parsing use the
+    /// same snapshot. The subset is rooted separately because Bazel and local
+    /// callers commonly keep it outside the spec tree.
+    pub fn record_ownership_subset(&self, path: &Path, bytes: &[u8]) -> Result<()> {
+        let path = absolute(path)?;
+        let parent = path
+            .parent()
+            .context("ownership subset input has no parent directory")?
+            .to_path_buf();
+        let relative = path
+            .strip_prefix(&parent)
+            .context("ownership subset input is outside its parent directory")?
+            .to_path_buf();
+        let mut guard = self.state.lock().expect("capture lock");
+        let provenance = guard.as_mut().expect("capture started");
+        provenance.roots.ownership_subset = Some(parent);
+        provenance.files.push(InputFile {
+            root: InputRoot::OwnershipSubset,
+            path: relative,
+            sha256: sha256(bytes),
+        });
+        Ok(())
+    }
+
+    pub fn set_selected_ownership(
+        &self,
+        selected: BTreeMap<String, Vec<SelectedOwnershipModule>>,
+    ) -> Result<()> {
+        self.state
+            .lock()
+            .expect("capture lock")
+            .as_mut()
+            .expect("capture started")
+            .selected_ownership_by_chunk = selected;
         Ok(())
     }
 
@@ -713,6 +794,11 @@ impl GraphProvenance {
         let base = match root {
             InputRoot::Spec => current.spec.as_ref().unwrap_or(&self.roots.spec),
             InputRoot::Source => current.source.as_ref().unwrap_or(&self.roots.source),
+            InputRoot::OwnershipSubset => current
+                .ownership_subset
+                .as_ref()
+                .or(self.roots.ownership_subset.as_ref())
+                .context("missing ownership subset root")?,
             InputRoot::Package(name) => current
                 .packages
                 .get(name)
@@ -745,8 +831,10 @@ impl GraphProvenance {
                 .is_some_and(|arg| arg == "run"),
             "graph has no replayable debundle run command"
         );
-        let relocated =
-            current.spec.is_some() || current.source.is_some() || !current.packages.is_empty();
+        let relocated = current.spec.is_some()
+            || current.source.is_some()
+            || current.ownership_subset.is_some()
+            || !current.packages.is_empty();
         let cwd = if relocated {
             absolute(current.spec.as_deref().unwrap_or(&self.roots.spec))?
         } else {
@@ -766,6 +854,7 @@ impl GraphProvenance {
                     | "--tree-vendor-marks"
                     | "--spec"
                     | "--tree-source-root"
+                    | "--ownership-subset"
                     | "--out-root"
                     | "--package-root"
                     | "--packages-root"
@@ -777,6 +866,23 @@ impl GraphProvenance {
                 let translated = match flag.as_str() {
                     "--tree-source-root" => {
                         absolute(current.source.as_deref().unwrap_or(&self.roots.source))?
+                    }
+                    "--ownership-subset" => {
+                        let original = absolute(Path::new(&value))?;
+                        let root = self
+                            .roots
+                            .ownership_subset
+                            .as_deref()
+                            .context("ownership subset root was not captured")?;
+                        let relative = original.strip_prefix(root).with_context(|| {
+                            format!(
+                                "recorded ownership subset {} is outside captured root {}",
+                                original.display(),
+                                root.display()
+                            )
+                        })?;
+                        absolute(current.ownership_subset.as_deref().unwrap_or(root))?
+                            .join(relative)
                     }
                     "--package-root" => {
                         let (name, root) = value
@@ -855,6 +961,9 @@ impl GraphProvenance {
         };
         consider(&self.roots.spec, current.spec.as_deref())?;
         consider(&self.roots.source, current.source.as_deref())?;
+        if let Some(old) = &self.roots.ownership_subset {
+            consider(old, current.ownership_subset.as_deref())?;
+        }
         for (name, old) in &self.roots.packages {
             consider(old, current.packages.get(name).map(PathBuf::as_path))?;
         }
@@ -1060,6 +1169,10 @@ impl GraphProvenance {
                 .transpose()?
                 .map(|path| absolute(&path))
                 .transpose()?,
+            selected_ownership: self
+                .selected_ownership_by_chunk
+                .get(&source.chunk_id)
+                .cloned(),
             sha256: source.sha256.clone(),
             source: Arc::from(
                 String::from_utf8(bytes).context("captured JavaScript source is not UTF-8")?,
@@ -1277,6 +1390,7 @@ mod tests {
             ProvenanceRoots {
                 spec: temp.path().to_path_buf(),
                 source: temp.path().to_path_buf(),
+                ownership_subset: None,
                 packages: BTreeMap::new(),
             },
             None,
@@ -1308,6 +1422,7 @@ mod tests {
         let roots = ProvenanceRoots {
             spec: temp.path().to_path_buf(),
             source: temp.path().to_path_buf(),
+            ownership_subset: None,
             packages: BTreeMap::from([
                 ("a".to_string(), package.clone()),
                 ("b".to_string(), package.clone()),
@@ -1363,6 +1478,7 @@ mod tests {
             ProvenanceRoots {
                 spec: temp.path().to_path_buf(),
                 source: modules.clone(),
+                ownership_subset: None,
                 packages: BTreeMap::new(),
             },
             Some(PathBuf::from("modules")),
@@ -1398,6 +1514,7 @@ mod tests {
                     ProvenanceRoots {
                         spec: root.clone(),
                         source: root.clone(),
+                        ownership_subset: None,
                         packages: BTreeMap::new(),
                     },
                     None,
