@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const maxObserveWaitSeconds = 30
@@ -51,14 +50,6 @@ type SourceError struct {
 	Message string `json:"message"`
 }
 
-type DispatchPart struct {
-	Kind       string          `json:"kind"`
-	Source     string          `json:"source"`
-	ObservedAt *time.Time      `json:"observed_at,omitempty"`
-	Value      json.RawMessage `json:"value,omitempty"`
-	Error      *SourceError    `json:"error,omitempty"`
-}
-
 type CorrelatedTurn struct {
 	TurnID                string   `json:"turn_id"`
 	InputCommandIDs       []string `json:"input_command_ids"`
@@ -76,10 +67,10 @@ type InputResult struct {
 }
 
 type InputObservation struct {
-	SessionID   string       `json:"session_id"`
-	CommandID   string       `json:"command_id"`
-	Dispatch    DispatchPart `json:"dispatch"`
-	Observation InputResult  `json:"observation"`
+	SessionID   string                             `json:"session_id"`
+	CommandID   string                             `json:"command_id"`
+	Dispatch    SourcePart[*dispatcherpb.Dispatch] `json:"dispatch"`
+	Observation InputResult                        `json:"observation"`
 }
 
 type resumeToken struct {
@@ -116,7 +107,7 @@ func ObserveInput(
 	result := InputObservation{
 		SessionID: request.SessionID,
 		CommandID: request.CommandID,
-		Dispatch:  DispatchPart{Kind: "not_observed", Source: "dispatcher"},
+		Dispatch:  SourcePart[*dispatcherpb.Dispatch]{Kind: SourceNotObserved, Source: SourceDispatcher},
 		Observation: InputResult{
 			HistoryCoverage: HistoryCoverage{Source: SourceHistory, Gaps: []HistoryCursorRange{}},
 			Kind:            ObservationNotObserved,
@@ -195,9 +186,7 @@ func getDispatch(
 	if dispatch == nil || dispatch.GetCommandId() != commandID || dispatch.GetSessionId() != sessionID {
 		return nil, status.Error(codes.NotFound, "input not found")
 	}
-	if err := recordDispatch(dispatch, result); err != nil {
-		return nil, err
-	}
+	recordDispatch(dispatch, result)
 	return dispatch, nil
 }
 
@@ -226,9 +215,7 @@ func watchForAdmission(
 			if dispatch.GetSessionId() != sessionID {
 				return nil, status.Error(codes.NotFound, "input not found")
 			}
-			if err := recordDispatch(dispatch, result); err != nil {
-				return current, err
-			}
+			recordDispatch(dispatch, result)
 			current = dispatch
 			if dispatch.GetAdmission() != nil || dispatchTerminal(dispatch) || wakeBlocksDelivery(dispatch) {
 				return current, nil
@@ -250,15 +237,10 @@ func wakeBlocksDelivery(dispatch *dispatcherpb.Dispatch) bool {
 	}
 }
 
-func recordDispatch(dispatch *dispatcherpb.Dispatch, result *InputObservation) error {
+func recordDispatch(dispatch *dispatcherpb.Dispatch, result *InputObservation) {
 	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
-	encoded, err := protojson.Marshal(dispatch)
-	if err != nil {
-		return fmt.Errorf("marshal Dispatcher receipt: %w", err)
-	}
 	now := time.Now().UTC()
-	result.Dispatch = DispatchPart{Kind: "observed", Source: "dispatcher", ObservedAt: &now, Value: encoded}
-	return nil
+	result.Dispatch = SourcePart[*dispatcherpb.Dispatch]{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: dispatch}
 }
 
 func setObservation(result *InputObservation, kind ObservationKind, turnID *string, turn *CorrelatedTurn, reason *string) {

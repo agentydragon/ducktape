@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -44,21 +45,40 @@ const (
 )
 
 // SourcePart preserves the result of one backend read without treating an absent record or failed
-// source as an empty successful value. Value is ProtoJSON from the owning service.
-type SourcePart struct {
-	Kind       SourceKind      `json:"kind"`
-	Source     Source          `json:"source"`
-	ObservedAt *time.Time      `json:"observed_at,omitempty"`
-	Value      json.RawMessage `json:"value,omitempty"`
-	Error      *SourceError    `json:"error,omitempty"`
+// source as an empty successful value. Value stays typed until this projection is marshaled.
+type SourcePart[T proto.Message] struct {
+	Kind       SourceKind   `json:"kind"`
+	Source     Source       `json:"source"`
+	ObservedAt *time.Time   `json:"observed_at,omitempty"`
+	Value      T            `json:"-"`
+	Error      *SourceError `json:"error,omitempty"`
+}
+
+func (part SourcePart[T]) MarshalJSON() ([]byte, error) {
+	var encoded json.RawMessage
+	message := proto.Message(part.Value)
+	if message != nil && message.ProtoReflect().IsValid() {
+		valueJSON, err := protojson.Marshal(message)
+		if err != nil {
+			return nil, fmt.Errorf("marshal %s source value: %w", part.Source, err)
+		}
+		encoded = valueJSON
+	}
+	return json.Marshal(struct {
+		Kind       SourceKind      `json:"kind"`
+		Source     Source          `json:"source"`
+		ObservedAt *time.Time      `json:"observed_at,omitempty"`
+		Value      json.RawMessage `json:"value,omitempty"`
+		Error      *SourceError    `json:"error,omitempty"`
+	}{part.Kind, part.Source, part.ObservedAt, encoded, part.Error})
 }
 
 // SessionSnapshot composes the durable Dispatcher Session and retained History summary. It makes
 // no live-environment lookup and owns neither credentials nor authorization.
 type SessionSnapshot struct {
-	SessionID uuid.UUID  `json:"session_id"`
-	Session   SourcePart `json:"session"`
-	History   SourcePart `json:"history"`
+	SessionID uuid.UUID                             `json:"session_id"`
+	Session   SourcePart[*dispatcherpb.Session]     `json:"session"`
+	History   SourcePart[*historypb.SessionSummary] `json:"history"`
 }
 
 // GetSession reads both independently owned sources, retaining one source's result when the other
@@ -71,8 +91,8 @@ func GetSession(
 ) (SessionSnapshot, error) {
 	snapshot := SessionSnapshot{
 		SessionID: sessionID,
-		Session:   SourcePart{Kind: SourceNotObserved, Source: SourceDispatcher},
-		History:   SourcePart{Kind: SourceNotObserved, Source: SourceHistory},
+		Session:   SourcePart[*dispatcherpb.Session]{Kind: SourceNotObserved, Source: SourceDispatcher},
+		History:   SourcePart[*historypb.SessionSummary]{Kind: SourceNotObserved, Source: SourceHistory},
 	}
 	session, sessionErr := dispatcher.GetSession(ctx, &dispatcherpb.GetSessionRequest{SessionId: sessionID.String()})
 	if sessionErr != nil {
@@ -90,12 +110,8 @@ func GetSession(
 		snapshot.Session.Kind = SourceUnavailable
 		snapshot.Session.Error = &SourceError{Code: codes.DataLoss.String(), Message: "Dispatcher returned a different Session"}
 	} else {
-		value, marshalErr := protojson.Marshal(session.GetSession())
-		if marshalErr != nil {
-			return snapshot, fmt.Errorf("marshal Dispatcher Session: %w", marshalErr)
-		}
 		now := time.Now().UTC()
-		snapshot.Session = SourcePart{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: value}
+		snapshot.Session = SourcePart[*dispatcherpb.Session]{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: session.GetSession()}
 	}
 
 	summary, historyErr := history.GetSessionSummary(ctx, &historypb.GetSessionSummaryRequest{SessionId: sessionID.String()})
@@ -114,12 +130,8 @@ func GetSession(
 		snapshot.History.Kind = SourceUnavailable
 		snapshot.History.Error = &SourceError{Code: codes.DataLoss.String(), Message: "History returned a summary for a different Session"}
 	} else {
-		value, marshalErr := protojson.Marshal(summary)
-		if marshalErr != nil {
-			return snapshot, fmt.Errorf("marshal History Session summary: %w", marshalErr)
-		}
 		now := time.Now().UTC()
-		snapshot.History = SourcePart{Kind: SourceObserved, Source: SourceHistory, ObservedAt: &now, Value: value}
+		snapshot.History = SourcePart[*historypb.SessionSummary]{Kind: SourceObserved, Source: SourceHistory, ObservedAt: &now, Value: summary}
 	}
 	if ctx.Err() != nil {
 		return snapshot, status.FromContextError(ctx.Err()).Err()

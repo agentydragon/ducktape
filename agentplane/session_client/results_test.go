@@ -79,18 +79,31 @@ func TestGetSessionComposesProtoJSONWithoutLosingEnumOrUint64Shapes(t *testing.T
 	if got.SessionID.String() != testSessionID || got.Session.Source != SourceDispatcher || got.History.Source != SourceHistory {
 		t.Fatalf("snapshot identities = %#v", got)
 	}
-	var opening, summary map[string]json.RawMessage
-	if err := json.Unmarshal(got.Session.Value, &opening); err != nil {
+	if got.Session.Value.GetStatus().GetMaterialization() != dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED ||
+		got.History.Value.GetFeedStatus() != historypb.FeedStatus_FEED_STATUS_ACTIVE || got.History.Value.GetCommittedCursor() != math.MaxUint64 {
+		t.Fatalf("typed Session and History values = %v / %v", got.Session.Value, got.History.Value)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal Session snapshot: %v", err)
+	}
+	var output struct {
+		SessionID string `json:"session_id"`
+		Session   struct {
+			Value map[string]json.RawMessage `json:"value"`
+		} `json:"session"`
+		History struct {
+			Value map[string]json.RawMessage `json:"value"`
+		} `json:"history"`
+	}
+	if err := json.Unmarshal(encoded, &output); err != nil {
 		t.Fatal(err)
 	}
-	if string(opening["status"]) != `{"materialization":"SESSION_MATERIALIZATION_ACCEPTED"}` {
-		t.Fatalf("Session ProtoJSON status = %s", opening["status"])
+	if output.SessionID != testSessionID || string(output.Session.Value["status"]) != `{"materialization":"SESSION_MATERIALIZATION_ACCEPTED"}` {
+		t.Fatalf("Session ProtoJSON status = %s in %s", output.Session.Value["status"], encoded)
 	}
-	if err := json.Unmarshal(got.History.Value, &summary); err != nil {
-		t.Fatal(err)
-	}
-	if string(summary["feedStatus"]) != `"FEED_STATUS_ACTIVE"` || string(summary["committedCursor"]) != `"18446744073709551615"` {
-		t.Fatalf("summary ProtoJSON fields = %#v", summary)
+	if string(output.History.Value["feedStatus"]) != `"FEED_STATUS_ACTIVE"` || string(output.History.Value["committedCursor"]) != `"18446744073709551615"` {
+		t.Fatalf("summary ProtoJSON fields = %#v", output.History.Value)
 	}
 }
 
@@ -107,6 +120,22 @@ func TestGetSessionPreservesMissingAndUnavailableSourcesIndependently(t *testing
 	}
 	if got.History.Kind != SourceNotObserved || got.History.Error != nil {
 		t.Fatalf("missing History was not distinct from an unavailable source: %#v", got.History)
+	}
+	encoded, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal partial snapshot: %v", err)
+	}
+	if strings.Contains(string(encoded), `"value"`) {
+		t.Fatalf("absent source values were serialized: %s", encoded)
+	}
+}
+
+func TestSourcePartReportsProtoJSONErrorsAtTheMarshalBoundary(t *testing.T) {
+	part := SourcePart[*dispatcherpb.Session]{
+		Kind: SourceObserved, Source: SourceDispatcher, Value: &dispatcherpb.Session{SessionId: "\xff"},
+	}
+	if _, err := json.Marshal(part); err == nil {
+		t.Fatal("marshaled a protobuf with invalid UTF-8")
 	}
 }
 
