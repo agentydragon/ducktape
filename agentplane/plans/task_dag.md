@@ -183,14 +183,14 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
-reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:30 UTC.
+reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:47 UTC.
 
-| Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                              |
-| -------------------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
-| Versioned dispatch watch               | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                              |
-| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
-| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                                 |
+| Track                                  | Operator release (UTC) | Node                                | State                                                                                                                                                              |
+| -------------------------------------- | ---------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`        | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
+| Versioned dispatch watch               | 2026-11-16 06:40       | `DISPATCHER_WATCH_RESUMABLE_SERVER` | Storage complete; resumable server in flight, chunked-notice cleanup gated                                                                                         |
+| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)         | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
+| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`          | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                                 |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
@@ -206,7 +206,7 @@ removed). Not released:
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch, section 16]
+    DISPATCHER_WATCH_RESUMABLE_SERVER[In progress: versioned dispatch server, section 16]
     DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists, section 13]
 ```
 
@@ -2602,7 +2602,7 @@ attachments without requiring a Sandbox on every Session.
 1. **Sessions:** a `WatchSessions` server stream (and its JSON facade route) on the Dispatcher with
    the same callers as `ListSessions`. A version bumped on every Session write, payload-free keyed
    notifications through `postgres/wakeups.Hub`, and the resume-token shape of
-   `DISPATCHER_WATCH_VERSIONS`. Additive migration; no client yet. The Dispatcher never deletes
+   `DISPATCHER_WATCH_RESUMABLE_SERVER`. Additive migration; no client yet. The Dispatcher never deletes
    Session rows, so the watch needs no Session tombstones.
 2. **Grants, if any:** a caller setting the image accepts, applied after that image is pinned.
 3. **App:** list membership and Dispatcher-known state (materialization, required Environment) from
@@ -3721,14 +3721,16 @@ a specific stopping condition.
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
-- **`DISPATCHER_CHUNKED_WATCH_CLEANUP` (blocked):** `CLEANUP(added 2026-11-15):` remove the
-  chunked PostgreSQL notification encoder/reassembler and its timeout and pending-cap handling only
-  after every serving replica uses durable versioned watches, all dispatch writers are on the
-  versioned migration, and no supported rollback image depends on that path. The current rollback
-  pin, `git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`,
-  still uses it; wait for `DISPATCHER_WATCH_RESUMABLE_SERVER`, replacement of that pin, and closure
-  of the supported rollback window. Client enablement is a separate gate. Source:
-  [versioned watch rollout](standard_idioms.md#dispatcher_watch_versions).
+- **`DISPATCHER_CHUNKED_WATCH_CLEANUP` (blocked):** remove the chunked PostgreSQL terminal-notice
+  sender and encoder only after every serving replica uses durable versioned watches and no supported
+  rollback image depends on that path. Migration `00024` covers every writer, including old application
+  images. The supported rollback image,
+  `git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`, remains the
+  rollback target. PR #16894 CI checked compatibility of its matching embedded migration provider but
+  did not run the old image binary. Keep the migration installed. That image resumes legacy watch
+  behavior and pauses tombstone pruning while it runs. Wait for the serving rollout and rollback window
+  to close before removing the sender. Client enablement is a separate gate. Source:
+  [versioned watch rollout](standard_idioms.md#dispatcher_watch_resumable_server).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3813,10 +3815,9 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_WATCH_VERSIONS[In progress: dispatch version storage, PR1]
-    DISPATCHER_WATCH_RESUMABLE_SERVER[Blocked: versioned watch receiver]
+    DISPATCHER_WATCH_RESUMABLE_SERVER[In progress: versioned watch receiver]
     DISPATCHER_WATCH_CLIENT_CUTOVER[Blocked: client enablement after staging pin]
-    DISPATCHER_WATCH_VERSIONS --> DISPATCHER_WATCH_RESUMABLE_SERVER --> DISPATCHER_WATCH_CLIENT_CUTOVER
+    DISPATCHER_WATCH_RESUMABLE_SERVER --> DISPATCHER_WATCH_CLIENT_CUTOVER
 ```
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
@@ -3824,33 +3825,22 @@ flowchart LR
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
 
-### In flight
-
-The operator released `DISPATCHER_WATCH_VERSIONS` on 2026-11-16 at 06:40 UTC.
-
-### `DISPATCHER_WATCH_VERSIONS` — persist dispatch change versions
-
-**In progress; coding agent, 2026-11-15 PST. Operator released the build on 2026-11-16 at
-06:40 UTC.** PR1 adds sequence-backed versions, a backfill, address-free deletion tombstones and
-24-hour pruning with a durable coverage floor. Existing watches and chunked notices stay in place.
-The [versioned watch plan](standard_idioms.md#dispatcher_watch_versions) owns the rollout and
-remaining acceptance. Exit: additive migration, old-writer compatibility, retention and rollback
-checks pass, including the k3s Dispatcher suite.
-
 ### `DISPATCHER_WATCH_RESUMABLE_SERVER` — serve versioned dispatch replay
 
-**Blocked on the storage release and every writer bumping versions.** Serve versioned database
-reads through `wakeups.Hub`, with filter-bound resume tokens and explicit retained-coverage loss.
-Keep chunked notices for old serving replicas and supported rollback images. Exit: disconnect and
-restart replay, deletion, expired coverage, concurrent commit ordering and multi-replica notification
-integration tests pass; the k3s Dispatcher suite remains green.
+**In progress.** Serve versioned database reads through `wakeups.Hub`, with filter-bound resume tokens,
+durable deletion replay and explicit retained-coverage loss. The storage migration is already part of
+the serving-binary startup lifecycle; this server change adds no migration and does not wait for a
+staging image pin. Continue sending chunked notices for older serving replicas. Exit: disconnect and
+restart replay, deletion, expired coverage, concurrent commit ordering, no-match checkpoint advancement
+and multi-replica notification integration tests pass; the k3s Dispatcher suite remains green. The
+[versioned watch plan](standard_idioms.md#dispatcher_watch_resumable_server) owns the design and rollback checks.
 
 ### `DISPATCHER_WATCH_CLIENT_CUTOVER` — enable versioned watch clients
 
-**Blocked on the versioned receiver's serving-image staging pin.** Enable App and
-`session_client/observe_input.go` resume tokens only after receivers ship. Clients surface
-`OUT_OF_RANGE` coverage loss before taking a fresh snapshot. The
-[plan](standard_idioms.md#dispatcher_watch_versions) inventories clients and test helpers.
+**Blocked until the operator confirms the versioned receiver's serving image is pinned on staging.**
+Enable App and `session_client/observe_input.go` resume tokens only after that pin. Clients surface
+`OUT_OF_RANGE` coverage loss before taking a fresh snapshot. Notifications has no `WatchDispatches`
+client. The [plan](standard_idioms.md#dispatcher_watch_resumable_server) inventories clients and test helpers.
 Exit: reconnect and coverage-loss behavior pass through the actual clients.
 
 ## 17. Two binaries and the Go layout

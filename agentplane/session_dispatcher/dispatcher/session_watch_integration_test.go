@@ -119,7 +119,7 @@ func sessionWatchHub(t *testing.T, databaseURL, name string) *wakeups.Hub {
 
 func sessionWatchService(store *Store, hub *wakeups.Hub) *Service {
 	return &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), SessionHub: hub, WatchLease: time.Minute,
+		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: hub, WatchLease: time.Minute,
 	}
 }
 

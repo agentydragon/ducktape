@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"slices"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
@@ -19,7 +18,6 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/placement"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -77,8 +75,7 @@ type Service struct {
 	Sandboxes          SandboxReader
 	EnvironmentRules   *reader.Index[access.Rule]
 	PolicyReady        func() error
-	Hub                *WatchHub
-	SessionHub         *wakeups.Hub
+	Hub                *wakeups.Hub
 	WatchLease         time.Duration
 	CentralTarget      *CentralTarget
 }
@@ -88,117 +85,6 @@ const maxFilterCommands = 1000
 
 // watchWriteTimeout bounds how long a slow reader can hold a Dispatcher watch.
 const watchWriteTimeout = 5 * time.Second
-
-func inScope(filter *dispatcherpb.DispatchFilter, row *dispatcherpb.Dispatch) bool {
-	if filter == nil {
-		return false
-	}
-	if ids := filter.GetCommandIds(); len(ids) > 0 && !slices.Contains(ids, row.GetCommandId()) {
-		return false
-	}
-	switch scope := filter.GetScope().(type) {
-	case *dispatcherpb.DispatchFilter_SessionId:
-		return row.GetSessionId() == scope.SessionId
-	case *dispatcherpb.DispatchFilter_Sandbox:
-		return row.GetSandbox() == scope.Sandbox
-	default:
-		return false
-	}
-}
-
-func (s *Service) WatchDispatches(request *dispatcherpb.WatchDispatchesRequest, stream grpc.ServerStreamingServer[dispatcherpb.WatchDispatchesResponse]) error {
-	ctx := stream.Context()
-	caller, err := s.caller(ctx)
-	if err != nil {
-		return err
-	}
-	if s.Hub == nil {
-		return status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
-	}
-	sub, unsubscribe, err := s.Hub.subscribe()
-	if err != nil {
-		return status.Error(codes.Unavailable, "dispatcher watch listener unavailable")
-	}
-	defer unsubscribe()
-	lease := s.WatchLease
-	if lease <= 0 {
-		return status.Error(codes.Internal, "watch lease must be positive")
-	}
-	leaseCtx, endLease := context.WithTimeout(ctx, lease)
-	defer endLease()
-	written := map[string]*dispatcherpb.Dispatch{}
-	var terminal []terminalnotice.Event
-	changed, caughtUp := true, false
-	for {
-		if changed {
-			changed = false
-			rows, err := s.list(ctx, request.GetFilter())
-			if err != nil {
-				return err
-			}
-			for _, event := range terminal {
-				if terminalVisibleTo(event, caller) && inScope(request.GetFilter(), event.Dispatch) {
-					rows = append(rows, event.Dispatch)
-				}
-			}
-			terminal = nil
-			for _, row := range rows {
-				if previous, ok := written[row.GetCommandId()]; ok && proto.Equal(previous, row) {
-					continue
-				}
-				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
-					Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: row},
-				})
-				if err != nil {
-					return err
-				}
-				if ended {
-					return nil
-				}
-				written[row.GetCommandId()] = proto.Clone(row).(*dispatcherpb.Dispatch)
-			}
-			if !caughtUp {
-				caughtUp = true
-				ended, err := sendWatchDispatch(leaseCtx, ctx, stream, &dispatcherpb.WatchDispatchesResponse{
-					Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
-				})
-				if err != nil {
-					return err
-				}
-				if ended {
-					return nil
-				}
-			}
-		}
-		select {
-		case <-leaseCtx.Done():
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return nil
-		case message := <-sub.failure:
-			return status.Error(codes.Unavailable, message)
-		case event := <-sub.terminal:
-			terminal = append(terminal, event)
-			changed = true
-		case <-sub.changed:
-			changed = true
-		}
-	}
-}
-
-func terminalVisibleTo(event terminalnotice.Event, caller Caller) bool {
-	switch c := caller.(type) {
-	case ServiceCaller:
-		return true
-	case ServiceAccountCaller:
-		return c.Privileged
-	case IdentityCaller:
-		return event.OwnerIdentity != nil && sameIdentity(event.OwnerIdentity, c.Identity)
-	default:
-		return false
-	}
-}
 
 func sendWatchDispatch(
 	leaseCtx, ctx context.Context,

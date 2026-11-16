@@ -21,10 +21,14 @@ The manual queue, replica and wake probes are documented in the
   ([proto](session_dispatcher.proto)). Commands name the Session; Dispatcher resolves its placement.
   A broker with an incarnation-scoped grant supplies `expected_sandbox_uid` as an authorization
   precondition. `command_id` is the idempotency key across every command RPC.
-- **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
-  again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
-  commands, so a caller holding a few of them does not replay a whole Session. The current RPC has no
-  resume token or durable replay; reconnecting starts with a new snapshot.
+- **Watching**: `WatchDispatches` sends the current Dispatches and retained deletion receipts in scope,
+  ordered by version, then a `CaughtUp` checkpoint. It replays versions after the request's opaque,
+  filter-bound `resume_token`; every response carries a token, and `CaughtUp` may recur after later
+  changes. A checkpoint advances even when a change is outside the filter. Tokens carry no caller
+  identity, so every request is authorized normally. Reusing a token with a different filter returns
+  `INVALID_ARGUMENT`; a token older than retained coverage returns `OUT_OF_RANGE` with resynchronization
+  detail. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those commands. Tombstones
+  are used for watch snapshots and replay; `GetDispatch` and `ListDispatches` continue to read current rows.
 - **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
@@ -102,14 +106,11 @@ The manual queue, replica and wake probes are documented in the
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
-  ones and admitted inputs `UNKNOWN`. The Dispatcher publishes their exact protobuf snapshots through
-  transactional PostgreSQL notifications in bounded chunks, in the same transaction that deletes the rows,
-  so active `WatchDispatches` streams on any connected replica receive them. A listener disconnect, reconnect
-  gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
-  so a later `GetDispatch` or current watch is `NOT_FOUND`/empty. Versioned storage groundwork retains
-  deleted receipt snapshots under command-ID/version tombstones with no Sandbox name or UID, but the current
-  watch and read APIs do not consume those tombstones. The storage migration does not change watch responses
-  or add resume-token support.
+  ones and admitted inputs `UNKNOWN`. Deletion writes receipt tombstones transactionally. A versioned
+  `WatchDispatches` snapshot or replay reads those tombstones in version order and applies the same retained
+  Session read scope as live rows. A tombstone contains no Sandbox name or UID. The Dispatcher continues
+  emitting transactional chunked terminal notices for older serving replicas; remove that path only after
+  every serving replica and supported rollback image has moved to versioned watches.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
   Later Session creation requests and queued commands cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.

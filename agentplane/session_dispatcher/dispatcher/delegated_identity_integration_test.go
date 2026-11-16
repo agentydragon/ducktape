@@ -74,7 +74,7 @@ func TestDelegatedIdentityActsOnlyOnItsIdentitysSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	hub := testWatchHub(t, store)
 	ca := transporttesting.NewCA(t)
 	serverTLS, err := ca.Issue(t, peertls.SessionDispatcherURI).WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
 	if err != nil {

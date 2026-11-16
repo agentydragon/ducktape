@@ -30,7 +30,7 @@ func TestSessionWatchGeneratedJSONFacade(t *testing.T) {
 	if _, err := store.CreateSession(admitted(t), "test-facade-unrecorded-session", "test-facade-environment", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{Store: store, SessionHub: hub, WatchLease: time.Minute, DispatcherServices: sets.New(peertls.AppURI)}
+	service := &Service{Store: store, Hub: hub, WatchLease: time.Minute, DispatcherServices: sets.New(peertls.AppURI)}
 	rule, err := auth.Services([]string{peertls.AppURI})
 	if err != nil {
 		t.Fatal(err)

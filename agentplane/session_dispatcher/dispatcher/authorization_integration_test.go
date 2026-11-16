@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -113,7 +114,7 @@ type authorityPeers struct {
 
 // authorityClients exercises the live workload Identity rule and the independent component grant.
 // Neither workload Identity inherits the component's authority from its ServiceAccount name.
-func authorityClients(t *testing.T, store *Store, inventory *authorityInventory, hub *WatchHub) authorityPeers {
+func authorityClients(t *testing.T, store *Store, inventory *authorityInventory, hub *wakeups.Hub) authorityPeers {
 	t.Helper()
 	api, err := kubeapiserver.Start()
 	if err != nil {
@@ -245,7 +246,7 @@ func serveAuthoritySVIDServer(
 		t.Fatal(err)
 	}
 	store := testStore(t, 10)
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	hub := testWatchHub(t, store)
 	service := &Service{
 		Store: store, DispatcherCallers: sets.New[auth.Account](),
 		Sandboxes: inventory, EnvironmentRules: environmentRules, PolicyReady: func() error { return nil },
@@ -406,7 +407,7 @@ func TestRPCIdentityOnlyOwnershipKeepsServiceBackendReads(t *testing.T) {
 		sandbox:  SandboxSnapshot{Name: caller.Name, Namespace: caller.Namespace, UID: authoritySandboxUID},
 		identity: ownerIdentity,
 	}
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
+	hub := testWatchHub(t, store)
 	peers := authorityClients(t, store, inventory, hub)
 	client := peers.component
 

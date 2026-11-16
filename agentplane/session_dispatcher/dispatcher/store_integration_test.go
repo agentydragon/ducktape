@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -176,7 +177,31 @@ func testStoreWithURL(t *testing.T, cap int) (*Store, string) {
 	t.Helper()
 	databaseURL := integrationDatabase.Clone(t)
 	db := postgres.Open(t, databaseURL)
-	return NewStore(db, cap), databaseURL
+	store := NewStore(db, cap)
+	testStoreDatabaseURLs.Store(db, databaseURL)
+	t.Cleanup(func() { testStoreDatabaseURLs.Delete(db) })
+	return store, databaseURL
+}
+
+var testStoreDatabaseURLs sync.Map // map[*sql.DB]string
+
+func testWatchHub(t *testing.T, store *Store) *wakeups.Hub {
+	t.Helper()
+	value, ok := testStoreDatabaseURLs.Load(store.DB)
+	databaseURL, isString := value.(string)
+	if !ok || !isString {
+		t.Fatal("test store has no registered PostgreSQL URL")
+	}
+	hub, err := wakeups.Listen(t.Context(), databaseURL, NotifyChannel)
+	if err != nil {
+		t.Fatal("listen for dispatcher notifications:", err)
+	}
+	t.Cleanup(func() {
+		if err := hub.Close(); err != nil {
+			t.Errorf("close dispatcher notification listener: %v", err)
+		}
+	})
+	return hub
 }
 
 func claimSessionOwner(t *testing.T, store *Store, sessionID string) SessionOwner {
@@ -716,9 +741,9 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	}
 }
 
-func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
+func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 	ctx := context.Background()
-	store, databaseURL := testStoreWithURL(t, 3)
+	store, _ := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
 	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("deleted-queued", "q"), nil); err != nil {
 		t.Fatal(err)
@@ -739,33 +764,12 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
 		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
 	}
-	// Two Dispatcher replicas must both receive the committed terminal snapshots:
-	// the rows are deleted in the same transaction and cannot be read afterward.
-	subscribers := make([]*watchSubscription, 0, 2)
-	for replica := range 2 {
-		hub := NewWatchHub(databaseURL)
-		listenContext, cancel := context.WithCancel(ctx)
-		ended := make(chan error, 1)
-		go func() { ended <- hub.Run(listenContext) }()
-		t.Cleanup(func() {
-			cancel()
-			select {
-			case <-ended:
-			case <-time.After(5 * time.Second):
-				t.Errorf("replica %d PostgreSQL listener did not stop", replica)
-			}
-		})
-		ready := time.After(5 * time.Second)
-		for !hub.Connected() {
-			select {
-			case err := <-ended:
-				t.Fatalf("replica %d listener stopped before subscription: %v", replica, err)
-			case <-ready:
-				t.Fatalf("replica %d listener did not subscribe", replica)
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-		sub, unsubscribe, err := hub.subscribe()
+	// Both Dispatcher replicas must wake for the committed cleanup, then read the
+	// durable tombstones because the dispatch rows are deleted in the same transaction.
+	subscribers := make([]<-chan struct{}, 0, 2)
+	for range 2 {
+		hub := testWatchHub(t, store)
+		sub, unsubscribe, err := hub.Subscribe(NotifyChannel)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -783,17 +787,10 @@ func TestDeletedSandboxBroadcastsTerminalRowsBeforeDeletingThem(t *testing.T) {
 		t.Fatalf("in-flight terminal: %+v", events[1])
 	}
 	for replica, sub := range subscribers {
-		for _, want := range events {
-			select {
-			case got := <-sub.terminal:
-				if got.ID != want.ID || !proto.Equal(got.Dispatch, want.Dispatch) {
-					t.Fatalf("replica %d terminal snapshot: got %+v, want %+v", replica, got, want)
-				}
-			case failure := <-sub.failure:
-				t.Fatalf("replica %d terminal watch failed: %s", replica, failure)
-			case <-time.After(5 * time.Second):
-				t.Fatalf("replica %d missed terminal snapshot %s", replica, want.ID)
-			}
+		select {
+		case <-sub:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("replica %d missed Sandbox deletion wakeup", replica)
 		}
 	}
 	if _, err := store.GetDispatch(ctx, "deleted-queued"); !errors.Is(err, ErrNotFound) {
@@ -867,13 +864,7 @@ func TestDeletedSandboxRetainsSessionsAndSettlesUnfinishedMaterialization(t *tes
 	}
 }
 
-func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
-	hub := &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true}
-	sub, unsubscribe, err := hub.subscribe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer unsubscribe()
+func TestTerminalPayloadRoundTripThroughAssembler(t *testing.T) {
 	reason := "sandbox_deleted"
 	event := terminalnotice.Event{ID: "00000000-0000-4000-8000-000000000123", Dispatch: &dispatcherpb.Dispatch{
 		CommandId: "terminal", Sandbox: strings.Repeat("sandbox", 1200),
@@ -886,23 +877,21 @@ func TestTerminalPayloadRoundTripForWatchers(t *testing.T) {
 	if len(payloads) < 2 {
 		t.Fatalf("large terminal snapshot did not span multiple NOTIFY payloads: %d", len(payloads))
 	}
-	// LISTEN preserves order on one connection, but separate writers and reconnects
-	// make reassembly independent of arrival order.
+	var assembler terminalnotice.Assembler
+	var received *terminalnotice.Event
+	// Reassembly must tolerate parts arriving out of order across writers or reconnects.
 	for i := len(payloads) - 1; i >= 0; i-- {
 		if len(payloads[i]) > terminalnotice.MaxPayloadBytes {
 			t.Fatalf("part %d exceeds PostgreSQL NOTIFY limit", i)
 		}
-		if err := hub.terminalPart(payloads[i]); err != nil {
+		var err error
+		received, err = assembler.Add(payloads[i])
+		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	select {
-	case received := <-sub.terminal:
-		if received.ID != event.ID || !proto.Equal(received.Dispatch, event.Dispatch) {
-			t.Fatalf("wrong terminal event %+v", received)
-		}
-	default:
-		t.Fatal("watcher did not receive terminal event")
+	if received == nil || received.ID != event.ID || !proto.Equal(received.Dispatch, event.Dispatch) {
+		t.Fatalf("wrong terminal event %+v", received)
 	}
 }
 
@@ -998,7 +987,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 		}
 	}
 	service := &Service{
-		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
+		Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, store),
 		WatchLease: 100 * time.Millisecond,
 	}
 	watch := &collectedWatch{ctx: ctx}
@@ -1025,7 +1014,7 @@ func TestWatchSendsMatchingDispatchesThenCaughtUp(t *testing.T) {
 
 func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 	base := admitted(t)
-	store, databaseURL := testStoreWithURL(t, 3)
+	store := testStore(t, 3)
 	uid := uuid.NewString()
 	dispatch, err := enqueueWithSession(t, store, base, "watch-wake-session", "sandbox-wake-watch", uid,
 		input("watch-wake-command", "hello"), nil)
@@ -1033,28 +1022,7 @@ func TestWatchDispatchesPublishesWakeOnlyReceiptChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, dispatch.SessionID)
-	hub := NewWatchHub(databaseURL)
-	listenerCtx, cancelListener := context.WithCancel(context.Background())
-	listenerDone := make(chan error, 1)
-	go func() { listenerDone <- hub.Run(listenerCtx) }()
-	t.Cleanup(func() {
-		cancelListener()
-		select {
-		case <-listenerDone:
-		case <-time.After(5 * time.Second):
-			t.Error("PostgreSQL watch listener did not stop")
-		}
-	})
-	deadline := time.After(5 * time.Second)
-	for !hub.Connected() {
-		select {
-		case err := <-listenerDone:
-			t.Fatalf("listener stopped before subscription: %v", err)
-		case <-deadline:
-			t.Fatal("listener did not subscribe")
-		case <-time.After(10 * time.Millisecond):
-		}
-	}
+	hub := testWatchHub(t, store)
 	watchCtx, cancelWatch := context.WithCancel(base)
 	defer cancelWatch()
 	service := &Service{
@@ -1134,8 +1102,9 @@ func TestWatchDispatchesEndsBlockedWriteOnLeaseOrCancellation(t *testing.T) {
 			leaseCtx, endLease := context.WithCancel(ctx)
 			defer endLease()
 			if tc.cancel {
+				store := testStore(t, 5)
 				service := &Service{
-					Store: testStore(t, 5), DispatcherServices: sets.New(peertls.AppURI), Hub: &WatchHub{subscribers: map[*watchSubscription]struct{}{}, connected: true},
+					Store: store, DispatcherServices: sets.New(peertls.AppURI), Hub: testWatchHub(t, store),
 					WatchLease: time.Hour,
 				}
 				request := &dispatcherpb.WatchDispatchesRequest{Filter: &dispatcherpb.DispatchFilter{

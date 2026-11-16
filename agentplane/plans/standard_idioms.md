@@ -12,66 +12,47 @@ File references are to `devel` at the time of the audit; re-check before startin
 
 ## PostgreSQL
 
-### `DISPATCHER_WATCH_VERSIONS`
+### `DISPATCHER_WATCH_RESUMABLE_SERVER`
 
-**In progress; coding agent, 2026-11-15 PST. Operator released the build on 2026-11-16 at
-06:40 UTC.** PR1 covers storage only.
-`WatchDispatches` currently ships deleted rows as base64 protobuf split into `pg_notify` parts
-(`dispatcher/terminal.go`), reassembled with a timeout and pending cap, failing every stream on any
-malformed part. It uses its own `pq.NewListener` rather than the shared `postgres/wakeups.Hub`,
-re-lists each scope on any change, and has no durable replay.
+**In progress; coding agent, 2026-11-16; resumable server.** The storage prerequisite is complete;
+its durable schema and retention contract live in the [Dispatcher specification](../session_dispatcher/dispatcher/SPEC.md#versioned-dispatch-watches).
+This step implements versioned `WatchDispatches` reads through payload-free
+`postgres/wakeups.Hub` notifications. A fresh snapshot includes current Dispatches and retained deletion
+receipts in version order; resumed reads return versions after the cursor. Checkpoints use brief
+PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone` to account for allocation/commit
+reordering, and no transaction or lock spans stream sends.
 
-PR1 adds storage groundwork only: an additive migration backfills each dispatch with a version from
-a sequence, and database triggers assign a fresh version to every later insert and update, including
-writes from older application images. A deletion trigger retains receipt snapshots in tombstones
-keyed by command ID and version, with no Sandbox name/UID or dispatch command/routing columns;
-the version keeps deletion records distinct if a command ID is reused. Retained admission evidence
-may include the original command content. The retained Session row supplies ownership and read
-scope. A pruner removes tombstones after 24 hours in bounded batches and
-keeps a durable global pruned-through watermark. This phase does not change `WatchDispatches`, add
-resume-token fields, or switch clients from the chunked notification path.
+Requests and responses carry an opaque, versioned resume token with the last version and a digest of the
+filter, but no principal binding. Every request is authorized normally. A filter mismatch returns
+`INVALID_ARGUMENT`; a cursor below the retained global floor returns `OUT_OF_RANGE` with resynchronization
+detail. `CaughtUp` follows the initial snapshot and each incremental read, may recur, and carries the
+checkpoint frontier even when no matching record was found. Use the shared
+`dispatcher/internal/resumetoken` package. When `postgres/wakeups.Hub.Generation()` changes after a listener
+reconnect, rescan from the current durable cursor to cover writes during the gap.
 
-After every dispatch-writing replica has the migration-compatible release, the later receiver step
-uses payload-free `postgres/wakeups.Hub` notifications to wake versioned database reads. Replay
-matching dispatches and tombstones in version order where `version > cursor`, applying the existing
-Session read scope to both. A sequence orders allocation, not commit: before checkpoint queries, the
-reader takes brief PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, which lets any
-writer that already allocated a lower version commit before the reader advances its cursor. It
-releases those locks and completes its transactions before sending frames; a transaction must never
-span stream sends.
+The server step does not wait for a staging image pin: the storage migration runs through the normal
+serving-binary startup lifecycle, and this step adds no migration. The client cutover remains blocked
+until the operator confirms that the serving image is pinned on staging. Only then enable the App
+browser watch (`app/frontend/threads/dispatch_watch.ts`, through the generated facade) and
+`session_client/observe_input.go` with resume tokens. Clients must surface coverage loss before taking a
+fresh snapshot. Update `session_dispatcher/dispatcher/testing_client.py`,
+`session_dispatcher/dispatcher/store_integration_test.go`, facade/auth mocks, and
+`system_tests/scenarios/{dispatcher,central_sampler}.py` with that client change. Notifications has no
+`WatchDispatches` client; it consumes SubmitInput receipts and reconciles through History. The App and
+`session_client/observe_input.go` do not send resume tokens in this server change.
 
-The later API carries an opaque, versioned `resume_token` in requests and responses. It contains the
-last dispatch version and a filter digest, but no principal binding; every request
-still performs normal authorization. A token used with a different filter returns `INVALID_ARGUMENT`.
-A cursor behind the retained coverage returns `OUT_OF_RANGE` with resynchronization detail; clients
-must surface that coverage loss before starting a fresh snapshot.
-
-Roll out the server and receiver before enabling clients. Enable the App browser watch
-(`app/frontend/threads/dispatch_watch.ts`, through the generated facade) and
-`session_client/observe_input.go` only after the serving image is pinned on staging. Update
-`session_dispatcher/dispatcher/testing_client.py`,
-`session_dispatcher/dispatcher/store_integration_test.go`, facade/auth mocks, and the
-`system_tests/scenarios/{dispatcher,central_sampler}.py` coverage with the client change.
-Notifications has no `WatchDispatches` client: it consumes SubmitInput receipts and reconciles through
-History.
-
-The currently pinned rollback image is
-`git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`. Keep the
-migration installed when rolling back; its database triggers continue stamping writes and retaining
-deletions. This image does not prune tombstones or provide versioned replay, so existing watch
-limitations remain. Verify that the old image can read rows written after migration before treating
-this rollback as supported.
-
-**CLEANUP:** remove the chunked notification encoder/reassembler and its timeout and pending-cap
-handling only after every serving replica uses durable versioned watches, all dispatch writers have
-versioned storage, and no supported rollback image depends on that path. The current rollback pin
-still uses it, so this gate remains open until that pin and the replica rollout no longer require the
-legacy behavior.
+Continue sending chunked terminal notices for older serving replicas. **CLEANUP:** remove the chunked
+terminal-notice sender and encoder only after every serving replica uses durable versioned watches and
+no supported rollback image depends on that path. The rollback target is
+`git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`. PR #16894 CI
+checked compatibility of its matching embedded migration provider; it did not run the old image
+binary. Keep migration `00024` installed during rollback. The old image resumes legacy watch behavior
+and pauses tombstone pruning while it runs.
 
 **Acceptance:** resume after a disconnect and server restart; replay a deleted receipt from its
-tombstone; surface retention-driven `OUT_OF_RANGE` before starting a fresh snapshot; force a lower
-allocated sequence value to commit after a higher one and prove the checkpoint does not skip it;
-verify payload-free Hub wakeups across replicas; and keep the k3s Dispatcher coverage green.
+tombstone; return retention-driven `OUT_OF_RANGE`; prove a checkpoint cannot skip a lower version that
+commits late; verify payload-free Hub wakeups across replicas and frontier advancement with no matching
+rows; preserve chunked notices for old replicas; and keep the k3s Dispatcher coverage green.
 
 ## Central sampler
 

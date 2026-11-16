@@ -69,12 +69,12 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 	if err != nil {
 		return status.Error(codes.InvalidArgument, err.Error())
 	}
-	if s.SessionHub == nil {
+	if s.Hub == nil {
 		return status.Error(codes.Unavailable, "Session watch listener unavailable")
 	}
-	generation := s.SessionHub.Generation()
+	generation := s.Hub.Generation()
 	// Subscribe before reading so a commit cannot fall between the read and subscription.
-	changed, unsubscribe, err := s.SessionHub.SubscribeKey(SessionNotifyChannel, sessionWatchKey(caller))
+	changed, unsubscribe, err := s.Hub.SubscribeKey(SessionNotifyChannel, sessionWatchKey(caller))
 	if err != nil {
 		return status.Error(codes.Unavailable, "Session watch listener unavailable")
 	}
@@ -101,10 +101,10 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 		return err
 	}
 	for {
-		if current := s.SessionHub.Generation(); current != generation {
+		if current := s.Hub.Generation(); current != generation {
 			generation, last, caughtUp = current, 0, false
 		}
-		if s.SessionHub.Connected() {
+		if s.Hub.Connected() {
 			sessions, err := s.Store.sessionsAfter(leaseCtx, last, caller)
 			if err != nil {
 				return sessionWatchEnd(ctx, leaseCtx, apiError(err))
@@ -122,7 +122,7 @@ func (s *Service) WatchSessions(request *dispatcherpb.WatchSessionsRequest, stre
 			if len(sessions) > 0 {
 				continue
 			}
-			if !caughtUp && s.SessionHub.Connected() && s.SessionHub.Generation() == generation {
+			if !caughtUp && s.Hub.Connected() && s.Hub.Generation() == generation {
 				if err := send(leaseCtx, &dispatcherpb.WatchSessionsResponse{Frame: &dispatcherpb.WatchSessionsResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}); err != nil {
 					return sessionWatchEnd(ctx, leaseCtx, err)
 				}

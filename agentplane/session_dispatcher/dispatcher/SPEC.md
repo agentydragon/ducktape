@@ -129,9 +129,9 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
   These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
   from normal account callers but remain visible through existing privileged backend behavior.
-- WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
-  event's owner association is carried through bounded PostgreSQL notification parts so a row deleted from
-  storage cannot bypass the read filter.
+- WatchDispatches applies the retained Session read scope to live rows and deletion receipts, authorizes
+  every request, and resumes from an opaque filter-bound version token. The token carries no caller identity;
+  a filter mismatch returns `INVALID_ARGUMENT`, and a cursor behind retained coverage returns `OUT_OF_RANGE`.
 - Commands name the Session. Dispatcher resolves the exact placement from its Session record. A broker
   whose grant is scoped to an incarnation supplies `expected_sandbox_uid`; a mismatch is denied before
   admission or forwarding. The UID is a constraint on authority, not a placement chosen by the caller.
@@ -270,31 +270,9 @@ unknown later execution/effect outcome on deletion; its terminal snapshot retain
 entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An unmarked command, including a claimed row still before the forwarding marker, can fail
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
-Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
-listeners. Cleanup removes the command receipts but keeps the Session record. An already-terminal
-row is not included in cleanup snapshots: a connected watcher delayed behind its earlier invalidation
-can miss that outcome when cleanup removes the row. Broadcasting all retained receipts is not a
-bounded solution: terminal subscription buffers can overflow. Runtime journals and History remain
-separate evidence owners; cleanup neither deletes retained History nor converts missing evidence
-into failure.
-
-The additive dispatch-version storage migration backfills each dispatch with a sequence-backed
-version, and database triggers assign a fresh version on every later insert or update. The triggers
-also cover writers running an older application image. Deletion triggers retain receipt snapshots in
-tombstones keyed by command ID and version, with no Sandbox name/UID or dispatch command/routing
-columns. The version keeps deletion records distinct if a command ID is reused. Retained admission
-evidence may include the original command content. The retained Session row supplies ownership and
-read scope. Tombstones are pruned after 24 hours,
-while a durable global pruned-through version records that older deletion history is no longer
-available. This storage step does not change `WatchDispatches`, `GetDispatch`, or facade behavior:
-current streams still rely on chunked notifications and have no durable replay, and a subscriber
-behind a disconnect can still miss a deleted receipt. `OUT_OF_RANGE` coverage reporting and
-resume-token support belong to the later versioned-watch receiver.
-
-**Sequence allocation is not commit order.** A versioned reader must establish its checkpoint under
-brief PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, so writers that already
-allocated lower versions commit before the reader advances its cursor. It must release the locks and
-finish database transactions before sending stream frames.
+Deletion cleanup keeps the Session row and writes tombstones in the same transaction that removes
+Dispatch rows. Runtime journals and History remain separate evidence owners; cleanup neither deletes
+retained History nor converts missing evidence into failure.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
 running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried
@@ -302,6 +280,45 @@ under ownership before any RPC. If ownership or the request is lost, no RPC is i
 marker without a send remains conservatively uncertain.
 The migration adds the column without altering authored data or History. A rollback to old writers
 loses the forwarding-evidence guarantee even if the column remains present.
+
+## Versioned dispatch watches
+
+Migration `00024` backfills each Dispatch with a sequence-backed version and installs database triggers
+that assign a fresh version on every later insert or update, including writes from older application
+images. A deletion trigger stores each receipt in `dispatch_tombstone`, keyed by command ID and version,
+without Sandbox name/UID or Dispatch command/routing columns. Versions distinguish deletions if a command
+ID is reused. A retained receipt may include original command content; its retained Session row supplies
+ownership and read scope. A bounded pruner removes tombstones after 24 hours and advances a durable,
+global pruned-through version.
+
+`WatchDispatches` uses payload-free notifications from `postgres/wakeups.Hub` to wake versioned database
+reads. A fresh snapshot includes matching current Dispatch rows and retained tombstones, ordered by version.
+Incremental reads return records with a version greater than the cursor. Both apply the existing Session
+read scope; a tombstone has no Sandbox name or UID to filter on directly. Token encoding and decoding use
+the shared `dispatcher/internal/resumetoken` package; wakeups use `postgres/wakeups.Hub`.
+When `postgres/wakeups.Hub.Generation()` changes after a listener reconnect, the receiver rescans from its current
+durable cursor so commits made during the disconnect are covered.
+
+The request and every response carry an opaque, versioned `resume_token` containing the last version and a
+digest of the request filter, but no principal. Every request performs ordinary authorization. A token used
+with another filter returns `INVALID_ARGUMENT`. If its cursor is below the global pruned-through version,
+the server returns `OUT_OF_RANGE` with resynchronization detail. The global floor is conservative: it can
+require a fresh snapshot even when the filtered scope had no deleted rows in the pruned interval.
+
+`CaughtUp` marks the checkpoint after the initial snapshot and each incremental read; it can appear more
+than once. Its token carries the read frontier even when changes at that frontier did not match the filter.
+This lets unrelated writes advance a watch without causing repeated reads of the same range.
+
+**Sequence allocation is not commit order.** Before establishing a checkpoint, the reader takes brief
+PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, so a writer that already allocated a lower
+version commits before the cursor advances. The reader releases those locks and completes its transaction
+before sending stream frames. No lock or transaction spans a stream send.
+
+The writer continues to emit chunked terminal deletion notices for older serving replicas or a supported
+rollback image that still uses that protocol. New receivers use Hub notifications and durable reads; they
+do not run the old custom listener. Remove the terminal-notice sender and encoder only after the replica
+rollout and rollback window no longer need them. Direct `GetDispatch` and `ListDispatches` read current
+rows; the tombstones provide watch snapshot and replay coverage.
 
 ## Session resource
 
