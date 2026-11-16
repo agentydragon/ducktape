@@ -11,12 +11,10 @@ import (
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -54,15 +52,9 @@ func (f *fakeSessionDispatcher) CreateSession(_ context.Context, request *dispat
 }
 
 type fakeEnvironmentRuntime struct {
-	list   *sessionpb.ListSessionsResponse
 	status *sessionpb.EnvironmentRuntimeStatus
 	err    error
 	got    *environmentpb.EnvironmentDescriptor
-}
-
-func (f *fakeEnvironmentRuntime) ListSessions(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error) {
-	f.got = sandbox
-	return f.list, f.err
 }
 
 func (f *fakeEnvironmentRuntime) EnvironmentRuntimeStatus(_ context.Context, sandbox *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error) {
@@ -179,26 +171,21 @@ func TestCreateSessionTimeoutCarriesStableIdempotencyKey(t *testing.T) {
 	}
 }
 
-func TestEnvironmentRuntimeRoutesUseCurrentSandboxIdentityAndReturnProxiedValues(t *testing.T) {
+func TestRuntimeDiagnosticsRoutesUseCurrentEnvironmentIdentity(t *testing.T) {
 	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
-	list := &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: uuid.NewString()}}}
 	status := &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "boot-1"}
-	environmentRuntime := &fakeEnvironmentRuntime{list: list, status: status}
+	environmentRuntime := &fakeEnvironmentRuntime{status: status}
 	getter := &fakeSandboxGetter{sandbox: sandbox}
 	client, err := New("operators", getter, environmentRuntime, &fakeSessionDispatcher{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := client.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
-	if err != nil || !proto.Equal(&sessionpb.ListSessionsResponse{Sessions: sessions}, list) {
-		t.Fatalf("ListSessions = %v, %v", sessions, err)
-	}
-	if getter.name != sandbox.GetTarget().GetName() || environmentRuntime.got != sandbox {
-		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, environmentRuntime.got, sandbox.GetTarget().GetName(), sandbox)
-	}
 	gotStatus, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid())
 	if err != nil || !proto.Equal(gotStatus, status) {
 		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", gotStatus, err)
+	}
+	if getter.name != sandbox.GetTarget().GetName() || environmentRuntime.got != sandbox {
+		t.Fatalf("sandbox lookup/proxy identity = %q / %p, want %q / %p", getter.name, environmentRuntime.got, sandbox.GetTarget().GetName(), sandbox)
 	}
 	if getter.uid != "sandbox-uid" || environmentRuntime.got.GetTarget().GetUid() != "sandbox-uid" {
 		t.Fatalf("runtime status lost UID: lookup=%q target=%v", getter.uid, environmentRuntime.got.GetTarget())
@@ -207,42 +194,6 @@ func TestEnvironmentRuntimeRoutesUseCurrentSandboxIdentityAndReturnProxiedValues
 	if _, err := client.EnvironmentRuntimeStatus(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
 		t.Fatal("same-name replacement was proxied")
 	}
-	getter.sandbox = &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: sandbox.GetTarget().GetName(), Namespace: sandbox.GetTarget().GetNamespace()}}
-	if _, err := client.ListSessions(context.Background(), sandbox.GetTarget().GetName(), sandbox.GetTarget().GetUid()); err == nil {
-		t.Fatal("Sandbox without UID was proxied")
-	}
-}
-
-type identityEnvironmentRuntimeServer struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	t    *testing.T
-	seen map[string]string
-}
-
-type appSVIDEnvironmentRuntimeServer struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
-	t     *testing.T
-	calls int
-	seen  map[string]string
-}
-
-func (s *appSVIDEnvironmentRuntimeServer) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	s.t.Helper()
-	identity, err := peertls.PeerIdentity(ctx)
-	if err != nil || identity != peertls.AppURI {
-		s.t.Fatalf("Runtime proxy peer identity = %q, error %v", identity, err)
-	}
-	incoming, ok := metadata.FromIncomingContext(ctx)
-	if !ok || len(incoming.Get("authorization")) != 0 {
-		s.t.Fatalf("Runtime proxy received authorization metadata: %v", incoming)
-	}
-	s.calls++
-	for key, values := range incoming {
-		if len(values) == 1 {
-			s.seen[key] = values[0]
-		}
-	}
-	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "runtime-session"}}}, nil
 }
 
 type appSVIDDispatcherServer struct {
@@ -266,125 +217,6 @@ func (s *appSVIDDispatcherServer) CreateSession(ctx context.Context, request *di
 		SessionId: request.GetSessionId(),
 		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: request.GetSpec().GetPlacement().GetEnvironmentHosted()}},
 	}}, nil
-}
-
-func (s *identityEnvironmentRuntimeServer) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
-	s.capture(ctx)
-	return &sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "durable-session"}}}, nil
-}
-
-func (s *identityEnvironmentRuntimeServer) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {
-	s.capture(ctx)
-	return &sessionpb.EnvironmentRuntimeStatus{EnvironmentRuntimeBootId: "live-boot"}, nil
-}
-
-func (s *identityEnvironmentRuntimeServer) capture(ctx context.Context) {
-	s.t.Helper()
-	values, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		s.t.Fatal("environmentRuntime call has no metadata")
-	}
-	for _, key := range []string{
-		"authorization", sandboxapi.RunnerProxySandboxMetadataKey,
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey,
-		sandboxapi.RunnerProxySandboxUIDMetadataKey, sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey,
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey,
-	} {
-		entries := values.Get(key)
-		if len(entries) != 1 {
-			s.t.Fatalf("metadata %q = %v", key, entries)
-		}
-		s.seen[key] = entries[0]
-	}
-}
-
-func TestGatewayEnvironmentRuntimeProxyBindsCurrentSandboxMetadata(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
-	service := &identityEnvironmentRuntimeServer{t: t, seen: make(map[string]string)}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-
-	tokenFile := t.TempDir() + "/token"
-	if err := os.WriteFile(tokenFile, []byte("rotated-environmentRuntime-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	proxy, err := NewGatewayEnvironmentRuntimeProxy(EnvironmentRuntimeConfig{
-		Namespace: "operators", TokenFile: tokenFile, Timeout: time.Second,
-		TargetTemplate: listener.Addr().String(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators"}}
-	listed, err := proxy.ListSessions(context.Background(), sandbox)
-	if err != nil || listed.GetSessions()[0].GetSessionId() != "durable-session" {
-		t.Fatalf("ListSessions = %v, %v", listed, err)
-	}
-	environmentRuntimeStatus, err := proxy.EnvironmentRuntimeStatus(context.Background(), sandbox)
-	if err != nil || environmentRuntimeStatus.GetEnvironmentRuntimeBootId() != "live-boot" {
-		t.Fatalf("EnvironmentRuntimeStatus = %v, %v", environmentRuntimeStatus, err)
-	}
-	want := map[string]string{
-		"authorization":                                        "Bearer rotated-environmentRuntime-token",
-		sandboxapi.RunnerProxySandboxMetadataKey:               "operator-sandbox",
-		sandboxapi.RunnerProxySandboxNamespaceMetadataKey:      "operators",
-		sandboxapi.RunnerProxySandboxUIDMetadataKey:            "sandbox-uid",
-		sandboxapi.RunnerProxySandboxOwnerNamespaceMetadataKey: "operators",
-		sandboxapi.RunnerProxySandboxOwnerNameMetadataKey:      "operator-sandbox",
-	}
-	for key, value := range want {
-		if service.seen[key] != value {
-			t.Errorf("metadata %q = %q, want %q", key, service.seen[key], value)
-		}
-	}
-}
-
-func TestGatewayEnvironmentRuntimeProxyAuthenticatesAppSVIDWithoutBearer(t *testing.T) {
-	ca := peertlstesting.NewCA(t)
-	serverConfig := ca.Issue(t, peertls.SessionDispatcherURI)
-	serverCredentials, err := serverConfig.ServerCredentials(peertls.AppURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(grpc.Creds(serverCredentials))
-	service := &appSVIDEnvironmentRuntimeServer{t: t, seen: make(map[string]string)}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-
-	appCertificate := ca.Issue(t, peertls.AppURI)
-	proxy, err := NewGatewayEnvironmentRuntimeProxy(EnvironmentRuntimeConfig{
-		TLS: &peertls.ClientTLS{
-			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
-			CertFile: appCertificate.CertFile, KeyFile: appCertificate.KeyFile, ClientURI: peertls.AppURI,
-		},
-		Namespace: "operators", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{
-		Name: "operator-sandbox", Uid: "sandbox-uid", Namespace: "operators",
-	}}
-	listed, err := proxy.ListSessions(context.Background(), sandbox)
-	if err != nil || listed.GetSessions()[0].GetSessionId() != "runtime-session" {
-		t.Fatalf("SVID-authenticated ListSessions = %v, %v", listed, err)
-	}
-	if service.calls != 1 {
-		t.Fatalf("Runtime calls = %d, want 1", service.calls)
-	}
-	if service.seen[sandboxapi.RunnerProxySandboxUIDMetadataKey] != "sandbox-uid" {
-		t.Fatalf("Runtime proxy Sandbox UID = %q", service.seen[sandboxapi.RunnerProxySandboxUIDMetadataKey])
-	}
 }
 
 type dispatcherTestServer struct {

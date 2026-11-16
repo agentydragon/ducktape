@@ -209,8 +209,8 @@ Operator released the receiver, App cutover and final App-grant narrowing on 202
 physical transport move. The accepting RPC is `EnvironmentService.GetRuntimeDiagnostics`: exact
 App service peer only, exact Environment handle, workload incarnation, observation time and the
 Runtime snapshot with its authenticated boot ID. It is a live read with explicit unavailable errors,
-not a persisted Session-status authority. Pin the receiver before switching App reads; remove its
-raw-proxy grant only after all of those reads have moved and rolled. Keep the busy-archive check
+not a persisted Session-status authority. The App cutover uses its EnvironmentService connection after the receiver image pin. Remove its
+raw-proxy grant only after this caller image has rolled. Keep the busy-archive check
 conservative until the Session-status decision; Notifications retains its independently reviewed path.
 
 ## Review question

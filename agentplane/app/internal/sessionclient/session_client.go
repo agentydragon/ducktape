@@ -6,10 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 	"unicode/utf8"
-
-	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 
@@ -35,11 +32,8 @@ type SessionDispatcher interface {
 	CreateSession(context.Context, *dispatcherpb.CreateSessionRequest) (*dispatcherpb.CreateSessionResponse, error)
 }
 
-// EnvironmentRuntimeProxy performs informational calls through the Sandbox's control
-// Service. The concrete GatewayEnvironmentRuntimeProxy binds all four identity values on
-// every call.
-type EnvironmentRuntimeProxy interface {
-	ListSessions(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.ListSessionsResponse, error)
+// RuntimeStatusReader provides live evidence through EnvironmentService, without Runtime protocol access.
+type RuntimeStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
@@ -47,12 +41,12 @@ type EnvironmentRuntimeProxy interface {
 type SessionClient struct {
 	namespace          string
 	sandboxes          SandboxGetter
-	environmentRuntime EnvironmentRuntimeProxy
+	environmentRuntime RuntimeStatusReader
 	dispatcher         SessionDispatcher
 }
 
-// New creates the app Session client. The Environment Runtime proxy may be nil when only Session calls are used.
-func New(namespace string, sandboxes SandboxGetter, environmentRuntime EnvironmentRuntimeProxy, dispatcher SessionDispatcher) (*SessionClient, error) {
+// New creates the app Session client. The Runtime diagnostics reader may be nil when only Session calls are used.
+func New(namespace string, sandboxes SandboxGetter, environmentRuntime RuntimeStatusReader, dispatcher SessionDispatcher) (*SessionClient, error) {
 	if namespace == "" || sandboxes == nil || dispatcher == nil {
 		return nil, errors.New("Sandbox getter and Session Dispatcher are required")
 	}
@@ -110,27 +104,11 @@ func (c *SessionClient) CreateSession(
 	return session, nil
 }
 
-// ListSessions proxies the live Environment Runtime's durable Session inventory through the requested Sandbox incarnation.
-func (c *SessionClient) ListSessions(ctx context.Context, sandboxName, sandboxUID string) ([]*sessionpb.SessionSummary, error) {
-	if c.environmentRuntime == nil {
-		return nil, errors.New("Environment Runtime proxy is not configured")
-	}
-	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
-	if err != nil {
-		return nil, err
-	}
-	response, err := c.environmentRuntime.ListSessions(ctx, sandbox)
-	if err != nil {
-		return nil, err
-	}
-	return response.GetSessions(), nil
-}
-
 // EnvironmentRuntimeStatus returns the live status snapshot for the requested Sandbox
 // incarnation. The snapshot is informational and does not wake the Sandbox.
 func (c *SessionClient) EnvironmentRuntimeStatus(ctx context.Context, sandboxName, sandboxUID string) (*sessionpb.EnvironmentRuntimeStatus, error) {
 	if c.environmentRuntime == nil {
-		return nil, errors.New("Environment Runtime proxy is not configured")
+		return nil, errors.New("Runtime diagnostics are not configured")
 	}
 	sandbox, err := c.currentSandbox(ctx, sandboxName, sandboxUID)
 	if err != nil {
@@ -183,15 +161,6 @@ func ParseSessionSpec(defaults *sessionpb.SessionSpec, fields map[string]any) (*
 		}
 	}
 	return merged, nil
-}
-
-// EnvironmentRuntimeConfig configures per-call connections to the Runner Gateway Service's Sandbox proxy.
-type EnvironmentRuntimeConfig struct {
-	TLS            *peertls.ClientTLS
-	Namespace      string
-	TokenFile      string
-	Timeout        time.Duration
-	TargetTemplate string
 }
 
 const MaxSetupScriptCharacters = 65_536

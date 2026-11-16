@@ -60,8 +60,7 @@ loss, an offline/unready/suspended Runtime or an absent transport returns `UNAVA
 empty snapshot implying idle. Replaced observations are refused. The read never wakes, creates or
 mutates an environment or Session and does not require controller leadership. Callers provide a
 unary deadline; the Runtime read inherits it. This is diagnostic evidence, not the canonical current
-Session-status or archival-safety contract. The App's existing raw proxy reads remain until the
-receiver image is pinned and its caller cutover rolls out.
+Session-status or archival-safety contract. The App uses this RPC for browser diagnostics and its existing conservative live archive check.
 
 ## Optional Runtime proxy and Executor receiver
 
