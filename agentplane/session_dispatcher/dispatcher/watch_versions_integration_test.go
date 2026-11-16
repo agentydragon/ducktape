@@ -353,6 +353,125 @@ func TestVersionWatchCheckpointWaitsForLowerAllocatedVersion(t *testing.T) {
 	}
 }
 
+func TestVersionWatchSnapshotQueryDoesNotBlockDispatchWriter(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store := testStore(t, 5)
+	filter := testSessionDispatchFilter("test-nonblocking-session")
+	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-nonblocking-sandbox", sandboxUID, input("test-nonblocking-command", "test-input"), nil); err != nil {
+		t.Fatal(err)
+	}
+	// Only the batch query joins session. Hold that query here while the frontier
+	// transaction can finish, then observe the actual query waiting in PostgreSQL.
+	barrier, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer barrier.Rollback()
+	var barrierPID int
+	if err := barrier.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&barrierPID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := barrier.ExecContext(ctx, "LOCK TABLE session IN ACCESS EXCLUSIVE MODE"); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		batch dispatchChanges
+		err   error
+	}
+	finished := make(chan result, 1)
+	caller := ServiceCaller{SPIFFEID: peertls.AppURI}
+	go func() {
+		batch, err := store.readDispatchChanges(ctx, filter, caller, 0, false)
+		finished <- result{batch, err}
+	}()
+	for {
+		var waiting bool
+		if err := store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+			WHERE datname=current_database() AND query LIKE 'WITH changes AS (%'
+			AND $1=ANY(pg_blocking_pids(pid)))`, barrierPID).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		select {
+		case got := <-finished:
+			t.Fatalf("snapshot ended before reaching query barrier: %v", got.err)
+		default:
+		}
+		runtime.Gosched()
+	}
+	// Complete this write BEFORE releasing the query barrier. No sleeps or large
+	// fixture make the overlap probabilistic; retaining SHARE across the query fails.
+	var writtenVersion int64
+	if err := store.DB.QueryRowContext(ctx, `UPDATE dispatch SET reason='test-concurrent-write'
+		WHERE command_id='test-nonblocking-command' RETURNING version`).Scan(&writtenVersion); err != nil {
+		t.Fatalf("dispatch writer blocked behind snapshot query: %v", err)
+	}
+	if err := barrier.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	got := <-finished
+	if got.err != nil {
+		t.Fatal(got.err)
+	}
+	if len(got.batch.changes) != 1 || got.batch.changes[0].version > got.batch.through || writtenVersion <= got.batch.through {
+		t.Fatalf("snapshot escaped its frontier: %+v, writer version %d", got.batch, writtenVersion)
+	}
+	// A read whose snapshot begins after that update must omit the newer row,
+	// rather than emit a frame token beyond its own CaughtUp checkpoint.
+	bounded, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, got.batch.through, false)
+	if err != nil || len(bounded.changes) != 0 {
+		t.Fatalf("bounded read included post-frontier update: %+v %v", bounded, err)
+	}
+	next, err := store.readDispatchChanges(ctx, filter, caller, got.batch.through, true)
+	if err != nil || len(next.changes) != 1 || next.changes[0].version != writtenVersion || next.changes[0].dispatch.GetReason() != "test-concurrent-write" {
+		t.Fatalf("next batch missed concurrent write: %+v %v", next, err)
+	}
+}
+
+func TestVersionWatchBoundsDeletionAfterFrontierAndRechecksPruning(t *testing.T) {
+	ctx := admitted(t)
+	store := testStore(t, 5)
+	filter := testSessionDispatchFilter("test-frontier-deletion-session")
+	if _, err := enqueueWithSession(t, store, ctx, filter.GetSessionId(), "test-frontier-deletion-sandbox", sandboxUID, input("test-frontier-deletion-command", "test-input"), nil); err != nil {
+		t.Fatal(err)
+	}
+	caller := ServiceCaller{SPIFFEID: peertls.AppURI}
+	through, err := store.dispatchWatchFrontier(ctx, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.EndSandbox(ctx, sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	batch, err := store.readDispatchChangesThrough(ctx, filter, caller, 0, through, false)
+	if err != nil || len(batch.changes) != 0 {
+		t.Fatalf("batch included a deletion after its frontier: %+v %v", batch, err)
+	}
+	next, err := store.readDispatchChanges(ctx, filter, caller, through, true)
+	if err != nil || len(next.changes) != 1 || next.changes[0].dispatch.GetCommandId() != "test-frontier-deletion-command" || next.changes[0].dispatch.GetSandboxUid() != "" {
+		t.Fatalf("next batch missed deletion tombstone: %+v %v", next, err)
+	}
+	// Prune between the unlocked frontier and batch transactions. The second
+	// coverage check must reject the cursor rather than checkpoint the missing row.
+	frontier, err := store.dispatchWatchFrontier(ctx, through, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch_tombstone SET deleted_at=clock_timestamp()-interval '48 hours'"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := store.PruneDispatchTombstones(ctx); err != nil || n != 1 {
+		t.Fatalf("prune: %d %v", n, err)
+	}
+	_, err = store.readDispatchChangesThrough(ctx, filter, caller, through, frontier, true)
+	if status.Code(err) != codes.OutOfRange || !strings.Contains(status.Convert(err).Message(), "resync") {
+		t.Fatalf("pruning between frontier and batch silently lost deletion: %v", err)
+	}
+}
+
 func TestVersionWatchReplicasReadTerminalReceiptsFromHubWakeup(t *testing.T) {
 	ctx := admitted(t)
 	store := testStore(t, 5)

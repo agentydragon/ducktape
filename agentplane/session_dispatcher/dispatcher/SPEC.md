@@ -311,8 +311,13 @@ This lets unrelated writes advance a watch without causing repeated reads of the
 
 **Sequence allocation is not commit order.** Before establishing a checkpoint, the reader takes brief
 PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, so a writer that already allocated a lower
-version commits before the cursor advances. The reader releases those locks and completes its transaction
-before sending stream frames. No lock or transaction spans a stream send.
+version commits before the cursor advances. That transaction reads only the indexed version maxima and
+singleton retention floor, then commits. The batch query runs afterward with `version > after AND version <= through`
+in a separate read-only MVCC snapshot, which permits dispatch writers to proceed throughout the query.
+It rechecks the retention floor in the same snapshot as the receipts, so pruning between transactions
+cannot silently lose a deletion. Updates or deletions after the frontier may coalesce into the next batch.
+No transaction spans a stream send. Frontier transactions remain per stream: Hub wakeups coalesce per
+subscriber and have no shared notification epoch suitable for safely invalidating a replica-wide cache.
 
 The writer continues to emit chunked terminal deletion notices for older serving replicas or a supported
 rollback image that still uses that protocol. New receivers use Hub notifications and durable reads; they
