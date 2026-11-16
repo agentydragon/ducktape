@@ -23,6 +23,115 @@ type codexHistorySnapshot struct {
 	err   error
 }
 
+// RecoverInputs uses Codex's public history to resolve a lost native reply.
+// A client ID directly identifies the original command; old null-ID items are
+// deliberately not matched by text, since an earlier identical input may have
+// been queued and drained after a later request was recorded.
+func (a *codexAdapter) RecoverInputs(ctx context.Context) error {
+	requests, err := a.host.Journal().PendingNativeRequests(ctx)
+	if err != nil {
+		return err
+	}
+	ids := map[string]bool{}
+	for _, request := range requests {
+		if request.Kind != harness.CodexTurnStart {
+			continue
+		}
+		for _, record := range request.Commands {
+			if record.TerminalCursor == nil && record.Command.GetSubmitInput() != nil {
+				ids[record.Command.GetCommandId()] = true
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	a.mu.Lock()
+	threadID, mode := a.threadID, a.historyMode
+	a.mu.Unlock()
+	if threadID == "" || mode == nil || *mode != protocol.Paginated {
+		return fmt.Errorf("Codex input recovery requires paginated thread history")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	limit := int64(100)
+	params := protocol.ThreadItemsListParams{ThreadID: threadID, Limit: &limit}
+	type candidate struct {
+		item   json.RawMessage
+		turn   string
+		source uint64
+	}
+	candidates := map[string]candidate{}
+	duplicates := map[string]bool{}
+	cursors := map[string]bool{}
+	for {
+		requestID, err := a.nextID()
+		if err != nil {
+			return err
+		}
+		frame, source, err := a.requestEvidence(ctx, jsonrpc.Request[any]{ID: requestID, Method: "thread/items/list", Params: params})
+		if err != nil {
+			return err
+		}
+		if err := codexResponseError(frame); err != nil {
+			return err
+		}
+		var page struct {
+			Data []struct {
+				TurnID string          `json:"turnId"`
+				Item   json.RawMessage `json:"item"`
+			} `json:"data"`
+			NextCursor *string `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(frame.Result, &page); err != nil {
+			return err
+		}
+		if page.Data == nil {
+			return fmt.Errorf("missing Codex input history page data")
+		}
+		for _, entry := range page.Data {
+			var item struct {
+				Type     string  `json:"type"`
+				ID       string  `json:"id"`
+				ClientID *string `json:"clientId"`
+			}
+			if err := json.Unmarshal(entry.Item, &item); err != nil || entry.TurnID == "" || item.ID == "" {
+				return fmt.Errorf("invalid Codex input history item")
+			}
+			if item.Type == "contextCompaction" {
+				return fmt.Errorf("Codex input history contains a compaction barrier")
+			}
+			if item.Type == "userMessage" && item.ClientID != nil && ids[*item.ClientID] {
+				if _, exists := candidates[*item.ClientID]; exists {
+					duplicates[*item.ClientID] = true
+				}
+				candidates[*item.ClientID] = candidate{item: entry.Item, turn: entry.TurnID, source: source}
+			}
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		if *page.NextCursor == "" || cursors[*page.NextCursor] {
+			return fmt.Errorf("invalid or repeated Codex input history cursor")
+		}
+		cursors[*page.NextCursor] = true
+		params.Cursor = &protocol.ThreadItemsListCursor{String: page.NextCursor}
+	}
+	for id, item := range candidates {
+		if duplicates[id] {
+			continue
+		}
+		turn, err := json.Marshal(item.turn)
+		if err != nil {
+			return err
+		}
+		if err := a.confirmInputItem(ctx, item.item, turn, []uint64{item.source}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *codexAdapter) Reconcile(ctx context.Context, turnID string, resumed bool) (*eventpb.ConversationReconciled, error) {
 	a.historyMu.Lock()
 	defer a.historyMu.Unlock()

@@ -145,6 +145,13 @@ func (s *Session) startOnCodexServer(ctx context.Context) error {
 		s.mu.Unlock()
 		return fmt.Errorf("harness startup failed: %w", err)
 	}
+	// This runs after the shared handshake lock is released and outside the
+	// native stdout reader, so history RPC replies can be delivered normally.
+	if recovery, ok := adapter.(harness.InputRecoveryAdapter); ok {
+		if err := recovery.RecoverInputs(ctx); err != nil {
+			zap.L().Warn("Codex input recovery could not establish delivery", zap.String("session", s.id), zap.Error(err))
+		}
+	}
 	return nil
 }
 

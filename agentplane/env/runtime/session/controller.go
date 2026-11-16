@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
@@ -187,6 +188,16 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		s.reconciliations = s.reconciliations[1:]
 		s.mu.Unlock()
 		if _, startErr := s.startOperation(&s.inspection, func(ctx context.Context) error {
+			if pending.inputOnly {
+				err := pending.adapter.(harness.InputRecoveryAdapter).RecoverInputs(ctx)
+				if err != nil && !errors.Is(err, context.Canceled) {
+					zap.L().Warn("Codex input recovery could not establish delivery", zap.String("session", s.id), zap.Error(err))
+				}
+				if errors.Is(err, journal.ErrFailed) {
+					return err
+				}
+				return nil
+			}
 			report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
 			if err == nil {
 				err = s.Emit(ctx, observation(report), pending.sources)

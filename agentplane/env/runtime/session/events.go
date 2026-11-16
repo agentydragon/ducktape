@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	harness "github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
@@ -16,10 +17,11 @@ import (
 )
 
 type pendingReconciliation struct {
-	turnID  string
-	adapter harness.Adapter
-	sources []uint64
-	ready   bool
+	turnID    string
+	adapter   harness.Adapter
+	sources   []uint64
+	ready     bool
+	inputOnly bool
 }
 
 // observation wraps one generated observation in the Event vocabulary. The generated
@@ -144,6 +146,11 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		reconciliation = &pendingReconciliation{turnID: turn.TurnId, adapter: adapter, sources: append([]uint64(nil), sources...)}
 		s.reconciliations = append(s.reconciliations, reconciliation)
 	}
+	var inputRecovery *pendingReconciliation
+	if recovery, ok := adapter.(harness.InputRecoveryAdapter); ok && recovery.NeedsInputRecovery() {
+		inputRecovery = &pendingReconciliation{turnID: turn.TurnId, adapter: adapter, inputOnly: true}
+		s.reconciliations = append(s.reconciliations, inputRecovery)
+	}
 	s.mu.Unlock()
 	completed := proto.Clone(turn).(*eventpb.TurnCompleted)
 	ids := []string{}
@@ -155,16 +162,16 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 		}
 	}
 	removeReconciliation := func() {
-		if reconciliation == nil {
+		if reconciliation == nil && inputRecovery == nil {
 			return
 		}
 		s.mu.Lock()
 		for i, pending := range s.reconciliations {
-			if pending == reconciliation {
-				s.reconciliations = append(s.reconciliations[:i], s.reconciliations[i+1:]...)
-				break
+			if pending == reconciliation || pending == inputRecovery {
+				s.reconciliations[i] = nil
 			}
 		}
+		s.reconciliations = slices.DeleteFunc(s.reconciliations, func(p *pendingReconciliation) bool { return p == nil })
 		s.mu.Unlock()
 	}
 	entry, err := s.recordEventUnderWriteGate(ctx, observation(completed), sources, ids)
@@ -180,6 +187,9 @@ func (s *Session) completeTurn(ctx context.Context, turn *eventpb.TurnCompleted,
 	delete(s.interrupts, turn.TurnId)
 	if reconciliation != nil {
 		reconciliation.ready = true
+	}
+	if inputRecovery != nil {
+		inputRecovery.ready = true
 	}
 	s.mu.Unlock()
 	s.writeMu.Unlock()

@@ -632,6 +632,24 @@ func (j *Journal) appendEntry(ctx context.Context, batch *journalBatch, event *e
 		// log or clear a different active turn.
 		return nil, nil
 	}
+	if event.GetHarnessUserMessageConfirmed() != nil && len(options.TerminalCommandIDs) > 0 {
+		// Live notifications and history recovery can confirm the same input in
+		// parallel. Check under the journal transaction, not only at the caller.
+		pending := false
+		for _, id := range options.TerminalCommandIDs {
+			command, err := j.getCommandLocked(ctx, id)
+			if err != nil {
+				return nil, err
+			}
+			if command == nil {
+				return nil, fmt.Errorf("%w %q", ErrUnknownCommand, id)
+			}
+			pending = pending || command.TerminalCursor == nil
+		}
+		if !pending {
+			return nil, nil
+		}
+	}
 	cursor := uint64(last + 1)
 	copyEvent := proto.Clone(event).(*eventpb.Event)
 	// Configuration and its terminal receipt share this writer transaction. Derive

@@ -155,7 +155,7 @@ func codexTurnStartResponse(t *testing.T, requestID, turnID string) json.RawMess
 	return frame
 }
 
-func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
+func TestCodexLateTurnStartResponseWaitsForDeliveredInput(t *testing.T) {
 	ctx := context.Background()
 	host := newAdapterTestHost()
 	adapter := New(host)
@@ -172,20 +172,31 @@ func TestCodexLateTurnStartResponseConfirmsPendingCommand(t *testing.T) {
 	if len(host.NativeWrites) != 1 || len(host.Failures) != 0 || len(host.Confirmations) != 0 {
 		t.Fatalf("dispatch did not return with one pending native request: writes=%d failures=%v confirmations=%v", len(host.NativeWrites), host.Failures, host.Confirmations)
 	}
+	var sent struct {
+		Params struct {
+			ClientID string `json:"clientUserMessageId"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(host.NativeWrites[0], &sent); err != nil || sent.Params.ClientID != "input-1" {
+		t.Fatalf("missing durable client message ID: %s (%v)", host.NativeWrites[0], err)
+	}
+	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+	host.JournalState.Requests = []harness.NativeRequest{{ID: requestID, Kind: harness.CodexTurnStart, Commands: []harness.CommandRecord{{Command: command, DispatchPlanned: true}}}}
 	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-late"), 17); err != nil {
 		t.Fatal(err)
 	}
-	if len(host.Confirmations) != 1 || host.Confirmations[0].Value.OriginCommandIDs[0] != "input-1" {
-		t.Fatalf("late response confirmations = %+v", host.Confirmations)
+	if len(host.Confirmations) != 0 || adapter.BlocksCommandDispatch() {
+		t.Fatalf("acceptance must unblock dispatch without confirming delivery: %+v", host.Confirmations)
 	}
 	if len(host.Failures) != 0 {
 		t.Fatalf("late success failed command: %v", host.Failures)
 	}
-	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-late"), 18); err != nil {
+	item := json.RawMessage(`{"method":"item/completed","params":{"threadId":"thread-root","turnId":"turn-late","item":{"type":"userMessage","id":"native-item","clientId":"input-1","content":[{"type":"text","text":"hello"}]}}}`)
+	if err := adapter.OnFrame(ctx, item, 18); err != nil {
 		t.Fatal(err)
 	}
-	if len(host.Confirmations) != 1 {
-		t.Fatalf("duplicate response confirmed command again: %+v", host.Confirmations)
+	if len(host.Confirmations) != 1 || host.Confirmations[0].Value.HarnessMessageID != "native-item" || host.Confirmations[0].Value.OriginCommandIDs[0] != "input-1" {
+		t.Fatalf("native item confirmation = %+v", host.Confirmations)
 	}
 }
 
@@ -214,11 +225,143 @@ func TestCodexRecoveryReplaysJournaledLateTurnStartResponse(t *testing.T) {
 	if err := adapter.(harness.RecoveryAdapter).Recover(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if len(host.Confirmations) != 1 || host.Confirmations[0].Sources[0] != 43 {
-		t.Fatalf("recovered confirmation = %+v", host.Confirmations)
+	if len(host.Confirmations) != 0 {
+		t.Fatalf("a recovered acceptance is not delivery evidence: %+v", host.Confirmations)
 	}
 	if host.SessionState.Model != "recovered-model" || host.SessionState.ReasoningEffort != "high" || len(host.NativeWrites) != 0 {
 		t.Fatalf("recovery lost linked command values or resent native work: session=%+v writes=%d", host.SessionState, len(host.NativeWrites))
+	}
+}
+
+func TestCodexInputItemBeforeLostResponseUnblocksWithoutLosingLateResponse(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	adapter := New(host)
+	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	requestID := host.NativeRequests[0].ID
+	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+	host.JournalState.Requests = []harness.NativeRequest{{ID: requestID, Kind: harness.CodexTurnStart, Commands: []harness.CommandRecord{{Command: command, DispatchPlanned: true}}}}
+	if !adapter.BlocksCommandDispatch() {
+		t.Fatal("unanswered request did not block dispatch")
+	}
+	item := json.RawMessage(`{"method":"item/completed","params":{"threadId":"thread-root","turnId":"turn-root","item":{"type":"userMessage","id":"item-1","clientId":"input-1","content":[{"type":"text","text":"hello"}]}}}`)
+	if err := adapter.OnFrame(ctx, item, 1); err != nil {
+		t.Fatal(err)
+	}
+	if adapter.BlocksCommandDispatch() || len(host.Confirmations) != 1 {
+		t.Fatalf("delivered input remained blocked: %+v", host.Confirmations)
+	}
+	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, requestID, "turn-root"), 2); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.Confirmations) != 1 {
+		t.Fatalf("late response duplicated confirmation: %+v", host.Confirmations)
+	}
+}
+
+func TestCodexAcceptedJoinedInputStaysUnconfirmedOnInterrupt(t *testing.T) {
+	ctx := context.Background()
+	host := newAdapterTestHost()
+	adapter := New(host).(*codexAdapter)
+	if err := adapter.Submit(ctx, "input-1", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.OnFrame(ctx, codexTurnStartResponse(t, host.NativeRequests[0].ID, "turn-root"), 1); err != nil {
+		t.Fatal(err)
+	}
+	completed := json.RawMessage(`{"method":"turn/completed","params":{"threadId":"thread-root","turn":{"id":"turn-root","status":"interrupted"}}}`)
+	if err := adapter.OnFrame(ctx, completed, 2); err != nil {
+		t.Fatal(err)
+	}
+	if len(host.Confirmations) != 0 || !adapter.NeedsInputRecovery() {
+		t.Fatalf("accepted but unobserved input was confirmed: %+v", host.Confirmations)
+	}
+}
+
+func TestCodexRecoveryTracksOnlyInputsSentWithClientID(t *testing.T) {
+	for _, clientID := range []string{"input-1", ""} {
+		t.Run(fmt.Sprintf("clientID=%q", clientID), func(t *testing.T) {
+			host := newAdapterTestHost()
+			command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+			host.JournalState.Requests = []harness.NativeRequest{{ID: "request", Kind: harness.CodexTurnStart, Commands: []harness.CommandRecord{{Command: command, DispatchPlanned: true}}}}
+			line := fmt.Sprintf(`{"id":"request","method":"turn/start","params":{"threadId":"thread-root","clientUserMessageId":%q}}`, clientID)
+			host.JournalState.Events = []*eventlogpb.EventEntry{{
+				Cursor: 1,
+				Event:  &eventpb.Event{Observation: &eventpb.Event_Native{Native: &eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: line}}},
+			}}
+			adapter := New(host).(*codexAdapter)
+			if err := adapter.Recover(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if adapter.NeedsInputRecovery() != (clientID != "") || adapter.BlocksCommandDispatch() {
+				t.Fatalf("recovered input tracking=%t blocked=%t", adapter.NeedsInputRecovery(), adapter.BlocksCommandDispatch())
+			}
+		})
+	}
+}
+
+type inputHistoryHost struct {
+	*adaptertest.Host
+	pages []string
+}
+
+func (h *inputHistoryHost) RequestNativeHandshake(_ context.Context, raw json.RawMessage, matches func(json.RawMessage) bool) (harness.NativeReceipt, error) {
+	var request struct {
+		ID     string `json:"id"`
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return harness.NativeReceipt{}, err
+	}
+	if request.Method != "thread/items/list" || len(h.pages) == 0 {
+		return harness.NativeReceipt{}, errors.New("unexpected history request")
+	}
+	page := h.pages[0]
+	h.pages = h.pages[1:]
+	response := json.RawMessage(fmt.Sprintf(`{"id":%q,%s}`, request.ID, page))
+	if !matches(response) {
+		return harness.NativeReceipt{}, errors.New("history response did not match")
+	}
+	return harness.NativeReceipt{Frame: response, Sequence: 42}, nil
+}
+
+func TestCodexInputRecoveryRequiresExactClientIDAndCompleteHistory(t *testing.T) {
+	item := `{"turnId":"turn-1","item":{"type":"userMessage","id":"item-1","clientId":"input-1","content":[{"type":"text","text":"hello"}]}}`
+	for _, tc := range []struct {
+		name    string
+		pages   []string
+		want    int
+		wantErr bool
+	}{
+		{"exact ID", []string{`"result":{"data":[` + item + `],"nextCursor":null}`}, 1, false},
+		{"second page", []string{`"result":{"data":[],"nextCursor":"next"}`, `"result":{"data":[` + item + `],"nextCursor":null}`}, 1, false},
+		{"legacy no ID", []string{`"result":{"data":[{"turnId":"turn-1","item":{"type":"userMessage","id":"item-1","clientId":null,"content":[{"type":"text","text":"hello"}]}}]}`}, 0, false},
+		{"different ID", []string{`"result":{"data":[{"turnId":"turn-1","item":{"type":"userMessage","id":"item-1","clientId":"other","content":[{"type":"text","text":"hello"}]}}]}`}, 0, false},
+		{"different content", []string{`"result":{"data":[{"turnId":"turn-1","item":{"type":"userMessage","id":"item-1","clientId":"input-1","content":[{"type":"text","text":"different"}]}}]}`}, 0, false},
+		{"duplicate ID", []string{`"result":{"data":[` + item + `,` + item + `]}`}, 0, false},
+		{"partial history", []string{`"result":{"data":[` + item + `],"nextCursor":"next"}`, `"error":{"code":-32603,"message":"unavailable"}`}, 0, true},
+		{"compaction", []string{`"result":{"data":[` + item + `,{"turnId":"turn-1","item":{"type":"contextCompaction","id":"compact"}}]}`}, 0, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host := &inputHistoryHost{Host: newAdapterTestHost(), pages: tc.pages}
+			command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
+			host.JournalState.Requests = []harness.NativeRequest{{ID: "request", Kind: harness.CodexTurnStart, Commands: []harness.CommandRecord{{Command: command, DispatchPlanned: true}}}}
+			mode := protocol.Paginated
+			adapter := New(host).(*codexAdapter)
+			adapter.historyMode = &mode
+			err := adapter.RecoverInputs(context.Background())
+			if (err != nil) != tc.wantErr || len(host.Confirmations) != tc.want {
+				t.Fatalf("error=%v confirmations=%+v", err, host.Confirmations)
+			}
+			if len(host.NativeWrites) != 0 {
+				t.Fatalf("history recovery replayed an input: %s", host.NativeWrites)
+			}
+			if tc.want == 1 && (host.Confirmations[0].Value.TurnID != "turn-1" || host.Confirmations[0].Sources[0] != 42) {
+				t.Fatalf("lost history provenance: %+v", host.Confirmations)
+			}
+		})
 	}
 }
 
@@ -379,7 +522,7 @@ func TestCodexIgnoresChildFramesAndKeepsUnknownItemFields(t *testing.T) {
 	}
 }
 
-func TestCodexStartReplyBeforeNotificationSettlesInputAndUnblocksDispatch(t *testing.T) {
+func TestCodexStartReplyBeforeNotificationUnblocksDispatch(t *testing.T) {
 	host := newAdapterTestHost()
 	host.SessionState.ActiveTurnID = ""
 	// This is the actual journal response before the native turn/started notification arrives.
@@ -398,7 +541,7 @@ func TestCodexStartReplyBeforeNotificationSettlesInputAndUnblocksDispatch(t *tes
 	if err := adapter.OnFrame(context.Background(), response, 1); err != nil {
 		t.Fatal(err)
 	}
-	if adapter.BlocksCommandDispatch() || len(host.Confirmations) != 1 || host.SessionState.ActiveTurnID != "new-turn" {
+	if adapter.BlocksCommandDispatch() || len(host.Confirmations) != 0 || host.SessionState.ActiveTurnID != "new-turn" {
 		t.Fatalf("early reply left input pending: blocked=%v confirmations=%v active=%q", adapter.BlocksCommandDispatch(), host.Confirmations, host.SessionState.ActiveTurnID)
 	}
 	if err := adapter.OnFrame(context.Background(), json.RawMessage(`{"method":"turn/started","params":{"threadId":"thread-root","turn":{"id":"new-turn"}}}`), 2); err != nil {

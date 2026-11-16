@@ -135,8 +135,12 @@ harness's outcome. Tool names and argument shapes are the harness's own.
   queued inputs may be newline-joined under that UUID, with bookkeeping replay frames for their
   followers. While a Claude tool is active, later inputs instead join the tool-result continuation
   and Claude emits neither a user echo nor an input UUID: the Runtime reports the tool-result id plus
-  the exact following `started` cohort as the causal evidence. Codex reports each accepted
-  `turn/start` input separately.
+  the exact following `started` cohort as the causal evidence. Codex's `turn/start` response can
+  merely accept input into a running turn; it is not delivery evidence. The Runtime supplies the
+  command ID as `clientUserMessageId` and confirms the input when Codex records the corresponding
+  `userMessage` item. On resume and after a turn ends with unresolved inputs, it checks paginated
+  native history using the same client ID. A missing, incomplete or ambiguous item leaves the
+  command unresolved; legacy items without an ID are not matched by text or replayed.
 - `InterruptTurn` is terminal when the named turn reports `INTERRUPTED`, whose
   `interrupted_by_command_id` names the command. If the turn is already over it is a `CommandNoop`.
 - `ChangeModel` has harness-specific native effects. Claude sends `set_model` and reports
