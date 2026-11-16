@@ -12,12 +12,7 @@ import { useEffect, useState } from "react";
 import type { z } from "zod";
 
 import { Field } from "../../field";
-import {
-  fetchGmailMessagePreview,
-  fetchGmailThreadPreviews,
-  type GmailMessagePreview,
-  type GmailThreadPreview,
-} from "../../gmail_client";
+import { fetchGmailMessagePreview, fetchGmailThreadPreviews, type GmailThreadPreview } from "../../gmail_client";
 import { MailIcon } from "../../icons";
 import { ExternalLink } from "../../link";
 import { mcpToolSchema, type McpToolArgumentsFor } from "../../mcp_tool_schema";
