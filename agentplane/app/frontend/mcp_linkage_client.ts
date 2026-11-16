@@ -4,8 +4,6 @@ import type { StreamConnection } from "./stream_reader";
 import { followWatch } from "./watch_stream";
 import {
   DisconnectMcpServerResponseSchema,
-  McpLinkageStatus,
-  McpRefreshAction,
   StartMcpServerLinkageRequestSchema,
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
@@ -17,34 +15,6 @@ const ACTION_FACADE = "/upstream/actions";
 
 function required<T>(value: T | undefined, field: string): T {
   if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
-  return value;
-}
-
-function validateLinkageStatus(value: McpLinkageStatus): void {
-  switch (value) {
-    case McpLinkageStatus.UNLINKED:
-    case McpLinkageStatus.LINKED:
-    case McpLinkageStatus.DEGRADED:
-    case McpLinkageStatus.EXPIRED:
-      return;
-    default:
-      throw new Error(`The Action Service returned an unknown MCP linkage status (${value}).`);
-  }
-}
-
-function validateRefreshAction(value: McpRefreshAction): void {
-  switch (value) {
-    case McpRefreshAction.RECONNECT:
-    case McpRefreshAction.RETRYING:
-      return;
-    default:
-      throw new Error(`The Action Service returned an unknown refresh action (${value}).`);
-  }
-}
-
-function validateLinkage(value: McpServerLinkage): McpServerLinkage {
-  validateLinkageStatus(value.status);
-  if (value.refreshFailure !== undefined) validateRefreshAction(value.refreshFailure.action);
   return value;
 }
 
@@ -83,7 +53,7 @@ export async function disconnectMcpLinkage(
       fetcher
     )
   );
-  return validateLinkage(required(response.linkage, "disconnected MCP linkage"));
+  return required(response.linkage, "disconnected MCP linkage");
 }
 
 export function followMcpLinkages(handlers: {
@@ -95,16 +65,8 @@ export function followMcpLinkages(handlers: {
     ...handlers,
     onFrame: (result) => {
       const response = fromJson(WatchMcpServersResponseSchema, result);
-      switch (response.frame.case) {
-        case "snapshot":
-          response.frame.value.linkages.forEach(validateLinkage);
-          break;
-        case "upsert":
-          validateLinkage(response.frame.value);
-          break;
-        case undefined:
-          throw new Error("The Action Service returned an empty MCP linkage watch frame.");
-      }
+      if (response.frame.case === undefined)
+        throw new Error("The Action Service returned an empty MCP linkage watch frame.");
       handlers.onFrame(response);
     },
   });

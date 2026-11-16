@@ -1,5 +1,12 @@
 # Agentplane frontend
 
+## Service responses
+
+Action, MCP linkage, and Connection adapters use the generated protobuf readers. Unknown numeric MCP
+display states remain readable as `unknown (value)`; they do not become an allowed decision or
+successful state. Required identities and timestamps, decision verdicts, mutation version checks,
+and nonempty watch frames remain validated.
+
 ## Environment identity
 
 The Sandbox Status tab shows the currently requested `spec.identity` name. Only a Sandbox whose

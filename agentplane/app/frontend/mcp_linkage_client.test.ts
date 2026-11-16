@@ -174,12 +174,12 @@ it("replays generated linkage snapshots and upserts", async () => {
   expect(connections.map(({ phase }) => phase)).toEqual(["connecting", "live"]);
 });
 
-it("rejects an unknown linkage enum value", async () => {
+it("preserves an unknown linkage enum value for presentation", async () => {
   const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     Response.json({ linkage: { serverId: "example", serverUrl: "https://mcp.example.test", status: 91 } })
   );
 
-  await expect(disconnectMcpLinkage("example", fetcher)).rejects.toThrow("unknown MCP linkage status (91)");
+  expect((await disconnectMcpLinkage("example", fetcher)).status).toBe(91);
 });
 
 it("rejects a missing disconnect linkage", async () => {

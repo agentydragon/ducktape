@@ -73,7 +73,7 @@ export function mcpLifecycleLabel(value: McpLifecycle): string {
     case McpLifecycle.STOPPED:
       return "stopped";
     default:
-      throw new Error(`Unknown MCP lifecycle state (${value}).`);
+      return `unknown (${value})`;
   }
 }
 
@@ -95,6 +95,6 @@ export function mcpUnavailableReasonLabel(value: McpUnavailableReason | undefine
     case McpUnavailableReason.SUPERVISOR_STOPPED:
       return "supervisor_stopped";
     default:
-      throw new Error(`Unknown MCP unavailable reason (${value}).`);
+      return `unknown (${value})`;
   }
 }

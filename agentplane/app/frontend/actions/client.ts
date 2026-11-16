@@ -5,12 +5,6 @@ import type { StreamConnection } from "../stream_reader";
 import { followWatch } from "../watch_stream";
 import {
   ActionState,
-  ExecutorKind,
-  ExecutionState,
-  McpLifecycle,
-  McpUnavailableReason,
-  PolicyKind,
-  PolicySource,
   Verdict,
   GetActionRequestResponseSchema,
   ListActionGroupsResponseSchema,
@@ -24,9 +18,7 @@ import {
   type ActionGroup,
   type ActionRequest,
   type Decision,
-  type Execution,
   type ListActionRequestHistoryResponse,
-  type PolicyEvidence,
 } from "../../../action_service/api/contracts/action_service_pb";
 import {
   DecideActionRequestRequestSchema,
@@ -38,26 +30,6 @@ const ACTIONS_PATH = "/upstream/actions";
 function required<T>(value: T | undefined, field: string): T {
   if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
   return value;
-}
-
-function validatePolicyEvidence(value: PolicyEvidence): void {
-  const matched = required(value.matched, "policy evidence match");
-  switch (matched.source) {
-    case PolicySource.RULES:
-      break;
-    default:
-      throw new Error(`The Action Service returned an unknown policy source (${matched.source}).`);
-  }
-  switch (matched.type) {
-    case PolicyKind.EXACT_ACTIONS:
-    case PolicyKind.ARGUMENT_SCHEMA:
-    case PolicyKind.GITHUB_REPOSITORY:
-    case PolicyKind.GITHUB_PUBLIC_REPOSITORY:
-    case PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL:
-      break;
-    default:
-      throw new Error(`The Action Service returned an unknown policy kind (${matched.type}).`);
-  }
 }
 
 function validateDecision(value: Decision): void {
@@ -74,27 +46,10 @@ function validateDecision(value: Decision): void {
       required(value.decider.value.operator, "OperatorDecision.operator");
       break;
     case "policy":
-      if (value.decider.value.evidence !== undefined) validatePolicyEvidence(value.decider.value.evidence);
       break;
     default:
       throw new Error("The Action Service omitted Decision.decider.");
   }
-}
-
-function validateExecution(value: Execution): void {
-  switch (value.state) {
-    case ExecutionState.PENDING_DISPATCH:
-    case ExecutionState.DISPATCHING:
-    case ExecutionState.RUNNING:
-    case ExecutionState.SUCCEEDED:
-    case ExecutionState.FAILED:
-    case ExecutionState.CANCELLED:
-    case ExecutionState.EXECUTION_UNKNOWN:
-      break;
-    default:
-      throw new Error(`The Action Service returned an unknown execution state (${value.state}).`);
-  }
-  required(value.createdAt, "Execution.created_at");
 }
 
 function validateActionRequest(value: ActionRequest): ActionRequest {
@@ -127,47 +82,7 @@ function validateActionRequest(value: ActionRequest): ActionRequest {
       throw new Error(`The Action Service returned an unknown request state (${value.state}).`);
   }
   if (value.decision !== undefined) validateDecision(value.decision);
-  if (value.execution !== undefined) validateExecution(value.execution);
-  return value;
-}
-
-function validateActionGroup(value: ActionGroup): ActionGroup {
-  switch (value.executorKind) {
-    case ExecutorKind.MCP:
-    case ExecutorKind.POD:
-    case ExecutorKind.ORCHESTRATION_V1:
-    case ExecutorKind.SESSION_DELEGATION:
-      break;
-    default:
-      throw new Error(`The Action Service returned an unknown executor kind (${value.executorKind}).`);
-  }
-  if (value.health !== undefined) {
-    switch (value.health.state) {
-      case McpLifecycle.DISCONNECTED:
-      case McpLifecycle.CONNECTING:
-      case McpLifecycle.DISCOVERING:
-      case McpLifecycle.AVAILABLE:
-      case McpLifecycle.DRAINING:
-      case McpLifecycle.STOPPED:
-        break;
-      default:
-        throw new Error(`The Action Service returned an unknown MCP lifecycle state (${value.health.state}).`);
-    }
-    if (value.health.reason !== undefined) {
-      switch (value.health.reason) {
-        case McpUnavailableReason.UNSPECIFIED:
-        case McpUnavailableReason.CONNECT_FAILED:
-        case McpUnavailableReason.DISCOVERY_FAILED:
-        case McpUnavailableReason.INVALID_CATALOG:
-        case McpUnavailableReason.LINKAGE_UNAVAILABLE:
-        case McpUnavailableReason.SESSION_FAILED:
-        case McpUnavailableReason.SUPERVISOR_STOPPED:
-          break;
-        default:
-          throw new Error(`The Action Service returned an unknown MCP unavailable reason (${value.health.reason}).`);
-      }
-    }
-  }
+  if (value.execution !== undefined) required(value.execution.createdAt, "Execution.created_at");
   return value;
 }
 
@@ -196,7 +111,7 @@ export async function listActionRequests(
 
 export async function listActionGroups(): Promise<ActionGroup[]> {
   const response = fromJsonString(ListActionGroupsResponseSchema, await fetchText(`${ACTIONS_PATH}/v1/action-groups`));
-  return response.actionGroups.map(validateActionGroup);
+  return response.actionGroups;
 }
 
 export async function getAction(requestId: string): Promise<ActionRequest> {
@@ -282,16 +197,7 @@ export function followActionGroups(handlers: {
     ...handlers,
     onFrame: (result) => {
       const message = fromJson(WatchActionGroupsResponseSchema, result);
-      switch (message.frame.case) {
-        case "snapshot":
-          message.frame.value.actionGroups.forEach(validateActionGroup);
-          break;
-        case "upsert":
-          validateActionGroup(message.frame.value);
-          break;
-        case undefined:
-          throw new Error("The Action Service returned an empty group watch frame.");
-      }
+      if (message.frame.case === undefined) throw new Error("The Action Service returned an empty group watch frame.");
       handlers.onFrame(message);
     },
   });

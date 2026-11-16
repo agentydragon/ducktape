@@ -2590,6 +2590,17 @@ const MCP_LINKAGES: McpServerLinkage[] = [
     status: McpLinkageStatus.UNLINKED,
     scopes: [],
   }),
+  create(McpServerLinkageSchema, {
+    serverId: "example_future",
+    serverUrl: "https://future-mcp.example.test/mcp",
+    status: 91 as McpLinkageStatus,
+    scopes: [],
+    refreshFailure: {
+      action: 91 as McpRefreshAction,
+      error: "The provider returned an unrecognized refresh action.",
+      attempts: 1,
+    },
+  }),
 ];
 
 type McpFailure = {
@@ -2661,6 +2672,25 @@ const MCP_GROUPS: ActionGroup[] = [
   mcpGroup("example_notes", BEARER),
   mcpGroup("ssh", BEARER),
 ];
+const MCP_UNKNOWN_GROUPS: ActionGroup[] = [
+  create(ActionGroupSchema, {
+    ...mcpGroup("example_future", LINKED),
+    available: false,
+    health: create(McpHealthSchema, {
+      state: 91 as McpLifecycle,
+      detail: "This backend returned an unrecognized lifecycle state.",
+    }),
+  }),
+  create(ActionGroupSchema, {
+    ...mcpGroup("example_future_reason", BEARER),
+    available: false,
+    health: create(McpHealthSchema, {
+      state: McpLifecycle.DISCONNECTED,
+      reason: 92 as McpUnavailableReason,
+      detail: "This backend returned an unrecognized health reason.",
+    }),
+  }),
+];
 let receiptActionGroup: ActionGroup | undefined;
 
 /** Switches a test sets on the mock services, before mounting or (`publish`) while a stream is open. */
@@ -2686,6 +2716,7 @@ type Flag =
   | "notificationExtraEntry"
   | "pushBrowserAdded"
   | "connectionRenamed"
+  | "unknownMcpStatus"
   | "mcpLinkageChanged"
   | "mcpHealthChanged"
   | "identityWatchUnavailable"
@@ -2693,7 +2724,8 @@ type Flag =
 const flags = new Set<Flag>();
 
 function actionGroups(): ActionGroup[] {
-  return MCP_GROUPS.map((row) =>
+  const groups = flags.has("unknownMcpStatus") ? [...MCP_GROUPS, ...MCP_UNKNOWN_GROUPS] : MCP_GROUPS;
+  return groups.map((row) =>
     row.key === "example_docs" && flags.has("mcpHealthChanged")
       ? create(ActionGroupSchema, {
           ...row,
@@ -2712,7 +2744,7 @@ function actionGroups(): ActionGroup[] {
 }
 
 function mcpLinkages(): McpServerLinkage[] {
-  return MCP_LINKAGES.map((row) =>
+  return MCP_LINKAGES.filter((row) => row.serverId !== "example_future" || flags.has("unknownMcpStatus")).map((row) =>
     row.serverId === "example_docs" && flags.has("mcpLinkageChanged")
       ? create(McpServerLinkageSchema, { ...row, status: McpLinkageStatus.EXPIRED })
       : row
