@@ -196,6 +196,7 @@ py_library(
     data = [
         "//cluster/cdk8s/monitoring/dashboards:authentik.json",
         "//cluster/cdk8s/monitoring/dashboards:buildbuddy-executor-pool.json",
+        "//cluster/cdk8s/monitoring/dashboards:cilium-agent.json",
         "//cluster/cdk8s/monitoring/dashboards:cluster-disk-usage.json",
         "//cluster/cdk8s/monitoring/dashboards:cluster-storage-io.json",
         "//cluster/cdk8s/monitoring/dashboards:cpap-gateway-disk.json",
