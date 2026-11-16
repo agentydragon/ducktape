@@ -538,7 +538,7 @@ async def test_codex_unjournaled_turn_start_response_allows_fresh_input_without_
     start_runner: Callable[..., Awaitable[RunnerProcess]],
     driver: RunnerDriver,
 ) -> None:
-    """A sent turn/start with an unjournaled response stays uncertain, but does not block new input."""
+    """Recover a delivered input from Codex history after its turn/start response was lost."""
     command_id = "codex-turn-start-response-not-journaled"
     uncertain_text = "Reply with exactly: CODEX_UNJOURNALED_TURN_START_OK"
     first_runner = await start_runner(test_debug_checkpoint=("before-native-response-recorded", command_id))
@@ -567,6 +567,7 @@ async def test_codex_unjournaled_turn_start_response_allows_fresh_input_without_
     ]
     incoming = _native_frames(first.seen, event_pb2.DIRECTION_FROM_HARNESS)
     assert not any(frame.get("id") == turn_start["id"] for frame in incoming)
+    assert turn_start["params"]["clientUserMessageId"] == command_id
     assert not any(
         command_id in entry.event.harness_user_message_confirmed.origin_command_ids
         for entry in events.of_kind(first.seen, "harness_user_message_confirmed")
@@ -583,6 +584,16 @@ async def test_codex_unjournaled_turn_start_response_allows_fresh_input_without_
     second = await driver.attach("codex-un-journaled-turn-start", spec=spec, after_cursor=first.cursor)
     started = await second.until(events.is_kind("harness_started"))
     assert started.event.harness_started.resumed
+    recovered = await second.until(
+        lambda entry: (
+            events.kind(entry) == "harness_user_message_confirmed"
+            and command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+        )
+    )
+    recovered_message = recovered.event.harness_user_message_confirmed
+    assert recovered_message.origin_command_ids == [command_id]
+    assert recovered_message.text == uncertain_text
+    assert recovered_message.turn_id
 
     fresh_command_id = "input-after-un-journaled-turn-start"
     fresh_text = "Reply with exactly: CODEX_FRESH_AFTER_UNJOURNALED_OK"
@@ -600,13 +611,16 @@ async def test_codex_unjournaled_turn_start_response_allows_fresh_input_without_
         )
     )
     assert confirmed.event.harness_user_message_confirmed.origin_command_ids == [fresh_command_id]
-    assert not any(
-        command_id in entry.event.harness_user_message_confirmed.origin_command_ids
-        for entry in events.of_kind(second.seen, "harness_user_message_confirmed")
-    )
     await second.until(events.turn_completed)
 
     all_seen = [*first.seen, *second.seen]
+    assert (
+        sum(
+            command_id in entry.event.harness_user_message_confirmed.origin_command_ids
+            for entry in events.of_kind(all_seen, "harness_user_message_confirmed")
+        )
+        == 1
+    )
     turn_starts = [
         frame
         for frame in _native_frames(all_seen, event_pb2.DIRECTION_TO_HARNESS)
