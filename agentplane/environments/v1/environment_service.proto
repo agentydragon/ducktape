@@ -7,6 +7,7 @@ option go_package = "github.com/agentydragon/ducktape/agentplane/environments/v1
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 import "agentplane/proto/kubernetes.proto";
+import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/empty.proto";
@@ -31,6 +32,8 @@ service EnvironmentService {
   rpc GetEnvironment(GetEnvironmentRequest) returns (EnvironmentDescriptor) {
     option (google.api.http) = {get: "/v1/environments/{target.namespace}/{target.name}"};
   }
+  // Live diagnostic evidence, available only to the App service peer. Never wakes an environment.
+  rpc GetRuntimeDiagnostics(GetRuntimeDiagnosticsRequest) returns (GetRuntimeDiagnosticsResponse);
   // Reports only the currently retained Sandbox-owned WorkloadCredential. Prior records are
   // revoked on stop and cannot provide a complete identity history.
   rpc GetEnvironmentIdentityRecord(GetEnvironmentRequest) returns (EnvironmentIdentityRecord) {
@@ -147,6 +150,21 @@ message EnvironmentChunk {
 message GetEnvironmentRequest {
   // All three fields are required. A same-name replacement is not the requested target.
   agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message GetRuntimeDiagnosticsRequest {
+  // All three fields identify one exact environment; a replacement is not followed.
+  agentplane.proto.EnvironmentTarget target = 1;
+}
+
+message GetRuntimeDiagnosticsResponse {
+  agentplane.proto.EnvironmentTarget target = 1;
+  // The workload Pod UID used by the fenced read, distinct from the Sandbox UID.
+  string incarnation_uid = 2;
+  // When Environments completed this live read; this is not a cached current-Session view.
+  google.protobuf.Timestamp observed_at = 3;
+  // Includes the Runtime boot ID that was authenticated by this replica's watch.
+  agentplane.proto.EnvironmentRuntimeStatus status = 4;
 }
 
 message EnvironmentIdentityRecord {

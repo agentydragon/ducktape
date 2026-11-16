@@ -406,3 +406,12 @@ now select Environments for diagnostics, inventory, native delivery, lifecycle a
 Dispatcher API callers retain their separate `session-dispatcher:8080` endpoint and server pin.
 Enable receiver configuration only after its accepting image is pinned and running. See the
 [receiver contract](../environments/SPEC.md#optional-runtime-proxy-and-executor-receiver).
+
+## EnvironmentService diagnostics
+
+`GetRuntimeDiagnostics` gives the App service peer a live snapshot with Environment UID,
+workload incarnation, boot ID and observation time. Environments uses its private fenced Runtime
+transport and checks the live Sandbox incarnation before and after reading. Offline state returns
+an unavailable error and never triggers wake. The [Environments contract](../environments/SPEC.md#live-runtime-diagnostics)
+defines its authorization and freshness. Existing App raw-proxy reads remain until the receiver
+image pin and caller cutover.

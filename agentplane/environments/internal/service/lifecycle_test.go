@@ -160,7 +160,7 @@ func serveEnvironmentService(
 			t.Fatal(err)
 		}
 	}
-	apiService, err := environmentservice.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, environmentservice.ManagementOptions{})
+	apiService, err := environmentservice.New(testNamespace, object, runtimeconfig.Catalog{}, lifecycleManager, environmentservice.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}

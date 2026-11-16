@@ -121,7 +121,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, ManagementOptions{})
+			service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -231,7 +231,7 @@ func TestServiceManagerCreateAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, ManagementOptions{
+	service, err := New(namespace, objects, runtimeconfig.Catalog{}, manager, Options{
 		ServiceManagers: sets.New(peertls.AppURI), ServiceLaunchers: sets.New(peertls.ActionsURI),
 	})
 	if err != nil {

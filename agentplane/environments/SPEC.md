@@ -44,6 +44,25 @@ Deployment configuration enables the listener only after the accepting image is 
 configuration changes follow the running receiver. The Gateway does not register EnvironmentService;
 restoring it for rollback requires its accepting image before callers are retargeted.
 
+## Live Runtime diagnostics
+
+`EnvironmentService.GetRuntimeDiagnostics` is a native gRPC read for the exact App service SVID
+(`spiffe://agentplane/app`), which enforces operator authorization at its browser boundary. Other
+service roles, workload Identities, bearer credentials and delegated envelopes grant no access.
+No new settings or manifest grants are needed. The request names an exact Environment
+namespace/name/UID. Environments reads the Sandbox uncached before and after the Runtime call;
+same-name replacement is `NOT_FOUND`, and a changed workload incarnation is `ABORTED`.
+
+The response includes that target, the workload Pod UID, completion observation time and the live
+`EnvironmentRuntimeStatus` snapshot, including its boot ID. The replica uses its existing fenced
+Runtime connection and requires the snapshot's boot ID to match the authenticated watch. Watch
+loss, an offline/unready/suspended Runtime or an absent transport returns `UNAVAILABLE`, never an
+empty snapshot implying idle. Replaced observations are refused. The read never wakes, creates or
+mutates an environment or Session and does not require controller leadership. Callers provide a
+unary deadline; the Runtime read inherits it. This is diagnostic evidence, not the canonical current
+Session-status or archival-safety contract. The App's existing raw proxy reads remain until the
+receiver image is pinned and its caller cutover rolls out.
+
 ## Optional Runtime proxy and Executor receiver
 
 `environment_service.runtime_proxy` registers the existing EnvironmentRuntime proxy and Executor

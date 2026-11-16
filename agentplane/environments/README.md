@@ -177,3 +177,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 EnvironmentService handlers, management and views live in [internal/service](internal/service/README.md).
 The shared lifecycle manager remains outside that internal boundary until the explicit/automatic
 split; automatic wake execution and budget ownership stay with Dispatcher.
+
+Runtime process, Session and lifecycle evidence is available through the App-only
+`EnvironmentService.GetRuntimeDiagnostics` RPC; see the [diagnostic contract](SPEC.md#live-runtime-diagnostics).
+The caller cutover follows the receiver image pin; this accepting change leaves deployed manifests unchanged.

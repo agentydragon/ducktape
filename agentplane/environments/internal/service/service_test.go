@@ -94,7 +94,7 @@ func serveFixture(t *testing.T, methods auth.Methods, register func(*grpc.Server
 
 func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, delegatedMethods []string, wakeCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), ManagementOptions{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
 		ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -117,7 +117,7 @@ func serveDiscoveryWithOptions(t *testing.T, objects client.WithWatch, catalog r
 
 func serveDiscoveryWithComponentReader(t *testing.T, objects client.WithWatch, catalog runtimeconfig.Catalog, wakeCallers []string) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), ManagementOptions{
+	service, err := New(discoveryNamespace, objects, catalog, discoveryLifecycle(t, objects, wakeCallers), Options{
 		ServiceReaders: sets.New(peertls.ActionsURI), ServiceManagers: sets.New(peertls.ActionsURI), ServiceLaunchers: sets.New(peertls.RuntimeProxyURI),
 	})
 	if err != nil {
@@ -301,7 +301,7 @@ func serveIdentityDiscoveryWithLifecycle(
 	readers sets.Set[string], manager *resume.Manager,
 ) environmentpb.EnvironmentServiceClient {
 	t.Helper()
-	service, err := New(discoveryNamespace, objects, catalog, manager, ManagementOptions{ServiceReaders: readers})
+	service, err := New(discoveryNamespace, objects, catalog, manager, Options{ServiceReaders: readers})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -403,7 +403,7 @@ func TestWorkloadSVIDInventoryAllowsZeroAndMultipleSandboxAttachments(t *testing
 					t.Fatal(err)
 				}
 			}
-			service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), ManagementOptions{})
+			service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -559,7 +559,7 @@ func TestDirectComponentReaderListAndGetReturnTheExecutionAccountIdentity(t *tes
 
 func TestRevalidateDescriptorRefreshesIdentityAfterSameUIDChange(t *testing.T) {
 	objects := baseReader(t)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), ManagementOptions{})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1124,7 +1124,7 @@ func TestServiceInventoryRequiresHandlerReaderRole(t *testing.T) {
 	terminating.Finalizers = []string{"test.example/retain"}
 	terminating.Status.OperatingMode = sandboxapi.OperatingModeSuspended
 	objects := readerWithObjects(t, sandboxObject(sandboxUID), executionAccountObject(sandboxUID), other, terminating)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), ManagementOptions{ServiceReaders: sets.New(peertls.ActionsURI)})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1165,7 +1165,7 @@ func TestDelegatedActorDoesNotLendInventoryReaderGrant(t *testing.T) {
 	other.Name = "other"
 	other.Spec.Identity = &sandboxapi.IdentityRef{Name: "other-identity"}
 	objects := readerWithObjects(t, first, executionAccountObject(first.UID), ownedRecord, other, otherIdentity)
-	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), ManagementOptions{ServiceReaders: sets.New(peertls.ActionsURI)})
+	service, err := New(discoveryNamespace, objects, runtimeconfig.Catalog{}, discoveryLifecycle(t, objects, nil), Options{ServiceReaders: sets.New(peertls.ActionsURI)})
 	if err != nil {
 		t.Fatal(err)
 	}

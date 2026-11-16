@@ -82,10 +82,21 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	if err != nil {
 		return nil, err
 	}
-	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, environmentservice.ManagementOptions{
+	var proxy *runtimeProxy
+	if c.RuntimeProxy != nil {
+		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme)
+		if err != nil {
+			return nil, fmt.Errorf("Runtime proxy: %w", err)
+		}
+	}
+	serviceOptions := environmentservice.Options{
 		ServiceReaders: sets.New(c.ServiceReaders...), ServiceManagers: sets.New(c.ServiceManagers...),
 		ServiceLaunchers: sets.New(c.ServiceLaunchers...),
-	})
+	}
+	if proxy != nil {
+		serviceOptions.RuntimeDiagnostics = proxy.gateway
+	}
+	service, err := environmentservice.New(namespace, objects, c.RuntimeCatalog, manager, serviceOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +116,7 @@ func New(c Config, namespace string, apiConfig *rest.Config, scheme *runtime.Sch
 	}
 	allMethods := auth.HealthMethods()
 	maps.Copy(allMethods, methods)
-	var proxy *runtimeProxy
-	if c.RuntimeProxy != nil {
-		proxy, err = newRuntimeProxy(*c.RuntimeProxy, namespace, apiConfig, scheme)
-		if err != nil {
-			return nil, fmt.Errorf("Runtime proxy: %w", err)
-		}
+	if proxy != nil {
 		proxyMethods, err := proxy.gateway.Methods()
 		if err != nil {
 			return nil, err

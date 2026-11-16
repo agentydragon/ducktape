@@ -3905,6 +3905,11 @@ move: the operator also released the Runtime diagnostics API and App cutover to 
 transport migration, which has landed; Session activity and Sandbox-independent Notifications
 remain their separately tracked contracts.
 
+**In flight, operator release 2026-11-16:** implement the Runtime diagnostics receiver, then move
+App status reads after its accepting Environments image is pinned; retire the App raw-proxy grant
+only after its last caller rolls. Archive safety retains its conservative live check pending
+`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN`; this migration does not choose canonical Session status.
+
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the
 remaining migration work dispatched separately. The audit does not block the agreed physical proxy
 move, authorize new grants or require a Sandbox/single attachment on a Session.

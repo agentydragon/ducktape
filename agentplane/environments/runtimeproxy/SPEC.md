@@ -71,6 +71,13 @@ its final Session cutoff refuses new command IDs, including interrupts. Existing
 journal reconciliation. Removing finalizers or using foreground deletion bypasses this managed
 protocol and supplies no such proof.
 
+## Internal diagnostic reads
+
+EnvironmentService uses `RuntimeStatus` internally with the exact Environment and an incarnation
+from an uncached Sandbox read. This reuses the existing ready-Pod route and authenticated watch,
+replaces outgoing metadata with the transport fence, and rejects a mismatched response boot ID or
+an observation replaced/lost during the read. It grants no extra Runtime method to external callers.
+
 ## Service certificate callers
 
 The Runtime proxy has independent exact-service allowlists for diagnostics readers, Sessions

@@ -205,6 +205,16 @@ Restore and pin an old receiver before rolling callers back to it. Never delete 
 Session records, identities or History to perform the cutover. This audit changes no API, manifest,
 authentication mode, deployed name, proto wire name, data shape or staging resource.
 
+## Runtime diagnostics implementation
+
+Operator released the receiver, App cutover and final App-grant narrowing on 2026-11-16 after the
+physical transport move. The accepting RPC is `EnvironmentService.GetRuntimeDiagnostics`: exact
+App service peer only, exact Environment handle, workload incarnation, observation time and the
+Runtime snapshot with its authenticated boot ID. It is a live read with explicit unavailable errors,
+not a persisted Session-status authority. Pin the receiver before switching App reads; remove its
+raw-proxy grant only after all of those reads have moved and rolled. Keep the busy-archive check
+conservative until the Session-status decision; Notifications retains its independently reviewed path.
+
 ## Review question
 
 Should authorized Session admission/ownership suffice for subscription creation before owner

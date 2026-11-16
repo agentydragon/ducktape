@@ -4,6 +4,7 @@ go_library(
     name = "runtimeproxy",
     srcs = [
         "connections.go",
+        "diagnostics.go",
         "executor.go",
         "gateway.go",
         "peer.go",
@@ -53,6 +54,7 @@ go_library(
 go_test(
     name = "gateway_test",
     srcs = [
+        "diagnostics_test.go",
         "fixture_test.go",
         "gateway_testmain_test.go",
         "methods_test.go",

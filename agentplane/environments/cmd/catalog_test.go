@@ -81,7 +81,7 @@ func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) 
 	}
 	service, err := environmentservice.New(
 		"agentplane", objects, config.RuntimeCatalog, lifecycleManager,
-		environmentservice.ManagementOptions{ServiceReaders: sets.New(config.ServiceReaders...)},
+		environmentservice.Options{ServiceReaders: sets.New(config.ServiceReaders...)},
 	)
 	if err != nil {
 		t.Fatal(err)
