@@ -219,3 +219,73 @@ fn reads_of_immutable_foreign_bindings_relocate() {
         );
     }
 }
+
+/// A pair of local re-export hops fans out to the same immutable provider
+/// function. The CLI can prove both imported bindings stable, so extracting
+/// one read ahead of the stateful call does not change behavior.
+#[test]
+fn immutable_imports_reexported_through_a_shared_tail_relocate() {
+    let source = "import { next } from './peer.js';\n\
+import { bound, alsoBound } from './bridge.js';\n\
+const first = next();\n\
+const second = bound;\n\
+const third = alsoBound;\n\
+console.log(first, second === third);\n";
+    let peers = [
+        (
+            "static/peer",
+            "export const limit = 3;\n\
+             let count = 0;\n\
+             export function next() { return ++count; }\n\
+             export function bound() { return limit; }\n",
+        ),
+        (
+            "static/tail",
+            "import { bound } from './peer.js';\n\
+             export { bound as first, bound as second };\n",
+        ),
+        (
+            "static/bridge",
+            "import { first, second } from './tail.js';\n\
+             export { first as bound, second as alsoBound };\n",
+        ),
+    ];
+    let fixture = run_fixture(second_first(source, &peers));
+    assert_preserved_entry_output(&fixture, "1 true\n");
+    let assessment = candidate_relocation_assessment(&fixture);
+    assert_eq!(assessment["legacy_gate_accepts"], true, "{assessment:#}");
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "the stable import must cross the stateful call: {assessment:#}"
+    );
+}
+
+/// The mutable live binding still carries its provider cell through a local
+/// re-export in a cyclic module graph. Moving the read before its writer is
+/// therefore refused, and the rejected tree demonstrates the divergence.
+#[test]
+fn mutable_reexport_in_a_module_cycle_keeps_the_read_after_its_writer() {
+    let source = "import { count, next } from './bridge.js';\n\
+const first = next();\n\
+const second = count;\n\
+console.log(first, second);\n";
+    let peers = [
+        (
+            "static/bridge",
+            "import { count, next } from './provider.js';\n\
+             export { count, next };\n\
+             export const marker = 1;\n",
+        ),
+        (
+            "static/provider",
+            "import { marker } from './bridge.js';\n\
+             export let count = 0;\n\
+             export function next() { return ++count; }\n",
+        ),
+    ];
+    let refused = run_emit_on_rejection_fixture_with_graphs(second_first(source, &peers));
+    assert_node_output(&refused.source_root.join("static/app.js"), "1 1\n", "");
+    assert_node_output(&refused.entry_path(), "1 0\n", "");
+    let assessment = refused.candidate_relocation_assessment();
+    assert_eq!(assessment["legacy_gate_accepts"], false, "{assessment:#}");
+}
