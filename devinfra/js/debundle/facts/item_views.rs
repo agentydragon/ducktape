@@ -2,6 +2,7 @@ use super::*;
 use crate::facts::abstract_domain::builtins;
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 
+#[derive(Clone)]
 pub enum TopLevelItemView<'a> {
     Borrowed(&'a ModuleItem),
     Owned {
@@ -14,6 +15,7 @@ pub enum TopLevelItemView<'a> {
 /// The cloned analysis item is still the one consumed by per-source-unit
 /// analysis; this borrowed origin lets source-based proofs check that item
 /// against its exact original declarator without rediscovering it by name.
+#[derive(Clone)]
 pub struct SplitDeclaratorProvenance<'a> {
     pub(crate) parent_item: &'a ModuleItem,
     pub(crate) declarator_index: usize,

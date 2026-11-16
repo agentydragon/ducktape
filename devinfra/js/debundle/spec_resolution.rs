@@ -8,7 +8,8 @@ use selector_outcome::{
     SelectorKind,
 };
 use selector_resolve::{
-    AnonymousStatement, Chunk, Member, MemberSelector, Projection, Resolution, SpecModule,
+    AnonymousStatement, Chunk, FrozenImportAnchor, Member, MemberSelector, PlacementAnchors,
+    Projection, Resolution, SpecModule,
 };
 use source_match::ParsedSourceMatchSelector;
 use spec::{
@@ -562,6 +563,7 @@ pub struct ProjectedChunk<'a> {
     modules: Vec<SpecModule>,
     projection: Projection,
     resolved_members: Vec<Vec<usize>>,
+    placement_import_anchors: Option<Vec<FrozenImportAnchor>>,
 }
 
 /// The selector result, source structure, and request indices lowering needs
@@ -570,16 +572,16 @@ pub struct ResolvedChunk<'a> {
     pub resolution: Resolution,
     pub resolved_members: Vec<Vec<usize>>,
     pub structural_analysis: StructuralChunkSourceFacts<'a>,
+    pub placement_anchors: Option<PlacementAnchors>,
 }
 
-/// Compile requests into selector-engine modules and project them against one
-/// source chunk. `resolved_members` identifies which request members are
-/// eligible after lowering has accounted for duplicate and unmatched pins.
-pub fn project_chunk<'a>(
-    chunk: Chunk<'a>,
+/// Compile the exact eligible request-member layout used by the canonical
+/// resolver. Ownership layers share this mapping instead of rebuilding member
+/// or grouped-selector identities in their callers.
+pub fn selector_modules_for_requests(
     requests: &[LogicalRequest],
-    resolved_members: Vec<Vec<usize>>,
-) -> Result<ProjectedChunk<'a>> {
+    resolved_members: &[Vec<usize>],
+) -> Result<Vec<SpecModule>> {
     if requests.len() != resolved_members.len() {
         bail!(
             "selector request/module count mismatch: {} requests, {} member-index lists",
@@ -587,9 +589,9 @@ pub fn project_chunk<'a>(
             resolved_members.len()
         );
     }
-    let modules = requests
+    requests
         .iter()
-        .zip(&resolved_members)
+        .zip(resolved_members)
         .map(|(request, member_indices)| {
             let members = member_indices
                 .iter()
@@ -621,13 +623,42 @@ pub fn project_chunk<'a>(
                 anonymous_statements,
             ))
         })
-        .collect::<Result<Vec<_>>>()?;
+        .collect::<Result<Vec<_>>>()
+}
+
+/// Compile requests into selector-engine modules and project them against one
+/// source chunk. `resolved_members` identifies which request members are
+/// eligible after lowering has accounted for duplicate and unmatched pins.
+pub fn project_chunk<'a>(
+    chunk: Chunk<'a>,
+    requests: &[LogicalRequest],
+    resolved_members: Vec<Vec<usize>>,
+    freeze_for_placement: bool,
+) -> Result<ProjectedChunk<'a>> {
+    let modules = selector_modules_for_requests(requests, &resolved_members)?;
     let projection = chunk.project(&modules)?;
+    let placement_import_anchors = freeze_for_placement.then(|| {
+        requests
+            .iter()
+            .flat_map(|request| {
+                request
+                    .members
+                    .iter()
+                    .filter(|member| member.selector.is_import_specifier())
+                    .map(|member| FrozenImportAnchor {
+                        logical_module: request.target_path.clone(),
+                        export_name: member.export_name.clone(),
+                        imported_binding: member.binding.clone(),
+                    })
+            })
+            .collect()
+    });
     Ok(ProjectedChunk {
         chunk,
         modules,
         projection,
         resolved_members,
+        placement_import_anchors,
     })
 }
 
@@ -640,17 +671,20 @@ pub fn solve_projected_chunks<'a>(
     let mut modules = Vec::with_capacity(chunks.len());
     let mut projections = Vec::with_capacity(chunks.len());
     let mut resolved_members = Vec::with_capacity(chunks.len());
+    let mut placement_import_anchors = Vec::with_capacity(chunks.len());
     for ProjectedChunk {
         chunk,
         modules: chunk_modules,
         projection,
         resolved_members: member_indices,
+        placement_import_anchors: import_anchors,
     } in chunks
     {
         source_chunks.push(chunk);
         modules.push(chunk_modules);
         projections.push(projection);
         resolved_members.push(member_indices);
+        placement_import_anchors.push(import_anchors);
     }
     let resolutions = selector_resolve::solve(
         source_chunks
@@ -660,16 +694,30 @@ pub fn solve_projected_chunks<'a>(
             .map(|((chunk, modules), projection)| (chunk, modules.as_slice(), projection))
             .collect(),
     )?;
-    Ok(resolutions
+    resolutions
         .into_iter()
         .zip(resolved_members)
         .zip(source_chunks)
-        .map(|((resolution, resolved_members), chunk)| ResolvedChunk {
-            resolution,
-            resolved_members,
-            structural_analysis: chunk.into_structural(),
-        })
-        .collect())
+        .zip(modules)
+        .zip(placement_import_anchors)
+        .map(
+            |((((resolution, resolved_members), chunk), modules), import_anchors)| {
+                let placement_anchors = import_anchors
+                    .map(|imports| -> Result<PlacementAnchors> {
+                        let mut anchors = chunk.freeze_placement_anchors(&modules, &resolution)?;
+                        chunk.add_frozen_import_anchors(&mut anchors, &imports)?;
+                        Ok(anchors)
+                    })
+                    .transpose()?;
+                Ok(ResolvedChunk {
+                    resolution,
+                    resolved_members,
+                    structural_analysis: chunk.into_structural(),
+                    placement_anchors,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>>>()
 }
 
 /// Resolve a single set of compiled modules through the shared exact solver.

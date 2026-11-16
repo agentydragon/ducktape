@@ -4,6 +4,15 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
+    name = "selected_placement_cli_test",
+    deps = [
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "modules_propose_cli_test",
     deps = [
         ":graph_support",

@@ -1049,6 +1049,7 @@ pub struct StructuralChunkAnalysis<'a> {
 
 /// Source-only structural census. Selector resolution can consume this before
 /// value-flow roots supplied by validated author inputs are known.
+#[derive(Clone)]
 pub struct StructuralChunkSourceFacts<'a> {
     pub body: Vec<TopLevelItemView<'a>>,
     pub(crate) stable_array_spread_shapes: super::StableArraySpreadShapes,

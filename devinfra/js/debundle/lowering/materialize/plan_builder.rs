@@ -29,8 +29,8 @@ use selector_outcome::{
 };
 use selector_resolve::{EntityIndex, EntityOutcome, MemberSelector, Resolution};
 use source_identity::ChunkId;
-use source_identity::SourceUnitId;
 use source_identity::StatementId;
+use source_identity::{SourceUnitId, SourceUnitOrdinal};
 use spec::MemberSelectorSpec;
 use spec_resolution::{LogicalRequest, MemberRequest, reject_duplicate_member_bindings};
 use std::collections::VecDeque;
@@ -624,6 +624,35 @@ impl ChunkPlanBuilder {
         body: &[ModuleItem],
         declaration_by_name: &HashMap<Id, Vec<StatementId>>,
     ) -> Result<()> {
+        self.claim_resolution_at_offset(
+            0,
+            explicit_requests,
+            resolution,
+            resolved_members,
+            member_claims,
+            chunk_top_level_mark,
+            chunk_id,
+            body,
+            declaration_by_name,
+        )
+    }
+
+    /// Apply another independently resolved ownership layer to the existing
+    /// plans. Resolution indices and frontend claim indices stay local to that
+    /// layer; only concrete output-plan destinations receive the offset.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn claim_resolution_at_offset(
+        &mut self,
+        module_offset: usize,
+        explicit_requests: &[LogicalRequest],
+        resolution: Resolution,
+        resolved_members: Vec<Vec<usize>>,
+        member_claims: &MemberClaimProjection,
+        chunk_top_level_mark: swc_common::Mark,
+        chunk_id: &str,
+        body: &[ModuleItem],
+        declaration_by_name: &HashMap<Id, Vec<StatementId>>,
+    ) -> Result<()> {
         self.outcomes.list_templates(resolution.templates);
         // Recorded last, once every claim is in.
         let mut eliminated = Vec::new();
@@ -657,7 +686,7 @@ impl ChunkPlanBuilder {
                         body_index,
                     );
                     self.claim_anonymous_statement(
-                        index,
+                        module_offset + index,
                         &request.id,
                         &ResolvedAnonymousStatement {
                             selector_index: statement_index,
@@ -683,7 +712,7 @@ impl ChunkPlanBuilder {
                         request,
                         member,
                         &binding,
-                        index,
+                        module_offset + index,
                         chunk_top_level_mark,
                         chunk_id,
                         body,
@@ -898,6 +927,72 @@ impl ChunkPlanBuilder {
     pub(super) fn drop_explicit_request_scratch(&mut self) {
         self.catalogue_index_by_name = HashMap::new();
         self.deferred_binding_claims_by_name = HashMap::new();
+    }
+
+    /// Prepare an additional fresh-owner layer after retained ownership has
+    /// applied its normal destructuring and anonymous-statement placement.
+    /// Occupancy comes from the shared complete source-unit assignment, not
+    /// from a second interpretation of named selector hits. The checked layout
+    /// converts graph IDs into the selector resolver's source ordinal domain.
+    pub(super) fn begin_placement_layer(
+        &mut self,
+        precomputed: &DependencyGraphAndAtomicGroups,
+        layout: &SourceUnitLayout,
+    ) -> Result<(usize, BTreeSet<SourceUnitOrdinal>)> {
+        ensure!(
+            self.residual_plan_index.is_none(),
+            "placement claims must precede residual routing"
+        );
+        ensure!(
+            layout.issues().is_empty(),
+            "cannot project selected placement with an invalid source-unit layout: {:?}",
+            layout.issues()
+        );
+        let offset = self.module_plans.len();
+        let entry = ModuleId(offset);
+        let mut source_unit_claims = Vec::new();
+        for (&statement, &module) in &self.whole_statement_assignment {
+            let locations = layout.for_statement(statement);
+            ensure!(
+                !locations.is_empty(),
+                "selected anonymous statement {} has no canonical source unit",
+                statement.0
+            );
+            source_unit_claims.extend(
+                locations
+                    .into_iter()
+                    .map(|location| (location.source_unit, ModuleId(module))),
+            );
+        }
+        let assembled = assemble_assignment_with_source_unit_claims(
+            &precomputed.dependency_graph,
+            &precomputed.atomic_groups,
+            &self.bindings_catalogue,
+            &source_unit_claims,
+            EntryDestination::from_module_id(entry),
+        )?;
+        ensure!(
+            assembled.conflicts.is_empty(),
+            "retained selected ownership splits an atomic group before placement"
+        );
+        let occupied = assembled
+            .assignment
+            .iter()
+            .filter(|(_, owner)| *owner != entry)
+            .map(|(unit, _)| {
+                layout
+                    .by_source_unit(unit)
+                    .expect("checked layout contains every graph unit")
+                    .ordinal
+            })
+            .collect();
+        self.catalogue_index_by_name = self
+            .bindings_catalogue
+            .keys()
+            .map(|binding| (binding.0.to_string(), binding.clone()))
+            .collect();
+        self.deferred_binding_claims_by_name.clear();
+        Ok((offset, occupied))
     }
 
     /// Apply the shared placement-kernel decision to each retained
