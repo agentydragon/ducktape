@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
-  "observed_at_utc": "2026-11-16T00:15:00Z",
+  "source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
+  "observed_at_utc": "2026-11-16T03:05:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1338,
+    "files": 1343,
     "directories": 249,
-    "production": 741,
-    "tests": 597
+    "production": 743,
+    "tests": 600
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -46,7 +46,7 @@
       },
       {
         "name": "sandbox-controller",
-        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only. Since #16656 and #16685 every replica can also serve the Runtime proxy and Executor with service-only admission, enabled on staging by #16692; since #16723 every Runtime proxy and Executor caller targets it, including the Controller's own quiesce.",
+        "text": "Leader-elected controller-runtime manager with no database. Since #16324 it observes each Runtime's `WatchState` directly with its own certificate and keeps idle timers in memory. Since #16542 and #16556 every replica also serves EnvironmentService on 8082 for every caller (App #16565, CLI #16568, Actions #16573); reconcilers stay leader-only. Since #16656 and #16685 every replica can also serve the Runtime proxy and Executor with service-only admission, enabled on staging by #16692; since #16723 every Runtime proxy and Executor caller targets it, including the Controller's own quiesce. Since #16819 EnvironmentService also serves the app's Runtime diagnostics over the replica's own Runtime transport; the app reads them there since #16825.",
         "evidence_paths": [
           "agentplane/environments/cmd/main.go",
           "agentplane/environments/internal/runtimecontrol/observer.go",
@@ -63,7 +63,7 @@
         "text": "Reconciles on the leader; serves gRPC on every replica. Sits beside its API, `environments/v1`.",
         "owns": [
           "Sandbox reconciliation: lifecycle, quiesce, the suspend decision and its idle timer",
-          "EnvironmentService: inventory, management and explicit `ResumeEnvironment`",
+          "EnvironmentService: inventory, management, explicit `ResumeEnvironment` and the app's Runtime diagnostics",
           "Runtime proxy: native Session creation and commands for the Sessions binary",
           "Executor: the central sampler's code mode (Codex exec server)",
           "Keep-alive holds (below)"
@@ -77,7 +77,7 @@
         "text": "The Dispatcher with its PostgreSQL database, at `agentplane/session_dispatcher/` since #16785 and still deployed as `runner-gateway`.",
         "owns": [
           "Session admission and the durable per-Session command queue",
-          "Delivery ownership: a PostgreSQL lease per Session taken at each dequeue (decided, not built)",
+          "Delivery ownership: a PostgreSQL lease per Session taken at each dequeue (decided; build released 2026-11-16)",
           "Routing each Session to the central sampler, or to a native harness through the Environments binary",
           "Automatic wake and its budget"
         ],
@@ -998,7 +998,7 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 80,
+        "files": 81,
         "directories": 23
       },
       "directories": [
@@ -1190,10 +1190,11 @@
         {
           "path": "agentplane/app/internal/sessionclient",
           "production": 4,
-          "tests": 1,
+          "tests": 2,
           "files": [
-            "agentplane/app/internal/sessionclient/environment_runtime.go",
             "agentplane/app/internal/sessionclient/errors.go",
+            "agentplane/app/internal/sessionclient/runtime_diagnostics.go",
+            "agentplane/app/internal/sessionclient/runtime_diagnostics_test.go",
             "agentplane/app/internal/sessionclient/session_client.go",
             "agentplane/app/internal/sessionclient/session_client_test.go",
             "agentplane/app/internal/sessionclient/session_dispatcher.go"
@@ -1589,13 +1590,13 @@
         },
         {
           "path": "agentplane/app/internal/sessionclient",
-          "role": "App-local Session client: opens and inspects Sessions through the Dispatcher and reads Environment Runtime status through the Environments Runtime proxy.",
+          "role": "App-local Session client: opens and inspects Sessions through the Dispatcher and reads Environment Runtime diagnostics through EnvironmentService (#16825).",
           "decision": "retain",
           "target_paths": [],
           "reason": "Named for its responsibility since #16394 (was `app/internal/bridge`); the shared `session_client` covers only Session input, results and turn helpers, not the app's opening or Runtime status calls.",
           "gate": "",
           "evidence_paths": [
-            "agentplane/app/internal/sessionclient/environment_runtime.go",
+            "agentplane/app/internal/sessionclient/runtime_diagnostics.go",
             "agentplane/app/internal/sessionclient/errors.go",
             "agentplane/app/internal/sessionclient/session_client.go",
             "agentplane/app/internal/sessionclient/session_dispatcher.go"
@@ -1604,7 +1605,7 @@
           "pending_tracks": [],
           "counts": {
             "non_test": 4,
-            "tests": 1
+            "tests": 2
           }
         },
         {
@@ -4514,7 +4515,7 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 83,
+        "files": 87,
         "directories": 13
       },
       "directories": [
@@ -4597,11 +4598,13 @@
         },
         {
           "path": "agentplane/environments/internal/service",
-          "production": 4,
-          "tests": 6,
+          "production": 5,
+          "tests": 7,
           "files": [
             "agentplane/environments/internal/service/collection.go",
             "agentplane/environments/internal/service/delegated_resume_envtest_test.go",
+            "agentplane/environments/internal/service/diagnostics.go",
+            "agentplane/environments/internal/service/diagnostics_test.go",
             "agentplane/environments/internal/service/environment_grants_test.go",
             "agentplane/environments/internal/service/lifecycle_test.go",
             "agentplane/environments/internal/service/management.go",
@@ -4654,10 +4657,12 @@
         },
         {
           "path": "agentplane/environments/runtimeproxy",
-          "production": 7,
-          "tests": 8,
+          "production": 8,
+          "tests": 9,
           "files": [
             "agentplane/environments/runtimeproxy/connections.go",
+            "agentplane/environments/runtimeproxy/diagnostics.go",
+            "agentplane/environments/runtimeproxy/diagnostics_test.go",
             "agentplane/environments/runtimeproxy/executor.go",
             "agentplane/environments/runtimeproxy/fixture_test.go",
             "agentplane/environments/runtimeproxy/gateway.go",
@@ -4821,7 +4826,7 @@
         },
         {
           "path": "agentplane/environments/internal/service",
-          "role": "EnvironmentService handlers: inventory, watches, management and explicit resume over Sandbox resources.",
+          "role": "EnvironmentService handlers: inventory, watches, management, explicit resume and the App-only Runtime diagnostics read (#16819) over Sandbox resources.",
           "decision": "retain",
           "target_paths": [],
           "reason": "Moved from `runner_gateway/environments` by #16613 after callers left the Gateway (#16565 App, #16573 Actions, #16568 CLI; Gateway registration retired in #16601). Package `environments` became `service`.",
@@ -4835,8 +4840,8 @@
           "declared_packages": ["service", "service_test"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 4,
-            "tests": 6
+            "non_test": 5,
+            "tests": 7
           }
         },
         {
@@ -4912,7 +4917,7 @@
         },
         {
           "path": "agentplane/environments/runtimeproxy",
-          "role": "The Runtime proxy and code-mode Executor: per-call Sandbox, Pod and boot-ID fencing, mutual-TLS forwarding to Runtimes, peer authentication and the Runtime observers.",
+          "role": "The Runtime proxy and code-mode Executor: per-call Sandbox, Pod and boot-ID fencing, mutual-TLS forwarding to Runtimes, peer authentication, the Runtime observers and EnvironmentService's fenced Runtime status read (#16819).",
           "decision": "retain",
           "target_paths": [],
           "reason": "Moved from `runner_gateway/internal/gateway` by #16656 (package `gateway` became `runtimeproxy`) and kept as its final home; since the Gateway's receivers retired (#16760) only `environments/` may import it. Its leftover Gateway-era names are gateway-era-names.",
@@ -4929,8 +4934,8 @@
           "declared_packages": ["runtimeproxy"],
           "pending_tracks": ["gateway-era-names"],
           "counts": {
-            "non_test": 7,
-            "tests": 8
+            "non_test": 8,
+            "tests": 9
           }
         },
         {
@@ -9316,7 +9321,7 @@
       "id": "gateway-era-names",
       "title": "Rename the Gateway-era names left in the proxy and Dispatcher",
       "components": ["environments", "session_dispatcher", "sandboxes"],
-      "status": "PLANNED",
+      "status": "READY",
       "kind": "naming",
       "stage": 2,
       "priority": 1,
@@ -9327,7 +9332,7 @@
         "Leave kind (2) for its own migration: settings keys and environment variables (`runner_security`, `runner_token_file`, `runner_control_target_template`, `runner_request_timeout_seconds`, `gateway_tls`, the `AGENTPLANE_RUNNER_GATEWAY_` prefix) with their Go fields, since a key rename ships accepting code before manifests; the delivery states `DELIVERING_TO_RUNNER` and `RUNNER_ADMITTED`; stored failure details such as `runner_unreachable`; the Goose table `runner_gateway_dispatcher_goose_version`; and deployed names (`RUNNER_GATEWAY_RENAME`).",
         "Mint no new runner or Gateway names."
       ],
-      "gate": "Not released. Kind (2) names stay; a PR that changes a settings key, wire, stored or deployed name is out of scope.",
+      "gate": "Released by the operator 2026-11-16 02:57 UTC (card \"Which of the three ready tracks should workers start now?\": \"Lease and renames\"); one PR per binary. Kind (2) names stay; a PR that changes a settings key, wire, stored or deployed name is out of scope.",
       "preserve": "Settings keys, environment variables, wire metadata values, delivery states, stored failure details, Goose tables and deployed names.",
       "validation": [
         "//agentplane/environments/runtimeproxy:gateway_test",
@@ -10425,7 +10430,7 @@
       "id": "gateway-replica-ownership",
       "title": "Replace the Dispatcher's ownership Lease with a per-Session Postgres lease",
       "components": ["session_dispatcher"],
-      "status": "AGREED DIRECTION",
+      "status": "READY",
       "kind": "service boundary design",
       "stage": 5,
       "priority": 8,
@@ -10436,7 +10441,7 @@
         "Roll so old (Kubernetes Lease) and new replicas never both deliver to one Session, then delete `ownership.go`, the `dispatcher-<sandbox UID>` Leases and the runner-gateway Role's Lease grant; controller leader election is unaffected.",
         "Then design the Dispatcher store split (runner-gateway-dispatcher-store) once, on this ownership."
       ],
-      "gate": "Not released. It lands as its own change, now that the Sessions binary is at `session_dispatcher/` (#16785), with a system test in which a replica dies mid-delivery and another takes over.",
+      "gate": "Released by the operator 2026-11-16 02:57 UTC (card \"Which of the three ready tracks should workers start now?\": \"Lease and renames\"); its build and rollout plan is reviewed before any code. It lands as its own change, with a system test in which a replica dies mid-delivery and another takes over.",
       "preserve": "Per-Session order, one deliverer per Session head, fencing of a stale deliverer's writes, and incarnation fencing of deliveries.",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:store_integration_test"
@@ -10594,7 +10599,7 @@
       ],
       "source_owner": "agentplane/net/peertls + identity + per-target clients",
       "candidate_target": null,
-      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners. Stage 4 (every first-party caller presents its service SVID) finished on staging (#16637, 2026-11-15). Stage 5, removing bearer admission, was released on 2026-11-15 and is in progress per receiver: the transitional plaintext RPC listeners are gone (#16661), and receiver code that refuses Kubernetes bearers has merged for Notifications, LLM ingress, PolicyService, Egress Admin (#16678), Actions (#16680), the Gateway (#16690) and EnvironmentService (#16681, with its TokenReview and account machinery). The sampler (#16688) and History (#16728) receivers merged too, and #16784 removed the TokenReview RBAC grants. Manifests drop the retired keys after each image pin (#16793 in review), then the decoder fields go (Gateway #16722, sampler #16729).",
+      "summary": "Operator, 2026-11-14, `PRIVILEGED_BACKEND_AUTH_DESIGN` option 2: \"One auth mode can fire off\". Every first-party service-to-service call authenticates its caller by a service SVID over mTLS with verified server TLS; the `kubernetes_bearer` listener mode, Agentplane's TokenReview code, projected token audiences and the `tokenreviews` RBAC go, and Kubernetes authentication stays only toward the Kubernetes API. A service acting for an Identity proves itself with its certificate plus the typed delegation envelope. The app's `agentplane-agent` TokenReview bearer goes separately (operator, 05:05–05:06 UTC): #16383 (merged 2026-11-14) removed the app's Kubernetes bearer admission and its token settings; #16387 (merged 2026-11-14) removed the account and its TokenReview RBAC. The decision record is in #16342. The migration removes code paths inside files and moves none: `net/peertls` and `identity/auth` stay the owners. Stage 4 (every first-party caller presents its service SVID) finished on staging (#16637, 2026-11-15). Stage 5, removing bearer admission, was released on 2026-11-15 and its receiver work is done: every receiver refuses Kubernetes bearers (among them the Gateway #16690, EnvironmentService #16681, the sampler #16688 and History #16728), retired keys and decoders are gone, #16784 removed the TokenReview RBAC grants, #16812 the shared `kubernetes_bearer` listener mode and #16811 token-backed service delegation, and the DAG closed the cutover in #16827. #16826, retiring the shared TokenReview resolver and account admission rules, is in review; this track leaves when it merges.",
       "how": [
         "Runs as its own staged migration, owned by the DAG node `PRIVILEGED_BACKEND_AUTH_DESIGN`: inventory, issue and mount service SVIDs, receivers admit exact service SPIFFE IDs beside bearers (#16350), callers present SVIDs after the receivers' images are pinned, then bearer admission, TokenReview and its RBAC go.",
         "This plan moves no file in `net/peertls`, `identity/auth` or the listener configuration while the migration runs. The two-binary split grants the Runtime proxy's methods to the Sessions binary's service SVID (target binaries cut line: Runtime calls)."
@@ -10734,7 +10739,7 @@
       "stage": 2,
       "title": "Fix layout inside components that no direction changes",
       "work": ["gateway-era-names"],
-      "result": "Naming and layout fixes that hold under any service map. runner-era-names finished on 2026-11-15; only the Gateway-era names the Gateway's dissolution left in the Runtime proxy and the Dispatcher remain. Not released."
+      "result": "Naming and layout fixes that hold under any service map. runner-era-names finished on 2026-11-15; only the Gateway-era names the Gateway's dissolution left in the Runtime proxy and the Dispatcher remain. Released 2026-11-16."
     },
     {
       "stage": 3,
@@ -10776,7 +10781,7 @@
         "history-journals",
         "settings-single-source"
       ],
-      "result": "The Notification split, the Journal service and a single settings source are open; the Dispatcher's ownership Lease is decided (a per-Session `postgres/lease`) but its build is not released. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
+      "result": "The Notification split, the Journal service and a single settings source are open; the Dispatcher's ownership Lease is decided (a per-Session `postgres/lease`) and its build was released on 2026-11-16. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
     },
     {
       "stage": 6,
@@ -10788,11 +10793,11 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 249,
-    "go_files": 1338,
+    "go_files": 1343,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "db6664d6ada5a6e9c72b0eab2dbd2140652a9e5c",
+    "review_source_sha": "75ead1cf19c1f1358da80a37e6e185eeb51ab029",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10804,7 +10809,7 @@
         "slice": "app",
         "components": ["app"],
         "packages": 23,
-        "go_files": 80
+        "go_files": 81
       },
       {
         "slice": "central_sampler",
@@ -10852,7 +10857,7 @@
         "slice": "environments",
         "components": ["environments"],
         "packages": 13,
-        "go_files": 83
+        "go_files": 87
       },
       {
         "slice": "firecracker",
@@ -11011,8 +11016,15 @@
       "id": "next-1",
       "track": "gateway-era-names",
       "title": "Rename the Gateway-era names left in the proxy and Dispatcher",
-      "readiness": "PLANNED",
+      "readiness": "READY",
       "first_step": "Rename the proxy's `Gateway` type, files and runner identifiers in `environments/runtimeproxy`, then the Dispatcher's delivery types."
+    },
+    {
+      "id": "next-2",
+      "track": "gateway-replica-ownership",
+      "title": "Replace the Dispatcher's ownership Lease with a per-Session Postgres lease",
+      "readiness": "READY",
+      "first_step": "Agree the build and rollout plan, then replace `ownership.go` with a per-Session `postgres/lease` taken at each dequeue."
     }
   ],
   "maintenance": {
