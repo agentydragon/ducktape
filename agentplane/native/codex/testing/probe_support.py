@@ -36,7 +36,9 @@ async def rpc(process: AsyncNativeProcess, method: str, **params: Any) -> dict[s
 
 
 @asynccontextmanager
-async def server(codex: CodexHarness, model: OpenAIResponses, name: str) -> AsyncIterator[AsyncNativeProcess]:
+async def server(
+    codex: CodexHarness, model: OpenAIResponses, name: str, *, experimental_api: bool = True
+) -> AsyncIterator[AsyncNativeProcess]:
     endpoint = f"{model.origin}/v1"
     logs = codex.logs / name
     logs.mkdir()
@@ -50,7 +52,7 @@ async def server(codex: CodexHarness, model: OpenAIResponses, name: str) -> Asyn
         },
     ) as process:
         frame = await raw_request(
-            process, driver.initialize(str(uuid4()), client_name="agentplane-probe", experimental_api=True)
+            process, driver.initialize(str(uuid4()), client_name="agentplane-probe", experimental_api=experimental_api)
         )
         assert "error" not in frame, frame
         assert isinstance(frame["result"], dict)

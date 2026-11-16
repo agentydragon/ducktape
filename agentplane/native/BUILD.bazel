@@ -37,6 +37,7 @@ test_suite(
         "//agentplane/native/claude:test_tools",
         "//agentplane/native/claude:test_turns",
         "//agentplane/native/codex:test_active_turn",
+        "//agentplane/native/codex:test_client_user_message_id",
         "//agentplane/native/codex:test_connection_loss",
         "//agentplane/native/codex:test_tools",
         "//agentplane/native/codex:test_turns",
