@@ -30,6 +30,38 @@ path for existing name-pin rewrites and fresh residual claims. It never adds
 omitted declarations, crosses module destinations, or searches subwindows of
 an ambiguous run.
 
+## Placement-only resolution
+
+`Chunk::resolve_placement` is a separate resolver scope for a new ownership
+overlay. Its caller must first resolve the complete base assignment with the
+ordinary `Chunk::resolve`, freeze that canonical `Resolution`, and supply the
+source units already occupied after applying the caller's whole-unit closure.
+The ordinary base solve and its `all_different` constraints are unchanged.
+
+Frozen base exports are read-only anchors, not overlay targets: their binding
+identities constrain `source_match` references, and their canonical source
+units can anchor relational selectors. Named-import anchors are added
+explicitly after the complete import requests have passed ordinary validation.
+They retain the imported binding identity for `source_match` references but
+have no local source unit, so a relational selector cannot anchor to them.
+Unresolved base outcomes cannot be frozen. Duplicate `(module, export)`
+identities and overlay paths that reuse a frozen module path are rejected.
+Global export-name collisions remain ambiguous even when entries happen to
+share a binding or source unit; the resolver counts module entries.
+
+The supplied occupied set is the caller's post-closure ownership result as
+`SourceUnitOrdinal`s, not report-row `SourceUnitId`s or a raw selector-hit set.
+Every overlay target excludes those units from its candidate domain, and
+grouped or anonymous placements exclude a row if any claimed unit is occupied.
+Overlay targets remain mutually distinct under their own `all_different`
+constraints. The resolver validates that occupied ordinals belong to the chunk,
+but does not compute ownership closure or decide which selectors should move.
+
+This API proves selector placement only. It does not validate the full spec,
+the dependency graph, edit-gate policy, or emitted JavaScript. Callers still
+need the normal whole-assignment check and materialization/runtime acceptance;
+placement resolution cannot replace them.
+
 `spec match-selector --explain --statements` is a local structural comparison,
 not a resolve. It uses the matcher directly on the explicitly selected range
 and cannot certify a unique or globally valid assignment. See
