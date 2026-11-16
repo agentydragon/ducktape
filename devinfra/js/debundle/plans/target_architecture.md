@@ -39,8 +39,9 @@ source, analysis projection and engine (`staged_analysis/analysis_projection.rs`
 
 - **One effect producer.** One domain and one builtin table
   (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
-  effect set. How it is computed is an open decision
-  ([§ Open decision](#open-decision-the-stage-2-producer)):
+  effect set. Its algorithm is owned by <cross_chunk_parity.md>: bounded
+  interprocedural may-analysis with ordered proof refinement.
+  The effects include:
   - reads and writes of cells: bindings including their initialization, heap
     cells, global and intrinsic slots, host queues;
   - invocations;
@@ -114,132 +115,28 @@ with structural placement obligations.
 - **CI performance budgets** on the canonical inputs
   (<analysis_performance.md>).
 
-## Open decision: the stage 2 producer
+## Stage 2 producer
 
-Stages 3–5 consume per-statement effect sets and do not care how they were
-computed. Two producers are on the table. The choice is made on measurements
-against the real specs, not on the design.
+The structure and remaining work are consolidated in <cross_chunk_parity.md>.
+The producer computes bounded, idempotent may-effects through interprocedural
+constraints and uses the ordered interpreter for initialization, singleton and
+completion proofs. Shared transfers and explicit dependencies replace repeated
+pool execution; hypothetical solver visits are separate from actual ordered
+observations. Prefix-sensitive escape and availability remain necessary: a
+whole-program potential graph cannot make future callbacks available early.
 
-**Execution-based (today).** `facts/sync_effects/` runs the top-level
-statements in source order through one abstract world, re-executes a callee's
-body at each invocation, and on an opaque call runs every escaped callback to
-a fixpoint. What the work so far showed:
+Keep the existing verdict authoritative until the new records, refinement
+rules and comparator have their soundness argument and causal CLI evidence.
+Changing analysis structure does not authorize an early effect-gate flip or
+removing placement, loader, replacement or privacy checks. Unsupported cases
+can retain explicit havoc/refusal; precision is justified by real boundaries.
 
-- **Cost follows execution, not code size.** A statement costs about the square
-  of the escaped-callback pool once any operation in it is refused, and after a
-  chunk's first opaque call refusals are everywhere
-  (<analysis_performance.md> § Superlinear callback pools). Constant-factor
-  work bought 10–30%; the target needs 10–25×.
-- **Coverage is all-or-nothing per statement, and havoc is global.** A
-  statement the kernel cannot finish is `incomplete`, and one unknown call
-  gives the whole statement global havoc, so it conflicts with every pure
-  definition it is swapped with. On the public corpus split one module per
-  atomic group, the effect verdict leaves 33–42% of swapped pairs unproven,
-  all of them havoc-only, and about 80% of the modules fall into one
-  component; no subset of coverage rows frees a module, and removing the
-  callback-pool mechanism would leave 85–99% of those pairs. The unknown
-  calls are mostly bundled vendor code behind CommonJS interop. The legacy
-  gate accepts the same assignment and the emitted tree runs: it keeps impure
-  statements in mutual order and lets pure definitions move
-  (<../debug/2026_11_10_excalidraw_module_blockers.md>).
-- **"Unknown" is not structurally tied to "escaped".** A call through an
-  unknown value reaches only escaped functions, so every site that widens a
-  value to unknown must also escape what it dropped. An audit found sites that
-  do not, with accepted splits that diverge under Node
-  ([§ Known open problems](#known-open-problems)).
-
-**Summary-based (built, retired).** One inclusion-based points-to and call-graph
-fixpoint over the chunk, flow- and path-insensitive inside function bodies;
-one effect summary per function, computed once and instantiated at call sites;
-one escaped set that every unmodelled flow feeds and every unknown call may
-invoke. A statement's effect set is its own code plus the summaries of what it
-may call at initialization.
-
-- **Expected gain.** Cost near-linear in code size. Every statement gets a
-  complete effect set, so there is no `incomplete` class and no
-  attempt-and-rewind. "Unknown means escaped" holds by construction.
-- **Known cost.** Less precision: no strong updates inside functions, no
-  decided branches, context-insensitive unless refined. Each lost proof costs
-  module granularity in a spec.
-- **What decides it.** The pairs that matter are a statement making an opaque
-  call swapped with a pure definition. The producer must answer which
-  functions could be invoked as of that statement (escaped by statements up
-  to it in source order, plus its own callees) and whether any of them
-  touches the definition; one whole-chunk escaped set would reproduce the
-  single component. After that, vendor callees in other chunks are the next
-  precision bucket (whole-program constraints).
-- **Unknown.** Whether the remaining loss matters for the real specs. A
-  report-only prototype under `x/` measures it: for each real spec's emitted
-  order, how many authored modules would have to be merged; the same for the
-  per-atomic-group stress assignment on the public corpus, joined pair by
-  pair with the current engine's result; and a cross-check that it reports
-  every conflict today's analysis models and refuses the audit's unsound
-  shapes.
-
-**Statement-class (measured candidate).** The points-to form above was built
-report-only and retired: 65–120 s and 3–5 GB per large chunk, and it did not
-converge on the largest one. What replaced it under `x/summary_effects/` does
-no value tracking. It classes each top-level statement as a pure definition,
-contained (allocates and touches only what it allocates), confined to one
-target, or impure; keeps impure statements in mutual order; and lets an impure
-statement conflict with a definition only if the definition is reachable by
-mention from something that escaped earlier in source order. Program-wide
-derivations (allocators, bundler helpers, string-constant exports, a census of
-writes to language-defined globals, split by constructor side and prototype
-side) and the spec's declared premises supply the rest. Measured on each
-spec's emitted order, with only the premises the spec declares:
-
-| Spec                                  | Largest authored component        | Time per chunk |
-| ------------------------------------- | --------------------------------- | -------------- |
-| Public corpus, committed spec         | none (0 unproven pairs)           | ~2 s           |
-| Public corpus, one module per group   | 4 and 23 modules (two chunks)     | ~2 s           |
-| Private A, main chunk (2,177 modules) | 82                                | 7 s            |
-| Private B, six largest chunks         | 104, 34, then 9 or fewer          | 8–10 s         |
-| Private C, main chunk                 | 5, on a synchronous require cycle | 14 s           |
-| Private D, E                          | none                              | seconds        |
-
-- **Against the yardsticks.** The execution-based engine takes about 17
-  minutes on private A's main chunk and its effect verdict leaves most of the
-  stress assignment in one component. The cost target is met with room.
-- **What the residue is.** On A, 18 impure statements tie the 82 modules; on
-  B, two statements tie all 104. None of the sampled ties is order-dependent.
-  Each is one of a few shapes: a read-only expression statement, member reads
-  of a table that is passed around but never mutated, a nested literal read,
-  the TypeScript enum form, a formatter called with literals, an imported
-  namespace-export helper, and a handful of local callees that need a declared
-  premise.
-- **Soundness evidence so far.** Existing fixtures pass, but the
-  [independent audit](../debug/2026_11_10_statement_class_independent_audit.md)
-  found accepted reorderings with divergent Node behavior, including
-  default-export cells and observable abrupt completion in the base classifier.
-  Optional intrinsic, enum and helper rules have further counterexamples.
-  It remains report-only; precision and cost results do not establish soundness.
-- **Preconditions it relies on.** No top-level `await` in the program; no
-  direct `eval` or `with` in a split chunk; every static import resolves
-  (unseen dynamically imported chunks run in a later job); a chunk on a
-  synchronous import cycle gets no cross-chunk derivations.
-
-**Decision rule.** Adopt the statement-class producer if, with bounded
-refinements (shape rules with refused siblings, existing premises as axioms),
-the real specs keep their modules and the cost target is met. Otherwise keep the execution-based producer: bound havoc reach,
-model the vendor interop callees, apply the fewer-opaque-events changes and
-the monotone delta (<analysis_performance.md>), and finish the kernel
-migration.
-
-**The half-migrated state.** `devel` runs two verdicts (the legacy gate
-decides, the effect verdict reports) and two evaluators (the flat lane and
-the kernel, joined per statement by attempt-and-rewind), with old paths kept
-because the legacy gate reads them. The unsound shapes found so far sit in
-those seams. Adopting the statement-class producer ends the migration by
-replacement: its sets are complete for every statement, so the flip needs no
-coverage rows, and the flat lane, the kernel lanes, attempt-and-rewind and
-the legacy gate are deleted after it. Keeping the execution-based producer
-means completing the migration into the kernel first.
-
-**Unchanged either way.** Parse, spec resolution, the loader model, order
-search, swapped-pair validation, structural placement obligations, emit, the
-premise surface, and the Node-differential e2e suite, which is the acceptance
-suite for whichever producer runs.
+The statement-class prototype's low cost does not establish soundness; its
+[independent audit](../debug/2026_11_10_statement_class_independent_audit.md)
+contains counterexamples. Preserve those behavioral controls. Do not revive a
+prototype solely because it is fast or assume that a generic summary solver
+will be near-linear. The new plan requires an input-size bound and completed
+same-input measurements before adoption.
 
 ## Out of scope
 
@@ -290,6 +187,7 @@ empty at the end.
   Pass 1 and Pass 2.
 - `../SPEC.md` § Host behavior and § Reentry through imported names: explicit
   host premises and their effect on export reentry.
+- <cross_chunk_parity.md>: stage 2 analysis algorithm, bounds and migration.
 - <analysis_performance.md>: stage 2 cost and the CI budgets.
 - <native_receiver_identity.md>, <purity_analysis.md>,
   <runtime_validation.md>: analysis precision and probe work within stage 2.
