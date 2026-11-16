@@ -10,15 +10,11 @@
 #   # then bump `version`, re-fetch the .deb, and recompute the SRI hash:
 #   nix hash to-sri --type sha256 "$(curl -sSL <deb-url> | sha256sum | cut -d' ' -f1)"
 # Install docs: https://code.claude.com/docs/en/desktop-linux
-{
-  lib,
-  pkgs,
-}:
+{ lib, pkgs }:
 let
   version = "4.23118.0";
-  desktopFile = "com.anthropic.Claude.desktop";
 in
-pkgs.stdenv.mkDerivation {
+pkgs.callPackage ./mk-electron-deb.nix { } {
   pname = "claude-desktop";
   inherit version;
 
@@ -27,104 +23,35 @@ pkgs.stdenv.mkDerivation {
     hash = "sha256-GtmW6MqrBcmzdGRgUcQMtrudhPNxdW8VuNNyiJdRWpc=";
   };
 
-  nativeBuildInputs = with pkgs; [
-    autoPatchelfHook
-    makeWrapper
+  desktopFile = "com.anthropic.Claude.desktop";
+  desktopExec = "claude-desktop ";
+
+  # Electron safeStorage dlopens libsecret to persist sign-in via the keyring.
+  extraBuildInputs = with pkgs; [
+    libnotify
+    libsecret
+    libseccomp
+    libcap_ng
+    pipewire
+    util-linux
+    libxtst
   ];
 
-  # Maps the .deb's Depends (libgtk-3-0, libnss3, libatspi2.0-0, libdrm2,
-  # libgbm1, libsecret-1-0, libxtst6, ...). autoPatchelf patches DT_NEEDED;
-  # the GL/X libs are also dlopen'd by Electron, so makeWrapper exposes them on
-  # LD_LIBRARY_PATH too (see tana-outliner.nix for the same shape).
-  #
-  # libsecret is the non-obvious one: Electron's safeStorage/OSCrypt dlopens
-  # libsecret-1.so.0 (it is NOT a DT_NEEDED), so without it on LD_LIBRARY_PATH
-  # the dlopen fails and safeStorage.isEncryptionAvailable() returns false —
-  # Claude Desktop then refuses to persist sign-in with a misleading "install a
-  # system keyring" prompt even though gnome-keyring is running and unlocked.
-  buildInputs = with pkgs; [
-    alsa-lib
-    at-spi2-atk
-    at-spi2-core
-    cairo
-    cups
-    dbus
-    expat
-    glib
-    gtk3
-    libdrm
+  libraryPath = with pkgs; [
     libGL
-    libnotify
+    libdrm
     libsecret
     libxkbcommon
     mesa
-    # virtiofsd (bundled for the Cowork microVM feature) needs these.
-    libseccomp
-    libcap_ng
-    nspr
-    nss
-    pango
-    pipewire # claude-native-binding.node
-    util-linux # libuuid
     libx11
-    libxcomposite
-    libxdamage
-    libxext
-    libxfixes
-    libxrandr
     libxtst
     libxcb
   ];
 
-  runtimeDependencies = [ (lib.getLib pkgs.systemd) ];
-
-  dontBuild = true;
-  dontConfigure = true;
-  dontUnpack = true;
-
-  installPhase = ''
-    runHook preInstall
-
-    # Extract .deb via bsdtar (tolerates the SUID chrome-sandbox without error).
-    ${pkgs.libarchive}/bin/bsdtar -xf $src --no-same-permissions
-    ${pkgs.libarchive}/bin/bsdtar -xf data.tar.* --no-same-permissions
-
-    mkdir -p $out/lib
-    cp -r usr/share $out/share
-    cp -r usr/lib/claude-desktop $out/lib/claude-desktop
-
-    # Wrap the real binary so dlopen'd GL/X libs — and libsecret (dlopen'd by
-    # Electron's OSCrypt for safeStorage; see buildInputs note above) — resolve.
-    # qemu_kvm goes on PATH so the "Cowork" sandboxed-microVM feature's presence
-    # check finds qemu-system-x86_64 (firmware + virtiofsd are handled at the
-    # system level by the ducktape.cowork NixOS module).
-    mkdir -p $out/bin
-    makeWrapper $out/lib/claude-desktop/claude-desktop $out/bin/claude-desktop \
-      --prefix LD_LIBRARY_PATH : "${
-        lib.makeLibraryPath (
-          with pkgs;
-          [
-            libGL
-            libdrm
-            libsecret
-            libxkbcommon
-            mesa
-            libx11
-            libxtst
-            libxcb
-          ]
-        )
-      }" \
-      --prefix PATH : "${lib.makeBinPath [ pkgs.qemu_kvm ]}"
-
-    # Point the desktop entry's Exec lines at our wrapper. Match the three
-    # `Exec=claude-desktop <arg>` lines (main + NewChat/NewCode actions) without
-    # touching Icon, which also contains the literal name.
-    substituteInPlace $out/share/applications/${desktopFile} \
-      --replace-fail "Exec=claude-desktop " "Exec=$out/bin/claude-desktop "
-
-    runHook postInstall
-  '';
+  # Cowork locates QEMU here; the NixOS module supplies firmware and virtiofsd.
+  path = with pkgs; [
+    qemu_kvm
+  ];
 
   meta = {
     description = "Claude Desktop — Anthropic's Electron desktop app (Linux beta)";
