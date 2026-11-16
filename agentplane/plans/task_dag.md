@@ -183,16 +183,18 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
-reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 05:55 UTC.
+reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:05 UTC.
 
-| Track                      | Operator release (UTC) | Node                                  | State                                                                                                                                                                              |
-| -------------------------- | ---------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`          | App Runtime diagnostics moved behind EnvironmentService (#16819, #16825); the App raw-proxy grant retires after that App image rolls. The other dispositions await operator review |
-| Per-Session delivery lease | 2026-11-16 02:57       | `DISPATCHER_PERSISTENCE_MODEL_DESIGN` | Postgres-only Session leases run on staging (#16852, #16858); cleanup released 05:52, in flight                                                                                    |
+| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                                                          |
+| -------------------------- | ---------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService (#16819, #16825) and that App image rolled; the App raw-proxy grant removal is in flight. The other dispositions await operator review |
+| Keyed Dispatcher delivery  | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                                                      |
+| Versioned dispatch watch   | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                                                          |
+| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                                                  |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
-([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)), one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes, runner-era and Gateway-era Go names (#16846, #16847), the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
+([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)), one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes, runner-era and Gateway-era Go names (#16846, #16847), the per-Session delivery lease and its cleanup (#16852, #16858, #16865, #16867; [decision](../docs/adr_session_delivery_lease.md)), the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -204,7 +206,8 @@ removed). Not released:
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[In flight: delivery lease cleanup, section 13]
+    DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery, section 16]
+    DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch, section 16]
 ```
 
 ### Sandbox-free central Sessions
@@ -2419,7 +2422,7 @@ beyond the transport track nodes the operator dispatched.
 
 ```mermaid
 flowchart LR
-    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Session leases live; cleanup in flight]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: immediate-or-fail send]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
     SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: live Session status ownership]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
@@ -2491,49 +2494,15 @@ flowchart LR
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
 ```
 
-### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose delivery ownership and service topology
+### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — decide on an immediate-or-fail send
 
 **Decision; queue and database direction selected by operator, 2026-11-02.** Dispatcher
 PostgreSQL and queue-backed admission remain mandatory; the database-free / queue-off mode is no
 longer a candidate. This does not require every Environment Service operation to enter the queue.
 Whether to offer an explicit immediate-or-fail send within the mandatory queue contract remains open.
 See the [Session/environment model](session_environment_model.md#where-should-live-control-live).
-
-**Topology selected (operator, 2026-11-14 05:29 UTC, card "Adopt it"):** two binaries, Sessions
-and Environments; the Runner Gateway disappears ([section 17](#17-two-binaries-and-the-go-layout)).
-
-**Delivery ownership selected (operator, 2026-11-15 00:06 UTC, card "Record it"; "grabbing a lock
-per dequeue"):** a [`postgres/lease`](../postgres/lease/lease.go) per Session replaces the
-Dispatcher's per-Sandbox Kubernetes ownership Lease and its database ownership generation. No
-replica owns a Sandbox or a queue. Any Sessions replica dequeues a Session whose head is runnable and takes that Session's lease, which carries a database-clock expiry and a
-holder fencing token. The lease covers the whole head step: waking the Sandbox, materializing the
-Session and delivering the head command. Every write in the step fences on it (`ownerMatch`), and
-the lease ends when the head settles. Once a lease expires, any replica may take it and requeue that
-Session's in-flight work (`RecoverSession`).
-
-- **Keyed by Session, not command:** the Session is the ordering unit and has at most one head in
-  flight, so a command key buys no parallelism. The step starts while the head is still queued
-  (wake, Session materialization), before any command is claimed. A Session key also needs no
-  Sandbox, so it holds for Sessions without an environment.
-- **A timed lease, not a lock held in a transaction:** the claim must outlive the delivery RPC, and
-  the delivery attempt commits before that RPC (`MarkDeliveryAttempt`).
-- **Unchanged:** per-Session order still comes from the head rule (a command waits while an earlier
-  one is queued or delivering). The Runtime's command-ID dedupe still makes a late duplicate
-  harmless; no lease fences an RPC already in flight.
-
-**Built (operator release 2026-11-16 02:57 UTC, card "Lease and renames").** The compatibility
-image (#16852) and then the Postgres-only image (#16858) rolled on staging; every Sessions replica
-has run only Session leases since 2026-11-16 05:34 UTC, observed by the coordinator.
-
-**Cleanup in flight; released by the operator 2026-11-16 05:52 UTC (card "Build the cleanup PRs
-that end rollback to the compatibility image?").** Drop `sandbox_ownership` (data drop, own PR),
-remove Sessions' Lease RBAC and delete the leftover `dispatcher-<sandbox UID>` Lease; controller
-leader election is unaffected. Merging the first two ends rollback to the compatibility image.
-
-The former [Dispatcher/Gateway merge proposal](https://github.com/agentydragon/ducktape/blob/7e22be0335/agentplane/plans/dispatcher_gateway_merge.md) is historical for its
-queue-off and holder-owned-delivery choices, not an implementation authorization. Independent
-Runtime restructuring does not wait for this decision.
-`DELIVERY_DESTINATION_AUTHORITY_DESIGN` remains independent.
+Topology ([section 17](#17-two-binaries-and-the-go-layout)) and
+[delivery ownership](../docs/adr_session_delivery_lease.md) are decided and built.
 
 ### `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` — decide ownership of current Session status
 
@@ -3766,8 +3735,8 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_KEYED_DELIVERY[Unscheduled: keyed Dispatcher delivery]
-    DISPATCHER_WATCH_VERSIONS[Unscheduled: versioned dispatch watch]
+    DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery]
+    DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch]
 ```
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
@@ -3775,11 +3744,10 @@ flowchart LR
 **Decision; operator to weigh in.** Alternatives and the recommendation (journal kind plus a reference,
 raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decision).
 
-### Unscheduled
+### In flight
 
-`DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` no longer wait: the per-Session delivery
-lease (#16858) removed the per-Sandbox ownership scans, and terminal notices now serialize on the
-Sandbox deletion lock and Session lease rows instead of `sandbox_ownership`.
+The operator released `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` on 2026-11-16 at
+06:40 UTC; each builds in its own PR.
 
 ## 17. Two binaries and the Go layout
 
