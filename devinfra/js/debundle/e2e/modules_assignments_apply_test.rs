@@ -23,11 +23,12 @@ fn order_file(fixture: &GraphFixture, assignments: &str) -> String {
         .to_owned()
 }
 
-fn check(fixture: &GraphFixture, assignments: &str) -> std::process::Output {
+fn check_graph(fixture: &GraphFixture, assignments: &str) -> std::process::Output {
     let order = order_file(fixture, assignments);
     fixture.command(&[
         "modules",
         "check",
+        "--graph-only",
         "--batch",
         assignments,
         "--import-order",
@@ -119,7 +120,7 @@ fn graph_accepted_duplicate_literal_binding_has_no_unique_selector_and_writes_no
             {"unit_id": fixture.source_unit_for_binding("first"), "module": "a_before"},
         ]),
     );
-    assert!(check(&fixture, &path).status.success());
+    assert!(check_graph(&fixture, &path).status.success());
     assert_rejected(
         &fixture,
         &path,
@@ -168,7 +169,7 @@ fn joint_multi_destination_batch_claims_anonymous_units_and_preserves_omitted_un
         {"unit_id": write, "module": "counter"},
     ]);
     let path = batch(&fixture, changes.clone());
-    assert!(check(&fixture, &path).status.success());
+    assert!(check_graph(&fixture, &path).status.success());
     let preview = parse_stdout_json(&apply(&fixture, &path, true, &[]));
     assert_eq!(preview["residual_source_units_claimed"], 4);
     assert_eq!(preview["source_units_reassigned"], 0);
@@ -299,7 +300,7 @@ fn selector_realization_failure_leaves_the_spec_unchanged() {
             {"unit_id": fixture.source_unit_for_line(2), "module": "effects"},
         ]),
     );
-    assert!(check(&fixture, &path).status.success());
+    assert!(check_graph(&fixture, &path).status.success());
     assert_rejected(&fixture, &path, &["no unique structural selector"]);
 }
 
@@ -314,7 +315,7 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
         "module": "consumer"
     }]);
     let path = batch(&fixture, changes.clone());
-    let checked = check(&fixture, &path);
+    let checked = check_graph(&fixture, &path);
     assert!(
         checked.status.success(),
         "{}",

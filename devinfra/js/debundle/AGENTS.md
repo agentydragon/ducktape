@@ -27,9 +27,11 @@ the validator enforces) before working on the splitting pipeline.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
 - Use `modules check` for explicit destination batches. Whole-assignment acceptance
   includes structural atoms and ESM evaluation under the supplied chunk priority;
-  local probes and proposal
-  readiness labels cannot replace it. Recheck combined batches, and keep graph
-  acceptance distinct from selector realization and emitted runtime evidence.
+  default checks also preflight the source writer before returning a plan.
+  Use explicit `--graph-only` for graph inspection/oracles; it never returns a
+  plan. Local probes and proposal readiness labels cannot replace a complete
+  check. Recheck combined batches, and keep graph acceptance distinct from
+  selector realization and emitted runtime evidence.
 - For residual placement, use `modules propose` on the current graph or the
   configured corpus (`--graphs` plus `--tree-config`). Start without selecting
   already-known movable units. Inspect the discovered groups in source.

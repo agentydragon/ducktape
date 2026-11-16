@@ -17,7 +17,9 @@ atomic coverage, selector anchors and evidence requirements.
 Use `modules check --batch` to validate a reviewed explicit destination batch
 against the complete accepted assignment, including residual units and anonymous
 statements. Keep omitted units in place and check the actual destination. A
-successful check is graph evidence; selector realization and emission are separate.
+successful default check includes writer preflight and an executable plan;
+`--graph-only` reports graph validity without a plan. Supply the matching source
+root and tree config for executable checks. Emission and runtime remain separate.
 Recheck the union of independently accepted batches before recommending it.
 
 For "can anything still be peeled?", begin with unseeded

@@ -49,8 +49,9 @@ destinations. Omitted units retain their owners. Keep its returned `.plan` for
 review/application. Existing-claim reorganization uses the same
 [check and apply workflow](spec_editing.md#workflow-reorganizing-existing-modules).
 Changing destinations or combining independently accepted plans needs another
-complete check. Graph acceptance still requires selector realization, normal
-materialization and relevant behavioral evidence.
+complete check. Default checks preflight selector realization before returning
+a plan; explicit `--graph-only` checks report graph validity without a plan.
+Normal materialization and relevant behavioral evidence remain required.
 
 For selector work, use the [bulk conversion loop](selectors.md#bulk-conversion-loop).
 Give workers explicit items or coherent module scopes. Report repeated synthesis

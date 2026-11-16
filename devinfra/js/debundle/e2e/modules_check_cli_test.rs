@@ -13,6 +13,7 @@ fn check(fixture: &GraphFixture, batch: Value, accepted: bool) -> Value {
     let output = fixture.command(&[
         "modules",
         "check",
+        "--graph-only",
         "--batch",
         path.to_str().unwrap(),
         "--import-order",
@@ -171,6 +172,7 @@ fn malformed_changes_and_scaffolding_are_refused_without_spec_edits() {
         let output = fixture.command(&[
             "modules",
             "check",
+            "--graph-only",
             "--batch",
             path.to_str().unwrap(),
             "--import-order",

@@ -1193,13 +1193,24 @@ global ESM evaluation. Anonymous units and joint moves are supported. Existing
 owners are preserved directly, without speculative pairwise reconstruction;
 generated residual destinations remain distinct from the entry destination.
 
-The command writes no spec files. An accepted candidate reports `accepted: true`
-and exits 0; a graph rejection reports `accepted: false` with validation evidence
-and exits 1. Invalid inputs and stale graph identities fail before acceptance. A rejected
-starting assignment may be repaired only when the complete requested result
-passes the same gate. This graph check does not establish selector realization, emitted behavior,
-search completeness or the validity of concatenating independently checked
-batches. The exact combined assignment requires its own check.
+The command writes no spec files. By default it also dry-runs the actual source
+writer, requiring `--source-root` (or `DEBUNDLE_SOURCE_ROOT`) and, when priority
+changes, `--tree-config`. It returns `scope: executable_plan`, independent
+`graph_accepted`, and `accepted: true` with a snapshot-bound `plan` only if both
+graph validation and writer preflight succeed. A graph rejection or writer
+failure reports `accepted: false`, no plan, and exits 1. Writer failure retains
+the graph result and reports `selector_realization_error`.
+
+`modules check --graph-only --batch` skips writer preflight and requires no source
+root. It reports `scope: graph_only`; `accepted` equals `graph_accepted` and
+`plan` is always null. It cannot be combined with `--plan`. This mode supports
+graph inspection and independent graph-validity oracles without conflating
+graph validity with selector synthesis. Invalid inputs and stale identities
+fail before acceptance. A rejected starting assignment may be repaired only
+when the complete requested result passes the same gate. Neither mode proves
+emitted behavior, proposal completeness or the validity of concatenating
+independently checked batches. The exact combined assignment requires its own
+check.
 
 `modules apply --assignments` realizes that explicit batch, including new
 residual declarations, anonymous units and existing selector claims, while

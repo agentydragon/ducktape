@@ -11,13 +11,10 @@ priorities is separately deferred as AR10 there.
 
 ## Current acceptance gaps
 
-- Audit every plan-producing `modules check` path against the executable-plan
-  contract. The ordinary explicit-batch regression with duplicate initializer
-  shapes demonstrates graph acceptance followed by selector-synthesis failure.
-  Route executable plans through the shared writer preflight; retain a clear
-  graph-only result for graph/oracle inspection without claiming selector
-  realization. Preserve independent graph-validity oracles when tightening
-  the CLI contract.
+- Land executable-plan checking for ordinary batches alongside the selected-view
+  workflow. Preserve the explicit graph-only/no-plan mode and its independent
+  graph-validity oracles, plus writer-refusal and check/preview/apply/runtime
+  regressions, through final required-engine adoption.
 - Verify preparation cost for selected-view corpus proposals. Reuse compatible
   captured program/source and full-base selector preparation across the corpus;
   never rebuild them per inventory seed. Measure source/selector preparation
