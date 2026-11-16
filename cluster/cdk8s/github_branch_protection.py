@@ -19,7 +19,5 @@ def chart(app: App) -> Chart:
         module_name=NAME,
         identity_name=KUBERNETES_IDENTITY,
         schema=terraform.gitops_state_schema(NAME),
-        secret_accesses=(
-            ("flux-system-secrets", "flux-system", ("github-secrets-sync-pat",), ()),
-        ),
+        secret_accesses=(("flux-system-secrets", "flux-system", ("github-secrets-sync-pat",), ()),),
     )

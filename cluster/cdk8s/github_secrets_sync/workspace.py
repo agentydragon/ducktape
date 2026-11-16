@@ -43,11 +43,6 @@ def chart(app: App) -> Chart:
                 (ci_token.GAFFER_WRITER.name, ci_token.READER.name, ci_token.WRITER.name),
                 (),
             ),
-            (
-                "drivefs-artifacts-s3-credentials",
-                "seaweedfs-credentials",
-                ("drivefs-artifacts-s3-credentials",),
-                (),
-            ),
+            ("drivefs-artifacts-s3-credentials", "seaweedfs-credentials", ("drivefs-artifacts-s3-credentials",), ()),
         ),
     )
