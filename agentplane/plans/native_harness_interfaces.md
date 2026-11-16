@@ -7,9 +7,12 @@ Nothing here is decided or built.
 The operator, 2026-11-14 20:34 UTC, is considering whether the Environment Runtime should "expose
 codex and Claude's interfaces (both input and output) more directly rather than having it doing
 translation to history's current neutral projections (see the "history becomes journal" thing) and
-translating from generic commands to harness specific commands", adding that this "would make the
-responsibility for doing the translation fall probably somewhere between session dispatcher and env
-runtime". History's half is
+translating from generic commands to harness specific commands". On 2026-11-16 06:38 UTC the
+operator named two coherent shapes, with no point in between: "(a) env runtime just forwards the
+harness's own protocol and does not to basically any massaging, or (b) env runtime does all the
+massaging like it does today"; a harness-neutral shared commands layer, if there is one, raises
+"whether it should live in env runtime or in e.g. environment service or session dispatcher".
+History's half is
 [`JOURNAL_REPRESENTATION_DESIGN`](task_dag.md#journal_representation_design--history-as-stored-journals);
 this note is the Runtime and command half. Vocabulary follows the
 [Journal and Thread ADR](../docs/adr_journal_and_thread.md); a **kind** is Claude, Codex or the
@@ -51,6 +54,33 @@ derive [`Event`](../proto/event.proto)s from them in the same sequence:
 The central sampler writes the same vocabulary directly as its own output, plus `BoundaryRecord` and
 `ExecutionProgress`.
 
+### What the Runtime decides beside the process
+
+Beyond framing one request per command, the adapters decide things that need the harness's output in
+order with the Runtime's own writes. The per-kind packages are about 2,800 lines of Go.
+
+- **Turn identity and interrupt fencing.** Claude has no turn IDs, so the Runtime mints them.
+  Journal admission checks an interrupt's turn against the active turn in the same transaction,
+  because Claude's `interrupt` acts on whatever turn is running.
+- **Input placement.** Claude inputs coalesce or join a tool-result continuation; a Codex input
+  during a turn joins it. `BlocksCommandDispatch` holds later commands until a native response
+  advances the current one.
+- **Deferred settings.** Codex model and effort changes wait for the next `turn/start` response.
+- **Harness requests.** The Runtime allows Claude's `can_use_tool` and refuses other Claude control
+  requests and every Codex server request
+  ([Claude](../env/runtime/internal/harnesses/claude/adapter.go), [Codex](../env/runtime/internal/harnesses/codex/adapter.go)).
+- **Settlement and restart.** The journal maps each native request to its commands
+  ([`native_requests.go`](../env/runtime/journal/native_requests.go)); a dispatched but unsettled
+  command stays pending after a restart rather than being resent.
+- **Busy.** An active turn or pending command blocks autosuspend ([`status.go`](../env/runtime/session/status.go));
+  the Sandbox Controller suspends only on the Runtime's `idle_since`.
+- **Recovery.** After process loss the Runtime compares its journal with the harness's continuation
+  files ([Claude](../env/runtime/internal/harnesses/claude/history.go), [Codex](../env/runtime/internal/harnesses/codex/history.go))
+  and emits `ConversationReconciled`.
+- **Shared Codex app-server.** One app-server serves every Codex Session in the Sandbox. The Runtime
+  mints request IDs unique across Sessions and routes each frame by thread
+  ([`router.go`](../env/runtime/internal/harnesses/codex/router.go)).
+
 ### Who reads the neutral forms
 
 | Consumer                                                                                                      | Reads                                                                                            | Needs content?         |
@@ -67,7 +97,7 @@ The central sampler writes the same vocabulary directly as its own output, plus 
 The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; its unused confirmation
 states were deleted rather than given a writer.
 
-Harness knowledge already lives past the neutral layer. History's delta
+Harness knowledge already lives past the Runtime. History's delta
 [settlement](../history_service/internal/storage/settlement.go) matches Claude and Codex native
 delta frames. The app parses Claude `Bash` and Codex `commandExecution` arguments separately
 ([`shell_calls.ts`](../app/frontend/threads/shell_calls.ts)). Codex `imageView` completes without a
@@ -97,8 +127,9 @@ symmetric." Later changes stayed inside that bound:
 - [`ENVIRONMENT_RUNTIME_NATIVE_SURFACE`](task_dag.md#environment_runtime_native_surface--an-environment-runtime-surface-unmistakably-about-native-sessions)
   was deferred on 2026-11-11.
 
-The generic surface works at its floor and has no way above it. The harness capabilities beyond it
-sit in the freezer: Codex `turn/steer` and `thread/queue/*` and Claude `cancel_async_message`
+The generic surface works for the four operations every kind shares and has no way past them. The
+harness capabilities beyond it sit in the freezer: Codex `turn/steer` and `thread/queue/*` and Claude
+`cancel_async_message`
 ([`INPUT_DELIVERY`](task_freezer.md#input_delivery--remaining-native-queue-and-recovery-evidence)),
 [`HARNESS_MANUAL_COMPACTION`](task_freezer.md#harness_manual_compaction--user-triggered-compaction-from-the-frontend),
 [`HARNESS_INTERACTIVE_CONTROLS`](task_freezer.md#harness_interactive_controls--durable-park-answer-recovery)
@@ -107,158 +138,98 @@ Each would need either a common abstraction the evidence does not support, which
 [common protocol](../docs/common_protocol.md#harness-differences-remain-evidence) forbids, or a
 per-kind command path, which does not exist.
 
-## The neutral floor
+## (a) The Runtime forwards the native protocol
 
-Routing and admission never read harness output: Dispatcher routes by the Session record, its
-placement and the live Identity. The floor is what the platform itself acts on. Names are today's
-unless marked new; fields are a sketch.
+The Runtime keeps launching and supervising the harness, journaling every frame verbatim, delivering
+journals to History and routing the shared Codex app-server's frames by thread. Command framing,
+Event derivation and everything under
+[What the Runtime decides](#what-the-runtime-decides-beside-the-process) leave it.
 
-**Commands in:** `SubmitInput{text}`, `InterruptTurn{turn_id}`, `ChangeModel{model}`,
-`ChangeReasoningEffort{effort}`, each with a caller-chosen `command_id`. Everything else is per kind.
+### Where the shared commands layer would sit
 
-**Facts out**, written by the Runtime adapters or the central sampler:
+| Home                                                    | Under (a)                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_dispatcher`                                    | Fits. It owns the Session record, which names the harness, the queue, and the per-Session delivery lease, so it is already the one writer per Session. It also routes central Sessions to the sampler ([`SessionDeliveryRouter`](../session_dispatcher/dispatcher/central_delivery.go)). |
+| `environments`                                          | Does not fit. Any replica forwards any Runtime call and keeps no per-Session state ([Runtime proxy contract](../environments/runtimeproxy/SPEC.md)), and central Sessions never pass through it.                                                                                         |
+| Each caller (app, notifications, delegation tools, CLI) | Every caller would reimplement each kind's driver, and none is the single writer that fencing and settlement need.                                                                                                                                                                       |
 
-| Fact                                                                         | Fields                                                                           | Read by                                                                        | Why it cannot stay native                                                                                              |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `CommandAdmitted`                                                            | the whole `Command`                                                              | Dispatcher (`RUNNER_ADMITTED` receipt), notices, fold, `observe_input`         | It is the Runtime's own journal commit; no harness frame exists.                                                       |
-| `CommandSettled` (new; see [below](#did-the-command-execute))                | `command_id`, outcome `EFFECTED`/`FAILED`/`NOOP`, `reason`, `turn_id` for inputs | the Runtime's pending set, notices, fold, `observe_input`                      | Mapping a native request back to its commands lives only in the Runtime journal's private `native_request` tables.     |
-| `TurnStarted`, `TurnCompleted`                                               | `turn_id`, `model`; `status`, `error`                                            | interrupt fencing, `idle_since`, `read_turns`, `observe_input`, sidebar status | The Runtime mints Claude's turn IDs; Claude's protocol has none.                                                       |
-| `ModelChanged`, `ReasoningEffortChanged`                                     | applied value and previous value                                                 | the journal checkpoint, the model picker                                       | Codex applies at the next `turn/start`, Claude on a control response; the checkpoint commits atomically with the fact. |
-| `HarnessStarted`/`Exited`/`Lost`/`LaunchFailed`, `Setup*`, `JournalReopened` | pid, resumed, exit code, setup output                                            | Runtime status, journal view lifecycle rows, recovery                          | Process facts the harness cannot report about itself.                                                                  |
-| `ConversationReconciled`                                                     | `turn_id`, per native item ID: retained, absent, unknown or revised              | journal view badges after process loss                                         | Compares what the Runtime journaled with what native history kept after a restart.                                     |
-| `Native`                                                                     | direction, exact line                                                            | journal view, decoders, debugging                                              | It is the native form.                                                                                                 |
+So the input half lands in `session_dispatcher`, and rendering content lands in readers (History's
+journal view, `session_client`).
 
-Leaving the floor: `ItemStarted`, `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`,
-`ToolOutputDelta`, `ItemCompleted`. `CommandSettled` absorbs `HarnessUserMessageConfirmed`,
-`CommandFailed`, `CommandNoop` and the command IDs on `ModelChanged`, `ReasoningEffortChanged` and
-`TurnCompleted`.
-The sampler's `BoundaryRecord` and `ExecutionProgress` are its kind's own records.
+### What moves to `session_dispatcher`
 
-### Did the command execute?
+It becomes a live protocol driver per Session. It would:
 
-Tracked today, per layer:
+- read each Session's native output as it happens, from the Runtime or History; today it reads no
+  Events;
+- keep turn state and the native-request-to-command map in PostgreSQL, and read the Runtime journal
+  back after a Runtime restart to learn which frames reached the harness;
+- answer each Claude `can_use_tool`;
+- send the handshake (`initialize`, `thread/start` or `thread/resume`) whenever the Runtime starts a
+  harness;
+- tell the Runtime while a turn runs, for example through a keep-alive hold, since the Runtime no
+  longer knows;
+- allowlist native requests, since one frame can carry anything the harness accepts (Claude's
+  `apply_flag_settings` takes a whole settings object).
 
-- **Dispatcher:** `QUEUED_IN_DISPATCHER` → `DELIVERING_TO_RUNNER` → `RUNNER_ADMITTED`, which stores
-  the Runtime's `CommandAdmitted` receipt, or `FAILED`, `CANCELLED_IN_DISPATCHER`, `UNKNOWN`.
-- **Runtime:** its journal's `command` row records admission, whether a native write was planned,
-  and a terminal cursor. Five signals settle a command: `HarnessUserMessageConfirmed` (inputs),
-  `ModelChanged`, `ReasoningEffortChanged`, `TurnCompleted.interrupted_by_command_id`, and
-  `CommandFailed`/`CommandNoop`. An unsettled command keeps the Sandbox busy (`idle_since`), and
-  after a restart a dispatched but unsettled command stays pending rather than being resent.
-- **Readers:** the History fold collapses the five into `PENDING`/`EFFECTED`/`FAILED`/`NOOP`
-  (`ThreadCommandOutcome`), which drives the app's last progress light ("Agent confirmed message",
-  "Applied"). The Notification inbox keeps one notice in flight until it is confirmed or failed
-  ([`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history)).
-  `observe_input` reports `input_confirmed`, then the correlated turn.
-
-"Confirmed" already means different things per kind. Claude's evidence is the model response's
-`message_start` naming the input, or the tool-result cohort it joined. Codex's is the `turn/start`
-response; an input joining a running turn sits in that turn's pending input until the current
-model response and its tool calls finish ([Codex notes](../docs/harness_protocols.md#tools-steering-and-interrupt-1)).
-
-Options:
-
-1. **Keep it as today:** five settling signals and one "confirmed" whose meaning differs by kind.
-2. **One settlement in the floor (recommended):** `CommandSettled`, defined by the Runtime's own
-   boundary, "the harness took it and the Runtime holds no more work for it", not "it reached the
-   model". Same evidence as today; readers stop mapping five signals; the fold's outcome enum
-   becomes the producer's. Whether the model saw it is a per-kind reading of `Native`.
-3. **Admitted only:** drop settlement from the floor. The Runtime still computes it for idle and
-   restart, so nothing is saved there; notices lose their pacing gate; the app light and
-   `observe_input` need per-kind decoders plus a newly published native-request-to-command map.
-
-Settlement is produced only where that map lives: the Runtime adapters, and the sampler for its
-Sessions. Readers, notices and `observe_input` included, keep getting it from History; the Dispatch
-record does not carry it.
-
-Option 2 stands alone: it needs neither per-kind commands nor native content, and changes no
-meaning, because `CommandSettled` fires where the Runtime already sets the journal's terminal cursor
-and where the sampler sets a command's outcome. It replaces `CommandFailed`, `CommandNoop` and the
-command IDs on `ModelChanged`, `ReasoningEffortChanged` and `TurnCompleted`.
-`HarnessUserMessageConfirmed` stays as the input fact, since transcript inputs and `read_turns` use
-its harness-coalesced text and grouping, but stops settling. One behavior changes: when a sampler
-Session blocks, the sampler fails inputs it had already confirmed and the fold skips that failure
-(`blockedInputFailureReason`); instead the sampler settles an input at confirmation, and the block
-stays on the failed turn. It gives the Dispatcher no harness-confirmation state, because the Dispatcher
-reads no Events. Rollout: readers (History fold, notices, `session_client`, `orchestration_v1`) accept
-`CommandSettled` first and keep the old signals while any Sandbox runs an older Runtime image, since
-a Sandbox reads its template's image only when it starts; then the sampler and the template image;
-then the old reads go.
-
-## Options
-
-- **A. Grow the neutral surface.** Add per-harness operations to the common set as `Compact` was,
-  and keep content Events. Cheapest; keeps the triple storage and the leaks above, and each new
-  capability bends the common set.
-- **B. The neutral floor above, native content, per-kind commands.** Described below.
-- **C. Raw pass-through.** Callers send native frames; the Runtime journals and forwards them; every
-  consumer decodes per kind. It loses the control floor: nothing could fence a Claude interrupt
-  without Runtime-minted turn IDs, and notices, `observe_input` and `idle_since` lose their facts.
-  Codex's app-server is shared by the Runtime's Sessions, so the Runtime demultiplexes frames
-  anyway. A caller-supplied frame can carry any native request, including Claude's
-  `apply_flag_settings`, whose payload is a settings object, so the Runtime must allowlist anyway:
-  B's typed per-kind set under another name.
-
-### B concretely
-
-**Commands.** `Command.operation` keeps the four operations every kind implements with an effect
-fact: `SubmitInput`, `InterruptTurn`, `ChangeModel`, `ChangeReasoningEffort`. Beside them, one oneof
-of `ClaudeCommand`, `CodexCommand` and `SamplerCommand`, each a closed set of typed operations the
-adapter maps one-to-one onto a native request, for example Codex `TurnSteer` and `ThreadQueueAdd`,
-Claude `CancelAsyncMessage`, sampler `Compact`. Codex types keep coming from the pinned binary's
-generated schema ([`codex/protocol`](../env/runtime/internal/harnesses/codex/protocol/BUILD.bazel)).
-A per-kind operation gets an effect Event once its native evidence is pinned, as today.
-
-**Output.** The adapters keep the control floor and `Native`, and stop emitting content Events. The
-item projection code (Claude's stream-event and assistant item handling, Codex's
-`projectItemStarted`/`projectItemCompleted`) moves into a per-kind decoder library that readers
-share. The sampler's content Events become its kind's own records.
-
-**Order.** Readers first: the journal view from `JOURNAL_REPRESENTATION_DESIGN`, then per-kind
-final-text and tool-name decoding for `read_turns`, `observe_input` and summaries. Only then do the
-adapters stop emitting content. Per-kind commands are independent of the output half.
-
-### Where translation lands in the two-binary shape
-
-| Responsibility                                         | Owner                                                                          | Why                                                                                                                                                                                                               |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native framing of commands; deriving the control floor | Environment Runtime adapters                                                   | A frame is journaled before it is written, its response correlated, fenced on the active turn, recovered after a crash from native files on the Sandbox volume, and demultiplexed from Codex's shared app-server. |
-| Checking a per-kind command against the Session's kind | `session_dispatcher`, at admission                                             | It owns the Session record, which names the harness, and the queue: a Codex command for a Claude Session is refused before it waits behind a wake. Otherwise it queues the typed command as it is.                |
-| Nothing                                                | `environments`                                                                 | It forwards Runtime calls and keeps no per-Session state; harness knowledge there would give a pass-through proxy state it has no use for.                                                                        |
-| Rendering content                                      | Readers, through the decoder library: History's journal view, `session_client` | They already carry the per-kind knowledge that leaked. Dispatcher reads no Events today and need not start.                                                                                                       |
-
-So the input side splits between `session_dispatcher` (kind check) and the Runtime (framing), and
-`environments`, the component between them, takes none of it. The output side moves to readers.
-
-### For and against B
+### For and against (a)
 
 For:
 
-- Harness capabilities get a path without invented symmetry.
-- Content is stored once, natively, once the fold goes.
-- Per-kind knowledge lives in one decoder library per kind instead of the adapter, History
-  settlement and the app.
-- A harness pin that changes content shapes stops being a Runtime change.
-- The Journal is then exactly what the harness emitted, as the ADR defines it.
+- Translation fixes roll with a Deployment. Today an adapter change reaches a Session only when its
+  Sandbox next starts on the new template image.
+- A harness feature needs a Dispatcher change, not a Runtime image.
+- The Runtime journals only native frames and its own process records.
 
 Against:
 
-- A caller mixing kinds, such as an agent delegating through `session_delegation`, switches on kind
-  for anything above the floor; per-kind commands need per-kind tools or stay app-only.
-- Read-time decoders must handle frames from every stored pin, where today only the live adapter
-  must understand the current one. The scripted harness tests must cover the decoders.
-- `read_turns` and `observe_input` gain per-kind code for final text and tool names.
-- It spans the Runtime, History, the app and `session_client`, and its output half waits on
-  `JOURNAL_REPRESENTATION_DESIGN`, which is unscheduled.
-- The hardest Runtime code stays: input confirmation, recovery and turn fencing are all control.
+- Decisions taken against the live stdout move to a reader with a delayed view. An interrupt decided
+  against Claude turn T can land on the turn after it.
+- A running turn now needs the Dispatcher: tool permissions wait for its answer and the next
+  command waits for it to see settlement. A Dispatcher roll or outage stalls turns, where today it
+  only delays new deliveries ([roll-independence](../docs/principles.md#components-roll-and-fail-independently)).
+- If its busy hold lapses while the Dispatcher is down, the Sandbox can suspend mid-turn.
+- The Dispatcher gains a live dependency on Runtime or History output.
+
+## (b) The Runtime translates everything (today)
+
+The shared layer stays in the Runtime adapters, and in the central sampler for its own Sessions.
+`session_dispatcher` routes by placement and never reads harness output; `environments` forwards.
+Nothing moves.
+
+What (b) still needs:
+
+- **Harness-specific commands.** A frozen capability enters as an operation the Runtime frames: a
+  common one where every kind has the same meaning, as `Compact` did, otherwise one typed for its
+  kind. `session_dispatcher` can refuse an operation of another kind from the Session record, as
+  validation rather than translation.
+- **One settlement event** (optional, independent). `CommandSettled` (`command_id`, outcome
+  `EFFECTED`/`FAILED`/`NOOP`, `reason`, `turn_id`) replaces the five signals that settle a command today:
+  `HarnessUserMessageConfirmed` for inputs, `ModelChanged`, `ReasoningEffortChanged`,
+  `TurnCompleted.interrupted_by_command_id` and `CommandFailed`/`CommandNoop`. It fires where the
+  journal already marks a command terminal, so no meaning changes; `HarnessUserMessageConfirmed`
+  stays as the input fact. Readers (History fold, notices, `session_client`, `orchestration_v1`)
+  accept it first and keep the old events while any Sandbox runs an older Runtime image; then the
+  sampler and the template image change.
+- **Content.** The Runtime keeps deriving content Events beside `Native`. A reader that needs more
+  than the projection, such as the app's shell-call parsing or History's delta settlement, reads
+  `Native`. Which of the two History stores is `JOURNAL_REPRESENTATION_DESIGN`'s choice.
+
+Against (b): an adapter fix reaches a Session only when its Sandbox restarts, and every harness
+feature needs a Runtime image.
 
 ## Recommendation
 
-B, with the [floor above](#the-neutral-floor) and settlement option 2, as two independent halves. Input: add the per-kind command oneof; its first slice moves `Compact`
-into `SamplerCommand`, proving the shape with no new native behavior, and later operations arrive
-with whichever freezer capability is selected. Output: decide together with
-`JOURNAL_REPRESENTATION_DESIGN` and land after its journal view. Renaming or splitting the Runtime's
-gRPC surface stays with `ENVIRONMENT_RUNTIME_NATIVE_SURFACE`.
+(b), with the shared layer in the Runtime and in the central sampler for central Sessions.
+`environments` hosts it under neither shape.
 
-**Question for review:** adopt B: a neutral control floor, per-kind typed commands checked by
-`session_dispatcher` and framed by the Runtime, and native content rendered by readers?
+The Runtime is the one component that sees the harness's output in order with its own writes, holds
+the process and its continuation files, and keeps running through control-plane rolls. Under (a)
+those duties do not go away; they move to `session_dispatcher`, which would have to read output live,
+answer harness requests and keep Sandboxes awake, so each Dispatcher roll would stall running turns.
+(a)'s gain, adapter fixes without a Sandbox restart, does not outweigh that. Harness-specific
+features enter (b) as Runtime-framed operations typed per kind, so the common set holds only what
+every kind shares.
+
+**Question for review:** keep all translation in the Runtime (b), or forward the native protocol (a)
+with the shared commands layer in `session_dispatcher`?
