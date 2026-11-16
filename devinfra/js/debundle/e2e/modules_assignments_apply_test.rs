@@ -1,7 +1,10 @@
 //! Checked source-unit batches realize the exact complete assignment.
 
 use debundle_e2e_graph_support::GraphFixture;
-use debundle_e2e_support::{parse_stdout_json, read_tree};
+use debundle_e2e_support::{
+    VariableDeclarationKind, VariableInitializerKind, assert_module_variable_declarators,
+    parse_stdout_json, read_tree,
+};
 use serde_json::{Value, json};
 use std::fs;
 
@@ -155,6 +158,50 @@ fn moves_existing_metadata_while_claiming_residual_and_keeps_empty_owner_shell()
         &["modules", "apply", "--assignments", &path],
         &["graph compatibility mismatch"],
     );
+}
+
+#[test]
+fn readable_name_may_match_selector_keyword_without_changing_runtime_binding() {
+    let fixture = GraphFixture::new(
+        "const value = 41, read = () => value;\nconsole.log(read() + 1);\n",
+        &[],
+    );
+    let path = batch(
+        &fixture,
+        json!([
+            {"unit_id": fixture.source_unit_for_binding("value"), "module": "values/value"},
+            {"unit_id": fixture.source_unit_for_binding("read"), "module": "values/value"},
+        ]),
+    );
+    let names = fixture.root().join("names.json");
+    fs::write(&names, "{\"value\":\"ANYTHING\",\"read\":\"read\"}").unwrap();
+    fixture.json(&[
+        "modules",
+        "apply",
+        "--assignments",
+        &path,
+        "--readable-names",
+        names.to_str().unwrap(),
+    ]);
+
+    let emitted = fixture.rerun();
+    assert_module_variable_declarators(
+        emitted.path(),
+        "app/main/values/value.js",
+        &[
+            (
+                VariableDeclarationKind::Const,
+                &["ANYTHING"],
+                VariableInitializerKind::Number,
+            ),
+            (
+                VariableDeclarationKind::Const,
+                &["read"],
+                VariableInitializerKind::Arrow,
+            ),
+        ],
+    );
+    debundle_e2e_support::assert_node_output(&emitted.path().join("app/main/entry.js"), "42\n", "");
 }
 
 #[test]

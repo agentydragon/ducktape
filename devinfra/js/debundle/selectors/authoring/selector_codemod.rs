@@ -211,14 +211,6 @@ pub fn synthesize_residual_claims_for_modules(
                 };
                 let mut claim_bindings = Vec::new();
                 for target in synthesized.target_bindings {
-                    if target.selector_local == target.runtime_binding
-                        && target.export_name != target.runtime_binding
-                    {
-                        bail!(
-                            "selector for `{}` still pins its source binding name; author a structural selector",
-                            target.runtime_binding
-                        );
-                    }
                     claim_bindings.push(SourceMatchBinding::Detailed(SourceMatchBindingDetail {
                         local: target.selector_local,
                         name: Some(target.export_name),
