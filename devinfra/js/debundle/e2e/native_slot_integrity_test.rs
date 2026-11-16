@@ -51,7 +51,21 @@ fn assert_refused(
     stdout: &str,
 ) {
     let source = source(mutations, declaration, output);
-    let rejected = run_rejection_fixture_with_graphs(opts(&source, member, &anonymous(mutations)));
+    assert_refused_fixtures(
+        opts(&source, member, &anonymous(mutations)),
+        FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        member,
+        stdout,
+    );
+}
+
+fn assert_refused_fixtures(
+    rejected_options: FixtureOpts<'_>,
+    fallback_options: FixtureOpts<'_>,
+    member: &'static str,
+    stdout: &str,
+) {
+    let rejected = run_rejection_fixture_with_graphs(rejected_options);
     assert!(rejected.atomic_group_conflicts().iter().any(|conflict| {
         let claims = conflict["claims"].as_array().expect("conflict claims");
         ["values/native", "values/later"].iter().all(|module| {
@@ -68,8 +82,7 @@ fn assert_refused(
         .find(|node| node["declared_bindings"][0]["binding"] == member)
         .expect("native source unit");
     assert_eq!(node["synchronous_execution"]["complete"], false, "{node}");
-    let fixture =
-        run_fixture_with_graphs(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
+    let fixture = run_fixture_with_graphs(fallback_options);
     assert_preserved_entry_output(&fixture, stdout);
 }
 
@@ -234,6 +247,77 @@ fn symbol_keyed_constructor_write_keeps_the_global_binding() {
         "collection",
         "collection.size",
         "0 42\n",
+    );
+}
+
+#[test]
+fn replacing_symbol_for_widens_a_later_computed_global_write() {
+    // Replacing the key-producing intrinsic alone does not reach `%Map%`.
+    assert_split(
+        &["Symbol.for = function forKey() { return \"Map\"; };"],
+        MAP,
+        "collection",
+        "collection.size",
+        "0 42\n",
+    );
+
+    // The second write now has an unknown key, so it may replace `%Map%`.
+    assert_refused(
+        &[
+            "Symbol.for = function forKey() { return \"Map\"; };",
+            "globalThis[Symbol.for(\"registry\")] = function Map() { try { globalThis.saved(); return { size: \"ready\" }; } catch (error) { return { size: error.name }; } };",
+        ],
+        MAP,
+        "collection",
+        "collection.size",
+        "ReferenceError 42\n",
+    );
+}
+
+#[test]
+fn rebound_constructor_widens_a_later_prototype_write_across_chunks() {
+    const SETUP: &str = "globalThis.Map = function Map() {};\n";
+    const SETUP_CHUNK: &[(&str, &str)] = &[("static/setup", SETUP)];
+    const SOURCE: &str = "import './setup.js';\n\
+        globalThis.saved = () => later;\n\
+        Map.prototype.forEach = function forEach() { globalThis.saved(); return this; };\n\
+        const observed = [1].forEach(() => {});\n\
+        const later = 42;\n\
+        console.log(observed, later);\n";
+
+    // With `%Map%` intact, this precise prototype write does not touch the
+    // independent array method selected by the array literal receiver.
+    assert_split(
+        &["Map.prototype.forEach = function forEach() { globalThis.saved(); return this; };"],
+        "const observed = [1].forEach(() => {});",
+        "observed",
+        "observed",
+        "undefined 42\n",
+    );
+
+    let rejected_options = FixtureOpts::new(
+        SOURCE,
+        vec![
+            logical_module_with_anon(
+                "values/native",
+                &[Member::new("observed")],
+                &[
+                    "globalThis.saved = () => later;",
+                    "Map.prototype.forEach = function forEach() { globalThis.saved(); return this; };",
+                ],
+            ),
+            logical_module("values/later", &[Member::new("later")]),
+        ],
+    )
+    .with_extra_chunks(SETUP_CHUNK);
+    let fallback_options = FixtureOpts::new(SOURCE, vec![])
+        .with_extra_chunks(SETUP_CHUNK)
+        .with_import_order(&["residual"]);
+    assert_refused_fixtures(
+        rejected_options,
+        fallback_options,
+        "observed",
+        "undefined 42\n",
     );
 }
 
