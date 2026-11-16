@@ -15,7 +15,7 @@ def _query(metric: str, labels: str = "") -> str:
     return f"{metric}{{{_JOB}{extra_labels}}}"
 
 
-_RPC_ERRORS = _query("grpc_server_handled_total", 'grpc_type="unary", grpc_code!="OK"')
+_RPC_NON_OK = _query("grpc_server_handled_total", 'grpc_type="unary", grpc_code!="OK"')
 _RPC_STARTED = _query("grpc_server_started_total", 'grpc_type="unary"')
 _WAL_BUCKETS = _query("etcd_disk_wal_fsync_duration_seconds_bucket")
 _BACKEND_BUCKETS = _query("etcd_disk_backend_commit_duration_seconds_bucket")
@@ -154,11 +154,11 @@ def build_dashboard() -> dashboard.Dashboard:
         .with_panel(
             _panel(
                 11,
-                "Unary RPC errors per second",
-                f"sum(rate({_RPC_ERRORS}[5m]))",
-                "Non-OK unary responses",
+                "Non-OK unary responses per second by code",
+                f"sum by (grpc_code) (rate({_RPC_NON_OK}[5m]))",
+                "{{grpc_code}}",
                 unit="ops",
-                description="Zero is normal when no non-OK unary replies occur; a nonzero rate is an observed RPC error signal.",
+                description="Non-OK gRPC codes can include expected client cancellations and deadline expirations, so they do not all indicate an etcd server fault. The code label distinguishes the observed response status.",
             )
         )
         .with_panel(
