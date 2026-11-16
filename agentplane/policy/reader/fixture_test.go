@@ -1,7 +1,6 @@
 package reader
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -181,6 +180,7 @@ func (f *faults) patchCount(binding string) int {
 
 // fixture is one test's namespace, and a reader of it against the shared API server.
 type fixture struct {
+	kubeapiserver.TestClient
 	t         *testing.T
 	faults    *faults
 	health    *watchhealth.Health
@@ -191,8 +191,8 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{t: t, faults: newFaults(), namespace: fmt.Sprintf("test-%d", fixtures.Add(1))}
-	f.create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: f.namespace}})
+	f := &fixture{t: t, TestClient: kubeapiserver.NewTestClient(t, apiClient), faults: newFaults(), namespace: fmt.Sprintf("test-%d", fixtures.Add(1))}
+	f.Create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: f.namespace}})
 	return f
 }
 
@@ -208,16 +208,7 @@ func (f *fixture) start() {
 	if f.reader, err = watchRules(watches, f.index, f.namespace, testCondition); err != nil {
 		f.t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		watches.Run(ctx)
-	}()
-	f.t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	kubeapiserver.RunUntilCleanup(f.t, watches.Run)
 }
 
 func (f *fixture) eventually(what string, condition func() bool) {
@@ -225,33 +216,10 @@ func (f *fixture) eventually(what string, condition func() bool) {
 	eventually.Eventually(f.t, what, condition)
 }
 
-func (f *fixture) create(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Create(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) update(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Update(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) remove(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Delete(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
 func (f *fixture) binding(name string) *policyapi.PolicyBinding {
 	f.t.Helper()
 	binding := &policyapi.PolicyBinding{}
-	if err := apiClient.Get(context.Background(), client.ObjectKey{Namespace: f.namespace, Name: name}, binding); err != nil {
-		f.t.Fatal(err)
-	}
+	f.Get(f.namespace, name, binding)
 	return binding
 }
 

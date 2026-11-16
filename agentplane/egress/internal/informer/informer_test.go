@@ -20,15 +20,15 @@ import (
 func TestIndexFollowsTheAPIServer(t *testing.T) {
 	f := newFixture(t)
 	secret := f.secret(f.credentials, "test-secret", "first-value")
-	f.create(secret)
+	f.Create(secret)
 	// Only the credentials namespace is read, and the index keys a Secret by name alone.
-	f.create(f.secret(f.elsewhere, "test-elsewhere", "other-namespace-value"))
+	f.Create(f.secret(f.elsewhere, "test-elsewhere", "other-namespace-value"))
 	credential := f.credential("test-cred", "test-secret")
-	f.create(credential)
-	f.create(f.credential("test-cred-elsewhere", "test-elsewhere"))
-	f.create(f.policySet("test-egress", egressRule("test-cred"), egressRule("test-cred-elsewhere")))
+	f.Create(credential)
+	f.Create(f.credential("test-cred-elsewhere", "test-elsewhere"))
+	f.Create(f.policySet("test-egress", egressRule("test-cred"), egressRule("test-cred-elsewhere")))
 	grant := f.policyBinding("test-grant", "test-egress")
-	f.create(grant)
+	f.Create(grant)
 	f.start()
 
 	allowed := func(substitution string) policy.Decision {
@@ -44,13 +44,13 @@ func TestIndexFollowsTheAPIServer(t *testing.T) {
 	f.eventuallyDecides("test-cred-elsewhere", policy.Denied{Reason: decision.CredentialUnavailable})
 
 	secret.Data["token"] = []byte("second-value")
-	f.update(secret)
+	f.Update(secret)
 	f.eventuallyDecides("test-cred", allowed("second-value"))
 
-	f.remove(credential)
+	f.Delete(credential)
 	f.eventuallyDecides("test-cred", allowed(""))
 
-	f.remove(grant)
+	f.Delete(grant)
 	f.eventuallyDecides("test-cred", policy.Denied{Reason: decision.NoBinding})
 }
 
