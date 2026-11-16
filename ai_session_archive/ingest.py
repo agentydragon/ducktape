@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession, aliased
 
 from ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
-from ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
+from ai_session_archive.codex_metadata import read_codex_titles
 from ai_session_archive.database import (
     CodexTitleCandidateRow,
     CodexTitleObservationRow,
@@ -32,18 +32,18 @@ from ai_session_archive.database import (
 )
 from ai_session_archive.file_staging import FileStaging
 from ai_session_archive.models import Harness, SessionKind
+from ai_session_archive.record_interpretation import extract_session_metadata, session_kind_from_record
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticRepository, ResticSnapshot
 from ai_session_archive.session_projection import CLAUDE_TITLE_PROJECTION_VERSION, update_session_metadata
 from ai_session_archive.snapshot_inventory import (
     KNOWN_DIFF_MODIFIERS,
-    ArchiveLocation,
-    HarnessRoot,
     SnapshotInventory,
     assert_snapshot_identity,
     error_text,
 )
+from ai_session_archive.source_paths import HarnessRoot, SourceLocation, classify_source_path
 from ai_session_archive.statuses import (
     CodexMetadataStatus,
     SnapshotFileStatus,
@@ -176,7 +176,7 @@ class SnapshotIngestor:
                 )
             )
 
-    def _ensure_session(self, db: DbSession, location: ArchiveLocation, inferred: bool = False) -> SessionRow:
+    def _ensure_session(self, db: DbSession, location: SourceLocation, inferred: bool = False) -> SessionRow:
         # Inventories for distinct snapshots can discover the same physical session concurrently.
         db.get(MachineRow, self._source.machine_id, with_for_update=True)
         session_id = _session_id(self._source.machine_id, location.harness, location.source_path)
@@ -198,7 +198,7 @@ class SnapshotIngestor:
         if not inferred and location.parent_source_path is not None:
             parent_id = _session_id(self._source.machine_id, location.harness, location.parent_source_path)
             parent_link_kind = "claude_path_inferred"
-            parent_location = self._inventory.classify(location.parent_source_path)
+            parent_location = classify_source_path(location.parent_source_path, self._inventory.roots)
             if parent_location is not None:
                 self._ensure_session(db, parent_location, inferred=True)
         row = SessionRow(
@@ -460,7 +460,7 @@ class SnapshotIngestor:
                 if raw_bytes is not None:
                     parsed = parse_record_json(raw_bytes)
                     if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-                        kind = _session_kind_from_record(Harness(row.harness), parsed.parsed)
+                        kind = session_kind_from_record(Harness(row.harness), parsed.parsed)
                 if (
                     kind is None
                     and row.harness == Harness.CLAUDE.value
@@ -494,7 +494,7 @@ class SnapshotIngestor:
                 )
                 if row is None or row.status not in (SnapshotFileStatus.PENDING, SnapshotFileStatus.FAILED):
                     return
-                location = self._inventory.classify(path)
+                location = classify_source_path(path, self._inventory.roots)
                 if location is None:
                     row.status = SnapshotFileStatus.UNCLASSIFIED
                     return
@@ -573,7 +573,7 @@ class SnapshotIngestor:
         *,
         snapshot: ResticSnapshot,
         path: str,
-        location: ArchiveLocation,
+        location: SourceLocation,
         session_id: UUID,
         sha256: str,
         byte_size: int,
@@ -658,7 +658,7 @@ class SnapshotIngestor:
         *,
         snapshot: ResticSnapshot,
         path: str,
-        location: ArchiveLocation,
+        location: SourceLocation,
         version_id: UUID,
         session_id: UUID,
         sha256: str,
@@ -981,7 +981,7 @@ def _read_record_batch(
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
         parsed = parse_record_json(raw_bytes)
         if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-            _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
+            extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
         records.append(
             ParsedRecord(
                 raw_bytes=raw_bytes,
@@ -997,62 +997,3 @@ def _read_record_batch(
         batch_bytes += len(raw_bytes)
     metadata["_byte_offset"] = byte_offset
     return records
-
-
-def _extract_session_metadata(
-    record: Mapping[str, Any], metadata: dict[str, Any], *, timestamp: datetime | None, harness: Harness
-) -> None:
-    payload = record.get("payload")
-    data = payload if isinstance(payload, dict) else {}
-    if record.get("type") == "session_meta":
-        if isinstance(data.get("id"), str):
-            _remember_metadata_value(metadata, "native_session_id", data["id"])
-        if isinstance(data.get("parent_thread_id"), str):
-            _remember_metadata_value(metadata, "parent_native_session_id", data["parent_thread_id"])
-        if harness == Harness.CODEX:
-            _remember_session_kind(metadata, classify_codex_source(data.get("source")))
-    if harness == Harness.CLAUDE and isinstance(record.get("isSidechain"), bool):
-        _remember_session_kind(metadata, SessionKind.SUBAGENT if record["isSidechain"] else SessionKind.MAIN)
-    for candidate in (record.get("cwd"), data.get("cwd")):
-        if isinstance(candidate, str):
-            metadata.setdefault("cwd", candidate)
-            break
-    if timestamp is not None:
-        first = metadata.get("first_timestamp")
-        last = metadata.get("last_timestamp")
-        metadata["first_timestamp"] = timestamp if first is None else min(first, timestamp)
-        metadata["last_timestamp"] = timestamp if last is None else max(last, timestamp)
-    metadata["claude_title"] = select_claude_title(metadata.get("claude_title"), record)
-
-
-def _session_kind_from_record(harness: Harness, record: Mapping[str, Any]) -> SessionKind | None:
-    if harness == Harness.CODEX and record.get("type") == "session_meta":
-        payload = record.get("payload")
-        data = payload if isinstance(payload, Mapping) else {}
-        return classify_codex_source(data.get("source"))
-    if harness == Harness.CLAUDE and isinstance(record.get("isSidechain"), bool):
-        return SessionKind.SUBAGENT if record["isSidechain"] else SessionKind.MAIN
-    return None
-
-
-def _remember_session_kind(metadata: dict[str, Any], kind: SessionKind) -> None:
-    if metadata.get("session_kind_conflict"):
-        return
-    existing = metadata.get("session_kind")
-    if kind == SessionKind.UNKNOWN:
-        metadata.setdefault("session_kind", SessionKind.UNKNOWN.value)
-        return
-    if existing is None or existing == SessionKind.UNKNOWN.value:
-        metadata["session_kind"] = kind.value
-    elif existing != kind.value:
-        metadata["session_kind"] = SessionKind.UNKNOWN.value
-        metadata["session_kind_conflict"] = True
-
-
-def _remember_metadata_value(metadata: dict[str, Any], key: str, value: str) -> None:
-    candidates = metadata.setdefault(f"{key}_candidates", [])
-    if value not in candidates:
-        candidates.append(value)
-    if len(candidates) > 1:
-        metadata[f"{key}_conflict"] = True
-    metadata.setdefault(key, value)

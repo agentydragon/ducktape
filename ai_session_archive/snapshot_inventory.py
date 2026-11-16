@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
 from datetime import datetime
-from pathlib import PurePosixPath
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
 from ai_session_archive.database import ResticSnapshotRow, SessionRow, SnapshotFileRow
-from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
+from ai_session_archive.source_paths import HarnessRoot, SourceLocation, classify_source_path
 from ai_session_archive.statuses import (
     CodexMetadataStatus,
     SnapshotCaptureStatus,
@@ -22,33 +20,7 @@ from ai_session_archive.statuses import (
     SnapshotProcessingStatus,
 )
 
-
-@dataclass(frozen=True)
-class HarnessRoot:
-    """A configured harness root as it appears inside Restic snapshots."""
-
-    harness: Harness
-    path: PurePosixPath
-
-    def __init__(self, harness: Harness, path: str | PurePosixPath):
-        normalized = PurePosixPath(path)
-        if str(normalized) in ("", "."):
-            raise ValueError("harness root must be an explicit non-empty path")
-        object.__setattr__(self, "harness", harness)
-        object.__setattr__(self, "path", normalized)
-
-
-@dataclass(frozen=True)
-class ArchiveLocation:
-    harness: Harness
-    root: HarnessRoot
-    relative_path: PurePosixPath
-    source_path: str
-    native_session_id: str
-    parent_source_path: str | None
-
-
-SnapshotInventoryEntry = tuple[str, str, str, int, datetime | None, str, str | None, ArchiveLocation | None]
+SnapshotInventoryEntry = tuple[str, str, str, int, datetime | None, str, str | None, SourceLocation | None]
 
 
 def assert_snapshot_identity(row: ResticSnapshotRow, snapshot: ResticSnapshot) -> None:
@@ -79,7 +51,7 @@ class SnapshotInventory:
         machine_id: str,
         restic: ResticRepository,
         roots: tuple[HarnessRoot, ...],
-        ensure_session: Callable[[DbSession, ArchiveLocation], SessionRow],
+        ensure_session: Callable[[DbSession, SourceLocation], SessionRow],
     ) -> None:
         self._session_factory = session_factory
         self._machine_id = machine_id
@@ -271,7 +243,7 @@ class SnapshotInventory:
         for file in files:
             if not file.path.endswith(".jsonl"):
                 continue
-            location = self.classify(file.path)
+            location = classify_source_path(file.path, self.roots)
             if location is None:
                 status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif file.file_type != "file":
@@ -294,7 +266,7 @@ class SnapshotInventory:
         entries: list[SnapshotInventoryEntry] = []
         for path, modifiers in sorted(combined.items()):
             modifier = ",".join(dict.fromkeys(modifiers))
-            location = self.classify(path)
+            location = classify_source_path(path, self.roots)
             if location is None:
                 status, error = SnapshotFileStatus.UNCLASSIFIED, None
             elif modifier == "-":
@@ -305,48 +277,6 @@ class SnapshotInventory:
                 status, error = SnapshotFileStatus.PENDING, None
             entries.append((path, modifier, "file", 0, None, status, error, location))
         return entries
-
-    def classify(self, path: str) -> ArchiveLocation | None:
-        archived_path = PurePosixPath(path)
-        archived_parts = archived_path.parts
-        for root in self.roots:
-            root_parts = root.path.parts
-            if archived_parts[: len(root_parts)] == root_parts:
-                relative_parts = archived_parts[len(root_parts) :]
-            elif tuple(part for part in archived_parts if part != "/")[: len(root_parts)] == tuple(
-                part for part in root_parts if part != "/"
-            ):
-                stripped = tuple(part for part in archived_parts if part != "/")
-                relative_parts = stripped[len(tuple(part for part in root_parts if part != "/")) :]
-            else:
-                continue
-            relative = PurePosixPath(*relative_parts)
-            if not relative_parts or relative.suffix != ".jsonl":
-                return None
-            if root.harness == Harness.CLAUDE:
-                supported = len(relative_parts) >= 3 and relative_parts[0] == "projects"
-            else:
-                supported = len(relative_parts) >= 2 and relative_parts[0] in ("sessions", "archived_sessions")
-            if not supported:
-                return None
-            parent_source_path = None
-            if root.harness == Harness.CLAUDE and "subagents" in relative_parts:
-                index = len(relative_parts) - 1 - tuple(reversed(relative_parts)).index("subagents")
-                parent_parts = list(relative_parts[:index])
-                if parent_parts:
-                    parent_parts[-1] = f"{parent_parts[-1]}.jsonl"
-                    parent_relative = PurePosixPath(*parent_parts)
-                    archive_root_parts = archived_parts[: len(archived_parts) - len(relative_parts)]
-                    parent_source_path = str(PurePosixPath(*archive_root_parts) / parent_relative)
-            return ArchiveLocation(
-                harness=root.harness,
-                root=root,
-                relative_path=relative,
-                source_path=path,
-                native_session_id=relative.stem,
-                parent_source_path=parent_source_path,
-            )
-        return None
 
     def mark_failed(self, snapshot: ResticSnapshot, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():

@@ -17,7 +17,7 @@ from ai_session_archive.database import CodexTitleObservationRow, ResticSnapshot
 from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.restic import ResticCommandError
-from ai_session_archive.snapshot_inventory import HarnessRoot
+from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
