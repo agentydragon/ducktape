@@ -130,7 +130,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
-        ":queries",
+        ":progress_queries",
         ":testing",
         "//:conftest",
         "//util/testing:postgres_fixtures",
@@ -484,6 +484,7 @@ py_library(
     deps = [
         ":database",
         ":models",
+        ":progress_queries",
         ":queries",
         ":version_queries",
         ":web_settings",
@@ -796,6 +797,17 @@ py_library(
         ":record_json",
         ":record_payloads",
         ":version_lineage",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "progress_queries",
+    srcs = ["progress_queries.py"],
+    deps = [
+        ":database",
+        ":models",
+        ":statuses",
         "@pypi//sqlalchemy",
     ],
 )
