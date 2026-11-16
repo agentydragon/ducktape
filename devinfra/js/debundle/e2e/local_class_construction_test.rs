@@ -110,9 +110,9 @@ export function enter() {
 
 #[test]
 fn inferred_implicit_class_construction_breaks_a_live_array_sequenced_cycle() {
-    let fixture = assert_pure_cycle_break(
-        REGISTRY_SOURCE,
-        registry_modules(),
+    let fixture = assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(REGISTRY_SOURCE, registry_modules())
+            .with_import_order(&["registry", "residual"]),
         "registry",
         &["class Registry", "const b = new Registry"],
         &["const a"],
@@ -130,9 +130,8 @@ fn inferred_implicit_class_construction_breaks_an_array_free_sequenced_cycle() {
             "globalThis.events += 'clear';",
         )
         .replace("globalThis.events.join(\",\")", "globalThis.events");
-    let fixture = assert_pure_cycle_break(
-        &source,
-        registry_modules(),
+    let fixture = assert_pure_cycle_break_with_opts(
+        FixtureOpts::new(&source, registry_modules()).with_import_order(&["registry", "residual"]),
         "registry",
         &["class Registry", "const b = new Registry"],
         &["const a"],
@@ -169,9 +168,9 @@ console.log(c, globalThis.events.join(","));
 export {{ a, b, c, Registry }};
 "#
         );
-        let fixture = assert_pure_cycle_break(
-            &source,
-            registry_modules(),
+        let fixture = assert_pure_cycle_break_with_opts(
+            FixtureOpts::new(&source, registry_modules())
+                .with_import_order(&["registry", "residual"]),
             "registry",
             &["class Registry", "const b = new Registry"],
             &["const a"],
@@ -245,7 +244,8 @@ export {{ saved, Checker, Command, create, command, later }};
                 logical_module("command", &[Member::new("command")]),
                 logical_module("value", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["command", "residual", "value"]),
         &["command", "value"],
         &[],
     );
@@ -302,7 +302,8 @@ export {{ a, b, c, Registry }};
                 "registry",
                 &[Member::new("Registry"), Member::new("b")],
             )],
-        ),
+        )
+        .with_import_order(&["registry", "residual"]),
         &["registry", "residual"],
     );
 }
@@ -362,14 +363,17 @@ const c = b ? a : 0;
 console.log(c);
 export { a, b, c, Registry };
 "#;
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "registry",
-            &[Member::new("Registry"), Member::new("b")],
-            &["Registry = class { value = 2; };"],
-        )],
-    ));
+    let rejected = run_rejection_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "registry",
+                &[Member::new("Registry"), Member::new("b")],
+                &["Registry = class { value = 2; };"],
+            )],
+        )
+        .with_import_order(&["registry", "residual"]),
+    );
     let graph = rejected.dependency_graph();
     let constructed = node_declaring(&graph, "b");
     let purity = serde_json::to_value(&constructed.purity).unwrap();
@@ -397,17 +401,20 @@ fn constructor_arguments_stay_sequenced() {
 #[test]
 fn asserted_pure_field_calls_do_not_supply_a_heap_certificate() {
     let source = "const values = [];\nconst a = (() => 1)();\nfunction read() { const first = values.length; values.push(42); return first; }\nclass Registry { value = read(); }\nconst b = new Registry();\nconst c = b ? a : 0;\nconsole.log(c);\n";
-    let rejected = run_rejection_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "registry",
-            &[
-                Member::new("Registry").with_purity(MemberPurity::PureNew),
-                Member::new("read").with_purity(MemberPurity::Pure),
-                Member::new("b"),
-            ],
-        )],
-    ));
+    let rejected = run_rejection_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "registry",
+                &[
+                    Member::new("Registry").with_purity(MemberPurity::PureNew),
+                    Member::new("read").with_purity(MemberPurity::Pure),
+                    Member::new("b"),
+                ],
+            )],
+        )
+        .with_import_order(&["registry", "residual"]),
+    );
     let graph = rejected.dependency_graph();
     let construction = graph
         .nodes
@@ -477,7 +484,7 @@ fn certified_class_shape_keeps_earlier_binding_initialization_observations() {
         &["maker", "registry"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
 }
 
@@ -510,11 +517,13 @@ fn certified_construction_retains_deferred_field_and_getter_captures() {
                     ),
                     logical_module("value", &[Member::new("later")]),
                 ],
-            ),
+            )
+            .with_import_order(&["reader", "residual", "value"]),
             &["reader", "value"],
             &[],
         );
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
     }
 }
@@ -555,7 +564,7 @@ console.log(before);
         &["reader", "value"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
 }
 
@@ -615,6 +624,7 @@ fn composition_options<'a>(source: &'a str, anonymous: &'a [&'a str]) -> Fixture
             anonymous,
         )],
     )
+    .with_import_order(&["registry", "residual"])
     .with_extra_chunks(CAPTURE_CHUNKS)
     .with_extra_files(OPAQUE_FILES)
     .with_value_inputs("static/peer", vec![captured_input()])
@@ -653,7 +663,7 @@ fn expected_purity(value_inputs: BTreeSet<ValueInputRef>) -> Purity {
 #[test]
 fn composed_native_set_and_local_class_proofs_keep_captured_input_provenance() {
     let fixture = assert_pure_cycle_break_with_graphs_and_opts(
-        composition_options(COMPOSITION_SOURCE, &[]),
+        composition_options(COMPOSITION_SOURCE, &[]).with_import_order(&["residual", "registry"]),
         "registry",
         &[
             "const unique = new Set",
@@ -761,6 +771,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     );
     let mutated_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&mutated, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input()]),
@@ -791,6 +802,7 @@ fn composed_proofs_reject_native_set_mutation_and_unsafe_field_initializers() {
     );
     let unsafe_fixture = run_fixture_with_graphs(
         FixtureOpts::new(&unsafe_field, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input()]),
@@ -811,6 +823,7 @@ fn composed_proof_rejects_rebound_class_bindings() {
     );
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(&source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(CAPTURE_CHUNKS)
             .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input()]),
@@ -842,7 +855,7 @@ const later = 40;
 console.log(registry);
 export { Registry, registry, later };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
 
     expect_atomic_conflict_rejection(
@@ -856,7 +869,8 @@ export { Registry, registry, later };
                 ),
                 logical_module("value", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["registry", "residual", "value"]),
         &["registry", "value"],
         &[],
     );
