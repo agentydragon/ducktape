@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
-import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, BinaryIO, cast
+from typing import Any, BinaryIO
 from uuid import UUID, uuid5
 
 from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession
 
-from ai_session_archive import file_publication
+from ai_session_archive import file_capture, file_publication
 from ai_session_archive.claude_title_refresh import refresh_claude_titles
 from ai_session_archive.codex_metadata import read_codex_titles
 from ai_session_archive.database import (
@@ -31,9 +29,7 @@ from ai_session_archive.database import (
 from ai_session_archive.file_publication import SnapshotFileIdentity
 from ai_session_archive.file_staging import FileStaging
 from ai_session_archive.models import Harness, SessionKind
-from ai_session_archive.record_interpretation import extract_session_metadata
-from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
-from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
+from ai_session_archive.record_payloads import PARSER_VERSION
 from ai_session_archive.restic import ResticRepository, ResticSnapshot
 from ai_session_archive.session_identity import SourceSessionIdentity
 from ai_session_archive.session_kind_projection import project_missing_session_kinds
@@ -50,10 +46,7 @@ from ai_session_archive.statuses import (
     SnapshotInventoryStatus,
     SnapshotProcessingStatus,
 )
-from ai_session_archive.usage_observations import usage_observations_for_record
 from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage_ranks
-
-RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -368,11 +361,8 @@ class SnapshotIngestor:
                 inventory_status = snapshot_row.inventory_status
                 comparison_snapshot_id = snapshot_row.comparison_snapshot_id
 
-            with cast(BinaryIO, tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")) as contents:
-                self._source.restic.dump_to(snapshot.id, path, contents)
-                contents.seek(0)
-                sha256, byte_size, record_count = _fingerprint_file(contents)
-                contents.seek(0)
+            with file_capture.capture_file(self._source.restic, snapshot.id, path) as captured:
+                contents = captured.contents
 
                 with self._session_factory() as db, db.begin():
                     snapshot_row = db.scalar(
@@ -417,9 +407,9 @@ class SnapshotIngestor:
                     path=path,
                     location=location,
                     session_id=session_id,
-                    sha256=sha256,
-                    byte_size=byte_size,
-                    record_count=record_count,
+                    sha256=captured.sha256,
+                    byte_size=captured.byte_size,
+                    record_count=captured.record_count,
                     contents=contents,
                     file_identity=file_identity,
                     inventory_status=inventory_status,
@@ -493,7 +483,7 @@ class SnapshotIngestor:
         ordinal = 0
         if existing is None:
             # Parsing, usage projection and metadata extraction run without a database transaction.
-            while batch := _read_record_batch(contents, metadata, limit=500, harness=location.harness):
+            while batch := file_capture.read_record_batch(contents, metadata, limit=500, harness=location.harness):
                 self._staging.store_record_batch(version_id, ordinal, batch, parent=parent, parent_ranks=parent_ranks)
                 ordinal += len(batch)
             if ordinal != record_count:
@@ -569,44 +559,3 @@ class SnapshotIngestor:
             files_unclassified=sum(row.status == SnapshotFileStatus.UNCLASSIFIED for row in files),
             codex_metadata_partial=sum(row.codex_metadata_status == CodexMetadataStatus.PARTIAL for row in snapshots),
         )
-
-
-def _fingerprint_file(source: BinaryIO) -> tuple[str, int, int]:
-    digest = hashlib.sha256()
-    byte_size = 0
-    newline_count = 0
-    final_byte = b""
-    while chunk := source.read(1024 * 1024):
-        digest.update(chunk)
-        byte_size += len(chunk)
-        newline_count += chunk.count(b"\n")
-        final_byte = chunk[-1:]
-    record_count = newline_count + (1 if byte_size and final_byte != b"\n" else 0)
-    return digest.hexdigest(), byte_size, record_count
-
-
-def _read_record_batch(
-    source: BinaryIO, metadata: dict[str, Any], *, limit: int, harness: Harness
-) -> list[ParsedRecord]:
-    records: list[ParsedRecord] = []
-    batch_bytes = 0
-    byte_offset = int(metadata.get("_byte_offset", 0))
-    while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
-        parsed = parse_record_json(raw_bytes)
-        if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-            extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
-        records.append(
-            ParsedRecord(
-                raw_bytes=raw_bytes,
-                byte_offset=byte_offset,
-                sha256=hashlib.sha256(raw_bytes).hexdigest(),
-                json=parsed,
-                usage=tuple(usage_observations_for_record(parsed.parsed))
-                if isinstance(parsed, ParsedRecordJson)
-                else (),
-            )
-        )
-        byte_offset += len(raw_bytes)
-        batch_bytes += len(raw_bytes)
-    metadata["_byte_offset"] = byte_offset
-    return records

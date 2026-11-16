@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from ai_session_archive import file_publication, ingest
+from ai_session_archive import file_capture, file_publication
 from ai_session_archive.database import (
     FileVersionImportRecordRow,
     FileVersionImportRow,
@@ -96,7 +96,7 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
     contents = _contents()
     importer = _ingestor(postgres_engine, contents)
     store_batch = importer._staging.store_record_batch
-    read_batch = ingest._read_record_batch
+    read_batch = file_capture.read_record_batch
     factory = sessionmaker(postgres_engine)
     committed_sizes = []
 
@@ -140,7 +140,7 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
 
     with (
         patch.object(importer._staging, "store_record_batch", side_effect=crash_after_second_batch),
-        patch.object(ingest, "_read_record_batch", side_effect=parse_without_transaction),
+        patch.object(file_capture, "read_record_batch", side_effect=parse_without_transaction),
         pytest.raises(SimulatedCrash),
     ):
         importer.ingest()
@@ -476,8 +476,8 @@ def test_cleanup_of_already_published_stage_preserves_shared_evidence(postgres_e
 def test_dump_fingerprint_and_parse_release_transactions(postgres_engine: Engine) -> None:
     importer = _ingestor(postgres_engine, _contents())
     dump = importer._source.restic.dump_to
-    fingerprint = ingest._fingerprint_file
-    read_batch = ingest._read_record_batch
+    fingerprint = file_capture.fingerprint_file
+    read_batch = file_capture.read_record_batch
 
     def dump_without_transaction(*args: Any, **kwargs: Any) -> None:
         assert isinstance(postgres_engine.pool, QueuePool)
@@ -496,8 +496,8 @@ def test_dump_fingerprint_and_parse_release_transactions(postgres_engine: Engine
 
     with (
         patch.object(importer._source.restic, "dump_to", side_effect=dump_without_transaction),
-        patch.object(ingest, "_fingerprint_file", side_effect=fingerprint_without_transaction),
-        patch.object(ingest, "_read_record_batch", side_effect=parse_without_transaction),
+        patch.object(file_capture, "fingerprint_file", side_effect=fingerprint_without_transaction),
+        patch.object(file_capture, "read_record_batch", side_effect=parse_without_transaction),
     ):
         assert importer.ingest().files_partial == 1
 
@@ -548,7 +548,7 @@ def test_extraction_rechecks_identity_before_parsing(postgres_engine: Engine, ch
 
     with (
         patch.object(importer._source.restic, "dump_to", side_effect=change_identity_during_dump),
-        patch.object(ingest, "_read_record_batch") as parse_batch,
+        patch.object(file_capture, "read_record_batch") as parse_batch,
     ):
         assert importer.ingest().files_failed == 1
         parse_batch.assert_not_called()

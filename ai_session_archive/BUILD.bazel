@@ -157,11 +157,10 @@ py_library(
         ":claude_title_refresh",
         ":codex_metadata",
         ":database",
+        ":file_capture",
         ":file_publication",
         ":file_staging",
         ":models",
-        ":record_interpretation",
-        ":record_json",
         ":record_payloads",
         ":restic",
         ":session_identity",
@@ -169,7 +168,6 @@ py_library(
         ":snapshot_inventory",
         ":source_paths",
         ":statuses",
-        ":usage_observations",
         ":version_lineage",
         "@pypi//sqlalchemy",
     ],
@@ -754,6 +752,7 @@ py_test(
     requires_docker = True,
     deps = [
         ":database",
+        ":file_capture",
         ":file_publication",
         ":ingest",
         ":models",
@@ -826,6 +825,19 @@ py_library(
         ":record_payloads",
         ":version_lineage",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "file_capture",
+    srcs = ["file_capture.py"],
+    deps = [
+        ":models",
+        ":record_interpretation",
+        ":record_json",
+        ":record_payloads",
+        ":restic",
+        ":usage_observations",
     ],
 )
 
