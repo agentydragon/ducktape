@@ -5,7 +5,7 @@ import textwrap
 
 import pytest_bazel
 
-from x.flake8_early_bailout.flake8_early_bailout import EarlyBailoutChecker
+from devinfra.lint.x.flake8_early_bailout.flake8_early_bailout import EarlyBailoutChecker
 
 
 def get_errors(code: str) -> list[str]:
