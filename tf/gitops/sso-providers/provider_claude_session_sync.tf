@@ -53,27 +53,3 @@ resource "authentik_policy_binding" "claude_session_sync_owner_only" {
   user   = tonumber(authentik_user.agentydragon.id)
   order  = 0
 }
-
-# Reflector mirrors this into the app's namespace. The keys are the environment variables of the
-# web app's `WebSettings` (devinfra/claude/session_export/settings.py), which the Deployment reads
-# from them one by one.
-resource "kubernetes_secret" "claude_session_sync_oidc" {
-  metadata {
-    name      = "claude-session-sync-oidc"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "claude-session-sync"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "claude-session-sync"
-    }
-  }
-
-  data = {
-    SESSION_SYNC_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/claude-session-sync/"
-    SESSION_SYNC_OIDC_CLIENT_ID       = authentik_provider_oauth2.claude_session_sync.client_id
-    SESSION_SYNC_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.claude_session_sync.client_secret
-    SESSION_SYNC_OIDC_SESSION_SECRET  = random_password.claude_session_sync_session_secret.result
-    SESSION_SYNC_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
-  }
-}

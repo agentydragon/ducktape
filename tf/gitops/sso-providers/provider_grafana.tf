@@ -13,21 +13,3 @@ resource "authentik_policy_binding" "grafana_admins" {
   group  = data.authentik_group.admins.id
   order  = 0
 }
-
-resource "kubernetes_secret" "grafana_oidc" {
-  metadata {
-    name      = "grafana-oidc-config"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "monitoring"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "monitoring"
-    }
-  }
-
-  data = {
-    GF_AUTH_GENERIC_OAUTH_CLIENT_ID     = authentik_provider_oauth2.confidential["grafana"].client_id
-    GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET = authentik_provider_oauth2.confidential["grafana"].client_secret
-  }
-}

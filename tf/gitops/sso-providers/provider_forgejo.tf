@@ -15,22 +15,3 @@ resource "authentik_policy_binding" "forgejo_admins" {
   group  = data.authentik_group.admins.id
   order  = 0
 }
-
-# Forgejo helm chart expects keys named "key" (client_id) and "secret" (client_secret).
-resource "kubernetes_secret" "forgejo_oauth" {
-  metadata {
-    name      = "forgejo-oauth-client-secret"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "forgejo,flux-system"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "forgejo,flux-system"
-    }
-  }
-
-  data = {
-    key    = authentik_provider_oauth2.confidential["forgejo"].client_id
-    secret = authentik_provider_oauth2.confidential["forgejo"].client_secret
-  }
-}

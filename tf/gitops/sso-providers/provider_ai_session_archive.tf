@@ -48,26 +48,3 @@ resource "authentik_policy_binding" "ai_session_archive_owner_only" {
   user   = tonumber(authentik_user.agentydragon.id)
   order  = 0
 }
-
-# Reflect the generated OIDC credentials into the workload namespace. The app also pins the
-# allowed numeric subject, so application authorization remains owner-only if provider policy changes.
-resource "kubernetes_secret" "ai_session_archive_oidc" {
-  metadata {
-    name      = "ai-session-archive-oidc"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "session-backup"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "session-backup"
-    }
-  }
-
-  data = {
-    AI_SESSION_ARCHIVE_OIDC_ISSUER          = "https://auth.allegedly.works/application/o/ai-session-archive/"
-    AI_SESSION_ARCHIVE_OIDC_CLIENT_ID       = authentik_provider_oauth2.ai_session_archive.client_id
-    AI_SESSION_ARCHIVE_OIDC_CLIENT_SECRET   = authentik_provider_oauth2.ai_session_archive.client_secret
-    AI_SESSION_ARCHIVE_OIDC_SESSION_SECRET  = random_password.ai_session_archive_session_secret.result
-    AI_SESSION_ARCHIVE_OIDC_ALLOWED_SUBJECT = tostring(authentik_user.agentydragon.id)
-  }
-}
