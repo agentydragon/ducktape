@@ -157,4 +157,26 @@ ts_library(
     deps = [":stream_status"],
 )
 
+ts_library(
+    name = "session_dispatcher_client",
+    srcs = ["session_dispatcher_client.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":client",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "session_dispatcher_client_test",
+    srcs = ["session_dispatcher_client.test.ts"],
+    deps = [
+        ":session_dispatcher_client",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
 check_vitest_specs()

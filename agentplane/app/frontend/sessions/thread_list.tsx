@@ -22,7 +22,12 @@ import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { type ThreadNotices, useThreadNotices } from "../notifications/thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../ui/time_ago";
-import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
+import {
+  archiveBlockReason,
+  sessionMaterializationLabel,
+  snapshotFresh,
+  threadStatusFromSnapshot,
+} from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
 
 function GroupStateIcon({ sandbox }: { sandbox: EnvironmentDescriptor | null }): JSX.Element {
@@ -107,6 +112,9 @@ function ThreadRow({
       />
       <span className="agentplane-thread-list-row-text">
         <span className="agentplane-thread-list-row-name">{label}</span>
+        {sessionMaterializationLabel(thread) && (
+          <span className="agentplane-thread-list-row-detail">{sessionMaterializationLabel(thread)}</span>
+        )}
         {detailed && (
           <span className="agentplane-thread-list-row-detail">
             {harnessLabel(harness)}

@@ -23,6 +23,32 @@ pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.front
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
+async def test_dispatcher_sessions_without_history(view: VisualPage, app: AgentplaneFixture) -> None:
+    for suffix, materialization in (("31", "WAITING"), ("32", "FAILED")):
+        await app.add_session(
+            {
+                "sessionId": f"10000000-0000-4000-8000-0000000000{suffix}",
+                "createdAt": "2026-01-01T12:00:00Z",
+                "placement": {
+                    "environmentHosted": {
+                        "environment": {"name": "ready-sandbox", "uid": "0f9c1d2e-0000-4000-8000-00000000a1b2"},
+                        "harness": "HARNESS_CLAUDE",
+                    }
+                },
+                "status": {
+                    "materialization": f"SESSION_MATERIALIZATION_{materialization}",
+                    "requiredEnvironment": "REQUIRED_ENVIRONMENT_AVAILABLE",
+                },
+            }
+        )
+    await app.mount_app("/")
+    navigation = view.page.get_by_role("navigation")
+    await expect(navigation.get_by_text("Waiting for placement", exact=True)).to_be_visible()
+    await expect(navigation.get_by_text("Session materialization failed", exact=True)).to_be_visible()
+    await view.check(context="Dispatcher Sessions visible before History recording")
+    await view.capture(target=navigation)
+
+
 async def test_archived_thread_toggle(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")

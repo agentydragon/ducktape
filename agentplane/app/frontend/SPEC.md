@@ -18,6 +18,23 @@ reads the current Sandbox-owned WorkloadCredential on demand and offers an expli
 empty record is not historical proof: older credentials are revoked, and the UI says this is not
 a complete history. The new-environment identity picker awaits the open creation-contract question.
 
+## Session inventory
+
+List membership, creation order, materialization and required Environment state come from the
+Dispatcher Session watch, including Sessions not yet recorded in History. The browser uses the
+operator-authenticated `/upstream/dispatcher/v1/sessions:watch` proxy and the generated
+SessionDispatcher protobuf-es messages. Each browser stream has its own upstream watch. An empty
+token supplies the snapshot and `CaughtUp`; there is no ListSessions bootstrap. The browser retains
+its inventory and in-memory resume token across reconnects, advancing the token only after applying
+a frame. `INVALID_ARGUMENT` clears the token and starts a fresh snapshot. A page reload starts empty;
+no token crosses a browser login lifetime. Disconnection retains the last view with stale health.
+
+Titles and archived state remain App metadata. History supplies conversation content and its
+existing runtime observations; current Environment observations continue to participate in
+running/idle marks. Materialization never establishes that a harness is running. A Session with
+no History summary appears with its materialization state. History-only records cannot add list
+members. Metadata and History watches refresh the joins without polling.
+
 ## Thread creation
 
 When Create thread is disabled, hovering it or focusing its wrapper shows the current reason:

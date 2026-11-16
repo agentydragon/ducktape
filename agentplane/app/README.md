@@ -8,7 +8,7 @@ the Session Dispatcher, and reads live Runtime diagnostics through
 boundary and uses its App SVID on the backend connection. Diagnostic evidence includes exact
 Environment, incarnation and boot identity; unavailable evidence never means idle. The existing
 busy-Thread archive check retains its conservative behavior through that same diagnostics API. It reads archived Session
-history and Threads (each Session's conversation projection) from the History Service and synchronizes
+conversation history from the History Service, Session membership and materialization from the Dispatcher, and synchronizes
 selected rows and content to the browser through authenticated Electric endpoints. It also presents
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
@@ -153,10 +153,10 @@ the Dispatches of any Session id. Command writes do not check the app's History 
 catalog before reaching the Dispatcher. The frontend model picker remains catalog-backed; the backend
 and executor report command failures after submission.
 
-The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
-runner Pod does not clear the inventory. A row's status mark is derived from those last-observed History
-values and the Sandbox's own state, and reads as unconfirmed whenever the Thread watches, the Sandbox inventory watch or the
-Thread-update listener (`updates_connected` in the Thread snapshot) is not current. The Status tab shows the
+The Sandbox page lists Sessions from the Dispatcher's retained inventory, including Sessions that
+History has not recorded. Materialization and required Environment state come from Dispatcher;
+a row's running/idle mark still comes from History and live Environment observations. Thread marks
+are not current while their watches are disconnected. The Status tab shows the
 Sandbox's state and lets an operator change its wake-on-message and idle-suspend settings, as the list
 does; the Kubernetes conditions and containers below start open only where one is unmet. It reads
 `GET /sandboxes/{name}/runner-status` for current runner process and Session diagnostics; it does not
@@ -236,9 +236,10 @@ The app copies no runner events and folds none. Each runner pushes its Sessions'
 History Service's ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
-A Session gets its Thread from the History Service's watch, which names each Session it records
-on the runner's first push; every stream resumes after the last one the replica opened, and a new
-process starts from the first. Opening a Thread does not restart its harness. A composer may submit
+App metadata rows are created on first title or archive write, independently of History recording.
+The legacy History Session-recording worker remains until the separate post-rollout cleanup; its
+idempotent opens preserve titles and archived state. Opening a Thread does not restart its harness.
+A composer may submit
 input to an eligible dormant Session; the Dispatcher wakes and admits the Session as needed. A
 suspended Sandbox still follows its `wake_on_send` policy. Exact-turn interruption remains available
 while that turn is active.
@@ -308,10 +309,11 @@ The shared Sandbox inventory uses the generated EnvironmentService watch through
 `/upstream/environments/v1/environments:watch`. Protobuf snapshot chunks replace the inventory
 when complete; subsequent upserts and UID-fenced removals update individual Sandboxes. The
 Action Service watch separately streams the execution account's effective Action policy.
-The Sandbox page reads UID-filtered app Thread metadata pages, joins History summaries, and uses them as its retained
-Session inventory; its harness and turn fields are last observed History values. Suspending or
-removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
-are still running. Archived Threads stay hidden unless the operator chooses **Show archived**. The archived count and page tokens follow the same Sandbox UID.
+The Sandbox page filters the Dispatcher Session inventory by the exact Environment UID, then joins
+App titles/archived state and History summaries. Harness and turn fields remain last-observed
+History values. Sessions without History appear with their materialization state; removing a runner
+Pod does not remove a Session. Archived Threads stay hidden unless the operator chooses **Show archived**.
+The archived count uses the same Dispatcher membership and Sandbox UID filter.
 
 The Egress log watches `/upstream/egress/v1/decisions:watch` through the generated Egress facade.
 The browser follows the exact Environment target and selects its execution ServiceAccount, clearing
@@ -319,7 +321,7 @@ the displayed window when either observation becomes stale. An initial Egress sn
 additions and removals maintain the recent window for that account, which can include older Sandbox
 incarnations. The app's Egress system-status
 probe uses gRPC health on the same admin endpoint. Runner availability affects operations that need a live Session and
-whether the page can open a new one; it does not determine whether a retained History Thread appears
+whether the page can open a new one; it does not determine whether a retained Dispatcher Session appears
 in the table. Session creation displays progress and prevents duplicate clicks while the request
 runs.
 
@@ -367,18 +369,30 @@ retains the existing live-runtime busy check; an absent History summary does not
 
 ## Sidebar inventory updates
 
-The browser builds the Thread window from the generated app metadata list and History summary reads. It pages app-owned
-metadata until it has enough visible rows, joins summaries in batches, applies name/Sandbox/ID-prefix search, and pins
-the open Thread if it is outside the visible page. The app list response also carries the archived count. Two generated
-HTTP streams invalidate that view: History reports summary changes, and the app reports Thread metadata changes plus
-whether its PostgreSQL listener is connected. The browser re-reads the list after either signal and reconnects each
-watch independently; a listener reconnect signals a re-read, including writes whose notifications were missed while
-disconnected. There is no sidebar polling loop or new notification service.
+The browser's SessionDispatcher protobuf-es client follows `/upstream/dispatcher/v1/sessions:watch`
+through the App's plain proxy to the Dispatcher's gRPC-Gateway JSON facade. The App checks its
+operator-only caller policy and current browser OIDC login; request cancellation, logout, expiry
+and drain end the stream and its upstream native gRPC call. Dispatcher authenticates the App as
+`spiffe://agentplane/app` under the existing service caller grant. Each browser stream has one
+upstream watch. The App holds no Session inventory cache and performs no joins for the browser.
 
-The browser reads the shared Sandbox inventory from its one EnvironmentService watch, which the whole shell shares (sidebar, landing
-page, Sandbox list, and a Thread's top bar and composer), so two views of one Sandbox cannot disagree. Kubernetes
-inventory source loss closes that watch and marks it stale while it reconnects; the Thread list's connection status comes from its History and app watches and
-the PostgreSQL listener state.
+An empty token supplies a snapshot through `CaughtUp`, with no `ListSessions` bootstrap. The browser
+retains the latest applied resume token in memory and resumes on reconnect. `INVALID_ARGUMENT`
+clears the token and rebuilds the inventory from a new snapshot; reloading the page also starts
+empty. Disconnection keeps the previous view with stale health. Tokens advance after applying frames.
+
+Dispatcher records alone determine list membership, newest-first order and Environment grouping.
+The browser joins paged App metadata for titles and archived state and batched History summaries
+for visible rows. History-only metadata cannot add a Session to the list. Search, archive counts
+and pagination apply to Dispatcher members; the open Session stays pinned outside the visible page.
+A missing History summary yields a row showing Dispatcher materialization, with no invented
+running/idle state. History summary and App metadata watches invalidate their joins; inventory
+upserts refresh them directly. There is no list polling loop. History content continues through
+its existing Electric shapes. Legacy History membership ingestion and filtering remain for the
+separate post-rollout cleanup.
+
+The shell shares its EnvironmentService inventory watch across its Sandbox views. Thread connection
+health combines the inventory, History and App metadata watches and PostgreSQL listener state.
 
 The landing route (`/`) is the same Thread list as a whole page, with each Thread's harness, model
 and last activity, so a phone opens on its Sandboxes and Threads rather than behind the drawer. The

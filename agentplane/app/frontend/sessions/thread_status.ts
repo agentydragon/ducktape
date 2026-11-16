@@ -1,3 +1,7 @@
+import {
+  SessionStatus_Materialization as Materialization,
+  SessionStatus_RequiredEnvironment as RequiredEnvironment,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 /** One status decision for a Thread, shared by every page that lists Threads from a live snapshot. */
 import type { ThreadView } from "./client";
@@ -29,6 +33,13 @@ export function threadStatusFromSnapshot(
 ): ThreadTabStatus {
   if (!thread || !fresh) return { kind: "inactive", label: "No live harness confirmed", tabLabel: "Unknown" };
   if (thread.metadata.archived) return { kind: "archived", label: "Thread archived", tabLabel: "Archived" };
+  if (thread.session && !thread.summary.attached) {
+    return {
+      kind: "inactive",
+      label: sessionMaterializationLabel(thread) ?? "Waiting for History",
+      tabLabel: "Pending",
+    };
+  }
   const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread.summary.attached));
   if (commandsRequireReadySandbox && sandbox && sandboxSummary(sandbox).kind === "suspended") {
     const reason = suspensionReason(sandbox);
@@ -83,4 +94,28 @@ export function threadStatusFromSnapshot(
     }
   }
   return { kind: "idle", label: "Runner feed active · harness running", tabLabel: "Ready" };
+}
+
+/** Dispatcher-owned facts; these labels make no claim about a native harness's running state. */
+export function sessionMaterializationLabel(thread: ThreadView): string | null {
+  const status = thread.session?.status;
+  if (!status) return null;
+  if (
+    thread.summary.attached &&
+    status.materialization === Materialization.SESSION_MATERIALIZATION_ACCEPTED &&
+    status.requiredEnvironment !== RequiredEnvironment.DELETED
+  )
+    return null;
+  const state =
+    {
+      [Materialization.SESSION_MATERIALIZATION_UNSPECIFIED]: "Materialization unspecified",
+      [Materialization.SESSION_MATERIALIZATION_WAITING]: "Waiting for placement",
+      [Materialization.SESSION_MATERIALIZATION_IN_PROGRESS]: "Materializing Session",
+      [Materialization.SESSION_MATERIALIZATION_ACCEPTED]: "Session materialized",
+      [Materialization.SESSION_MATERIALIZATION_FAILED]: "Session materialization failed",
+      [Materialization.SESSION_MATERIALIZATION_UNKNOWN]: "Session materialization unknown",
+    }[status.materialization] ?? "Session materialization unknown";
+  const environment =
+    status.requiredEnvironment === RequiredEnvironment.DELETED ? " · Required Environment deleted" : "";
+  return state + environment + (status.reason ? ` · ${status.reason}` : "");
 }

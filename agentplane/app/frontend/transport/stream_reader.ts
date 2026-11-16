@@ -6,8 +6,8 @@
  * The request goes through `fetchWithLogin`, so a 401 sends the browser to log in and nothing is
  * retried. A connection that ends for any other reason -- a refusal, a dropped network, a malformed
  * frame, the server closing the body -- is replaced by a new one after a backoff, sooner once the
- * browser is back online or the page is back in view. Neither framing carries a resume position: each
- * connection starts from the server's current state.
+ * browser is back online or the page is back in view. Callers with resumable protocols can provide
+ * a URL factory to choose a position for each connection.
  */
 import { displayableError, fetchWithLogin, HttpError } from "./client";
 
@@ -34,7 +34,7 @@ export interface ReaderHandlers<F> {
   accept: string;
   /** Splits the decoded body into frames; erroring it ends the connection. */
   frames: (body: ReadableStream<string>) => ReadableStream<F>;
-  /** A response was accepted: the frames that follow start from the server's current state. */
+  /** A response was accepted and frame delivery is starting. */
   onOpen?: () => void;
   /** Abort and retry if no first frame arrives within this many milliseconds. */
   initialFrameTimeoutMs?: number;
@@ -44,12 +44,14 @@ export interface ReaderHandlers<F> {
   onFrame: (frame: F) => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
+  /** Called for a failed connection before it is retried. */
+  onError?: (reason: unknown) => void;
 }
 
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
-  url: string,
-  { accept, frames, onOpen, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
+  url: string | (() => string),
+  { accept, frames, onOpen, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection, onError }: ReaderHandlers<F>
 ): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
@@ -73,8 +75,20 @@ export function followResponse<F>(
           );
     let idleTimeout: number | undefined;
     try {
-      const response = await fetchWithLogin(url, { signal: attempt.signal, headers: { Accept: accept } });
-      if (!response.ok) throw new HttpError(response, await response.text());
+      const response = await fetchWithLogin(typeof url === "string" ? url : url(), {
+        signal: attempt.signal,
+        headers: { Accept: accept },
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        let body: unknown = text;
+        try {
+          body = JSON.parse(text) as unknown;
+        } catch {
+          // Keep a non-JSON response readable while preserving structured gateway codes when present.
+        }
+        throw new HttpError(response, body);
+      }
       if (response.body === null) throw new Error("the response has no body");
       onOpen?.();
       const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();
@@ -108,6 +122,7 @@ export function followResponse<F>(
       await read(attempt);
     } catch (reason) {
       lastError = displayableError(reason);
+      if (!closed) onError?.(reason);
     } finally {
       // A malformed frame or a consumer error must close the old body before reconnecting.
       attempt.abort();

@@ -1,4 +1,4 @@
-import type { ThreadView } from "./client";
+import { sessionEnvironment, type ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 
 /**
@@ -31,7 +31,7 @@ export function groupThreads(
   const identity = (name: string, uid: string | undefined) => JSON.stringify([name, uid || null]);
   for (const thread of threads) {
     const threadId = thread.metadata.threadId;
-    const sandbox = thread.summary.sandbox;
+    const sandbox = thread.session ? sessionEnvironment(thread.session) : thread.summary.sandbox;
     const sandboxName = sandbox?.name ?? "";
     const sandboxUID = sandbox?.uid;
     const key = identity(sandboxName, sandboxUID);

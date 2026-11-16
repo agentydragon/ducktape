@@ -71,6 +71,7 @@ from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_clus
 from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
@@ -371,7 +372,11 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
 
 
 async def _seed_navigation_threads(
-    event_logs: SessionHistory, history: History, store: ThreadHTTP
+    event_logs: SessionHistory,
+    history: History,
+    store: ThreadHTTP,
+    session_dispatcher: SessionDispatcherClient,
+    sandbox: SandboxCluster,
 ) -> tuple[list[UUID], list[ReplicationSource]]:
     """Two threads of 130 messages, "Thread N message M", named "Test navigation thread N".
 
@@ -383,6 +388,7 @@ async def _seed_navigation_threads(
     for number in range(2):
         source = ReplicationSource()
         source.attached.session_id = f"test-navigation-session-{number}"
+        source.attached.spec.placement.environment_hosted.environment.uid = sandbox.uid
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
         source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-navigation-turn")))
         for index in range(130):
@@ -398,6 +404,10 @@ async def _seed_navigation_threads(
                 )
             )
         thread = await event_logs.seed(SANDBOX, source.attached.session_id)
+        await session_dispatcher.unary(
+            session_dispatcher.stub.CreateSession,
+            session_dispatcher_pb2.CreateSessionRequest(session_id=str(thread), spec=source.attached.spec),
+        )
         await history.set_attached(thread, source.attached)
         # The fold numbers the view state's row after the rows of the first page it folds, which holds whatever the
         # ingress had committed of a push by then. Folding the opening alone first keeps the row below every message.
@@ -417,16 +427,17 @@ async def test_switching_threads_starts_at_each_threads_tail(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    namespace: SandboxNamespace,
-    empty_gateway_access: GatewayAccess,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
-    threads, _ = await _seed_navigation_threads(event_logs, history, store)
+    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
     async with (
         app_process(
             db_url,
             history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=empty_gateway_access,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -465,18 +476,19 @@ async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    namespace: SandboxNamespace,
-    empty_gateway_access: GatewayAccess,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
-    threads, _ = await _seed_navigation_threads(event_logs, history, store)
+    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
     async with (
         app_process(
             db_url,
             history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=empty_gateway_access,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -528,16 +540,17 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
     history: History,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    namespace: SandboxNamespace,
-    empty_gateway_access: GatewayAccess,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
-    threads, sources = await _seed_navigation_threads(event_logs, history, store)
+    threads, sources = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
     async with (
         app_process(
             db_url,
             history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=empty_gateway_access,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,

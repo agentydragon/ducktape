@@ -5,7 +5,13 @@ import { TurnStatus } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { threadView, type ThreadViewInit } from "./testing/state";
 import { readySandbox, suspendedSandbox } from "../testing/sandbox";
-import { threadStatusFromSnapshot } from "./thread_status";
+import { create } from "@bufbuild/protobuf";
+import {
+  SessionSchema,
+  SessionStatus_Materialization as Materialization,
+  SessionStatus_RequiredEnvironment as RequiredEnvironment,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { archiveBlockReason, sessionMaterializationLabel, threadStatusFromSnapshot } from "./thread_status";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -150,4 +156,38 @@ it("keeps a central sampler turn visible when the execution Sandbox is unavailab
   expect(threadStatusFromSnapshot(central, SUSPENDED_SANDBOX, true).kind).toBe("running");
   expect(threadStatusFromSnapshot(central, undefined, true).kind).toBe("running");
   expect(threadStatusFromSnapshot(central, undefined, false).kind).toBe("inactive");
+});
+
+it("shows materialization before History without treating acceptance as a running harness", () => {
+  const pending = thread({ summary: { attached: undefined } });
+  pending.session = create(SessionSchema, {
+    sessionId: THREAD_ID,
+    status: {
+      materialization: Materialization.SESSION_MATERIALIZATION_WAITING,
+      requiredEnvironment: RequiredEnvironment.AVAILABLE,
+    },
+  });
+  expect(threadStatusFromSnapshot(pending, READY_SANDBOX, true)).toMatchObject({
+    kind: "inactive",
+    label: "Waiting for placement",
+  });
+  expect(archiveBlockReason(pending)).toBeNull();
+  pending.session.status!.materialization = Materialization.SESSION_MATERIALIZATION_ACCEPTED;
+  expect(threadStatusFromSnapshot(pending, READY_SANDBOX, true).kind).toBe("inactive");
+  pending.session.status!.materialization = Materialization.SESSION_MATERIALIZATION_FAILED;
+  pending.session.status!.requiredEnvironment = RequiredEnvironment.DELETED;
+  expect(sessionMaterializationLabel(pending)).toBe("Session materialization failed · Required Environment deleted");
+});
+
+it("keeps running marks in the existing observations while exposing Dispatcher failures separately", () => {
+  const running = thread({ summary: { attached: { activeTurnId: "test-active-turn" } } });
+  running.session = create(SessionSchema, {
+    sessionId: THREAD_ID,
+    status: {
+      materialization: Materialization.SESSION_MATERIALIZATION_FAILED,
+      requiredEnvironment: RequiredEnvironment.AVAILABLE,
+    },
+  });
+  expect(threadStatusFromSnapshot(running, READY_SANDBOX, true).kind).toBe("running");
+  expect(sessionMaterializationLabel(running)).toBe("Session materialization failed");
 });

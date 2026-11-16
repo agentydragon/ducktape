@@ -1,3 +1,10 @@
+import {
+  SessionSchema,
+  SessionStatus_Materialization,
+  SessionStatus_RequiredEnvironment,
+  WatchSessionsResponseSchema,
+  type Session,
+} from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
 /**
  * Visual-test harness: Python configures canned data and explicitly mounts the app. No scene registry.
@@ -3554,7 +3561,60 @@ function drops(url: URL): boolean {
 // down; once the flag is cleared it is served afresh.
 const droppedStreams = new Set<string>();
 
+const unrecordedSessions = new Map<string, Session>();
+function sessionInventoryFrames() {
+  const sessions = THREADS_WITH_SANDBOXES.map(mapThread).map((thread) =>
+    create(SessionSchema, {
+      sessionId: thread.metadata.threadId,
+      createdAt: thread.metadata.createdAt,
+      placement: thread.summary.attached?.spec?.placement ?? {
+        kind: {
+          case: "environmentHosted",
+          value: {
+            environment: { name: thread.summary.sandbox?.name, uid: thread.summary.sandbox?.uid },
+            harness: Harness.CLAUDE,
+          },
+        },
+      },
+      status: {
+        materialization: SessionStatus_Materialization.SESSION_MATERIALIZATION_ACCEPTED,
+        requiredEnvironment: SessionStatus_RequiredEnvironment.AVAILABLE,
+      },
+    })
+  );
+  return [
+    ...[...sessions, ...unrecordedSessions.values()].map((session) =>
+      toJson(
+        WatchSessionsResponseSchema,
+        create(WatchSessionsResponseSchema, {
+          frame: { case: "session", value: session },
+          resumeToken: "test-inventory-token",
+        })
+      )
+    ),
+    toJson(
+      WatchSessionsResponseSchema,
+      create(WatchSessionsResponseSchema, {
+        frame: { case: "caughtUp", value: {} },
+        resumeToken: "test-inventory-token",
+      })
+    ),
+  ];
+}
+
 routes.unshift(
+  [
+    "GET",
+    /^\/upstream\/dispatcher\/v1\/sessions:watch$/,
+    (_match, _query, signal) =>
+      liveNdjsonWatch(
+        "/upstream/dispatcher/v1/sessions:watch",
+        sessionInventoryFrames(),
+        sessionInventoryFrames,
+        signal,
+        flags.has("threadStreamDropped")
+      ),
+  ],
   [
     "GET",
     /^\/upstream\/environments\/v1\/environments\/agentplane-visual\/([^/]+):identity-record$/,
@@ -3924,6 +3984,8 @@ function projectQueuedSession(): void {
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
   publishStreams("/upstream/app/v1/threads:watch");
+  unrecordedSessions.delete(sessionId);
+  publishStreams("/upstream/dispatcher/v1/sessions:watch");
   publishStreams("/upstream/history/v1/session-summaries:watch");
 }
 
@@ -3935,6 +3997,11 @@ function mount(element: ReactNode): void {
 
 /** Callable fixture builders, not a name-to-recipe dispatcher. Python owns their composition. */
 const visualHarness = {
+  addSession(value: JsonValue): void {
+    const session = fromJson(SessionSchema, value);
+    unrecordedSessions.set(session.sessionId, session);
+    publishStreams("/upstream/dispatcher/v1/sessions:watch");
+  },
   mountApp(route: string): void {
     window.location.hash = route;
     mount(<App />);
