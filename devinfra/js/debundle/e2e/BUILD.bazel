@@ -3,6 +3,33 @@ load(":defs.bzl", "debundle_e2e_test")
 
 package(default_testonly = True)
 
+genrule(
+    name = "attached_callback_source",
+    outs = ["attached_callbacks.js"],
+    cmd = "$(execpath //devinfra/js/debundle/perf:gen_callback_registration_corpus_bin) --source-out $@ --callbacks 1024 --invocations 1",
+    tools = ["//devinfra/js/debundle/perf:gen_callback_registration_corpus_bin"],
+)
+
+genrule(
+    name = "lexical_callback_source",
+    outs = ["lexical_callbacks.js"],
+    cmd = "$(execpath //devinfra/js/debundle/perf:gen_callback_registration_corpus_bin) --source-out $@ --callbacks 1024 --invocations 1 --omit-attached-method",
+    tools = ["//devinfra/js/debundle/perf:gen_callback_registration_corpus_bin"],
+)
+
+debundle_e2e_test(
+    name = "callback_registration_scale_test",
+    data = [
+        ":attached_callback_source",
+        ":lexical_callback_source",
+    ],
+    env = {
+        "DEBUNDLE_ATTACHED_CALLBACK_SOURCE": "$(rlocationpath :attached_callback_source)",
+        "DEBUNDLE_LEXICAL_CALLBACK_SOURCE": "$(rlocationpath :lexical_callback_source)",
+    },
+    deps = ["@rules_rust//tools/runfiles"],
+)
+
 debundle_e2e_test(
     name = "selected_placement_cli_test",
     deps = [
