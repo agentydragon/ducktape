@@ -603,11 +603,7 @@ func TestSessionDiscoveryUsesRetainedAuthorityAndStablePages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	lease, err := store.ClaimSandboxOwner(t.Context(), uid, "discovery-lease", 1, "discovery-worker", 0)
-	if err != nil || lease == nil {
-		t.Fatalf("claim: %+v %v", lease, err)
-	}
-	deliveryOwner := claimSessionOwner(t, store, *lease, failedID)
+	deliveryOwner := claimSessionOwner(t, store, failedID)
 	if row, err := store.SettleSession(t.Context(), failedID, deliveryOwner, []string{SessionWaitingState}, SessionFailedState, "runner_rejected"); err != nil || row == nil {
 		t.Fatalf("reject opening: %+v %v", row, err)
 	}

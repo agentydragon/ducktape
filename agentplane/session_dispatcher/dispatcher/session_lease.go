@@ -4,9 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	"github.com/google/uuid"
+)
+
+const (
+	LeaseDuration      = 30 * time.Second
+	LeaseRenewInterval = 10 * time.Second
 )
 
 var sessionDeliveryLease = lease.Table{
@@ -16,9 +22,6 @@ var sessionDeliveryLease = lease.Table{
 
 // SessionOwner fences a head step, including work before the command is claimed.
 type SessionOwner struct {
-	// CLEANUP(added 2026-11-16): Remove the Kubernetes Lease/generation proof in PR 2,
-	// after the coordinator confirms every staging Sessions replica runs the compatibility image.
-	Owner
 	SessionID string
 	Holder    uuid.UUID
 }
@@ -28,7 +31,6 @@ func (o SessionOwner) lease() lease.Lease {
 }
 
 // AcquireSessionLease needs only a Session ID, including for Sessions without an Environment.
-// The compatibility worker separately requires the Sandbox ownership proof before using it.
 func (s *Store) AcquireSessionLease(ctx context.Context, sessionID string) (*SessionOwner, error) {
 	var acquired lease.Lease
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) (err error) {
@@ -42,8 +44,27 @@ func (s *Store) AcquireSessionLease(ctx context.Context, sessionID string) (*Ses
 }
 
 func ownerMatch(ctx context.Context, tx *sql.Tx, owner SessionOwner) (bool, error) {
-	current, err := sandboxOwnerMatch(ctx, tx, owner.Owner)
-	if err != nil || !current {
+	// Cleanup takes the exclusive side before classifying terminal notices. Take
+	// the shared side before the lease row, matching admission/cleanup lock order.
+	var sandboxUID sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT sandbox_uid FROM session WHERE session_id=$1`, owner.SessionID).Scan(&sandboxUID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if sandboxUID.Valid && sandboxUID.String != "" {
+		if err := lockLiveSandbox(ctx, tx, sandboxUID.String); err != nil {
+			if errors.Is(err, ErrSandboxDeleted) {
+				return false, nil
+			}
+			return false, err
+		}
+	}
+	// Admission and compatibility Session settlement take this before delivery
+	// rows. Keep their lock order while the two image versions overlap.
+	if err := sessionLock(ctx, tx, owner.SessionID); err != nil {
 		return false, err
 	}
 	if err := sessionDeliveryLease.Fence(ctx, tx, owner.lease()); err != nil {
@@ -52,22 +73,12 @@ func ownerMatch(ctx context.Context, tx *sql.Tx, owner SessionOwner) (bool, erro
 		}
 		return false, err
 	}
-	var matches bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM session WHERE session_id=$1 AND sandbox_uid=$2)`, owner.SessionID, owner.SandboxUID).Scan(&matches)
-	return matches, err
+	return true, nil
 }
 
 func (s *Store) RenewSessionLease(ctx context.Context, owner SessionOwner) error {
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		current, err := ownerMatch(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		if !current {
-			return lease.ErrLost
-		}
-		_, err = sessionDeliveryLease.Renew(ctx, tx, owner.lease(), LeaseDuration)
+		_, err := sessionDeliveryLease.Renew(ctx, tx, owner.lease(), LeaseDuration)
 		return err
 	})
 }
@@ -79,11 +90,9 @@ func (s *Store) ReleaseSessionLease(ctx context.Context, owner SessionOwner) err
 }
 
 func (w *DeliveryWorker) stillOwns(ctx context.Context, owner SessionOwner) (bool, error) {
-	current, err := w.Leases.StillOwns(ctx, owner.Owner)
-	if err != nil || !current {
-		return false, err
-	}
-	err = transaction(ctx, w.Store.DB, func(tx *sql.Tx) error {
+	var current bool
+	err := transaction(ctx, w.Store.DB, func(tx *sql.Tx) error {
+		var err error
 		current, err = ownerMatch(ctx, tx, owner)
 		return err
 	})
