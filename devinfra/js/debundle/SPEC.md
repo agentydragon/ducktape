@@ -803,6 +803,10 @@ evaluated operand, while `!` applies JavaScript's non-invoking `ToBoolean`.
 Every evaluated operand, including a discarded sequence operand, composes its
 access/coverage judgment and possible abrupt outcome. A normally completing
 last value does not discharge an earlier unproved read or throw.
+Exact array-spread materialization is bounded to 4096 source slots and 4096
+combined target slots. An oversized source or target keeps the spread operand
+reachable but does not claim exact result slots or length. Direct non-spread
+array literals are still processed in proportion to their source size.
 In a supported ordered callable body, an untagged template evaluates each
 substitution once and converts it to String before the next substitution.
 Known non-Symbol primitives use the scalar conversion transfer. Symbol

@@ -828,6 +828,8 @@ debundle_e2e_test(
     ],
 )
 
+debundle_e2e_test(name = "bounded_array_spread_test")
+
 debundle_e2e_test(
     name = "imported_primitive_array_spread_test",
     deps = [

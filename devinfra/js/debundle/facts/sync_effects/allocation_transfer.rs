@@ -23,6 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use swc_common::Span;
 use swc_ecma_ast::{BinaryOp, Id};
 
+/// Maximum exact slot count retained across one array literal's spreads.
+pub(super) const MAX_EXACT_ARRAY_SPREAD_SLOTS: usize = 4096;
+
 #[derive(Clone)]
 pub(super) enum AllocationJudgment {
     Opaque,
@@ -872,6 +875,17 @@ impl ArrayTransfer {
         );
         match receipt.yields {
             NativeIterableYields::ExactSlots(slots) => {
+                if self
+                    .dense
+                    .len()
+                    .checked_add(slots.len())
+                    .is_none_or(|length| length > MAX_EXACT_ARRAY_SPREAD_SLOTS)
+                {
+                    // The operand remains in properties[None], so finish can
+                    // drop exact positions without losing retained values.
+                    self.unproved_spread = true;
+                    return;
+                }
                 for slot in slots {
                     self.slot(slot);
                 }

@@ -194,6 +194,12 @@ For a local primitive array spread, the source shape proves fresh dense
 producer arrays and no intervening user code or producer exposure, while
 native-integrity inference establishes the Array iterator and iterator `next`
 identities at the selected initializer.
+Exact spread materialization is bounded to 4096 source slots and 4096 combined
+target slots. The source bound is checked before cloning slots; the target bound
+is checked before appending them. Beyond either bound the spread stays
+conservative: its operand remains reachable, but the result has no exact slot
+layout or length. Direct non-spread literals remain proportional to their
+source size.
 Imported primitive arrays use a separate `imported_primitive_array_spread_inputs`
 contract. It selects one spread-only array initializer and direct imported
 identifier operands, resolves each provider export to its selected dense
