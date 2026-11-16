@@ -297,6 +297,7 @@ debundle_e2e_test(
 
 debundle_e2e_test(
     name = "foreign_cell_read_order_test",
+    saved_analysis_tools = True,
     deps = [
         ":graph_support",
     ],

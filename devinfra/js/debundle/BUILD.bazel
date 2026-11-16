@@ -786,6 +786,7 @@ rust_library(
         "loader_closure.rs",
         "module_assignment.rs",
         "placement_projection.rs",
+        "program_bindings.rs",
         "purity/classifier.rs",
         "purity/classifier_tests.rs",
         "purity/code_graph.rs",
