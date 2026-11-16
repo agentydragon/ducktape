@@ -796,7 +796,7 @@ impl<'m> Chunk<'m> {
         &self,
         overlay_modules: &[SpecModule],
         anchors: &PlacementAnchors,
-        occupied_source_units: &BTreeSet<SourceUnitId>,
+        occupied_source_units: &BTreeSet<SourceUnitOrdinal>,
     ) -> Result<Resolution> {
         let frozen_paths = anchors
             .modules
@@ -817,18 +817,25 @@ impl<'m> Chunk<'m> {
                 );
             }
         }
-        let known_source_units = self
+        let known_source_ordinals = self
             .structural
             .per_statement
             .iter()
-            .map(|statement| SourceUnitId(statement.ordinal.0))
+            .map(|statement| statement.ordinal)
             .collect::<BTreeSet<_>>();
-        if let Some(unknown) = occupied_source_units.difference(&known_source_units).next() {
+        if let Some(unknown) = occupied_source_units
+            .difference(&known_source_ordinals)
+            .next()
+        {
             bail!(
-                "occupied source unit {unknown:?} is not present in chunk {}",
+                "occupied source-unit ordinal {unknown:?} is not present in chunk {}",
                 self.name
             );
         }
+        let occupied_source_units = occupied_source_units
+            .iter()
+            .map(|ordinal| SourceUnitId(ordinal.0))
+            .collect();
 
         let mut modules = anchors
             .modules
@@ -868,7 +875,7 @@ impl<'m> Chunk<'m> {
             &modules,
             frozen_module_count,
             frozen_anchor_members,
-            occupied_source_units.clone(),
+            occupied_source_units,
         )
         .project()?;
         let [mut resolution] = solve(vec![(self, modules.as_slice(), projection)])?
