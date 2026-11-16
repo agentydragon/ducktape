@@ -1182,6 +1182,11 @@ debundle_e2e_test(name = "lemma_three_at_init_read_test")
 
 debundle_e2e_test(name = "lemma_five_side_effect_order_test")
 
+debundle_e2e_test(
+    name = "interop_factory_icon_test",
+    deps = ["@crates//:tempfile"],
+)
+
 debundle_e2e_test(name = "asymmetric_non_residual_cycle_test")
 
 debundle_e2e_test(name = "mediator_reaches_asymmetric_cycle_test")
