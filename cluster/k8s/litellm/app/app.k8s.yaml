@@ -840,6 +840,7 @@ data:
     general_settings:
       forward_client_headers_to_llm_api: true
       store_model_in_db: false
+      disable_spend_logs: true
 immutable: false
 ---
 apiVersion: external-secrets.io/v1
