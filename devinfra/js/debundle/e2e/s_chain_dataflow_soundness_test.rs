@@ -54,14 +54,7 @@ fn assert_eager_edge(graph: &DependencyGraphReport, reader: &str, declaration: &
     );
 }
 
-#[test]
-fn ordinary_eager_read_stays_before_later_binding_write() {
-    let source = r#"let value = 0;
-const snapshot = value;
-value = 42;
-console.log(snapshot, value);
-export { snapshot, value };
-"#;
+fn assert_eager_read_split_rejected(source: &str) {
     let mut colocated = FixtureOpts::new(
         source,
         vec![logical_module_with_anon(
@@ -98,46 +91,27 @@ export { snapshot, value };
 }
 
 #[test]
-fn ordinary_eager_read_stays_between_var_initializer_and_reassignment() {
-    let source = r#"var value = 0;
+fn ordinary_eager_read_stays_before_later_binding_write() {
+    assert_eager_read_split_rejected(
+        r#"let value = 0;
 const snapshot = value;
 value = 42;
 console.log(snapshot, value);
 export { snapshot, value };
-"#;
-    let mut colocated = FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "runtime/all",
-            &[Member::new("value"), Member::new("snapshot")],
-            &["value = 42;", "console.log(snapshot, value);"],
-        )],
-    )
-    .with_unassigned_mode(unassigned_mode_inline());
-    colocated.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    let fixture = run_fixture_with_graphs(colocated);
-    assert_preserved_entry_output(&fixture, "0 42\n");
-    let graph = fixture.dependency_graph();
-    assert_eager_edge(
-        &graph,
-        source_unit_for_ordinal(&graph, 1),
-        source_unit_for_ordinal(&graph, 0),
+"#,
     );
-    assert_sequenced_edge(
-        &graph,
-        source_unit_for_ordinal(&graph, 2),
-        source_unit_for_ordinal(&graph, 1),
-    );
+}
 
-    let mut split = FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon("values/value", &[Member::new("value")], &["value = 42;"]),
-            logical_module("values/snapshot", &[Member::new("snapshot")]),
-        ],
+#[test]
+fn ordinary_eager_read_stays_between_var_initializer_and_reassignment() {
+    assert_eager_read_split_rejected(
+        r#"var value = 0;
+const snapshot = value;
+value = 42;
+console.log(snapshot, value);
+export { snapshot, value };
+"#,
     );
-    split.host_behavior.synchronous_module_loader = SynchronousModuleLoader::None;
-    expect_atomic_conflict_rejection(split, &["values/value", "values/snapshot"], &[]);
 }
 
 #[test]
