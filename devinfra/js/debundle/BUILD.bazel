@@ -769,6 +769,7 @@ rust_library(
         "facts/sync_effects/world/prefix_values.rs",
         "facts/value_flow.rs",
         "facts/value_flow/call_effects.rs",
+        "facts/value_flow/initialization.rs",
         "facts/value_flow/program.rs",
         "facts/value_flow/program_tests.rs",
         "facts/value_flow_tests.rs",

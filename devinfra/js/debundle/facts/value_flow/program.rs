@@ -342,6 +342,10 @@ impl Rekey<'_> {
 
     fn event(&self, event: &mut FlowEvent) {
         match event {
+            FlowEvent::Initialization { id, sites } => {
+                *id = self.binding(*id);
+                sites.rekey(|site| self.site(site));
+            }
             FlowEvent::FunctionDeclaration { id, origin }
             | FlowEvent::ClassDeclaration { id, origin } => {
                 *id = self.binding(*id);
@@ -563,6 +567,7 @@ pub(crate) fn program_value_flows<'a>(
     let mut candidate_bindings = BTreeMap::new();
     let mut parameters = BTreeMap::new();
     let mut cell_effects = BTreeMap::new();
+    let mut initializations = BTreeMap::new();
     // Move completed facts into their read indexes. Do not keep a second full
     // value-key map alive while constructing source projections.
     for (key, fact) in facts {
@@ -581,6 +586,9 @@ pub(crate) fn program_value_flows<'a>(
             }
             (key, FlowFact::Cells(accesses)) => {
                 cell_effects.insert(key, accesses);
+            }
+            (FlowKey::Initialization(binding), FlowFact::Initialization(sites)) => {
+                initializations.insert(binding, sites);
             }
             _ => {}
         }
@@ -629,6 +637,11 @@ pub(crate) fn program_value_flows<'a>(
             if let Some(bits) = candidate_bindings.get(&global) {
                 flow.candidate_bindings
                     .insert(local.clone(), Arc::new(view.candidate_bits(bits)));
+            }
+            if let Some(sites) = initializations.remove(&global) {
+                let mut sites = sites;
+                sites.rekey(|site| shared.sites.sources[site as usize].1);
+                flow.initializations.insert(local.clone(), sites);
             }
         }
         let inverse: BTreeMap<_, _> = view

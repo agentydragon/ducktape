@@ -1786,13 +1786,13 @@ pub fn resolve_imported_callable_summaries(
             let key = bindings
                 .export_id(module, export)
                 .expect("prepared callable export");
-            // Publish only after proving availability for the resolved import.
-            // Isolated initializer providers stay leaves under every assignment;
-            // general initialized bindings still require a use/order proof.
+            // Summary eligibility does not establish readiness at an importer's
+            // execution point. Isolated initializer providers remain leaves;
+            // class and captured-cell TDZs retain the ordered/gate obligations.
             let Some(call) = capabilities
                 .foreign_calls
                 .get(local)
-                .filter(|call| call.availability.available_to_importer())
+                .filter(|call| call.permits_foreign_summary())
             else {
                 continue;
             };

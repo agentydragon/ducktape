@@ -1,3 +1,4 @@
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 
 const SOURCE: &str = "import { factory } from './peer.js';\nconst wrapped = factory(() => later);\nconst later = 42;\nconsole.log(wrapped.invoke());\n";
@@ -44,19 +45,35 @@ fn isolated_initializer_and_export_alias_are_available_after_splitting() {
         "export const factory = callback => ({ invoke: callback });",
         "const factory = callback => ({ invoke: callback }); export { factory };",
         "const create = callback => ({ invoke: callback }); export { create as factory };",
+        "export const factory = function (callback) { return { invoke: callback }; };",
     ] {
         let local = if provider.contains("const create") {
             "create"
         } else {
             "factory"
         };
-        let fixture = run_fixture(
+        let (staged, _fixture) = staged(
             options(&[("static/peer", provider)]).with_extra_chunk_logical_modules(&[(
                 "static/peer",
                 vec![logical_module("provider", &[Member::new(local)])],
             )]),
         );
-        assert_preserved_entry_output(&fixture, "42\n");
+        assert_node_output(&staged.root().join("snapshot/static/app.js"), "42\n", "");
+        let direct = staged.run(&[]);
+        let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+        for invocation in [&direct, &saved] {
+            assert!(
+                invocation.result.status.success(),
+                "{}",
+                invocation.result.stderr
+            );
+            assert_node_output(
+                &invocation.output_root().join("app/static/app/entry.js"),
+                "42\n",
+                "",
+            );
+        }
+        assert_same_invocation_trees(&direct, &saved);
     }
 }
 

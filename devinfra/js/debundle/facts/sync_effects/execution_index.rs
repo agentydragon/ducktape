@@ -4803,9 +4803,6 @@ pub(super) struct ExecutionIndex {
     pub(super) initialization_coverage_refusals:
         Vec<Option<OwnerInitializationCoverageRefusalReason>>,
     pub(super) top_definite_initializers: Vec<BTreeSet<Id>>,
-    /// The sole direct top-level `let`/`const` identifier declared by an owner.
-    /// A lexical read of it before this owner runs cannot create its initializer's callbacks.
-    pub(super) single_top_lexical_binding: Vec<Option<Id>>,
     pub(super) const_call_owners: BTreeSet<SourceUnitOrdinal>,
     pub(super) top_member_value_writes: Vec<Vec<MemberValueWrite>>,
     pub(super) top_callback_result_writes: Vec<Vec<CallbackResultWrite>>,
@@ -6649,7 +6646,6 @@ impl ExecutionIndex {
             initialization_source_identities: BTreeMap::new(),
             initialization_coverage_refusals: vec![None; body.len()],
             top_definite_initializers: vec![BTreeSet::new(); body.len()],
-            single_top_lexical_binding: vec![None; body.len()],
             top_member_value_writes: vec![Vec::new(); body.len()],
             top_callback_result_writes: vec![Vec::new(); body.len()],
             top_exported_values: vec![Vec::new(); body.len()],
@@ -8498,13 +8494,6 @@ impl ExecutionIndex {
         let Some(declaration) = var_decl_of_item(item) else {
             return;
         };
-        if matches!(declaration.kind, VarDeclKind::Let | VarDeclKind::Const)
-            && !declaration.declare
-            && let [declarator] = declaration.decls.as_slice()
-            && let Pat::Ident(binding) = &declarator.name
-        {
-            self.single_top_lexical_binding[self.owner.0] = Some(binding.id.to_id());
-        }
         if declaration.kind == VarDeclKind::Const
             && matches!(declaration.decls.as_slice(), [declarator]
                 if matches!(declarator.init.as_deref().map(Expr::unwrap_parens), Some(Expr::Call(call))
@@ -11828,56 +11817,18 @@ pub(crate) struct InferredCallableCapabilities {
 pub(crate) struct InferredForeignCall {
     pub derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     pub declaration_start: u32,
-    pub availability: CallableAvailability,
+    pub declaration: crate::facts::value_flow::CallableDeclaration,
     pub dependencies: ProofDependencies,
     pub record: Option<InferredReturnedRecord>,
     /// The returned closure defers its first argument (`deferred_callback_closure`).
     pub callback_factory: bool,
 }
 
-/// Availability is independent of the callable body's invocation/return proof.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CallableAvailability {
-    /// Existing declaration eligibility, kept separate from the new initializer proof.
-    Declaration,
-    /// The provider has one const callable declaration and only local exports.
-    /// Every emitted destination reaching it therefore depends on a leaf: no
-    /// assignment can introduce a return import from that initializer.
-    IsolatedInitializer,
-    UnprovedInitializer,
-}
-
-impl CallableAvailability {
-    pub(crate) fn available_to_importer(self) -> bool {
-        !matches!(self, Self::UnprovedInitializer)
+impl InferredForeignCall {
+    pub(crate) fn permits_foreign_summary(&self) -> bool {
+        self.declaration
+            .permits_foreign_summary(self.derived.retained_provider_captures.is_empty())
     }
-}
-
-fn isolated_callable_initializer(body: &[TopLevelItemView<'_>], binding: &Ident) -> bool {
-    let mut declarations = 0;
-    for item in body {
-        match item.as_module_item() {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Var(declaration)))
-            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                decl: Decl::Var(declaration), ..
-            })) => {
-                let [declarator] = declaration.decls.as_slice() else { return false; };
-                if declaration.kind != VarDeclKind::Const
-                    || !matches!(&declarator.name, Pat::Ident(local) if local.id.to_id() == binding.to_id())
-                {
-                    return false;
-                }
-                declarations += 1;
-            }
-            ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(export))
-                if export.src.is_none() && export.specifiers.iter().all(|specifier| {
-                    matches!(specifier, ExportSpecifier::Named(named)
-                        if matches!(&named.orig, ModuleExportName::Ident(local) if local.to_id() == binding.to_id()))
-                }) => {}
-            _ => return false,
-        }
-    }
-    declarations == 1
 }
 
 /// Prepared once for callable inference and the whole-program native census.
@@ -12345,7 +12296,7 @@ pub(crate) fn infer_callable_capabilities<'f>(
                     crate::facts::abstract_domain::integrity::Integrity::Intact(_)
                 )
             },
-            |call| call.availability.available_to_importer() || call.callback_factory,
+            |call| call.permits_foreign_summary() || call.callback_factory,
         );
     }
     result.intact_collections = [
@@ -12384,47 +12335,21 @@ fn infer_foreign_calls<'f>(
     if !index.dynamic_scope_owners.is_empty() {
         return BTreeMap::new();
     }
-    let declarations: Vec<_> = body
-        .iter()
-        .filter_map(|item| {
-            let declaration = match item.as_module_item() {
-                ModuleItem::Stmt(Stmt::Decl(declaration)) => declaration,
-                ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => &export.decl,
-                _ => return None,
-            };
-            let (binding, is_class, start, hoisted) = match declaration {
-                Decl::Fn(function) => (&function.ident, false, function.function.span.lo.0, true),
-                Decl::Class(class) => (&class.ident, true, class.class.span.lo.0, true),
-                Decl::Var(declaration) => {
-                    let [declarator] = declaration.decls.as_slice() else {
-                        return None;
-                    };
-                    let Pat::Ident(binding) = &declarator.name else {
-                        return None;
-                    };
-                    let (is_class, start) = match declarator.init.as_deref()?.unwrap_parens() {
-                        Expr::Fn(function) => (false, function.function.span.lo.0),
-                        Expr::Arrow(arrow) => (false, arrow.span.lo.0),
-                        _ => return None,
-                    };
-                    (&binding.id, is_class, start, false)
-                }
-                _ => return None,
-            };
-            exported_locals
-                .contains(binding.sym.as_ref())
-                .then_some((binding, is_class, start, hoisted))
-        })
-        .collect();
-    if declarations.is_empty() {
-        return BTreeMap::new();
-    }
+    let flow = match flow {
+        Some(flow) => flow,
+        None => structural_flow(),
+    };
     let shadowed = crate::facts::compute_shadowed_globals(body);
-    let candidates: Vec<_> = declarations
-        .into_iter()
-        .filter(|(binding, ..)| !index.reassigned_bindings.contains(&binding.to_id()))
-        .filter_map(|(binding, is_class, declaration_start, hoisted)| {
-            let derived = if is_class {
+    let candidates: Vec<_> = flow
+        .callable_declarations()
+        .filter(|(binding, _)| exported_locals.contains(binding.0.as_ref()))
+        .filter(|(binding, _)| !index.reassigned_bindings.contains(*binding))
+        .filter_map(|(binding, declaration)| {
+            let declaration_start = declaration.start();
+            let derived = if matches!(
+                declaration,
+                crate::facts::value_flow::CallableDeclaration::Class(_)
+            ) {
                 strict_provider::derive_class(index, declaration_start, &shadowed)?
             } else {
                 // All callable bodies consume one shared source-covered plan.
@@ -12440,13 +12365,7 @@ fn infer_foreign_calls<'f>(
             }
             Some((
                 binding,
-                foreign_call(
-                    index,
-                    derived,
-                    declaration_start,
-                    hoisted,
-                    !hoisted && isolated_callable_initializer(body, binding),
-                ),
+                foreign_call(index, derived, declaration_start, declaration),
             ))
         })
         .filter(|(_, call)| wanted(call))
@@ -12457,18 +12376,14 @@ fn infer_foreign_calls<'f>(
     // Binding values do not depend on the tracked candidate objects, so the
     // structural flow the purity oracle solves for this body anyway answers
     // this check.
-    let flow = match flow {
-        Some(flow) => flow,
-        None => structural_flow(),
-    };
     candidates
         .into_iter()
         .filter(|(binding, call)| {
-            let values = flow.values_of_binding(&binding.to_id());
+            let values = flow.values_of_binding(binding);
             // An initializer's binding holds `undefined` (or is in its TDZ)
             // until its statement runs; afterwards it must hold only that
             // function.
-            if call.availability == CallableAvailability::Declaration {
+            if call.declaration.is_declaration() {
                 values.iter().count() == 1
             } else {
                 values
@@ -12476,7 +12391,7 @@ fn infer_foreign_calls<'f>(
                     .eq([Value::Alloc(Kind::Function, call.declaration_start)])
             }
         })
-        .map(|(binding, call)| (binding.sym.to_string(), call))
+        .map(|(binding, call)| (binding.0.to_string(), call))
         .collect()
 }
 
@@ -12484,8 +12399,7 @@ fn foreign_call(
     index: &ExecutionIndex,
     derived: crate::facts::abstract_domain::foreign_call::DerivedForeignCall,
     declaration_start: u32,
-    hoisted: bool,
-    isolated_initializer: bool,
+    declaration: crate::facts::value_flow::CallableDeclaration,
 ) -> InferredForeignCall {
     let mut dependencies = derived.dependencies.clone();
     for family in &derived.native_constructions {
@@ -12507,13 +12421,7 @@ fn foreign_call(
     });
     InferredForeignCall {
         declaration_start,
-        availability: if hoisted {
-            CallableAvailability::Declaration
-        } else if isolated_initializer && derived.retained_provider_captures.is_empty() {
-            CallableAvailability::IsolatedInitializer
-        } else {
-            CallableAvailability::UnprovedInitializer
-        },
+        declaration,
         derived,
         dependencies,
         record,

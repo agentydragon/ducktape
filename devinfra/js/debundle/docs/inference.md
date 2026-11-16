@@ -781,3 +781,60 @@ with `O(n³)` space including copied names. The preceding value-flow bound
 continues to cover the combined phase. As above, adversarial hash collisions
 add a polynomial table-size factor. These bounds add no runtime caps and say
 nothing about ordered callback replay or exact ESM scheduling.
+
+### Source initialization sites
+
+`InitializationCensus` extends the existing top-level preparation visit. For
+each binding it records its declaration owners, direct callable definitions and
+single-binding lexical read guards. Bare `var` redeclarations and hoisted `var`
+sites inside compound statements count as declaration owners even when they
+write no value. Default exports, destructuring and conditional declarations do
+not acquire a direct callable/lexical-guard certificate from their possible
+values. Split declarators keep the prepared source-unit coordinates.
+
+`FlowRules` publishes these records under `Initialization(binding)` keys;
+their join is set union over immutable source records. Binding slots and
+callable sites use the same program qualification as value flow. An owner
+ordinal is relative to that binding's defining source, and projection moves
+the records back only to that source's binding. Imports and ordinary value
+copies never copy initialization records. Thus neither a possible callee
+origin nor an imported live-cell identity makes a caller-local cell ready.
+
+Two consumers read the completed census:
+
+- Interpreter preparation installs a deferred-read guard only for a direct
+  single-binding `let`/`const` owner with no other declaration owner for that
+  binding. Ordered execution still checks `initialized_bindings` before
+  traversing that owner's deferred bodies; incomplete reachability retains
+  its existing conservative bypass. A source guard is not an observation
+  that initialization completed.
+- Foreign-call preparation gets direct function/class/initializer candidates
+  and isolated-initializer eligibility from the same records. Function and
+  class declarations remain distinct. Publishing their body summaries does
+  not prove class readiness or the readiness of captured cells. A callable
+  initializer is eligible only when its module contains that one `const`
+  declaration and local exports of the same binding, and the derived body
+  retains no provider captures. Other providers keep their existing fallback.
+
+**Preservation.** Preparation records every owner previously counted by the
+statement census. A lexical guard's source shape implies the removed direct
+lexical/definite-initializer checks; uniqueness excludes hoisted/`var`
+redeclarations and imported bindings cannot satisfy the local declaration
+shape. The callable candidates and isolated-module conditions retain their
+previous exact source categories. All derived-body, stability, native-integrity
+and captured-cell checks still apply. Uniqueness and isolation are queried
+only after the census closes; an intermediate singleton is never a certificate.
+No value rule reads initialization facts, so their insertion changes no
+possible-value result or parameter-readiness activation.
+
+**Bounds and lifetime.** Let `D` be total binding/declaration-owner pairs and
+`B` binding slots. Both are `O(n)` in source size, including repeated sites.
+The census and union preparation cost `O((n+D) log(n+2))` integer/index work
+and `O(B+D)` records. Each initialization producer runs once, watches no keys
+and contributes its fixed source set; it never wakes on a growing value set.
+Projection visits each record once. Charging source-name copying/comparison
+gives a conservative `O(n² log(n+2))` added time bound and `O(n²)` space bound;
+there is no whole-module scan per callable candidate. The shared store retires
+these facts into source views during projection, and those views own them for
+their existing analysis lifetime. Saved artifacts retain the derived chunk
+facts and callable obligations, with no new persisted declaration graph.

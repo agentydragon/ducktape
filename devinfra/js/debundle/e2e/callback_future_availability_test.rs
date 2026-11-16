@@ -1,6 +1,7 @@
 //! A callback that reads an unavailable future binding must stop at its TDZ
 //! error. It must not inherit deferred reads from the binding's initializer.
 
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
@@ -40,6 +41,46 @@ fn source(callback_setup: &str, callback: &str, tail: &str) -> String {
     result
 }
 
+fn assert_availability_parity(
+    input: &str,
+    binding: &'static str,
+    exit: i32,
+    original: &str,
+    candidate: &str,
+) {
+    let destination = format!("values/{binding}");
+    let (staged, _fixture) = staged(
+        FixtureOpts::new(
+            input,
+            vec![logical_module(&destination, &[Member::new(binding)])],
+        )
+        .with_extra_chunks(&PEER)
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
+    let direct = staged.run(&["--emit-on-rejection"]);
+    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    assert_same_invocation_trees(&direct, &saved);
+    for invocation in [&direct, &saved] {
+        assert_eq!(
+            invocation.result.status.code(),
+            Some(exit),
+            "{}",
+            invocation.result.stderr
+        );
+        let root = invocation.output_root().join("app");
+        assert_node_output(&root.join("static/app/entry.js"), candidate, "");
+        if exit == 0 {
+            assert_module_exports(
+                &root,
+                &format!("static/app/modules/{destination}.js"),
+                &[binding],
+                &[],
+            );
+        }
+    }
+}
+
 #[test]
 fn future_initializer_callback_does_not_add_a_style_read_to_fallback() {
     for declaration in ["const", "let"] {
@@ -53,20 +94,12 @@ fn future_initializer_callback_does_not_add_a_style_read_to_fallback() {
          console.log(observations[0], future());\n"
             ),
         );
-        let fixture = run_fixture(
-            FixtureOpts::new(
-                &input,
-                vec![logical_module("values/styles", &[Member::new("styles")])],
-            )
-            .with_extra_chunks(&PEER)
-            .with_unassigned_mode(unassigned_mode_inline()),
-        );
-        assert_preserved_entry_output(&fixture, "ReferenceError ready\n");
-        assert_module_exports(
-            &fixture.out_root,
-            "static/app/modules/values/styles.js",
-            &["styles"],
-            &[],
+        assert_availability_parity(
+            &input,
+            "styles",
+            0,
+            "ReferenceError ready\n",
+            "ReferenceError ready\n",
         );
     }
 }
@@ -87,15 +120,12 @@ fn later_hoisted_function_keeps_its_real_style_tdz_dependency() {
     );
     assert_preserved_entry_output(&colocated, "ReferenceError ready\n");
 
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &input,
-            vec![logical_module("values/styles", &[Member::new("styles")])],
-        )
-        .with_extra_chunks(&PEER)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["values/styles"],
-        &[],
+    assert_availability_parity(
+        &input,
+        "styles",
+        3,
+        "ReferenceError ready\n",
+        "ready ready\n",
     );
 }
 
@@ -141,16 +171,7 @@ fn future_binding_tdz_remains_when_future_itself_is_moved() {
     );
     assert_preserved_entry_output(&colocated, "ReferenceError\n");
 
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            &input,
-            vec![logical_module("values/future", &[Member::new("future")])],
-        )
-        .with_extra_chunks(&PEER)
-        .with_unassigned_mode(unassigned_mode_inline()),
-        &["values/future"],
-        &[],
-    );
+    assert_availability_parity(&input, "future", 3, "ReferenceError\n", "ready\n");
 }
 
 #[test]

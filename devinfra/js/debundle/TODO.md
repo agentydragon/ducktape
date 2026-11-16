@@ -141,9 +141,11 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   reconsideration.
 
 - **AR3 — Compose callable capabilities and initialization availability.**
-  `CallableSummary` in <analysis_inputs.rs>, <cross_module_purity.rs> and
-  `CallableAvailability` in <facts/sync_effects/execution_index.rs> distribute
-  return, callback, capture and availability proofs across specialized paths.
+  `CallableSummary` in <analysis_inputs.rs> and <cross_module_purity.rs> still
+  distribute return, callback, capture and availability proofs across
+  specialized paths. Source initialization sites and summary eligibility share
+  the flow census (<docs/inference.md>); reached-prefix readiness remains
+  separate ordered evidence.
   The isolated-initializer recognizer excludes providers with other statements.
   Reuse the shared interpreter to compose these independent facts through
   canonical import, alias, namespace and reexport identities; prove availability
