@@ -16,7 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use analysis::StatementKind;
 use analysis::facts::StructuralChunkSourceFacts;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use js_ast::statement_for_source_unit_ordinal;
 use rayon::prelude::*;
 use selector_ir::{
@@ -87,6 +87,41 @@ pub struct SpecModule {
     pub path: String,
     pub members: Vec<Member>,
     pub anonymous_statements: Vec<AnonymousStatement>,
+}
+
+/// The named exports of a fully resolved base assignment, frozen as
+/// read-only reference anchors for a separate placement-only resolution.
+/// Source-unit ids are transient solver inputs; this type is not serialized.
+#[derive(Debug, Clone, Default)]
+pub struct PlacementAnchors {
+    modules: Vec<PlacementAnchorModule>,
+}
+
+/// A base export backed by a validated named-import pin. Imports have a
+/// binding identity for source-match references, but no local source unit for
+/// relational selectors to target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrozenImportAnchor {
+    pub logical_module: String,
+    pub export_name: String,
+    pub imported_binding: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PlacementAnchorModule {
+    path: String,
+    members: Vec<PlacementAnchor>,
+}
+
+#[derive(Debug, Clone)]
+struct PlacementAnchor {
+    export_name: String,
+    /// Binding name used by free-identifier references. An unresolved base
+    /// outcome is rejected while freezing and cannot become an anchor.
+    binding: String,
+    /// Canonical source unit for relational selectors. Imports have no local
+    /// source-unit anchor.
+    source_unit: Option<SourceUnitId>,
 }
 
 #[derive(Debug, Clone)]
@@ -345,8 +380,17 @@ enum Referent {
         module_index: usize,
         member_index: usize,
     },
+    /// A fixed member from the base assignment. It may constrain a free
+    /// identifier by binding name, but is never a placement target.
+    Frozen { binding: String },
     /// A `source_match` rejected before the solve. Its name stays a wildcard.
     Unprojected,
+}
+
+#[derive(Debug, Clone)]
+struct FrozenPlacementAnchor {
+    binding: String,
+    source_unit: Option<SourceUnitId>,
 }
 
 /// Names that, unless the chunk declares or imports them at top level, are
@@ -585,6 +629,269 @@ impl<'m> Chunk<'m> {
     /// projected in parallel.
     pub fn project(&self, modules: &[SpecModule]) -> Result<Projection> {
         Resolve::new(self, modules).project()
+    }
+
+    /// Freezes the canonical placements in `resolution` without resolving
+    /// any base selector again.
+    pub fn freeze_placement_anchors(
+        &self,
+        modules: &[SpecModule],
+        resolution: &Resolution,
+    ) -> Result<PlacementAnchors> {
+        let places = self.places();
+        let mut module_paths = BTreeSet::new();
+        let mut export_identities = BTreeSet::new();
+        let mut frozen_modules = Vec::with_capacity(modules.len());
+        for (module_index, module) in modules.iter().enumerate() {
+            ensure!(
+                module_paths.insert(module.path.as_str()),
+                "frozen base contains duplicate logical module path {:?}",
+                module.path
+            );
+            let mut frozen_members = Vec::with_capacity(module.members.len());
+            for (member_index, member) in module.members.iter().enumerate() {
+                ensure!(
+                    export_identities.insert((module.path.as_str(), member.export_name.as_str())),
+                    "frozen base contains duplicate export identity {}::{}",
+                    module.path,
+                    member.export_name
+                );
+                let outcome = resolution
+                    .outcome(module_index, EntityIndex::Member(member_index))
+                    .with_context(|| {
+                        format!(
+                            "canonical base resolution has no outcome for {}::{}",
+                            module.path, member.export_name
+                        )
+                    })?;
+                let Outcome::Resolved {
+                    body_index,
+                    binding: Some(binding),
+                    ..
+                } = &outcome.outcome
+                else {
+                    bail!(
+                        "canonical base export {}::{} is not resolved to one binding: {:?}",
+                        module.path,
+                        member.export_name,
+                        outcome.outcome
+                    );
+                };
+                let source_unit = places
+                    .declarations
+                    .get(binding)
+                    .and_then(|declarations| declarations.first())
+                    .map(|(source_unit, _, _)| *source_unit)
+                    .with_context(|| {
+                        format!(
+                            "resolved base export {}::{} has no canonical declaration",
+                            module.path, member.export_name
+                        )
+                    })?;
+                let matched_source_unit = places
+                    .source_unit_by_body_and_binding
+                    .get(&(*body_index, binding.clone()))
+                    .copied()
+                    .with_context(|| {
+                        format!(
+                            "resolved base export {}::{} has no matched declaration",
+                            module.path, member.export_name
+                        )
+                    })?;
+                if !places
+                    .declarations
+                    .get(binding)
+                    .is_some_and(|declarations| {
+                        declarations
+                            .iter()
+                            .any(|(unit, _, _)| *unit == matched_source_unit)
+                    })
+                {
+                    bail!(
+                        "resolved base export {}::{} has inconsistent declaration identity",
+                        module.path,
+                        member.export_name
+                    );
+                }
+                frozen_members.push(PlacementAnchor {
+                    export_name: member.export_name.clone(),
+                    binding: binding.clone(),
+                    source_unit: Some(source_unit),
+                });
+            }
+            frozen_modules.push(PlacementAnchorModule {
+                path: module.path.clone(),
+                members: frozen_members,
+            });
+        }
+        Ok(PlacementAnchors {
+            modules: frozen_modules,
+        })
+    }
+
+    /// Adds already-validated named-import pins as binding-only base anchors.
+    /// The caller derives these from the complete request after import
+    /// validation; this method checks that each binding is an import in this
+    /// exact source chunk and that its export identity is unique in the module.
+    pub fn add_frozen_import_anchors(
+        &self,
+        anchors: &mut PlacementAnchors,
+        imports: &[FrozenImportAnchor],
+    ) -> Result<()> {
+        let imported_bindings = &self.places().imports;
+        let mut identities = BTreeSet::new();
+        for import in imports {
+            ensure!(
+                identities.insert((import.logical_module.as_str(), import.export_name.as_str())),
+                "frozen import anchors contain duplicate export identity {}::{}",
+                import.logical_module,
+                import.export_name
+            );
+            ensure!(
+                imported_bindings.contains_key(&import.imported_binding),
+                "frozen import anchor {}::{} names non-import binding {:?}",
+                import.logical_module,
+                import.export_name,
+                import.imported_binding
+            );
+            let module = anchors
+                .modules
+                .iter_mut()
+                .find(|module| module.path == import.logical_module)
+                .with_context(|| {
+                    format!(
+                        "frozen import anchor names unknown base module {:?}",
+                        import.logical_module
+                    )
+                })?;
+            ensure!(
+                !module
+                    .members
+                    .iter()
+                    .any(|member| member.export_name == import.export_name),
+                "frozen base contains duplicate export identity {}::{}",
+                import.logical_module,
+                import.export_name
+            );
+        }
+        for import in imports {
+            let module = anchors
+                .modules
+                .iter_mut()
+                .find(|module| module.path == import.logical_module)
+                .expect("the validation pass found the import anchor's module");
+            module.members.push(PlacementAnchor {
+                export_name: import.export_name.clone(),
+                binding: import.imported_binding.clone(),
+                source_unit: None,
+            });
+        }
+        Ok(())
+    }
+
+    /// Resolves only the overlay selectors. Frozen base exports participate
+    /// in canonical name/reference resolution, while occupied source units
+    /// are excluded from every overlay target's domain.
+    pub fn resolve_placement(
+        &self,
+        overlay_modules: &[SpecModule],
+        anchors: &PlacementAnchors,
+        occupied_source_units: &BTreeSet<SourceUnitOrdinal>,
+    ) -> Result<Resolution> {
+        let frozen_paths = anchors
+            .modules
+            .iter()
+            .map(|module| module.path.as_str())
+            .collect::<BTreeSet<_>>();
+        let mut overlay_paths = BTreeSet::new();
+        for module in overlay_modules {
+            ensure!(
+                overlay_paths.insert(module.path.as_str()),
+                "placement overlay contains duplicate logical module path {:?}",
+                module.path
+            );
+            if frozen_paths.contains(module.path.as_str()) {
+                bail!(
+                    "placement overlay module path {:?} already exists in the frozen base",
+                    module.path
+                );
+            }
+        }
+        let known_source_ordinals = self
+            .structural
+            .per_statement
+            .iter()
+            .map(|statement| statement.ordinal)
+            .collect::<BTreeSet<_>>();
+        if let Some(unknown) = occupied_source_units
+            .difference(&known_source_ordinals)
+            .next()
+        {
+            bail!(
+                "occupied source-unit ordinal {unknown:?} is not present in chunk {}",
+                self.name
+            );
+        }
+        let occupied_source_units = occupied_source_units
+            .iter()
+            .map(|ordinal| SourceUnitId(ordinal.0))
+            .collect();
+
+        let mut modules = anchors
+            .modules
+            .iter()
+            .map(|module| SpecModule {
+                path: module.path.clone(),
+                members: Vec::new(),
+                anonymous_statements: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let mut frozen_anchor_members = BTreeMap::new();
+        for (module_index, anchor_module) in anchors.modules.iter().enumerate() {
+            for anchor in &anchor_module.members {
+                let member_index = modules[module_index].members.len();
+                modules[module_index].members.push(Member {
+                    export_name: anchor.export_name.clone(),
+                    selector: MemberSelector::Authored(MemberSelectorSpec::Binding(
+                        BindingSelector {
+                            name: anchor.binding.clone(),
+                            kind: None,
+                        },
+                    )),
+                });
+                frozen_anchor_members.insert(
+                    (module_index, member_index),
+                    FrozenPlacementAnchor {
+                        binding: anchor.binding.clone(),
+                        source_unit: anchor.source_unit,
+                    },
+                );
+            }
+        }
+        let frozen_module_count = modules.len();
+        modules.extend_from_slice(overlay_modules);
+        let projection = Resolve::new_placement(
+            self,
+            &modules,
+            frozen_module_count,
+            frozen_anchor_members,
+            occupied_source_units,
+        )
+        .project()?;
+        let [mut resolution] = solve(vec![(self, modules.as_slice(), projection)])?
+            .try_into()
+            .unwrap_or_else(|_| unreachable!("one placement query resolves to one result"));
+        for outcome in &mut resolution.outcomes {
+            debug_assert!(outcome.module >= frozen_module_count);
+            outcome.module -= frozen_module_count;
+        }
+        for reference in &mut resolution.member_references {
+            debug_assert!(reference.source_module >= frozen_module_count);
+            reference.source_module -= frozen_module_count;
+            debug_assert!(reference.referenced_module >= frozen_module_count);
+            reference.referenced_module -= frozen_module_count;
+        }
+        Ok(resolution)
     }
 }
 
@@ -992,6 +1299,9 @@ impl UnionFind {
 struct Resolve<'c, 'm> {
     chunk: &'c Chunk<'m>,
     modules: &'c [SpecModule],
+    frozen_module_count: usize,
+    frozen_anchor_members: BTreeMap<(usize, usize), FrozenPlacementAnchor>,
+    occupied_source_units: BTreeSet<SourceUnitId>,
     ids: Vec<String>,
     builder: MemberSelectorProgramBuilder,
     outcomes: Vec<EntityOutcome>,
@@ -1004,14 +1314,34 @@ struct Resolve<'c, 'm> {
 
 impl<'c, 'm> Resolve<'c, 'm> {
     fn new(chunk: &'c Chunk<'m>, modules: &'c [SpecModule]) -> Self {
+        Self::new_placement(chunk, modules, 0, BTreeMap::new(), BTreeSet::new())
+    }
+
+    fn new_placement(
+        chunk: &'c Chunk<'m>,
+        modules: &'c [SpecModule],
+        frozen_module_count: usize,
+        frozen_anchor_members: BTreeMap<(usize, usize), FrozenPlacementAnchor>,
+        occupied_source_units: BTreeSet<SourceUnitId>,
+    ) -> Self {
+        let mut builder = MemberSelectorProgramBuilder::default();
+        for ((module_index, member_index), anchor) in &frozen_anchor_members {
+            builder.declare_frozen_export_anchor(
+                &modules[*module_index].members[*member_index].export_name,
+                anchor.source_unit,
+            );
+        }
         Self {
             chunk,
             modules,
+            frozen_module_count,
+            frozen_anchor_members,
+            occupied_source_units,
             ids: modules
                 .iter()
                 .map(|module| format!("{}::{}", chunk.name, module.path))
                 .collect(),
-            builder: MemberSelectorProgramBuilder::default(),
+            builder,
             outcomes: Vec::new(),
             members: BTreeMap::new(),
             anonymous: Vec::new(),
@@ -1027,7 +1357,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let mut source_matches = Vec::new();
         // Members with a name pin or a relational selector.
         let mut constrained = Vec::new();
-        for (module_index, module) in modules.iter().enumerate() {
+        for (module_index, module) in modules.iter().enumerate().skip(self.frozen_module_count) {
             let module_groups = source_match_groups(module);
             let grouped = module_groups
                 .iter()
@@ -1054,7 +1384,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             }
         }
         let mut collected = Vec::new();
-        for (module_index, module) in modules.iter().enumerate() {
+        for (module_index, module) in modules.iter().enumerate().skip(self.frozen_module_count) {
             for position in 0..module.anonymous_statements.len() {
                 match self.collect_anonymous(module_index, position) {
                     Ok(entity) => collected.push(entity),
@@ -1098,6 +1428,8 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 selector,
             )?;
         }
+        self.builder
+            .exclude_occupied_source_units(&self.occupied_source_units);
         let builder = std::mem::take(&mut self.builder);
         let program = builder.into_program()?;
         let pin_places = self.pin_places();
@@ -1187,7 +1519,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             module_index,
             free: template_free_identifiers(&statement.selector),
             shape: CollectedShape::Anonymous(position),
-            rows,
+            rows: self.without_occupied_source_units(rows),
         })
     }
 
@@ -1304,7 +1636,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             .into_iter()
             .filter(|name| !used.contains_key(name))
             .collect();
-        Ok((rows, free))
+        Ok((self.without_occupied_source_units(rows), free))
     }
 
     fn collect_member(
@@ -1351,8 +1683,18 @@ impl<'c, 'm> Resolve<'c, 'm> {
             module_index,
             free: template_free_identifiers(parsed),
             shape: CollectedShape::Member(member_index),
-            rows,
+            rows: self.without_occupied_source_units(rows),
         })
+    }
+
+    fn without_occupied_source_units(&self, rows: Vec<CollectedRow>) -> Vec<CollectedRow> {
+        rows.into_iter()
+            .filter(|row| {
+                row.places
+                    .iter()
+                    .all(|place| !self.occupied_source_units.contains(&place.source_unit))
+            })
+            .collect()
     }
 
     /// Declares and lowers every collected entity whose rows survive its
@@ -1372,22 +1714,30 @@ impl<'c, 'm> Resolve<'c, 'm> {
         }
         for (module_index, module) in modules.iter().enumerate() {
             for (member_index, member) in module.members.iter().enumerate() {
-                let referent = match (
-                    &member.selector,
-                    projected_by_member.get(&(module_index, member_index)),
-                ) {
-                    (_, Some(index)) => Referent::Projected(*index),
-                    (MemberSelector::Authored(MemberSelectorSpec::Binding(pin)), None) => {
-                        Referent::Pin {
+                let referent = match self
+                    .frozen_anchor_members
+                    .get(&(module_index, member_index))
+                {
+                    Some(anchor) => Referent::Frozen {
+                        binding: anchor.binding.clone(),
+                    },
+                    None => match (
+                        &member.selector,
+                        projected_by_member.get(&(module_index, member_index)),
+                    ) {
+                        (_, Some(index)) => Referent::Projected(*index),
+                        (MemberSelector::Authored(MemberSelectorSpec::Binding(pin)), None) => {
+                            Referent::Pin {
+                                module_index,
+                                member_index,
+                                name: pin.name.clone(),
+                            }
+                        }
+                        (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
+                        (_, None) => Referent::Relational {
                             module_index,
                             member_index,
-                            name: pin.name.clone(),
-                        }
-                    }
-                    (MemberSelector::SourceMatch(_), None) => Referent::Unprojected,
-                    (_, None) => Referent::Relational {
-                        module_index,
-                        member_index,
+                        },
                     },
                 };
                 exports
@@ -1527,6 +1877,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                             .get(&(*module_index, *member_index))
                             .copied()
                     }
+                    Referent::Frozen { .. } => None,
                     Referent::Unprojected => continue,
                 };
                 referenced.push((name.clone(), *module_index, target));
@@ -2234,6 +2585,7 @@ fn narrow_by_references(
             references.iter().all(|(name, _, referent)| match referent {
                 Referent::Unprojected => true,
                 Referent::Pin { name: pinned, .. } => row.free_bindings.get(name) == Some(pinned),
+                Referent::Frozen { binding } => row.free_bindings.get(name) == Some(binding),
                 Referent::Projected(_) | Referent::Relational { .. } => {
                     row.free_bindings.contains_key(name)
                 }
@@ -2247,6 +2599,8 @@ fn narrow_by_references(
             .filter(|(name, _, referent)| {
                 matches!(referent, Referent::Pin { name: pinned, .. }
                     if candidates.iter().all(|row| row.free_bindings.get(name) != Some(pinned)))
+                    || matches!(referent, Referent::Frozen { binding }
+                        if candidates.iter().all(|row| row.free_bindings.get(name) != Some(binding)))
             })
             .map(|(name, module_index, _)| reference_entity(modules, name, *module_index))
             .collect::<Vec<_>>();
