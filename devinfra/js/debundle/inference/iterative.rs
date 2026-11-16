@@ -308,7 +308,8 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             Entry::Vacant(entry) => {
                 entry.insert(Judgment {
                     value: contribution,
-                    dependencies: self.dependencies.clone(),
+                    dependencies: (!self.dependencies.is_empty())
+                        .then(|| Box::new(self.dependencies.clone())),
                     premises: if RETAIN_PREMISES {
                         self.reads.iter().cloned().collect()
                     } else {
@@ -321,9 +322,14 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 let fact = entry.get_mut();
                 let changed = R::merge(&key, &mut fact.value, contribution);
                 let dependencies_grew = !self.dependencies.is_empty() && {
-                    let dependencies = fact.dependencies.clone();
-                    fact.dependencies.extend(&self.dependencies);
-                    fact.dependencies != dependencies
+                    if let Some(current) = &mut fact.dependencies {
+                        let dependencies = current.as_ref().clone();
+                        current.extend(&self.dependencies);
+                        current.as_ref() != &dependencies
+                    } else {
+                        fact.dependencies = Some(Box::new(self.dependencies.clone()));
+                        true
+                    }
                 };
                 if RETAIN_PREMISES {
                     fact.premises.extend(self.reads.iter().cloned());

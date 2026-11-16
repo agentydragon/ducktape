@@ -2,6 +2,10 @@
 
 use crate::analysis_inputs::ProofDependencies;
 use std::collections::BTreeSet;
+use std::sync::LazyLock;
+
+static EMPTY_PROOF_DEPENDENCIES: LazyLock<ProofDependencies> =
+    LazyLock::new(ProofDependencies::default);
 
 mod iterative;
 pub(crate) use iterative::{
@@ -17,7 +21,9 @@ pub(crate) use iterative::{
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct Judgment<Key, Fact> {
     value: Fact,
-    dependencies: ProofDependencies,
+    // Source-derived facts have no author dependencies. Keep their empty
+    // metadata shared rather than embedding every dependency set in each row.
+    dependencies: Option<Box<ProofDependencies>>,
     premises: BTreeSet<Key>,
 }
 
@@ -29,11 +35,25 @@ impl<Key, Fact> Judgment<Key, Fact> {
 
     /// Returns the union of captured-value dependencies used by the proof.
     pub fn dependencies(&self) -> &ProofDependencies {
-        &self.dependencies
+        self.dependencies
+            .as_deref()
+            .unwrap_or(&EMPTY_PROOF_DEPENDENCIES)
     }
 
     /// Returns the direct inference premises used by the proof.
     pub fn premises(&self) -> &BTreeSet<Key> {
         &self.premises
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn source_fact_metadata_stays_compact() {
+        // Dense value-flow stores can contain millions of source-only rows.
+        // Empty proof categories must not each occupy a BTreeSet in every row.
+        assert!(std::mem::size_of::<Judgment<u32, u32>>() <= 6 * std::mem::size_of::<usize>());
     }
 }
