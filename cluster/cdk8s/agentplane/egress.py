@@ -65,7 +65,6 @@ from agentplane.crd_group import GROUP
 from agentplane.egress.settings import APIServer, Settings
 from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.net.peertls.config import APP_URI, EGRESS_PROXY_URI
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium, node_scheduling
 from cluster.cdk8s.agentplane import actions, database, environment_service, llm_ingress, notifications, runner_gateway
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
@@ -98,8 +97,6 @@ PROXY_MTLS_SECRET = "agentplane-egress-proxy-tls"
 # The health service whose verdict is "the process answers", whatever the index says; keep equal to
 # `LivenessService` in agentplane/egress/internal/admin/grpc_health.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
-# Only the app's authenticated admin gRPC caller receives this audience.
-ADMIN_GRPC_AUDIENCE = "agentplane-egress-admin"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 # Must equal localAPIServerHost in agentplane/policy_controller/internal/controller/account_use.go; the managed account
 # admission policy refuses that controller's use sets naming any other host, which the controller's
@@ -540,7 +537,6 @@ class Egress(Construct):
         *,
         database_url: EnvValue,
         runners: Pods,
-        admin_grpc_callers: Sequence[ServiceAccountRef],
         litellm_host: str | None = None,
         litellm_cluster_internal: bool = True,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
@@ -586,11 +582,6 @@ class Egress(Construct):
             rules_namespace=env.namespace,
             credentials_namespace=env.egress.credentials_namespace,
             allowed_service_account_namespaces=frozenset((env.namespace, *env.egress.external_workload_namespaces)),
-            admin_grpc_audience=ADMIN_GRPC_AUDIENCE,
-            admin_grpc_callers=[
-                f"{account.namespace}/{account.name}"
-                for account in sorted(admin_grpc_callers, key=lambda account: (account.namespace, account.name))
-            ],
             admin_grpc_service_callers=frozenset({APP_URI}),
             ca_cert=Path("/etc/agentplane-egress/ca/tls.crt"),
             ca_key=Path("/etc/agentplane-egress/ca/tls.key"),

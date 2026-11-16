@@ -637,7 +637,6 @@ def add_backend_services(
         env,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
-        admin_grpc_callers=list(platform_callers),
         litellm_host="litellm.allegedly.works" if isinstance(models, PublicLiteLLM) else None,
         litellm_cluster_internal=not isinstance(models, PublicLiteLLM),
         placement=None,
