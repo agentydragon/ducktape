@@ -53,11 +53,7 @@ the output, for example with jq; the proxy alone decides what matches a call.`,
 				if err != nil {
 					return invocation.GRPCFailure(ctx, err)
 				}
-				body, err := (protojson.MarshalOptions{EmitUnpopulated: true}).Marshal(response)
-				if err != nil {
-					return invocation.InvalidResponse("%v", err)
-				}
-				return a.ShowOne(body, rulesText)
+				return invocation.ShowProto(a.Invocation, []*egressrulespb.GetRulesResponse{response}, rulesText, protojson.MarshalOptions{EmitUnpopulated: true})
 			},
 		})
 }

@@ -268,11 +268,7 @@ prints the Dispatcher Session resource; it does not wait for History.`,
 			if response.GetSession() == nil {
 				return invocation.InvalidResponse("CreateSession returned no Session")
 			}
-			body, err := invocation.ProtoJSON(response.GetSession())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, sessionLine)
+			return invocation.ShowProto(a.Invocation, []*dispatcherpb.Session{response.GetSession()}, sessionLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringVar(&sandbox, "sandbox", "", "name of the existing Sandbox")
@@ -308,11 +304,7 @@ runner received the input. After an unknown outcome, use get-dispatch with the s
 			if response.GetDispatch() == nil {
 				return invocation.InvalidResponse("SubmitInput returned no dispatch")
 			}
-			body, err := invocation.ProtoJSON(response.GetDispatch())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, dispatchLine)
+			return invocation.ShowProto(a.Invocation, []*dispatcherpb.Dispatch{response.GetDispatch()}, dispatchLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key for this input")
@@ -343,17 +335,9 @@ This is not retained History or environment-free central Session discovery.`,
 				return invocation.GRPCFailure(ctx, err)
 			}
 			if a.JSON() {
-				body, err := invocation.ProtoJSON(response)
-				if err != nil {
-					return err
-				}
-				return a.ShowOne(body, nil)
+				return invocation.ShowProto(a.Invocation, []*dispatcherpb.ListSessionsResponse{response}, nil, protojson.MarshalOptions{})
 			}
-			items, err := invocation.ProtoJSONList(response.GetSessions())
-			if err != nil {
-				return err
-			}
-			if err := a.Show(items, sessionLine); err != nil {
+			if err := invocation.ShowProto(a.Invocation, response.GetSessions(), sessionLine, protojson.MarshalOptions{}); err != nil {
 				return err
 			}
 			if response.GetNextPageToken() != "" {
@@ -384,11 +368,7 @@ func (a *commands) getDispatchCommand() *cobra.Command {
 			if response.GetDispatch() == nil {
 				return invocation.InvalidResponse("GetDispatch returned no dispatch")
 			}
-			body, err := invocation.ProtoJSON(response.GetDispatch())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, dispatchLine)
+			return invocation.ShowProto(a.Invocation, []*dispatcherpb.Dispatch{response.GetDispatch()}, dispatchLine, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -412,11 +392,7 @@ lost reply. After an unknown outcome, use get-dispatch with the same COMMAND_ID.
 			if response.GetDispatch() == nil {
 				return invocation.InvalidResponse("CancelDispatch returned no dispatch")
 			}
-			body, err := invocation.ProtoJSON(response.GetDispatch())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, dispatchLine)
+			return invocation.ShowProto(a.Invocation, []*dispatcherpb.Dispatch{response.GetDispatch()}, dispatchLine, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -442,11 +418,7 @@ the idempotency key; it is not generated or replaced by this CLI.`,
 			if response.GetDispatch() == nil {
 				return invocation.InvalidResponse("InterruptTurn returned no dispatch")
 			}
-			body, err := invocation.ProtoJSON(response.GetDispatch())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, dispatchLine)
+			return invocation.ShowProto(a.Invocation, []*dispatcherpb.Dispatch{response.GetDispatch()}, dispatchLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringVar(&commandID, "command-id", "", "caller-held idempotency key")
@@ -493,11 +465,7 @@ func (a *commands) readSessionValue(flag, source string) (string, error) {
 	return string(data), nil
 }
 
-func sessionLine(raw json.RawMessage) (string, error) {
-	session := &dispatcherpb.Session{}
-	if err := protojson.Unmarshal(raw, session); err != nil {
-		return "", invocation.InvalidResponse("%v", err)
-	}
+func sessionLine(session *dispatcherpb.Session) (string, error) {
 	if session.GetSessionId() == "" {
 		return "", invocation.InvalidResponse("no session ID in the Session")
 	}
@@ -523,22 +491,13 @@ func sessionLine(raw json.RawMessage) (string, error) {
 	return line, nil
 }
 
-func dispatchLine(raw json.RawMessage) (string, error) {
-	normalized, err := normalizeDispatchStateJSON(raw)
-	if err != nil {
-		return "", invocation.InvalidResponse("%v", err)
-	}
-	dispatch := &dispatcherpb.Dispatch{}
-	if err := protojson.Unmarshal(normalized, dispatch); err != nil {
-		return "", invocation.InvalidResponse("%v", err)
-	}
-	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
+func dispatchLine(dispatch *dispatcherpb.Dispatch) (string, error) {
 	if dispatch.GetCommandId() == "" {
 		return "", invocation.InvalidResponse("no command ID in the dispatch")
 	}
 	line := invocation.Fields(
 		dispatch.GetCommandId(),
-		invocation.EnumSuffix(dispatch.GetState().String(), "DELIVERY_STATE_"),
+		invocation.EnumSuffix(dispatchstate.NormalizeDeliveryState(dispatch.GetState()).String(), "DELIVERY_STATE_"),
 		invocation.EnumSuffix(dispatch.GetOperation().String(), "OPERATION_"),
 		dispatch.GetSessionId(),
 		dispatch.GetSandbox(),

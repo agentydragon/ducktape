@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func resultValue(t *testing.T, value string) *structpb.Value {
@@ -77,6 +78,12 @@ func TestSucceededActionExitsZeroWhateverItsResultSays(t *testing.T) {
 func TestResultPrintsTextBlocksAndOtherwiseIndentedJSON(t *testing.T) {
 	cases := []struct{ name, result, want string }{
 		{"text blocks", `{"content":[{"type":"text","text":"one"},{"type":"image","data":"x"},{"type":"text","text":"two"}],"isError":false}`, "one\ntwo"},
+		{"null result", `null`, "null"},
+		{"scalar result", `42`, "42"},
+		{"non-object result", `[true, false]`, "[\n  true,\n  false\n]"},
+		{"null content block", `{"content":[null,{"type":"text","text":"one"}]}`, "one"},
+		{"non-object content block", `{"content":[42]}`, "{\n  \"content\": [\n    42\n  ]\n}"},
+		{"non-string text", `{"content":[{"type":"text","text":42}]}`, "{\n  \"content\": [\n    {\n      \"text\": 42,\n      \"type\": \"text\"\n    }\n  ]\n}"},
 		{"no text blocks", `{"exit":{"exit_code":0}}`, "{\n  \"exit\": {\n    \"exit_code\": 0\n  }\n}"},
 	}
 	for _, tc := range cases {
@@ -350,5 +357,21 @@ func TestEventCursorRejectsValuesOutsideTheProtoRange(t *testing.T) {
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "events", waitedID, "--after", "2147483648")
 	if code != invocation.ExitUsage || stdout != "" || fake.count("ListActionRequestEvents") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v", code, stdout, fake.callLog())
+	}
+}
+
+func TestEventsDoNotPrintPartialOutputAfterALateRenderingError(t *testing.T) {
+	fake, endpoint := newActionFake(t)
+	fake.listEvents = func(context.Context, *action_servicepb.ListActionRequestEventsRequest) (*action_servicepb.ListActionRequestEventsResponse, error) {
+		return &action_servicepb.ListActionRequestEventsResponse{Events: []*action_servicepb.ActionEvent{
+			{Sequence: 1, State: action_servicepb.ActionState_ACTION_STATE_RUNNING},
+			{Sequence: 2, State: action_servicepb.ActionState_ACTION_STATE_SUCCEEDED, At: &timestamppb.Timestamp{Seconds: 253402300800}},
+		}}, nil
+	}
+	for _, flags := range [][]string{nil, {"--json"}} {
+		code, stdout, stderr := invoke(actionsEnv(endpoint), append([]string{"actions", "events", waitedID}, flags...)...)
+		if code != invocation.ExitRefused || stdout != "" {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q; want invalid response and no partial output", flags, code, stdout, stderr)
+		}
 	}
 }

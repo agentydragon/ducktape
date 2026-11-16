@@ -14,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/cli/internal/invocation"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -38,12 +39,12 @@ func (a *commands) actionsCommand() *cobra.Command {
 		a.waitCommand(), a.requestsCommand(), a.eventsCommand(), a.cancelCommand())
 }
 
-func catalog(ctx context.Context, client action_servicepb.ActionServiceClient) ([]json.RawMessage, error) {
+func catalog(ctx context.Context, client action_servicepb.ActionServiceClient) ([]*action_servicepb.ActionGroup, error) {
 	response, err := client.ListActionGroups(ctx, &action_servicepb.ListActionGroupsRequest{})
 	if err != nil {
 		return nil, invocation.GRPCFailure(ctx, err)
 	}
-	return invocation.ProtoJSONList(response.GetActionGroups())
+	return response.GetActionGroups(), nil
 }
 
 func (a *commands) groupsCommand() *cobra.Command {
@@ -57,7 +58,7 @@ func (a *commands) groupsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.Show(groups, groupLine)
+			return invocation.ShowProto(a.Invocation, groups, groupLine, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -73,25 +74,18 @@ func (a *commands) listCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var actions []json.RawMessage
+			var actions []*action_servicepb.Action
 			found := len(args) == 0
-			for _, raw := range groups {
-				group, err := invocation.Decode[struct {
-					Key     string            `json:"key"`
-					Actions []json.RawMessage `json:"actions"`
-				}](raw)
-				if err != nil {
-					return err
-				}
-				if len(args) == 0 || group.Key == args[0] {
-					actions = append(actions, group.Actions...)
+			for _, group := range groups {
+				if len(args) == 0 || group.GetKey() == args[0] {
+					actions = append(actions, group.GetActions()...)
 					found = true
 				}
 			}
 			if !found {
 				return invocation.ClientFailure(invocation.ExitNotFound, "NOT_FOUND", "no ActionGroup %q", args[0])
 			}
-			return a.Show(actions, actionLine)
+			return invocation.ShowProto(a.Invocation, actions, actionLine, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -120,11 +114,7 @@ func (a *commands) showCommand() *cobra.Command {
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := invocation.ProtoJSON(response.GetAction())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, actionDetail)
+			return invocation.ShowProto(a.Invocation, []*action_servicepb.Action{response.GetAction()}, actionDetail, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -140,11 +130,7 @@ func (a *commands) policyCommand() *cobra.Command {
 			if err != nil {
 				return invocation.GRPCFailure(ctx, err)
 			}
-			body, err := invocation.ProtoJSON(response.GetActionPolicy())
-			if err != nil {
-				return err
-			}
-			return a.ShowOne(body, policyText)
+			return invocation.ShowProto(a.Invocation, []*action_servicepb.CallerActionPolicy{response.GetActionPolicy()}, policyText, protojson.MarshalOptions{})
 		}),
 	}
 }
@@ -170,11 +156,7 @@ func (t target) read(ctx context.Context, client action_servicepb.ActionServiceC
 }
 
 func (a *commands) printReceipt(r *receipt) error {
-	raw, err := invocation.ProtoJSON(r.request)
-	if err != nil {
-		return err
-	}
-	return a.ShowOne(raw, receiptLine)
+	return invocation.ShowProto(a.Invocation, []*action_servicepb.ActionRequest{r.request}, receiptLine, protojson.MarshalOptions{})
 }
 
 func (a *commands) getCommand() *cobra.Command {
@@ -268,15 +250,11 @@ learn a script's own exit code or an MCP isError.`,
 }
 
 func (a *commands) printResult(r *receipt) error {
-	result := []byte("null")
-	if execution := r.request.GetExecution(); execution != nil && execution.GetResult() != nil {
-		var err error
-		result, err = invocation.ProtoJSON(execution.GetResult())
-		if err != nil {
-			return err
-		}
+	result := r.request.GetExecution().GetResult()
+	if result == nil {
+		result = structpb.NewNullValue()
 	}
-	return a.ShowOne(result, resultText)
+	return invocation.ShowProto(a.Invocation, []*structpb.Value{result}, resultText, protojson.MarshalOptions{})
 }
 
 func (a *commands) submitCommand() *cobra.Command {
@@ -445,7 +423,7 @@ unlimited). To continue, pass the last item's id as --after.`,
 				}
 				parsedStates = append(parsedStates, state)
 			}
-			items, err := invocation.Collect(limit, after, func(after string, size int) ([]json.RawMessage, error) {
+			items, err := invocation.Collect(limit, after, func(after string, size int) ([]*action_servicepb.ActionRequest, error) {
 				request := &action_servicepb.ListActionRequestsRequest{State: parsedStates}
 				limit := int32(size)
 				request.Limit = &limit
@@ -456,12 +434,12 @@ unlimited). To continue, pass the last item's id as --after.`,
 				if err != nil {
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
-				return invocation.ProtoJSONList(response.GetActionRequests())
-			}, invocation.IDOf)
+				return response.GetActionRequests(), nil
+			}, requestID)
 			if err != nil {
 				return err
 			}
-			return invocation.ShowPage(a.Invocation, items, limit, invocation.IDOf, receiptLine)
+			return invocation.ShowProtoPage(a.Invocation, items, limit, requestID, receiptLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().StringArrayVar(&states, "state", nil, "only requests in this state; repeatable")
@@ -482,7 +460,7 @@ func (a *commands) eventsCommand() *cobra.Command {
 			if after < 0 || after > int(1<<31-1) {
 				return invocation.UsageFailure("--after must be between 0 and 2147483647")
 			}
-			items, err := invocation.Collect(limit, after, func(after, size int) ([]json.RawMessage, error) {
+			items, err := invocation.Collect(limit, after, func(after, size int) ([]*action_servicepb.ActionEvent, error) {
 				request := &action_servicepb.ListActionRequestEventsRequest{RequestId: args[0], AfterSequence: int32(after)}
 				limit := int32(size)
 				request.Limit = &limit
@@ -490,12 +468,12 @@ func (a *commands) eventsCommand() *cobra.Command {
 				if err != nil {
 					return nil, invocation.GRPCFailure(ctx, err)
 				}
-				return invocation.ProtoJSONList(response.GetEvents())
-			}, invocation.SequenceOf)
+				return response.GetEvents(), nil
+			}, eventSequence)
 			if err != nil {
 				return err
 			}
-			return invocation.ShowPage(a.Invocation, items, limit, invocation.SequenceOf, eventLine)
+			return invocation.ShowProtoPage(a.Invocation, items, limit, eventSequence, eventLine, protojson.MarshalOptions{})
 		}),
 	}
 	command.Flags().IntVar(&limit, "limit", invocation.DefaultLimit, "stop after this many items; 0 is unlimited")
@@ -528,11 +506,7 @@ the original and do not repeat work. After an ambiguous failure (3), cancel agai
 			default:
 				return invocation.InvalidResponse("unrecognized cancellation outcome %q", response.GetOutcome())
 			}
-			body, err := invocation.ProtoJSON(response)
-			if err != nil {
-				return err
-			}
-			if err := a.ShowOne(body, cancellationLine); err != nil {
+			if err := invocation.ShowProto(a.Invocation, []*action_servicepb.CancelActionRequestResponse{response}, cancellationLine, protojson.MarshalOptions{}); err != nil {
 				return err
 			}
 			return invocation.ExitWith(code)
@@ -544,4 +518,12 @@ type commands struct{ *invocation.Invocation }
 
 func Command(in *invocation.Invocation) *cobra.Command {
 	return (&commands{Invocation: in}).actionsCommand()
+}
+
+func requestID(request *action_servicepb.ActionRequest) (string, error) {
+	return request.GetId(), nil
+}
+
+func eventSequence(event *action_servicepb.ActionEvent) (int, error) {
+	return int(event.GetSequence()), nil
 }

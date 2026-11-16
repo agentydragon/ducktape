@@ -5,36 +5,31 @@ import (
 	"strings"
 	"testing"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 func TestSessionLineRejectsIncompleteResource(t *testing.T) {
-	for _, raw := range []string{
-		`{"sessionId":"session","placement":{"environmentHosted":{"environment":{"name":"sandbox","uid":"uid"}}}}`,
-		`{"sessionId":"session","status":{"materialization":"SESSION_MATERIALIZATION_WAITING"}}`,
+	for _, session := range []*dispatcherpb.Session{
+		{SessionId: "session", Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "uid"}}}}},
+		{SessionId: "session", Status: &dispatcherpb.SessionStatus{Materialization: dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING}},
 	} {
-		if _, err := sessionLine(json.RawMessage(raw)); err == nil {
-			t.Errorf("sessionLine(%s) accepted an incomplete Session", raw)
+		if _, err := sessionLine(session); err == nil {
+			t.Errorf("sessionLine(%v) accepted an incomplete Session", session)
 		}
 	}
 }
 
 func TestDispatchLineMapsUnknownStateToNamedUnknown(t *testing.T) {
-	raw, err := protojson.Marshal(&dispatcherpb.Dispatch{CommandId: "command", State: dispatcherpb.DeliveryState(99)})
-	if err != nil {
-		t.Fatal(err)
+	line, err := dispatchLine(&dispatcherpb.Dispatch{CommandId: "command", State: dispatcherpb.DeliveryState(99)})
+	if err != nil || !strings.Contains(line, "unknown") || strings.Contains(line, "99") {
+		t.Fatalf("dispatchLine() = %q, error %v; want the normalized unknown state", line, err)
 	}
-	for _, value := range []json.RawMessage{
-		raw,
-		json.RawMessage(`{"commandId":"command","state":"DELIVERY_STATE_FUTURE"}`),
-	} {
-		line, err := dispatchLine(value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(line, "unknown") || strings.Contains(line, "99") {
-			t.Fatalf("dispatchLine() = %q, want the normalized unknown state", line)
-		}
+}
+
+func TestInputObservationMapsFutureJSONStateToNamedUnknown(t *testing.T) {
+	line, err := inputObservationLine(json.RawMessage(`{"dispatch":{"value":{"commandId":"command","state":"DELIVERY_STATE_FUTURE"}}}`))
+	if err != nil || !strings.Contains(line, "unknown") {
+		t.Fatalf("inputObservationLine() = %q, error %v; want the normalized unknown state", line, err)
 	}
 }

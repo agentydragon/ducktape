@@ -1,7 +1,6 @@
 package invocation
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -46,17 +45,9 @@ func Collect[C, Item any](
 	}
 }
 
-// showPage prints a collected list. In text mode, a list cut at limit says on stderr where to resume.
-func ShowPage[C any](a *Invocation, items []json.RawMessage, limit int, cursorOf func(json.RawMessage) (C, error), line func(json.RawMessage) (string, error)) error {
-	return showPage(a, items, limit, cursorOf, func() error { return a.Show(items, line) })
-}
-
+// ShowProtoPage prints a collected list. In text mode, a list cut at limit says on stderr where to resume.
 func ShowProtoPage[C any, Item proto.Message](a *Invocation, items []Item, limit int, cursorOf func(Item) (C, error), line func(Item) (string, error), options protojson.MarshalOptions) error {
-	return showPage(a, items, limit, cursorOf, func() error { return ShowProto(a, items, line, options) })
-}
-
-func showPage[C any, Item any](a *Invocation, items []Item, limit int, cursorOf func(Item) (C, error), show func() error) error {
-	if err := show(); err != nil {
+	if err := ShowProto(a, items, line, options); err != nil {
 		return err
 	}
 	if a.asJSON || limit == 0 || len(items) < limit {
@@ -68,18 +59,4 @@ func showPage[C any, Item any](a *Invocation, items []Item, limit int, cursorOf 
 	}
 	fmt.Fprintf(a.stderr, "more may follow: --after %v\n", last)
 	return nil
-}
-
-func IDOf(raw json.RawMessage) (string, error) {
-	item, err := Decode[struct {
-		ID string `json:"id"`
-	}](raw)
-	return item.ID, err
-}
-
-func SequenceOf(raw json.RawMessage) (int, error) {
-	item, err := Decode[struct {
-		Sequence int `json:"sequence"`
-	}](raw)
-	return item.Sequence, err
 }

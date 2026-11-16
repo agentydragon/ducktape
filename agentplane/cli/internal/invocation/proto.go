@@ -19,10 +19,6 @@ func ProtoJSONWithOptions(message proto.Message, options protojson.MarshalOption
 	return encoded, nil
 }
 
-func ProtoJSONList[T proto.Message](messages []T) ([]json.RawMessage, error) {
-	return ProtoJSONListWithOptions(messages, protojson.MarshalOptions{})
-}
-
 func ProtoJSONListWithOptions[T proto.Message](messages []T, options protojson.MarshalOptions) ([]json.RawMessage, error) {
 	items := make([]json.RawMessage, 0, len(messages))
 	for _, message := range messages {
