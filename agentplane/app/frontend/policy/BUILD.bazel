@@ -1,5 +1,6 @@
 load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
 load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
 
 package(default_visibility = ["//agentplane/app:__subpackages__"])
 
