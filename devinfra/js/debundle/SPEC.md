@@ -570,6 +570,13 @@ gzip level-1 compact JSON, without a plaintext staging file. Saved-graph
 commands require gzip input; corrupt, incomplete or plain JSON graph files fail.
 Small reports and report selection retain their existing behavior.
 
+`module_graph.sccs` and `scc` expose quotient cycles and their
+`constraining_module_edge_ids`, without a per-SCC realizability boolean. An
+initialization edge inside an import cycle does not by itself reject a split;
+the shared gate decides whether the complete assignment and ESM evaluation are
+valid. Structural SCC queries must not substitute their edge census for that
+verdict.
+
 Each `dependency_graph.json.gz` written by `debundle run` references the run's
 `program_graph.json.gz`, which carries input provenance:
 SHA-256 of the executable engine and the exact bytes read for the tree config,

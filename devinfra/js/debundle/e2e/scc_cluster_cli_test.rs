@@ -32,7 +32,12 @@ fn scc_listing_and_filters_agree_on_cycles_and_singletons() {
     let cycle = &cycles["sccs"][0];
     assert_eq!(cycles["sccs"].as_array().unwrap().len(), 1);
     assert_eq!(cycle["is_cycle"], true);
-    assert_eq!(cycle["realizable"], false);
+    assert!(
+        !cycle["constraining_module_edge_ids"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     let labels = cycle["labels"].as_array().unwrap();
     assert_eq!(labels.len(), 2);
     assert!(labels.iter().any(|l| l == "ui/plugins"));
@@ -55,7 +60,46 @@ fn scc_listing_and_filters_agree_on_cycles_and_singletons() {
     assert_eq!(isolated["sccs"].as_array().unwrap().len(), 1);
     assert_eq!(isolated["sccs"][0]["labels"][0], "isolated");
     assert_eq!(isolated["sccs"][0]["is_cycle"], false);
-    assert_eq!(isolated["sccs"][0]["realizable"], true);
+    assert!(
+        isolated["sccs"][0]["constraining_module_edge_ids"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn scc_does_not_turn_initialization_edges_into_a_rejection() {
+    let fixture = GraphFixture::new(
+        "const value = 1;\nfunction read() { return initialized; }\nconst initialized = value;\nconsole.log(read());\n",
+        &[
+            (
+                "first.yaml",
+                "members: [{selector: {binding: {name: initialized}}}]",
+            ),
+            (
+                "second.yaml",
+                "members: [{selector: {binding: {name: value}}}, {selector: {binding: {name: read}}}]",
+            ),
+        ],
+    );
+    fixture.assert_runs("1\n");
+    let cycles = fixture.json(&["scc", "--cycles-only"]);
+    let cycle = &cycles["sccs"][0];
+    assert_eq!(cycle["is_cycle"], true);
+    assert!(cycle.get("realizable").is_none(), "{cycle}");
+    assert!(
+        !cycle["constraining_module_edge_ids"]
+            .as_array()
+            .expect("initialization constraint evidence")
+            .is_empty(),
+        "{cycle}"
+    );
+    let text = fixture.command(&["scc", "--cycles-only", "--format", "text"]);
+    assert!(text.status.success());
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert!(text.contains("initialization_constraints"), "{text}");
+    assert!(!text.contains("UNREALIZABLE"), "{text}");
 }
 
 #[test]
