@@ -1,7 +1,7 @@
 /** The landing page: every Sandbox with its Threads, the same listing the sidebar navigates, wide
  * enough to say each Thread's harness, model and last activity. */
 import { Button, Title } from "@mantine/core";
-import { IconPlus } from "../icons";
+import { IconPlus } from "../ui/icons";
 import type { JSX } from "react";
 import { Link } from "react-router";
 

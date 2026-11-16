@@ -18,7 +18,7 @@ import { Verdict } from "../../../action_service/api/contracts/action_service_pb
 import { GrantStatus } from "../../../mcp_edge/api/connection/connection_service_pb";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { toJson } from "@bufbuild/protobuf";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./connection_service_client";
 
 function continueAuthorization(url: string): void {

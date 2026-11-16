@@ -6,7 +6,7 @@ import type { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { CodeBlock } from "../../../../../../util/frontend/code_block";
-import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../shell_command_view";
+import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../ui/shell_command_view";
 import { definePreview, type ArgumentsPreview, type PreviewProps } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";
 import { sshExecNotes, zSshExecArguments, zSshExecResult } from "../../schemas/ssh/exec";

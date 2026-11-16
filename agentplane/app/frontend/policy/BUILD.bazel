@@ -53,7 +53,7 @@ ts_library(
     srcs = ["state.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend/ui:status_mark",
         "//agentplane/policy/v1:policy_service_pb",
     ],
 )
@@ -80,9 +80,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:mark_glyph",
-        "//agentplane/app/frontend:status_mark",
-        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/ui:mark_glyph",
+        "//agentplane/app/frontend/ui:status_mark",
+        "//agentplane/app/frontend/ui:time_ago",
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/egress/api/rules:egress_rules_pb",
         "//agentplane/policy/api/v1alpha1:policy_types_pb",

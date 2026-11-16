@@ -3,8 +3,8 @@ import type { JSX } from "react";
 import { z } from "zod";
 
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
-import { argvText } from "../../../argv_text";
-import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../shell_command_view";
+import { argvText } from "../../../ui/argv_text";
+import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../../ui/shell_command_view";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { defineResultPreview, type ResultPreview, type ResultPreviewProps } from "../result_entry";

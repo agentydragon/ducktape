@@ -20,7 +20,7 @@ import {
   type Source,
   type Subscription,
 } from "../../../notification_service/api/notifications/notifications_pb";
-import { clockTime, isoTime, timeAgo } from "../format_time";
+import { clockTime, isoTime, timeAgo } from "../ui/format_time";
 import { followWatch } from "../transport/watch_stream";
 import { inboxWatchUrl } from "./thread_notices";
 

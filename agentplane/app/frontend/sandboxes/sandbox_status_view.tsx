@@ -28,7 +28,7 @@ import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { IdleSuspendInput } from "./idle_suspend";
 import { JsonView } from "../../../../util/frontend/json_view";
 import { deleting } from "./lifecycle";
-import { RawSwitch } from "../raw_switch";
+import { RawSwitch } from "../ui/raw_switch";
 import {
   containerStatuses,
   podIp,
@@ -39,7 +39,7 @@ import {
   type ContainerStatus,
   type RawCondition,
 } from "../sandbox_status";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 
 function Ago({ value }: { value: string | null }): JSX.Element {

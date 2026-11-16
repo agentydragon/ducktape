@@ -7,8 +7,8 @@ import {
   type EnvironmentDescriptor,
 } from "../../environments/v1/environment_service_pb";
 
-import { durationLabel } from "./format_time";
-import type { SandboxStatusKind } from "./status_mark";
+import { durationLabel } from "./ui/format_time";
+import type { SandboxStatusKind } from "./ui/status_mark";
 
 type RawObject = Record<string, unknown>;
 

@@ -22,7 +22,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { IconDotsVertical } from "../icons";
+import { IconDotsVertical } from "../ui/icons";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -32,10 +32,10 @@ import type { NewSandboxDefaults, SandboxPreset } from "../../app_service_pb";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";
 import { ConfirmDelete, deletable, deleting, SuspendResume } from "./lifecycle";
 import { useRequiredSandboxesLive } from "./live";
-import { MarkGlyph } from "../mark_glyph";
+import { MarkGlyph } from "../ui/mark_glyph";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "../status_mark";
+import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { TopbarTitle } from "../shell/topbar";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 import { launchEnvironment, listEnvironmentTemplates, resumeSandbox, suspendEnvironment } from "./client";

@@ -18,7 +18,7 @@ import { useIdentities, usePolicyResources } from "../policy/watch";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
 import { deleteEnvironment } from "./client";
 import { sandboxOperatingMode, sandboxPhase } from "../sandbox_status";
-import { IconPlayerPause, IconPlayerPlay } from "../icons";
+import { IconPlayerPause, IconPlayerPlay } from "../ui/icons";
 
 export const DELETE_NEEDS_SUSPENDED = "Suspend the sandbox before deleting it";
 

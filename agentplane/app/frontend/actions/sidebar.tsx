@@ -1,9 +1,9 @@
 import { Badge, Button, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
-import { IconArrowRight, IconChevronDown, IconChevronRight } from "../icons";
+import { IconArrowRight, IconChevronDown, IconChevronRight } from "../ui/icons";
 import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
-import { JsonBlock } from "../text_block";
+import { JsonBlock } from "../ui/text_block";
 import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
 import {
   actionCompactCardExpands,

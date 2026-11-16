@@ -2,7 +2,7 @@ import { type ActionPresentation, expandsForRejectedArguments } from "./presenta
 import { Badge, Code, Group, Stack, Table, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../shell_command_view";
+import { ShellCommandView, ShellCommandSummary, OutputBlock } from "../../ui/shell_command_view";
 import { sandboxExecNotes } from "../schemas/sandbox/exec";
 import { definePreview, type ArgumentsPreview } from "./entry";
 import { defineResultPreview, type ResultPreview } from "./result_entry";

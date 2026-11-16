@@ -4,7 +4,7 @@
  */
 import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
-import { IconArchive, IconArchiveOff, IconSearch } from "../icons";
+import { IconArchive, IconArchiveOff, IconSearch } from "../ui/icons";
 import { type JSX, useState } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
 
@@ -14,14 +14,14 @@ import { harnessLabel } from "../model_catalog";
 import { attachedHarness } from "../harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
-import { MarkGlyph } from "../mark_glyph";
+import { MarkGlyph } from "../ui/mark_glyph";
 import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "../status_mark";
+import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { type ThreadNotices, useThreadNotices } from "../notifications/thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { timestampLabel } from "./thread_presentation";
 

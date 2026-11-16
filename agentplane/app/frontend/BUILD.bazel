@@ -37,6 +37,7 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
+        "//agentplane/app/frontend/ui:typed_lint_srcs",
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
@@ -169,52 +170,6 @@ agentplane_vitest_test(
     ],
 )
 
-# Shared Tabler imports and their ambient subpath types. Feature targets depend on this
-# facade rather than importing the untyped package subpaths themselves.
-ts_library(
-    name = "icons",
-    srcs = [
-        "icons.tsx",
-        "tabler_icons.d.ts",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@tabler/icons-react",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "status_mark",
-    srcs = ["status_mark.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":custom_mark_icons",
-        ":icons",
-        "//:node_modules/@types/react",
-    ],
-)
-
-# The status marks no icon library supplies: a dot, and the moving chevrons.
-ts_library(
-    name = "custom_mark_icons",
-    srcs = [
-        "custom_mark_icons.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":custom_mark_icons_css",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-js_library(
-    name = "custom_mark_icons_css",
-    srcs = ["custom_mark_icons.css"],
-)
-
 ts_library(
     name = "app_config_client",
     srcs = ["app_config_client.ts"],
@@ -238,92 +193,6 @@ agentplane_vitest_test(
 )
 
 ts_library(
-    name = "raw_switch",
-    srcs = ["raw_switch.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-js_library(
-    name = "operation_section_css",
-    srcs = ["operation_section.css"],
-)
-
-ts_library(
-    name = "operation_section",
-    srcs = [
-        "operation_section.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":operation_section_css",
-        "//:node_modules/@types/react",
-        "//util/frontend:code_block",
-        "//util/frontend:code_block_css",
-    ],
-)
-
-ts_library(
-    name = "text_block",
-    srcs = ["text_block.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":operation_section",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend:clamped_block",
-        "//util/frontend:code_block",
-    ],
-)
-
-ts_library(
-    name = "argv_text",
-    srcs = ["argv_text.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "shell_command_view",
-    srcs = ["shell_command_view.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":argv_text",
-        ":operation_section",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//util/frontend:clamped_block",
-        "//util/frontend:code_block",
-        "//util/frontend:disclosure",
-        "//util/frontend:json_view",
-    ],
-)
-
-ts_library(
-    name = "inline_name",
-    srcs = [
-        "inline_name.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":inline_name_css",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-# inline_name.tsx imports this stylesheet for the bundler.
-js_library(
-    name = "inline_name_css",
-    srcs = ["inline_name.css"],
-)
-
-ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
@@ -342,9 +211,9 @@ ts_library(
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":format_time",
+        "//agentplane/app/frontend/ui:format_time",
         ":schema",
-        ":status_mark",
+        "//agentplane/app/frontend/ui:status_mark",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/transport:client",
@@ -365,44 +234,6 @@ agentplane_vitest_test(
         "//agentplane/app/frontend/transport:client",
         "//agentplane/environments/v1:environment_service_pb",
     ],
-)
-
-# Draws any StatusMark in the page; the thread dot and the sidebar's Sandbox icon both use it.
-ts_library(
-    name = "mark_glyph",
-    srcs = [
-        "mark_glyph.tsx",
-    ],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":mark_glyph_css",
-        ":status_mark",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-js_library(
-    name = "mark_glyph_css",
-    srcs = ["mark_glyph.css"],
-)
-
-ts_library(
-    name = "time_ago",
-    srcs = ["time_ago.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":format_time",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "format_time",
-    srcs = ["format_time.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//:node_modules/date-fns"],
 )
 
 ts_library(
@@ -497,8 +328,8 @@ ts_library(
     deps = [
         ":harness_network",
         ":schema",
-        ":shell_command_view",
-        ":text_block",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

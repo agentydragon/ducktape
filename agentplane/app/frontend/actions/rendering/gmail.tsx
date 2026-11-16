@@ -3,7 +3,7 @@ import { Anchor, Code, Group, Stack, Text } from "@mantine/core";
 import type { JSX } from "react";
 import { z } from "zod";
 
-import { JsonBlock, TextBlock } from "../../text_block";
+import { JsonBlock, TextBlock } from "../../ui/text_block";
 import {
   defineCallPreview,
   definePreview,

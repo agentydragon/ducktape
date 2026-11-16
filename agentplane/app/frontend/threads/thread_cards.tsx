@@ -12,12 +12,12 @@ import {
 import { InlineCode } from "../../../../util/frontend/code_block";
 import { DisclosureBody, DisclosureCard } from "../../../../util/frontend/disclosure";
 import { UserMessage, VerbatimText } from "../../../../util/frontend/transcript/message";
-import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../shell_command_view";
+import { SHELL_COMMAND_MAX_HEIGHT_REM, ShellCommandView, OutputBlock } from "../ui/shell_command_view";
 import { HighlightedText } from "../../../../util/frontend/json_view";
 import { Markdown } from "../../../../util/frontend/markdown";
 import { RetainedDisclosure, useRetainedDisclosure } from "../../../../util/frontend/transcript/retained_disclosures";
 import { TextBlock } from "../../../../util/frontend/transcript/text_block";
-import { RawSwitch } from "../raw_switch";
+import { RawSwitch } from "../ui/raw_switch";
 import { oneLine, parseShellCall, type ShellCall } from "./shell_calls";
 import { CommandProgress } from "./command_progress";
 import { lifecyclePresentation } from "./history_rows";

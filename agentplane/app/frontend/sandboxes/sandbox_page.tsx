@@ -16,7 +16,7 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { IconDotsVertical, IconPlus, IconTrash } from "../icons";
+import { IconDotsVertical, IconPlus, IconTrash } from "../ui/icons";
 import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -34,14 +34,14 @@ import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "../egress/egress";
 import { EnvironmentIdentity } from "./identity";
 import { useEnvironmentWatch, sandboxInventoryFresh, useRequiredSandboxesLive } from "./live";
-import { MarkGlyph } from "../mark_glyph";
+import { MarkGlyph } from "../ui/mark_glyph";
 import { ConfirmDelete, deletable, DELETE_NEEDS_SUSPENDED, SuspendResume } from "./lifecycle";
 import { usePolicyResources } from "../policy/watch";
 import { PolicyBindingsSection } from "./policy_bindings";
 import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
 import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "../sandbox_status";
-import { SANDBOX_STATUS_MARKS } from "../status_mark";
+import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import { snapshotFresh } from "../threads/thread_status";
 import { NewThreadForm } from "../threads/new_thread_form";
 import { SandboxThreadsTable } from "../threads/sandbox_threads";

@@ -8,7 +8,7 @@ import type { JSX, ReactNode } from "react";
 
 import { type CallToolResult, toolContentRestatesValue, toolValue } from "../call_tool_result";
 import type { ActionIdentity } from "../../../../action_service/api/contracts/action_service_pb";
-import { JsonBlock } from "../../text_block";
+import { JsonBlock } from "../../ui/text_block";
 import { renderPreview } from "./entry";
 import type { ActionOutcome, ActionPresentation } from "./presentation";
 import { renderResultPreview } from "./result_entry";

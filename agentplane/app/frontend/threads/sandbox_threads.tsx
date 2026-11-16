@@ -2,14 +2,14 @@ import { ActionIcon, Button, Group, Menu, Stack, Table, Text } from "@mantine/co
 import type { TraceSearchSettings } from "../../app_service_pb";
 import type { ThreadView } from "./client";
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
-import { IconDotsVertical } from "../icons";
+import { IconDotsVertical } from "../ui/icons";
 import type { JSX } from "react";
 
 import { harnessLabel } from "../model_catalog";
 import { attachedHarness } from "../harness_behavior";
 import { traceSearchUrl } from "../trace_search";
 
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { archiveBlockReason, threadStatusFromSnapshot } from "./thread_status";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { SetupState } from "../../../proto/session_pb";

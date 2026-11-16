@@ -3,7 +3,7 @@ import { type JSX, useMemo } from "react";
 import { z } from "zod";
 import { parseAllDocuments } from "yaml";
 
-import { JsonBlock, TextBlock } from "../text_block";
+import { JsonBlock, TextBlock } from "../ui/text_block";
 import { parsedJson } from "../transport/parsed_json";
 import { looksLikeJson } from "../../../../util/frontend/transcript/text_block";
 

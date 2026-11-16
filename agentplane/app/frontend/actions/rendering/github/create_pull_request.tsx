@@ -3,7 +3,7 @@ import { Badge, Code, Group, Stack, Text } from "@mantine/core";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { TextBlock } from "../../../text_block";
+import { TextBlock } from "../../../ui/text_block";
 import {
   type CreatePullRequestArguments,
   pullRequestOptions,

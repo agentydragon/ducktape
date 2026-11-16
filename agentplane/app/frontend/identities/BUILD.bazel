@@ -119,7 +119,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/ui:time_ago",
         "//agentplane/policy/v1:policy_service_pb",
     ],
 )
@@ -177,7 +177,7 @@ ts_library(
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/app/frontend/policy:table",
         "//agentplane/app/frontend/policy:watch",

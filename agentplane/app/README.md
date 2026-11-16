@@ -390,7 +390,7 @@ from the newest stored `turn_completed` entry through a partial index), so the s
 open-thread composer can use the same status-dot component. These are operational snapshots, not
 replacements for a Thread's runner Event prefix.
 
-Every status indicator is drawn from one table, `frontend/status_mark.ts`, which gives each thread
+Every status indicator is drawn from one table, `frontend/ui/status_mark.ts`, which gives each thread
 and Sandbox status its icon component (a Tabler icon, or one of `custom_mark_icons.tsx`) and color,
 and each thread status also its favicon shape and tab-title glyph. The in-page glyph (`mark_glyph.tsx`)
 and the browser-tab favicon (`thread_favicon.ts`, which hand-draws its own SVG) only render what it

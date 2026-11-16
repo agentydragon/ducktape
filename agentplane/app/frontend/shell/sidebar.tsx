@@ -1,6 +1,6 @@
 /** The persistent left sidebar: the thread list, the Actions queue, and the footer's page links. */
 import { ActionIcon, Tooltip } from "@mantine/core";
-import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "../icons";
+import { IconBox, IconHeartbeat, IconId, IconListCheck, IconPlus, IconSettings, IconX } from "../ui/icons";
 import { type JSX, useEffect, useState } from "react";
 import { useLocation, useMatch, useNavigate } from "react-router";
 

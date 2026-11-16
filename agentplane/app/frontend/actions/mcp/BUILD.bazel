@@ -57,7 +57,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/ui:time_ago",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:presentation",
         "//agentplane/app/frontend/transport:client",

@@ -8,9 +8,9 @@ import { TargetSchema, type Credential, type Target } from "../../../egress/api/
 import { RuleSchema } from "../../../policy/api/v1alpha1/policy_types_pb";
 import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
 import { CodeBlock } from "../../../../util/frontend/code_block";
-import { MarkGlyph } from "../mark_glyph";
-import { BINDING_STATE_MARKS } from "../status_mark";
-import { TimeAgo } from "../time_ago";
+import { MarkGlyph } from "../ui/mark_glyph";
+import { BINDING_STATE_MARKS } from "../ui/status_mark";
+import { TimeAgo } from "../ui/time_ago";
 import { useCredentialMetadata } from "../egress/credential_watch";
 import { bindingState } from "./state";
 

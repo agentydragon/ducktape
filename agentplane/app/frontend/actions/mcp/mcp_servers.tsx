@@ -18,7 +18,7 @@ import {
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { followActionGroups } from "../client";
 import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../presentation";
-import { TimeAgo } from "../../time_ago";
+import { TimeAgo } from "../../ui/time_ago";
 import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_linkage_client";
 
 type McpHealth = ActionGroup["health"];
