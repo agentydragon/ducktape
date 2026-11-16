@@ -52,6 +52,9 @@ the validator enforces) before working on the splitting pipeline.
   selectors in the captured view's `placements` map, preserve the complete base
   premise/anchor tree, and compare the realized complete assignment with the
   graph-checked candidate before offering or applying an executable plan.
+  Corpus proposals share source/base preparation only for an identical verified
+  capture. Consume each resolved target once; candidate claims and priorities
+  stay local. Preserve multi-chunk runtime and input-invalidation coverage.
 - Materialized chunks require `import_order` with every nonentry emitted owner
   exactly once. Check that concrete witness through the shared verifier and
   retain it through emission. Never repair it implicitly. Plans carry ordering

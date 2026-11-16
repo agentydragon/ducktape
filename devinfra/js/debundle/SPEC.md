@@ -1186,6 +1186,16 @@ latter also passes selector-writer preflight. Runtime evidence remains a
 separate check. See [residual proposals](docs/module_proposals.md) and
 [algorithm and proof](docs/placement_algorithm.md).
 
+In configured corpus proposals, compatible selected-view rows share one
+command-scoped source and full-base selector preparation. Compatibility binds
+the complete verified input provenance, relocated run context and roots, and
+exact captured view path and bytes. Each row retains its own verified chunk
+context and independently checks its staged selectors, complete ownership,
+retained exports and final priority. A resolved chunk is consumed once.
+`preparation.selected_programs` counts preparation attempts, including failures;
+ordinary and graph-only rows do not increment it. Preparation or selector
+failure produces no executable plan and cannot establish graph exhaustion.
+
 `modules check` overlays a JSON batch of source-unit destination changes on the
 accepted graph assignment, retaining the destination of every omitted unit.
 It rejects split structural atoms, cross-module rebinding and unrealizable

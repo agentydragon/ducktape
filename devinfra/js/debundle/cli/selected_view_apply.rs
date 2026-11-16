@@ -21,6 +21,53 @@ pub(super) fn run(
     graph: DependencyGraphInput,
     options: SourceUnitApplyOptions<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
+    let change = prepare_change(context, graph, options)?;
+    let header = graph_provenance::read_graph_header(graph_path)?;
+    let provenance = header
+        .provenance
+        .as_ref()
+        .context("selected-view editing requires graph provenance")?;
+    let request = crate::graph_transform_request(context)?;
+    let program = pipeline::SelectedOwnershipProgram::prepare(&request, context, provenance)?;
+    let targets = BTreeSet::from([context.chunk_id().to_owned()]);
+    command_diagnostics::run(stderr, |diagnostics| {
+        program.with_preflight_session(targets, diagnostics, |session| {
+            realize_change(change, session)
+        })
+    })
+}
+
+/// Corpus discovery supplies one verified shared frontend. All cheap assignment
+/// restrictions and the complete realized-assignment comparison stay identical
+/// to ordinary check/preview/apply.
+pub(super) fn run_prepared(
+    context: &VerifiedGraphSourceContext,
+    graph: DependencyGraphInput,
+    options: SourceUnitApplyOptions<'_>,
+    session: &mut lowering::SelectedOwnershipPreflightSession<'_>,
+) -> Result<SourceUnitApplyOutcome> {
+    realize_change(prepare_change(context, graph, options)?, session)
+}
+
+struct SelectedViewChange<'a> {
+    context: &'a VerifiedGraphSourceContext,
+    graph: DependencyGraphInput,
+    view: OwnershipSubset,
+    destination: ModulePath,
+    import_order: Vec<ModulePath>,
+    expected: BTreeMap<String, Option<ModulePath>>,
+    unchanged_exports: BTreeMap<String, BTreeMap<String, String>>,
+    bindings: Vec<(String, String, Option<SelectorOverride>)>,
+    anonymous_ordinals: Vec<source_identity::SourceUnitOrdinal>,
+    dry_run: bool,
+    residual_source_units_claimed: usize,
+}
+
+fn prepare_change<'a>(
+    context: &'a VerifiedGraphSourceContext,
+    graph: DependencyGraphInput,
+    options: SourceUnitApplyOptions<'_>,
+) -> Result<SelectedViewChange<'a>> {
     let SourceUnitApplyOptions {
         tree_config,
         assignments,
@@ -46,13 +93,13 @@ pub(super) fn run(
         config_path == graph_provenance::absolute(requested_config)?.as_path(),
         "selected-view editing must update the verified graph's tree configuration"
     );
-    let config_bytes = context
+    context
         .tree_config()
         .context("graph lacks a captured tree configuration")?;
-    let (view_path, view_bytes) = context
+    let (_, view_bytes) = context
         .ownership_subset_input()
         .context("graph lacks a captured selected-view input")?;
-    let mut view: OwnershipSubset = serde_json::from_slice(view_bytes)?;
+    let view: OwnershipSubset = serde_json::from_slice(view_bytes)?;
     // A selected view has chunk-local owner keys rather than physical YAML
     // destinations. Preserve the same coordinates used by its graph and plan.
     for assignment in &assignments {
@@ -171,14 +218,48 @@ pub(super) fn run(
     );
     drop(problem);
 
-    let header = graph_provenance::read_graph_header(graph_path)?;
-    let provenance = header
-        .provenance
-        .as_ref()
-        .context("selected-view editing requires graph provenance")?;
-    let request = crate::graph_transform_request(context)?;
-    let prepared = pipeline::SelectedOwnershipEdit::prepare(&request, context, provenance, graph)?;
-    let source = prepared.source()?;
+    Ok(SelectedViewChange {
+        context,
+        graph,
+        view,
+        destination,
+        import_order,
+        expected,
+        unchanged_exports,
+        bindings,
+        anonymous_ordinals,
+        dry_run,
+        residual_source_units_claimed: assignments.len(),
+    })
+}
+
+fn realize_change(
+    change: SelectedViewChange<'_>,
+    session: &mut lowering::SelectedOwnershipPreflightSession<'_>,
+) -> Result<SourceUnitApplyOutcome> {
+    let SelectedViewChange {
+        context,
+        graph,
+        mut view,
+        destination,
+        import_order,
+        expected,
+        unchanged_exports,
+        bindings,
+        anonymous_ordinals,
+        dry_run,
+        residual_source_units_claimed,
+    } = change;
+    let config_path = context
+        .tree_config_path()
+        .context("graph lacks a captured tree configuration path")?;
+    let config_bytes = context
+        .tree_config()
+        .context("graph lacks a captured tree configuration")?;
+    let (view_path, _) = context
+        .ownership_subset_input()
+        .context("graph lacks a captured selected-view input")?;
+    let source = session.source(context.chunk_id())?;
     let body_statements =
         js_ast::statements_for_source_unit_ordinals(&source.module.body, &anonymous_ordinals);
     let mut module = selector_codemod::with_source_unit_selector_synthesizer(
@@ -274,9 +355,8 @@ pub(super) fn run(
         "selected-view placement destination already exists"
     );
     placements.insert(destination.to_string(), module.clone());
-    let realized = command_diagnostics::run(stderr, |diagnostics| {
-        prepared.check(&view, &import_order, diagnostics)
-    })?;
+    let realized = session.check(context.chunk_id(), &view, &import_order, graph)?;
+    realized.ensure_accepted()?;
     ensure!(
         realized.source_unit_modules == expected,
         "selected-view selectors realize a different complete assignment from the checked plan"
@@ -330,7 +410,7 @@ pub(super) fn run(
             Vec::new(),
         ),
         source_units_reassigned: 0,
-        residual_source_units_claimed: assignments.len(),
+        residual_source_units_claimed,
         synthesized_claims: BTreeMap::from([(destination.to_string(), module)]),
         effect_relocation_assessment: None,
     })
