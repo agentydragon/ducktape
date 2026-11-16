@@ -125,13 +125,6 @@ dependencies = [
     "types-networkx",
 
 
-    # Jupyter
-    "ipykernel>=7.3.0",
-
-    # Matrix
-    "mautrix>=0.20.0",
-    "matrix-nio>=0.23",
-
     # Banking (plaid_utils)
     "plaid-python>=18.0.0",
     "babel>=2.18.0",
@@ -174,8 +167,7 @@ dependencies = [
     # rl_finetune: the Wordle environment's word lists (>=3.9 for the JSON tagger models)
     "nltk>=3.9",
 
-    # ember
-    "jupyter-client>=8.10.0",
+    # Kubernetes
     "kubernetes>=32.0",
     "kubernetes-asyncio>=26.1",
     "durationpy>=0.11",

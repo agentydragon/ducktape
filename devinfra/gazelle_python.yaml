@@ -7,9 +7,7 @@
 manifest:
   modules_mapping:
     08ae81f72d5a2b5fa9e0__mypyc: mypy
-    Crypto: pycryptodome
     FreeCADTemplates: freecad_stubs
-    IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
     absl: absl_py
@@ -27,7 +25,6 @@ manifest:
     aiofiles: aiofiles
     aiohappyeyeballs: aiohappyeyeballs
     aiohttp: aiohttp
-    aiohttp_socks: aiohttp_socks
     aioitertools: aioitertools
     aioquic: aioquic
     aiosignal: aiosignal
@@ -41,7 +38,6 @@ manifest:
     argon2: argon2_cffi
     asgiref: asgiref
     ast_serialize: ast_serialize
-    asttokens: asttokens
     asyncpg: asyncpg
     asyncvnc: asyncvnc
     atomicwrites: atomicwrites
@@ -71,7 +67,6 @@ manifest:
     click: click
     cloudpickle: cloudpickle
     colorama: colorama
-    comm: comm
     constructs: constructs
     contourpy: contourpy
     cryptography: cryptography
@@ -91,7 +86,6 @@ manifest:
     durationpy: durationpy
     email_validator: email_validator
     exceptiongroup: exceptiongroup
-    executing: executing
     ezdxf: ezdxf
     farama_notifications: farama_notifications
     fastapi: fastapi
@@ -211,9 +205,6 @@ manifest:
     interface_meta: interface_meta
     inventree: inventree
     invoke: invoke
-    ipykernel: ipykernel
-    ipykernel_launcher: ipykernel
-    ipython_pygments_lexers: ipython_pygments_lexers
     itsdangerous: itsdangerous
     jaraco.classes: jaraco.classes
     jaraco.context: jaraco_context
@@ -221,7 +212,6 @@ manifest:
     jax: jax
     jaxlib: jaxlib
     jaxtyping: jaxtyping
-    jedi: jedi
     jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
@@ -237,9 +227,6 @@ manifest:
     jsonschema: jsonschema
     jsonschema_path: jsonschema_path
     jsonschema_specifications: jsonschema_specifications
-    jupyter: jupyter_core
-    jupyter_client: jupyter_client
-    jupyter_core: jupyter_core
     jwt: pyjwt
     kaitaistruct: kaitaistruct
     key_value: py_key_value_aio
@@ -262,8 +249,6 @@ manifest:
     markdown_it: markdown_it_py
     markupsafe: markupsafe
     matplotlib: matplotlib
-    matplotlib_inline: matplotlib_inline
-    mautrix: mautrix
     mcp: mcp
     mcp_types: mcp_types
     mdit_py_plugins: mdit_py_plugins
@@ -290,7 +275,6 @@ manifest:
     narwhals: narwhals
     nest_asyncio2: nest_asyncio2
     networkx: networkx
-    nio: matrix_nio
     nltk: nltk
     nulltype: nulltype
     numpy: numpy
@@ -345,12 +329,10 @@ manifest:
     packaging: packaging
     pandas: pandas
     paramiko: paramiko
-    parso: parso
     pathable: pathable
     pathlib_abc: pathlib_abc
     pathspec: pathspec
     patsy: patsy
-    pexpect: pexpect
     pint: pint
     plaid: plaid_python
     platformdirs: platformdirs
@@ -358,7 +340,6 @@ manifest:
     pluggy: pluggy
     polars: polars
     prometheus_client: prometheus_client
-    prompt_toolkit: prompt_toolkit
     propcache: propcache
     proto: proto_plus
     proxytypes: jsonref
@@ -366,10 +347,8 @@ manifest:
     psycopg: psycopg
     psycopg2: psycopg2_binary
     psycopg_binary: psycopg_binary
-    ptyprocess: ptyprocess
     publication: publication
     publicsuffix2: publicsuffix2
-    pure_eval: pure_eval
     py: pytest
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
@@ -395,7 +374,6 @@ manifest:
     pytest_httpx2: pytest_httpx2
     pytest_timeout: pytest_timeout
     python_multipart: python_multipart
-    python_socks: python_socks
     pytz: pytz
     qrcode: qrcode
     qtpy: QtPy
@@ -428,7 +406,6 @@ manifest:
     sqlalchemy: sqlalchemy
     sqlparse: sqlparse
     sse_starlette: sse_starlette
-    stack_data: stack_data
     starlette: starlette
     statsmodels: statsmodels
     structlog: structlog
@@ -444,7 +421,6 @@ manifest:
     tomli_w: tomli_w
     tornado: tornado
     tqdm: tqdm
-    traitlets: traitlets
     trio: trio
     truststore: truststore
     typeguard: typeguard
@@ -457,7 +433,6 @@ manifest:
     ulid: python_ulid
     uncalled_for: uncalled_for
     unidiff: unidiff
-    unpaddedbase64: unpaddedbase64
     upath: universal_pathlib
     uritemplate: uritemplate
     urllib3: urllib3
@@ -476,8 +451,7 @@ manifest:
     yaml: pyyaml
     yarl: yarl
     zipp: zipp
-    zmq: pyzmq
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: b9d043bffeaf8f3c7e33a4cf3880ce29bda80b24957c5a452c631876f01aeb7e
+integrity: 08dc5d49c3304080220f9e564b7d28e1d71456326310529c3e4adc6177b04ace

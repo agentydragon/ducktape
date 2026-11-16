@@ -149,7 +149,6 @@ known-first-party = [
     "props",
     "difftree",
     "ducktape_llm_common",
-    "ember",
     "finance",
     "gmail_api",
     "gmail_archiver",

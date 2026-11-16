@@ -3,7 +3,6 @@ load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_exec_roundtrip.py
 
-# Image reading utility shared by Ember's direct exec and Docker exec
 py_library(
     name = "read_image",
     srcs = ["read_image.py"],
