@@ -1,6 +1,6 @@
 """Identity-only references to a Service, its ports and the Pods behind it, declared once by the
 module that builds them and projected into each dialect by methods: container and Service ports,
-the client's address, and the Cilium rules on either side of a connection.
+the client's address, ServiceMonitor specs, and the Cilium rules on either side of a connection.
 
 A reference holds names and the addresses derived from them, never spec.
 """
@@ -11,8 +11,14 @@ from dataclasses import dataclass
 
 from cdk8s_plus_34 import ContainerPort, Protocol, ServicePort, k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress, CiliumNetworkPolicySpecIngress
+from prometheus_operator_crds.com.coreos.monitoring import (
+    ServiceMonitorSpec,
+    ServiceMonitorSpecEndpoints,
+    ServiceMonitorSpecSelector,
+)
 
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule
+from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,16 @@ class _Service:
     def labels(self) -> dict[str, str]:
         """The Service's own labels; a ServiceMonitor selects on these."""
         return self.pods.selector
+
+    def service_monitor_spec(self, *endpoints: ServiceMonitorSpecEndpoints) -> ServiceMonitorSpec:
+        """Select this Service's labels. Our default is one plain `/metrics` endpoint on this
+        named port; supplied typed endpoints keep their authentication and scrape options.
+        The caller supplies the ServiceMonitor's metadata and namespace.
+        """
+        return ServiceMonitorSpec(
+            selector=ServiceMonitorSpecSelector(match_labels=self.labels),
+            endpoints=list(endpoints) or [Endpoint.plain(port=self.port.name)],
+        )
 
     @property
     def host(self) -> str:

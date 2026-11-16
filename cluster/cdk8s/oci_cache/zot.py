@@ -12,11 +12,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.gateway import https_route
@@ -240,10 +236,7 @@ def chart(app: App) -> Chart:
             namespace=_NAMESPACE,
             annotations={"description": "Zot OCI-cache application metrics scraped into Mimir by Alloy."},
         ),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
-            endpoints=[Endpoint.plain(port=HTTP.port.name, scrape_timeout="10s")],
-        ),
+        spec=HTTP.service_monitor_spec(Endpoint.plain(port=HTTP.port.name, scrape_timeout="10s")),
     )
     return chart
 

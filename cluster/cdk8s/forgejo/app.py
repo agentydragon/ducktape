@@ -30,11 +30,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecValuesFrom,
     HelmReleaseSpecValuesFromKind,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
@@ -450,13 +446,10 @@ def chart(app: App) -> Chart:
         chart,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=HTTP.labels),
-            endpoints=[
-                Endpoint.bearer_token_secret(
-                    port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
-                )
-            ],
+        spec=HTTP.service_monitor_spec(
+            Endpoint.bearer_token_secret(
+                port=HTTP.port.name, secret_name=_METRICS_TOKEN.secret.name, key=_METRICS_TOKEN.key
+            )
         ),
     )
     _metrics_token(chart)

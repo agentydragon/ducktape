@@ -19,11 +19,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
@@ -382,10 +378,7 @@ def _facade(chart: Chart) -> None:
         chart,
         "facade-servicemonitor",
         metadata=ApiObjectMetadata(name=_FACADE_HTTP.name, namespace=_NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_FACADE_HTTP.labels),
-            endpoints=[Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")],
-        ),
+        spec=_FACADE_HTTP.service_monitor_spec(Endpoint.plain(port=_FACADE_METRICS.port.name, scrape_timeout="10s")),
     )
     PrometheusRule(
         chart,

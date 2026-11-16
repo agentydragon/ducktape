@@ -5,6 +5,7 @@ and a `Port` renders one agreeing container port and Service port in both builde
 import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Testing as Cdk8sTesting  # pytest auto-collects classes named Test*
 from cdk8s_plus_34 import Deployment, Service, k8s
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor, ServiceMonitorSpecEndpoints
 
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -82,6 +83,21 @@ def test_port_renders_one_container_and_service_port_in_both_tiers(scratch_chart
     assert raw_pod["spec"]["containers"][0]["ports"] == [container_port]
     assert service["spec"]["ports"] == [service_port]
     assert raw_service["spec"]["ports"] == [service_port]
+
+
+def test_monitor_derives_service_selector_and_port_without_changing_custom_endpoints(scratch_chart: Chart) -> None:
+    ServiceMonitor(scratch_chart, "default-monitor", spec=_SERVICE.service_monitor_spec())
+    ServiceMonitor(
+        scratch_chart,
+        "custom-monitor",
+        spec=_SERVICE.service_monitor_spec(
+            ServiceMonitorSpecEndpoints(port="other-port", path="/custom-metrics", interval="37s")
+        ),
+    )
+    default, custom = Cdk8sTesting.synth(scratch_chart)
+    assert default["spec"]["selector"] == {"matchLabels": {"app.kubernetes.io/name": "test-app"}}
+    assert default["spec"]["endpoints"] == [{"port": "http", "path": "/metrics"}]
+    assert custom["spec"]["endpoints"] == [{"port": "other-port", "path": "/custom-metrics", "interval": "37s"}]
 
 
 if __name__ == "__main__":

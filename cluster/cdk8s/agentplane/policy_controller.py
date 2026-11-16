@@ -11,11 +11,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ServerTLSListener
@@ -29,7 +25,6 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -153,10 +148,7 @@ class PolicyController(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=endpoint.pods.selector),
-                endpoints=[Endpoint.plain(port=endpoint.port.name)],
-            ),
+            spec=endpoint.service_monitor_spec(),
         )
         # kube-state-metrics reports every PolicyBinding's expiresAt (monitoring/stack.py), so this
         # fires even while the controller is down.

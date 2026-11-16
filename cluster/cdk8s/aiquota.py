@@ -38,11 +38,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
     ExternalSecretSpecTargetTemplateMetadata,
 )
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from aiquota.config import CLIProxyAPISettings, Config
 from aiquota.providers.anthropic_platform import AnthropicPlatformSettings
@@ -317,10 +313,7 @@ class Aiquota(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
-                endpoints=[Endpoint.plain(port=SERVICE.port.name, scrape_timeout="15s")],
-            ),
+            spec=SERVICE.service_monitor_spec(Endpoint.plain(port=SERVICE.port.name, scrape_timeout="15s")),
         )
 
 
