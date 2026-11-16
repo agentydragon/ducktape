@@ -29,9 +29,9 @@ spec:
     !/cluster/k8s/flux/flux-system
     # module "wyrm2_image": `tofu init` installs every module block in the
     # config, whether or not -target keeps it in the plan graph.
-    !/terraform
-    /terraform/*
-    !/terraform/modules
+    !/tf
+    /tf/*
+    !/tf/modules
   interval: 10m
   ref:
     branch: devel

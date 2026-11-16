@@ -9,7 +9,7 @@ locals {
 # Bootstrap NixOS qcow2 image — minimal SSH-able image for initial VM provisioning.
 # Only rebuilt when rebuild_image=true. After boot, nixos-rebuild deploys the full config.
 module "wyrm2_image" {
-  source        = "../../../terraform/modules/nixos-image"
+  source        = "../../../tf/modules/nixos-image"
   flake_target  = "bootstrap"
   proxmox_host  = var.proxmox_node_name
   repo_root     = local.repo_root
