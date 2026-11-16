@@ -1,19 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -80,36 +78,10 @@ func loadConfig() (config, error) {
 	if path == "" {
 		return config{}, fmt.Errorf("%s is required", settingPrefix+"CONFIG_FILE")
 	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return config{}, errors.New("could not read History Service settings file")
-	}
-	var settings map[string]any
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	if err := decoder.Decode(&settings); err != nil {
-		return config{}, errors.New("could not decode History Service settings file")
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, errors.New("could not decode History Service settings file")
-		}
-		return config{}, errors.New("History Service settings file must contain one YAML document")
-	}
-
 	c := defaultConfig()
-	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result:      &c,
-		TagName:     "mapstructure",
-		ErrorUnused: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
-		),
-	})
-	if err != nil {
-		return config{}, errors.New("invalid History Service settings")
-	}
-	if err := mapDecoder.Decode(settings); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHooks: []mapstructure.DecodeHookFunc{listener.AuthenticationDecodeHook},
+	}); err != nil {
 		return config{}, errors.New("invalid History Service settings")
 	}
 	c.DatabaseURL = os.Getenv(settingPrefix + "DATABASE_URL")

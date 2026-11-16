@@ -1,10 +1,8 @@
 package settings
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/url"
 	"os"
@@ -15,9 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
-	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -245,29 +243,15 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("could not read app settings file: %w", err)
 	}
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	var rawSettings map[string]any
-	if err := decoder.Decode(&rawSettings); err != nil {
-		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
-	}
-	var trailingDocument any
-	if err := decoder.Decode(&trailingDocument); err == nil {
-		return Config{}, errors.New("app settings file must contain exactly one YAML document")
-	} else if !errors.Is(err, io.EOF) {
-		return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
+	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
+	rawSettings, err := configfile.DecodeMapstructureYAML(contents, &c, configfile.MapstructureOptions{WeaklyTypedInput: true})
+	if err != nil {
+		if errors.Is(err, configfile.ErrInvalidYAML) {
+			return Config{}, fmt.Errorf("could not decode app settings file: %w", err)
+		}
+		return Config{}, fmt.Errorf("invalid app settings: %w", err)
 	}
 	sandboxPresetOrder = yamlMappingKeys(contents, "sandbox_presets")
-	// Keep Viper's weak scalar conversions for compatibility with existing settings files.
-	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true, WeaklyTypedInput: true,
-		DecodeHook: mapstructure.TextUnmarshallerHookFunc(),
-	})
-	if err != nil {
-		return Config{}, fmt.Errorf("invalid app settings: %w", err)
-	}
-	if err := mapDecoder.Decode(rawSettings); err != nil {
-		return Config{}, fmt.Errorf("invalid app settings: %w", err)
-	}
 	c.clearImplicitServiceTokensForSVID(rawSettings)
 	c.DatabaseURL = os.Getenv("AGENTPLANE_DATABASE_URL")
 	if c.LogLevels == nil {

@@ -3,18 +3,17 @@ package server
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
 	"regexp"
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
 	"go.opentelemetry.io/otel/baggage"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -103,36 +102,11 @@ func loadConfig() (config, error) {
 	if !ok || strings.TrimSpace(path) == "" {
 		return config{}, fmt.Errorf("%s is required", configFileEnv)
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, fmt.Errorf("open LLM ingress settings file: %w", err)
-	}
-	defer file.Close()
-
 	c := defaultConfig()
-	yamlDecoder := yaml.NewDecoder(file)
-	var settings map[string]any
-	if err := yamlDecoder.Decode(&settings); err != nil {
-		return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
-	}
-	var extra any
-	if err := yamlDecoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
-		}
-		return config{}, errors.New("LLM ingress settings file must contain one YAML document")
-	}
-	settingsDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true,
-		MatchName: func(mapKey, fieldName string) bool { return mapKey == fieldName },
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
-		),
-	})
-	if err != nil {
-		return config{}, fmt.Errorf("prepare LLM ingress settings decoder: %w", err)
-	}
-	if err := settingsDecoder.Decode(settings); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHooks:     []mapstructure.DecodeHookFunc{listener.AuthenticationDecodeHook},
+		ExactFieldNames: true,
+	}); err != nil {
 		return config{}, fmt.Errorf("decode LLM ingress settings file: %w", err)
 	}
 	c.LiteLLMKey = os.Getenv(liteLLMKeyEnv)

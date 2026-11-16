@@ -3,16 +3,15 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/netip"
 	"os"
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/history"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/go-viper/mapstructure/v2"
-	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -76,36 +75,11 @@ func loadConfig() (config, error) {
 	if !ok || strings.TrimSpace(path) == "" {
 		return config{}, fmt.Errorf("%s is required", configFileEnv)
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, fmt.Errorf("open egress settings file: %w", err)
-	}
-	defer file.Close()
-
 	c := defaultConfig()
-	decoder := yaml.NewDecoder(file)
-	var settings map[string]any
-	if err := decoder.Decode(&settings); err != nil {
-		return config{}, fmt.Errorf("decode egress settings file: %w", err)
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, fmt.Errorf("decode egress settings file: %w", err)
-		}
-		return config{}, errors.New("egress settings file must contain one YAML document")
-	}
-	settingsDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result: &c, TagName: "mapstructure", ErrorUnused: true,
-		MatchName: func(mapKey, fieldName string) bool { return mapKey == fieldName },
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
-		),
-	})
-	if err != nil {
-		return config{}, fmt.Errorf("prepare egress settings decoder: %w", err)
-	}
-	if err := settingsDecoder.Decode(settings); err != nil {
+	if _, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHooks:     []mapstructure.DecodeHookFunc{listener.AuthenticationDecodeHook},
+		ExactFieldNames: true,
+	}); err != nil {
 		return config{}, fmt.Errorf("decode egress settings file: %w", err)
 	}
 	c.DatabaseURL = os.Getenv(databaseURLEnv)

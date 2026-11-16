@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/url"
@@ -14,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -21,7 +20,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/worker"
 	"github.com/go-viper/mapstructure/v2"
-	"gopkg.in/yaml.v3"
 )
 
 const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
@@ -158,41 +156,17 @@ func loadConfig() (config, error) {
 	if path == "" {
 		return config{}, errors.New("Notification Service settings file path is required")
 	}
-	contents, err := os.ReadFile(path)
+	c := defaultConfig()
+	raw, err := configfile.DecodeMapstructureFile(path, &c, configfile.MapstructureOptions{
+		DecodeHooks: []mapstructure.DecodeHookFunc{listener.AuthenticationDecodeHook},
+	})
 	if err != nil {
-		return config{}, errors.New("could not read Notification Service settings file")
-	}
-	var raw map[string]any
-	decoder := yaml.NewDecoder(bytes.NewReader(contents))
-	if err := decoder.Decode(&raw); err != nil {
-		return config{}, errors.New("could not decode Notification Service settings file")
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		if err != nil {
-			return config{}, errors.New("could not decode Notification Service settings file")
-		}
-		return config{}, errors.New("Notification Service settings file must contain one YAML document")
+		return config{}, errors.New("invalid Notification Service settings")
 	}
 	if raw == nil {
 		return config{}, errors.New("Notification Service settings file must contain a YAML mapping")
 	}
 
-	c := defaultConfig()
-	mapDecoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
-		Result:      &c,
-		TagName:     "mapstructure",
-		ErrorUnused: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			mapstructure.TextUnmarshallerHookFunc(), listener.AuthenticationDecodeHook,
-		),
-	})
-	if err != nil {
-		return config{}, errors.New("invalid Notification Service settings")
-	}
-	if err := mapDecoder.Decode(raw); err != nil {
-		return config{}, errors.New("invalid Notification Service settings")
-	}
 	// Preserve absent (default seven days) versus explicit YAML null (retain indefinitely).
 	if value, exists := raw["github_delivery_retention_days"]; exists && value == nil {
 		c.GitHubRetention.Days = nil

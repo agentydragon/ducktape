@@ -3,13 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/configfile"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
-	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
@@ -39,20 +38,12 @@ func loadConfig() (config, error) {
 	if strings.TrimSpace(path) == "" {
 		return config{}, fmt.Errorf("%s is required", configFileEnv)
 	}
-	file, err := os.Open(path)
-	if err != nil {
-		return config{}, errors.New("could not read Policy Controller settings file")
-	}
-	defer file.Close()
-
 	c := defaultConfig()
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&c); err != nil {
+	if err := configfile.DecodeKnownFieldsFile(path, &c); err != nil {
+		if errors.Is(err, configfile.ErrMultipleDocuments) {
+			return config{}, errors.New("Policy Controller settings file must contain one YAML document")
+		}
 		return config{}, errors.New("invalid Policy Controller settings")
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		return config{}, errors.New("Policy Controller settings file must contain one YAML document")
 	}
 	return c, c.validate()
 }

@@ -9,6 +9,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/environments/cmd",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/configfile",
         "//agentplane/environments/internal/controller",
         "//agentplane/environments/internal/runtimecontrol",
         "//agentplane/environments/internal/serving",
@@ -21,7 +22,6 @@ go_library(
         "//agentplane/sandboxes/api",
         "@com_github_go_logr_logr//:logr",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/runtime",
         "@io_k8s_client_go//discovery",

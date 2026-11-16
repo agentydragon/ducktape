@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/egress/cmd",
     visibility = ["//agentplane/egress:__subpackages__"],
     deps = [
+        "//agentplane/configfile",
         "//agentplane/egress/api/admin:egress_admin_go_proto",
         "//agentplane/egress/api/rules:egress_rules_go_proto",
         "//agentplane/egress/internal/admin",
@@ -33,7 +34,6 @@ go_library(
         "//agentplane/observability",
         "//agentplane/postgres/migrate",
         "@com_github_go_viper_mapstructure_v2//:mapstructure",
-        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_k8s_client_go//rest",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
