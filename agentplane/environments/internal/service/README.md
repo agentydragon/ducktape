@@ -59,8 +59,10 @@ are separate current facts. Explicit-resume eligibility includes a denial reason
 against the caller's live UID and its explicit Identity rule or configured direct operator grant;
 it does not depend on `wakeOnSend`. Automatic Identity wake has its own assessment
 and uses the shared lifecycle manager under the `wakeOnSend` and existing
-`resumePolicy.allowOwnServiceAccount` opt-in. Configured `wake_service_callers`
-remain automatic-only broker grants; service wake budgets are keyed by the caller's exact SPIFFE ID.
+`resumePolicy.allowOwnServiceAccount` opt-in. Environments' configured `wake_service_callers`
+remain automatic-only broker grants for its own assessments. Dispatcher configures its own broker
+list for in-process wake execution, including Actions for rows carrying Action proof, and keys
+service wake budgets by exact SPIFFE ID.
 
 Call `EnvironmentService.ResumeEnvironment` explicitly, then observe the same target again.
 `REQUESTED` confirms acceptance of desired running state, not readiness; no Session or input is
@@ -102,9 +104,10 @@ Direct service SVIDs have independent, exact-SPIFFE-ID grants through
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
 `service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
-with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
-separately from the Action origin.
+never supplies operator authority or waives the resume token. This service's `wake_service_callers`
+list grants automatic broker eligibility for EnvironmentService assessments only. Dispatcher has a
+separate list and owns service wake budgets keyed by exact SPIFFE ID. Create receipts retain the
+typed service actor separately from the Action origin.
 
 The implementation is internal to Environments. Consumer tests use the wire interface through
 `environments/testing/servicefixture`; production consumers use gRPC. Explicit resume is internal at `environments/internal/resume`; automatic wake execution and its

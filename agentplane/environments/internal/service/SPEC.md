@@ -156,8 +156,8 @@ the stream; a successful review leaves it open. A stalled send is bounded by fiv
   omits those optional facts without denying implied self-reads; explicit resume fails closed as
   `UNAVAILABLE`. Deleting environments remain visible to broad readers without resume eligibility
   or a token. Idle watches refresh caller-specific facts at the credential recheck interval.
-- Automatic wake eligibility remains a separate assessment using `wakeOnSend` and the configured
-  wake-caller policy.
+- Automatic wake eligibility remains a separate assessment using `wakeOnSend` and Environments'
+  configured wake-caller policy. Dispatcher configures its own policy for its in-process wake manager.
 - The descriptor's wake generation and opaque resume token bind an ordinary resume precondition to
   the observed Sandbox UID and generation. The token is not authority; the manager rechecks current
   identity, policy and state at mutation time.
@@ -213,6 +213,7 @@ launchers may create only with an Action launch origin. Neither role implies the
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
 `service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
-with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
-separately from the Action origin.
+never supplies operator authority or waives the resume token. This service's `wake_service_callers`
+list grants automatic broker eligibility for EnvironmentService assessments only. Dispatcher has a
+separate list and owns service wake budgets keyed by exact SPIFFE ID. Create receipts retain the
+typed service actor separately from the Action origin.

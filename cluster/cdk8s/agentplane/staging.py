@@ -46,7 +46,7 @@ from agentplane.central_sampler.settings import (
 from agentplane.env.config import GuestResources, ResourceLimits
 from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
-from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
+from agentplane.net.peertls.config import ACTIONS_URI, CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
@@ -151,6 +151,9 @@ _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
 _KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
+# Action-attributed Dispatcher sends use the Actions service's independent broker grant. The
+# Environments service keeps its own wake allowlist from sandbox_controller.WAKE_SERVICE_CALLERS.
+DISPATCHER_WAKE_SERVICE_CALLERS = sandbox_controller.WAKE_SERVICE_CALLERS | frozenset({ACTIONS_URI})
 
 
 # Official OpenAI routes use Responses Lite and freeform Code mode.
@@ -1064,9 +1067,7 @@ def _add_standing_identity_access(
 
 
 def delivery_chart(app: App, env: Environment = ENV) -> Chart:
-    return runner_gateway_workload.serving_chart(
-        app, env=env, wake_service_callers=sandbox_controller.WAKE_SERVICE_CALLERS
-    )
+    return runner_gateway_workload.serving_chart(app, env=env, wake_service_callers=DISPATCHER_WAKE_SERVICE_CALLERS)
 
 
 def _add_session_secret(scope: Chart) -> None:

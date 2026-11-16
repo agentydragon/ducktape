@@ -340,8 +340,10 @@ not an in-process index. The integration app uses its own Pod-bound
 token as a distinct operator broker; it does not forward browser identity. Resume acceptance is not
 readiness, and no resume path replays Session input or creates a grant.
 Explicit resume is internal to Environments and accepts no wake budget. Dispatcher owns automatic
-wake execution and PostgreSQL budgeting, preserving the original effective caller and the
-`wakeOnSend` and `wake_callers` checks. Both owners use the same `environments/lifecycle`
+wake execution and PostgreSQL budgeting, preserving row attribution and applying `wakeOnSend` plus
+the retained caller's policy or a configured service-broker check. An Action-attributed row uses the
+Actions service actor's Dispatcher broker grant while retaining its effective Identity. Both owners
+use the same `environments/lifecycle`
 authorization and guarded-write code with independent policy views; Environments does not call
 Sessions. Conflicts reread and reauthorize, while an uncertain patch outcome is never replayed.
 The opt-in Session tools also forward the effective caller to Dispatcher commands and retained
@@ -362,7 +364,9 @@ proxy and Executor methods separately.
 Dispatcher also admits live workload Identity SVIDs and configured service delegation.
 EnvironmentService has its own receiver and separate reader, manager, launcher and operator grants.
 App and Notifications have exact service-SVID automatic wake-broker grants, separately from
-explicit operator resume. Notification wake remains conditional on the target's wake-on-send policy.
+explicit operator resume. Dispatcher also configures Actions as a service wake broker for rows
+carrying its Action proof. The Environments service has a separate wake-caller list for its own
+assessments. Notification wake remains conditional on the target's wake-on-send policy.
 When `orchestration_v1` is configured, the exact `spiffe://agentplane/actions` SVID also receives
 Dispatcher component authority and EnvironmentService launcher authority. Both grants follow the
 existing `actions.orchestration_callers` map; session delegation alone does not enable them. The
@@ -834,12 +838,14 @@ flowchart LR
 ## Staged Dispatcher and EnvironmentService service grants
 
 The shared Gateway listener admits the exact App and Notifications service SVIDs to the
-Dispatcher. Its live workload Identity SVID path and typed service delegation remain; Kubernetes
+Dispatcher, and Actions when `orchestration_v1` grants it the component role. Its live workload
+Identity SVID path and typed service delegation remain; Kubernetes
 bearers grant no admission. The App SVID separately has EnvironmentService
 inventory and management grants. Staging explicitly grants the App SVID resume and automatic
 wake authority; these grants are independent of delegation and direct Dispatcher admission.
-Dispatcher callers use their configured service certificates.
-Actions service grants and delegated Resume require their own reviewed configuration.
+Actions has its own Dispatcher automatic-wake broker grant for Action-attributed rows. The
+Environments service's wake assessment list remains separate. Actions service grants and delegated
+Resume require their own reviewed configuration.
 
 ```mermaid
 flowchart LR
@@ -853,8 +859,9 @@ flowchart LR
 The EnvironmentService receiver can admit an explicitly configured Actions service SVID with
 the typed Action delegation envelope for `ResumeEnvironment`, in addition to its four delegated
 read methods. The effective Identity's current environment resume grant remains the authority;
-the actor certificate never grants operator authority or waives `resume_token`. Automatic wake
-keeps its separate Identity-match and Sandbox opt-in policy. This receiver capability requires
+the actor certificate never grants operator authority or waives `resume_token`. Environments keeps
+its separate wake assessment list; Dispatcher Action-attributed rows use its Actions service broker
+grant. This receiver capability requires
 a pinned image before configuration grants it to Actions; caller activation follows separately.
 
 ```mermaid

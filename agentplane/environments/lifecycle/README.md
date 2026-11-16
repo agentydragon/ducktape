@@ -17,15 +17,18 @@ Delegated requests are authorized as their effective Identity; the actor does no
 Identity grants never override a requested stop and fail closed when policy is unavailable.
 Identity automatic wake uses the existing `spec.resumePolicy.allowOwnServiceAccount` opt-in only
 when the Sandbox currently acts as that exact live Identity. Same-name ServiceAccounts no longer
-inherit the Identity path. `spec.wakeOnSend` gates automatic requests. The existing `wake_callers`
-ServiceAccount broker grant remains automatic-only.
+inherit the Identity path. `spec.wakeOnSend` gates automatic requests. `wake_callers` and
+`wake_service_callers` are separate automatic-only broker grants. Dispatcher maps rows with Action
+proof to their service actor's broker grant, while retaining the effective Identity on the row;
+Environments keeps an independent service-caller list for its own assessments.
 
 Resume tokens bind the Sandbox namespace, name, UID and observed wake generation. They are
 preconditions, not capabilities. Writes use resource-version optimistic locking and recheck policy,
 readiness and live Identity incarnations after conflicts. A stale generation returns state changed.
 An error after a patch may have reached the API server is reported as an unknown outcome and is never
 retried by the service. Automatic `RequestWake` reserves a bounded attempt from the shared
-`WakeBudget`, keyed by effective caller identity, Sandbox UID and next generation. Explicit
+`WakeBudget`, keyed by caller principal (ServiceAccount namespace/name/UID, Identity
+namespace/name/UID, or exact service SPIFFE ID), Sandbox UID and next generation. Explicit
 `ResumeEnvironment` does not reserve wake budget.
 
 `REQUESTED` reports that desired state was accepted. The Sandbox Controller owns stopping, startup,
@@ -41,6 +44,7 @@ Direct service SVIDs have independent, exact-SPIFFE-ID grants through
 explicitly resume, including a requested stop; delegated callers never inherit those roles.
 `environment_service_delegation` admits a service actor only for configured read methods and
 `ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. `wake_service_callers` grants automatic broker wake only,
-with budgets keyed by exact service SPIFFE ID. Create receipts retain the typed service actor
+never supplies operator authority or waives the resume token. Environments' `wake_service_callers`
+grants automatic broker eligibility for its own assessments. Dispatcher configures its own broker
+list and budgets service wakes by exact SPIFFE ID. Create receipts retain the typed service actor
 separately from the Action origin.

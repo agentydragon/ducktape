@@ -26,8 +26,9 @@ It scopes existing Sessions and existing environments; it does not create enviro
 These callers have their own typed principal and attribution; no account UID or Pod is fabricated.
 `dispatcher_service_delegation` independently grants exact certificate actors and exact Dispatcher
 RPCs typed Identity delegation. It requires Action provenance and a fresh effective Identity UID.
-Delegated actors never inherit the direct component role and spend only
-the effective Identity's wake authority. Direct services require a separate service wake grant.
+Delegated actors never inherit the direct component role. Action-attributed rows use their service
+actor's independent wake grant while keeping the effective Identity in attribution. Direct services
+require a separate service wake grant.
 Both allowlists default empty and are configured only after receiver image pins.
 
 Additive migration 18 retains service actor, optional effective Identity and Action correlation in
@@ -42,14 +43,16 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   Middleware verifies the actor's SVID, typed Action provenance and the effective Identity's live
   UID before handlers run. The legacy account-based `delegation` setting is ignored.
 - Delegated calls use ordinary Identity Session ownership and `bind_session` checks. Actor grants
-  never confer component privileges or wake authority on the effective Identity. Native Session
-  creation still resolves the selected Sandbox's live execution Identity, which may differ from
-  the creator only under the existing explicit policy grant.
+  never confer component privileges on the effective Identity. The Action actor's service broker
+  grant applies only to automatic wake and does not lend component authority to that Identity.
+  Native Session creation still resolves the selected Sandbox's live execution Identity, which may
+  differ from the creator only under the existing explicit policy grant.
 - Durable openings and dispatch rows retain actor, effective caller and Action correlation
   separately. Request and execution UUIDs are correlation only; Session/command IDs and domain
   request equality retain their reconciliation meaning. Retries cannot rewrite admission evidence.
-- Wake eligibility uses the effective Identity. Direct service wake requires its independent exact
-  service grant. No credential or Action lease token is persisted, and Gateway does no Actions or
+- Wake eligibility ordinarily uses the effective Identity. A row carrying Action proof uses its
+  verified service actor's independent exact service grant; the effective Identity remains in row
+  attribution. No credential or Action lease token is persisted, and Dispatcher does no Actions or
   App lookup. Existing lifecycle, ownership and attachment rules are unchanged.
 
 ## Session binding
@@ -150,10 +153,12 @@ an old receiver must precede caller enablement or explicitly assess pending serv
   a native Runtime. This check is not an atomic fence against deletion after the read; managed
   quiescence and Runtime's admission barrier remain separate.
 - Automatic wake is attempted only when the live Sandbox has `spec.wakeOnSend: true`. The shared lifecycle service
-  rechecks the target UID, the retained effective caller's current ServiceAccount UID (for an Identity caller, that
-  the Sandbox acts as that live Identity incarnation), and current `resumePolicy` before requesting resume. The existing `wake_caller_accounts` setting is a separate trusted broker grant for automatic
-  wake only; it does not grant explicit resume authority or override `SuspendedBy=Requested`. Dispatcher actors and
-  admission-time eligibility are never substitutes for the effective caller's current authority.
+  rechecks the target UID and retained caller: a ServiceAccount's current UID, or for an Identity caller,
+  that the Sandbox acts as that live Identity incarnation under its current `resumePolicy`. `wake_callers`
+  and `wake_service_callers` are separate automatic-only broker grants. An Action-attributed row is assessed
+  as its verified service actor through the Dispatcher's exact service broker grant; its effective Identity
+  remains in the row attribution for Session authority. These grants do not authorize explicit resume or
+  override `SuspendedBy=Requested`. Admission-time eligibility never grants wake authority.
 - A queued opening denied wake for its creator does not suppress an authorized queued input or unattended
   notification. Dispatcher assesses downstream wake under each command's own retained effective identity,
   without forwarding commands ahead of the opening. Only a proven caller-authorization denial permits trying
@@ -193,8 +198,9 @@ when delivery state and reason are unchanged. An absent stored assessment reads 
 `WAKE_STATE_NOT_EVALUATED`; this does not claim a wake request was authorized or attempted.
 
 Automatic wake is assessed and requested through the shared lifecycle manager by the Gateway's
-in-process DeliveryWorker. The worker preserves the original effective caller and records the
-manager's typed assessment; see the lifecycle manager SPEC for its policy and mutation contract.
+in-process DeliveryWorker. The worker preserves row attribution and records the manager's typed
+assessment; Action proof selects the actor's service broker grant for wake. See the lifecycle manager
+SPEC for its policy and mutation contract.
 
 ## Deletion admission fence
 

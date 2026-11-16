@@ -103,8 +103,8 @@ func TestServiceActorsRetainSeparateProofAndIdentityScope(t *testing.T) {
 	if !ok || attribution.ActorSPIFFEID != peertls.ActionsURI || !sameIdentity(attribution.Identity, owner) || attribution.Action.RequestID != action.RequestId {
 		t.Fatalf("delegated service proof: %#v", queued.Attribution)
 	}
-	if wake, ok := wakeCaller(queued.Attribution).(lifecycle.IdentityWakeCaller); !ok || !sameIdentity(wake.Identity, owner) {
-		t.Fatalf("actor acquired wake grant: %#v", wakeCaller(queued.Attribution))
+	if wake, ok := wakeCaller(queued.Attribution).(lifecycle.ServiceWakeCaller); !ok || wake.SPIFFEID != peertls.ActionsURI {
+		t.Fatalf("Action attribution did not use the Actions wake broker: %#v", wakeCaller(queued.Attribution))
 	}
 	if _, err := actions.GetSession(delegated, &dispatcherpb.GetSessionRequest{SessionId: foreign}); status.Code(err) != codes.NotFound {
 		t.Fatalf("delegator inherited component authority: %v", err)

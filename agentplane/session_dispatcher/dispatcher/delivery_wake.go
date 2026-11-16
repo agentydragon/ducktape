@@ -356,6 +356,10 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 func wakeCaller(attribution Attribution) lifecycle.WakeCaller {
 	switch attribution := attribution.(type) {
 	case *ServiceAttribution:
+		if attribution.Action != nil {
+			// The Action actor needs its broker grant; keep the effective Identity as attribution.
+			return lifecycle.ServiceWakeCaller{SPIFFEID: attribution.ActorSPIFFEID}
+		}
 		if attribution.Identity != nil {
 			return lifecycle.IdentityWakeCaller{Identity: attribution.Identity}
 		}

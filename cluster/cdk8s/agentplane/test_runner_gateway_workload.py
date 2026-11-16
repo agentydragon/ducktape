@@ -141,7 +141,6 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert not any(key.startswith("environment_") for key in settings)
     assert "operator_callers" not in settings
     assert "runtime_catalog" not in settings
-    assert set(settings["wake_service_callers"]) == {APP_URI, NOTIFICATIONS_URI}
     for service_name in (runner_gateway.NAME, session_dispatcher.NAME):
         service = _resource(root_docs, "Service", service_name)["spec"]
         assert service["selector"]

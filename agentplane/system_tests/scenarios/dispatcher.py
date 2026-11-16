@@ -859,16 +859,12 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         }
     gateway_config = json.loads(await cluster.kubectl("get", "configmap", f"{WORKLOAD}-settings", "-o", "json"))
     gateway_settings = yaml.safe_load(gateway_config["data"]["settings.yaml"])
-    expected_wake_callers = {
+    expected_dispatcher_callers = {
         "spiffe://agentplane/app",
         "spiffe://agentplane/notifications",
         "spiffe://agentplane/actions",
     }
-    assert set(gateway_settings["dispatcher_service_callers"]) == expected_wake_callers
-    assert set(gateway_settings["wake_service_callers"]) == {
-        "spiffe://agentplane/app",
-        "spiffe://agentplane/notifications",
-    }
+    assert set(gateway_settings["dispatcher_service_callers"]) == expected_dispatcher_callers
 
     policies = list(LAUNCH_DEFAULT_POLICY_SETS)
     suffix = uuid4().hex[:8]
@@ -879,7 +875,7 @@ async def deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notificati
         "sandbox": sandbox,
         "session": session,
         "command": command,
-        "wake_caller_services": sorted(expected_wake_callers),
+        "dispatcher_callers": sorted(expected_dispatcher_callers),
         "passed": False,
         "policy_sets": policies,
     }

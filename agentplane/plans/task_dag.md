@@ -308,6 +308,7 @@ flowchart LR
     NOTIFICATION_SERVICE_SPLIT -. related .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     COMMAND_WATCH_SUBSCRIPTION_DESIGN[Unscheduled: a subscription kind that runs an agent's command on a schedule]
     COMMAND_WATCH_SUBSCRIPTION_DESIGN -. related .-> NOTIFICATION_SERVICE_SPLIT
+    ACTION_WAKE_AS_IDENTITY[Unscheduled: authorize Action-originated wake as caller Identity]
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT[Central Session without Environment, section 13]
     CENTRAL_SESSION_INPUT_METADATA[Blocked: central sampler metadata passthrough]
@@ -324,6 +325,17 @@ flowchart LR
 
 Details: [command admission](../session_dispatcher/dispatcher/README.md#contract); later
 [notification presentation and input metadata](notification_presentation.md).
+
+### `ACTION_WAKE_AS_IDENTITY` — authorize Action-originated automatic wake as caller Identity
+
+**Unscheduled.** Dispatcher temporarily assesses Action-attributed sends through the Actions service
+broker grant. Replace that mapping with authorization as the Identity that called the Action, for
+example through that Identity's launcher grant on the target Sandbox. Keep the effective Identity
+and service actor separate in row attribution. Then remove Actions from the Dispatcher's
+`wake_service_callers` and remove the Action-proof mapping to `ServiceWakeCaller`.
+
+**Exit:** Action-attributed sends wake under the caller Identity's reviewed grant and are denied
+without it; no Actions service wake broker or Action-specific mapping remains.
 
 Future ownership and wake-policy questions are recorded in the
 [freezer](task_freezer.md#notification_dispatcher_ownership--review-notification-and-dispatcher-ownership):
