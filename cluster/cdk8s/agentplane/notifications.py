@@ -29,7 +29,6 @@ from agentplane.net.peertls.config import (
     SESSION_DISPATCHER_URI,
 )
 from agentplane.notification_service.settings import (
-    TOKEN_AUDIENCE,
     ActionsSettings,
     GitHubSettings,
     HistoryServiceSettings,
@@ -159,8 +158,6 @@ class Notifications(Construct):
         assert serving_tls.ca_file is not None
         settings_model = Settings(
             namespace=env.namespace,
-            token_audience=TOKEN_AUDIENCE,
-            operator_reader_account="app",
             operator_reader_services=[APP_URI],
             notice_debounce=env.notifications_debounce,
             actions=ActionsSettings(
@@ -184,10 +181,7 @@ class Notifications(Construct):
             rpc=listener.Listener(
                 listen_address=f"0.0.0.0:{endpoint.pod_port}",
                 tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[
-                    listener.KubernetesBearerAuth(audiences=frozenset({TOKEN_AUDIENCE})),
-                    listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                ],
+                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
         )
         settings_file = SettingsFile(
@@ -195,7 +189,11 @@ class Notifications(Construct):
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(settings_model, exclude_none=True),
+            content=yaml_config(
+                settings_model.model_dump(
+                    mode="json", exclude_none=True, exclude={"token_audience", "operator_reader_account"}
+                )
+            ),
         )
         role_name = NAME.removeprefix("agentplane-")
         Role(

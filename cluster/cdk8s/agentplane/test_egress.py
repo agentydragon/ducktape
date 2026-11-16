@@ -27,7 +27,6 @@ from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
-    central_sampler,
     environment_sandbox,
     environment_service,
     history_service,
@@ -315,7 +314,9 @@ def test_llm_runner_traffic_uses_its_svid_listener(catalog_manifests: list[dict[
     assert llm_settings["rpc"]["listen_address"] == "0.0.0.0:8080"
     assert llm_settings["rpc"]["tls"]["cert_file"].endswith("/tls.crt")
     assert llm_settings["rpc"]["tls"]["key_file"].endswith("/tls.key")
-    assert llm_settings["central_sampler_accounts"] == [f"{staging.ENV.namespace}/{central_sampler.NAME}"]
+    assert "central_sampler_accounts" not in llm_settings
+    assert "token_audience" not in llm_settings
+    assert [auth["mode"] for auth in llm_settings["rpc"]["auth"]] == ["spiffe"]
     assert llm_settings["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
     assert llm_settings["central_sampler_identity_callers"] is True
 
