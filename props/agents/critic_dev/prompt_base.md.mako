@@ -48,7 +48,7 @@ ${source_inspection([
     ("props.agents.runtime", "Runtime helpers"),
     ("props.db.models", "SQLAlchemy models"),
     ("props.db.snapshot_io", "Snapshot fetching"),
-    ("agent_core.agent", "Agent core loop"),
+    ("props.agents.af.loop", "Built-in critic agent loop"),
     ("props.agents.critic_dev.eval_client", "Eval client — read this for run_critic internals"),
     ("props.agents.critic_dev.grading", "Grading status polling — read this for wait_until_graded internals"),
     ("props.agents.critic_dev.loop", "Your tool definitions and argument types"),
