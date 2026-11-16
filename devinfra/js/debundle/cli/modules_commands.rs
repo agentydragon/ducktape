@@ -32,6 +32,18 @@ impl ModulesNs {
             _ => false,
         }
     }
+    pub(super) fn writes_with_graph(&self) -> bool {
+        match &self.command {
+            ModulesNsCommand::Merge(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            ModulesNsCommand::Delete(args) => {
+                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
+            }
+            ModulesNsCommand::Apply(args) => !args.dry_run,
+            _ => false,
+        }
+    }
     pub(super) fn format(&self) -> Option<OutputFormat> {
         match &self.command {
             ModulesNsCommand::Merge(args) => args.edit.format,
