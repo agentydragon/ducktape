@@ -243,13 +243,13 @@ async def central_stack(cluster: Cluster, directory: Path, *, template: str) -> 
             )
             # Sandbox Ready proves leader observation; independently prove the every-replica
             # Environments proxy has a callable snapshot before starting setup.
-            # Dispatcher commands, Runtime diagnostics and History observations use the App reader role.
+            # Dispatcher commands and History observations use App; raw reads use Notifications.
             caller_credentials = await service_svid_credentials(cluster, "app-workload-tls")
             gateway = SandboxControlClient(
                 control_target=gateway_target,
                 token_file=None,
                 request_timeout_s=2,
-                channel_credentials=caller_credentials,
+                channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
                 server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
             )
             destination = SandboxDestination(

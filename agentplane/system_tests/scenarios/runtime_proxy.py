@@ -51,12 +51,17 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         ) as address,
         dial(
             address,
+            channel_credentials=await service_svid_credentials(cluster, "notifications-workload-tls"),
+            server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
+        ) as runtime_channel,
+        dial(
+            address,
             channel_credentials=await service_svid_credentials(cluster, "app-workload-tls"),
             server_name=f"sandbox-controller.{cluster.namespace}.svc.cluster.local",
         ) as channel,
     ):
         runtime: environment_runtime_pb2_grpc.EnvironmentRuntimeAsyncStub = (
-            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+            environment_runtime_pb2_grpc.EnvironmentRuntimeStub(runtime_channel)
         )
         # Ready proves the binding observer; the replica's forwarding watch may still be connecting.
         async with asyncio.timeout(30):
@@ -73,6 +78,7 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
                         raise
                     await asyncio.sleep(0.1)
         assert status.environment_runtime_boot_id
+        await runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
         environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
         diagnostics = await environments.GetRuntimeDiagnostics(
             environment_service_pb2.GetRuntimeDiagnosticsRequest(target=target), timeout=5
@@ -83,6 +89,13 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         assert diagnostics.status.environment_runtime_boot_id == status.environment_runtime_boot_id
         app_status = await client.runner_status(target.name, target.uid)
         assert app_status.environment_runtime_boot_id == status.environment_runtime_boot_id
+        app_runtime = environment_runtime_pb2_grpc.EnvironmentRuntimeStub(channel)
+        with pytest.raises(grpc.aio.AioRpcError) as raw_status:
+            await app_runtime.GetStatus(session_pb2.GetStatusRequest(), metadata=metadata, timeout=5)
+        assert raw_status.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        with pytest.raises(grpc.aio.AioRpcError) as raw_inventory:
+            await app_runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        assert raw_inventory.value.code() == grpc.StatusCode.PERMISSION_DENIED
         with pytest.raises(grpc.aio.AioRpcError) as stale:
             await runtime.GetStatus(
                 session_pb2.GetStatusRequest(),

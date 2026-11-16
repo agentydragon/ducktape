@@ -298,7 +298,7 @@ def test_environment_receiver_can_watch_policy_and_mutate_only_desired_state(
     assert verbs("", "serviceaccounts") == {"get", "list", "watch"}
 
 
-def test_runtime_proxy_receiver_matches_existing_service_grants_and_separates_binding_identity(
+def test_runtime_proxy_receiver_limits_service_grants_and_separates_binding_identity(
     staging_manifests: list[dict[str, Any]],
 ) -> None:
     controller = Settings.model_validate(
@@ -310,7 +310,7 @@ def test_runtime_proxy_receiver_matches_existing_service_grants_and_separates_bi
     proxy = controller.environment_service.runtime_proxy
     assert proxy is not None
     assert "audience" not in proxy.model_dump(mode="json")
-    assert set(proxy.readers) == {APP_URI, NOTIFICATIONS_URI}
+    assert set(proxy.readers) == {NOTIFICATIONS_URI}
     assert set(proxy.session_callers) == {GATEWAY_SESSIONS_URI}
     assert set(proxy.controller_callers) == {SANDBOX_CONTROLLER_URI}
     assert set(proxy.executor_callers) == {CENTRAL_SAMPLER_URI}

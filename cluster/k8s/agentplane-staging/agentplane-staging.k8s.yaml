@@ -6573,7 +6573,6 @@ data:
             key_file: /run/agentplane/sandbox-controller-runtime-proxy-client-tls/tls.key
             ca_file: /run/agentplane/workload-trust/ca-certificates.crt
         readers:
-          - spiffe://agentplane/app
           - spiffe://agentplane/notifications
         session_callers:
           - spiffe://agentplane/sessions
