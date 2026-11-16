@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any, BinaryIO, cast
@@ -13,7 +13,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from sqlalchemy import and_, case, delete, exists, insert, literal, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.orm import Session as DbSession, aliased, load_only
+from sqlalchemy.orm import Session as DbSession, aliased
 
 from ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
 from ai_session_archive.codex_metadata import classify_codex_source, read_codex_titles
@@ -30,10 +30,10 @@ from ai_session_archive.database import (
     SessionRootRow,
     SessionRow,
     SnapshotFileRow,
-    UsageObservationRow,
 )
 from ai_session_archive.models import Harness, SessionKind
 from ai_session_archive.record_json import ParsedRecordJson, RecordJsonParseError, parse_record_json
+from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord, store_payloads
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.statuses import (
     CodexMetadataStatus,
@@ -42,10 +42,9 @@ from ai_session_archive.statuses import (
     SnapshotInventoryStatus,
     SnapshotProcessingStatus,
 )
-from ai_session_archive.usage_observations import UsageObservation, usage_observations_for_record
+from ai_session_archive.usage_observations import usage_observations_for_record
 from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage
 
-PARSER_VERSION = "jsonl-v1"
 CLAUDE_TITLE_PROJECTION_VERSION = 1
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
 _KNOWN_DIFF_MODIFIERS = frozenset(("+", "-", "M", "T", "?", "U"))
@@ -102,15 +101,6 @@ class _Location:
     source_path: str
     native_session_id: str
     parent_source_path: str | None
-
-
-@dataclass(frozen=True)
-class _ParsedRecord:
-    raw_bytes: bytes
-    byte_offset: int
-    sha256: str
-    json: ParsedRecordJson | RecordJsonParseError
-    usage: tuple[UsageObservation, ...]
 
 
 @dataclass(frozen=True)
@@ -956,7 +946,7 @@ class SnapshotIngestor:
         self,
         version_id: UUID,
         start: int,
-        records: list[_ParsedRecord],
+        records: list[ParsedRecord],
         *,
         parent: FileVersionRow | None,
         parent_ranks: Mapping[UUID, int],
@@ -970,7 +960,7 @@ class SnapshotIngestor:
                 return
             if start > stage.imported_record_count:
                 raise RuntimeError(f"file import {version_id} is missing records before {start}")
-            payloads = self._get_payloads(db, records)
+            payloads = store_payloads(db, records)
             committed = min(len(records), stage.imported_record_count - start)
             if committed:
                 inherited = min(committed, max(0, stage.shared_prefix_record_count - start))
@@ -1164,53 +1154,6 @@ class SnapshotIngestor:
             self._update_session_metadata(db, session_row, metadata)
             if stage is not None:
                 db.execute(delete(FileVersionImportRow).where(FileVersionImportRow.id == version_id))
-
-    def _get_payloads(self, db: DbSession, records: list[_ParsedRecord]) -> list[RecordPayloadRow]:
-        by_hash: dict[str, _ParsedRecord] = {}
-        for record in records:
-            if record.sha256 in by_hash and by_hash[record.sha256].raw_bytes != record.raw_bytes:
-                raise RuntimeError("record SHA-256 collision detected")
-            by_hash[record.sha256] = record
-        new_ids = set(
-            db.scalars(
-                pg_insert(RecordPayloadRow)
-                .values(
-                    [
-                        {
-                            "id": uuid5(NAMESPACE_URL, f"ai-session-record:{PARSER_VERSION}:{record.sha256}"),
-                            "sha256": record.sha256,
-                            "parser_version": PARSER_VERSION,
-                            "raw_bytes": record.raw_bytes,
-                            "parse_error": record.json.parse_error
-                            if isinstance(record.json, RecordJsonParseError)
-                            else None,
-                            "timestamp": record.json.timestamp if isinstance(record.json, ParsedRecordJson) else None,
-                            "kind": record.json.kind if isinstance(record.json, ParsedRecordJson) else None,
-                        }
-                        for record in sorted(by_hash.values(), key=lambda record: record.sha256)
-                    ]
-                )
-                .on_conflict_do_nothing()
-                .returning(RecordPayloadRow.id)
-            )
-        )
-        payload_by_hash = {
-            row.sha256: row
-            for row in db.scalars(
-                select(RecordPayloadRow)
-                .options(load_only(RecordPayloadRow.sha256, RecordPayloadRow.raw_bytes))
-                .where(RecordPayloadRow.sha256.in_(by_hash), RecordPayloadRow.parser_version == PARSER_VERSION)
-            )
-        }
-        for record in by_hash.values():
-            payload = payload_by_hash[record.sha256]
-            if payload.raw_bytes != record.raw_bytes:
-                raise RuntimeError("record SHA-256 collision detected")
-            if payload.id in new_ids:
-                for index, observation in enumerate(record.usage):
-                    db.add(UsageObservationRow(payload_id=payload.id, observation_index=index, **asdict(observation)))
-        db.flush()
-        return [payload_by_hash[record.sha256] for record in records]
 
     def _previous_version(self, db: DbSession, current: SnapshotFileRow) -> FileVersionRow | None:
         # A path absent from many consecutive diffs must not cost one database round trip per snapshot.
@@ -1552,8 +1495,8 @@ def _fingerprint_file(source: BinaryIO) -> tuple[str, int, int]:
 
 def _read_record_batch(
     source: BinaryIO, metadata: dict[str, Any], *, limit: int, harness: Harness
-) -> list[_ParsedRecord]:
-    records: list[_ParsedRecord] = []
+) -> list[ParsedRecord]:
+    records: list[ParsedRecord] = []
     batch_bytes = 0
     byte_offset = int(metadata.get("_byte_offset", 0))
     while len(records) < limit and batch_bytes < RECORD_BATCH_MAX_BYTES and (raw_bytes := source.readline()):
@@ -1561,7 +1504,7 @@ def _read_record_batch(
         if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
             _extract_session_metadata(parsed.parsed, metadata, timestamp=parsed.timestamp, harness=harness)
         records.append(
-            _ParsedRecord(
+            ParsedRecord(
                 raw_bytes=raw_bytes,
                 byte_offset=byte_offset,
                 sha256=hashlib.sha256(raw_bytes).hexdigest(),

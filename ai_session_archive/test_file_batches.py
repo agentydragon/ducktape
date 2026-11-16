@@ -36,6 +36,7 @@ from ai_session_archive.database import (
 from ai_session_archive.ingest import ArchiveSource, HarnessRoot, IngestReport, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import list_sessions
+from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticChange, ResticFile, ResticRepository, ResticSnapshot
 from ai_session_archive.version_queries import get_version, list_events, list_versions
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -98,7 +99,7 @@ def test_committed_batch_survives_crash_without_publishing(postgres_engine: Engi
     factory = sessionmaker(postgres_engine)
     committed_sizes = []
 
-    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ingest._ParsedRecord]:
+    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ParsedRecord]:
         assert isinstance(postgres_engine.pool, QueuePool)
         assert postgres_engine.pool.checkedout() == 0
         return read_batch(*args, **kwargs)
@@ -414,7 +415,7 @@ def test_payload_collision_rejects_version_without_changing_evidence(postgres_en
             RecordPayloadRow(
                 id=payload_id,
                 sha256=hashlib.sha256(contents).hexdigest(),
-                parser_version=ingest.PARSER_VERSION,
+                parser_version=PARSER_VERSION,
                 raw_bytes=b"different bytes",
                 parse_error=None,
                 timestamp=None,
@@ -484,7 +485,7 @@ def test_dump_fingerprint_and_parse_release_transactions(postgres_engine: Engine
         assert postgres_engine.pool.checkedout() == 0
         return fingerprint(*args, **kwargs)
 
-    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ingest._ParsedRecord]:
+    def parse_without_transaction(*args: Any, **kwargs: Any) -> list[ParsedRecord]:
         assert isinstance(postgres_engine.pool, QueuePool)
         assert postgres_engine.pool.checkedout() == 0
         return read_batch(*args, **kwargs)
