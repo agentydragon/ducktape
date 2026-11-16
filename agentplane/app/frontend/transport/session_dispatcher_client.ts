@@ -16,8 +16,11 @@ export const sessionDispatcherClient = {
       body,
     });
   },
-  watchDispatches(query: URLSearchParams, handlers: WatchHandlers): () => void {
-    return followWatch(`/upstream/dispatcher/v1/dispatches:watch?${query}`, handlers);
+  watchDispatches(query: URLSearchParams | (() => URLSearchParams), handlers: WatchHandlers): () => void {
+    return followWatch(
+      () => `/upstream/dispatcher/v1/dispatches:watch?${typeof query === "function" ? query() : query}`,
+      handlers
+    );
   },
   watchSessions(
     handlers: Omit<WatchHandlers, "onOpen" | "onFrame" | "onError"> & {

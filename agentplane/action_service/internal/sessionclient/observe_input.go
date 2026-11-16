@@ -71,14 +71,16 @@ type InputObservation struct {
 	CommandID   string                             `json:"command_id"`
 	Dispatch    SourcePart[*dispatcherpb.Dispatch] `json:"dispatch"`
 	Observation InputResult                        `json:"observation"`
+	resume      resumeToken
 }
 
 type resumeToken struct {
-	Version     int    `json:"v"`
-	SessionID   string `json:"session_id"`
-	CommandID   string `json:"command_id"`
-	StartCursor uint64 `json:"start_cursor"`
-	Through     uint64 `json:"through_cursor"`
+	Version       int    `json:"v"`
+	SessionID     string `json:"session_id"`
+	CommandID     string `json:"command_id"`
+	StartCursor   uint64 `json:"start_cursor"`
+	Through       uint64 `json:"through_cursor"`
+	DispatchToken string `json:"dispatch_token,omitempty"`
 }
 
 // ObserveInput resolves the caller-held command ID before reading History, then follows only the
@@ -88,7 +90,7 @@ func ObserveInput(
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
 	request ObserveInputRequest,
-) (InputObservation, error) {
+) (result InputObservation, err error) {
 	if _, err := uuid.Parse(request.SessionID); err != nil {
 		return InputObservation{}, status.Error(codes.InvalidArgument, "session_id must be a UUID")
 	}
@@ -98,13 +100,16 @@ func ObserveInput(
 	if request.WaitSeconds < 0 || request.WaitSeconds > maxObserveWaitSeconds {
 		return InputObservation{}, status.Error(codes.InvalidArgument, "wait_seconds must be between 0 and 30")
 	}
+	position := resumeToken{Version: 1, SessionID: request.SessionID, CommandID: request.CommandID}
 	if request.ResumeToken != "" {
-		if _, err := decodeResumeToken(request.ResumeToken, request.SessionID, request.CommandID); err != nil {
+		position, err = decodeResumeToken(request.ResumeToken, request.SessionID, request.CommandID)
+		if err != nil {
 			return InputObservation{}, status.Error(codes.InvalidArgument, "invalid resume token for this Session and command")
 		}
 	}
 
-	result := InputObservation{
+	result = InputObservation{
+		resume:    position,
 		SessionID: request.SessionID,
 		CommandID: request.CommandID,
 		Dispatch:  SourcePart[*dispatcherpb.Dispatch]{Kind: SourceNotObserved, Source: SourceDispatcher},
@@ -113,6 +118,7 @@ func ObserveInput(
 			Kind:            ObservationNotObserved,
 		},
 	}
+	defer func() { result.Observation.ResumeToken = encodeResumeToken(result.resume) }()
 	readCtx := ctx
 	var cancel context.CancelFunc
 	if request.WaitSeconds > 0 {
@@ -121,24 +127,14 @@ func ObserveInput(
 	}
 
 	dispatch, err := getDispatch(readCtx, dispatcher, request.CommandID, request.SessionID, &result)
-	if err != nil {
+	if err != nil && status.Code(err) != codes.NotFound {
 		return result, err
 	}
-	if dispatch == nil {
-		return result, nil
-	}
-	if dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
+	if dispatch != nil && dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
 		return result, status.Error(codes.InvalidArgument, "command_id does not identify submitted input")
 	}
-	startCursor, hasAdmission := admissionStart(dispatch)
-	if !hasAdmission {
-		if dispatchTerminal(dispatch) {
-			return result, nil
-		}
-		if request.WaitSeconds == 0 {
-			return result, nil
-		}
-		dispatch, err = watchForAdmission(readCtx, dispatcher, request.CommandID, request.SessionID, dispatch, &result)
+	if dispatch == nil || (dispatch.GetAdmission() == nil && !dispatchTerminal(dispatch)) {
+		dispatch, err = watchForAdmission(readCtx, dispatcher, request, dispatch, &result)
 		if err != nil {
 			if isWaitDeadline(readCtx, ctx) {
 				return result, nil
@@ -146,29 +142,34 @@ func ObserveInput(
 			if errors.Is(ctx.Err(), context.Canceled) {
 				return result, status.FromContextError(ctx.Err()).Err()
 			}
-			result.Dispatch.Kind = "partial"
-			result.Dispatch.Error = sourceFailure(err)
-			return result, nil
-		}
-		if dispatch == nil {
-			return result, nil
-		}
-		startCursor, hasAdmission = admissionStart(dispatch)
-		if !hasAdmission {
-			if dispatchTerminal(dispatch) {
-				return result, nil
-			}
-			if dispatchstate.NormalizeDeliveryState(dispatch.GetState()) == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
-				result.Dispatch.Kind = "partial"
-				result.Dispatch.Error = &SourceError{Code: codes.DataLoss.String(), Message: "dispatcher admission cursor is missing"}
+			result.Dispatch.Kind = SourcePartial
+			if result.Dispatch.Error == nil {
+				result.Dispatch.Error = sourceFailure(err)
 			}
 			return result, nil
 		}
 	}
+	if dispatch == nil {
+		if result.Dispatch.Error != nil {
+			return result, nil
+		}
+		return result, status.Error(codes.NotFound, "input not found")
+	}
+	if dispatch.GetOperation() != commandpb.Operation_OPERATION_SUBMIT_INPUT {
+		return result, status.Error(codes.InvalidArgument, "command_id does not identify submitted input")
+	}
+	startCursor, hasAdmission := admissionStart(dispatch)
+	if !hasAdmission {
+		if dispatchstate.NormalizeDeliveryState(dispatch.GetState()) == dispatcherpb.DeliveryState_DELIVERY_STATE_RUNNER_ADMITTED {
+			result.Dispatch.Kind = SourcePartial
+			result.Dispatch.Error = &SourceError{Code: codes.DataLoss.String(), Message: "dispatcher admission cursor is missing"}
+		}
+		return result, nil
+	}
 
-	result.Observation.ResumeToken = encodeResumeToken(resumeToken{
-		Version: 1, SessionID: request.SessionID, CommandID: request.CommandID, StartCursor: startCursor,
-	})
+	// History correlation is rebuilt from admission; the Dispatch cursor is independent.
+	result.resume.StartCursor = startCursor
+	result.resume.Through = 0
 	return followInput(readCtx, ctx, history, request, startCursor, &result)
 }
 
@@ -193,33 +194,70 @@ func getDispatch(
 func watchForAdmission(
 	ctx context.Context,
 	client dispatcherpb.SessionDispatcherClient,
-	commandID, sessionID string,
+	request ObserveInputRequest,
 	current *dispatcherpb.Dispatch,
 	result *InputObservation,
 ) (*dispatcherpb.Dispatch, error) {
-	stream, err := client.WatchDispatches(ctx, &dispatcherpb.WatchDispatchesRequest{
-		Filter: &dispatcherpb.DispatchFilter{
-			Scope:      &dispatcherpb.DispatchFilter_SessionId{SessionId: sessionID},
-			CommandIds: []string{commandID},
-		},
-	})
-	if err != nil {
-		return current, err
-	}
 	for {
-		frame, err := stream.Recv()
+		if err := ctx.Err(); err != nil {
+			return current, status.FromContextError(err).Err()
+		}
+		token := result.resume.DispatchToken
+		streamCtx, cancel := context.WithCancel(ctx)
+		stream, err := client.WatchDispatches(streamCtx, &dispatcherpb.WatchDispatchesRequest{
+			Filter: &dispatcherpb.DispatchFilter{
+				Scope:      &dispatcherpb.DispatchFilter_SessionId{SessionId: request.SessionID},
+				CommandIds: []string{request.CommandID},
+			},
+			ResumeToken: token,
+		})
+		if err == nil {
+			for {
+				var frame *dispatcherpb.WatchDispatchesResponse
+				frame, err = stream.Recv()
+				if err != nil {
+					break
+				}
+				if dispatch := frame.GetDispatch(); dispatch != nil {
+					if dispatch.GetCommandId() != request.CommandID || dispatch.GetSessionId() != request.SessionID {
+						cancel()
+						return nil, status.Error(codes.DataLoss, "dispatcher returned a different input")
+					}
+					recordDispatch(dispatch, result)
+					current = dispatch
+				}
+				// Advance only after the receipt is applied. Persist CaughtUp tokens too.
+				result.resume.DispatchToken = frame.GetResumeToken()
+				if current != nil && (current.GetAdmission() != nil || dispatchTerminal(current) || wakeBlocksDelivery(current)) {
+					cancel()
+					return current, nil
+				}
+				if frame.GetCaughtUp() != nil {
+					if current == nil && token != "" {
+						// The caller has a position but no receipt. Restore it from a snapshot
+						// even if its terminal frame was already covered by the cursor.
+						result.resume.DispatchToken = ""
+						break
+					}
+					if current == nil || request.WaitSeconds == 0 {
+						cancel()
+						return current, nil
+					}
+				}
+			}
+		}
+		cancel()
+		if status.Code(err) == codes.OutOfRange && result.resume.DispatchToken != "" {
+			result.resume.DispatchToken = ""
+			result.Dispatch = SourcePart[*dispatcherpb.Dispatch]{
+				Kind: SourcePartial, Source: SourceDispatcher,
+				Error: &SourceError{Code: codes.OutOfRange.String(), Message: "dispatch deletion coverage expired; resyncing from a fresh snapshot"},
+			}
+			current = nil
+			continue
+		}
 		if err != nil {
 			return current, err
-		}
-		if dispatch := frame.GetDispatch(); dispatch != nil && dispatch.GetCommandId() == commandID {
-			if dispatch.GetSessionId() != sessionID {
-				return nil, status.Error(codes.NotFound, "input not found")
-			}
-			recordDispatch(dispatch, result)
-			current = dispatch
-			if dispatch.GetAdmission() != nil || dispatchTerminal(dispatch) || wakeBlocksDelivery(dispatch) {
-				return current, nil
-			}
 		}
 	}
 }
@@ -240,7 +278,12 @@ func wakeBlocksDelivery(dispatch *dispatcherpb.Dispatch) bool {
 func recordDispatch(dispatch *dispatcherpb.Dispatch, result *InputObservation) {
 	dispatch.State = dispatchstate.NormalizeDeliveryState(dispatch.GetState())
 	now := time.Now().UTC()
+	coverageError := result.Dispatch.Error
 	result.Dispatch = SourcePart[*dispatcherpb.Dispatch]{Kind: SourceObserved, Source: SourceDispatcher, ObservedAt: &now, Value: dispatch}
+	if coverageError != nil && coverageError.Code == codes.OutOfRange.String() {
+		result.Dispatch.Kind = SourcePartial
+		result.Dispatch.Error = coverageError
+	}
 }
 
 func setObservation(result *InputObservation, kind ObservationKind, turnID *string, turn *CorrelatedTurn, reason *string) {
@@ -373,7 +416,7 @@ func followInput(
 				through = frame.GetThroughCursor()
 			}
 			if through > 0 {
-				setCoverage(result, through, startCursor, request)
+				setCoverage(result, through, startCursor)
 			}
 			if complete {
 				return *result, nil
@@ -388,12 +431,10 @@ func followInput(
 	}
 }
 
-func setCoverage(result *InputObservation, through, start uint64, request ObserveInputRequest) {
+func setCoverage(result *InputObservation, through, start uint64) {
 	result.Observation.ThroughCursor = fmt.Sprint(through)
-	result.Observation.ResumeToken = encodeResumeToken(resumeToken{
-		Version: 1, SessionID: request.SessionID, CommandID: request.CommandID,
-		StartCursor: start, Through: through,
-	})
+	result.resume.StartCursor = start
+	result.resume.Through = through
 }
 
 func historyFailure(err error, ctx, parent context.Context, result *InputObservation) (InputObservation, error) {
@@ -430,6 +471,8 @@ func sourceFailure(err error) *SourceError {
 		message = "invalid request"
 	case codes.DataLoss:
 		message = "retained history has a gap"
+	case codes.OutOfRange:
+		message = "dispatch deletion coverage expired; resync required"
 	}
 	return &SourceError{Code: code.String(), Message: message}
 }

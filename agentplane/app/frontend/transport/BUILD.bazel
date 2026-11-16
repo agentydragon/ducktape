@@ -115,6 +115,7 @@ agentplane_vitest_test(
     name = "watch_stream_test",
     srcs = ["watch_stream.test.ts"],
     deps = [
+        ":client",
         ":stream_reader",
         ":watch_stream",
         "//:node_modules/vitest",

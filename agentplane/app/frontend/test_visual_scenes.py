@@ -32,6 +32,22 @@ async def test_session_recovery_messages(view: VisualPage, app: AgentplaneFixtur
     await view.capture()
 
 
+@DESKTOP_AND_MOBILE
+async def test_dispatch_coverage_loss_alert(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_thread(IDLE_THREAD)
+    await view.page.evaluate(
+        """threadId => {
+          const key = `agentplane.dispatch-watch-coverage-lost:${encodeURIComponent(threadId)}`;
+          localStorage.setItem(key, "true");
+          window.dispatchEvent(new StorageEvent("storage", { key, newValue: "true" }));
+        }""",
+        IDLE_THREAD,
+    )
+    alert = view.page.get_by_role("alert").filter(has_text="Some earlier delivery updates or deletions may be missing")
+    await expect(alert).to_be_visible()
+    await view.capture()
+
+
 async def test_session_recovery_tools(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("tools")
     await app.mount_thread(IDLE_THREAD)

@@ -1044,6 +1044,31 @@ it("loads commands by id as a quoted array", async () => {
   });
 });
 
+it("aborts an in-flight command subset when its thread is left", async () => {
+  const sync = stubSync();
+  thread(sync, 40);
+  let pending: AbortSignal | undefined;
+  let aborted = false;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    if (typeof init?.body === "string" && (JSON.parse(init.body) as Subset).where?.includes("entity_id = ANY")) {
+      return new Promise((_, reject) => {
+        pending = init.signal ?? undefined;
+        pending?.addEventListener("abort", () => {
+          aborted = true;
+          reject(pending?.reason);
+        });
+      });
+    }
+    return sync.fetch(input, init);
+  });
+  await renderThread(<Shown>{() => <Commands ids={["test-pending-command"]} />}</Shown>);
+  await vi.waitFor(() => expect(pending).toBeDefined());
+
+  await act(async () => root?.unmount());
+  root = undefined;
+  expect(aborted).toBe(true);
+});
+
 const itemsView = <Shown>{(rows, history) => <Rows rows={rows} history={history} />}</Shown>;
 const bodiesView = (
   <Shown>

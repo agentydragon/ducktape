@@ -3330,8 +3330,9 @@ routes.push(
               reason: queuedReasons.get(commandId) ?? "sandbox_resuming",
               updatedAt: ago(1_000),
             },
+            resumeToken: `visual-dispatch-${commandId}`,
           })),
-          { caughtUp: {} },
+          { caughtUp: {}, resumeToken: "visual-dispatch-checkpoint" },
         ],
         signal
       ),

@@ -96,6 +96,13 @@ with the same ID. After an unknown input outcome, use `session-dispatcher get-di
 command ID. Creating a Session does not create a model turn. For composite Session reads and input
 observation, use `agentplane actions guide session_delegation`.
 
+Input observation retains the opaque Dispatcher watch cursor inside its caller-held observation token,
+including checkpoints received before a disconnect or wait deadline. A missing live receipt is looked
+up through the watch so retained deletion tombstones remain observable. If deletion coverage expired,
+the client clears the Dispatch cursor and takes a fresh snapshot; `dispatch.kind` remains `partial`
+with an `OUT_OF_RANGE` source error even after a successful resync. A fresh snapshot cannot recover a
+deletion whose tombstone was pruned.
+
 The `history` commands expose the backend's typed summary and retained event page directly. Managed
 workloads call the local gRPC route, which authenticates with the workload SPIFFE certificate; History
 checks the exact Identity incarnation. Event pages include removed ranges and settlements, so callers

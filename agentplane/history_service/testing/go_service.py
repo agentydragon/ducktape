@@ -34,6 +34,7 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.go_process import GoProcess, go_process
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import CertificateAuthority, issue_workload_leaf, make_ca, workload_uri, write_ca
+from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from util.db_url import render_postgresql_url
 from util.net import listen_tcp
 from util.testing.postgres import PostgresDatabaseTemplate
@@ -391,7 +392,7 @@ async def go_history_service(
         async with go_process(
             _SERVICE,
             env={_DATABASE_URL_ENV: _go_database_url(database_url), _CONFIG_FILE_ENV: str(config)},
-            stderr=directory / "history-service.stderr",
+            stderr=undeclared_outputs_dir() / f"history-service-{uuid4().hex}.log",
             health_port=reader_listener.port,
             grace_s=_GRACE_SECONDS,
             pass_fds=(reader_fd,),

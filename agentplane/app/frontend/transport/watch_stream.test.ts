@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import type { StreamConnection } from "./stream_reader";
-import { followWatch } from "./watch_stream";
+import { HttpError } from "./client";
+import { followWatch, WatchStreamError } from "./watch_stream";
 import { type ServedWatch, stubWatchFetch } from "../testing/watch";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;
@@ -84,6 +85,44 @@ it("treats an error message of the stream as the end of the connection", async (
 
   expect(connection()).toMatchObject({ phase: "reconnecting", lastError: expect.stringContaining("lease lost") });
   expect(watch(0).signal?.aborted).toBe(true);
+});
+
+it("preserves a gRPC status from a JSON stream error and rebuilds the URL on retry", async () => {
+  const errors: unknown[] = [];
+  let checkpoint = "first";
+  stop = followWatch(() => `/test/watch?resumeToken=${checkpoint}`, {
+    onOpen: () => events.push("open"),
+    onFrame: (result) => events.push(result),
+    onConnection: (connection) => connections.push(connection),
+    onError: (reason) => errors.push(reason),
+  });
+  await settle();
+  expect(watch(0).url.searchParams.get("resumeToken")).toBe("first");
+  watch(0).write('{"error":{"code":11,"message":"coverage expired"}}\n');
+  await settle();
+  checkpoint = "fresh";
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  expect(errors[0]).toBeInstanceOf(WatchStreamError);
+  expect(errors[0]).toMatchObject({ code: 11 });
+  expect(watch(1).url.searchParams.get("resumeToken")).toBe("fresh");
+});
+
+it("parses the gRPC status from a rejected HTTP watch response", async () => {
+  const errors: unknown[] = [];
+  fetchMock.fetch.mockResolvedValueOnce(
+    Response.json({ error: { code: 11, message: "coverage expired" } }, { status: 400 })
+  );
+  stop = followWatch("/test/watch", {
+    onOpen: () => events.push("open"),
+    onFrame: (result) => events.push(result),
+    onConnection: (connection) => connections.push(connection),
+    onError: (reason) => errors.push(reason),
+  });
+  await settle();
+
+  expect(errors[0]).toBeInstanceOf(HttpError);
+  expect(errors[0]).toMatchObject({ code: 11, status: 400 });
 });
 
 it("passes nested JSON and null results without changing them", async () => {

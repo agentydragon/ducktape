@@ -55,9 +55,11 @@ export class HttpError extends Error {
   ) {
     super(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(body)}`);
     this.status = response.status;
+    // gRPC-Gateway streaming refusals use the same error envelope as an opened stream.
+    const status = typeof body === "object" && body !== null && "error" in body ? body.error : body;
     this.code =
-      typeof body === "object" && body !== null && "code" in body && typeof body.code === "number"
-        ? body.code
+      typeof status === "object" && status !== null && "code" in status && typeof status.code === "number"
+        ? status.code
         : undefined;
   }
 }

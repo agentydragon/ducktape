@@ -64,6 +64,49 @@ it("retains the exact command and immutable Thread target across a new page owne
   expect(new LocalCommands("other-thread", COMMAND_TARGET).getSnapshot().commands).toEqual([]);
 });
 
+it("persists a watch cursor under the canonical Session and command filter", () => {
+  const store = new LocalCommands("thread", COMMAND_TARGET);
+  expect(store.saveDispatchWatchResumeToken("thread", ["b", "a", "a"], "opaque-cursor")).toBe(true);
+
+  const restored = new LocalCommands("thread", COMMAND_TARGET);
+  expect(restored.dispatchWatchResumeToken("thread", ["a", "b"])).toBe("opaque-cursor");
+  expect(restored.dispatchWatchResumeToken("thread", ["a"])).toBeNull();
+  expect(
+    new LocalCommands("other-thread", COMMAND_TARGET).dispatchWatchResumeToken("other-thread", ["a", "b"])
+  ).toBeNull();
+  expect(() => restored.dispatchWatchResumeToken("other-thread", ["a", "b"])).toThrow("different Session");
+});
+
+it("leaves a cursor absent when local storage cannot persist it", () => {
+  const store = new LocalCommands("thread", COMMAND_TARGET);
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new DOMException("storage full", "QuotaExceededError");
+  });
+
+  expect(store.saveDispatchWatchResumeToken("thread", ["a"], "opaque-cursor")).toBe(false);
+  expect(new LocalCommands("thread", COMMAND_TARGET).dispatchWatchResumeToken("thread", ["a"])).toBeNull();
+});
+
+it("keeps lost deletion coverage visible across receipt storage failures and reloads", () => {
+  const store = new LocalCommands("thread", COMMAND_TARGET);
+  store.remember(COMMAND);
+  store.recordDispatchWatchCoverageLoss();
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new DOMException("storage full", "QuotaExceededError");
+  });
+
+  expect(store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, DeliveryState.FAILED, "2026-10-14T12:00:02Z"))).toBe(
+    false
+  );
+  expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  expect(store.getSnapshot().error).toContain("storage full");
+
+  const unsubscribe = store.subscribe(() => {});
+  expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  unsubscribe();
+  expect(new LocalCommands("thread", COMMAND_TARGET).getSnapshot().dispatchWatchCoverageLost).toBe(true);
+});
+
 it("pins the original Sandbox UID and rejects a changed destination for the same command ID", () => {
   const store = new LocalCommands("thread", COMMAND_TARGET);
   store.remember(COMMAND);

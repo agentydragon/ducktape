@@ -29,6 +29,9 @@ The manual queue, replica and wake probes are documented in the
   `INVALID_ARGUMENT`; a token older than retained coverage returns `OUT_OF_RANGE` with resynchronization
   detail. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those commands. Tombstones
   are used for watch snapshots and replay; `GetDispatch` and `ListDispatches` continue to read current rows.
+  The App persists a cursor with its applied local receipts; `session_client` carries one in the input
+  observation token. Both clear expired cursors and resync, while preserving an explicit coverage-loss
+  warning or source error. Resync cannot recover a pruned deletion.
 - **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,

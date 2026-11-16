@@ -443,11 +443,14 @@ class Shape {
    * live read.
    */
   async #attempt(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    // Electric's subset requests omit the shape signal, including retries after close.
+    const signal = init?.signal ? AbortSignal.any([this.#abort.signal, init.signal]) : this.#abort.signal;
+    signal.throwIfAborted();
     let response: Response;
     try {
-      response = await keepingOffset(input, init);
+      response = await keepingOffset(input, { ...init, signal });
     } catch (error) {
-      if (!init?.signal?.aborted) this.#attempted(displayableError(error));
+      if (!signal.aborted) this.#attempted(displayableError(error));
       throw error;
     }
     this.#attempted(response.status >= 500 || response.status === 429 ? `HTTP ${response.status}` : null);
@@ -456,7 +459,6 @@ class Shape {
 
   /** Every failed attempt, and the first success after them. */
   #attempted(failure: string | null): void {
-    // A subset's request carries no signal, so it goes on retrying once the shape is closed.
     if (this.closed || (failure === null && !this.#retrying)) return;
     this.#retrying = failure !== null;
     this.#onAttempt(failure);
