@@ -7,10 +7,10 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 )
 
 func (r *Runtime) initializeSessions() error {

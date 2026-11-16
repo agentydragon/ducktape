@@ -8,7 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/scripts"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"

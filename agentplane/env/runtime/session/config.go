@@ -8,8 +8,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/codexappserver"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
-	"github.com/agentydragon/ducktape/agentplane/env/scripts"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/state"
 )

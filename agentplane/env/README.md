@@ -27,9 +27,9 @@ journals before releasing its environment owner. See the [Runtime contract](runt
 
 Native adapters, Session management, retained records, journals and workspace helpers live directly
 under `env/runtime/`. Shared process machinery is in `runtime/supervision`, one-shot operation
-bookkeeping in `env/oneoff`, shell execution in `env/scripts`, and Go deployment parsing in
-`env/configuration`. `env/e2e/` contains cross-service integration tests; image and VM packaging
-lives in `env/images/`.
+bookkeeping in `env/oneoff`, shell execution in `env/runtime/internal/scripts`, and Go deployment
+parsing in `env/configuration`. `env/e2e/` contains cross-service integration tests; image and VM
+packaging lives in `env/images/`.
 
 The deployment renders the shared [Session guide](../session_instructions/platform_instructions.j2)
 with concrete service URLs. Native and central backends append the child's Session ID and standing
