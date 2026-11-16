@@ -1,123 +1,38 @@
 import { agentMessageContent, reasoningText, responsePayload } from "./codex-record";
-import type { AgentMessageContent } from "./codex-record";
 import { nonemptyString, object, string } from "./json-values";
 import type { ObjectValue } from "./json-values";
 import type { EventRecord } from "./schema";
+import {
+  claudeActivitySteps,
+  claudeRecordPresentation,
+  claudeThinkingEntries,
+  claudeToolEvents,
+  claudeToolStep as buildClaudeToolStep,
+} from "./claude-transcript";
+import type {
+  ActivityStep,
+  RecordPresentation,
+  StepCandidate,
+  ToolEvent,
+  ToolPairs,
+  TranscriptRow,
+} from "./transcript-row-types";
 
-export type RecordPresentation = "user" | "assistant" | "activity" | "metadata" | "compaction" | "record";
-
-export type ActivityStep =
-  | {
-      key: string;
-      kind: "tool";
-      records: EventRecord[];
-      name: string;
-      input: string | null;
-      output: string | null;
-      failed: boolean;
-      missingCall: boolean;
-    }
-  | { key: string; kind: "reasoning"; records: EventRecord[]; text: string }
-  | {
-      key: string;
-      kind: "subagent";
-      records: EventRecord[];
-      author: string;
-      recipient: string | null;
-      content: AgentMessageContent;
-    }
-  | { key: string; kind: "attachment"; records: EventRecord[]; title: string; preview: string }
-  | { key: string; kind: "record"; records: EventRecord[] };
-
-export type TranscriptRow =
-  | { key: string; kind: "record"; records: EventRecord[] }
-  | { key: string; kind: "metadata"; records: EventRecord[] }
-  | { key: string; kind: "activity"; records: EventRecord[]; steps: ActivityStep[] };
-
-type ToolNamespace = "claude" | "codex";
-type ToolEvent = {
-  key: string;
-  namespace: ToolNamespace;
-  kind: "call" | "output";
-  payload: ObjectValue;
-  callId: string | null;
-  record: EventRecord;
-  blockIndex: number;
-};
-type ToolPairs = {
-  callByOutputKey: Map<string, ToolEvent>;
-  outputByCallKey: Map<string, ToolEvent>;
-};
-type StepCandidate = { step: ActivityStep; ordinal: number; blockIndex: number };
 type MutableTranscriptRow =
   | { kind: "record"; records: EventRecord[] }
   | { kind: "metadata"; records: EventRecord[] }
   | { kind: "activity"; records: EventRecord[]; stepRecords: EventRecord[] };
 
-function claudeContent(record: EventRecord): unknown[] | null {
-  if (record.parse_error != null) return null;
-  const parsed = object(record.parsed);
-  if (parsed?.type !== "user" && parsed?.type !== "assistant") return null;
-  const content = object(parsed.message)?.content;
-  return Array.isArray(content) ? content : null;
-}
-
-const CLAUDE_INTERMEDIATE_TYPES = new Set(["tool_use", "tool_result", "thinking", "redacted_thinking"]);
-
-/** Identifies Claude blocks that the transcript renderer presents as activity instead of message prose. */
-export function isClaudeIntermediateBlock(value: unknown): boolean {
-  const block = object(value);
-  return block !== null && CLAUDE_INTERMEDIATE_TYPES.has(String(block.type));
-}
-
-function claudeThinkingText(block: ObjectValue): string | null {
-  const text = string(block.thinking);
-  return text !== null && text.trim().length > 0 ? text : null;
-}
-
 const TOOL_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
 const TOOL_OUTPUT_TYPES = new Set(["function_call_output", "custom_tool_call_output"]);
 
 function toolEvents(record: EventRecord): ToolEvent[] {
-  if (record.parse_error != null) return [];
   const parsed = object(record.parsed);
   if (parsed?.type === "user" || parsed?.type === "assistant") {
-    const content = claudeContent(record);
-    if (content === null) return [];
-    return content.flatMap<ToolEvent>((value, blockIndex) => {
-      const payload = object(value);
-      const type = string(payload?.type);
-      if (payload === null || type === null) return [];
-      if (type === "tool_use") {
-        return [
-          {
-            key: record.ordinal + ":" + blockIndex,
-            namespace: "claude" as const,
-            kind: "call" as const,
-            payload,
-            callId: nonemptyString(payload.id),
-            record,
-            blockIndex,
-          },
-        ];
-      }
-      if (type === "tool_result") {
-        return [
-          {
-            key: record.ordinal + ":" + blockIndex,
-            namespace: "claude" as const,
-            kind: "output" as const,
-            payload,
-            callId: nonemptyString(payload.tool_use_id),
-            record,
-            blockIndex,
-          },
-        ];
-      }
-      return [];
-    });
+    return claudeToolEvents(record);
   }
 
+  if (record.parse_error != null) return [];
   const payload = responsePayload(record);
   const type = string(payload?.type);
   if (payload === null || type === null) return [];
@@ -150,18 +65,6 @@ function toolEvents(record: EventRecord): ToolEvent[] {
   return [];
 }
 
-const CLAUDE_METADATA = new Set([
-  "queue-operation",
-  "pr-link",
-  "last-prompt",
-  "mode",
-  "permission-mode",
-  "atis-latch",
-  "ai-title",
-  "file-history-snapshot",
-  "file-history-delta",
-  "progress",
-]);
 const CODEX_METADATA = new Set([
   "session_meta",
   "turn_context",
@@ -182,23 +85,9 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   if (record.parse_error != null) return "record";
   const parsed = object(record.parsed);
   if (!parsed) return "record";
-  const message = object(parsed.message);
+  const claudePresentation = claudeRecordPresentation(record);
+  if (claudePresentation !== null) return claudePresentation;
   if (parsed.type === "attachment" && object(parsed.attachment) !== null) return "activity";
-  if (parsed.type === "user" || parsed.type === "assistant") {
-    const content = message?.content;
-    if (Array.isArray(content) && content.length > 0 && content.every(isClaudeIntermediateBlock)) {
-      const hasToolBlock = content.some((block) => {
-        const type = string(object(block)?.type);
-        return type === "tool_use" || type === "tool_result";
-      });
-      const hasReadableThinking = content.some((block) => {
-        const item = object(block);
-        return item?.type === "thinking" && claudeThinkingText(item) !== null;
-      });
-      return hasToolBlock || hasReadableThinking ? "activity" : "metadata";
-    }
-    return parsed.type;
-  }
 
   const payload = object(parsed.payload);
   if (parsed.type === "response_item" && payload) {
@@ -214,7 +103,7 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   }
   if (parsed.type === "compacted" || (parsed.type === "event_msg" && payload?.type === "context_compacted"))
     return "compaction";
-  if (CLAUDE_METADATA.has(String(parsed.type)) || CODEX_METADATA.has(String(parsed.type))) return "metadata";
+  if (CODEX_METADATA.has(String(parsed.type))) return "metadata";
   if (parsed.type === "event_msg" && CODEX_BOOKKEEPING.has(String(payload?.type))) return "metadata";
   return "record";
 }
@@ -348,38 +237,9 @@ function activitySteps(
       continue;
     }
 
-    const content = claudeContent(record);
-    if (content !== null) {
-      const eventsByIndex = new Map(toolEvents(record).map((event) => [event.blockIndex, event]));
-      content.forEach((value, blockIndex) => {
-        const block = object(value);
-        if (block === null) return;
-        const event = eventsByIndex.get(blockIndex);
-        if (event !== undefined) {
-          if (event.kind === "call") {
-            if (!pairs.outputByCallKey.has(event.key)) candidates.push(toolCandidate(event, null));
-            return;
-          }
-          const call = pairs.callByOutputKey.get(event.key);
-          if (call === undefined || !sourceOrdinals.has(call.record.ordinal)) {
-            candidates.push(toolCandidate(event, null));
-          } else {
-            candidates.push(toolCandidate(event, call));
-          }
-          return;
-        }
-
-        if (block.type === "thinking") {
-          const text = claudeThinkingText(block);
-          if (text !== null) {
-            candidates.push({
-              ordinal: record.ordinal,
-              blockIndex,
-              step: { key: record.ordinal + ":" + blockIndex, kind: "reasoning", records: [record], text },
-            });
-          }
-        }
-      });
+    const claudeCandidates = claudeActivitySteps(record, pairs, sourceOrdinals, toolCandidate);
+    if (claudeCandidates !== null) {
+      candidates.push(...claudeCandidates);
       continue;
     }
 
@@ -447,34 +307,10 @@ function activitySteps(
 function toolCandidate(event: ToolEvent, call: ToolEvent | null): StepCandidate {
   const records = uniqueRecords(call === null ? [event.record] : [call.record, event.record]);
   const step =
-    event.namespace === "claude" ? claudeToolStep(event, call, records) : codexToolStep(event, call, records);
+    event.namespace === "claude"
+      ? buildClaudeToolStep(event, call, records, displayValue)
+      : codexToolStep(event, call, records);
   return { step, ordinal: event.record.ordinal, blockIndex: event.blockIndex };
-}
-
-function claudeToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
-  const missingCall = event.kind === "output" && call === null;
-  const callPayload = call?.payload ?? (event.kind === "call" ? event.payload : undefined);
-  const outputPayload = event.kind === "output" ? event.payload : null;
-  return {
-    key: event.key,
-    kind: "tool",
-    records,
-    name: callPayload === undefined ? "Tool result" : (nonemptyString(callPayload.name) ?? "Tool call"),
-    input: callPayload === undefined ? null : displayValue(callPayload.input),
-    output: outputPayload === null ? null : claudeToolOutput(outputPayload.content),
-    failed: outputPayload?.is_error === true,
-    missingCall,
-  };
-}
-
-function claudeToolOutput(value: unknown): string | null {
-  if (
-    Array.isArray(value) &&
-    value.every((item) => object(item)?.type === "text" && typeof object(item)?.text === "string")
-  ) {
-    return value.map((item) => object(item)!.text as string).join("\n");
-  }
-  return displayValue(value);
 }
 
 function codexToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
@@ -522,17 +358,6 @@ function displayValue(value: unknown): string | null {
   } catch {
     return String(value);
   }
-}
-
-function claudeThinkingEntries(record: EventRecord): Array<{ blockIndex: number; text: string }> {
-  const content = claudeContent(record);
-  if (content === null) return [];
-  return content.flatMap((value, blockIndex) => {
-    const block = object(value);
-    if (block?.type !== "thinking") return [];
-    const text = claudeThinkingText(block);
-    return text === null ? [] : [{ blockIndex, text }];
-  });
 }
 
 function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {

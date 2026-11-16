@@ -68,8 +68,8 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
+        ":claude_transcript",
         ":schema",
-        ":transcript_rows",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -403,6 +403,30 @@ ts_library(
 )
 
 ts_library(
+    name = "transcript_row_types",
+    srcs = ["transcript-row-types.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":codex_record",
+        ":json_values",
+        ":schema",
+    ],
+)
+
+ts_library(
+    name = "claude_transcript",
+    srcs = ["claude-transcript.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_values",
+        ":schema",
+        ":transcript_row_types",
+    ],
+)
+
+ts_library(
     name = "transcript_rows",
     srcs = ["transcript-rows.ts"],
     isolated_typecheck = True,
@@ -412,9 +436,11 @@ ts_library(
         "//ai_session_archive/frontend:__pkg__",
     ],
     deps = [
+        ":claude_transcript",
         ":codex_record",
         ":json_values",
         ":schema",
+        ":transcript_row_types",
     ],
 )
 
@@ -431,6 +457,7 @@ ts_library(
         ":event_content",
         ":history_recorder",
         ":schema",
+        ":transcript_row_types",
         ":transcript_rows",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -454,7 +481,9 @@ vitest_test(
     config = ":vitest_config",
     tsconfig = ":tsconfig",
     deps = [
+        ":claude_transcript",
         ":schema",
+        ":transcript_row_types",
         ":transcript_rows",
         "//:node_modules/vitest",
     ],

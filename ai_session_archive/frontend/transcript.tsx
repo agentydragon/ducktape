@@ -15,13 +15,8 @@ import { Markdown } from "../../util/frontend/markdown";
 import { JsonView } from "../../util/frontend/json_view";
 import { CodeBlock } from "../../util/frontend/code_block";
 import { recordLabel, RecordContent, rawRecordText } from "./event-content";
-import {
-  recordPresentation,
-  summarizeActivity,
-  transcriptRows,
-  type ActivityStep,
-  type TranscriptRow,
-} from "./transcript-rows";
+import { recordPresentation, summarizeActivity, transcriptRows } from "./transcript-rows";
+import type { ActivityStep, TranscriptRow } from "./transcript-row-types";
 import type { EventRecord } from "./schema";
 import { historyRecorder } from "./history-recorder";
 
