@@ -28,9 +28,9 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app:app_service_pb",
-        "//agentplane/app/frontend/ui:time_ago",
         "//agentplane/app/frontend/shell:topbar",
         "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/ui:time_ago",
     ],
 )
 
