@@ -4,7 +4,7 @@ use selector_outcome::Outcome;
 use selector_resolve::{
     AnonymousStatement, Chunk, EntityIndex, FrozenImportAnchor, Member, MemberSelector, SpecModule,
 };
-use source_identity::SourceUnitId;
+use source_identity::SourceUnitOrdinal;
 use source_match::{ParsedSourceMatchSelector, SelectorField};
 use spec::{
     AnonymousStatementSelector, BindingSelector, BindingSourceKind, CrossRefTarget,
@@ -143,7 +143,7 @@ fn overlay_uses_frozen_full_resolution_and_only_excludes_occupied_units() {
         // The anchor and retained `Kept` stay owned. `FixedA` is omitted, so
         // its source unit is available, while its export remains a frozen
         // binding anchor for the overlay's free identifier.
-        let occupied = BTreeSet::from([SourceUnitId(0), SourceUnitId(3)]);
+        let occupied = BTreeSet::from([SourceUnitOrdinal(0), SourceUnitOrdinal(3)]);
         let placement = chunk
             .resolve_placement(&overlay, &anchors, &occupied)
             .unwrap();
@@ -173,7 +173,7 @@ fn occupied_candidate_is_removed_before_selector_uniqueness_is_decided() {
             .resolve_placement(
                 &overlay,
                 &anchors,
-                &BTreeSet::from([SourceUnitId(0), SourceUnitId(3)]),
+                &BTreeSet::from([SourceUnitOrdinal(0), SourceUnitOrdinal(3)]),
             )
             .unwrap();
         assert_eq!(resolved_body(&placement, 0, 0), 2);
@@ -229,7 +229,7 @@ fn grouped_source_match_rows_are_removed_as_whole_placements_when_occupied() {
             ],
         )];
         let placement = chunk
-            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitId(0)]))
+            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitOrdinal(0)]))
             .unwrap();
         assert_eq!(resolved_body(&placement, 0, 0), 1);
         assert_eq!(resolved_body(&placement, 0, 1), 1);
@@ -251,7 +251,7 @@ fn anonymous_source_match_obeys_occupied_units() {
             anonymous_statements: vec![anonymous_statement(0, "console.log(1);")],
         }];
         let placement = chunk
-            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitId(0)]))
+            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitOrdinal(0)]))
             .unwrap();
         assert!(matches!(
             &placement
@@ -289,7 +289,7 @@ fn relational_overlay_uses_a_frozen_source_unit_anchor() {
             .resolve_placement(
                 &overlay,
                 &anchors,
-                &BTreeSet::from([SourceUnitId(0), SourceUnitId(1)]),
+                &BTreeSet::from([SourceUnitOrdinal(0), SourceUnitOrdinal(1)]),
             )
             .unwrap();
         assert_eq!(resolved_body(&placement, 0, 0), 2);
@@ -397,7 +397,7 @@ fn repeated_declaration_anchor_uses_the_resolvers_canonical_first_site() {
             }],
         )];
         let placement = chunk
-            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitId(0)]))
+            .resolve_placement(&overlay, &anchors, &BTreeSet::from([SourceUnitOrdinal(0)]))
             .unwrap();
         assert_eq!(resolved_body(&placement, 0, 0), 3);
     });
@@ -420,6 +420,29 @@ fn overlay_cannot_reuse_a_frozen_module_path() {
                     &[module("existing-owner", Vec::new())],
                     &anchors,
                     &BTreeSet::new()
+                )
+                .is_err()
+        );
+    });
+}
+
+#[test]
+fn placement_rejects_an_occupied_ordinal_outside_the_chunk() {
+    with_chunk(|chunk| {
+        let base = [module(
+            "existing-owner",
+            vec![binding_member("anchor", "anchor")],
+        )];
+        let base_resolution = chunk.resolve(&base).unwrap();
+        let anchors = chunk
+            .freeze_placement_anchors(&base, &base_resolution)
+            .unwrap();
+        assert!(
+            chunk
+                .resolve_placement(
+                    &[module("new-owner", Vec::new())],
+                    &anchors,
+                    &BTreeSet::from([SourceUnitOrdinal(99)]),
                 )
                 .is_err()
         );

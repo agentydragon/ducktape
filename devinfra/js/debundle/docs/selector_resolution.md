@@ -49,13 +49,13 @@ identities and overlay paths that reuse a frozen module path are rejected.
 Global export-name collisions remain ambiguous even when entries happen to
 share a binding or source unit; the resolver counts module entries.
 
-The supplied occupied set is the caller's post-closure ownership result, not a
-raw selector-hit set. Every overlay target excludes those units from its
-candidate domain, and grouped or anonymous placements exclude a row if any
-claimed unit is occupied. Overlay targets remain mutually distinct under
-their own `all_different` constraints. The resolver validates that occupied
-IDs belong to the chunk, but does not compute ownership closure or decide
-which selectors should move.
+The supplied occupied set is the caller's post-closure ownership result as
+`SourceUnitOrdinal`s, not report-row `SourceUnitId`s or a raw selector-hit set.
+Every overlay target excludes those units from its candidate domain, and
+grouped or anonymous placements exclude a row if any claimed unit is occupied.
+Overlay targets remain mutually distinct under their own `all_different`
+constraints. The resolver validates that occupied ordinals belong to the chunk,
+but does not compute ownership closure or decide which selectors should move.
 
 This API proves selector placement only. It does not validate the full spec,
 the dependency graph, edit-gate policy, or emitted JavaScript. Callers still
