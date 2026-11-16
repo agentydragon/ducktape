@@ -205,7 +205,24 @@ def test_userspace_detection_keeps_early_console(tmp_path: Path) -> None:
     assert console.read_bytes().startswith(b"[0.0] Linux version\n")
 
 
+@pytest.mark.parametrize(
+    ("arguments", "expected"),
+    [
+        (b"qemu-kvm\0-name\0guest=test-domain,debug-threads=on\0", True),
+        (b"qemu-kvm\0-name\0test-domain\0", True),
+        (b"qemu-kvm\0-name\0guest=test-domain-other\0", False),
+        (b"qemu-kvm\0-machine\0none\0", False),
+        (b"qemu-pr-helper\0", False),
+    ],
+)
+def test_only_the_named_guest_process_can_start_capture(tmp_path: Path, arguments: bytes, expected: bool) -> None:
+    (tmp_path / "cmdline").write_bytes(arguments)
+    assert boot_interrupts._domain_process(tmp_path, "test-domain") == expected
+    assert not boot_interrupts._domain_process(tmp_path / "exited", "test-domain")
+
+
 def test_missing_executable_preserves_monitor_timeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(boot_interrupts, "_domain_process", lambda *_args: True)
     monkeypatch.setattr(
         boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
     )
@@ -242,6 +259,7 @@ def test_missing_executable_preserves_monitor_timeline(tmp_path: Path, monkeypat
 def test_apic_capture_precedes_monitor_and_finishes_at_userspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(boot_interrupts, "_domain_process", lambda *_args: True)
     monkeypatch.setattr(
         boot_interrupts.boot_rcu, "_sample_qemu", lambda *_args: {"matching_qemu_processes": 1, "pid": 42}
     )
@@ -273,7 +291,10 @@ def test_apic_capture_precedes_monitor_and_finishes_at_userspace(
     assert summary["trace_stats"] == {"cpu0": "overrun: 0"}
 
 
-def test_pending_launcher_does_not_spend_observer_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("helper_present", [False, True])
+def test_pending_or_helper_launcher_does_not_spend_observer_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, helper_present: bool
+) -> None:
     checking = threading.Event()
     qemu_ready = threading.Event()
     tracing = threading.Event()
@@ -282,13 +303,16 @@ def test_pending_launcher_does_not_spend_observer_budget(tmp_path: Path, monkeyp
 
     def hosts(_root: Path, uids: list[str]) -> tuple[dict[str, Any], dict[str, Any]]:
         checking.set()
-        return {uid: {"matching_qemu_processes": int(qemu_ready.is_set())} for uid in uids}, {}
+        return {
+            uid: {"matching_qemu_processes": int(helper_present or qemu_ready.is_set()), "pid": 42} for uid in uids
+        }, {}
 
     def trace(*_args: Any) -> None:
         assert qemu_ready.is_set()
         tracing.set()
 
     monkeypatch.setattr(boot_interrupts.boot_rcu, "_sample_qemus", hosts)
+    monkeypatch.setattr(boot_interrupts, "_domain_process", lambda *_args: qemu_ready.is_set())
     monkeypatch.setattr(boot_interrupts, "_trace_one", trace)
     with boot_interrupts.capture(lambda *_args: "", "test-scope", tmp_path):
         assert checking.wait(5)

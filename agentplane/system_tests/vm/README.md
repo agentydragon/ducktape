@@ -56,7 +56,8 @@ incarnation convergence failures are reported separately from an admitted-topolo
 
 Boot capture writes `vm-artifacts/boot-interrupts/<launcher-pod-uid>/` through
 `undeclared_outputs_dir()`. It attaches as soon as the exact launcher's QEMU
-process is found, before the first QMP round trip. It stops when the serial
+process is found with the exact libvirt domain name in its arguments, excluding
+helpers and capability probes, before the first QMP round trip. It stops when the serial
 console reaches `systemd[1]`, capture ends, or its existing 300-second/150-sample
 budget expires. The observer never pauses or resumes the guest. Discovery can
 miss early boot: activation timestamps, the serial log and initial APIC register

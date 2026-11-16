@@ -86,6 +86,19 @@ def _userspace(launcher: Path) -> bool:
     return False
 
 
+def _domain_process(process: Path, domain: str) -> bool:
+    """Exclude QEMU helpers and libvirt capability probes in the same Pod."""
+    try:
+        arguments = (process / "cmdline").read_bytes().split(b"\0")
+    except FileNotFoundError, ProcessLookupError:
+        return False
+    for index, argument in enumerate(arguments[:-1]):
+        if argument == b"-name":
+            name = arguments[index + 1].split(b",", 1)[0]
+            return name in (domain.encode(), b"guest=" + domain.encode())
+    return False
+
+
 @dataclass(frozen=True)
 class _Probe:
     name: str
@@ -400,7 +413,9 @@ def _trace_one(
             traced_pid = None
             while not stop.is_set():
                 sampled = boot_rcu._sample_qemu(proc_root, uid)
-                if sampled.get("matching_qemu_processes") == 1:
+                if sampled.get("matching_qemu_processes") == 1 and _domain_process(
+                    proc_root / str(sampled["pid"]), domain
+                ):
                     if traced_pid is None:
                         traced_pid = sampled["pid"]
                         resources.enter_context(_capture_apic(proc_root / str(traced_pid), output, record))
@@ -473,6 +488,10 @@ def capture(kubectl: host_qemu.Kubectl, namespace: str, root: Path) -> Iterator[
                         for target in pending:
                             if (
                                 hosts.get(target["pod_uid"], {}).get("matching_qemu_processes") == 1
+                                and _domain_process(
+                                    Path("/proc") / str(hosts[target["pod_uid"]]["pid"]),
+                                    f"{namespace}_{target['vmi_name']}",
+                                )
                                 and len(seen) < MAX_LAUNCHERS
                             ):
                                 seen.add(target["pod_uid"])
