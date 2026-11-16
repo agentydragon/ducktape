@@ -25,25 +25,42 @@ AGENT_A = AgentId("agent_a")
 ALICE = AgentId("alice")
 
 
+def make_security_holding(
+    *,
+    position_id: str,
+    account_id: AccountId,
+    lot_id: LotId,
+    symbol: str = "VOO",
+    security_kind: HoldingKind = HoldingKind.OTHER,
+    unit_value: Decimal = Decimal(500),
+    holding_period_months_at_start: int = 28,
+    quantity: float = 10.0,
+    cost_basis: Decimal = Decimal(4_000),
+) -> SecurityHoldingConfig:
+    return SecurityHoldingConfig(
+        position_id=position_id,
+        account_id=account_id,
+        symbol=SecuritySymbol(symbol),
+        security_kind=security_kind,
+        unit_value=unit_value,
+        lots=(
+            HoldingTaxLotConfig(
+                lot_id=lot_id,
+                holding_period_months_at_start=holding_period_months_at_start,
+                quantity=quantity,
+                cost_basis=cost_basis,
+            ),
+        ),
+    )
+
+
 def test_holding_positions_must_reference_known_accounts() -> None:
     with pytest.raises(ValidationError):
         PortfolioConfig(
             accounts=(),
             holdings=(
-                SecurityHoldingConfig(
-                    position_id="voo_position",
-                    account_id=AccountId("missing"),
-                    symbol=SecuritySymbol("VOO"),
-                    security_kind=HoldingKind.ETF,
-                    unit_value=Decimal(500),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("voo_lot"),
-                            holding_period_months_at_start=28,
-                            quantity=10.0,
-                            cost_basis=Decimal(4_000),
-                        ),
-                    ),
+                make_security_holding(
+                    position_id="voo_position", account_id=AccountId("missing"), lot_id=LotId("voo_lot")
                 ),
             ),
         )
@@ -55,35 +72,20 @@ def test_holding_lot_ids_must_be_unique() -> None:
         PortfolioConfig(
             accounts=(account,),
             holdings=(
-                SecurityHoldingConfig(
+                make_security_holding(
                     position_id="voo_position",
                     account_id=account.account_id,
-                    symbol=SecuritySymbol("VOO"),
+                    lot_id=LotId("duplicate_lot"),
+                    symbol="VOO",
                     security_kind=HoldingKind.ETF,
-                    unit_value=Decimal(500),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("duplicate_lot"),
-                            holding_period_months_at_start=28,
-                            quantity=10.0,
-                            cost_basis=Decimal(4_000),
-                        ),
-                    ),
                 ),
-                SecurityHoldingConfig(
+                make_security_holding(
                     position_id="goog_position",
                     account_id=account.account_id,
-                    symbol=SecuritySymbol("GOOG"),
+                    lot_id=LotId("duplicate_lot"),
+                    symbol="GOOG",
                     security_kind=HoldingKind.STOCK,
                     unit_value=Decimal(180),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("duplicate_lot"),
-                            holding_period_months_at_start=35,
-                            quantity=5.0,
-                            cost_basis=Decimal(500),
-                        ),
-                    ),
                 ),
             ),
         )
@@ -95,35 +97,19 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
         PortfolioConfig(
             accounts=(account,),
             holdings=(
-                SecurityHoldingConfig(
+                make_security_holding(
                     position_id="sp500_a",
                     account_id=account.account_id,
-                    symbol=SecuritySymbol("VOO"),
-                    security_kind=HoldingKind.OTHER,
+                    lot_id=LotId("sp500_a_lot"),
+                    symbol="VOO",
                     unit_value=Decimal(500),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("sp500_a_lot"),
-                            holding_period_months_at_start=28,
-                            quantity=10.0,
-                            cost_basis=Decimal(4_000),
-                        ),
-                    ),
                 ),
-                SecurityHoldingConfig(
+                make_security_holding(
                     position_id="sp500_b",
                     account_id=account.account_id,
-                    symbol=SecuritySymbol("VOO"),
-                    security_kind=HoldingKind.OTHER,
+                    lot_id=LotId("sp500_b_lot"),
+                    symbol="VOO",
                     unit_value=Decimal(600),
-                    lots=(
-                        HoldingTaxLotConfig(
-                            lot_id=LotId("sp500_b_lot"),
-                            holding_period_months_at_start=35,
-                            quantity=5.0,
-                            cost_basis=Decimal(500),
-                        ),
-                    ),
                 ),
             ),
         )
