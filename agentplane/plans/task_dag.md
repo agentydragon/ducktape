@@ -2357,20 +2357,28 @@ journal view per kind at read time; the common surface keeps only what every sou
 turn boundaries, status, usage). **Question for review:** retire the fold and its tables for
 per-kind rendering on read, and with what common surface?
 
+**Input side:** [`NATIVE_HARNESS_INTERFACES_DESIGN`](#native_harness_interfaces_design--expose-native-harness-interfaces-past-the-runtime);
+the operator, 2026-11-16 06:58 UTC, calls the command translation "kinda the input side of the same
+thing".
+
 ### `NATIVE_HARNESS_INTERFACES_DESIGN` — expose native harness interfaces past the Runtime
 
 **Decision, unscheduled; operator, 2026-11-14 20:34 UTC:** considering whether the Environment Runtime
 should expose Codex's and Claude's interfaces, input and output, more directly instead of translating
 to neutral projections and from generic commands. **Operator, 2026-11-16 06:38 UTC:** two coherent
 shapes, nothing in between: (a) the Runtime forwards the harness's own protocol, or (b) it does all
-the translation, as today; a shared commands layer raises where it lives.
+the translation, as today; a shared commands layer raises where it lives. **06:58 UTC:** (b) stays
+by default as the status quo, no migration within about a week; the abstraction leaks and fancier
+features (Agentplane-hosted tools for the model) would leak more; this is the input side of the
+managed Thread versus harness Journal split.
 [`native_harness_interfaces.md`](native_harness_interfaces.md) maps what the Runtime decides beside
 the process and where each shape puts it. **Recommendation:** (b), with the shared layer in the
 Runtime and the central sampler; harness-specific features as Runtime-framed operations typed per
 kind. Under (a) the layer would sit in `session_dispatcher`, never `environments`, and the output
 half would follow
 [`JOURNAL_REPRESENTATION_DESIGN`](#journal_representation_design--history-as-stored-journals)'s
-journal view. **Question for review:** (b), or (a) with the layer in `session_dispatcher`?
+journal view. **Open question:** where the neutral-command translator lives long-term; revisit when
+a feature such as driver-hosted tools crosses the common set.
 
 ### `THREAD_SYNC_WITHOUT_ELECTRIC` — replace Electric with our own thread stream
 

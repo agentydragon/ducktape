@@ -18,6 +18,11 @@ whose README records the placement and coexistence rulings. What stays open here
 upstream Codex (input to the [Session runtime model](session_runtime_model.md) attachment questions) and
 the Claude alternatives [below](#claude).
 
+The operator, 2026-11-16 06:58 UTC: Codex in containers "is not super important", since OpenAI lets
+our own code call Codex's backend API and the central sampler can do that; Claude officially expects
+its CLI for subscription quotas. In-Sandbox harness work therefore matters mainly for Claude
+([native harness interfaces](native_harness_interfaces.md#which-harnesses-run-in-a-sandbox)).
+
 ## Today
 
 - Environment Runtime runs one Codex app-server for all its Codex Sessions, with `CODEX_HOME` at
