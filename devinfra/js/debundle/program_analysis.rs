@@ -482,14 +482,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     // same single SWC walk used for the other shallow facts.
     for (index, item) in parsed.module.body.iter().enumerate() {
         module_scan.item_index = index;
-        module_scan.top_function = match item {
-            ModuleItem::Stmt(Stmt::Decl(Decl::Fn(function)))
-            | ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(ExportDecl {
-                decl: Decl::Fn(function),
-                ..
-            })) => Some(function.ident.to_id()),
-            _ => None,
-        };
         item.visit_with(&mut module_scan);
     }
     let ModuleScanVisitor {
@@ -502,7 +494,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         resources,
         binding_declarations,
         binding_writes,
-        function_reads,
         mut unresolved_uses,
         dynamic_scope,
         ..
@@ -762,19 +753,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         side_effect_count += 1;
     }
 
-    runtime_facts.function_import_reads = function_reads
-        .into_iter()
-        .map(|(function, reads)| {
-            (
-                function.0.to_string(),
-                reads
-                    .into_iter()
-                    .filter_map(|read| primitive_imported_bindings.get(&read).cloned())
-                    .collect(),
-            )
-        })
-        .collect();
-
     if runtime_facts.module_kind == ChunkModuleKind::Esm
         && !runtime_facts.has_own_cjs_export_surface
         && !dynamic_scope
@@ -968,8 +946,6 @@ struct ModuleScanVisitor {
     unresolved_context: SyntaxContext,
     binding_declarations: BTreeMap<Id, usize>,
     binding_writes: BTreeSet<Id>,
-    top_function: Option<Id>,
-    function_reads: BTreeMap<Id, BTreeSet<Id>>,
     unresolved_uses: BTreeMap<Id, Vec<Span>>,
     dynamic_scope: bool,
 }
@@ -1043,12 +1019,6 @@ impl Visit for ModuleScanVisitor {
     fn visit_continue_stmt(&mut self, _node: &ContinueStmt) {}
 
     fn visit_ident(&mut self, node: &Ident) {
-        if let Some(function) = &self.top_function {
-            self.function_reads
-                .entry(function.clone())
-                .or_default()
-                .insert(node.to_id());
-        }
         if node.ctxt == self.unresolved_context {
             self.unresolved_uses
                 .entry(node.to_id())

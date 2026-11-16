@@ -19,11 +19,108 @@ pub(crate) struct ProgramFlowModule<'a> {
 #[derive(Default)]
 pub struct ProgramValueFlows {
     flows: BTreeMap<SourceModuleKey, Arc<ChunkValueFlow>>,
+    cell_effects: BTreeMap<FlowKey, KnownCellAccesses>,
+    module_bindings: BTreeMap<(SourceModuleKey, String), BindingSlot>,
 }
 
 impl ProgramValueFlows {
     pub(crate) fn get(&self, module: &str) -> Option<&Arc<ChunkValueFlow>> {
         self.flows.get(module)
+    }
+
+    /// Positive obligations for the existing cyclic-export fallback. Returned
+    /// and other deferred descendants remain possible, never observed effects.
+    pub(crate) fn take_importer_cell_reads(
+        &mut self,
+        bindings: &ProgramBindings,
+    ) -> BTreeMap<SourceModuleKey, BTreeMap<String, BTreeSet<String>>> {
+        let Some(flow) = self.flows.values().next() else {
+            return BTreeMap::new();
+        };
+        let shared = &flow.program.as_ref().expect("program flow view").shared;
+        // This is the last access-summary consumer. Retire the summaries and
+        // source-name index here, before per-chunk analysis starts.
+        let cell_effects = std::mem::take(&mut self.cell_effects);
+        let module_bindings = std::mem::take(&mut self.module_bindings);
+        let slot = |binding| module_bindings.get(bindings.binding_name(binding)).copied();
+        let mut aliases = HashMap::new();
+        let mut users: BTreeMap<u32, BTreeMap<String, BTreeSet<String>>> = BTreeMap::new();
+        for module in bindings.modules() {
+            for (import, _) in bindings.imports(module) {
+                let Some(import_slot) = slot(import) else {
+                    continue;
+                };
+                if let Some(source) = bindings.source_cell(import).and_then(slot) {
+                    aliases.insert(import_slot.0, source.0);
+                }
+                if let Some(values) = shared.values.get(&FlowKey::Binding(import_slot)) {
+                    for value in values {
+                        if let Value::Alloc(Kind::Function, function) = value {
+                            users
+                                .entry(function)
+                                .or_default()
+                                .entry(module.clone())
+                                .or_default()
+                                .insert(bindings.binding_name(import).1.clone());
+                        }
+                    }
+                }
+            }
+        }
+        let mut exported: BTreeMap<String, BTreeMap<u32, BTreeSet<String>>> = BTreeMap::new();
+        for export in bindings.exports() {
+            let Some(local) = bindings.local_export(export) else {
+                continue;
+            };
+            let Some(cell) = bindings.source_cell(local).and_then(slot) else {
+                continue;
+            };
+            let (module, name) = bindings.binding_name(local);
+            exported
+                .entry(module.clone())
+                .or_default()
+                .entry(cell.0)
+                .or_default()
+                .insert(name.clone());
+        }
+        let masks: BTreeMap<_, RoaringBitmap> = exported
+            .iter()
+            .map(|(module, cells)| (module, cells.keys().copied().collect()))
+            .collect();
+        let mut output: BTreeMap<String, BTreeMap<String, BTreeSet<String>>> = BTreeMap::new();
+        for (function, consumers) in users {
+            let Some(accesses) = cell_effects.get(&FlowKey::RetainedCells(function)) else {
+                continue;
+            };
+            // Normalize a shared summary once, regardless of how many imports
+            // alias this function. Imported cells retain source-cell identity.
+            let cells: RoaringBitmap = accesses
+                .reads
+                .iter()
+                .chain(accesses.writes.iter())
+                .map(|slot| aliases.get(&slot).copied().unwrap_or(slot))
+                .collect();
+            for (module, callees) in consumers {
+                let Some(exports) = exported.get(&module) else {
+                    continue;
+                };
+                let mut names = BTreeSet::new();
+                for_each_bitmap_intersection(&cells, &masks[&module], |cell| {
+                    names.extend(exports[&cell].iter().cloned());
+                });
+                if !names.is_empty() {
+                    for callee in callees {
+                        output
+                            .entry(module.clone())
+                            .or_default()
+                            .entry(callee)
+                            .or_default()
+                            .extend(names.iter().cloned());
+                    }
+                }
+            }
+        }
+        output
     }
 
     /// Finish a source census with the same program flow used by capability
@@ -396,6 +493,31 @@ pub(crate) fn program_value_flows<'a>(
         for event in &mut program.events {
             mapping.event(event);
         }
+        let local_effects = std::mem::take(&mut program.cell_effects);
+        program.cell_effects = local_effects
+            .into_iter()
+            .map(|(function, mut body)| {
+                body.reads = body
+                    .reads
+                    .into_iter()
+                    .map(|slot| mapping.binding(slot))
+                    .collect();
+                body.writes = body
+                    .writes
+                    .into_iter()
+                    .map(|slot| mapping.binding(slot))
+                    .collect();
+                body.descendants = body
+                    .descendants
+                    .into_iter()
+                    .map(|site| mapping.site(site))
+                    .collect();
+                for call in &mut body.calls {
+                    *call += events.len();
+                }
+                (mapping.site(function), body)
+            })
+            .collect();
         events.append(&mut program.events);
         // Preserve the previous opaque-import alternative even after a source
         // identity arrives. May-flow is not a foreign execution certificate.
@@ -424,17 +546,23 @@ pub(crate) fn program_value_flows<'a>(
         }
     }
     let origins = Arc::new(OriginTable::from_origins(origins));
+    let cell_effects = programs
+        .iter_mut()
+        .flat_map(|program| std::mem::take(&mut program.cell_effects))
+        .collect();
     let (facts, _, _) = solve_flow(
         events,
         declared.clone(),
         origins.clone(),
         &candidates,
         native_sets,
+        cell_effects,
     );
     let mut values = BTreeMap::new();
     let mut reachability = BTreeMap::new();
     let mut candidate_bindings = BTreeMap::new();
     let mut parameters = BTreeMap::new();
+    let mut cell_effects = BTreeMap::new();
     // Move completed facts into their read indexes. Do not keep a second full
     // value-key map alive while constructing source projections.
     for (key, fact) in facts {
@@ -450,6 +578,9 @@ pub(crate) fn program_value_flows<'a>(
             }
             (FlowKey::Parameters(function), FlowFact::Parameters(params)) => {
                 parameters.insert(function, params);
+            }
+            (key, FlowFact::Cells(accesses)) => {
+                cell_effects.insert(key, accesses);
             }
             _ => {}
         }
@@ -555,7 +686,11 @@ pub(crate) fn program_value_flows<'a>(
         flow.program = Some(view);
         outputs.insert(names[module].clone(), Arc::new(flow));
     }
-    ProgramValueFlows { flows: outputs }
+    ProgramValueFlows {
+        flows: outputs,
+        cell_effects,
+        module_bindings: linkage,
+    }
 }
 
 #[cfg(test)]

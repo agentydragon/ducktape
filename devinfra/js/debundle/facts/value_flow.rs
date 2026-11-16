@@ -8,7 +8,9 @@
 //! across imports. The relation is context-insensitive and supplies no proof
 //! of call effects, initialization availability or normal completion.
 
+mod call_effects;
 mod program;
+use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
 
@@ -964,7 +966,9 @@ impl ChunkValueFlow {
             | FlowKey::CandidateBinding(_)
             | FlowKey::CandidateReachable(_)
             | FlowKey::Parameters(_)
-            | FlowKey::ReadyParameters(_) => None,
+            | FlowKey::ReadyParameters(_)
+            | FlowKey::InvokedCells(_)
+            | FlowKey::RetainedCells(_) => None,
         }
     }
 
@@ -1415,6 +1419,8 @@ enum FlowKey {
     Parameters(u32),
     /// Calls watch readiness so metadata-only input preserves legacy behavior.
     ReadyParameters(u32),
+    InvokedCells(u32),
+    RetainedCells(u32),
 }
 
 #[derive(Clone)]
@@ -1424,6 +1430,7 @@ enum FlowFact {
     CandidateReachability(Arc<RoaringBitmap>),
     Parameters(Vec<Option<BindingSlot>>),
     ReadyParameters(Vec<Option<BindingSlot>>),
+    Cells(KnownCellAccesses),
 }
 
 /// Candidate reachability is a second stratum over the completed value facts:
@@ -1440,6 +1447,7 @@ struct FlowProgram {
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
+    cell_effects: BTreeMap<u32, CallEffectBody>,
     origin_table: Arc<OriginTable>,
     candidate_objects: Vec<Value>,
     canonical: BTreeMap<Value, Id>,
@@ -1478,6 +1486,7 @@ impl FlowProgram {
             declared_ids: BTreeSet::new(),
             symbols: FlowSymbols::default(),
             events: Vec::new(),
+            cell_effects: BTreeMap::new(),
             origins: BTreeSet::from([Value::Top]),
             source_unit: SourceUnitOrdinal(0),
             current_function: None,
@@ -1516,6 +1525,7 @@ impl FlowProgram {
             declared_ids: collector.declared_ids,
             symbols: collector.symbols,
             events: collector.events,
+            cell_effects: collector.cell_effects,
             origin_table: Arc::new(OriginTable::from_origins(collector.origins)),
             candidate_objects: candidate_objects.iter().copied().collect(),
             canonical: collector.canonical,
@@ -1532,6 +1542,7 @@ impl FlowProgram {
             declared_ids,
             symbols,
             events,
+            cell_effects: _,
             origin_table,
             candidate_objects,
             canonical,
@@ -1545,6 +1556,7 @@ impl FlowProgram {
             origin_table.clone(),
             &candidate_objects,
             native_set_allocations.keys().copied().collect(),
+            BTreeMap::new(),
         );
 
         let mut flow = ChunkValueFlow {
@@ -1608,15 +1620,17 @@ fn solve_flow(
     origin_table: Arc<OriginTable>,
     candidate_objects: &[Value],
     native_set_allocations: BTreeSet<u32>,
+    cell_effects: BTreeMap<u32, CallEffectBody>,
 ) -> (BTreeMap<FlowKey, FlowFact>, usize, usize) {
     let producer_count = events.len();
     #[cfg(test)]
     let argument_evaluations = Rc::new(Cell::new(0));
     #[cfg(test)]
     let event_executions = Rc::new(Cell::new(0));
+    let events = Arc::new(events);
     let rules = FlowRules {
-        events,
-        declared,
+        events: events.clone(),
+        declared: declared.clone(),
         origin_table: origin_table.clone(),
         #[cfg(test)]
         argument_evaluations: argument_evaluations.clone(),
@@ -1624,6 +1638,14 @@ fn solve_flow(
         event_executions: event_executions.clone(),
     };
     let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
+    let values = if cell_effects.is_empty() {
+        values
+    } else {
+        let rules = CallEffectRules::new(cell_effects, &events, &values, &declared, &origin_table);
+        let producers = rules.producers();
+        IterativeInference::from_completed(rules, values).solve_values_resumable(producers)
+    };
+    drop(events);
     let facts = if candidate_objects.is_empty() {
         values.into_values()
     } else {
@@ -1655,6 +1677,7 @@ struct FlowProgramCollector {
     declared_ids: BTreeSet<Id>,
     symbols: FlowSymbols,
     events: Vec<FlowEvent>,
+    cell_effects: BTreeMap<u32, CallEffectBody>,
     origins: BTreeSet<Value>,
     source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
@@ -1664,7 +1687,62 @@ struct FlowProgramCollector {
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
 }
 
+impl FlowProgramCollector {
+    fn enter_function(&mut self, function: u32) -> Option<u32> {
+        if let Some(parent) = self.current_function {
+            self.cell_effects
+                .entry(parent)
+                .or_default()
+                .descendants
+                .insert(function);
+        }
+        self.cell_effects.entry(function).or_default();
+        self.current_function.replace(function)
+    }
+
+    fn record_invoke(&mut self, callee: &Expr, args: &[ExprOrSpread]) {
+        if let Some(function) = self.current_function {
+            self.cell_effects
+                .entry(function)
+                .or_default()
+                .calls
+                .push(self.events.len());
+        }
+        self.events.push(FlowEvent::Invoke {
+            callee: FlowValueExpr::from_ast(callee, &mut self.symbols),
+            args: args
+                .iter()
+                .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
+                .collect(),
+        });
+    }
+}
+
+impl binding_targets::TargetAccessRecorder for FlowProgramCollector {
+    fn record_binding_write(&mut self, id: &Id) {
+        if let Some(function) = self.current_function {
+            let slot = self.symbols.binding(id.clone());
+            self.cell_effects
+                .entry(function)
+                .or_default()
+                .writes
+                .insert(slot);
+        }
+    }
+}
+
 impl Visit for FlowProgramCollector {
+    fn visit_ident(&mut self, node: &Ident) {
+        if let Some(function) = self.current_function {
+            let slot = self.symbols.binding(node.to_id());
+            self.cell_effects
+                .entry(function)
+                .or_default()
+                .reads
+                .insert(slot);
+        }
+    }
+
     fn visit_binding_ident(&mut self, node: &BindingIdent) {
         self.declared_ids.insert(node.id.to_id());
     }
@@ -1723,6 +1801,7 @@ impl Visit for FlowProgramCollector {
     }
 
     fn visit_assign_expr(&mut self, node: &AssignExpr) {
+        binding_targets::record_assign_target(&node.left, self);
         match binding_targets::simple_write_target(&node.left) {
             Some(binding_targets::SimpleWriteTarget::Binding(binding)) => {
                 self.events.push(FlowEvent::AssignBinding {
@@ -1740,6 +1819,25 @@ impl Visit for FlowProgramCollector {
                 }
             }
             None => {}
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_update_expr(&mut self, node: &UpdateExpr) {
+        binding_targets::record_update_target(&node.arg, self);
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_in_stmt(&mut self, node: &ForInStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            binding_targets::record_pat_write(pattern, self);
+        }
+        node.visit_children_with(self);
+    }
+
+    fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
+        if let ForHead::Pat(pattern) = &node.left {
+            binding_targets::record_pat_write(pattern, self);
         }
         node.visit_children_with(self);
     }
@@ -1821,7 +1919,7 @@ impl Visit for FlowProgramCollector {
                 })
                 .collect(),
         });
-        let previous = self.current_function.replace(function);
+        let previous = self.enter_function(function);
         node.visit_children_with(self);
         self.current_function = previous;
     }
@@ -1849,7 +1947,7 @@ impl Visit for FlowProgramCollector {
                 })
                 .collect(),
         });
-        let previous = self.current_function.replace(function);
+        let previous = self.enter_function(function);
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
             self.events.push(FlowEvent::Return {
                 function,
@@ -1878,28 +1976,13 @@ impl Visit for FlowProgramCollector {
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
         if let Callee::Expr(callee) = &node.callee {
-            self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(callee, &mut self.symbols),
-                args: node
-                    .args
-                    .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
-                    .collect(),
-            });
+            self.record_invoke(callee, &node.args);
         }
         node.visit_children_with(self);
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        if let Some(args) = &node.args {
-            self.events.push(FlowEvent::Invoke {
-                callee: FlowValueExpr::from_ast(&node.callee, &mut self.symbols),
-                args: args
-                    .iter()
-                    .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
-                    .collect(),
-            });
-        }
+        self.record_invoke(&node.callee, node.args.as_deref().unwrap_or_default());
         node.visit_children_with(self);
     }
 }
@@ -1972,7 +2055,7 @@ struct CachedArgument {
 }
 
 struct FlowRules {
-    events: Vec<FlowEvent>,
+    events: Arc<Vec<FlowEvent>>,
     /// Indexed by binding slot.
     declared: Vec<bool>,
     origin_table: Arc<OriginTable>,
@@ -2365,6 +2448,11 @@ impl IterativeRules for CandidateRules {
 
 fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
     match (key, current, contribution) {
+        (
+            FlowKey::InvokedCells(_) | FlowKey::RetainedCells(_),
+            FlowFact::Cells(current),
+            FlowFact::Cells(contribution),
+        ) => current.union_with(&contribution),
         (
             FlowKey::Parameters(_),
             FlowFact::Parameters(current),

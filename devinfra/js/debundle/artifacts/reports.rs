@@ -1,6 +1,6 @@
 //! Serialized report models and the shared JSON writer for artifact output.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{BufWriter, Write};
 use std::path::Path;
@@ -203,10 +203,6 @@ pub struct ChunkRuntimeFacts {
     /// once their copied imports are. Resolved by the program-level
     /// cross-module analysis.
     pub stable_export_values: BTreeMap<String, StableExportValue>,
-    /// Direct top-level function declarations and named/default imports their
-    /// bodies may read, including deferred descendant bodies. This is not an
-    /// execution or completeness judgment.
-    pub function_import_reads: BTreeMap<String, BTreeSet<String>>,
     pub module_kind: ChunkModuleKind,
     pub has_top_level_await: bool,
     pub has_cjs_interop: bool,
