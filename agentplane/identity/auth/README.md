@@ -9,8 +9,6 @@ contracts; Kubernetes API credentials authenticate only to Kubernetes.
 configuration. `spiffe` requires TLS and an absolute trust-root path. Unsupported modes, empty
 lists, duplicates and unknown fields fail configuration loading. Native RPC listeners may admit
 unauthenticated public health methods. Listener authentication does not grant method authorization.
-The legacy `kubernetes_bearer` decoder remains for shared tests pending retirement; decoding it
-grants no receiver access.
 
 ## Workload Identity proof
 
@@ -82,11 +80,12 @@ certificate never selects bearer proof.
 
 ## Remaining legacy implementation
 
-[`auth.go`](auth.go) still contains the TokenReview resolver and account admission APIs for shared
-test consumers pending retirement. `Accounts`, `SVIDOrAccounts`, `ReviewedServiceAccount`,
-`ReviewedServiceAccountOrIdentity` are not the production receiver pattern. The remaining token
+[`auth.go`](auth.go) still contains the TokenReview resolver and account admission APIs for
+the undeployed [iron-proxy experiment](../../egress/x/iron_proxy/README.md) and its tests.
+`Accounts` and `ReviewedServiceAccount` are not the production receiver pattern.
+Shared listeners accept only SPIFFE authentication; public health methods may omit a client certificate. The remaining token
 client mode and audience constants do not establish an active first-party bearer caller. Remove these implementations after their final
-consumers and configuration rollout gates; TokenReview RBAC removal comes last. Preserve
+consumers and configuration rollout gates. Production TokenReview RBAC has been removed. Preserve
 Kubernetes API clients and retained account-attributed records.
 
 The [delegated authorization contract](../../docs/delegated_authorization.md) records the shared

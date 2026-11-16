@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"reflect"
-	"slices"
-	"strings"
 
 	"google.golang.org/grpc/credentials"
 
@@ -18,10 +16,7 @@ import (
 
 type Mode string
 
-const (
-	SPIFFE           Mode = "spiffe"
-	KubernetesBearer Mode = "kubernetes_bearer"
-)
+const SPIFFE Mode = "spiffe"
 
 type TLS struct {
 	CertFile string `mapstructure:"cert_file"`
@@ -39,13 +34,6 @@ type SPIFFEAuth struct {
 
 func (*SPIFFEAuth) authentication() {}
 func (*SPIFFEAuth) Mode() Mode      { return SPIFFE }
-
-type KubernetesBearerAuth struct {
-	Audiences []string
-}
-
-func (*KubernetesBearerAuth) authentication() {}
-func (*KubernetesBearerAuth) Mode() Mode      { return KubernetesBearer }
 
 // AuthenticationDecodeHook maps the YAML discriminator and variant fields to
 // the sealed authentication union. Keeping this at the config boundary lets
@@ -80,18 +68,6 @@ func AuthenticationDecodeHook(from, to reflect.Type, data any) (any, error) {
 			return nil, errors.New("authentication field \"ca_file\" must be a non-empty string")
 		}
 		return &SPIFFEAuth{CAFile: auth.CAFile}, nil
-	case KubernetesBearer:
-		var auth struct {
-			Mode      Mode     `mapstructure:"mode"`
-			Audiences []string `mapstructure:"audiences"`
-		}
-		if err := decodeAuthenticationFields(fields, &auth); err != nil {
-			return nil, err
-		}
-		if len(auth.Audiences) == 0 {
-			return nil, errors.New("authentication field \"audiences\" must be a non-empty list")
-		}
-		return &KubernetesBearerAuth{Audiences: auth.Audiences}, nil
 	default:
 		return nil, fmt.Errorf("unknown authentication mode %q", mode)
 	}
@@ -136,17 +112,6 @@ func (c Config) Validate() error {
 			if method == nil || c.TLS == nil || !filepath.IsAbs(method.CAFile) {
 				return errors.New("spiffe requires tls and an absolute ca_file")
 			}
-		case *KubernetesBearerAuth:
-			if method == nil || len(method.Audiences) == 0 {
-				return errors.New("kubernetes_bearer requires audiences")
-			}
-			audiences := make(map[string]bool, len(method.Audiences))
-			for _, audience := range method.Audiences {
-				if strings.TrimSpace(audience) == "" || audiences[audience] {
-					return errors.New("kubernetes_bearer audiences must be non-empty and unique")
-				}
-				audiences[audience] = true
-			}
 		default:
 			return fmt.Errorf("unknown authentication mode %q", mode)
 		}
@@ -166,31 +131,6 @@ func (c Config) Has(mode Mode) bool {
 	return false
 }
 
-func (c Config) AllowsBearerAudience(audience string) bool {
-	for _, method := range c.Auth {
-		if bearer, ok := method.(*KubernetesBearerAuth); ok && bearer != nil {
-			return slices.Contains(bearer.Audiences, audience)
-		}
-	}
-	return false
-}
-
-// Select chooses by the credentials presented, never by allowlist order. A
-// malformed credential still counts as presented and cannot enable a fallback.
-func (c Config) Select(hasCertificate, hasBearer bool) (Mode, error) {
-	if hasCertificate == hasBearer {
-		return "", errors.New("exactly one authentication credential is required")
-	}
-	mode := KubernetesBearer
-	if hasCertificate {
-		mode = SPIFFE
-	}
-	if !c.Has(mode) {
-		return "", fmt.Errorf("authentication mode %q is not enabled", mode)
-	}
-	return mode, nil
-}
-
 func (c Config) TLSConfig(localURI string) (*tls.Config, error) {
 	return c.tlsConfig(localURI, false, false)
 }
@@ -207,20 +147,20 @@ func (c Config) tlsConfig(localURI string, publicRPCs, serviceClients bool) (*tl
 		if spiffe, ok := method.(*SPIFFEAuth); ok && spiffe != nil {
 			files.CAFile = spiffe.CAFile
 			if serviceClients {
-				return files.WorkloadServerTLSConfigWithServices(localURI, c.Has(KubernetesBearer) || publicRPCs)
+				return files.WorkloadServerTLSConfigWithServices(localURI, publicRPCs)
 			}
-			if c.Has(KubernetesBearer) || publicRPCs {
-				return files.WorkloadServerTLSConfigWithBearer(localURI)
+			if publicRPCs {
+				return files.WorkloadServerTLSConfigWithPublicHealth(localURI)
 			}
 			return files.WorkloadServerTLSConfig(localURI)
 		}
 	}
-	return files.BearerServerTLSConfig(localURI)
+	return nil, errors.New("spiffe authentication is required")
 }
 
 // ServerCredentials uses the listener's verified TLS identity for native RPCs.
 // A missing certificate reaches public health methods; private methods still
-// require one of the configured authentication modes. Every presented leaf is verified.
+// require an admitted client certificate. Every presented leaf is verified.
 func (c Config) ServerCredentials(localURI string) (credentials.TransportCredentials, error) {
 	config, err := c.tlsConfig(localURI, true, false)
 	if err != nil || config == nil {

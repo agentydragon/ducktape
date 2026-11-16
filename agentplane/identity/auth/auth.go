@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -163,15 +162,13 @@ type TokenReviews interface {
 // is gone, still resolves for at most that long. A rejection or a failed review is never reused, so
 // the next call asks again.
 type Resolver struct {
-	audience     string
-	namespaces   map[string]struct{}
-	verdicts     authenticator.Token
-	svid         *SVIDResolver
-	listenerAuth *listener.Config
+	audience   string
+	namespaces map[string]struct{}
+	verdicts   authenticator.Token
 }
 
 // SubjectResolver resolves the subject admitted by an AnySubject rule, a ServiceAccount or an
-// Identity. Resolver implements it; a service-owned resolver may provide another verified source.
+// Identity. A service-owned resolver provides the verified source.
 type SubjectResolver interface {
 	ResolveSubject(context.Context) (Subject, error)
 }
@@ -236,9 +233,6 @@ func (t tokenReviewer) AuthenticateToken(ctx context.Context, token string) (*au
 // Resolve adapts gRPC metadata to ResolveAuthorization. HTTP callers use the same
 // authorization parser and TokenReview policy directly.
 func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
-	if principal, secured, err := r.resolveSVID(ctx); secured {
-		return principal, err
-	}
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return Principal{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
@@ -259,51 +253,6 @@ func (r *Resolver) Resolve(ctx context.Context) (Principal, error) {
 // ResolveReviewedCaller admits a reviewed ServiceAccount identity with or without a Pod binding.
 // Destinations must still choose which kind of caller is authoritative for each operation.
 func (r *Resolver) ResolveReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
-	if principal, secured, err := r.resolveSVID(ctx); secured {
-		if err != nil {
-			return ReviewedCaller{}, err
-		}
-		return reviewedSVIDCaller(principal), nil
-	}
-	return r.resolveReviewedBearer(ctx)
-}
-
-// ReviewedSubject is a reviewed ServiceAccount caller, or an IdentityPrincipal, which only a
-// workload SVID yields.
-type ReviewedSubject interface{ isReviewedSubject() }
-
-func (ReviewedCaller) isReviewedSubject()    {}
-func (IdentityPrincipal) isReviewedSubject() {}
-
-// resolveReviewedSubject is ResolveReviewedCaller for a method that also admits Identity callers.
-func (r *Resolver) resolveReviewedSubject(ctx context.Context) (ReviewedSubject, error) {
-	subject, secured, err := r.resolveSVIDSubject(ctx)
-	if !secured {
-		return r.resolveReviewedBearer(ctx)
-	}
-	if err != nil {
-		return nil, err
-	}
-	switch subject := subject.(type) {
-	case Principal:
-		return reviewedSVIDCaller(subject), nil
-	case IdentityPrincipal:
-		return subject, nil
-	default:
-		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-}
-
-func reviewedSVIDCaller(principal Principal) ReviewedCaller {
-	caller := ReviewedCaller{ServiceAccount: serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)}
-	// A standing workload's credential proves no Pod.
-	if principal.IsPodBound() {
-		caller.Pod = &principal
-	}
-	return caller
-}
-
-func (r *Resolver) resolveReviewedBearer(ctx context.Context) (ReviewedCaller, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ReviewedCaller{}, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())

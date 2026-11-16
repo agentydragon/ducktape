@@ -216,10 +216,10 @@ func (c Config) WorkloadServerTLSConfig(localURI string) (*tls.Config, error) {
 	return c.workloadServerTLSConfig(localURI, false, false)
 }
 
-// WorkloadServerTLSConfigWithBearer permits a missing client certificate for a
-// listener that also authenticates Kubernetes bearers. Every certificate that
+// WorkloadServerTLSConfigWithPublicHealth permits a missing client certificate for a
+// listener with public health methods. Every certificate that
 // is presented still passes the same SPIFFE chain, identity and client EKU checks.
-func (c Config) WorkloadServerTLSConfigWithBearer(localURI string) (*tls.Config, error) {
+func (c Config) WorkloadServerTLSConfigWithPublicHealth(localURI string) (*tls.Config, error) {
 	return c.workloadServerTLSConfig(localURI, true, false)
 }
 
@@ -229,7 +229,7 @@ func (c Config) WorkloadServerTLSConfigWithServices(localURI string, allowNoCert
 	return c.workloadServerTLSConfig(localURI, allowNoCertificate, true)
 }
 
-func (c Config) workloadServerTLSConfig(localURI string, allowBearer, serviceClients bool) (*tls.Config, error) {
+func (c Config) workloadServerTLSConfig(localURI string, allowNoCertificate, serviceClients bool) (*tls.Config, error) {
 	if c.WorkloadAPISocket != "" {
 		return nil, errors.New("Workload API server TLS is only supported through Security.Open(ctx)")
 	}
@@ -265,7 +265,7 @@ func (c Config) workloadServerTLSConfig(localURI string, allowBearer, serviceCli
 		return nil, err
 	}
 	config := tlsconfig.MTLSServerConfig(source, clients, authorizeRuntime)
-	if allowBearer {
+	if allowNoCertificate {
 		config.ClientAuth = tls.RequestClientCert
 		verify := config.VerifyPeerCertificate
 		config.VerifyPeerCertificate = func(rawCerts [][]byte, chains [][]*x509.Certificate) error {

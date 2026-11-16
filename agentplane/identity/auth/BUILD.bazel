@@ -35,7 +35,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/auth",
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        "//agentplane/identity/auth/listener",
         "//agentplane/identity/credentials/resolver",
         "//agentplane/net/peertls",
         "//agentplane/policy/api/v1alpha1",

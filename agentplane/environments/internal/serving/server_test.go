@@ -172,7 +172,6 @@ func TestEveryReplicaServesAndFencesConcurrentResume(t *testing.T) {
 			TLS:           &listener.TLS{CertFile: serverCertificate.CertFile, KeyFile: serverCertificate.KeyFile},
 			Auth: []listener.Authentication{
 				&listener.SPIFFEAuth{CAFile: ca.RootFile},
-				&listener.KubernetesBearerAuth{Audiences: []string{"environment-serving-test"}},
 			},
 		},
 		PolicyNamespace:  servingTestNamespace,

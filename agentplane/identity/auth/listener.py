@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TLS(BaseModel):
@@ -32,26 +32,12 @@ class SPIFFEAuth(BaseModel):
         return self
 
 
-class KubernetesBearerAuth(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    mode: Literal["kubernetes_bearer"] = "kubernetes_bearer"
-    audiences: frozenset[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
-
-    @field_serializer("audiences")
-    def serialize_audiences(self, audiences: frozenset[str]) -> list[str]:
-        return sorted(audiences)
-
-
-type Authentication = Annotated[SPIFFEAuth | KubernetesBearerAuth, Field(discriminator="mode")]
-
-
 class Listener(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     listen_address: str = Field(min_length=1)
     tls: TLS | None = None
-    auth: list[Authentication] = Field(min_length=1)
+    auth: list[Annotated[SPIFFEAuth, Field(discriminator="mode")]] = Field(min_length=1)
 
     @model_validator(mode="after")
     def authentication_modes(self) -> Self:

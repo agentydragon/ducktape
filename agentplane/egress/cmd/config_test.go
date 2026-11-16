@@ -220,7 +220,7 @@ func TestForwardListenerUsesOneExplicitSPIFFEAllowlist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.TLS == nil || c.Forward.Has(listener.KubernetesBearer) ||
+	if c.Forward.ListenAddress != "127.0.0.1:5555" || c.Forward.TLS == nil ||
 		!c.Forward.Has(listener.SPIFFE) {
 		t.Fatalf("unexpected SPIFFE-only forward listener: %+v", c.Forward)
 	}

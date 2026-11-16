@@ -32,7 +32,7 @@ func NewAuthenticator(policy listener.Config, records *resolver.Resolver) (*Auth
 	if err := policy.Validate(); err != nil {
 		return nil, err
 	}
-	if !policy.Has(listener.SPIFFE) || policy.Has(listener.KubernetesBearer) {
+	if !policy.Has(listener.SPIFFE) {
 		return nil, errors.New("workload authentication accepts SPIFFE alone")
 	}
 	if records == nil {
@@ -48,12 +48,12 @@ func (a *Authenticator) Authenticate(ctx context.Context, state *tls.ConnectionS
 		return Authenticated{}, &Rejection{Reason: decision.TokenRejected, Detail: "TLS is required"}
 	}
 	hasCertificate := state != nil && len(state.PeerCertificates) > 0
-	if _, err := a.policy.Select(hasCertificate, hasBearer); err != nil {
+	if !hasCertificate || hasBearer {
 		reason := decision.TokenRejected
 		if !hasCertificate && !hasBearer {
 			reason = decision.TokenMissing
 		}
-		return Authenticated{}, &Rejection{Reason: reason, Detail: "credentials do not select one enabled authentication mode"}
+		return Authenticated{}, &Rejection{Reason: reason, Detail: "a client certificate without bearer credentials is required"}
 	}
 	subject, err := ResolveSVID(ctx, state, a.records)
 	return Authenticated{Subject: subject}, err

@@ -142,7 +142,7 @@ func (c *config) validate() error {
 	if c.Forward.TLS == nil {
 		return errors.New("forward listener requires TLS")
 	}
-	if !c.Forward.Has(listener.SPIFFE) || c.Forward.Has(listener.KubernetesBearer) {
+	if !c.Forward.Has(listener.SPIFFE) {
 		return errors.New("forward listener authenticates SPIFFE alone")
 	}
 	for _, limit := range []bounded{

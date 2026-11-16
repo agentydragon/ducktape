@@ -18,14 +18,14 @@ func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
 		name          string
 		localLifetime time.Duration
 		peerLifetime  time.Duration
-		bearerOnly    bool
+		publicHealth  bool
 	}{
 		{name: "peer expires first", localLifetime: 8 * time.Second, peerLifetime: 3 * time.Second},
 		{name: "local expires first", localLifetime: 3 * time.Second, peerLifetime: 8 * time.Second},
-		{name: "bearer only local expiry", localLifetime: 3 * time.Second, bearerOnly: true},
+		{name: "public health local expiry", localLifetime: 3 * time.Second, publicHealth: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			client, server, connState, expiresAt := establishHTTPExpiryConnection(t, tc.localLifetime, tc.peerLifetime, tc.bearerOnly)
+			client, server, connState, expiresAt := establishHTTPExpiryConnection(t, tc.localLifetime, tc.peerLifetime, tc.publicHealth)
 			connState(server, http.StateActive)
 			assertClosesAtExpiry(t, client, expiresAt)
 			connState(server, http.StateClosed)
@@ -138,7 +138,7 @@ func TestConfigureHTTPServerTLSExpiryRejectsUntrackedCertificateSelection(t *tes
 func establishHTTPExpiryConnection(
 	t *testing.T,
 	localLifetime, peerLifetime time.Duration,
-	bearerOnly bool,
+	publicHealth bool,
 ) (*tls.Conn, *tls.Conn, func(net.Conn, http.ConnState), time.Time) {
 	t.Helper()
 	ca := environmentruntimetransporttesting.NewCA(t)
@@ -149,7 +149,7 @@ func establishHTTPExpiryConnection(
 	var peerExpiry time.Time
 	var clientTLS *tls.Config
 	var err error
-	if bearerOnly {
+	if publicHealth {
 		clientTLS, err = (peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: localURI,
 		}).TLSConfig()
@@ -169,8 +169,8 @@ func establishHTTPExpiryConnection(
 		}
 	}
 	var serverTLS *tls.Config
-	if bearerOnly {
-		serverTLS, err = local.WorkloadServerTLSConfigWithBearer(localURI)
+	if publicHealth {
+		serverTLS, err = local.WorkloadServerTLSConfigWithPublicHealth(localURI)
 	} else {
 		serverTLS, err = local.WorkloadServerTLSConfig(localURI)
 	}
@@ -182,9 +182,9 @@ func establishHTTPExpiryConnection(
 		t.Fatal(err)
 	}
 	client, server := handshakeTLSConnections(t, clientTLS, serverTLS)
-	if bearerOnly {
+	if publicHealth {
 		if len(server.ConnectionState().PeerCertificates) != 0 {
-			t.Fatalf("bearer-only TLS received %d peer certificates, want none", len(server.ConnectionState().PeerCertificates))
+			t.Fatalf("public health TLS received %d peer certificates, want none", len(server.ConnectionState().PeerCertificates))
 		}
 	} else if len(server.ConnectionState().PeerCertificates) == 0 {
 		t.Fatal("mTLS handshake received no client certificate")
