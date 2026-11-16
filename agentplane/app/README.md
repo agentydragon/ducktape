@@ -3,18 +3,19 @@
 The human-facing API is a Go service built from `//agentplane/app/cmd:agentplane-app` and packaged as
 `//agentplane/app:image`. It proxies Sandbox management through the Sandbox Controller
 `EnvironmentService` with its App service SVID, creates Sessions and submits commands through
-the Session Dispatcher, and uses the Runner
-Gateway for UID-fenced live checks and read-only runner status diagnostics. It reads archived Session
+the Session Dispatcher, and reads live Runtime diagnostics through
+`EnvironmentService.GetRuntimeDiagnostics`. The App enforces operator authority at its browser
+boundary and uses its App SVID on the backend connection. Diagnostic evidence includes exact
+Environment, incarnation and boot identity; unavailable evidence never means idle. The existing
+busy-Thread archive check retains its conservative behavior through that same diagnostics API. It reads archived Session
 history and Threads (each Session's conversation projection) from the History Service and synchronizes
 selected rows and content to the browser through authenticated Electric endpoints. It also presents
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
 
-The Runtime proxy's `runner_gateway_tls.server_uri` may pin Gateway's
-`spiffe://agentplane/session-dispatcher` identity or Environments'
-`spiffe://agentplane/sandbox-controller` identity during cutover. It verifies only the configured
-receiver. The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
-Caller targets change only after the receiver and accepting App image roll.
+Diagnostics use the `environment_service` target and pin `spiffe://agentplane/sandbox-controller`.
+The separate `session_dispatcher_tls` pin remains `spiffe://agentplane/session-dispatcher`.
+The old raw-proxy target setting remains decoded until its manifest omission has rolled.
 
 The published API image runs Go. Python remains only for the settings schema consumed by cdk8s,
 test fixtures, and HTTP test clients; app integration tests start the real Go executable.

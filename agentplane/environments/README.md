@@ -180,4 +180,4 @@ split; automatic wake execution and budget ownership stay with Dispatcher.
 
 Runtime process, Session and lifecycle evidence is available through the App-only
 `EnvironmentService.GetRuntimeDiagnostics` RPC; see the [diagnostic contract](SPEC.md#live-runtime-diagnostics).
-The caller cutover follows the receiver image pin; this accepting change leaves deployed manifests unchanged.
+The App reads this RPC over its existing EnvironmentService connection; deployed manifests are unchanged.

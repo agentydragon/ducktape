@@ -129,14 +129,6 @@ func Run(ctx context.Context, config settings.Config) error {
 		return err
 	}
 	threadStore := threads.NewStore(db)
-	environmentRuntime, err := sessionclient.NewGatewayEnvironmentRuntimeProxy(sessionclient.EnvironmentRuntimeConfig{
-		TLS: config.RunnerGatewayTLS, Namespace: config.SandboxNamespace, TokenFile: config.RunnerGatewayTokenFile,
-		Timeout:        time.Duration(config.RunnerGatewayRequestTimeoutSeconds * float64(time.Second)),
-		TargetTemplate: config.RunnerGatewayControlTarget,
-	})
-	if err != nil {
-		return fmt.Errorf("configure Runner Gateway: %w", err)
-	}
 	dispatcher, err := sessionclient.NewSessionDispatcherClient(sessionclient.SessionDispatcherConfig{
 		TLS: config.SessionDispatcherTLS, Target: config.SessionDispatcherTarget, TokenFile: config.SessionDispatcherTokenFile,
 		Timeout: time.Duration(config.SessionDispatcherRequestTimeoutSecs * float64(time.Second)),
@@ -154,6 +146,10 @@ func Run(ctx context.Context, config settings.Config) error {
 	environments, err := sandboxes.NewEnvironmentReader(environmentpb.NewEnvironmentServiceClient(environmentConn))
 	if err != nil {
 		return fmt.Errorf("configure Environment Service reader: %w", err)
+	}
+	environmentRuntime, err := sessionclient.NewRuntimeDiagnostics(config.SandboxNamespace, environmentpb.NewEnvironmentServiceClient(environmentConn), environmentTimeout)
+	if err != nil {
+		return fmt.Errorf("configure Runtime diagnostics: %w", err)
 	}
 	sessionClient, err := sessionclient.New(config.SandboxNamespace, environments, environmentRuntime, dispatcher)
 	if err != nil {

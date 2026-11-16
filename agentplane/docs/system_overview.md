@@ -19,7 +19,7 @@ EnvironmentService and opens no direct Runtime watch.
 
 EnvironmentService also serves an App-only `GetRuntimeDiagnostics` read through its replica-local,
 incarnation/boot-fenced Runtime transport. It is independent of controller leadership and never
-wakes an environment. The receiver is staged before moving the App's raw-proxy status reads.
+wakes an environment. The App uses this RPC for its browser status and conservative live archive check.
 
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
@@ -97,7 +97,7 @@ flowchart LR
     browser -->|HTTPS, one origin| httpsGateway
     httpsGateway -->|HTML, assets and service worker| frontend
     httpsGateway -->|API, auth and streams| app
-    app -->|App SVID mTLS: Runtime diagnostics and health| sandboxctl
+    app -->|App SVID mTLS: EnvironmentService diagnostics and health| sandboxctl
     app -->|service SVID mTLS: Dispatcher| gw
     app -->|App SVID mTLS: EnvironmentService| sandboxctl
     app -->|service SVID mTLS: History reads| hs
