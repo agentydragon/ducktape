@@ -464,16 +464,6 @@ type Session struct {
 	EnvironmentDeletedAt *time.Time
 }
 
-// CLEANUP(added 2026-11-16): Remove this Kubernetes Lease/generation proof in PR 2,
-// after the coordinator confirms the compatibility image runs on every staging Sessions replica.
-// Owner is a fresh Kubernetes Lease proof paired with the committed DB generation.
-// Every worker transition locks and compares this full token before changing work.
-type Owner struct {
-	SandboxUID, LeaseUID, HolderIdentity string
-	Generation                           int64
-	LeaseTransitions                     int
-}
-
 type Store struct {
 	DB       *sql.DB
 	QueueCap int
@@ -1398,26 +1388,7 @@ func (s *Store) WakeCommands(ctx context.Context, sessionID, sandboxName, sandbo
 	return result, rows.Err()
 }
 
-// SandboxesWithPendingWork includes in-flight work a successor must requeue.
-func (s *Store) SandboxesWithPendingWork(ctx context.Context) (map[string]struct{}, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch WHERE state = ANY($1)
-		UNION SELECT sandbox_uid::text FROM session WHERE state = ANY($2)`,
-		pq.Array([]string{QueueState, DeliveringState}), pq.Array([]string{SessionWaitingState, SessionInProgressState}))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := map[string]struct{}{}
-	for rows.Next() {
-		var uid string
-		if err := rows.Scan(&uid); err != nil {
-			return nil, err
-		}
-		result[uid] = struct{}{}
-	}
-	return result, rows.Err()
-}
-
+// SessionsWithPendingWork includes stranded in-flight work even when no lease row exists.
 func (s *Store) SessionsWithPendingWork(ctx context.Context) ([]*Session, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT `+sessionColumns+` FROM session o
 		WHERE o.state = ANY($1) OR EXISTS (
@@ -1436,100 +1407,6 @@ func (s *Store) SessionsWithPendingWork(ctx context.Context) ([]*Session, error)
 		result = append(result, row)
 	}
 	return result, rows.Err()
-}
-
-func (s *Store) OwnershipGeneration(ctx context.Context, sandboxUID string) (int64, error) {
-	var generation int64
-	err := s.DB.QueryRowContext(ctx, "SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID).Scan(&generation)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, nil
-	}
-	return generation, err
-}
-
-func sandboxOwnerMatch(ctx context.Context, tx *sql.Tx, owner Owner) (bool, error) {
-	var generation int64
-	var leaseUID, holder string
-	var transitions int
-	err := tx.QueryRowContext(ctx, `SELECT generation, lease_uid, lease_transitions, holder_identity
-		FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE`, owner.SandboxUID).Scan(&generation, &leaseUID, &transitions, &holder)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return generation == owner.Generation && leaseUID == owner.LeaseUID && transitions == owner.LeaseTransitions && holder == owner.HolderIdentity, nil
-}
-
-func (s *Store) IsCurrentOwner(ctx context.Context, owner Owner) (bool, error) {
-	var generation int64
-	var leaseUID, holder string
-	var transitions int
-	err := s.DB.QueryRowContext(ctx, `SELECT generation, lease_uid, lease_transitions, holder_identity
-		FROM sandbox_ownership WHERE sandbox_uid=$1`, owner.SandboxUID).Scan(&generation, &leaseUID, &transitions, &holder)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return generation == owner.Generation && leaseUID == owner.LeaseUID && transitions == owner.LeaseTransitions && holder == owner.HolderIdentity, nil
-}
-
-// ClaimSandboxOwner must be called only after validating a fresh Kubernetes
-// Lease. expectedGeneration is read before Lease acquisition; this CAS prevents
-// a paused old holder from replacing a successor's DB fence.
-func (s *Store) ClaimSandboxOwner(ctx context.Context, sandboxUID, leaseUID string, leaseTransitions int, holder string, expectedGeneration int64) (*Owner, error) {
-	var result *Owner
-	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		if err := lockLiveSandbox(ctx, tx, sandboxUID); err != nil {
-			return err
-		}
-		var generation int64
-		var oldLease, oldHolder string
-		var oldTransitions int
-		err := tx.QueryRowContext(ctx, `SELECT generation,lease_uid,lease_transitions,holder_identity
-			FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE`, sandboxUID).Scan(&generation, &oldLease, &oldTransitions, &oldHolder)
-		if errors.Is(err, sql.ErrNoRows) {
-			generation = 0
-		} else if err != nil {
-			return err
-		}
-		if generation != expectedGeneration {
-			return nil
-		}
-		same := generation != 0 && oldLease == leaseUID && oldTransitions == leaseTransitions && oldHolder == holder
-		if generation == 0 {
-			generation = 1
-			err = tx.QueryRowContext(ctx, `INSERT INTO sandbox_ownership
-				(sandbox_uid,generation,lease_uid,lease_transitions,holder_identity,updated_at)
-				VALUES ($1,$2,$3,$4,$5,now()) ON CONFLICT DO NOTHING RETURNING generation`,
-				sandboxUID, generation, leaseUID, leaseTransitions, holder).Scan(&generation)
-			if errors.Is(err, sql.ErrNoRows) {
-				return nil
-			}
-		} else if !same {
-			if oldLease == leaseUID && leaseTransitions <= oldTransitions {
-				return nil
-			}
-			generation++
-			_, err = tx.ExecContext(ctx, `UPDATE sandbox_ownership SET generation=$2,lease_uid=$3,
-				lease_transitions=$4,holder_identity=$5,updated_at=now() WHERE sandbox_uid=$1`,
-				sandboxUID, generation, leaseUID, leaseTransitions, holder)
-		}
-		if err != nil {
-			return err
-		}
-		if !same {
-			if err := notify(ctx, tx); err != nil {
-				return err
-			}
-		}
-		result = &Owner{sandboxUID, leaseUID, holder, generation, leaseTransitions}
-		return nil
-	})
-	return result, err
 }
 
 // MarkDeliveryAttempt commits possible forwarding before issuing the external RPC.
@@ -1606,11 +1483,8 @@ func (s *Store) RejectSession(ctx context.Context, id string, owner SessionOwner
 func (s *Store) settleSession(ctx context.Context, id string, owner SessionOwner, from []string, to, reason string, rejectQueued bool) (*Session, error) {
 	var result *Session
 	err := transaction(ctx, s.DB, func(tx *sql.Tx) error {
-		// Enqueue holds the same Session lock, so it either precedes rejection and
-		// is failed below, or observes the terminal session before storing work.
-		if err := sessionLock(ctx, tx, id); err != nil {
-			return err
-		}
+		// ownerMatch takes admission's Session lock before the lease row, so
+		// enqueue either precedes rejection or observes its terminal outcome.
 		current, err := ownerMatch(ctx, tx, owner)
 		if err != nil || !current {
 			return err
@@ -1668,7 +1542,7 @@ func (s *Store) RecoverSession(ctx context.Context, owner SessionOwner) (bool, e
 	return current, err
 }
 
-// NoteWaiting changes only a still-queued row under the current Sandbox fence.
+// NoteWaiting changes only a still-queued row under the current Session lease.
 func (s *Store) NoteWaiting(ctx context.Context, id string, owner SessionOwner, reason string) error {
 	return transaction(ctx, s.DB, func(tx *sql.Tx) error {
 		current, err := ownerMatch(ctx, tx, owner)

@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 import grpc
 import pytest
 import yaml
-from kubernetes_asyncio import client as k8s, watch as k8s_watch
+from kubernetes_asyncio import client as k8s
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.crd_group import GROUP, VERSION
@@ -338,22 +338,16 @@ async def _crashed_dispatcher_process(
 
 
 @asynccontextmanager
-async def _replace_owner_with_peer(
-    cluster: Cluster,
-    sandbox_uid: str,
-    deployment_uid: str,
-    evidence: dict[str, object],
-    *,
-    crictl_command: tuple[str, ...] | None = None,
+async def _replace_original_with_peer(
+    cluster: Cluster, deployment_uid: str, evidence: dict[str, object], *, crictl_command: tuple[str, ...] | None = None
 ) -> AsyncIterator[str]:
     with tracer.start_as_current_span("system_test.dispatcher.peer_lifetime"):
         pods = json.loads(
             await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
         )
-        (original,) = pods["items"]
-        lease_name = f"dispatcher-{UUID(sandbox_uid).hex}"
-        lease = json.loads(await cluster.kubectl("get", "lease", lease_name, "-o", "json"))
-        holder = lease["spec"]["holderIdentity"]
+        live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
+        assert len(live) == 1, f"expected the initial singleton, found {len(live)} live replicas"
+        original = live[0]
         scaled_generation: int | None = None
         try:
             patched = json.loads(
@@ -379,7 +373,9 @@ async def _replace_owner_with_peer(
             pods = json.loads(
                 await cluster.kubectl("get", "pods", "-l", f"app.kubernetes.io/name={WORKLOAD}", "-o", "json")
             )
-            (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
+            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
+            assert len(live) == 2, f"expected two live replicas after scale-up, found {len(live)}"
+            (peer,) = [item for item in live if item["metadata"]["uid"] != original["metadata"]["uid"]]
             if crictl_command is None:
                 await _delete_pod(cluster, original["metadata"]["name"], original["metadata"]["uid"])
             else:
@@ -390,25 +386,8 @@ async def _replace_owner_with_peer(
                         body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=original["metadata"]["uid"])),
                     )
                 await cluster.kubectl("wait", f"pod/{original['metadata']['name']}", "--for=delete", "--timeout=120s")
-            async with cluster.api_client() as api, k8s_watch.Watch() as watch:
-                coordination = k8s.CoordinationV1Api(api)
-                current = await coordination.read_namespaced_lease(lease_name, cluster.namespace)
-                if current.spec.holder_identity == holder:
-                    async with asyncio.timeout(BOUND_SECONDS):
-                        async for event in watch.stream(
-                            coordination.list_namespaced_lease,
-                            cluster.namespace,
-                            field_selector=f"metadata.name={lease_name}",
-                            resource_version=current.metadata.resource_version,
-                        ):
-                            current = event["object"]
-                            if current.spec.holder_identity != holder:
-                                break
-                assert current.spec.holder_identity != holder
-                assert current.spec.lease_transitions > lease["spec"]["leaseTransitions"]
-                evidence["owner_before"] = holder
-                evidence["owner_after"] = current.spec.holder_identity
-                evidence["replaced_dispatcher_pod_uid"] = original["metadata"]["uid"]
+            evidence["original_dispatcher_pod_uid"] = original["metadata"]["uid"]
+            evidence["peer_dispatcher_pod_uid"] = peer["metadata"]["uid"]
             yield peer["metadata"]["name"]
         finally:
             if scaled_generation is not None:
@@ -568,11 +547,10 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         if replica_failover:
-            # Only one replica can have acquired this Sandbox's Lease before scaling.
-            # Killing that known owner, then watching through the surviving peer, exercises
-            # lease expiry and durable queue recovery without the app HTTP service.
+            # The stopped Sandbox leaves this command durably queued. Replacing the initial
+            # singleton then reading through its peer exercises queue recovery without an app HTTP call.
             peer = await stack.enter_async_context(
-                _replace_owner_with_peer(cluster, uid, deployment["metadata"]["uid"], evidence)
+                _replace_original_with_peer(cluster, deployment["metadata"]["uid"], evidence)
             )
             peer_target = await stack.enter_async_context(_forward(cluster, f"pod/{peer}"))
             peer_channel = await stack.enter_async_context(
@@ -604,8 +582,8 @@ async def deployed_dispatcher_waits_for_ready_then_records_runner_admission(
         if crash_mid_delivery:
             evidence["blocked_settlement"] = await _wait_for_blocked_settlement(cluster, command)
             peer = await stack.enter_async_context(
-                _replace_owner_with_peer(
-                    cluster, uid, deployment["metadata"]["uid"], evidence, crictl_command=crictl_command
+                _replace_original_with_peer(
+                    cluster, deployment["metadata"]["uid"], evidence, crictl_command=crictl_command
                 )
             )
             await settlement_gate.aclose()

@@ -6,8 +6,8 @@ Session Dispatcher gRPC contract; the stable Dispatcher Service maps port `8080`
 shared TLS listener. The credential-holding Sandbox relay reaches that same listener through
 central-proxy CONNECT and presents its Runner SVID. Dispatcher methods retain their caller rules,
 exact service grants and typed delegation policy. EnvironmentService has its own listener. The worker
-delivers through the Runner proxy once the exact Sandbox is ready, with a per-Session PostgreSQL delivery lease. During the compatibility rollout, it also retains
-the per-Sandbox Kubernetes Lease and generation fence.
+delivers through the Runner proxy once the exact Sandbox is ready, with a per-Session PostgreSQL
+delivery lease.
 
 The manual queue, replica and wake probes are documented in the
 [system tests](../../system_tests/README.md#dispatcher-queue-and-replicas).
@@ -100,7 +100,7 @@ The manual queue, replica and wake probes are documented in the
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
   so a later read or watch is `NOT_FOUND`/empty.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
-  Later Session creation requests, queued commands and ownership claims cannot recreate deleted state, even from
+  Later Session creation requests and queued commands cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.
   This starts at Dispatcher cleanup, not the Kubernetes deletion instant; see
   [the deletion contract](SPEC.md#deletion-admission-fence).
@@ -111,9 +111,9 @@ The manual queue, replica and wake probes are documented in the
   worker write locks and checks that live token. A successor requeues only that Session's
   in-flight work and preserves `delivery_attempted` and command IDs. The lease key needs no
   Environment. Current Session creation still requires an Environment.
-  During the compatibility rollout, the worker additionally requires the Sandbox's Kubernetes
-  Lease and database generation. Environment deletion and terminal notices still serialize with
-  worker attempts and settlements under that generation row lock.
+  No replica owns a Sandbox or queue. Environment deletion and terminal notices serialize with
+  worker attempts and settlements through the deletion advisory lock and Session lease rows;
+  `sandbox_ownership` is no longer read or written.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
@@ -141,26 +141,23 @@ The manual queue, replica and wake probes are documented in the
   while the execution environment is suspended.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
-Sandboxes) or a retry deadline. Every ten seconds each replica also renews its compatibility Kubernetes Leases and rescans
-pending Sessions, including stranded in-flight work. Active steps renew their Session lease every
-ten seconds; both kinds of lease last thirty seconds.
+Sandboxes) or a retry deadline. Every ten seconds each replica rescans pending Sessions, including
+stranded in-flight work with no lease row. Active steps renew their Session lease every ten seconds;
+a lease lasts thirty seconds.
 
 ## Delivery lease rollout
 
-This image is the expand/compatibility release. Its new Goose migration only adds
-`session_delivery_lease`; it retains `sandbox_ownership` and the Sessions Kubernetes Lease grant.
-Original replicas and this image share the Kubernetes fence. This image and a later Postgres-only
-image share the Session lease. No compatibility replica performs Sandbox-wide recovery.
+This image uses only PostgreSQL delivery leases. The compatibility image from #16852 was pinned
+on staging as `devel-20261116042224-6543415` and ran on every Sessions replica before this release
+was authorized. Compatibility and Postgres-only replicas share the Session lease and recover only
+the Session they hold. Never overlap an original, pre-compatibility image with Postgres-only
+replicas, including during rollback.
 
-The coordinator must confirm that this image is pinned on staging and **every** Sessions replica
-runs it before the Postgres-only follow-up PR (PR 2) opens. Never overlap an original image with
-Postgres-only replicas. That follow-up must replace the terminal-notice/attempt-marker
-serialization in `terminal.go` before removing the generation lock.
-
-Rollback this release by restoring the previous image pin and leaving the additive table and Goose
-history intact. The migration integration test exercises the previous embedded migration set against
-the expanded schema; it does not run two image versions. The k3s tests run replicas of this image;
-version overlap is checked by the coordinator during staged pins.
+Rollback by restoring the compatibility image pin, leaving the lease table, `sandbox_ownership`
+and Goose history intact. Verify Session materialization, delivery and peer takeover after it
+rolls. Returning to an original image requires first completing a rollback to compatibility and
+removing every Postgres-only replica. The k3s tests run replicas of this image; they do not exercise
+two image versions. The coordinator observes version overlap during staged pins.
 
 A later, separately approved PR may drop `sandbox_ownership` only after no pinned image reads it,
 the compatibility rollback window has closed, and the operator has agreed through the coordinator.

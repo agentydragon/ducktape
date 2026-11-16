@@ -179,16 +179,18 @@ creator scope across Identities.
 ## Dispatcher queue and replicas
 
 The queue case leaves a stopped Sandbox unchanged. The replica case raises Gateway replicas to two,
-removes the recorded lease owner and verifies durable queue recovery through its peer; opted-in app
+removes the initial singleton and verifies that a peer reads and delivers the durable queued command;
+the stopped command has no held Session lease, so this case does not test lease expiry. Opted-in app
 and Notification submissions share a wake generation ([`dispatcher.py`](scenarios/dispatcher.py)).
 Shared Session polling lives in [`dispatcher_operations.py`](driver/dispatcher_operations.py), and
 runner mount inspection, archives and cleanup evidence capture live in
 [`sandbox_diagnostics.py`](driver/sandbox_diagnostics.py).
 The mid-delivery crash case gates the real database settlement after Runtime admission, stops
 and kills the exact delivering process after kubelet observes Pod deletion, and lets a peer
-recover using natural lease expiry. It checks the retained attempt fact, one Runtime journal
-admission for the replayed command ID, and a subsequent admitted command. All replicas use the
-same image; this does not establish mixed-image overlap safety.
+recover after the Session's natural PostgreSQL lease expiry. Its initial single replica identifies
+the delivering process; the queued replica case does not infer lease ownership from a Pod. It checks
+the retained attempt fact, one Runtime journal admission for the replayed command ID, and a subsequent
+admitted command. All replicas use the same image; this does not establish mixed-image overlap safety.
 
 The [Dispatcher guide](../session_dispatcher/dispatcher/README.md) owns the command delivery contract.
 

@@ -35,7 +35,6 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	toolscache "k8s.io/client-go/tools/cache"
@@ -48,8 +47,7 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Zero keeps client-go's 5 QPS / burst 10 limiter, which once queued Dispatcher ownership Lease
-	// acquisitions for seconds each; the deployment sets -1 to disable it.
+	// Zero keeps client-go's 5 QPS / burst 10 limiter; the deployment sets -1 to disable it.
 	kubeConfig.QPS = c.KubernetesClientQPS
 	return kubeConfig, nil
 }
@@ -102,10 +100,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return fmt.Errorf("Gateway RPC listener TLS: %w", err)
 	}
 	config, err := kubernetesConfig(c)
-	if err != nil {
-		return err
-	}
-	kube, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return err
 	}
@@ -184,7 +178,6 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: catalog, Wake: wakeManager,
-		Leases:   dispatcher.NewOwnershipLeases(kube.CoordinationV1().Leases(c.Namespace), store, c.Namespace),
 		Delivery: runtime, Hub: hub, Ready: ready,
 	}
 	go func() { reportUnexpected(ctx, failed, "Dispatcher delivery", worker.Run(ctx)) }()

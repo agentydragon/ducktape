@@ -2,12 +2,15 @@ package dispatcher
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/terminalnotice"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 func expireSessionLease(t *testing.T, store *Store, owner SessionOwner) {
@@ -18,6 +21,106 @@ func expireSessionLease(t *testing.T, store *Store, owner SessionOwner) {
 	}
 }
 
+func TestCleanupLocksMissingSessionLeaseAndPreservesRollbackData(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	store, databaseURL := testStoreWithURL(t, 3)
+	row, err := enqueueWithSession(t, store, ctx, "test-cleanup-no-lease-session", "test-cleanup-sandbox", sandboxUID, input("test-cleanup-command", "test input"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB.ExecContext(ctx, `INSERT INTO sandbox_ownership
+		(sandbox_uid,generation,lease_uid,lease_transitions,holder_identity,updated_at)
+		VALUES ($1,7,'test-retained-lease',3,'test-retained-replica',now())`, sandboxUID); err != nil {
+		t.Fatal(err)
+	}
+	connect := func() (*Store, int) {
+		db := postgres.Open(t, databaseURL)
+		db.SetMaxOpenConns(1)
+		var pid int
+		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		return NewStore(db, 3), pid
+	}
+	deleter, deleterPID := connect()
+	acquirer, acquirerPID := connect()
+	gate, err := store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback()
+	var gatePID int
+	if err := gate.QueryRowContext(ctx, `SELECT pg_backend_pid() FROM dispatch WHERE command_id=$1 FOR UPDATE`, row.CommandID).Scan(&gatePID); err != nil {
+		t.Fatal(err)
+	}
+	waitBlocked := func(waiter, blocker int) {
+		t.Helper()
+		ticker := time.NewTicker(10 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			var blocked bool
+			if err := store.DB.QueryRowContext(ctx, "SELECT $2 = ANY(pg_blocking_pids($1))", waiter, blocker).Scan(&blocked); err != nil {
+				t.Fatal(err)
+			}
+			if blocked {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	type cleanupResult struct {
+		events []terminalnotice.Event
+		err    error
+	}
+	deleted := make(chan cleanupResult, 1)
+	go func() {
+		events, err := deleter.EndSandbox(ctx, sandboxUID)
+		deleted <- cleanupResult{events, err}
+	}()
+	waitBlocked(deleterPID, gatePID)
+	type acquisitionResult struct {
+		owner *SessionOwner
+		err   error
+	}
+	acquired := make(chan acquisitionResult, 1)
+	go func() {
+		owner, err := acquirer.AcquireSessionLease(ctx, row.SessionID)
+		acquired <- acquisitionResult{owner, err}
+	}()
+	// Cleanup has created and locked the previously missing lease before waiting
+	// on the dispatch row. The compatibility acquisition API must wait on it too.
+	waitBlocked(acquirerPID, deleterPID)
+	if err := gate.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	result := <-deleted
+	if result.err != nil || len(result.events) != 1 || result.events[0].Dispatch.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_FAILED {
+		t.Fatalf("unsent cleanup: %v %v", result.events, result.err)
+	}
+	successor := <-acquired
+	if successor.err != nil || successor.owner == nil {
+		t.Fatalf("acquire after cleanup: %v %v", successor.owner, successor.err)
+	}
+	defer store.ReleaseSessionLease(context.Background(), *successor.owner)
+	if marked, err := store.MarkDeliveryAttempt(ctx, row.CommandID, *successor.owner); err != nil || marked {
+		t.Fatalf("cleanup permitted forwarding: %t %v", marked, err)
+	}
+	var generation, transitions int
+	var leaseUID, holder string
+	if err := store.DB.QueryRowContext(ctx, `SELECT generation,lease_uid,lease_transitions,holder_identity
+		FROM sandbox_ownership WHERE sandbox_uid=$1`, sandboxUID).Scan(&generation, &leaseUID, &transitions, &holder); err != nil {
+		t.Fatal(err)
+	}
+	if generation != 7 || transitions != 3 || leaseUID != "test-retained-lease" || holder != "test-retained-replica" {
+		t.Fatalf("cleanup changed compatibility rollback data: %d %s %d %s", generation, leaseUID, transitions, holder)
+	}
+}
+
 func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
@@ -25,11 +128,7 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, err := store.ClaimSandboxOwner(ctx, sandboxUID, "test-lease", 1, "test-replica", 0)
-	if err != nil || legacy == nil {
-		t.Fatalf("compatibility owner: %v %v", legacy, err)
-	}
-	stale := claimSessionOwner(t, store, *legacy, row.SessionID)
+	stale := claimSessionOwner(t, store, row.SessionID)
 	if _, err := store.AcquireSessionLease(ctx, row.SessionID); !errors.As(err, new(*lease.HeldError)) {
 		t.Fatalf("live lease did not refuse takeover: %v", err)
 	}
@@ -45,7 +144,7 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 	expireSessionLease(t, store, stale)
 	for _, takeover := range []bool{false, true} {
 		if takeover {
-			successor := claimSessionOwner(t, store, *legacy, row.SessionID)
+			successor := claimSessionOwner(t, store, row.SessionID)
 			if successor.Holder == stale.Holder {
 				t.Fatal("takeover reused the fencing token")
 			}
@@ -81,15 +180,11 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 func TestRecoveryDoesNotTouchAnotherSessionOnTheSameSandbox(t *testing.T) {
 	store := testStore(t, 3)
 	ctx := t.Context()
-	legacy, err := store.ClaimSandboxOwner(ctx, sandboxUID, "test-shared-lease", 1, "test-replica", 0)
-	if err != nil || legacy == nil {
-		t.Fatalf("compatibility owner: %v %v", legacy, err)
-	}
 	for _, id := range []string{"test-recover-session", "test-live-session"} {
 		if _, err := store.CreateSession(ctx, id, "test-shared-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			t.Fatal(err)
 		}
-		owner := claimSessionOwner(t, store, *legacy, id)
+		owner := claimSessionOwner(t, store, id)
 		if row, err := store.SettleSession(ctx, id, owner, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
 			t.Fatalf("claim Session: %v %v", row, err)
 		}
@@ -97,7 +192,7 @@ func TestRecoveryDoesNotTouchAnotherSessionOnTheSameSandbox(t *testing.T) {
 			expireSessionLease(t, store, owner)
 		}
 	}
-	successor := claimSessionOwner(t, store, *legacy, "test-recover-session")
+	successor := claimSessionOwner(t, store, "test-recover-session")
 	if recovered, err := store.RecoverSession(ctx, successor); err != nil || !recovered {
 		t.Fatalf("recover: %t %v", recovered, err)
 	}
@@ -123,9 +218,7 @@ func TestSessionLeaseDoesNotRequireAnEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := transaction(ctx, store.DB, func(tx *sql.Tx) error {
-		return sessionDeliveryLease.Fence(ctx, tx, owner.lease())
-	}); err != nil {
+	if err := store.RenewSessionLease(ctx, *owner); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.ReleaseSessionLease(context.Background(), *owner); err != nil {
@@ -133,5 +226,52 @@ func TestSessionLeaseDoesNotRequireAnEnvironment(t *testing.T) {
 	}
 	if _, err := store.AcquireSessionLease(ctx, id); err != nil {
 		t.Fatalf("released environment-free Session is not leasable: %v", err)
+	}
+}
+
+func TestPendingScanRecoversStrandedWorkWithoutLeaseRows(t *testing.T) {
+	store := testStore(t, 3)
+	ctx := t.Context()
+	const openingID, commandSessionID = "test-stranded-opening", "test-stranded-command-session"
+	if _, err := store.CreateSession(ctx, openingID, "test-stranded-sandbox", sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	row, err := enqueueWithSession(t, store, ctx, commandSessionID, "test-stranded-sandbox", sandboxUID, input("test-stranded-command", "test input"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Model a crashed pre-expansion worker: its in-flight work has no Session lease row.
+	if _, err := store.DB.ExecContext(ctx, `UPDATE session SET state=CASE WHEN session_id=$1 THEN $2 ELSE $3 END`, openingID, SessionInProgressState, SessionAcceptedState); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB.ExecContext(ctx, `UPDATE dispatch SET state=$1,delivery_attempted=true WHERE command_id=$2`, DeliveringState, row.CommandID); err != nil {
+		t.Fatal(err)
+	}
+	var leaseRows int
+	if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM session_delivery_lease`).Scan(&leaseRows); err != nil || leaseRows != 0 {
+		t.Fatalf("fixture leases: %d %v", leaseRows, err)
+	}
+	pending, err := store.SessionsWithPendingWork(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	for _, session := range pending {
+		seen[session.SessionID] = true
+		owner := claimSessionOwner(t, store, session.SessionID)
+		if recovered, err := store.RecoverSession(ctx, owner); err != nil || !recovered {
+			t.Fatalf("recover %s: %t %v", session.SessionID, recovered, err)
+		}
+	}
+	if len(seen) != 2 || !seen[openingID] || !seen[commandSessionID] {
+		t.Fatalf("scan missed stranded work: %v", seen)
+	}
+	opening, head, err := store.SessionHead(ctx, openingID)
+	if err != nil || opening == nil || opening.State != SessionWaitingState || head != nil {
+		t.Fatalf("recovered opening head: %v %v %v", opening, head, err)
+	}
+	opening, head, err = store.SessionHead(ctx, commandSessionID)
+	if err != nil || opening != nil || head == nil || head.State != QueueState || !head.DeliveryAttempted {
+		t.Fatalf("recovered command head: %v %v %v", opening, head, err)
 	}
 }

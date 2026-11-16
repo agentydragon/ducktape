@@ -143,14 +143,9 @@ func TestSessionExecutesAsTheIdentityItsSandboxNamedAtCreation(t *testing.T) {
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: snapshot}, identity: named}
 	runtime := &placingRuntime{placed: make(chan SessionExecution, 2)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Delivery: runtime}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
-	lease, err := worker.Leases.Acquire(ctx, snapshot.Name, snapshot.UID)
-	if err != nil || lease == nil {
-		t.Fatalf("acquire delivery owner: %#v %v", lease, err)
-	}
-	worker.owners[snapshot.UID] = *lease
 	if err := worker.processSession(ctx, placed); err != nil {
 		t.Fatalf("place Session: %v", err)
 	}
@@ -318,14 +313,9 @@ func TestAnIdentityRunSandboxNeedsNoManagedServiceAccount(t *testing.T) {
 
 	catalog := &identityCatalog{testCatalog: testCatalog{sandbox: sandbox}, identity: named}
 	runtime := &placingRuntime{acceptingRuntime: acceptingRuntime{calls: make(chan string, 2)}, placed: make(chan SessionExecution, 1)}
-	worker := &DeliveryWorker{Store: store, Catalog: catalog, Leases: testLease{store: store}, Delivery: runtime}
+	worker := &DeliveryWorker{Store: store, Catalog: catalog, Delivery: runtime}
 	worker.init()
 	defer worker.queue.ShutDown()
-	lease, err := worker.Leases.Acquire(ctx, sandbox.Name, sandbox.UID)
-	if err != nil || lease == nil {
-		t.Fatalf("acquire delivery owner: %#v %v", lease, err)
-	}
-	worker.owners[sandbox.UID] = *lease
 	if err := worker.processSession(ctx, sessionID); err != nil {
 		t.Fatalf("place Session: %v", err)
 	}

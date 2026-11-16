@@ -200,9 +200,8 @@ manager's typed assessment; see the lifecycle manager SPEC for its policy and mu
 
 Once Dispatcher cleanup for an exact Sandbox UID commits, later `CreateSession` and queued-command
 admissions for that UID fail with `FAILED_PRECONDITION`, including privileged callers using an
-inventory snapshot read before cleanup. The durable UID tombstone survives removal of dispatch and
-ownership rows and process restart. An ownership claim cannot recreate the removed
-worker fence. A same-name environment with a different UID has independent admission.
+inventory snapshot read before cleanup. The durable UID tombstone survives removal of command receipts and
+process restart. A same-name environment with a different UID has independent admission.
 
 Cleanup retains Sessions with their immutable placement and execution principal. It records that
 the required Environment is deleted separately from owner materialization: a not-yet-sent opening
@@ -236,7 +235,7 @@ A native owner `CreateSession` response of `INVALID_ARGUMENT` proves validation 
 reservation; `ALREADY_EXISTS` reports a conflicting retained request. Dispatcher records these as
 `SESSION_MATERIALIZATION_FAILED` and, in the same transaction, fails commands still `QUEUED_IN_DISPATCHER` and never forwarded with
 `session_opening_rejected`; a previously attempted command becomes `UNKNOWN`. It does not alter delivering or admitted commands. Admission and
-settlement serialize on the Session ID, and settlement checks the current owner generation.
+settlement serialize on the Session ID, and settlement checks the current Session lease holder.
 A command admitted first is included; a later new queued command is refused with
 `FAILED_PRECONDITION` without a stored receipt. Exact existing-command retries still return the
 original receipt after ordinary caller authorization.
@@ -257,7 +256,7 @@ Deletion cleanup, retained History and UUID reuse policy are unchanged.
 ## Possible command forwarding and deletion outcomes
 
 Before a queued command RPC leaves Dispatcher, its current fenced worker commits a sticky
-`delivery_attempted` fact under the same ownership lock used by environment cleanup. A removed row
+`delivery_attempted` fact under the same deletion fence used by environment cleanup. A removed row
 or stale owner cannot acquire that permission. Storage uncertainty is retried before forwarding;
 cancellation or ownership loss prevents forwarding. A worker crash, requeue or owner recovery
 retains the fact. Only an original command ID and payload may be reconciled; this is never permission
@@ -326,7 +325,22 @@ with no runnable queued head. The head rule continues to serialize commands with
 Acquiring a lease requires only the Session ID, including when no Environment exists; this does
 not change current Session admission or Environment attachment contracts.
 
-During the compatibility release, worker writes also require the Sandbox Kubernetes Lease's
-committed generation fence. Deletion and terminal notices still lock `sandbox_ownership` before
-worker lease/delivery rows, preserving serialization with `MarkDeliveryAttempt`. The
-[rollout gates and rollback](README.md#delivery-lease-rollout) constrain removing that fence.
+Worker writes take the shared side of the existing Sandbox deletion advisory lock, then the
+Session admission advisory lock, then fence the Session lease. Environment cleanup takes the
+exclusive deletion lock before storing the tombstone and committing terminal notices. This
+serializes `MarkDeliveryAttempt` and settlement with notice classification without owning a
+Sandbox between transactions or holding a transaction across an RPC.
+
+Cleanup also locks every affected Session lease before touching delivery rows. It creates an
+expired placeholder when a lease row is missing, in sorted Session order, so a compatibility
+replica cannot acquire a missing row and write through cleanup. The no-op conflict update keeps
+an existing holder and expiry unchanged while locking it. Cleanup invalidates those leases in
+its transaction. Compatibility workers already fence their Session lease before writes; their
+own cleanup takes the same exclusive deletion advisory lock. Both versions therefore serialize
+terminal notices and attempt evidence during the roll. A marker committed first remains possible
+forwarding evidence; cleanup committed first prevents a marker or settlement from reviving work.
+
+The serving image never reads, locks, updates or deletes `sandbox_ownership`; its table and data
+remain for compatibility rollback. Its later drop removes no live terminal-notice lock. The
+[rollout gates and rollback](README.md#delivery-lease-rollout) constrain removal of the stored data
+and Sessions Lease RBAC.

@@ -52,20 +52,6 @@ func (queueWake) RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeC
 	return &environmentpb.WakeAssessment{State: environmentpb.WakeState_WAKE_STATE_NOT_NEEDED}, nil
 }
 
-type queueLease struct{ store *dispatcher.Store }
-
-func (l queueLease) Acquire(ctx context.Context, _, uid string) (*dispatcher.Owner, error) {
-	generation, err := l.store.OwnershipGeneration(ctx, uid)
-	if err != nil {
-		return nil, err
-	}
-	return l.store.ClaimSandboxOwner(ctx, uid, "queue-test-lease", 1, "queue-test-replica", generation)
-}
-
-func (l queueLease) StillOwns(ctx context.Context, owner dispatcher.Owner) (bool, error) {
-	return l.store.IsCurrentOwner(ctx, owner)
-}
-
 type queuedRunnerRequest struct {
 	request  *environmentruntimepb.SubmitInputRequest
 	metadata metadata.MD
@@ -205,7 +191,7 @@ func TestQueuedDeliveryThroughGatewayRunnerRPC(t *testing.T) {
 	worker := &dispatcher.DeliveryWorker{
 		Store: store, Catalog: queueCatalog{dispatcher.SandboxSnapshot{
 			Name: testSandbox, Namespace: f.namespace, UID: sandboxUID, Incarnation: string(f.pod.UID),
-		}}, Wake: queueWake{}, Leases: queueLease{store: store},
+		}}, Wake: queueWake{},
 		Delivery: &dispatcher.RuntimeProxyClient{
 			Namespace: f.namespace, GatewayTLS: gatewayTLS, Timeout: 5 * time.Second,
 			TargetTemplate: proxy.target,

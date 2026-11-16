@@ -25,13 +25,13 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 		if _, err := tx.ExecContext(ctx, "INSERT INTO deleted_sandbox (sandbox_uid) VALUES ($1) ON CONFLICT DO NOTHING", sandboxUID); err != nil {
 			return err
 		}
-		// CLEANUP(added 2026-11-16): PR 2 must replace this compatibility lock with
-		// Session lease serialization of terminal notices and MarkDeliveryAttempt before
-		// removing the generation fence. PR 3 may drop the table only after its last reader rolls.
-		// Match worker settlement's lock order: ownership row before Session lease and delivery rows.
-		var generation int64
-		err := tx.QueryRowContext(ctx, `SELECT generation FROM sandbox_ownership WHERE sandbox_uid=$1 FOR UPDATE`, sandboxUID).Scan(&generation)
-		if err != nil && err != sql.ErrNoRows {
+		// Lock every Session lease before touching delivery rows. Inserting an
+		// expired placeholder also serializes a compatibility replica acquiring a
+		// missing lease row. The exclusive Sandbox advisory lock above prevents new
+		// admission and Postgres-only worker writes until terminal notices commit.
+		if _, err := tx.ExecContext(ctx, `INSERT INTO session_delivery_lease (session_id,holder,expires_at)
+			SELECT session_id,$2,'-infinity'::timestamptz FROM session WHERE sandbox_uid=$1
+			ORDER BY session_id ON CONFLICT (session_id) DO UPDATE SET session_id=EXCLUDED.session_id`, sandboxUID, uuid.Nil); err != nil {
 			return err
 		}
 		positions := make([]int64, 0)
@@ -109,7 +109,8 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 			WHERE sandbox_uid=$1 AND environment_deleted_at IS NULL`, sandboxUID); err != nil {
 			return err
 		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM sandbox_ownership WHERE sandbox_uid=$1", sandboxUID); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM session_delivery_lease WHERE session_id IN
+			(SELECT session_id FROM session WHERE sandbox_uid=$1)`, sandboxUID); err != nil {
 			return err
 		}
 		count, err := deleted.RowsAffected()
@@ -142,8 +143,7 @@ func executionAccountField(owner *ServiceAccountIdentity, field string) string {
 
 func (s *Store) ListSandboxUIDs(ctx context.Context) (map[string]struct{}, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT sandbox_uid::text FROM dispatch
-		UNION SELECT sandbox_uid::text FROM session WHERE environment_deleted_at IS NULL
-		UNION SELECT sandbox_uid::text FROM sandbox_ownership`)
+		UNION SELECT sandbox_uid::text FROM session WHERE environment_deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
 	}

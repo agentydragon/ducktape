@@ -15,7 +15,8 @@ original command ID and never forward caller credentials. Environments does not 
 
 Dispatcher automatic wake preserves the effective caller and applies `wakeOnSend`, configured wake
 grants and the shared budget. Its Kubernetes Role still reads workload and policy state, patches
-existing Sandboxes for automatic wake and maintains delivery Leases. It cannot create or delete
+existing Sandboxes for automatic wake. Delivery uses per-Session PostgreSQL leases; the unused
+Kubernetes Lease grant remains until this image is pinned and running. It cannot create or delete
 Sandboxes or read SandboxTemplates. The Controller owns `Sandbox.status`; its leader election and
 Runtime observation are independent of Dispatcher scheduling ownership. See the
 [Dispatcher contract](dispatcher/SPEC.md) and [Runtime proxy contract](../environments/runtimeproxy/SPEC.md).
@@ -28,7 +29,7 @@ are rejected as unknown settings after their manifest omission rolled out. Obsol
 Runtime client certificates and mounts are no longer rendered after the receiver-free image
 was pinned and rolled; the Sessions client and Dispatcher listener certificates remain. The Gateway has no direct Runtime
 network permission, old Runtime peer admission or proxy grants. Its Kubernetes permissions cover
-Dispatcher inventory, admission, automatic wake and delivery ownership, without Pod/VM discovery
+Dispatcher inventory, admission and automatic wake, without Pod/VM discovery
 or TokenReview authority. Restoring the old receiver for rollback requires its image and credentials before callers
 are retargeted.
 
@@ -39,7 +40,7 @@ or per-Sandbox control EndpointSlice; every proxy replica may call the Controlle
 and workload Pod UID with the observed Runtime boot ID. Watch loss closes only that replica's route;
 Runtime restart or same-name replacement invalidates stale fences. Uncertain mutations are never
 automatically replayed. The [proxy specification](../environments/runtimeproxy/SPEC.md) owns this
-contract; the separate Dispatcher delivery Lease remains unchanged.
+contract; Dispatcher delivery uses a timed per-Session PostgreSQL lease.
 
 ## Source and tests
 
