@@ -8,10 +8,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::time::Instant;
 
-use analysis::graph::{EndpointView, chunk_constraining_module_edges, project_endpoints};
 use analysis::{EntryDestination, ModuleAssignment, ModuleId, StatementKind};
 use anyhow::{Context, Result, bail, ensure};
-use gate::{EsmImportOrder, EsmImportSchedule, ScheduleObstruction};
+use gate::{
+    AssignmentConstraints, EsmImportOrder, EsmImportSchedule, ScheduleObstruction,
+    project_assignment_constraints,
+};
 use petgraph::{algo::tarjan_scc, graphmap::DiGraphMap};
 use source_identity::SourceUnitId;
 use spec::{ModulePath, is_residual_namespace_path};
@@ -198,7 +200,7 @@ struct Candidate {
 struct Projection {
     candidate: Candidate,
     module_paths: Vec<ModulePath>,
-    module_assignment: ModuleAssignment,
+    constraints: AssignmentConstraints,
     block_by_module: BTreeMap<ModuleId, Token>,
     block_by_unit: Vec<Token>,
     nodes: BTreeSet<ModuleId>,
@@ -761,12 +763,12 @@ impl Solver<'_, '_, '_> {
             EntryDestination::from_module_id(entry),
         );
         let nodes: BTreeSet<_> = (0..=paths.len()).map(ModuleId).collect();
-        let canonical =
-            chunk_constraining_module_edges(self.problem.input.graph(), &module_assignment);
-        let pairs: BTreeSet<_> = canonical.pairs().collect();
-        let successors = canonical.i_successors.clone();
+        let constraints =
+            project_assignment_constraints(self.problem.input.graph(), &module_assignment);
+        let pairs: BTreeSet<_> = constraints.canonical.pairs().collect();
+        let successors = constraints.canonical.i_successors.clone();
         let preferred = EsmImportOrder::build_for_assignment(
-            &canonical,
+            &constraints.canonical,
             self.problem.input.graph(),
             &module_assignment,
             &nodes,
@@ -791,7 +793,7 @@ impl Solver<'_, '_, '_> {
         Ok(Some(Projection {
             candidate,
             module_paths: paths,
-            module_assignment,
+            constraints,
             block_by_module,
             block_by_unit,
             nodes,
@@ -874,19 +876,13 @@ impl Solver<'_, '_, '_> {
     }
 
     fn cross_rebind_force(&self, projection: &Projection) -> Option<(Token, Token)> {
-        self.problem
-            .input
-            .graph()
-            .iter_edges()
-            .filter(|edge| edge.reason.is_rebind())
-            .find_map(|edge| {
-                let endpoints =
-                    project_endpoints(edge, projection.entry, EndpointView::Gate, |unit| {
-                        projection.module_assignment.of(unit)
-                    })?;
-                if endpoints.0 == endpoints.1 {
-                    return None;
-                }
+        let graph = self.problem.input.graph();
+        projection
+            .constraints
+            .cross_rebinds
+            .iter()
+            .find_map(|rebind| {
+                let edge = graph.edge(rebind.dependency_edge);
                 let left = projection.block_by_unit.get(edge.from.0)?.clone();
                 let right = projection.block_by_unit.get(edge.to.0)?.clone();
                 (left != right).then_some((left, right))

@@ -152,6 +152,29 @@ impl RealizabilityVerdict {
     }
 }
 
+/// Canonical assignment constraints shared by the gate and placement callers.
+/// The import graph includes lazy imports; `canonical.edges` contains only
+/// imports that constrain initialization order. Cross-destination rebinds stay
+/// separate because they are a distinct gate clause and never become imports.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AssignmentConstraints {
+    pub canonical: ChunkConstrainingEdgeSet,
+    pub cross_rebinds: Vec<CrossRebindEdge>,
+}
+
+/// Project one exact source-unit assignment into the canonical gate graph and
+/// cross-destination rebind constraints. This does not choose an import order.
+pub fn project_assignment_constraints(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+) -> AssignmentConstraints {
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    AssignmentConstraints {
+        canonical,
+        cross_rebinds,
+    }
+}
+
 /// Entry imports every emitted module and evaluates last. A constraining edge
 /// into entry is therefore a TDZ/order violation even if the source I-graph has
 /// no return edge. Diagnose that two-node runtime cycle directly, without
@@ -216,7 +239,10 @@ pub fn check_realizability_with_priority(
     {
         return Err(ImportScheduleError::ModuleUniverse);
     }
-    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    let AssignmentConstraints {
+        canonical,
+        cross_rebinds,
+    } = project_assignment_constraints(dependency_graph, assignment);
     let entry = assignment.entry_destination().module_id();
     let schedule =
         EsmImportSchedule::from_priority(entry, &canonical.i_successors, nodes, priority)?;
@@ -229,7 +255,11 @@ fn check_realizability_using_schedule(
     assignment: &ModuleAssignment,
     schedule: Option<&EsmImportSchedule>,
 ) -> Result<RealizabilityVerdict, ImportScheduleError> {
-    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    let constraints = project_assignment_constraints(dependency_graph, assignment);
+    let AssignmentConstraints {
+        canonical,
+        cross_rebinds,
+    } = constraints;
     let entry = assignment.entry_destination().module_id();
     if let Some(schedule) = schedule {
         let nodes = schedule.modules();
