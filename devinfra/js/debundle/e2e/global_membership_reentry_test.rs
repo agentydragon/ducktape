@@ -36,7 +36,7 @@ const SOURCE: &str = "import './prelude.js';\nfunction read() { return later; }\
 fn listed_host_membership_can_preserve_deferred_callback_initialization() {
     for root in ["globalThis", "window"] {
         let source = SOURCE.replace("in globalThis;", &format!("in {root};"));
-        let mut opts = probe_opts(&source);
+        let mut opts = probe_opts(&source).with_import_order(&["state/value", "startup/probe"]);
         let assertions = [(root, "feature")];
         opts.non_reentrant_global_membership = &assertions;
         let fixture = run_fixture_with_graphs(opts);
@@ -83,7 +83,8 @@ fn descendant_record_writes_do_not_mutate_the_global_root() {
         ],
     );
     opts.non_reentrant_global_membership = &[("globalThis", "feature")];
-    let fixture = run_fixture_with_graphs(opts);
+    let fixture =
+        run_fixture_with_graphs(opts.with_import_order(&["state/value", "startup/probe"]));
     assert_preserved_entry_output(&fixture, "42\n7\n");
     assert_probe_read(&fixture, false);
 }
@@ -347,7 +348,8 @@ fn confined_earlier_alias_does_not_publish_or_modify_probe_surface() {
         &[prefix, "globalThis.addEventListener('neutral', read);"],
     );
     opts.non_reentrant_global_membership = &[("globalThis", "feature")];
-    let fixture = run_fixture_with_graphs(opts);
+    let fixture =
+        run_fixture_with_graphs(opts.with_import_order(&["state/value", "startup/probe"]));
     assert_preserved_entry_output(&fixture, "42\n");
     assert_probe_read(&fixture, false);
 }

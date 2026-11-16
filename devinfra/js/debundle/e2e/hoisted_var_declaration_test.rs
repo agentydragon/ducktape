@@ -64,14 +64,17 @@ export { reader };
 /// its source-unit owner; it does not need a separate whole-statement claim.
 #[test]
 fn unclaimed_nested_var_stays_in_entry_with_lazy_reader() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"try { var impl = "primary"; } catch (e) { var impl = "fallback"; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"try { var impl = "primary"; } catch (e) { var impl = "fallback"; }
 function reader() { return impl; }
 console.log(reader());
 export { reader };
 "#,
-        vec![logical_module("mod_reader", &[Member::new("reader")])],
-    ));
+            vec![logical_module("mod_reader", &[Member::new("reader")])],
+        )
+        .with_import_order(&["mod_reader", "residual"]),
+    );
     assert_entry_output(&fixture, "primary\n");
 }
 
@@ -98,7 +101,8 @@ fn nested_var_explicit_and_residual_owners_must_agree() {
             "try { var left = 10; var right = 20; } catch (e) {}\n",
             vec![logical_module("left_module", &[Member::new("left")])],
         )
-        .with_unassigned_mode(unassigned_mode_catchall_file(None)),
+        .with_unassigned_mode(unassigned_mode_catchall_file(None))
+        .with_import_order(&["left_module", "residual"]),
         &["NestedVarDestinationSplit", "left_module", "residual"],
     );
 }
@@ -154,7 +158,8 @@ fn unclaimed_nested_var_statement_runs_from_residual() {
 console.log(impl);\n",
             vec![],
         )
-        .with_unassigned_mode(unassigned_mode_catchall_file(None)),
+        .with_unassigned_mode(unassigned_mode_catchall_file(None))
+        .with_import_order(&["residual"]),
     );
     assert_entry_output(&fixture, "primary\n");
 }

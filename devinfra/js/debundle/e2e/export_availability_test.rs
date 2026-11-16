@@ -12,6 +12,7 @@ fn options<'a>(providers: &'a [(&'a str, &'a str)]) -> FixtureOpts<'a> {
     )
     .with_extra_chunks(providers)
     .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(&["later", "wrapped"])
 }
 
 /// The xfail form for a split the effect verdict already accepts and only the
@@ -97,7 +98,8 @@ fn namespace_import_of_a_factory_stays_pending() {
             ],
         )
         .with_extra_chunks(&[("static/peer", "export const factory = callback => ({ invoke: callback });")])
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["later", "wrapped"]),
         "42\n",
     );
 }
@@ -113,7 +115,8 @@ fn available_provider_preserves_an_early_callback_tdz() {
             ],
         )
         .with_extra_chunks(&[("static/peer", "export const factory = callback => ({ invoke: callback });")])
-        .with_unassigned_mode(unassigned_mode_inline()),
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["later", "wrapped"]),
     );
     assert_preserved_entry_error(&fixture, "Cannot access 'later' before initialization");
 }
