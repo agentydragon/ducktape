@@ -807,11 +807,20 @@ index lists, preserving omitted fields versus empty selections. This is partial
 output; it does not validate the full canonical assignment. Full graph export
 is available with `--graphs`; the dependency graph records the normalized
 selection and its program provenance fingerprints the exact subset-file bytes.
-The saved graph can be inspected, but selected-view overlay authoring is not
-implemented: `modules propose` returns `inventory_only` without a plan,
-`modules check` refuses to create one, and source-backed edit commands refuse
-the graph before writing. Do not treat selected graph unit IDs as durable spec
-coordinates. An omitted explicit catchall claim can be recreated as ordinary
+For a passing `inline_in_entry` selected baseline, `modules propose/check/apply`
+can append one fresh residual owner. The writer stores ordinary selector claims
+in the subset JSON's `placements` map and the checked final priority in the
+same tree configuration. It retains the full base tree and its semantic
+premises, retained bindings and existing placements. Destination paths for this
+selected-view workflow are chunk-local owner keys in proposals, explicit batches
+and plans. It preflights the actual
+staged view through the normal materializer and compares the complete ownership
+assignment with the graph-checked candidate before creating an executable plan
+or writing. A selector failure returns no plan. Other selected-view binding and
+module edits remain unsupported, as does optional `--analysis` effect assessment.
+Use the same `--tree-config`, `--modules` and `--source-root` context for the
+workflow in <module_proposals.md>. Do not treat selected graph unit IDs as durable
+spec coordinates. An omitted explicit catchall claim can be recreated as ordinary
 residual ownership without its authored renames. Use the same full projection
 and matching analysis artifact across selection edits; an engine, source or
 analysis-contract change still requires a matching fresh analysis.

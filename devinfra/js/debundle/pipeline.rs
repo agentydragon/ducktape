@@ -690,6 +690,134 @@ struct PreparedTransform {
     module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
 }
 
+/// Source preparation shared by selected-view selector synthesis and the
+/// canonical ownership preflight. Preparing this context performs no semantic
+/// analysis; the saved graph supplies the program's analyzed constraints.
+pub struct SelectedOwnershipEdit<'a> {
+    spec: TransformSpec,
+    prepared: PreparedTransform,
+    graph_source: &'a VerifiedGraphSourceContext,
+    graph: analysis::DependencyGraphInput,
+}
+
+impl<'a> SelectedOwnershipEdit<'a> {
+    pub fn prepare(
+        request: &TransformRequest,
+        graph_source: &'a VerifiedGraphSourceContext,
+        provenance: &GraphProvenance,
+        graph: analysis::DependencyGraphInput,
+    ) -> Result<Self> {
+        let (path, bytes) = graph_source.ownership_subset_input().context(
+            "selected-view editing requires the graph's captured ownership-subset input",
+        )?;
+        let baseline = serde_json::from_slice(bytes)
+            .context("parsing the graph's verified ownership-subset input")?;
+        let mut options = audit_options();
+        options.ownership_subset = Some(baseline);
+        options.ownership_subset_input = Some(OwnershipSubsetInput {
+            path: path.to_path_buf(),
+            bytes: bytes.to_vec(),
+        });
+        let (spec, prepared) = prepare_transform(request, &options, None, None, None)?;
+        // A fresh read may not silently replace any input accepted during graph
+        // verification. Compare bytes actually consumed by preparation, not a
+        // later filesystem reread that could hide an intervening change.
+        let fingerprints = |provenance: &GraphProvenance, roots: &CurrentRoots| {
+            provenance
+                .files
+                .iter()
+                .map(|file| {
+                    Ok((
+                        graph_provenance::absolute(
+                            &provenance.resolve(&file.root, &file.path, roots)?,
+                        )?,
+                        file.sha256.clone(),
+                    ))
+                })
+                .collect::<Result<BTreeMap<_, _>>>()
+        };
+        anyhow::ensure!(
+            fingerprints(provenance, graph_source.current_roots())?
+                == fingerprints(&prepared.provenance, &CurrentRoots::default())?,
+            "selected-view preparation consumed inputs different from the verified graph; regenerate the graph"
+        );
+        anyhow::ensure!(
+            graph.report().chunk_id == graph_source.chunk_id(),
+            "selected-view graph and verified source identify different chunks"
+        );
+        let source = prepared
+            .provenance
+            .chunk_sources
+            .iter()
+            .find(|source| source.chunk_id == graph_source.chunk_id())
+            .context("selected-view transform context lacks the graph's chunk source")?;
+        anyhow::ensure!(
+            source.source_path == graph_source.source_path()
+                && source.sha256 == graph_source.sha256(),
+            "selected-view transform source differs from the verified graph"
+        );
+        Ok(Self {
+            spec,
+            prepared,
+            graph_source,
+            graph,
+        })
+    }
+
+    /// The already parsed source used by the subsequent ownership preflight.
+    pub fn source(&self) -> Result<&js_ast::ParsedJsModule> {
+        let artifact = self.prepared.source.program.artifact();
+        let chunk_id = artifact
+            .chunk_table
+            .get(self.graph_source.chunk_id())
+            .context("selected-view source chunk is absent from the prepared program")?;
+        let (_, _, ast) = artifact::chunk_runtime_entry(
+            artifact,
+            self.graph_source.chunk_id(),
+            chunk_id,
+            self.spec.materialize_logical_modules.file.as_deref(),
+        )?;
+        Ok(ast)
+    }
+
+    pub fn check(
+        mut self,
+        candidate: &OwnershipSubset,
+        import_order: &[spec::ModulePath],
+        diagnostics: &analysis::diagnostics::Diagnostics,
+    ) -> Result<lowering::SelectedOwnershipPreflight> {
+        self.spec.import_order.insert(
+            self.graph_source.chunk_id().to_owned(),
+            import_order.to_vec(),
+        );
+        let chunks: Vec<_> = self.spec.materialize_chunk_ids().into_iter().collect();
+        let checked =
+            lowering::preflight_selected_ownership(lowering::SelectedOwnershipPreflightInput {
+                artifact: self.prepared.source.program.artifact(),
+                spec_inputs: MaterializeSpecInputs {
+                    host_behavior: &self.spec.host_behavior,
+                    program_premises: &self.spec.program_premises,
+                    embedded_loaders: &self.prepared.embedded_loaders,
+                    logical_modules: &self.spec.logical_modules,
+                    chunk_renames: &self.spec.chunk_renames,
+                    unassigned_mode: &self.spec.unassigned_mode,
+                    import_order: &self.spec.import_order,
+                    chunk_analysis_options: &self.spec.chunk_analysis_options,
+                    chunk_export_purity: &self.spec.chunk_export_purity,
+                },
+                materialize_config: &self.spec.materialize_logical_modules,
+                materialized_chunk_ids: &chunks,
+                chunk_id: self.graph_source.chunk_id(),
+                ownership_subset: candidate,
+                graph: self.graph,
+                diagnostics,
+                graph_provenance: Some(&self.prepared.provenance),
+            })?;
+        checked.ensure_accepted()?;
+        Ok(checked)
+    }
+}
+
 /// One accepted baseline and its immutable input preparation. Only the contract
 /// map may change between probes: other spec fields affect preparation.
 pub struct ContractAudit {

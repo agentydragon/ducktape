@@ -53,7 +53,7 @@ pub enum SelectorOverride {
     Relational(Box<spec::RawMemberSelector>),
 }
 
-fn validate_assignment_module_id(module: &str) -> Result<()> {
+pub(super) fn validate_assignment_module_id(module: &str) -> Result<()> {
     let normalized = module.to_ascii_lowercase();
     for extension in [".yaml", ".yml"] {
         if normalized.ends_with(extension) {
@@ -101,6 +101,16 @@ pub fn run_source_unit_apply(
     source_context: Option<&graph_provenance::VerifiedGraphSourceContext>,
     options: SourceUnitApplyOptions<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
+    let graph_input = analysis::DependencyGraphInput::read(dependency_graph_path)?;
+    if graph_input.report().ownership_subset.is_some() {
+        return crate::selected_view_apply::run(
+            stderr,
+            dependency_graph_path,
+            source_context.context("selected-view editing requires verified graph inputs")?,
+            graph_input,
+            options,
+        );
+    }
     let SourceUnitApplyOptions {
         tree_config,
         assignments,
@@ -124,13 +134,8 @@ pub fn run_source_unit_apply(
         validate_assignment_module_id(&assignment.module)?;
     }
 
-    let graph_input =
-        std::sync::Arc::new(analysis::DependencyGraphInput::read(dependency_graph_path)?);
+    let graph_input = std::sync::Arc::new(graph_input);
     let dependency_graph = graph_input.report();
-    anyhow::ensure!(
-        dependency_graph.ownership_subset.is_none(),
-        "source-backed edits are refused for selected-ownership graphs until selected-view overlay authoring is supported"
-    );
     let scope = tree_config
         .map(|path| ModuleTreeScope::from_config(path, &dependency_graph.chunk_id))
         .transpose()?;

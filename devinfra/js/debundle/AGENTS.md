@@ -46,6 +46,10 @@ the validator enforces) before working on the splitting pipeline.
   <docs/placement_algorithm.md>. Preserve the real-source CLI and property/oracle
   tests when changing candidate generation, scheduling, gate checks, or plan
   application.
+- Selected-ownership plans use chunk-local owner paths. Stage new ordinary
+  selectors in the captured view's `placements` map, preserve the complete base
+  premise/anchor tree, and compare the realized complete assignment with the
+  graph-checked candidate before offering or applying an executable plan.
 - Materialized chunks require `import_order` with every nonentry emitted owner
   exactly once. Check that concrete witness through the shared verifier and
   retain it through emission. Never repair it implicitly. Plans carry ordering

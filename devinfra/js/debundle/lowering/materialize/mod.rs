@@ -1786,11 +1786,11 @@ fn graph_export_guidance(
     if ownership_subset {
         if selection.enabled() {
             return format!(
-                " Selected-ownership dependency graph at {}; graph-backed edits remain unavailable until selected-view overlay authoring is supported.",
+                " Selected-ownership dependency graph at {}. For an accepted selected view, use `modules propose/check/apply` to append a selector-backed residual owner.",
                 chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
             );
         }
-        return " Bounded reports describe this ownership subset; rerun with `--graphs` to export its provenance-bound selected-ownership graph. Graph-backed edits remain unavailable until selected-view overlay authoring is supported.".to_string();
+        return " Bounded reports describe this ownership subset; rerun with `--graphs` to export its provenance-bound selected-ownership graph. For an accepted selected view, use `modules propose/check/apply` to append a selector-backed residual owner.".to_string();
     }
     if selection.enabled() {
         format!(

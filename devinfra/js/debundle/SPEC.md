@@ -260,6 +260,17 @@ that selected assignment only; it does not establish acceptance of the full cano
 assignment or complete effect coverage. Reusing analysis still requires the
 normal matching engine, source and full-projection checks.
 
+With `inline_in_entry`, `modules propose/check/apply` can append one fresh
+placement owner while retaining every existing owner and its priority. The new
+owner is last in the shared priority. Proposals and selected-view checks
+preflight the actual selector-backed view through the normal ownership builder,
+source-unit assembler, structural placement projection and exact-order gate.
+Every realized source-unit owner must equal the graph-checked candidate. The
+writer stages the selected JSON and final configuration before writing either;
+base module documents and semantic premises remain unchanged. Selector failure
+produces no executable plan and is not graph exhaustion. Other selected-view
+binding/module edits and `--analysis` effect assessment are unsupported.
+
 ## Accepted output
 
 Unresolved claims prevent acceptance. A run may write diagnostic reports for a
