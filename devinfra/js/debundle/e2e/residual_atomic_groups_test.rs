@@ -43,7 +43,9 @@ fn subset_reports_residual_binding_and_anonymous_effect_as_one_atom() {
         logical_module("b", &[Member::new("b")]),
     ];
     let subset = subset();
-    let opts = FixtureOpts::new(source, modules).with_unassigned_mode(unassigned_mode_inline());
+    let opts = FixtureOpts::new(source, modules)
+        .with_unassigned_mode(unassigned_mode_inline())
+        .with_import_order(&["a"]);
     let fixture = run_fixture_with_args(
         opts,
         &[
@@ -98,7 +100,9 @@ fn generated_residual_modules_are_reported_and_report_is_opt_in() {
     let subset = subset();
     let subset_path = subset.path().to_str().unwrap();
     let opts = || {
-        FixtureOpts::new(source, modules()).with_unassigned_mode(unassigned_mode_per_atomic_group())
+        FixtureOpts::new(source, modules())
+            .with_unassigned_mode(unassigned_mode_per_atomic_group())
+            .with_import_order(&["__auto/atomic_groups/0000", "a"])
     };
     let without = run_fixture_with_args(opts(), &["--ownership-subset", subset_path]);
     assert!(
@@ -143,7 +147,9 @@ fn selected_and_omitted_anonymous_statements_follow_the_subset() {
     ];
     let subset = subset();
     let fixture = run_fixture_with_args(
-        FixtureOpts::new(source, modules).with_unassigned_mode(unassigned_mode_inline()),
+        FixtureOpts::new(source, modules)
+            .with_unassigned_mode(unassigned_mode_inline())
+            .with_import_order(&["a"]),
         &[
             "--ownership-subset",
             subset.path().to_str().unwrap(),

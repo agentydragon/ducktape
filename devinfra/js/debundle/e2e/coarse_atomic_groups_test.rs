@@ -16,12 +16,29 @@ console.log(globalThis.trace.join("|"));
 "#;
 
 fn ordering_fixture(mode: spec::UnassignedMode) -> Fixture {
+    let priority: &[&str] = match &mode {
+        spec::UnassignedMode::PerAtomicGroup => &[
+            "__auto/atomic_groups/0000",
+            "__auto/atomic_groups/0001",
+            "__auto/atomic_groups/0002",
+            "__auto/atomic_groups/0003",
+            "__auto/atomic_groups/0004",
+            "features/anchor",
+        ],
+        spec::UnassignedMode::CoarseAtomicGroups { .. } => &[
+            "__auto/residual_groups/0000",
+            "features/anchor",
+            "__auto/residual_groups/0001",
+        ],
+        _ => &["features/anchor"],
+    };
     run_fixture(
         FixtureOpts::new(
             ORDER_SOURCE,
             vec![logical_module("features/anchor", &[Member::new("anchor")])],
         )
-        .with_unassigned_mode(mode),
+        .with_unassigned_mode(mode)
+        .with_import_order(priority),
     )
 }
 
@@ -139,7 +156,25 @@ export { a as Q };
 const Q = 2;
 console.log(Q);
 "#;
-    let fixture = |mode| run_fixture(FixtureOpts::new(source, vec![]).with_unassigned_mode(mode));
+    let fixture = |mode| {
+        let priority: &[&str] = match &mode {
+            spec::UnassignedMode::PerAtomicGroup => &[
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+                "__auto/atomic_groups/0003",
+            ],
+            spec::UnassignedMode::CoarseAtomicGroups { .. } => {
+                &["__auto/residual_groups/0001", "__auto/residual_groups/0000"]
+            }
+            _ => &[],
+        };
+        run_fixture(
+            FixtureOpts::new(source, vec![])
+                .with_unassigned_mode(mode)
+                .with_import_order(priority),
+        )
+    };
     let fine = fixture(unassigned_mode_per_atomic_group());
     let coarse = fixture(unassigned_mode_coarse_atomic_groups());
     assert_preserved_entry_output(&fine, "2\n");
@@ -191,12 +226,28 @@ export const after = () => anchor;
 console.log([before, anchor, after()].join("|"));
 "#;
     let fixture = |mode| {
+        let priority: &[&str] = match &mode {
+            spec::UnassignedMode::PerAtomicGroup => &[
+                "__auto/atomic_groups/0000",
+                "__auto/atomic_groups/0001",
+                "__auto/atomic_groups/0002",
+                "features/anchor",
+            ],
+            spec::UnassignedMode::CoarseAtomicGroups { .. } => &[
+                "__auto/residual_groups/0000",
+                "features/anchor",
+                "__auto/residual_groups/0001",
+                "__auto/residual_groups/0002",
+            ],
+            _ => &["features/anchor"],
+        };
         run_fixture(
             FixtureOpts::new(
                 source,
                 vec![logical_module("features/anchor", &[Member::new("anchor")])],
             )
-            .with_unassigned_mode(mode),
+            .with_unassigned_mode(mode)
+            .with_import_order(priority),
         )
     };
     let fine = fixture(unassigned_mode_per_atomic_group());
@@ -220,7 +271,23 @@ fn asymmetric_fixture(mode: spec::UnassignedMode) -> FixtureOpts<'static> {
             &[Member::new("namedReader")],
         )],
     )
-    .with_unassigned_mode(mode)
+    .with_unassigned_mode(mode.clone())
+    .with_import_order(match mode {
+        spec::UnassignedMode::PerAtomicGroup => &[
+            "features/named_reader",
+            "__auto/atomic_groups/0000",
+            "__auto/atomic_groups/0001",
+            "__auto/atomic_groups/0002",
+            "__auto/atomic_groups/0003",
+        ],
+        spec::UnassignedMode::CoarseAtomicGroups { .. } => &[
+            "features/named_reader",
+            "__auto/residual_groups/0000",
+            "__auto/residual_groups/0001",
+            "__auto/residual_groups/0002",
+        ],
+        _ => &["features/named_reader"],
+    })
 }
 
 #[test]
@@ -250,7 +317,12 @@ console.log(late);
                 &[Member::new("early"), Member::new("late")],
             )],
         )
-        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups()),
+        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups())
+        .with_import_order(&[
+            "features/__auto/residual_groups/endpoints",
+            "__auto/residual_groups/0000",
+            "__auto/residual_groups/0001",
+        ]),
     );
     let cycles = rejected.cycles();
     assert!(
@@ -305,7 +377,12 @@ console.log([trigger() === first, first(), middle, last].join("|"));
             source,
             vec![logical_module("features/anchor", &[Member::new("anchor")])],
         )
-        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups()),
+        .with_unassigned_mode(unassigned_mode_coarse_atomic_groups())
+        .with_import_order(&[
+            "__auto/residual_groups/0001",
+            "__auto/residual_groups/0000",
+            "features/anchor",
+        ]),
     );
     assert_preserved_entry_output(&fixture, "first\nbetween\nmiddle\nlast\ntrue|1|1|2\n");
     let residual = module_containing(
