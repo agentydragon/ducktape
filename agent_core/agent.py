@@ -21,14 +21,7 @@ from agent_core.events import (
     UserText,
 )
 from agent_core.handler import BaseHandler
-from agent_core.loop_control import (
-    Abort,
-    AllowAnyToolOrTextMessage,
-    LoopDecision,
-    NoAction,
-    RequireAnyTool,
-    ToolPolicy,
-)
+from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, LoopDecision, NoAction, RequireAnyTool, ToolPolicy
 from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
