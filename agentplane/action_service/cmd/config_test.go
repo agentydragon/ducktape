@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
@@ -50,26 +49,8 @@ func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || len(c.ReaderAccounts) != 0 || c.operatorsEnabled() {
+	if c.DatabaseURL == "" || c.RPC.ListenAddress != "0.0.0.0:8080" || c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
-	}
-}
-
-func TestConnectionDelegationActorSettingIsOptionalAndAccepted(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.ConnectionDelegationActor != nil {
-		t.Fatalf("unset connection_delegation_actor = %+v", c.ConnectionDelegationActor)
-	}
-
-	c, err = loadTestConfig(t, requiredFile+"connection_delegation_actor: {namespace: test-agentplane, name: mcp-edge}\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := c.ConnectionDelegationActor, (&auth.Account{Namespace: "test-agentplane", Name: "mcp-edge"}); got == nil || *got != *want {
-		t.Fatalf("connection_delegation_actor = %+v, want %+v", got, want)
 	}
 }
 
@@ -164,11 +145,8 @@ func TestWithoutActionGroupsNoActionResolves(t *testing.T) {
 	}
 }
 
-func TestReaderAccountsAndTheOperatorIssuerAreRead(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+`reader_accounts:
-  - {namespace: test-agentplane, name: test-notifications}
-  - test-agentplane/test-other-reader
-operator_oidc:
+func TestOperatorIssuerIsRead(t *testing.T) {
+	c, err := loadTestConfig(t, requiredFile+`operator_oidc:
   issuer: https://issuer.test.example/
   jwks_uri: https://issuer.test.example/jwks/
   audience: test-actions-audience
@@ -176,12 +154,11 @@ operator_oidc:
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantReaders := []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}, {Namespace: "test-agentplane", Name: "test-other-reader"}}
 	wantOperators := operator.Settings{
 		Issuer: "https://issuer.test.example/", Audience: "test-actions-audience", JWKSURI: "https://issuer.test.example/jwks/",
 		TokenProfile: operator.ProfileAuthentik,
 	}
-	if !slices.Equal(c.ReaderAccounts, wantReaders) || c.OperatorOIDC != wantOperators || !c.operatorsEnabled() {
+	if c.OperatorOIDC != wantOperators || !c.operatorsEnabled() {
 		t.Errorf("settings: %+v", c)
 	}
 }
@@ -281,7 +258,8 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"no caller namespaces":           strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":            strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
 		"database Secret in static file": requiredFile + "database_url: never-print-this\n",
-		"reader of a word":               requiredFile + "reader_accounts: [never-print-this]\n",
+		"retired reader accounts":        requiredFile + "reader_accounts: [never-print-this]\n",
+		"retired delegation actor":       requiredFile + "connection_delegation_actor: {namespace: test-agentplane, name: never-print-this}\n",
 		"operator issuer without its audience": requiredFile + `operator_oidc:
   issuer: https://never-print-this.test.example/
   jwks_uri: https://issuer.test.example/jwks/
@@ -350,17 +328,6 @@ func TestInvalidDirectWaitsAreRefused(t *testing.T) {
 		if _, err := loadTestConfig(t, requiredFile+file); err == nil {
 			t.Fatalf("accepted %s", file)
 		}
-	}
-}
-
-func TestReaderAccountsAreFileOnly(t *testing.T) {
-	c, err := loadTestConfig(t, requiredFile+"reader_accounts: [test-agentplane/test-notifications]\n",
-		settingPrefix+"READER_ACCOUNTS=invalid-unused-override")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(c.ReaderAccounts, []auth.Account{{Namespace: "test-agentplane", Name: "test-notifications"}}) {
-		t.Fatalf("readers: %v", c.ReaderAccounts)
 	}
 }
 

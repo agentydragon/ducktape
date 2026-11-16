@@ -38,10 +38,6 @@ type config struct {
 	RPC                         listener.Config `mapstructure:"rpc"`
 	// CallerServiceAccountNamespaces scopes live WorkloadCredential reads and policy index watches.
 	CallerServiceAccountNamespaces []string `mapstructure:"caller_service_account_namespaces"`
-	// CLEANUP(2026-11-15, stage 5): legacy receiver settings are decoded but ignored.
-	// Remove after generated manifests omit them and the service-SVID-only rollout completes.
-	ConnectionDelegationActor *auth.Account  `mapstructure:"connection_delegation_actor"`
-	ReaderAccounts            []auth.Account `mapstructure:"reader_accounts"`
 	// OperatorOIDC is on when any of its settings differs from its default; off, no operator is admitted.
 	OperatorOIDC operator.Settings `mapstructure:"operator_oidc"`
 	// PolicyNamespace holds the PolicySets and PolicyBindings the service watches; it writes ActionsReady only on

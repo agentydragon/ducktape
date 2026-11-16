@@ -634,6 +634,10 @@ func TestSettingsRejectPartialAndUnknownConfiguration(t *testing.T) {
 	if _, err := DecodeSettings(strings.NewReader(invalid)); err == nil {
 		t.Fatal("accepted unknown setting")
 	}
+	invalid = strings.TrimSuffix(string(encoded), "}") + `,"kubeconfig":"/unused/kubeconfig"}`
+	if _, err := DecodeSettings(strings.NewReader(invalid)); err == nil {
+		t.Fatal("accepted retired kubeconfig setting")
+	}
 	invalid = strings.Replace(string(encoded), `"test-credential"`, `{"secret":"test-credential"}`, 1)
 	if _, err := DecodeSettings(strings.NewReader(invalid)); err == nil {
 		t.Fatal("accepted invalid credential type")

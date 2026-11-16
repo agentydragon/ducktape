@@ -311,8 +311,6 @@ class Settings(BaseModel):
     )
     lease_seconds: int = Field(gt=30)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
-    # CLEANUP(added 2026-11-15): Remove after manifests omit kubeconfig and that rollout completes. Ignored.
-    kubeconfig: Path | None = None
 
     @model_validator(mode="after")
     def validate_listeners(self) -> Self:

@@ -21,7 +21,6 @@ from agentplane.net.peertls.config import (
     ClientTLS,
     ServiceSPIFFEID,
 )
-from agentplane.subjects import ServiceAccountRef
 
 DEFAULT_DIRECT_WAIT_SECONDS = 30.0
 
@@ -88,15 +87,6 @@ class Settings(BaseModel):
         default="",
         description="Exact Central Sampler service SPIFFE ID allowed to delegate Session operations.",
     )
-    # CLEANUP(2026-11-15, stage 5): remove these ignored legacy receiver keys after generated manifests
-    # omit them and the service-SVID-only receiver rollout completes.
-    reader_accounts: frozenset[ServiceAccountRef] = Field(
-        default=frozenset(), description="Ignored legacy reader setting."
-    )
-    connection_delegation_actor: ServiceAccountRef | None = Field(
-        default=None, description="Ignored legacy bearer delegation setting."
-    )
-
     policy_namespace: str = Field(
         description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
         "it writes `ActionsReady` conditions only on those bindings."
@@ -139,10 +129,6 @@ class Settings(BaseModel):
     @field_serializer("caller_service_account_namespaces")
     def serialize_namespaces(self, namespaces: Set[str]) -> list[str]:
         return sorted(namespaces)
-
-    @field_serializer("reader_accounts")
-    def serialize_reader_accounts(self, accounts: frozenset[ServiceAccountRef]) -> list[ServiceAccountRef]:
-        return sorted(accounts, key=lambda account: (account.namespace, account.name))
 
     @model_validator(mode="after")
     def validate_service_trust(self) -> Settings:

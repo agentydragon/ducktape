@@ -64,7 +64,7 @@ const (
 
 var (
 	kube *kubeapiserver.Server
-	// readerAccount reads every account's requests; readerToken proves it, from a Pod running as it.
+	// readerAccount supplies a valid Kubernetes bearer for the receiver rejection check.
 	readerAccount = auth.Account{Namespace: "test-agentplane", Name: "test-reader"}
 	readerToken   string
 )
@@ -109,7 +109,6 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 	c.RPC = listener.Config{ListenAddress: "127.0.0.1:0", TLS: &listener.TLS{CertFile: serving.CertFile, KeyFile: serving.KeyFile}, Auth: []listener.Authentication{&listener.SPIFFEAuth{CAFile: ca.RootFile}}}
 	c.ServiceReaders = []string{peertls.NotificationsURI}
 	c.CallerServiceAccountNamespaces = []string{readerAccount.Namespace}
-	c.ReaderAccounts = []auth.Account{readerAccount}
 	c.PolicyNamespace = policyNamespace
 	cluster := deps{Kube: kubeConfig}
 	configure(&c, &cluster)
@@ -601,7 +600,7 @@ func listOverGRPC(t *testing.T, service running, bearer string, code codes.Code)
 	return listed
 }
 
-func TestTheServiceRejectsAValidKubernetesBearerDespiteLegacyReaderSettings(t *testing.T) {
+func TestTheServiceRejectsAValidKubernetesBearer(t *testing.T) {
 	service := start(t, kube.Config, &catalog.Catalog{})
 	waitReady(t, service)
 	listOverGRPC(t, service, readerToken, codes.Unauthenticated)
