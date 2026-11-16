@@ -600,7 +600,11 @@ uses the existing changed-key rules; it never wakes source events. There is no
 source replay, fresh solver-iteration identity, second points-to transfer or
 placement-dependent analysis.
 
-The completed store is shared by chunk views. Existing consumers still receive
+The completed store is shared by chunk views. Capability, purity and final
+chunk preparation borrow or clone an Arc to the same immutable source view,
+never clone its binding/property maps. Solved value facts move into the
+completed query index rather than retaining a second full key map throughout
+projection. Existing consumers still receive
 chunk-local `Value`s: owned allocations recover their original offset, while a
 foreign allocation projects to `Top` and any local candidate roots reachable
 through it. Thus publication through a foreign carrier cannot erase local

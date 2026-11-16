@@ -18,11 +18,11 @@ pub(crate) struct ProgramFlowModule<'a> {
 /// facts instead; loading those facts never starts another flow solve.
 #[derive(Default)]
 pub struct ProgramValueFlows {
-    flows: BTreeMap<SourceModuleKey, ChunkValueFlow>,
+    flows: BTreeMap<SourceModuleKey, Arc<ChunkValueFlow>>,
 }
 
 impl ProgramValueFlows {
-    pub(crate) fn get(&self, module: &str) -> Option<&ChunkValueFlow> {
+    pub(crate) fn get(&self, module: &str) -> Option<&Arc<ChunkValueFlow>> {
         self.flows.get(module)
     }
 
@@ -433,15 +433,23 @@ pub(crate) fn program_value_flows<'a>(
     );
     let mut values = BTreeMap::new();
     let mut reachability = BTreeMap::new();
-    for (key, fact) in &facts {
-        match fact {
-            FlowFact::Values(value) => {
-                values.insert(*key, value.clone());
+    let mut candidate_bindings = BTreeMap::new();
+    let mut parameters = BTreeMap::new();
+    // Move completed facts into their read indexes. Do not keep a second full
+    // value-key map alive while constructing source projections.
+    for (key, fact) in facts {
+        match (key, fact) {
+            (key, FlowFact::Values(value)) => {
+                values.insert(key, value);
             }
-            FlowFact::CandidateReachability(bits) => {
-                if let FlowKey::CandidateReachable(origin) = key {
-                    reachability.insert(*origin, bits.clone());
-                }
+            (FlowKey::CandidateReachable(origin), FlowFact::CandidateReachability(bits)) => {
+                reachability.insert(origin, bits);
+            }
+            (FlowKey::CandidateBinding(binding), FlowFact::CandidateReachability(bits)) => {
+                candidate_bindings.insert(binding, bits);
+            }
+            (FlowKey::Parameters(function), FlowFact::Parameters(params)) => {
+                parameters.insert(function, params);
             }
             _ => {}
         }
@@ -487,9 +495,7 @@ pub(crate) fn program_value_flows<'a>(
                 flow.bindings
                     .insert(local.clone(), view.prepare_projection(values, &flow));
             }
-            if let Some(FlowFact::CandidateReachability(bits)) =
-                facts.get(&FlowKey::CandidateBinding(global))
-            {
+            if let Some(bits) = candidate_bindings.get(&global) {
                 flow.candidate_bindings
                     .insert(local.clone(), Arc::new(view.candidate_bits(bits)));
             }
@@ -509,7 +515,7 @@ pub(crate) fn program_value_flows<'a>(
                 flow.returns
                     .insert(*offset, view.prepare_projection(values, &flow));
             }
-            if let Some(FlowFact::Parameters(params)) = facts.get(&FlowKey::Parameters(*site)) {
+            if let Some(params) = parameters.get(site) {
                 flow.params.insert(
                     *offset,
                     params
@@ -547,7 +553,7 @@ pub(crate) fn program_value_flows<'a>(
             }
         }
         flow.program = Some(view);
-        outputs.insert(names[module].clone(), flow);
+        outputs.insert(names[module].clone(), Arc::new(flow));
     }
     ProgramValueFlows { flows: outputs }
 }

@@ -540,7 +540,7 @@ impl<'a> ModulePurityFacts<'a> {
     fn prepare(
         &self,
         inputs: &crate::analysis_inputs::AnalysisInputs,
-        structural_flow: Option<ChunkValueFlow>,
+        structural_flow: Option<Arc<ChunkValueFlow>>,
         options: PreparationOptions,
     ) -> PreparedModulePurityFacts<'a> {
         let source = crate::facts::collect_chunk_source_facts_from_items(self.body, None);

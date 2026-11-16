@@ -7,7 +7,7 @@ fn id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
-fn flow(source: &str) -> ChunkValueFlow {
+fn flow(source: &str) -> Arc<ChunkValueFlow> {
     let caller = raw_js_test_support::parse(source);
     let provider = raw_js_test_support::parse(
         "export function relay(value) { return value; }\nexport function wrap(value) { return { box: value }; }\n",

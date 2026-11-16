@@ -237,7 +237,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
         native_operation_inputs,
         inferred_set_constructions,
     );
-    complete_chunk_structural_with_flow(source, argument_inputs, value_flow)
+    complete_chunk_structural_with_flow(source, argument_inputs, std::sync::Arc::new(value_flow))
 }
 
 /// `complete_chunk_structural_with_inputs` reusing a flow that
@@ -245,7 +245,7 @@ pub fn complete_chunk_structural_with_inputs<'a>(
 pub(crate) fn complete_chunk_structural_with_flow<'a>(
     source: StructuralChunkSourceFacts<'a>,
     argument_inputs: &[crate::analysis_inputs::ResolvedArgumentInput],
-    value_flow: ChunkValueFlow,
+    value_flow: std::sync::Arc<ChunkValueFlow>,
 ) -> StructuralChunkAnalysis<'a> {
     let StructuralChunkSourceFacts {
         body,
