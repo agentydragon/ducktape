@@ -94,7 +94,7 @@ impl OwnDataContext for LocalExecutionContext<'_, '_, '_> {
 }
 
 impl<'source> LocalExecutionContext<'_, 'source, '_> {
-    pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Call] {
+    pub(in crate::facts::sync_effects) fn calls(&self) -> &'source [Arc<Call>] {
         match self.scope {
             LocalExecutionScope::Callable(key) => &self.executor.inputs.index.callables[&key].calls,
             LocalExecutionScope::Root => &self.executor.inputs.index.top_calls[self.owner.0],
@@ -736,7 +736,7 @@ impl CallContext for LocalExecutionContext<'_, '_, '_> {
         let substituted_summary = self.substituted_call_summary(&call);
         let caller = self.executor.local_body_identity_for_call(&call);
         let result = self.executor.request(RuntimeOperation::Call {
-            call,
+            call: call.as_ref().clone(),
             environment: frame.environment.clone(),
             captures: frame.environment.clone(),
             outcome: Box::new(Outcome {
@@ -1225,7 +1225,7 @@ impl ControlContext for LocalExecutionContext<'_, '_, '_> {
                                     .dense_array_push_receiver(receivers)
                                     .is_some()) =>
                     {
-                        lookup.clone()
+                        lookup.as_ref().clone()
                     }
                     _ => Call::member_read(self.owner, self.scope.caller(), callee, span),
                 };

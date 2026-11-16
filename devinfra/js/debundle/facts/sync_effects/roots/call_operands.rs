@@ -13,6 +13,7 @@ use crate::analysis_inputs::{ForeignCallSummary, ForeignInvocation, ForeignRetur
 use crate::facts::abstract_domain::value::Kind;
 use crate::reports::schema::CallbackFactoryUseKind;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 impl Executor<'_, '_> {
     /// The derived summary of a callback-factory import called with one
@@ -101,7 +102,7 @@ impl Executor<'_, '_> {
     /// gets no worse an outcome on the kernel than on the flattened lane.
     pub(in crate::facts::sync_effects) fn substitutes_factory_calls(
         &self,
-        calls: &[Call],
+        calls: &[Arc<Call>],
         binding: &swc_ecma_ast::Id,
     ) -> bool {
         let mut calls = calls

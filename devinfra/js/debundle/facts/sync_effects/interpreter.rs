@@ -10062,7 +10062,11 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// The exact root `new C(...)` of a stable local class whose checked
     /// constructor body the kernel's construct rule can run: no other root
     /// operation and no call in the class body.
-    pub(super) fn ordered_root_construction(&mut self, body: &LocalBody, calls: &[Call]) -> bool {
+    pub(super) fn ordered_root_construction(
+        &mut self,
+        body: &LocalBody,
+        calls: &[Arc<Call>],
+    ) -> bool {
         let Some((callee, span)) = body.single_construction_initializer() else {
             return false;
         };
@@ -10094,7 +10098,7 @@ impl<'source, 'rule> Executor<'source, 'rule> {
     /// Every call of the root is an exact intact intrinsic, so the ordered
     /// lane runs no application code. Identity is decided here; the ordered
     /// call transfer admits or refuses the operands.
-    pub(super) fn ordered_root_calls_are_native(&self, calls: &[Call]) -> bool {
+    pub(super) fn ordered_root_calls_are_native(&self, calls: &[Arc<Call>]) -> bool {
         let mut calls = calls
             .iter()
             .filter(|call| call.kind == CallKind::Call)

@@ -21,6 +21,7 @@ use crate::facts::statement_facts::{SettledElements, StatementFacts, StatementKi
 use crate::reports::schema::{LocalRecordFactoryRejection, RecordFactoryRejectionReason};
 use source_identity::SourceUnitOrdinal;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use swc_common::Span;
 use swc_ecma_ast::*;
 
@@ -29,7 +30,7 @@ pub(super) struct RootOperands<'source> {
     pub(super) fact: &'source StatementFacts,
     pub(super) settled_array_elements: BTreeMap<Id, SettledElements>,
     pub(super) global_object_aliases: Option<BTreeSet<Id>>,
-    pub(super) calls: &'source Vec<Call>,
+    pub(super) calls: &'source Vec<Arc<Call>>,
     pub(super) assignments: &'source Vec<(Id, ValueExpr)>,
     pub(super) initializer_source: Option<&'source OriginalInitializer>,
     pub(super) initialization_coverage_refusal: Option<OwnerInitializationCoverageRefusalReason>,
@@ -371,7 +372,7 @@ pub(super) fn prepare<'source>(
         let mut calls = calls
             .iter()
             .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New));
-        calls.clone().any(summarized)
+        calls.clone().any(|call| summarized(call.as_ref()))
             && calls.all(|call| {
                 call.kind == CallKind::Call
                     && (summarized(call) || executor.ordered_root_call_is_local(call))
@@ -613,7 +614,7 @@ pub(super) fn prepare<'source>(
 /// execution only if it seals the owner and otherwise rewinds to the flat
 /// lane (`plans/kernel_design.md` § Root admission). The row itself proves
 /// the method, the receiver and every callback.
-fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Call]) -> bool {
+fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Arc<Call>]) -> bool {
     let invocations: Vec<_> = calls
         .iter()
         .filter(|call| {
@@ -688,7 +689,7 @@ impl Executor<'_, '_> {
     /// retain their established whole-owner path. This chooses a source
     /// family before execution; the ordered call transfer still checks each
     /// actual target and never retries a failed invocation.
-    fn ordered_root_calls_are_local(&self, calls: &[Call]) -> bool {
+    fn ordered_root_calls_are_local(&self, calls: &[Arc<Call>]) -> bool {
         calls
             .iter()
             .filter(|call| call.kind == CallKind::Call)
