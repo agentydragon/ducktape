@@ -86,6 +86,7 @@ async function render(): Promise<string[]> {
       )
         return eventFetch(input, init);
       if (
+        pathname !== "/upstream/dispatcher/v1/sessions:watch" &&
         pathname !== "/upstream/app/v1/threads:watch" &&
         pathname !== "/upstream/history/v1/session-summaries:watch"
       ) {
@@ -93,7 +94,11 @@ async function render(): Promise<string[]> {
       }
       threadStreams.push(pathname);
       watch.send(
-        pathname === "/upstream/app/v1/threads:watch" ? { changed: {}, updatesConnected: true } : { changed: {} }
+        pathname === "/upstream/dispatcher/v1/sessions:watch"
+          ? { caughtUp: {}, resumeToken: "test-snapshot-token" }
+          : pathname === "/upstream/app/v1/threads:watch"
+            ? { changed: {}, updatesConnected: true }
+            : { changed: {} }
       );
       return Promise.resolve(watch.response);
     }
@@ -172,7 +177,11 @@ it("shares one search with the sidebar while reusing the generated update watche
   });
   expect(searchBox(sidebar()).value).toBe("beta");
   await act(async () => vi.runAllTimers());
-  expect(threadStreams).toEqual(["/upstream/app/v1/threads:watch", "/upstream/history/v1/session-summaries:watch"]);
+  expect(threadStreams).toEqual([
+    "/upstream/dispatcher/v1/sessions:watch",
+    "/upstream/app/v1/threads:watch",
+    "/upstream/history/v1/session-summaries:watch",
+  ]);
   const searches = vi.mocked(listThreadWindow).mock.calls.map(([listing]) => listing.search);
   expect(searches.at(-1)).toBe("beta");
   expect(searches.filter((search) => search === "beta")).toHaveLength(1);

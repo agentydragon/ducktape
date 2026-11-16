@@ -3,7 +3,7 @@
  * reader (`stream_reader.ts`). The facade answers with newline-delimited JSON: one `{"result": ...}`
  * object per message, and a last `{"error": ...}` object when the RPC fails after it began.
  *
- * A watch replays what it holds on every connection; `onOpen` marks where a replay begins.
+ * `onOpen` marks each accepted connection; services decide whether to replay or resume.
  */
 import type { JsonValue } from "@bufbuild/protobuf";
 import { z } from "zod";
@@ -11,12 +11,13 @@ import { z } from "zod";
 import { followResponse, type StreamConnection } from "./stream_reader";
 
 export interface WatchHandlers {
-  /** A response was accepted: the frames that follow replay the watch's state from its start. */
+  /** A response was accepted; called before its first frame. */
   onOpen: () => void;
   /** The `result` of one message. Throwing ends the connection. */
   onFrame: (result: JsonValue) => void;
   /** Called with the opening `connecting` at once, then on every change. */
   onConnection: (connection: StreamConnection) => void;
+  onError?: (reason: unknown) => void;
   /** Bounds a watch that opens but never sends its initial snapshot. */
   initialFrameTimeoutMs?: number;
   /** Bounds a quiet stream whose contract promises periodic frames. */
@@ -28,6 +29,15 @@ const messageSchema = z.union([
   z.object({ result: z.json() }),
 ]);
 
+export class WatchRpcError extends Error {
+  constructor(
+    readonly code: number,
+    message: string
+  ) {
+    super(`${message} (code ${code})`);
+  }
+}
+
 /** Splits text into lines and each into its message's `result`, erroring on an `error` message. */
 function results(): TransformStream<string, JsonValue> {
   let partial = "";
@@ -38,7 +48,7 @@ function results(): TransformStream<string, JsonValue> {
       for (const line of lines) {
         if (line === "") continue;
         const message = messageSchema.parse(JSON.parse(line));
-        if ("error" in message) throw new Error(`${message.error.message} (code ${message.error.code})`);
+        if ("error" in message) throw new WatchRpcError(message.error.code, message.error.message);
         controller.enqueue(message.result);
       }
     },
@@ -47,8 +57,8 @@ function results(): TransformStream<string, JsonValue> {
 
 /** Follows `url` until the returned function is called. */
 export function followWatch(
-  url: string,
-  { onOpen, onFrame, onConnection, initialFrameTimeoutMs, idleTimeoutMs }: WatchHandlers
+  url: string | (() => string),
+  { onOpen, onFrame, onConnection, onError, initialFrameTimeoutMs, idleTimeoutMs }: WatchHandlers
 ): () => void {
   return followResponse(url, {
     accept: "application/x-ndjson",
@@ -56,6 +66,7 @@ export function followWatch(
     onOpen,
     onFrame,
     onConnection,
+    onError,
     initialFrameTimeoutMs,
     idleTimeoutMs,
   });

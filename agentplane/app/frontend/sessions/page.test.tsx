@@ -241,11 +241,14 @@ beforeEach(() => {
     if (new Headers(init?.headers).get("Accept") === "application/x-ndjson") {
       const url = new URL(String(input), window.location.href);
       if (
+        url.pathname === "/upstream/dispatcher/v1/sessions:watch" ||
         url.pathname === "/upstream/app/v1/threads:watch" ||
         url.pathname === "/upstream/history/v1/session-summaries:watch"
       ) {
         const stream = new ServedWatch(String(input), init?.signal ?? undefined);
-        if (url.pathname === "/upstream/app/v1/threads:watch") {
+        if (url.pathname === "/upstream/dispatcher/v1/sessions:watch") {
+          stream.send({ caughtUp: {}, resumeToken: "test-snapshot-token" });
+        } else if (url.pathname === "/upstream/app/v1/threads:watch") {
           stream.send({ changed: {}, updatesConnected: true });
         } else {
           stream.send({ changed: {} });

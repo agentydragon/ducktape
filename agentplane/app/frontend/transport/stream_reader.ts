@@ -6,10 +6,11 @@
  * The request goes through `fetchWithLogin`, so a 401 sends the browser to log in and nothing is
  * retried. A connection that ends for any other reason -- a refusal, a dropped network, a malformed
  * frame, the server closing the body -- is replaced by a new one after a backoff, sooner once the
- * browser is back online or the page is back in view. Neither framing carries a resume position: each
- * connection starts from the server's current state.
+ * browser is back online or the page is back in view. A service can supply a URL callback to resume
+ * from its last applied checkpoint.
  */
 import { displayableError, fetchWithLogin, HttpError } from "./client";
+import { parsedJson } from "./parsed_json";
 
 /** `since` is when the stream entered the phase; `reconnecting` covers every failure since it was
  * last live, a failed first connection included, and `attempt` counts them. `lastError` is why the
@@ -34,8 +35,10 @@ export interface ReaderHandlers<F> {
   accept: string;
   /** Splits the decoded body into frames; erroring it ends the connection. */
   frames: (body: ReadableStream<string>) => ReadableStream<F>;
-  /** A response was accepted: the frames that follow start from the server's current state. */
+  /** A response was accepted; called before its first frame. */
   onOpen?: () => void;
+  /** Inspect a refusal or stream failure before the next request is constructed. */
+  onError?: (reason: unknown) => void;
   /** Abort and retry if no first frame arrives within this many milliseconds. */
   initialFrameTimeoutMs?: number;
   /** Abort and retry if an established stream stops delivering frames. */
@@ -48,8 +51,8 @@ export interface ReaderHandlers<F> {
 
 /** Follows `url` until the returned function is called. */
 export function followResponse<F>(
-  url: string,
-  { accept, frames, onOpen, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
+  url: string | (() => string),
+  { accept, frames, onOpen, onError, initialFrameTimeoutMs, idleTimeoutMs, onFrame, onConnection }: ReaderHandlers<F>
 ): () => void {
   let connection: StreamConnection = { phase: "connecting", since: Date.now() };
   let retries = 0;
@@ -73,8 +76,14 @@ export function followResponse<F>(
           );
     let idleTimeout: number | undefined;
     try {
-      const response = await fetchWithLogin(url, { signal: attempt.signal, headers: { Accept: accept } });
-      if (!response.ok) throw new HttpError(response, await response.text());
+      const response = await fetchWithLogin(typeof url === "function" ? url() : url, {
+        signal: attempt.signal,
+        headers: { Accept: accept },
+      });
+      if (!response.ok) {
+        const body = await response.text();
+        throw new HttpError(response, parsedJson(body) ?? body);
+      }
       if (response.body === null) throw new Error("the response has no body");
       onOpen?.();
       const reader = frames(response.body.pipeThrough(new TextDecoderStream())).getReader();
@@ -107,6 +116,7 @@ export function followResponse<F>(
     try {
       await read(attempt);
     } catch (reason) {
+      onError?.(reason);
       lastError = displayableError(reason);
     } finally {
       // A malformed frame or a consumer error must close the old body before reconnecting.

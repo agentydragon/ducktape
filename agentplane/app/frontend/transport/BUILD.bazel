@@ -66,7 +66,10 @@ ts_library(
     name = "stream_reader",
     srcs = ["stream_reader.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
-    deps = [":client"],
+    deps = [
+        ":client",
+        ":parsed_json",
+    ],
 )
 
 agentplane_vitest_test(
@@ -155,6 +158,28 @@ ts_library(
     srcs = ["live.tsx"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [":stream_status"],
+)
+
+ts_library(
+    name = "session_dispatcher_client",
+    srcs = ["session_dispatcher_client.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":client",
+        ":watch_stream",
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "session_dispatcher_client_test",
+    srcs = ["session_dispatcher_client.test.ts"],
+    deps = [
+        ":session_dispatcher_client",
+        "//:node_modules/vitest",
+        "//agentplane/app/frontend/testing:watch",
+    ],
 )
 
 check_vitest_specs()

@@ -88,6 +88,9 @@ class AgentplaneFixture:
     def __init__(self, page: Page) -> None:
         self.page = page
 
+    async def add_session(self, session: dict[str, object]) -> None:
+        await self.page.evaluate("session => window.agentplaneVisual.addSession(session)", session)
+
     async def mount_app(self, route: str) -> None:
         await self.page.evaluate("route => window.agentplaneVisual.mountApp(route)", route)
         await expect(self.page.locator("#app > *").first).to_be_attached()

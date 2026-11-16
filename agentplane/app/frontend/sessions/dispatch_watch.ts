@@ -1,5 +1,5 @@
 import { dispatchFromJson } from "./client";
-import { followWatch } from "../transport/watch_stream";
+import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import type { LocalCommands } from "./local_commands";
 
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */
@@ -13,7 +13,7 @@ export function watchDispatches(store: LocalCommands, sessionId: string, command
   for (const id of asked) query.append("filter.commandIds", id);
   // The rows this connection has sent, since each replays the Dispatcher's rows from the start.
   let held = new Set<string>();
-  return followWatch(`/upstream/dispatcher/v1/dispatches:watch?${query}`, {
+  return sessionDispatcherClient.watchDispatches(query, {
     onOpen: () => {
       held = new Set();
     },

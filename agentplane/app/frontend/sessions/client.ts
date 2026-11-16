@@ -1,8 +1,10 @@
 import { create, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
+import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
 import { displayableError, fetchJson, fetchText, fetchWithLogin, HttpError } from "../transport/client";
 import { TurnStatusSchema } from "../../../proto/event_pb";
 import {
+  type ExactEnvironment,
   Harness,
   HarnessSchema,
   HarnessState,
@@ -22,7 +24,6 @@ import {
   BatchGetSessionSummariesResponseSchema,
   FeedStatus,
   FeedStatusSchema,
-  FindSessionsResponseSchema,
   GetSessionSummaryRequestSchema,
   ReadEntityEvidenceRequestSchema,
   ReadEntityEvidenceResponseSchema,
@@ -56,6 +57,7 @@ import {
   SubmitInputRequestSchema,
   SubmitInputResponseSchema,
   type Dispatch,
+  type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 
 export type CommandTarget = { sandbox: string; sandboxUid: string };
@@ -64,6 +66,7 @@ export type CommandTarget = { sandbox: string; sandboxUid: string };
 export interface ThreadView {
   metadata: ThreadMetadata;
   summary: SessionSummary;
+  session?: Session;
 }
 export interface ThreadListing {
   limit: number;
@@ -297,11 +300,7 @@ export function savedInterruptResultFromJson(value: unknown): Dispatch {
 async function dispatcherCommand(path: string, body: string): Promise<JsonValue> {
   let response: Response;
   try {
-    response = await fetchWithLogin(new URL(`/upstream/dispatcher/v1${path}`, window.location.href), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body,
-    });
+    response = await sessionDispatcherClient.post(path, body);
   } catch (cause) {
     throw new Error(`Command admission unconfirmed: ${displayableError(cause)}`, { cause });
   }
@@ -522,95 +521,104 @@ function validateThread(metadata: ThreadMetadata, summary: SessionSummary): void
   if (summary.lastTurnStatus !== undefined) assertKnownEnum(summary.lastTurnStatus, TurnStatusSchema, "TurnStatus");
 }
 
-/** Pages app-owned Thread rows, joins History summaries, and keeps the former live-list semantics. */
+/** Join the watched Dispatcher inventory with optional App metadata and History evidence. */
 export async function listThreadWindow(
   listing: ThreadListing,
   openThreadId: string | null,
+  sessions: readonly Session[],
   signal?: AbortSignal
 ): Promise<ThreadWindow> {
   if (listing.limit < 1) throw new Error("Thread list limit must be positive");
-
-  const search = listing.search?.toLowerCase() ?? null;
-  const sandboxMatches = new Set<string>();
-  if (listing.search !== null) {
-    const query = new URLSearchParams({ sandbox_name_contains: listing.search });
-    const found = fromJson(FindSessionsResponseSchema, await historyJson(`/sessions:find?${query}`, { signal }));
-    for (const session of found.sessions) sandboxMatches.add(session.sessionId);
-  }
-
-  const threads: ThreadView[] = [];
-  const seenTokens = new Set<string>();
-  let archivedCount = 0;
-  let pageToken = "";
-  let more = false;
+  const metadata = new Map<string, ThreadMetadata>();
+  const tokens = new Set<string>();
+  let token = "";
   for (;;) {
-    const query = new URLSearchParams({ include_archived: String(listing.includeArchived), limit: "200" });
-    if (listing.sandboxUID) query.set("sandbox_uid", listing.sandboxUID);
-    if (pageToken !== "") query.set("page_token", pageToken);
-    const metadata = await fetchProto(
+    // Do not apply History-derived Sandbox membership in the legacy metadata endpoint.
+    const query = new URLSearchParams({ include_archived: "true", limit: "200" });
+    if (token) query.set("page_token", token);
+    const page = await fetchProto(
       `/upstream/app/v1/threads?${query}`,
       (json) => fromJson(ListThreadMetadataResponseSchema, json),
       "Thread metadata list",
       signal
     );
-    if (!metadata) throw new Error("Thread metadata list was not found");
-    if (pageToken === "") archivedCount = metadata.archivedCount;
-
-    const ids = metadata.threads.map((thread) => thread.threadId);
-    const summaries =
-      ids.length === 0
-        ? []
-        : fromJson(
-            BatchGetSessionSummariesResponseSchema,
-            await historyJson("/sessions:batchGetSummaries", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(
-                toJson(
-                  BatchGetSessionSummariesRequestSchema,
-                  create(BatchGetSessionSummariesRequestSchema, { sessionIds: ids })
-                )
-              ),
-              signal,
+    if (!page) throw new Error("Thread metadata list was not found");
+    for (const row of page.threads) metadata.set(row.threadId, row);
+    if (!page.nextPageToken) break;
+    if (tokens.has(page.nextPageToken)) throw new Error("Thread metadata page token did not advance");
+    token = page.nextPageToken;
+    tokens.add(token);
+  }
+  const search = listing.search?.toLowerCase() ?? null;
+  const candidates = sessions
+    .filter((session) => {
+      const environment = sessionEnvironment(session);
+      return (
+        (!listing.sandboxUID || environment?.uid === listing.sandboxUID) &&
+        (search === null ||
+          session.sessionId.toLowerCase().startsWith(search) ||
+          metadata.get(session.sessionId)?.name?.toLowerCase().includes(search) ||
+          environment?.name.toLowerCase().includes(search))
+      );
+    })
+    .sort((left, right) => {
+      const l = left.createdAt,
+        r = right.createdAt;
+      if (l?.seconds !== r?.seconds) return (l?.seconds ?? 0n) > (r?.seconds ?? 0n) ? -1 : 1;
+      return (r?.nanos ?? 0) - (l?.nanos ?? 0) || right.sessionId.localeCompare(left.sessionId);
+    });
+  const archivedCount = candidates.filter((session) => metadata.get(session.sessionId)?.archived).length;
+  const filtered = candidates.filter(
+    (session) => listing.includeArchived || !metadata.get(session.sessionId)?.archived
+  );
+  const visible = filtered.slice(0, listing.limit);
+  const opened = sessions.find((session) => session.sessionId === openThreadId);
+  if (opened && !visible.some((session) => session.sessionId === opened.sessionId)) visible.push(opened);
+  const summaries = new Map<string, SessionSummary>();
+  for (let offset = 0; offset < visible.length; offset += 100) {
+    const batch = visible.slice(offset, offset + 100);
+    const response = fromJson(
+      BatchGetSessionSummariesResponseSchema,
+      await historyJson("/sessions:batchGetSummaries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal,
+        body: JSON.stringify(
+          toJson(
+            BatchGetSessionSummariesRequestSchema,
+            create(BatchGetSessionSummariesRequestSchema, {
+              sessionIds: batch.map((session) => session.sessionId),
             })
-          ).summaries;
-    const byID = new Map(summaries.map((summary) => [summary.sessionId, summary]));
-    for (const metadataRow of metadata.threads) {
-      const summary = byID.get(metadataRow.threadId);
-      if (!summary) continue;
-      if (listing.sandboxUID && summary.sandbox?.uid !== listing.sandboxUID) continue;
-      const matchesSearch =
-        search === null ||
-        (metadataRow.name?.toLowerCase().includes(search) ?? false) ||
-        metadataRow.threadId.toLowerCase().startsWith(search) ||
-        sandboxMatches.has(metadataRow.threadId);
-      if (!matchesSearch) continue;
-      if (!summary.sandbox?.name) throw new Error("History Session has no Sandbox identity");
-      validateThread(metadataRow, summary);
-      threads.push({ metadata: metadataRow, summary });
-      if (threads.length > listing.limit) {
-        more = true;
-        break;
-      }
-    }
-    if (more || metadata.nextPageToken === "") break;
-    if (seenTokens.has(metadata.nextPageToken) || metadata.nextPageToken === pageToken) {
-      throw new Error("Thread metadata page token did not advance");
-    }
-    seenTokens.add(metadata.nextPageToken);
-    pageToken = metadata.nextPageToken;
+          )
+        ),
+      })
+    );
+    for (const summary of response.summaries) summaries.set(summary.sessionId, summary);
   }
+  const threads = visible.map((session) => {
+    const row =
+      metadata.get(session.sessionId) ??
+      create(ThreadMetadataSchema, {
+        threadId: session.sessionId,
+        createdAt: session.createdAt,
+      });
+    const summary = summaries.get(session.sessionId) ?? create(SessionSummarySchema, { sessionId: session.sessionId });
+    validateThread(row, summary);
+    return { metadata: row, summary, session };
+  });
+  return { threads, more: filtered.length > listing.limit, archived_count: archivedCount };
+}
 
-  const visible = threads.slice(0, listing.limit);
-  if (openThreadId !== null && !visible.some((thread) => thread.metadata.threadId === openThreadId)) {
-    try {
-      const opened = await findThread(openThreadId, signal);
-      if (opened) visible.push(opened);
-    } catch (reason) {
-      if (signal?.aborted) throw reason;
-    }
+export function sessionEnvironment(session: Session | undefined): ExactEnvironment | undefined {
+  const placement = session?.placement?.kind;
+  switch (placement?.case) {
+    case "environmentHosted":
+      return placement.value.environment;
+    case "centralSamplerV1":
+      return placement.value.executorEnvironment;
+    default:
+      return undefined;
   }
-  return { threads: visible, more, archived_count: archivedCount };
 }
 
 /** Set or clear the operator-managed name. */

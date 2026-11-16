@@ -15,7 +15,7 @@ import {
   threadObservations,
   listThreadWindow,
 } from "./client";
-import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+import { SessionSchema, DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import {
   BatchGetSessionSummariesResponseSchema,
   FeedStatus,
@@ -29,6 +29,14 @@ import {
 } from "../../../history_service/api/history/history_service_pb";
 import { Harness, HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import { ListThreadMetadataResponseSchema, ThreadMetadataSchema } from "../../app_service_pb";
+
+function watchedSession(id = "thread-id", name = "sandbox", uid = "sandbox-uid") {
+  return create(SessionSchema, {
+    sessionId: id,
+    createdAt: timestampFromDate(new Date("2026-01-01T00:00:00Z")),
+    placement: { kind: { case: "environmentHosted", value: { environment: { name, uid }, harness: Harness.CLAUDE } } },
+  });
+}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -81,9 +89,9 @@ it("keeps app metadata and History SessionSummary in their generated message sha
     );
   });
 
-  const result = await listThreadWindow({ limit: 1, search: null, includeArchived: false }, null);
+  const result = await listThreadWindow({ limit: 1, search: null, includeArchived: false }, null, [watchedSession()]);
 
-  expect(result.threads).toEqual([{ metadata, summary }]);
+  expect(result.threads).toEqual([{ metadata, summary, session: watchedSession() }]);
   expect(result.threads[0]?.summary.foldedThrough).toBe(9007199254740993n);
   expect(requests.map((request) => new URL(request.url).pathname)).toEqual([
     "/upstream/app/v1/threads",
@@ -91,18 +99,22 @@ it("keeps app metadata and History SessionSummary in their generated message sha
   ]);
 });
 
-it("passes the exact Sandbox UID to the paginated app Thread RPC", async () => {
+it("filters Sandbox membership from Dispatcher while reading App metadata without a History filter", async () => {
   const requests: Request[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
     const request = new Request(input, init);
     requests.push(request);
-    return Promise.resolve(Response.json({ threads: [], archivedCount: 0 }));
+    return Promise.resolve(
+      Response.json(request.method === "GET" ? { threads: [], archivedCount: 0 } : { summaries: [] })
+    );
   });
-  await listThreadWindow({ limit: 200, search: null, includeArchived: false, sandboxUID: "opaque-uid" }, null);
-  expect(requests).toHaveLength(1);
+  await listThreadWindow({ limit: 200, search: null, includeArchived: false, sandboxUID: "opaque-uid" }, null, [
+    watchedSession("thread-id", "sandbox", "opaque-uid"),
+  ]);
+  expect(requests).toHaveLength(2);
   const url = new URL(requests[0]!.url);
   expect(url.pathname).toBe("/upstream/app/v1/threads");
-  expect(url.searchParams.get("sandbox_uid")).toBe("opaque-uid");
+  expect(url.searchParams.get("sandbox_uid")).toBeNull();
   expect(url.searchParams.get("limit")).toBe("200");
 });
 
@@ -144,9 +156,33 @@ it.each([
     throw new Error(`Unexpected request: ${path}`);
   });
 
-  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: true }, null);
+  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: true }, null, [
+    watchedSession("archived-session", "archived-sandbox", "archived-sandbox-uid"),
+  ]);
   expect(result.threads).toHaveLength(1);
   expect(result.threads[0]?.summary.attached?.historicalHarness).toBe(expected);
+});
+
+it("lists a Dispatcher Session without History or App metadata and excludes History-only metadata", async () => {
+  const session = watchedSession("test-unrecorded-session");
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    return Promise.resolve(
+      Response.json(
+        request.method === "GET"
+          ? {
+              threads: [
+                { threadId: "test-history-only", createdAt: "2026-01-01T00:00:00Z", name: "History-only thread" },
+              ],
+            }
+          : { summaries: [] }
+      )
+    );
+  });
+  const result = await listThreadWindow({ limit: 20, search: null, includeArchived: false }, null, [session]);
+  expect(result.threads.map((thread) => thread.metadata.threadId)).toEqual([session.sessionId]);
+  expect(result.threads[0]?.session).toEqual(session);
+  expect(result.threads[0]?.summary.attached).toBeUndefined();
 });
 
 it.each(["before", "after"] as const)("preserves %s archive cursors above JS integer precision", async (direction) => {

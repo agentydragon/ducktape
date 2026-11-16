@@ -2,6 +2,9 @@ import { fromJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { useMatch } from "react-router";
 
+import { sessionDispatcherClient } from "../transport/session_dispatcher_client";
+import type { Session } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
+
 import { displayableError } from "../transport/client";
 import { type Live, type WatchHealth } from "../transport/live";
 import { backoff, type StreamConnection } from "../transport/stream_reader";
@@ -40,10 +43,14 @@ interface ThreadListingState {
 const ThreadsLiveContext = createContext<Live<ThreadsSnapshot> | null>(null);
 const ThreadListingContext = createContext<ThreadListingState | null>(null);
 
-/** The Threads stream as one connection over its two watches. A failure that drops both (a network
+/** The Threads stream as one connection over its three watches. A failure that drops several (a network
  * change, a gateway roll) reaches each with the same reason, which the result names once. */
-export function combinedConnection(history: StreamConnection, metadata: StreamConnection): StreamConnection {
-  const sources = [history, metadata];
+export function combinedConnection(
+  history: StreamConnection,
+  metadata: StreamConnection,
+  inventory: StreamConnection
+): StreamConnection {
+  const sources = [history, metadata, inventory];
   const disconnected = sources.filter((source) => source.phase !== "live");
   if (disconnected.length === 0) {
     return { phase: "live", since: Math.max(...sources.map((source) => source.since)) };
@@ -76,7 +83,7 @@ function threadWatchHealth(connected: boolean, since: number | null): WatchHealt
   };
 }
 
-/** Follows History and app-owned metadata watches, joining their generated reads in the browser. */
+/** Dispatcher watch owns membership; App metadata and History watches refresh their independent joins. */
 export function useThreadsLive(listing: ThreadListing | null, openThreadId: string | null): Live<ThreadsSnapshot> {
   const [state, setState] = useState<Pick<Live<ThreadsSnapshot>, "snapshot" | "health">>({
     snapshot: null,
@@ -103,16 +110,19 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     let disconnectedSince: number | null = null;
     let historyReady = false;
     let metadataReady = false;
+    let inventoryReady = false;
+    const sessions = new Map<string, Session>();
+    let inventoryConnection: StreamConnection = { phase: "connecting", since: Date.now() };
     const lifetime = new AbortController();
     let historyConnection: StreamConnection = { phase: "connecting", since: Date.now() };
     let metadataConnection: StreamConnection = { phase: "connecting", since: Date.now() };
 
     function reportConnections(): void {
-      setConnection(combinedConnection(historyConnection, metadataConnection));
+      setConnection(combinedConnection(historyConnection, metadataConnection, inventoryConnection));
     }
 
     function refresh(): void {
-      if (closed) return;
+      if (closed || !inventoryReady) return;
       window.clearTimeout(retryTimer);
       retryTimer = undefined;
       dirty = true;
@@ -124,7 +134,12 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
           try {
             const current = currentListing.current;
             if (current.listing === null) return;
-            const windowData = await listThreadWindow(current.listing, current.openThreadId, lifetime.signal);
+            const windowData = await listThreadWindow(
+              current.listing,
+              current.openThreadId,
+              [...sessions.values()],
+              lifetime.signal
+            );
             if (closed) return;
             if (updatesConnected) disconnectedSince = null;
             else disconnectedSince ??= Date.now();
@@ -153,6 +168,29 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
     }
 
     refreshRef.current = refresh;
+    const stopInventory = sessionDispatcherClient.watchSessions({
+      onOpen: (snapshot) => {
+        if (snapshot) sessions.clear();
+        inventoryReady = false;
+      },
+      onFrame: (frame) => {
+        switch (frame.frame.case) {
+          case "session":
+            sessions.set(frame.frame.value.sessionId, frame.frame.value);
+            break;
+          case "caughtUp":
+            inventoryReady = true;
+            break;
+          case "reconnectRequired":
+            return;
+        }
+        if (inventoryReady) refresh();
+      },
+      onConnection: (next) => {
+        inventoryConnection = next;
+        reportConnections();
+      },
+    });
     const stopMetadata = followWatch("/upstream/app/v1/threads:watch", {
       onOpen: () => {
         metadataReady = false;
@@ -197,14 +235,14 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
       refreshRef.current = () => undefined;
       window.clearTimeout(retryTimer);
       lifetime.abort();
+      stopInventory();
       stopHistory();
       stopMetadata();
     };
   }, [enabled, sandboxUID]);
 
   useEffect(() => {
-    // Render the initial read even if a watch is slow to open. Once both watches have sent their
-    // opening frames, the watch callbacks refresh again to cover changes during this read.
+    // Listing changes reuse the watched inventory; its CaughtUp frame gates the initial join.
     refreshRef.current();
   }, [listing, openThreadId]);
 
@@ -217,7 +255,7 @@ export function useThreadsLive(listing: ThreadListing | null, openThreadId: stri
   return { ...state, stream };
 }
 
-/** One pair of generated watches shared by navigation and the open composer. */
+/** Generated watches shared by navigation and the open composer. */
 export function ThreadsLiveProvider({
   openThreadId,
   children,
