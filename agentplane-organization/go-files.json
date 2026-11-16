@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
-  "observed_at_utc": "2026-11-16T21:20:00Z",
+  "source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
+  "observed_at_utc": "2026-11-16T21:22:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1363,
-    "directories": 253,
+    "files": 1366,
+    "directories": 255,
     "production": 751,
-    "tests": 612
+    "tests": 615
   },
   "directories": [
     {
@@ -58,6 +58,18 @@
         "agentplane/action_service/internal/admission/catalog/golden_test.go",
         "agentplane/action_service/internal/admission/catalog/input.go",
         "agentplane/action_service/internal/admission/catalog/input_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate",
+      "production": 2,
+      "tests": 3,
+      "files": [
+        "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+        "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+        "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+        "agentplane/action_service/internal/admission/grpcgate/gate.go",
+        "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go"
       ]
     },
     {
@@ -146,10 +158,9 @@
     },
     {
       "path": "agentplane/action_service/internal/rpc",
-      "production": 12,
+      "production": 10,
       "tests": 16,
       "files": [
-        "agentplane/action_service/internal/rpc/attribution.go",
         "agentplane/action_service/internal/rpc/attribution_test.go",
         "agentplane/action_service/internal/rpc/catalog.go",
         "agentplane/action_service/internal/rpc/catalog_golden_test.go",
@@ -157,7 +168,6 @@
         "agentplane/action_service/internal/rpc/catalog_test.go",
         "agentplane/action_service/internal/rpc/errors.go",
         "agentplane/action_service/internal/rpc/fixture_test.go",
-        "agentplane/action_service/internal/rpc/gate.go",
         "agentplane/action_service/internal/rpc/gate_policy_test.go",
         "agentplane/action_service/internal/rpc/gate_test.go",
         "agentplane/action_service/internal/rpc/integration_testmain_test.go",
@@ -2203,22 +2213,29 @@
       ]
     },
     {
-      "path": "agentplane/mcp_edge",
-      "production": 7,
-      "tests": 5,
+      "path": "agentplane/mcp_edge/cmd",
+      "production": 5,
+      "tests": 3,
       "files": [
-        "agentplane/mcp_edge/action_metadata.go",
-        "agentplane/mcp_edge/action_metadata_test.go",
-        "agentplane/mcp_edge/callers.go",
-        "agentplane/mcp_edge/config.go",
-        "agentplane/mcp_edge/config_test.go",
-        "agentplane/mcp_edge/core_client.go",
-        "agentplane/mcp_edge/core_client_test.go",
-        "agentplane/mcp_edge/http_facade.go",
-        "agentplane/mcp_edge/http_facade_test.go",
-        "agentplane/mcp_edge/http_health.go",
-        "agentplane/mcp_edge/http_health_test.go",
-        "agentplane/mcp_edge/main.go"
+        "agentplane/mcp_edge/cmd/callers.go",
+        "agentplane/mcp_edge/cmd/config.go",
+        "agentplane/mcp_edge/cmd/config_test.go",
+        "agentplane/mcp_edge/cmd/http_facade.go",
+        "agentplane/mcp_edge/cmd/http_facade_test.go",
+        "agentplane/mcp_edge/cmd/http_health.go",
+        "agentplane/mcp_edge/cmd/http_health_test.go",
+        "agentplane/mcp_edge/cmd/main.go"
+      ]
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient",
+      "production": 2,
+      "tests": 2,
+      "files": [
+        "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+        "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+        "agentplane/mcp_edge/internal/actionclient/core_client.go",
+        "agentplane/mcp_edge/internal/actionclient/core_client_test.go"
       ]
     },
     {
@@ -3110,10 +3127,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "orchestration-v1-retirement",
-        "action-service-grpcgate"
-      ],
+      "pending_tracks": ["orchestration-v1-retirement"],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3129,7 +3143,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3145,7 +3159,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3161,7 +3175,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3170,17 +3184,14 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 704,
-      "sha256": "05a5ad13464cc46994329cd736b5331f687562b3c3c8ad045c7f8b6552561538",
+      "lines": 705,
+      "sha256": "fc464cef1a68824a59d600703502e2de829e41e6b638d3c68f660bdad7b1d300",
       "planned_path": "agentplane/action_service/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "orchestration-v1-retirement",
-        "action-service-grpcgate"
-      ],
+      "pending_tracks": ["orchestration-v1-retirement"],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3196,7 +3207,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3212,7 +3223,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3228,7 +3239,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3244,7 +3255,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3359,6 +3370,86 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/admission/catalog"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+      "package": "grpcgate",
+      "test": false,
+      "generated": false,
+      "lines": 44,
+      "sha256": "8e95626a594c9f042d3ac6cad5b026e0447bdaf4e5fddf7e057ac63a425ce327",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 28,
+      "sha256": "40b402670869cb56c916ff8d039f3cbc3080c3a3d99e06c87859ee6b684a422f",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 80,
+      "sha256": "8db84a14ab3d8fd1fd2853bfb7e42e54c52b6ac69cdc6ce8ef53243637a6cdea",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/gate.go",
+      "package": "grpcgate",
+      "test": false,
+      "generated": false,
+      "lines": 508,
+      "sha256": "897cebedf10b27f72d1d9c20dae0481643d04de9cc19a8c314a3d5fe0310a9a2",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/gate.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 104,
+      "sha256": "17fa0bae70434324f03e1bf6b453872ded2a96eb62ca55ed0228c556fb5688da",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
     },
     {
       "path": "agentplane/action_service/internal/admission/informer/fixture_test.go",
@@ -4033,28 +4124,12 @@
       "package_decision": "agentplane/action_service/internal/push"
     },
     {
-      "path": "agentplane/action_service/internal/rpc/attribution.go",
-      "package": "rpc",
-      "test": false,
-      "generated": false,
-      "lines": 44,
-      "sha256": "da4b38e9679b89ee04eda767c30860e0c5f32545dc8e66ccc593fb84a98a8b8a",
-      "planned_path": "agentplane/action_service/internal/rpc/attribution.go",
-      "planned_parts": [],
-      "planned_package": "rpc",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
-      "package_decision": "agentplane/action_service/internal/rpc"
-    },
-    {
       "path": "agentplane/action_service/internal/rpc/attribution_test.go",
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 52,
-      "sha256": "edddb43ab5fab32d15f42be050604259645e807d42028c5bbbfe8bc354c0e8d3",
+      "lines": 42,
+      "sha256": "502a354331bd950d623dd790cd221f6f303393dd6eebc0258e3b2b476a6fd42e",
       "planned_path": "agentplane/action_service/internal/rpc/attribution_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -4069,18 +4144,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 184,
-      "sha256": "e2c4b678d8d97d654adfc26779fb791a95d8950da5d82f1c36facdd885ab67e6",
-      "planned_path": null,
+      "lines": 185,
+      "sha256": "71add4bb27561706559a621f3aada81d7c37e9cfcd8c04ead354213f79274887",
+      "planned_path": "agentplane/action_service/internal/rpc/catalog.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4090,16 +4162,13 @@
       "generated": false,
       "lines": 116,
       "sha256": "7a703394c522fa748e68b5f23d6bb46b74e59392cfe9d58e746dd8a4fbd062a1",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_golden_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4109,16 +4178,13 @@
       "generated": false,
       "lines": 29,
       "sha256": "31c1670301ab5e19cd802453bdf22a9a23878b2f9982dbd250b9fbd9266d223e",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_settings_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4128,16 +4194,13 @@
       "generated": false,
       "lines": 323,
       "sha256": "ba1670472bd6d941b01b91f244fcb031c92090f2d7e358655a5e37c85314b7b9",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4145,18 +4208,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 92,
-      "sha256": "b17117cb209e5941b374ebffa1f227a82fde3fd1a82cbaf1c88440fa7d7046b2",
-      "planned_path": null,
+      "lines": 93,
+      "sha256": "dfc601245eff3659f64cb089ec5358b48d3f09fb51d295cea9e9a492305ca97b",
+      "planned_path": "agentplane/action_service/internal/rpc/errors.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4164,37 +4224,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 446,
-      "sha256": "1d30d170d977b6fd4bc9a3893fe878b791e6a55e90cd3d034c6acc4ff5da3123",
-      "planned_path": null,
+      "lines": 465,
+      "sha256": "23ecaafeca3def5ff6fac4e53529a656d0ea69e215eb918dfcb2c676279043db",
+      "planned_path": "agentplane/action_service/internal/rpc/fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/action_service/internal/rpc"
-    },
-    {
-      "path": "agentplane/action_service/internal/rpc/gate.go",
-      "package": "rpc",
-      "test": false,
-      "generated": false,
-      "lines": 505,
-      "sha256": "44dbe296b1c13cc92925dd9b1b7c83105eb4d67fbe35bdf6fb96a096fa91e09c",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4202,18 +4240,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 110,
-      "sha256": "501d735e9bfbbd27d2646095de0b461de8f2c5f13312ed367e3e183826552d32",
-      "planned_path": null,
+      "lines": 24,
+      "sha256": "f724f68984900c3613300480567a87cb1685fa55eaa4e7c1c2bd114ca4d35d87",
+      "planned_path": "agentplane/action_service/internal/rpc/gate_policy_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4221,18 +4256,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 413,
-      "sha256": "235341312a20135c9ce58921d12c3d570b8a866c352f85eee8012167b0e2d8f3",
-      "planned_path": null,
+      "lines": 430,
+      "sha256": "1ff8d62676752e7172425cc06c103b983858f87248202a8bb12665a8c52c7d21",
+      "planned_path": "agentplane/action_service/internal/rpc/gate_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4242,16 +4274,13 @@
       "generated": false,
       "lines": 23,
       "sha256": "fd4e8248d157f2e191e9c65b436550ae01d25a8f8dd46d4b3e7211f6202bb4ae",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/integration_testmain_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4259,18 +4288,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 106,
-      "sha256": "a045e9bc3298673bfa38ecc21d6cef7d528d1894b060fc26f4674a0d6214efbb",
-      "planned_path": null,
+      "lines": 107,
+      "sha256": "24cec812018c1a0b10db3cb20f0619948e28a19c1dafe8891be194a690254095",
+      "planned_path": "agentplane/action_service/internal/rpc/mcp_servers.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4280,16 +4306,13 @@
       "generated": false,
       "lines": 175,
       "sha256": "fa19e862ef0672ce5d9f44b676abcdb454b8102410ea1e34ae229af7fb905ce2",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/mcp_servers_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4297,18 +4320,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 52,
-      "sha256": "f22903137477b6548be08039d4163940b6db654378d01a4a39f6848f6eba62f6",
-      "planned_path": null,
+      "lines": 53,
+      "sha256": "21ad42bd0cfb639ca80c4efe1a44c6654766460c93fbd3e76a1848b649537bb7",
+      "planned_path": "agentplane/action_service/internal/rpc/operator_service.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4318,16 +4338,13 @@
       "generated": false,
       "lines": 263,
       "sha256": "3459d44a9c9c6e7d520e23eaa719b9a6943386394505ee6d4ec1281c4715eff1",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/operator_service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4335,18 +4352,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 75,
-      "sha256": "8016694c41f140614813f8867c57ac382686fb3c68926ba5ef10d8b692d767d8",
-      "planned_path": null,
+      "lines": 76,
+      "sha256": "aba09aee18eca4a618a8c6e3e86ca85668ddd161f4cbf5f4262c75171f9538cd",
+      "planned_path": "agentplane/action_service/internal/rpc/policy.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4356,16 +4370,13 @@
       "generated": false,
       "lines": 463,
       "sha256": "d7f7c37fd0a20da59ffc16fe31d1c428fab85c4e9057a8f62886472de6bf5218",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/policy_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4373,18 +4384,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 203,
-      "sha256": "bf8485bcb0acfe0b3bccb8ceb5f9f645fa90c1620b49b5eb35ef940eaad650d3",
-      "planned_path": null,
+      "lines": 204,
+      "sha256": "c2a46d91c645133a3eaee2fdcc4b5aa231877f510ec469cc4b9029147d416ae4",
+      "planned_path": "agentplane/action_service/internal/rpc/push.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4394,16 +4402,13 @@
       "generated": false,
       "lines": 344,
       "sha256": "00baded535e07edd1930b1065076810fdfbb0c3613e97c95656922090f9a40db",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/push_service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4411,18 +4416,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 193,
-      "sha256": "b6a50a42127658e928f7fc01932c601aced565e08d4b1390b94469f5587510fb",
-      "planned_path": null,
+      "lines": 194,
+      "sha256": "b546b2dbf443ef5192158d2f698ffaa3089ee2ea9c3e65fc2ec7f6d03dec5b4e",
+      "planned_path": "agentplane/action_service/internal/rpc/service.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4432,16 +4434,13 @@
       "generated": false,
       "lines": 422,
       "sha256": "9360a9141e2412878a3810ef9f8d1160b0f73755ea2db7934dd7dfea8e8ca6a2",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4449,18 +4448,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 146,
-      "sha256": "98992ef43df913c72ad3b412d5dd9f5ee98fa6d1ba1b8a14cc02ae0b205349cc",
-      "planned_path": null,
+      "lines": 147,
+      "sha256": "e3f29e70062e0f1f42daa43c8a6c0f17920cd032567507702fca39cc1e5c28c4",
+      "planned_path": "agentplane/action_service/internal/rpc/submit.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4470,16 +4466,13 @@
       "generated": false,
       "lines": 401,
       "sha256": "554ba07becbaabdf5f6985b172196685715d844317b908698006c4157b7a76a0",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/submit_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4489,16 +4482,13 @@
       "generated": false,
       "lines": 209,
       "sha256": "0899ce279280e3526c56a3de17163bb149e11e8c430d37bd515f0dd4ed1c0e5d",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/svid_fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4508,16 +4498,13 @@
       "generated": false,
       "lines": 243,
       "sha256": "02367f46654c22d1a28ebd518f72647853e9d1dee0e86d3246633345dd8e8b81",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/views.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4525,18 +4512,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 302,
-      "sha256": "4ffbb5adb9d1a137e9b4ab1562ddd2f49864184b8fd90ce261048377b88d79b2",
-      "planned_path": null,
+      "lines": 303,
+      "sha256": "b1e226cc9da98918404e060e90b6fc12888ed973b080ab036d55d26d504d2e80",
+      "planned_path": "agentplane/action_service/internal/rpc/watch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4546,16 +4530,13 @@
       "generated": false,
       "lines": 347,
       "sha256": "cb4dffe21bfd7edd6f85468c4017360720b1c0e7c3543bd96ce513fbcc07d858",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/watch_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -19560,224 +19541,196 @@
       "package_decision": "agentplane/llm_ingress/internal/server"
     },
     {
-      "path": "agentplane/mcp_edge/action_metadata.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 34,
-      "sha256": "7835e0038898e5877119f8049b5ef0b112ebd4ce3adddcc71da0fec3a9afa697",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/action_metadata_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 49,
-      "sha256": "dbb9e3b4ce5715aab7266c0f67b32ae83a5b84276d274f70b4c48700907e5e4b",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/callers.go",
+      "path": "agentplane/mcp_edge/cmd/callers.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 108,
       "sha256": "6a0c5317578b1fa7f4805b618dfae713bb4f1b4f458ad4d7c3689813a14451b6",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/callers.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/config.go",
+      "path": "agentplane/mcp_edge/cmd/config.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 176,
       "sha256": "67c0b31e0ee7af406ca37e366768381c74e586dde2e7261475b07d99d809aa4d",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/config.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/config_test.go",
+      "path": "agentplane/mcp_edge/cmd/config_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 350,
       "sha256": "9eafb8181262f5848252c30cbd9d41752eeec2e2cdc4a9c6542903974e6cd965",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/config_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/core_client.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 194,
-      "sha256": "a8e8d76be6ebae4e8fa1c2633b4d554f9346ad5c8d4d041e4354732df491db6e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/core_client_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 230,
-      "sha256": "0f007012199c44e0f9d77291e2577ace975f1909724002c9ad6f418c5eecf06f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/http_facade.go",
+      "path": "agentplane/mcp_edge/cmd/http_facade.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 94,
       "sha256": "46b7db210cdc326352825408f4d3ebeb0924cc38fba7c0d3ba0975d6a24994ec",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_facade.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_facade_test.go",
+      "path": "agentplane/mcp_edge/cmd/http_facade_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 40,
       "sha256": "275e6f6e0810588491bf99b842f8e88f439e077a1c6842661942db5ab0e3b6ca",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_facade_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_health.go",
+      "path": "agentplane/mcp_edge/cmd/http_health.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 23,
       "sha256": "2600d01291587442df1d01b9640b6c9940c66b9d672a7015bbbefd8a9db0a3f3",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_health.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_health_test.go",
+      "path": "agentplane/mcp_edge/cmd/http_health_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 60,
       "sha256": "b21e5cf2c7c2c84864df26475a4b6bcdddc5b5a3abf8aa9a3339526aef71c97e",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_health_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
+    },
+    {
+      "path": "agentplane/mcp_edge/cmd/main.go",
+      "package": "main",
+      "test": false,
+      "generated": false,
+      "lines": 256,
+      "sha256": "92d2f95f16a0cedecd5e2fd1f71f872e2ff96d62163983c7555cd572b5cea8d9",
+      "planned_path": "agentplane/mcp_edge/cmd/main.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+      "package": "actionclient",
+      "test": false,
+      "generated": false,
+      "lines": 34,
+      "sha256": "8f7fb4261af88939138b177b1fd771af47deaa2be756d6a405d567d71bbdb368",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+      "planned_parts": [],
+      "planned_package": "actionclient",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+      "package": "actionclient_test",
+      "test": true,
+      "generated": false,
+      "lines": 50,
+      "sha256": "4d5b04e94e6f647c46f6263e97579a00afca0faf22718130b550a55cb8739d34",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+      "planned_parts": [],
+      "planned_package": "actionclient_test",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/core_client.go",
+      "package": "actionclient",
+      "test": false,
+      "generated": false,
+      "lines": 223,
+      "sha256": "64b9c2d27d027b757d103e0c962eb7538888968e32fd1a18ec04379180ca6d33",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/core_client.go",
+      "planned_parts": [],
+      "planned_package": "actionclient",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/core_client_test.go",
+      "package": "actionclient_test",
+      "test": true,
+      "generated": false,
+      "lines": 238,
+      "sha256": "953eb3c707ef45fa50488f7394a6b6b01d861546de5ce115c93afda035f079af",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/core_client_test.go",
+      "planned_parts": [],
+      "planned_package": "actionclient_test",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
     },
     {
       "path": "agentplane/mcp_edge/internal/admission/gate.go",
@@ -20370,26 +20323,6 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/mcp_edge/internal/mcpserver"
-    },
-    {
-      "path": "agentplane/mcp_edge/main.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 251,
-      "sha256": "54bf592685545a46364df2e18cb73a2ff186deac81277a3beb30c7177f89f89e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
     },
     {
       "path": "agentplane/mcp_edge/migrations/migrations.go",

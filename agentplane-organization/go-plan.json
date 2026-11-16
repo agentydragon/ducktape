@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
-  "observed_at_utc": "2026-11-16T21:20:00Z",
+  "source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
+  "observed_at_utc": "2026-11-16T21:22:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1363,
-    "directories": 253,
+    "files": 1366,
+    "directories": 255,
     "production": 751,
-    "tests": 612
+    "tests": 615
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -206,8 +206,8 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 160,
-        "directories": 24
+        "files": 163,
+        "directories": 25
       },
       "directories": [
         {
@@ -258,6 +258,18 @@
             "agentplane/action_service/internal/admission/catalog/golden_test.go",
             "agentplane/action_service/internal/admission/catalog/input.go",
             "agentplane/action_service/internal/admission/catalog/input_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/action_service/internal/admission/grpcgate",
+          "production": 2,
+          "tests": 3,
+          "files": [
+            "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+            "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+            "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+            "agentplane/action_service/internal/admission/grpcgate/gate.go",
+            "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go"
           ]
         },
         {
@@ -346,10 +358,9 @@
         },
         {
           "path": "agentplane/action_service/internal/rpc",
-          "production": 12,
+          "production": 10,
           "tests": 16,
           "files": [
-            "agentplane/action_service/internal/rpc/attribution.go",
             "agentplane/action_service/internal/rpc/attribution_test.go",
             "agentplane/action_service/internal/rpc/catalog.go",
             "agentplane/action_service/internal/rpc/catalog_golden_test.go",
@@ -357,7 +368,6 @@
             "agentplane/action_service/internal/rpc/catalog_test.go",
             "agentplane/action_service/internal/rpc/errors.go",
             "agentplane/action_service/internal/rpc/fixture_test.go",
-            "agentplane/action_service/internal/rpc/gate.go",
             "agentplane/action_service/internal/rpc/gate_policy_test.go",
             "agentplane/action_service/internal/rpc/gate_test.go",
             "agentplane/action_service/internal/rpc/integration_testmain_test.go",
@@ -543,7 +553,6 @@
       ],
       "pending_tracks": [
         "orchestration-v1-retirement",
-        "action-service-grpcgate",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -557,7 +566,7 @@
           "agentplane/action_service/cmd/main.go",
           "agentplane/action_service/cmd/config.go",
           "agentplane/action_service/BUILD.bazel",
-          "agentplane/action_service/internal/rpc/gate.go",
+          "agentplane/action_service/internal/admission/grpcgate/gate.go",
           "agentplane/action_service/internal/rpc/policy.go",
           "agentplane/action_service/internal/rpc/watch.go",
           "agentplane/action_service/internal/rpc/fixture_test.go"
@@ -568,6 +577,7 @@
           "agentplane/action_service/cmd",
           "agentplane/action_service/docs",
           "agentplane/action_service/internal/admission/catalog",
+          "agentplane/action_service/internal/admission/grpcgate",
           "agentplane/action_service/internal/admission/informer",
           "agentplane/action_service/internal/admission/policies",
           "agentplane/action_service/internal/admission/policyview",
@@ -634,10 +644,7 @@
             "agentplane/action_service/cmd/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": [
-            "orchestration-v1-retirement",
-            "action-service-grpcgate"
-          ],
+          "pending_tracks": ["orchestration-v1-retirement"],
           "counts": {
             "non_test": 2,
             "tests": 7
@@ -673,6 +680,24 @@
           "pending_tracks": ["orchestration-v1-retirement"],
           "counts": {
             "non_test": 3,
+            "tests": 3
+          }
+        },
+        {
+          "path": "agentplane/action_service/internal/admission/grpcgate",
+          "role": "Action RPC admission: default-deny method allowlist, credential authentication, delegated-admission context, stream revalidation and drain lifetime.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted from `internal/rpc` by #17053 (action-service-grpcgate) behind `New(Options)`; fixtures pass constructor options instead of mutating private fields. Domain-error mapping stays in `rpc` through `Options.ErrorMapper`, and it stays separate from the MCP edge's admission.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+            "agentplane/action_service/internal/admission/grpcgate/gate.go"
+          ],
+          "declared_packages": ["grpcgate"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
             "tests": 3
           }
         },
@@ -787,24 +812,21 @@
         },
         {
           "path": "agentplane/action_service/internal/rpc",
-          "role": "Action, operator, policy and Web Push gRPC adapters plus method admission/drain gate.",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/action_service/internal/rpc",
-            "agentplane/action_service/internal/admission/grpcgate"
-          ],
-          "reason": "Keep handlers together. Gate is a distinct security/lifecycle responsibility, but extraction crosses private state used by policy/watch handlers and integration fixtures.",
-          "gate": "DESIGN REQUIRED: replace private Gate field access and fixture mutation with a narrow typed API/options; keep end-to-end handler tests in rpc.",
+          "role": "Action, operator, policy and Web Push gRPC adapters.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Keep handlers together. #17053 moved method admission, stream revalidation and drain to `internal/admission/grpcgate`; handlers read the admitted principal and attribution through its typed API, and the real handler, Identity, policy and watch tests stay here.",
+          "gate": "",
           "evidence_paths": [
-            "agentplane/action_service/internal/rpc/gate.go",
+            "agentplane/action_service/internal/admission/grpcgate/gate.go",
             "agentplane/action_service/internal/rpc/policy.go",
             "agentplane/action_service/internal/rpc/watch.go",
             "agentplane/action_service/internal/rpc/fixture_test.go"
           ],
           "declared_packages": ["rpc"],
-          "pending_tracks": ["action-service-grpcgate"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 12,
+            "non_test": 10,
             "tests": 16
           }
         },
@@ -6535,26 +6557,33 @@
       "path": "agentplane/mcp_edge",
       "counts": {
         "files": 50,
-        "directories": 6
+        "directories": 7
       },
       "directories": [
         {
-          "path": "agentplane/mcp_edge",
-          "production": 7,
-          "tests": 5,
+          "path": "agentplane/mcp_edge/cmd",
+          "production": 5,
+          "tests": 3,
           "files": [
-            "agentplane/mcp_edge/action_metadata.go",
-            "agentplane/mcp_edge/action_metadata_test.go",
-            "agentplane/mcp_edge/callers.go",
-            "agentplane/mcp_edge/config.go",
-            "agentplane/mcp_edge/config_test.go",
-            "agentplane/mcp_edge/core_client.go",
-            "agentplane/mcp_edge/core_client_test.go",
-            "agentplane/mcp_edge/http_facade.go",
-            "agentplane/mcp_edge/http_facade_test.go",
-            "agentplane/mcp_edge/http_health.go",
-            "agentplane/mcp_edge/http_health_test.go",
-            "agentplane/mcp_edge/main.go"
+            "agentplane/mcp_edge/cmd/callers.go",
+            "agentplane/mcp_edge/cmd/config.go",
+            "agentplane/mcp_edge/cmd/config_test.go",
+            "agentplane/mcp_edge/cmd/http_facade.go",
+            "agentplane/mcp_edge/cmd/http_facade_test.go",
+            "agentplane/mcp_edge/cmd/http_health.go",
+            "agentplane/mcp_edge/cmd/http_health_test.go",
+            "agentplane/mcp_edge/cmd/main.go"
+          ]
+        },
+        {
+          "path": "agentplane/mcp_edge/internal/actionclient",
+          "production": 2,
+          "tests": 2,
+          "files": [
+            "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+            "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+            "agentplane/mcp_edge/internal/actionclient/core_client.go",
+            "agentplane/mcp_edge/internal/actionclient/core_client_test.go"
           ]
         },
         {
@@ -6634,7 +6663,6 @@
       ],
       "pending_tracks": [
         "orchestration-v1-retirement",
-        "mcp-edge-command-action-client",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -6645,14 +6673,15 @@
         "goal_summary": "Executable composition for external MCP/OAuth edge, readiness, HTTP/gRPC listeners and Action clients.",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": [
-          "agentplane/mcp_edge/main.go",
-          "agentplane/mcp_edge/core_client.go",
-          "agentplane/mcp_edge/action_metadata.go",
-          "agentplane/mcp_edge/core_client_test.go",
+          "agentplane/mcp_edge/cmd/main.go",
+          "agentplane/mcp_edge/internal/actionclient/core_client.go",
+          "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+          "agentplane/mcp_edge/internal/actionclient/core_client_test.go",
           "agentplane/mcp_edge/BUILD.bazel"
         ],
         "reviewed_package_paths": [
-          "agentplane/mcp_edge",
+          "agentplane/mcp_edge/cmd",
+          "agentplane/mcp_edge/internal/actionclient",
           "agentplane/mcp_edge/internal/admission",
           "agentplane/mcp_edge/internal/authserver",
           "agentplane/mcp_edge/internal/connections",
@@ -6662,28 +6691,42 @@
       },
       "package_decisions": [
         {
-          "path": "agentplane/mcp_edge",
-          "role": "Executable composition for external MCP/OAuth edge, readiness, HTTP/gRPC listeners and Action clients.",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/mcp_edge",
-            "agentplane/mcp_edge/cmd",
-            "agentplane/mcp_edge/internal/actionclient"
-          ],
-          "reason": "Keep service composition, settings, Identity watch and readiness in cmd, while extracting the Action client boundary (delegated gRPC caller and public metadata handler) into an internal owner. Exact file ownership is proposed in one coordinated change because it changes package APIs and the test split; a cmd-only move would make a second move immediately necessary.",
-          "gate": "DESIGN REQUIRED: define the narrow typed actionclient API, preserve Connection grant resolution and projected Action token/delegation, and split the current combined runtime_test without losing revocation-stream coverage.",
+          "path": "agentplane/mcp_edge/cmd",
+          "role": "The `mcp-edge` executable: configuration, composition, listeners, readiness, the HTTP facade, OAuth and MCP routing, migrations and shutdown.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from the component root by #17053 (mcp-edge-command-action-client); the root keeps the settings and OCI image targets and the aggregate `runtime_test`.",
+          "gate": "",
           "evidence_paths": [
-            "agentplane/mcp_edge/main.go",
-            "agentplane/mcp_edge/core_client.go",
-            "agentplane/mcp_edge/action_metadata.go",
-            "agentplane/mcp_edge/core_client_test.go",
-            "agentplane/mcp_edge/BUILD.bazel"
+            "agentplane/mcp_edge/cmd/callers.go",
+            "agentplane/mcp_edge/cmd/config.go",
+            "agentplane/mcp_edge/cmd/http_facade.go",
+            "agentplane/mcp_edge/cmd/http_health.go",
+            "agentplane/mcp_edge/cmd/main.go"
           ],
           "declared_packages": ["main"],
-          "pending_tracks": ["mcp-edge-command-action-client"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 7,
-            "tests": 5
+            "non_test": 5,
+            "tests": 3
+          }
+        },
+        {
+          "path": "agentplane/mcp_edge/internal/actionclient",
+          "role": "The edge-to-Actions adapter: delegated gRPC calls with the live Connection grant and the public Action metadata handler.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted by #17053 (mcp-edge-command-action-client) behind `New(Config)` with a typed `GrantResolver`; every delegated call keeps the exact Identity, Connection and grant provenance, and open streams keep their revocation recheck.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+            "agentplane/mcp_edge/internal/actionclient/core_client.go"
+          ],
+          "declared_packages": ["actionclient", "actionclient_test"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 2
           }
         },
         {
@@ -9456,109 +9499,6 @@
       "review_size": "Replacements in their owners' PRs; the deletion is one PR."
     },
     {
-      "id": "mcp-edge-command-action-client",
-      "title": "Move MCP composition to cmd and give the Action client boundary an owner",
-      "components": ["mcp_edge"],
-      "source_paths": [
-        "agentplane/mcp_edge/action_metadata.go",
-        "agentplane/mcp_edge/action_metadata_test.go",
-        "agentplane/mcp_edge/callers.go",
-        "agentplane/mcp_edge/config.go",
-        "agentplane/mcp_edge/config_test.go",
-        "agentplane/mcp_edge/core_client.go",
-        "agentplane/mcp_edge/core_client_test.go",
-        "agentplane/mcp_edge/main.go",
-        "agentplane/mcp_edge/BUILD.bazel"
-      ],
-      "target_paths": [
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "status": "DESIGN REQUIRED",
-      "summary": "In one coordinated PR, place MCP service composition and config under cmd, and extract the edge-to-Actions client/authentication adapter into internal/actionclient so the external Connection grant boundary has a named owner.",
-      "how": [
-        "Keep main.go, callers.go, config.go and config_test.go together in agentplane/mcp_edge/cmd; main.go contains real composition: DB/migrations, kube watches, readiness, gRPC/HTTP listeners, OAuth, MCP routing and shutdown.",
-        "Move core_client.go and core_client_test.go to agentplane/mcp_edge/internal/actionclient. Expose a narrow typed constructor/resolver seam and a typed way to attach the inbound Connection bearer; avoid an any-based client registry.",
-        "Move action_metadata.go and action_metadata_test.go to internal/actionclient with an exported handler/path surface used by cmd. Both files are Action Service client adapters, alongside delegated gRPC calls.",
-        "Create cmd and actionclient BUILD targets, split the current runtime_test into command config/composition coverage and actionclient behavior coverage, and keep cmd:mcp-edge as the executable target.",
-        "Keep the root OCI image and point service_binary_layer at //agentplane/mcp_edge/cmd:mcp-edge. Update Python/deployment BUILD consumers only if target visibility or labels require it; keep the public settings target at root."
-      ],
-      "gate": "DESIGN REQUIRED: agree the typed client API and package ownership before moving files; preserve the current Connection resolution, exact grant/Identity incarnation, projected Action audience token, typed delegation provenance, stream revocation recheck and metadata response behavior. No separate cmd-only move.",
-      "preserve": "MCP edge remains the external Connection/OAuth authority; Action Service remains the authority over Actions and policy.; The edge resolves every inbound bearer against the live Connection/grant, delegates the exact Identity and Connection provenance with its projected Action token, and terminates open streams after grant revocation/rebind.; Readiness, HTTP facade, MCP handler, listener setup, migration and shutdown behavior; keep the mcp-edge executable and OCI image contract.",
-      "validation": [
-        "//agentplane/mcp_edge:runtime_test",
-        "//agentplane/mcp_edge:service_image",
-        "After design: focused cmd config/composition test and internal/actionclient behavior test; retain revocation-stream and metadata status/cache assertions."
-      ],
-      "evidence_paths": [
-        "agentplane/mcp_edge/main.go",
-        "agentplane/mcp_edge/callers.go",
-        "agentplane/mcp_edge/config.go",
-        "agentplane/mcp_edge/core_client.go",
-        "agentplane/mcp_edge/core_client_test.go",
-        "agentplane/mcp_edge/action_metadata.go",
-        "agentplane/mcp_edge/action_metadata_test.go",
-        "agentplane/mcp_edge/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/mcp_edge",
-      "priority": 1,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "action-service-grpcgate",
-      "title": "Give the Action RPC method gate an explicit admission owner",
-      "components": ["action_service"],
-      "source_paths": [
-        "agentplane/action_service/internal/rpc/gate.go",
-        "agentplane/action_service/internal/rpc/gate_test.go",
-        "agentplane/action_service/internal/rpc/gate_policy_test.go",
-        "agentplane/action_service/internal/rpc/fixture_test.go",
-        "agentplane/action_service/internal/rpc/policy.go",
-        "agentplane/action_service/internal/rpc/watch.go",
-        "agentplane/action_service/cmd/main.go",
-        "agentplane/action_service/internal/rpc/BUILD.bazel"
-      ],
-      "target_paths": ["agentplane/action_service/internal/admission/grpcgate"],
-      "status": "DESIGN REQUIRED",
-      "summary": "Separate method allowlisting, authentication, stream revalidation and drain lifetime from handlers after defining a narrow typed API.",
-      "how": [
-        "Retain explicit method allowlist/default deny.",
-        "Replace rpc reads of private Gate.callers and fixture mutation with a semantic API or constructor options.",
-        "Keep end-to-end handler tests with rpc; move only gate tests independent of rpc fixture.",
-        "Do not merge with mcp_edge admission, whose authority/principals differ."
-      ],
-      "gate": "DESIGN REQUIRED: policy.go reads Gate.callers, fixtures mutate private fields, and some gate tests depend on rpc server fixtures; test split/API must be designed.",
-      "preserve": "Method allowlist/default deny, opaque unauthenticated response, method-scoped Connection delegation, stream token recheck and drain cancellation.",
-      "validation": [
-        "//agentplane/action_service/internal/rpc:unit_test",
-        "//agentplane/action_service/internal/rpc:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/action_service/internal/rpc/gate.go",
-        "agentplane/action_service/internal/rpc/policy.go",
-        "agentplane/action_service/internal/rpc/watch.go",
-        "agentplane/action_service/internal/rpc/gate_policy_test.go",
-        "agentplane/action_service/internal/rpc/gate_test.go"
-      ],
-      "dependencies": [],
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/action_service/internal/rpc",
-      "priority": 2,
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "sampler-content-persistence",
       "title": "Isolate transaction-scoped content persistence",
       "components": ["central_sampler"],
@@ -10599,8 +10539,6 @@
       "stage": 4,
       "title": "Extract responsibilities behind a local contract",
       "work": [
-        "mcp-edge-command-action-client",
-        "action-service-grpcgate",
         "sampler-content-persistence",
         "sampler-executor-boundary",
         "env-supervision-backends",
@@ -10610,7 +10548,7 @@
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the execution-state and request-preparation extractions. The workers found no clean cut yet for five tracks; their gates say why."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, and #17053 the MCP edge's Action client and the Action Service's admission gate. The workers found no clean cut yet for five tracks; their gates say why."
     },
     {
       "stage": 5,
@@ -10637,18 +10575,18 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 253,
-    "go_files": 1363,
+    "go_packages": 255,
+    "go_files": 1366,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
+    "review_source_sha": "98c48aede62f9714e560911a58f2e7428f198b21",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
-        "packages": 24,
-        "go_files": 160
+        "packages": 25,
+        "go_files": 163
       },
       {
         "slice": "app",
@@ -10749,7 +10687,7 @@
       {
         "slice": "mcp_edge",
         "components": ["mcp_edge"],
-        "packages": 6,
+        "packages": 7,
         "go_files": 50
       },
       {
