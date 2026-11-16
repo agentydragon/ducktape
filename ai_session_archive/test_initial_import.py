@@ -20,6 +20,7 @@ from ai_session_archive.database import (
 from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
 from ai_session_archive.models import Harness
 from ai_session_archive.queries import get_session, list_sessions
+from ai_session_archive.session_kind_projection import project_missing_session_kinds
 from ai_session_archive.source_paths import HarnessRoot
 from ai_session_archive.testing import _backup, _new_repository
 from ai_session_archive.version_queries import list_events, list_versions
@@ -112,7 +113,7 @@ def test_initial_import_preserves_records_and_provenance(tmp_path: Path, postgre
         )
         for row in db.scalars(select(SessionRow).where(SessionRow.machine_id == "archive-test")):
             row.session_kind = None
-    ingestor._project_missing_session_kinds()
+    project_missing_session_kinds(factory, source.machine_id)
 
     with factory() as db:
         summaries = list_sessions(db, machine_id="archive-test", harness=Harness.CLAUDE, cursor=None, limit=100).data

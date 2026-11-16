@@ -164,6 +164,7 @@ py_library(
         ":record_json",
         ":record_payloads",
         ":restic",
+        ":session_kind_projection",
         ":snapshot_inventory",
         ":source_paths",
         ":statuses",
@@ -330,6 +331,7 @@ py_test(
         ":ingest",
         ":models",
         ":queries",
+        ":session_kind_projection",
         ":source_paths",
         ":testing",
         ":version_queries",
@@ -902,6 +904,19 @@ py_library(
         ":record_json",
         ":session_projection",
         ":statuses",
+        ":version_lineage",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "session_kind_projection",
+    srcs = ["session_kind_projection.py"],
+    deps = [
+        ":database",
+        ":models",
+        ":record_interpretation",
+        ":record_json",
         ":version_lineage",
         "@pypi//sqlalchemy",
     ],
