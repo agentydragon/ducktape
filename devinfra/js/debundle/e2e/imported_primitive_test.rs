@@ -146,6 +146,39 @@ fn assert_called_operation_receipt(fixture: &Fixture, binding: &str, callee: &st
     );
 }
 
+fn assert_accepted_actual_inversion(fixture: &Fixture, operation: &str) {
+    let assessment = fixture.effect_translation_validation();
+    assert_eq!(
+        assessment["decision"]["status"], "accepted",
+        "{assessment:#}"
+    );
+    assert!(
+        assessment["swapped_pairs"].as_u64().unwrap() > 0,
+        "{operation} must participate in an actual inversion: {assessment:#}"
+    );
+    let graph = fixture.dependency_graph();
+    let position = |binding| {
+        let unit = source_unit_for_binding(&graph, binding);
+        let ordinal = graph
+            .nodes
+            .iter()
+            .find(|node| node.id == unit)
+            .unwrap()
+            .statement_ordinal
+            .0 as u64;
+        assessment["emitted_order"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|row| row.as_u64() == Some(ordinal))
+            .unwrap()
+    };
+    assert!(
+        position("computed") < position("before") || position("after") < position("computed"),
+        "{operation} must cross an executable anchor: {assessment:#}"
+    );
+}
+
 #[test]
 fn initialized_imported_read_has_a_receipt_for_an_actual_inversion() {
     let source = "import { limit as bytes } from './peer.js';\nconst before = 0;\nfunction read() { return bytes; }\nconst computed = read();\nconst after = 1;\nconsole.log(before, computed, after);\n";
@@ -268,35 +301,7 @@ fn called_primitive_binary_return_has_a_receipt_for_an_actual_inversion() {
             .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 258 1\n");
-    let assessment = fixture.effect_translation_validation();
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "the called primitive operation must participate in an actual inversion: {assessment:#}"
-    );
-    let graph = fixture.dependency_graph();
-    let position = |binding| {
-        let ordinal = graph
-            .nodes
-            .iter()
-            .find(|node| node.id == source_unit_for_binding(&graph, binding))
-            .unwrap()
-            .statement_ordinal
-            .0;
-        assessment["emitted_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|row| row.as_u64() == Some(ordinal as u64))
-            .unwrap()
-    };
-    assert!(
-        position("computed") < position("before") || position("after") < position("computed"),
-        "the call result must cross an executable anchor: {assessment:#}"
-    );
+    assert_accepted_actual_inversion(&fixture, "the called primitive operation");
     assert_called_operation_receipt(&fixture, "computed", "add");
 }
 
@@ -313,35 +318,7 @@ fn called_primitive_template_return_has_a_receipt_for_an_actual_inversion() {
             .with_extra_chunks(&[("static/peer", "export const limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "0 bytes:2 1\n");
-    let assessment = fixture.effect_translation_validation();
-    assert_eq!(
-        assessment["decision"]["status"], "accepted",
-        "{assessment:#}"
-    );
-    assert!(
-        assessment["swapped_pairs"].as_u64().unwrap() > 0,
-        "the template return must cross an executable anchor: {assessment:#}"
-    );
-    let graph = fixture.dependency_graph();
-    let position = |binding| {
-        let ordinal = graph
-            .nodes
-            .iter()
-            .find(|node| node.id == source_unit_for_binding(&graph, binding))
-            .unwrap()
-            .statement_ordinal
-            .0;
-        assessment["emitted_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|row| row.as_u64() == Some(ordinal as u64))
-            .unwrap()
-    };
-    assert!(
-        position("computed") < position("before") || position("after") < position("computed"),
-        "the call result must cross an executable anchor: {assessment:#}"
-    );
+    assert_accepted_actual_inversion(&fixture, "the template return");
     assert_called_operation_receipt(&fixture, "computed", "render");
 }
 
