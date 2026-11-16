@@ -172,6 +172,43 @@ fn a_store_in_another_chunk_keeps_the_slot_unknown() {
     assert_preserved_entry_output(&fixture, "0 42\n");
 }
 
+#[test]
+fn a_peer_global_invalidation_cascades_through_a_bundle_owned_alias() {
+    let bundle = "import './registry.js';\nconst root = globalThis;\nroot.aliasRegistry = root.registry;\nfunction install(name, value) { root.aliasRegistry[name] = value; }\ninstall('Map', function Map() { try { globalThis.saved(); return { size: 'ready' }; } catch (error) { return { size: error.name }; } });";
+    let source = source(bundle);
+    let clean = [("static/registry", "globalThis.registry = {};\n")];
+    let fixture =
+        run_fixture(opts(&source, &["root", "install"], &[], true).with_extra_chunks(&clean));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+    assert_all_emitted_js_checks(&fixture);
+
+    let poisoned = [("static/registry", "globalThis.registry = globalThis;\n")];
+    expect_atomic_conflict_rejection(
+        opts(&source, &["root", "install"], &[], true).with_extra_chunks(&poisoned),
+        &["values/native", "values/later"],
+        &[],
+    );
+    let fixture = run_fixture(
+        FixtureOpts::new(&source, vec![])
+            .with_import_order(&["residual"])
+            .with_extra_chunks(&poisoned),
+    );
+    assert_preserved_entry_output(&fixture, "ReferenceError 42\n");
+}
+
+#[test]
+fn a_global_for_write_invalidates_symbol_for_bundle_global_evidence() {
+    let bundle = "const root = globalThis;\nconst key = Symbol.for('bundle-registry');\nroot[key] = {};\nroot.for = 1;\nfunction install(name, value) { root[key][name] = value; }";
+    let source = source(bundle);
+    expect_atomic_conflict_rejection(
+        opts(&source, &["root", "key", "install"], &[], true),
+        &["values/native", "values/later"],
+        &[],
+    );
+    let fixture = run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
+    assert_preserved_entry_output(&fixture, "0 42\n");
+}
+
 const ACCESSOR_CALL: &str = "const root = globalThis;\nfunction install(name, value) { root.registry = root.registry || {}; root.registry[name] = value; }\nfunction call(method, key, value) { root[method](key, value); }\nfunction other(target, key) { target[key](); }";
 
 fn no_accessor_install(declaration: &str, binding: &str) -> NoAccessorInstallCallableContract {

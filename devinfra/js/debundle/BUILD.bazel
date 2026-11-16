@@ -722,6 +722,7 @@ rust_library(
         "facts/sync_effects/completion.rs",
         "facts/sync_effects/effect_coverage.rs",
         "facts/sync_effects/execution_index.rs",
+        "facts/sync_effects/execution_index/bundle_globals.rs",
         "facts/sync_effects/execution_index/callback_arguments.rs",
         "facts/sync_effects/execution_index/prototype_properties.rs",
         "facts/sync_effects/interpreter.rs",

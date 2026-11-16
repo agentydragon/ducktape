@@ -1,5 +1,6 @@
 //! AST collection for synchronous execution: callables, roots, writes, and source order.
 
+pub(crate) mod bundle_globals;
 mod callback_arguments;
 mod prototype_properties;
 
@@ -19,8 +20,7 @@ use crate::analysis_inputs::{
     InferredSetOperation, NamespaceWrapperSummary, NativeInputKind, NativeIntegrity,
     NativeIntrinsic, NativeOperationInputEvidence, NoAccessorInstallRef, ProgramPremiseKey,
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
-    ResolvedNoAccessorInstall, SelectedBindingValueInput, SelectedNativeOperationInput,
-    ValueInputEvidence, ValueInputRef,
+    SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
 use crate::execution_evidence::SourceLocation;
 use crate::facts::abstract_domain::builtins::{
@@ -46,7 +46,6 @@ use crate::facts::semantic_inference::{
     NativeCallee, NativePremise, NativePremises, SemanticFact, SemanticFacts, SemanticKey,
     SemanticRules, native_premise,
 };
-use crate::facts::standard_globals::is_predefined_global;
 use crate::facts::statement_facts::{
     CallbackFactoryCallArgumentWitness, CallbackFactoryWriteWitness,
 };
@@ -2512,9 +2511,56 @@ fn receiver_global_property(
     }
 }
 
+/// Access to the mutable inputs of the shared root transfer. The ordinary
+/// census uses closed maps; bundle ownership installs watched invalidation reads.
+trait IntrinsicRootRead {
+    fn binding_roots(&mut self, binding: &Id) -> NativeReceiverRoots;
+    fn bundle_holds(&mut self, property: Option<&str>, key: &MemberKey) -> bool;
+    fn fresh_collections(&mut self) -> bool;
+}
+
+struct IntrinsicRootMap<'a> {
+    aliases: &'a BTreeMap<Id, NativeReceiverRoots>,
+    bundle: &'a BundleGlobals,
+}
+
+impl IntrinsicRootRead for IntrinsicRootMap<'_> {
+    fn binding_roots(&mut self, binding: &Id) -> NativeReceiverRoots {
+        self.aliases.get(binding).cloned().unwrap_or_default()
+    }
+
+    fn bundle_holds(&mut self, property: Option<&str>, key: &MemberKey) -> bool {
+        self.bundle.holds(property, key)
+    }
+    fn fresh_collections(&mut self) -> bool {
+        self.bundle.fresh_collections
+    }
+}
+
 fn intrinsic_roots(
     value: &ValueExpr,
     roots: &BTreeMap<Id, NativeReceiverRoots>,
+    globals: &GlobalNames,
+    declared: &BTreeSet<Id>,
+    ordinary_inputs: &BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
+    callable_return_inputs: &CallableReturnInputs,
+) -> NativeReceiverRoots {
+    intrinsic_roots_read(
+        value,
+        &mut IntrinsicRootMap {
+            aliases: roots,
+            bundle: &globals.bundle,
+        },
+        globals,
+        declared,
+        ordinary_inputs,
+        callable_return_inputs,
+    )
+}
+
+fn intrinsic_roots_read(
+    value: &ValueExpr,
+    inputs: &mut impl IntrinsicRootRead,
     globals: &GlobalNames,
     declared: &BTreeSet<Id>,
     ordinary_inputs: &BTreeMap<Id, (ValueInputRef, SourceUnitOrdinal)>,
@@ -2546,9 +2592,7 @@ fn intrinsic_roots(
         // The spelling of a local binding is not an intrinsic identity.
         // Retain source-only aliases, but never manufacture a native root for
         // a shadowed constructor or global-object name.
-        ValueExpr::Binding(id) if declared.contains(id) => {
-            roots.get(id).cloned().unwrap_or_default()
-        }
+        ValueExpr::Binding(id) if declared.contains(id) => inputs.binding_roots(id),
         ValueExpr::Binding(id) if id.0.as_ref() == "Error" => {
             BTreeSet::from([intrinsic(NativeIntrinsic::Error)])
         }
@@ -2591,7 +2635,7 @@ fn intrinsic_roots(
         ValueExpr::Binding(id) if globals.contains(id.0.as_ref()) => {
             BTreeSet::from([intrinsic(NativeIntrinsic::GlobalObject)])
         }
-        ValueExpr::Binding(id) => roots.get(id).cloned().unwrap_or_default(),
+        ValueExpr::Binding(id) => inputs.binding_roots(id),
         ValueExpr::Alloc(Kind::Function, _) => NativeReceiverRoots::new(),
         ValueExpr::ObjectLiteral(_, fields) => {
             // A fresh container is not native merely because it stores a
@@ -2599,9 +2643,9 @@ fn intrinsic_roots(
             // field actually carries the selected ordinary input.
             let mut references = BTreeSet::new();
             for (_, field) in fields.iter() {
-                for root in intrinsic_roots(
+                for root in intrinsic_roots_read(
                     field,
-                    roots,
+                    inputs,
                     globals,
                     declared,
                     ordinary_inputs,
@@ -2645,9 +2689,9 @@ fn intrinsic_roots(
             let mut unknown_arm = false;
             let mut ordinary_refs = BTreeSet::new();
             for option in options {
-                let option_roots = intrinsic_roots(
+                let option_roots = intrinsic_roots_read(
                     option,
-                    roots,
+                    inputs,
                     globals,
                     declared,
                     ordinary_inputs,
@@ -2696,98 +2740,58 @@ fn intrinsic_roots(
             combined
         }
         ValueExpr::Member(base, property, key, _) => {
-            let base_roots = intrinsic_roots(
+            let base_roots = intrinsic_roots_read(
                 base,
-                roots,
+                inputs,
                 globals,
                 declared,
                 ordinary_inputs,
                 callable_return_inputs,
             );
-            let mut out = NativeReceiverRoots::new();
-            for root in base_roots {
-                match root {
-                    NativeReceiverRoot::OrdinaryDirect {
-                        reference,
-                        available_after,
-                    }
-                    | NativeReceiverRoot::OrdinaryDescendant {
-                        reference,
-                        available_after,
-                    } => {
-                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                        out.insert(NativeReceiverRoot::OrdinaryDescendant {
-                            reference,
-                            available_after,
-                        });
-                    }
-                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject) => {
-                        if globals.bundle.holds(property.as_deref(), key) {
-                            out.insert(NativeReceiverRoot::BundleGlobal);
-                        } else {
-                            out.insert(intrinsic(
-                                property
-                                    .as_deref()
-                                    .and_then(|property| globals.binding_root(property))
-                                    .unwrap_or(NativeIntrinsic::UnknownGlobalValue),
-                            ));
-                        }
-                    }
-                    NativeReceiverRoot::BundleGlobal => {
-                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                    }
-                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => {
-                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                    }
-                    NativeReceiverRoot::Intrinsic(root) => {
-                        out.insert(if property.as_deref() == Some("prototype") {
-                            NativeReceiverRoot::IntrinsicPrototype(root)
-                        } else {
-                            NativeReceiverRoot::IntrinsicDescendant(root)
-                        });
-                        // These paths can cross from one intrinsic family to
-                        // another; computed keys can name either one. Preserve
-                        // the known family and add an opaque root so writes
-                        // through aliases conservatively invalidate all native
-                        // proofs that may depend on the resolved object.
-                        if property
-                            .as_deref()
-                            .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
-                        {
-                            out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                        }
-                    }
-                    NativeReceiverRoot::IntrinsicPrototype(root)
-                    | NativeReceiverRoot::IntrinsicDescendant(root) => {
-                        out.insert(NativeReceiverRoot::IntrinsicDescendant(root));
-                        if property
-                            .as_deref()
-                            .is_none_or(|property| matches!(property, "__proto__" | "constructor"))
-                        {
-                            out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                        }
-                    }
-                    NativeReceiverRoot::ArrayIteratorPrototype
-                    | NativeReceiverRoot::SetIteratorPrototype => {
-                        out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
-                    }
-                }
-            }
-            out
+            intrinsic_member_roots(base_roots, property.as_deref(), key, inputs, globals)
         }
         ValueExpr::Call(callee, args, _) | ValueExpr::New(callee, args, _) => {
             let mut input_roots = NativeReceiverRoots::new();
             let mut ordinary_refs = BTreeSet::new();
             let mut has_callable_return_roots = false;
-            for value in std::iter::once(callee.as_ref()).chain(args.iter()) {
-                let value_roots = intrinsic_roots(
-                    value,
-                    roots,
-                    globals,
-                    declared,
-                    ordinary_inputs,
-                    callable_return_inputs,
-                );
+            let mut object_get_prototype_of = false;
+            for (position, value) in std::iter::once(callee.as_ref())
+                .chain(args.iter())
+                .enumerate()
+            {
+                // The member receiver and its reflection guard share this one
+                // child result; nested reflected callees do not revisit it.
+                let value_roots = if position == 0
+                    && let ValueExpr::Member(receiver, Some(property), MemberKey::Static, _) = value
+                    && property == "getPrototypeOf"
+                {
+                    let receiver_roots = intrinsic_roots_read(
+                        receiver,
+                        inputs,
+                        globals,
+                        declared,
+                        ordinary_inputs,
+                        callable_return_inputs,
+                    );
+                    object_get_prototype_of = receiver_roots
+                        .contains(&NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object));
+                    intrinsic_member_roots(
+                        receiver_roots,
+                        Some(property.as_str()),
+                        &MemberKey::Static,
+                        inputs,
+                        globals,
+                    )
+                } else {
+                    intrinsic_roots_read(
+                        value,
+                        inputs,
+                        globals,
+                        declared,
+                        ordinary_inputs,
+                        callable_return_inputs,
+                    )
+                };
                 ordinary_refs.extend(value_roots.iter().filter_map(|root| match root {
                     NativeReceiverRoot::OrdinaryDirect {
                         reference,
@@ -2806,22 +2810,6 @@ fn intrinsic_roots(
                 }));
                 input_roots.extend(value_roots);
             }
-            let object_get_prototype_of = match callee.as_ref() {
-                ValueExpr::Member(receiver, Some(property), MemberKey::Static, _)
-                    if property == "getPrototypeOf" =>
-                {
-                    intrinsic_roots(
-                        receiver,
-                        roots,
-                        globals,
-                        declared,
-                        ordinary_inputs,
-                        callable_return_inputs,
-                    )
-                    .contains(&NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object))
-                }
-                _ => false,
-            };
             if matches!(value, ValueExpr::Call(..)) && object_get_prototype_of {
                 // A prototype query can cross intrinsic families or reach a
                 // builtin through an ordinary input. Keep its result opaque
@@ -2899,6 +2887,79 @@ fn intrinsic_roots(
         }
         _ => NativeReceiverRoots::new(),
     }
+}
+
+fn intrinsic_member_roots(
+    base_roots: NativeReceiverRoots,
+    property: Option<&str>,
+    key: &MemberKey,
+    inputs: &mut impl IntrinsicRootRead,
+    globals: &GlobalNames,
+) -> NativeReceiverRoots {
+    let intrinsic = NativeReceiverRoot::Intrinsic;
+    let mut out = NativeReceiverRoots::new();
+    for root in base_roots {
+        match root {
+            NativeReceiverRoot::OrdinaryDirect {
+                reference,
+                available_after,
+            }
+            | NativeReceiverRoot::OrdinaryDescendant {
+                reference,
+                available_after,
+            } => {
+                out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+                out.insert(NativeReceiverRoot::OrdinaryDescendant {
+                    reference,
+                    available_after,
+                });
+            }
+            NativeReceiverRoot::Intrinsic(NativeIntrinsic::GlobalObject) => {
+                if inputs.bundle_holds(property, key) {
+                    out.insert(NativeReceiverRoot::BundleGlobal);
+                } else {
+                    out.insert(intrinsic(
+                        property
+                            .and_then(|property| globals.binding_root(property))
+                            .unwrap_or(NativeIntrinsic::UnknownGlobalValue),
+                    ));
+                }
+            }
+            NativeReceiverRoot::BundleGlobal => {
+                out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+            }
+            NativeReceiverRoot::Intrinsic(NativeIntrinsic::UnknownGlobalValue) => {
+                out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+            }
+            NativeReceiverRoot::Intrinsic(root) => {
+                out.insert(if property == Some("prototype") {
+                    NativeReceiverRoot::IntrinsicPrototype(root)
+                } else {
+                    NativeReceiverRoot::IntrinsicDescendant(root)
+                });
+                // These paths can cross from one intrinsic family to
+                // another; computed keys can name either one. Preserve
+                // the known family and add an opaque root so writes
+                // through aliases conservatively invalidate all native
+                // proofs that may depend on the resolved object.
+                if property.is_none_or(|property| matches!(property, "__proto__" | "constructor")) {
+                    out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+                }
+            }
+            NativeReceiverRoot::IntrinsicPrototype(root)
+            | NativeReceiverRoot::IntrinsicDescendant(root) => {
+                out.insert(NativeReceiverRoot::IntrinsicDescendant(root));
+                if property.is_none_or(|property| matches!(property, "__proto__" | "constructor")) {
+                    out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+                }
+            }
+            NativeReceiverRoot::ArrayIteratorPrototype
+            | NativeReceiverRoot::SetIteratorPrototype => {
+                out.insert(intrinsic(NativeIntrinsic::UnknownGlobalValue));
+            }
+        }
+    }
+    out
 }
 
 fn read_intrinsic_alias_inputs(
@@ -4345,8 +4406,7 @@ fn property_key_evidence<'a>(
                 };
             }
             PropertyKeyExpr::Template { .. } | PropertyKeyExpr::Concat(..) => {
-                let Some((prefix, suffix)) = string_affixes(expression, assignments, &mut seen)
-                else {
+                let Some((prefix, suffix)) = string_affixes(expression, assignments, &seen) else {
                     return PropertyKeyEvidence::unknown();
                 };
                 if prefix.is_empty() && suffix.is_empty() {
@@ -4391,31 +4451,230 @@ fn property_key_evidence<'a>(
 fn string_affixes<'a>(
     expression: &'a PropertyKeyExpr,
     assignments: &'a BTreeMap<Id, Vec<PropertyKeyExpr>>,
-    seen: &mut BTreeSet<&'a Id>,
+    initially_seen: &BTreeSet<&'a Id>,
 ) -> Option<(String, String)> {
-    match expression {
-        PropertyKeyExpr::String(value) => Some((value.clone(), value.clone())),
-        PropertyKeyExpr::Template { prefix, suffix } => Some((prefix.clone(), suffix.clone())),
-        PropertyKeyExpr::Binding(binding) if seen.insert(binding) => {
-            let affixes = match assignments.get(binding).map(Vec::as_slice) {
-                Some([value]) => string_affixes(value, assignments, seen),
-                _ => None,
-            };
-            seen.remove(binding);
-            affixes
-        }
-        PropertyKeyExpr::Concat(left, right) => {
-            let left = string_affixes(left, assignments, seen);
-            let right = string_affixes(right, assignments, seen);
-            if left.is_none() && right.is_none() {
-                return None;
+    let mut visited = initially_seen.clone();
+    if !string_leaf_reachable(expression, assignments, &mut visited) {
+        return None;
+    }
+
+    Some((
+        string_affix(
+            expression,
+            assignments,
+            initially_seen,
+            StringAffixSide::Prefix,
+        )
+        .unwrap_or_default(),
+        string_affix(
+            expression,
+            assignments,
+            initially_seen,
+            StringAffixSide::Suffix,
+        )
+        .unwrap_or_default(),
+    ))
+}
+
+/// Test whether any string-valued leaf is reachable. Binding assignments form
+/// a graph, so expand each binding once instead of recursively re-walking
+/// shared concatenation branches.
+fn string_leaf_reachable<'a>(
+    expression: &'a PropertyKeyExpr,
+    assignments: &'a BTreeMap<Id, Vec<PropertyKeyExpr>>,
+    visited: &mut BTreeSet<&'a Id>,
+) -> bool {
+    let mut pending = vec![expression];
+    let mut found_string = false;
+    while let Some(expression) = pending.pop() {
+        match expression {
+            PropertyKeyExpr::String(_) | PropertyKeyExpr::Template { .. } => {
+                found_string = true;
             }
-            Some((
-                left.map(|(prefix, _)| prefix).unwrap_or_default(),
-                right.map(|(_, suffix)| suffix).unwrap_or_default(),
-            ))
+            PropertyKeyExpr::Binding(binding) if visited.insert(binding) => {
+                if let Some([value]) = assignments.get(binding).map(Vec::as_slice) {
+                    pending.push(value);
+                }
+            }
+            PropertyKeyExpr::Concat(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            _ => {}
         }
-        _ => None,
+    }
+    found_string
+}
+
+#[derive(Clone, Copy)]
+enum StringAffixSide {
+    Prefix,
+    Suffix,
+}
+
+/// Follow the one concatenation edge that determines this affix. The initial
+/// bindings are already on the caller's recursion path, and revisiting any
+/// binding ends this path just as the former recursive analysis did.
+fn string_affix<'a>(
+    expression: &'a PropertyKeyExpr,
+    assignments: &'a BTreeMap<Id, Vec<PropertyKeyExpr>>,
+    initially_seen: &BTreeSet<&'a Id>,
+    side: StringAffixSide,
+) -> Option<String> {
+    let mut expression = expression;
+    let mut seen = initially_seen.clone();
+    loop {
+        match expression {
+            PropertyKeyExpr::String(value) => return Some(value.clone()),
+            PropertyKeyExpr::Template { prefix, suffix } => {
+                return Some(match side {
+                    StringAffixSide::Prefix => prefix.clone(),
+                    StringAffixSide::Suffix => suffix.clone(),
+                });
+            }
+            PropertyKeyExpr::Binding(binding) => {
+                if !seen.insert(binding) {
+                    return None;
+                }
+                let Some([value]) = assignments.get(binding).map(Vec::as_slice) else {
+                    return None;
+                };
+                expression = value;
+            }
+            PropertyKeyExpr::Concat(left, right) => {
+                expression = match side {
+                    StringAffixSide::Prefix => left,
+                    StringAffixSide::Suffix => right,
+                };
+            }
+            _ => return None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod string_affixes_tests {
+    use super::{PropertyKeyExpr, string_affixes, string_leaf_reachable};
+    use std::collections::{BTreeMap, BTreeSet};
+    use swc_common::SyntaxContext;
+    use swc_ecma_ast::Id;
+
+    fn id(name: &str) -> Id {
+        (name.into(), SyntaxContext::empty())
+    }
+
+    fn binding(binding: &Id) -> PropertyKeyExpr {
+        PropertyKeyExpr::Binding(binding.clone())
+    }
+
+    fn concat(left: PropertyKeyExpr, right: PropertyKeyExpr) -> PropertyKeyExpr {
+        PropertyKeyExpr::Concat(Box::new(left), Box::new(right))
+    }
+
+    #[test]
+    fn cyclic_and_acyclic_affixes_preserve_blocked_bindings() {
+        let first = id("first");
+        let second = id("second");
+        let acyclic = id("acyclic");
+        let multiple = id("multiple");
+        let assignments = BTreeMap::from([
+            (
+                first.clone(),
+                vec![concat(
+                    binding(&second),
+                    PropertyKeyExpr::String("cycle-tail".into()),
+                )],
+            ),
+            (
+                second.clone(),
+                vec![concat(
+                    binding(&first),
+                    PropertyKeyExpr::Template {
+                        prefix: "cycle-prefix".into(),
+                        suffix: "cycle-suffix".into(),
+                    },
+                )],
+            ),
+            (
+                acyclic.clone(),
+                vec![PropertyKeyExpr::String("acyclic-key".into())],
+            ),
+            (
+                multiple.clone(),
+                vec![
+                    PropertyKeyExpr::String("first-value".into()),
+                    PropertyKeyExpr::String("second-value".into()),
+                ],
+            ),
+        ]);
+
+        let blocked_expression = binding(&second);
+        let mixed_expression = concat(binding(&multiple), binding(&acyclic));
+        let unknown_expression = concat(
+            PropertyKeyExpr::Unknown,
+            PropertyKeyExpr::Template {
+                prefix: "right-prefix".into(),
+                suffix: "right-suffix".into(),
+            },
+        );
+        let cases = [
+            (binding(&first), Vec::new(), Some(("", "cycle-tail"))),
+            (
+                blocked_expression,
+                vec![first.clone()],
+                Some(("", "cycle-suffix")),
+            ),
+            (
+                binding(&acyclic),
+                Vec::new(),
+                Some(("acyclic-key", "acyclic-key")),
+            ),
+            (binding(&multiple), Vec::new(), None),
+            (mixed_expression, Vec::new(), Some(("", "acyclic-key"))),
+            (unknown_expression, Vec::new(), Some(("", "right-suffix"))),
+        ];
+        for (expression, initially_seen, expected) in &cases {
+            let seen = initially_seen.iter().collect();
+            assert_eq!(
+                string_affixes(expression, &assignments, &seen),
+                expected.map(|(prefix, suffix)| (prefix.to_owned(), suffix.to_owned())),
+            );
+        }
+    }
+
+    #[test]
+    fn shared_diamond_expands_each_binding_once() {
+        let leaf = id("diamond-leaf");
+        let mut assignments = BTreeMap::from([(
+            leaf.clone(),
+            vec![PropertyKeyExpr::Template {
+                prefix: "shared-prefix".into(),
+                suffix: "shared-suffix".into(),
+            }],
+        )]);
+        let mut parent = leaf;
+        let depth = 256;
+        for level in 0..depth {
+            let next = id(&format!("diamond-{level}"));
+            assignments.insert(
+                next.clone(),
+                vec![concat(binding(&parent), binding(&parent))],
+            );
+            parent = next;
+        }
+
+        let expression = binding(&parent);
+        let mut visited = BTreeSet::new();
+        assert!(string_leaf_reachable(
+            &expression,
+            &assignments,
+            &mut visited
+        ));
+        assert_eq!(visited.len(), depth + 1);
+        assert_eq!(
+            string_affixes(&expression, &assignments, &BTreeSet::new()),
+            Some(("shared-prefix".into(), "shared-suffix".into()))
+        );
     }
 }
 
@@ -6295,84 +6554,6 @@ fn object_literal_assign_keys(sources: &[ExprOrSpread]) -> Option<Vec<String>> {
     Some(keys)
 }
 
-const KEYED_COLLECTIONS: [&str; 4] = ["Map", "Set", "WeakMap", "WeakSet"];
-
-const LEGACY_ACCESSOR_METHODS: [&str; 2] = ["__defineGetter__", "__defineSetter__"];
-
-/// One global data property a bundle-owned value may sit in: a name, or any
-/// property keyed by a `Symbol.for` symbol.
-#[derive(Clone, Copy)]
-enum BundleSlot<'a> {
-    Name(&'a str),
-    RegisteredSymbol,
-}
-
-struct BundleGlobalContext<'a> {
-    aliases: &'a BTreeMap<Id, NativeReceiverRoots>,
-    globals: &'a GlobalNames,
-    declared: &'a BTreeSet<Id>,
-    /// Top-level bindings that only ever hold fresh objects or primitives.
-    fresh_objects: &'a BTreeSet<Id>,
-}
-
-impl BundleGlobalContext<'_> {
-    fn roots(&self, value: &ValueExpr) -> NativeReceiverRoots {
-        intrinsic_roots(
-            value,
-            self.aliases,
-            self.globals,
-            self.declared,
-            &BTreeMap::new(),
-            &CallableReturnInputs::default(),
-        )
-    }
-
-    /// Whether storing `value` into `slot` keeps it bundle-owned: a fresh
-    /// object (inline or through a binding that only holds one), a primitive,
-    /// or the value of a bundle-owned property, the slot's own current value
-    /// included.
-    fn keeps(&self, value: &ValueExpr, slot: BundleSlot<'_>) -> bool {
-        match value {
-            ValueExpr::ObjectLiteral(..)
-            | ValueExpr::Primitive(_)
-            | ValueExpr::StrictEquality(..)
-            | ValueExpr::LogicalNot(_)
-            | ValueExpr::Void(_)
-            | ValueExpr::Undefined
-            | ValueExpr::NonCallable(_) => true,
-            ValueExpr::Alternatives(_) | ValueExpr::Conditional { .. } | ValueExpr::Sequence(_) => {
-                let options = value.result_alternatives().expect("alternative expression");
-                options.iter().all(|option| self.keeps(option, slot))
-            }
-            // A keyed collection the program never replaces allocates a fresh
-            // object whatever its argument.
-            ValueExpr::New(callee, _, _)
-                if self.globals.bundle.fresh_collections
-                    && matches!(callee.as_ref(), ValueExpr::Binding(id)
-                        if !self.declared.contains(id)
-                            && KEYED_COLLECTIONS.contains(&id.0.as_ref())) =>
-            {
-                true
-            }
-            ValueExpr::Binding(id) if self.fresh_objects.contains(id) => true,
-            // A sloppy read of the undeclared global itself.
-            ValueExpr::Binding(id)
-                if !self.declared.contains(id)
-                    && matches!(slot, BundleSlot::Name(name) if *id.0 == *name) =>
-            {
-                true
-            }
-            _ => {
-                let roots = self.roots(value);
-                !roots.is_empty()
-                    && roots
-                        .iter()
-                        .all(|root| *root == NativeReceiverRoot::BundleGlobal)
-            }
-        }
-    }
-}
-
 impl ExecutionIndex {
     /// A unique top-level function identity with no source writes or dynamic
     /// scope; earlier statements cannot silently replace this class base.
@@ -6575,317 +6756,6 @@ impl ExecutionIndex {
             symbol_keys: self.symbol_key_bindings(declared),
             fresh_collections: names.fresh_collections,
             no_accessor_install_callables: names.no_accessor_install_callables.clone(),
-        }
-    }
-
-    /// Every non-standard global property this module stores into the global
-    /// object, the start of the greatest fixed point (SPEC.md § Bundle-owned
-    /// globals).
-    pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
-        if self.census_globals.predefined == spec::PredefinedGlobals::Unknown {
-            return BundleGlobalNames::default();
-        }
-        let declared = self.declared_bindings();
-        let assignments = self.bundle_assignments();
-        let aliases = close_raw_intrinsic_aliases(&assignments, &self.census_globals, &declared);
-        let fresh_objects = self.fresh_object_bindings();
-        let context = BundleGlobalContext {
-            aliases: &aliases,
-            globals: &self.census_globals,
-            declared: &declared,
-            fresh_objects: &fresh_objects,
-        };
-        let mut candidates = BundleGlobalNames {
-            fresh_collections: true,
-            ..BundleGlobalNames::default()
-        };
-        for write in &self.intrinsic_writes {
-            if write.value.is_none()
-                || !context
-                    .roots(&write.receiver)
-                    .contains(&NativeReceiverRoot::Intrinsic(
-                        NativeIntrinsic::GlobalObject,
-                    ))
-            {
-                continue;
-            }
-            let Some(key) = &write.key else {
-                continue;
-            };
-            match property_key_evidence(key, &self.property_key_assignments, &declared).domain {
-                PropertyKeyDomain::FiniteStrings(keys) => {
-                    candidates.names.extend(keys.into_iter().filter(|name| {
-                        !is_predefined_global(name, self.census_globals.predefined)
-                            && self.census_globals.binding_root(name).is_none()
-                    }));
-                }
-                PropertyKeyDomain::Symbol => candidates.registered_symbols = true,
-                _ => {}
-            }
-        }
-        // A non-standard property only read here is a candidate too: with no
-        // store it stays absent or a named property.
-        let mut reads = BTreeSet::new();
-        for expr in self
-            .intrinsic_writes
-            .iter()
-            .flat_map(|write| std::iter::once(&write.receiver).chain(&write.value))
-            .chain(self.prototype_calls.iter().map(|call| &call.callee))
-            .chain(assignments.iter().map(|(_, value)| value))
-        {
-            self.global_property_reads(expr, &context, &mut reads);
-        }
-        candidates.names.extend(reads);
-        candidates
-    }
-
-    /// Non-standard property names `expr` reads from the global object.
-    fn global_property_reads(
-        &self,
-        expr: &ValueExpr,
-        context: &BundleGlobalContext<'_>,
-        reads: &mut BTreeSet<String>,
-    ) {
-        match expr {
-            ValueExpr::Member(base, property, _, _) => {
-                if let Some(name) = property
-                    && !reads.contains(name)
-                    && !is_predefined_global(name, self.census_globals.predefined)
-                    && self.census_globals.binding_root(name).is_none()
-                    && context.roots(base).contains(&NativeReceiverRoot::Intrinsic(
-                        NativeIntrinsic::GlobalObject,
-                    ))
-                {
-                    reads.insert(name.clone());
-                }
-                self.global_property_reads(base, context, reads);
-            }
-            ValueExpr::Call(callee, arguments, _) | ValueExpr::New(callee, arguments, _) => {
-                self.global_property_reads(callee, context, reads);
-                for argument in arguments.iter() {
-                    self.global_property_reads(argument, context, reads);
-                }
-            }
-            ValueExpr::ObjectLiteral(_, properties) => {
-                for (_, value) in properties.iter() {
-                    self.global_property_reads(value, context, reads);
-                }
-            }
-            ValueExpr::ArrayIteratorPrototype(inner) | ValueExpr::SetIteratorPrototype(inner) => {
-                self.global_property_reads(inner, context, reads);
-            }
-            ValueExpr::Primitive(values)
-            | ValueExpr::Alternatives(values)
-            | ValueExpr::Sequence(values) => {
-                for value in values.iter() {
-                    self.global_property_reads(value, context, reads);
-                }
-            }
-            ValueExpr::StrictEquality(left, right) => {
-                self.global_property_reads(left, context, reads);
-                self.global_property_reads(right, context, reads);
-            }
-            ValueExpr::Void(child) | ValueExpr::LogicalNot(child) => {
-                self.global_property_reads(child, context, reads)
-            }
-            ValueExpr::Conditional { test, alternatives } => {
-                self.global_property_reads(test, context, reads);
-                for alternative in alternatives.iter() {
-                    self.global_property_reads(alternative, context, reads);
-                }
-            }
-            ValueExpr::Binding(_)
-            | ValueExpr::Alloc(..)
-            | ValueExpr::Undefined
-            | ValueExpr::NonCallable(_)
-            | ValueExpr::Unknown => {}
-        }
-    }
-
-    /// The `candidates` this module's writes keep bundle-owned: a greatest
-    /// fixed point dropping a property some census write could store anything
-    /// else into, and every property once a global-chain write has an unknown
-    /// key or may change a prototype chain. A key derived through `Symbol.for`
-    /// is exact while no write may replace `%Symbol%` or `%Symbol.for%`.
-    pub(crate) fn bundle_global_survivors(
-        &self,
-        candidates: &BundleGlobalNames,
-        premises: &[ResolvedNoAccessorInstall],
-    ) -> BundleGlobalNames {
-        if self.census_globals.predefined == spec::PredefinedGlobals::Unknown {
-            return BundleGlobalNames::default();
-        }
-        let declared = self.declared_bindings();
-        let assignments = self.bundle_assignments();
-        let evidence = |key: &PropertyKeyExpr| {
-            property_key_evidence(key, &self.property_key_assignments, &declared)
-        };
-        let fresh_objects = self.fresh_object_bindings();
-        let mut current = candidates.clone();
-        let mut symbol_for_intact = true;
-        loop {
-            let mut globals = self.census_globals.clone();
-            globals.bundle = self.bundle_globals(&current, &declared);
-            let aliases = close_raw_intrinsic_aliases(&assignments, &globals, &declared);
-            let context = BundleGlobalContext {
-                aliases: &aliases,
-                globals: &globals,
-                declared: &declared,
-                fresh_objects: &fresh_objects,
-            };
-            let mut next = current.clone();
-            next.no_accessor_install_callables.clear();
-            let mut next_symbol_for_intact = true;
-            for write in &self.intrinsic_writes {
-                let roots = context.roots(&write.receiver);
-                if roots
-                    .iter()
-                    .all(|root| *root == NativeReceiverRoot::BundleGlobal)
-                {
-                    continue;
-                }
-                // A keyless reflective write (`Object.assign`,
-                // `Object.setPrototypeOf`) may change any property or the
-                // prototype chain.
-                let Some(key) = &write.key else {
-                    return BundleGlobalNames::default();
-                };
-                // A delete stores nothing: on a prototype it leaves an
-                // inherited read absent. A delete that may name a property of
-                // the global object itself still drops that property.
-                if write.operation == NativeMutationOperation::Delete {
-                    if roots.contains(&NativeReceiverRoot::Intrinsic(
-                        NativeIntrinsic::GlobalObject,
-                    )) {
-                        let domain = evidence(key).domain;
-                        next.names
-                            .retain(|name| !key_domain_may_name(&domain, name));
-                        if matches!(
-                            domain,
-                            PropertyKeyDomain::Symbol | PropertyKeyDomain::Unknown
-                        ) {
-                            next.registered_symbols = false;
-                        }
-                    }
-                    continue;
-                }
-                for evidence in std::iter::once(key)
-                    .chain(&write.additional_keys)
-                    .map(evidence)
-                {
-                    let exact = evidence.dependencies.is_empty()
-                        || evidence.dependencies == BTreeSet::from([NativeIntrinsic::Symbol])
-                            && symbol_for_intact;
-                    let domain = if exact {
-                        evidence.domain
-                    } else {
-                        PropertyKeyDomain::Unknown
-                    };
-                    if matches!(domain, PropertyKeyDomain::Unknown)
-                        || key_domain_may_name(&domain, "__proto__")
-                    {
-                        return BundleGlobalNames::default();
-                    }
-                    if key_domain_may_name(&domain, "for") || key_domain_may_name(&domain, "Symbol")
-                    {
-                        next_symbol_for_intact = false;
-                    }
-                    if KEYED_COLLECTIONS
-                        .iter()
-                        .any(|name| key_domain_may_name(&domain, name))
-                    {
-                        next.fresh_collections = false;
-                    }
-                    let stores = |slot: BundleSlot<'_>| {
-                        write.operation == NativeMutationOperation::PropertyAssignment
-                            && write
-                                .value
-                                .as_ref()
-                                .is_some_and(|value| context.keeps(value, slot))
-                    };
-                    next.names.retain(|name| {
-                        !key_domain_may_name(&domain, name) || stores(BundleSlot::Name(name))
-                    });
-                    if matches!(domain, PropertyKeyDomain::Symbol)
-                        && !stores(BundleSlot::RegisteredSymbol)
-                    {
-                        next.registered_symbols = false;
-                    }
-                }
-            }
-            for (binding, value) in &assignments {
-                if declared.contains(binding) {
-                    continue;
-                }
-                // A sloppy assignment to an undeclared name writes the global
-                // property.
-                if next.names.contains(binding.0.as_ref())
-                    && !context.keeps(value, BundleSlot::Name(binding.0.as_ref()))
-                {
-                    next.names.remove(binding.0.as_ref());
-                }
-                if binding.0.as_ref() == "Symbol" {
-                    next_symbol_for_intact = false;
-                }
-                if KEYED_COLLECTIONS.contains(&binding.0.as_ref()) {
-                    next.fresh_collections = false;
-                }
-            }
-            // A legacy accessor method can install a getter that runs on a later
-            // read. A computed method key counts whenever its domain may spell
-            // one, unless an author premise covers its callable.
-            let installs_accessor = |property: &Option<String>, key: &MemberKey| {
-                let domain = match (property, key) {
-                    (Some(name), _) => {
-                        PropertyKeyDomain::FiniteStrings(BTreeSet::from([name.clone()]))
-                    }
-                    (None, MemberKey::Computed(Some(binding))) => {
-                        let evidence = evidence(&PropertyKeyExpr::Binding(binding.clone()));
-                        if evidence.dependencies.is_empty()
-                            || evidence.dependencies == BTreeSet::from([NativeIntrinsic::Symbol])
-                                && symbol_for_intact
-                        {
-                            evidence.domain
-                        } else {
-                            PropertyKeyDomain::Unknown
-                        }
-                    }
-                    (None, _) => PropertyKeyDomain::Unknown,
-                };
-                LEGACY_ACCESSOR_METHODS
-                    .iter()
-                    .any(|method| key_domain_may_name(&domain, method))
-            };
-            for call in &self.prototype_calls {
-                let ValueExpr::Member(base, property, key, _) = &call.callee else {
-                    continue;
-                };
-                if call.kind != CallKind::Call
-                    || !installs_accessor(property, key)
-                    || context
-                        .roots(base)
-                        .iter()
-                        .all(|root| *root == NativeReceiverRoot::BundleGlobal)
-                {
-                    continue;
-                }
-                let premise = premises.iter().find(|premise| {
-                    property.is_none() && premise.function_span.contains(call.span)
-                });
-                let Some(premise) = premise else {
-                    return BundleGlobalNames::default();
-                };
-                next.no_accessor_install_callables
-                    .insert(premise.reference.clone());
-            }
-            if !next_symbol_for_intact {
-                next.registered_symbols = false;
-            }
-            if next == current && next_symbol_for_intact == symbol_for_intact {
-                return next;
-            }
-            current = next;
-            symbol_for_intact = next_symbol_for_intact;
         }
     }
 }
@@ -13785,18 +13655,6 @@ impl PreparedCallableCapabilities {
         )
         .with_never_written(integrity.never_written.clone());
         self.index.infer_set_constructions(&flags)
-    }
-
-    pub(crate) fn bundle_global_candidates(&self) -> BundleGlobalNames {
-        self.index.bundle_global_candidates()
-    }
-
-    pub(crate) fn bundle_global_survivors(
-        &self,
-        candidates: &BundleGlobalNames,
-        premises: &[ResolvedNoAccessorInstall],
-    ) -> BundleGlobalNames {
-        self.index.bundle_global_survivors(candidates, premises)
     }
 
     pub(crate) fn value_input_errors(&self) -> &[String] {

@@ -126,6 +126,102 @@ or whole-world snapshots in this closure. The solver's existing test-only rule
 counter checks that invalidating one constructor revisits its readers while an
 unrelated constructor's readers remain untouched.
 
+## Bundle-owned-global closure
+
+`execution_index/bundle_globals.rs` resolves bundle ownership across all prepared
+chunks on one `IterativeInference` store. This is conditional on the existing
+`predefined_globals` host premise. The candidate names, registered-symbol
+category and fresh-collection premise keep their existing meaning (SPEC.md
+§ Bundle-owned globals); the closure does not infer callable availability.
+
+Prepare declared bindings, assignments, fresh-value shapes, symbol-key bindings,
+property-key evidence and accessor-premise matches once per chunk. Collect the
+candidate universe with the ordinary closed alias transfer. Then close aliases
+once under the optimistic candidate set. Both preparations use
+`intrinsic_roots_read`, the same root transfer as the native census. Its input
+adapter supplies closed maps during preparation and watched reads during solving.
+
+The growing facts are invalidations of a candidate name, registered-symbol
+ownership, collection freshness, a chunk's `Symbol.for` key evidence, or a
+chunk-qualified alias. An `All` fact invalidates every global category without
+materializing one fact per name. A separate rejected-chunk fact controls final
+premise projection. Every key is input-derived; joins are unit propositions.
+Register rules for assignments, native writes and possible legacy accessor calls:
+
+- Global-property reads watch only the candidate category they consume, plus
+  `All`. A constructor allocation watches collection freshness.
+- An alias rule propagates a newly possible opaque root through its assignment.
+  Alias readers watch the corresponding chunk-qualified key, including when
+  its invalidation is still absent. No rule restarts an alias solver.
+- A write or accessor rule consumes those roots and its prepared key evidence,
+  preserving the existing widening, deletion and refusal cases. A refusal
+  contributes `All` and the responsible chunk's rejection.
+- Key-to-name matches are indexed during preparation. A write's value is
+  transferred once to `Ownership::{Any, SameName, None}` and shared by all its
+  matching names. `SameName` preserves the sloppy self-slot read exception;
+  alternative values meet these constraints. Registered-symbol stores require
+  `Any`.
+
+Only the completed closure becomes `BundleGlobalNames`. Accessor author
+references are projected once using the final roots and key evidence; a rejected
+chunk contributes none, exactly as an early refusal in the local transfer did.
+Source facts and author assertions retain their separate ownership. Existing
+consumers continue to attach the projected references to their proof dependencies.
+
+**Preservation.** With no ordinary-value or callable-return inputs, the raw
+alias transfer has a fixed finite native-root vocabulary. Changing candidate
+ownership can replace `BundleGlobal` with `UnknownGlobalValue`; it cannot create
+a different native identity. Empty root sets stay empty. A reflection call's
+`Object` receiver test is therefore invariant, and its admitted result already
+contains the opaque root. These observations follow by induction over the
+canonical value expression and the assignment closure.
+
+Consequently, an optimistic alias that already contains an opaque root never
+needs refinement. For each other alias containing `BundleGlobal`, one growing
+bit suffices to record whether it can acquire that opaque root. The watched
+adapter retains its optimistic roots and adds the opaque root when this bit is
+set. Retaining an extra `BundleGlobal` token does not affect either consumer
+predicate: membership of a concrete native identity, or whether all roots are
+bundle-owned. The nonempty predicate used for stored values is also preserved.
+Thus this representation gives the same ownership decisions as recomputing the
+entire alias closure after every loss of a global premise.
+
+Write, key and accessor transfers only lose ownership as these invalidations
+grow. Their complement is a monotone operator on a finite set of bits. The old
+nested local/program loops and the joint worklist impose the same constraints:
+each chunk must respect every other chunk's invalidations, and each assignment
+must propagate their effects to its consumers. Closing local constraints before
+a program round or interleaving individual constraints reaches the same least
+invalidation closure. Complete watchers, including missing reads, ensure no
+constraint is left stale. The final ownership and accessor-reference projection
+therefore preserves the previous completed result, including conservative
+refusals. This is a phase-preservation argument, not a proof of every census
+recognizer or host assumption.
+
+**Bounds.** Let `S` be the explicit prepared census and assignment syntax size,
+including source names, key expressions, premise references and chunks; aliases
+remain references rather than inlined expressions. Let `K` count possible
+invalidation keys, `R` rules and `T` prepared write-key/name matches. Then
+`K,R = O(S)` and `T = O(S²)`. The native-root vocabulary in this phase is fixed.
+Property-key preparation walks shared binding graphs without enumerating paths;
+string affixes come from source literals/templates rather than generated string
+combinations. The reflection guard and member transfer share their receiver
+result, so nested reflected callees do not duplicate child evaluation.
+
+The two initial alias closures, key evidence, candidate collection and indexed
+key matches cost `O(S² log(S + 2))` time and `O(S²)` space. Each key can be
+inserted once, there are at most `RK` watchers, and each rule runs initially and
+at most once per changed key it has read: at most `R(K + 1)` evaluations. Summed
+transfer work per complete sweep is `O(S + T)`: expressions are visited once per
+transfer and a write shares its value result across all matching keys. With
+ordinary hash-table lookup costs, preparation, solving and projection take
+`O(S² log(S + 2) + (K + 1)(S + T)log(S + 2))` time and `O(S²)` space. Even
+pathological collisions in the existing hash-based fact store only multiply
+lookup work by `O(K)`, yielding a polynomial worst-case bound of `O(S⁴ log(S + 2))`.
+There are no generated execution identities, subset contexts or callback runs.
+The test-only evaluation counter checks the exact `3w + 1` rule bound when one
+of two independent width-`w` alias groups loses its global premise.
+
 ## Consumers
 
 A native callee's identity is its spelling (the unshadowed, undeclared global
