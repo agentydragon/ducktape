@@ -5,7 +5,9 @@ Baseline: `origin/devel` at
 The inventory and decisions below come from that tree. This planning change
 branches directly from it and has no dependency on #16762 or #14552. Those PRs
 are candidate material to examine, not implementations that must be preserved
-or landed first. Implementation remains paused until resumed.
+or landed first. Implement this plan through bounded migrations; the complete
+redesign and the real icons extraction are not prerequisites for an individual
+slice.
 
 The goal is to consolidate existing inference and operation semantics while
 extending cross-chunk effects. Do not add another production solver or parallel
@@ -430,6 +432,14 @@ reviewable diff and causal tests. No slice depends on merging #16762. Independen
 source/identity, regression and cost-accounting work can proceed without an early
 gate flip. Before extending an analysis, name its existing owner and consumers;
 before removing one, name the shared facts that replace its decisions.
+
+A slice can migrate one existing analysis while preserving all of its current
+conservative answers. Its exit criteria are the identified producer/consumer
+migration, deletion of the superseded path, behavioral controls and bounds for
+that phase. If gaining precision would require another analyzer's redesign,
+retain havoc and leave that extension as separate work. Do not make the full
+icons extraction or a whole-engine performance repair a prerequisite for these
+bounded consolidations.
 
 | Step                            | Deliverable and exit criterion                                                                                                                                                                                                                                                                         |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

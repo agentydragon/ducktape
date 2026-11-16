@@ -67,6 +67,67 @@ object rather than trusting the original receiver's family.
 An axiom covering every requested slot at the queried site is consumed instead
 of the census and recorded as that input's proof dependency.
 
+## Slot-write closure
+
+`OwnSlotWrites::resolve` uses `IterativeInference` over positive may-invalidation
+facts keyed by `IntrinsicSlot`. Its inputs are the completed mutation witnesses,
+unwitnessed mutated families and immutable whole-prototype flags. The existing
+write transfer (`OwnSlotWrites::add`) supplies both inference and diagnostics;
+there is no second interpretation of a witness.
+
+Prepare the finite query set `Q` from every constructor/prototype receiver's
+global binding and every computed-key derivation's own-slot dependencies. Those
+are exactly the mutable slot identities the transfer reads. Whole-prototype
+dependencies are already closed inputs. Seed the slots that unwitnessed family
+mutations invalidate. Register one rule per reachable witness:
+
+1. Read its receiver/key identity facts through `FactContext`. Absence means
+   provisionally intact for this transfer, and installs a watcher.
+2. Apply the existing transfer to that one witness. Losing an identity widens
+   a receiver or key; it never narrows the slots that the write may reach.
+3. Propose each slot in `Q` reached by that contribution. A fact is a unit
+   proposition: its join is idempotent, and it can be inserted only once.
+
+After closure, apply each witness once against the completed identities to
+produce the existing full write surface. Consumers and `CensusExplanation` read
+that closed view. Querying another property does not start another solver.
+Intact-slot certificates never escape from an intermediate absence. Unsupported
+receivers, unknown keys, prototype coupling and open-census refusals keep their
+existing treatment. This migration does not add callable or callback precision.
+
+**Correctness.** Let `p(W)` be the slots of `Q` invalidated by a write surface
+`W`, and let `F(W)` be the previous round transfer: unwitnessed base writes plus
+all witness transfers evaluated against `W`. Every mutable read of `F` is in
+`Q`, so `F(W)` depends on `W` only through `p(W)`. Thus it factors as
+`F(W) = G(p(W))`, with the immutable prototype inputs held fixed. The growing
+solver computes the closure of `p(base) ∪ p(G(I))` over invalidation sets `I`.
+Each receiver/key widening preserves the previous denotation of possible writes,
+so this map is monotone. Induction on the old rounds and on individual rule
+firings gives the same least invalidation closure. Complete watchers, including
+absent reads, ensure every newly invalidated input is consumed. The final
+`G(I)` projection therefore gives the same reached-slot answers and witness
+interpretation as the old closure, without depending on rule order. This is a
+preservation argument for this phase, not a new proof of every census transfer.
+
+**Cost.** Let `W` count witnesses, `K = |Q|`, and `S` count explicit census
+bytes, including target/key/dependency entries and key strings. There are at
+most `K` fact insertions and `WK` registered dependencies. Each rule runs once
+initially and at most once per watched slot insertion: at most `W(K + 1)`
+evaluations. A transfer builds only its witness's contribution, and its `K`
+own-slot probes scan only that contribution. With the existing ordered sets,
+preparation, solving and final projection take
+`O((K + 1)S(log(S + 2) + K) + W(K + 1)log(W + 2))` time and
+`O(S + WK)` space. String comparisons are charged to the inserted strings;
+queried names are the fixed intrinsic names and derivation slots, not generated
+strings. For the fixed native-slot schema, `K` is constant, giving
+`O(S log(S + 2))` time and `O(S)` space. A new dependency must extend `Q` and
+this bound. There are no fresh identities, path enumeration, callback execution
+or whole-world snapshots in this closure. The solver's existing test-only rule
+counter checks that invalidating one constructor revisits its readers while an
+unrelated constructor's readers remain untouched.
+
+## Consumers
+
 A native callee's identity is its spelling (the unshadowed, undeclared global
 binding of the row's family, or an unshadowed `globalThis` qualifying it) plus
 the flags of the row's `requires` slots at the call. Empty collection

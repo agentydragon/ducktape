@@ -7,6 +7,7 @@
 //! this module reads the census for them.
 
 use crate::analysis_inputs::{NativeIntrinsic, NativeOperationInputRef, ProofDependencies};
+use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
     NativeMutationOperation, NativeMutationWitness, NativePropertyKey, NativeReceiverPath,
 };
@@ -18,7 +19,7 @@ use std::fmt;
 /// when a census write can reach that property (`OwnSlotWrites`); the
 /// whole-object prototype slots are unknown after any write to their family
 /// or the global object.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IntrinsicSlot {
     /// The global object's own data property naming a family's constructor or
     /// namespace: `%Set%`, `%Math%`.
@@ -348,6 +349,46 @@ struct OwnSlotWrites {
     any_receiver_symbol: bool,
 }
 
+/// Only slots consumed by another witness participate in the closure. The
+/// full write surface is projected once after these may-invalidations settle.
+struct OwnWriteRules<'a, PrototypeIntact> {
+    witnesses: &'a [&'a NativeMutationWitness],
+    queried_slots: &'a BTreeSet<IntrinsicSlot>,
+    prototype_intact: PrototypeIntact,
+}
+
+impl<PrototypeIntact: Fn(IntrinsicSlot) -> bool> IterativeRules
+    for OwnWriteRules<'_, PrototypeIntact>
+{
+    type Key = IntrinsicSlot;
+    type Fact = ();
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        let mut contribution = OwnSlotWrites::default();
+        contribution.add(
+            self.witnesses[*rule],
+            |slot| {
+                assert!(
+                    self.queried_slots.contains(&slot),
+                    "unregistered slot dependency: {slot}"
+                );
+                context.read(slot).is_none()
+            },
+            &self.prototype_intact,
+        );
+        for &slot in self.queried_slots {
+            if !contribution.intact(slot) {
+                context.propose(slot, ());
+            }
+        }
+    }
+
+    fn merge(_: &Self::Key, _: &mut Self::Fact, _: Self::Fact) -> bool {
+        false
+    }
+}
+
 impl OwnSlotWrites {
     /// The least fixed point over the reachable witnesses. A constructor or
     /// prototype path names the object its source binding holds, so it is
@@ -383,23 +424,67 @@ impl OwnSlotWrites {
                 None => base.every_slot = true,
             }
         }
-        let mut writes = base.clone();
-        loop {
-            let mut next = base.clone();
-            for witness in &witnesses {
-                next.add(witness, &writes, &prototype_intact);
+        // Constructor/prototype paths read their global binding's identity;
+        // computed keys additionally read the own slots of their derivation.
+        // Whole-prototype inputs come from the completed immutable census.
+        let queried_slots: BTreeSet<_> = witnesses
+            .iter()
+            .flat_map(|witness| {
+                witness
+                    .target_slots
+                    .iter()
+                    .filter_map(|target| match target.receiver {
+                        NativeReceiverPath::Constructor(family)
+                        | NativeReceiverPath::Prototype(family) => {
+                            Some(IntrinsicSlot::Global(family))
+                        }
+                        _ => None,
+                    })
+                    .chain(
+                        witness
+                            .key_dependencies
+                            .iter()
+                            .filter_map(|family| IntrinsicSlot::read_by_key_dependency(*family))
+                            .flatten()
+                            .filter(|slot| {
+                                matches!(slot, IntrinsicSlot::Global(_) | IntrinsicSlot::Static(..))
+                            }),
+                    )
+            })
+            .collect();
+        let mut inference = IterativeInference::new(OwnWriteRules {
+            witnesses: &witnesses,
+            queried_slots: &queried_slots,
+            prototype_intact: &prototype_intact,
+        });
+        for &slot in &queried_slots {
+            if !base.intact(slot) {
+                inference.seed(slot, ());
             }
-            if next == writes {
-                return writes;
-            }
-            writes = next;
         }
+        let invalid = inference.solve_values(0..witnesses.len());
+        // Querying another slot never starts another solver. Keep the existing
+        // full write representation and diagnostic transfer as a closed view.
+        for witness in witnesses {
+            base.add(
+                witness,
+                |slot| {
+                    assert!(
+                        queried_slots.contains(&slot),
+                        "unregistered slot dependency: {slot}"
+                    );
+                    !invalid.contains_key(&slot)
+                },
+                &prototype_intact,
+            );
+        }
+        base
     }
 
     fn add(
         &mut self,
         witness: &NativeMutationWitness,
-        current: &Self,
+        mut own_intact: impl FnMut(IntrinsicSlot) -> bool,
         prototype_intact: impl Fn(IntrinsicSlot) -> bool,
     ) {
         if witness.operation == NativeMutationOperation::BindingAssignment {
@@ -424,7 +509,7 @@ impl OwnSlotWrites {
         let derivation_intact = witness.key_dependencies.iter().all(|family| {
             IntrinsicSlot::read_by_key_dependency(*family).is_some_and(|slots| {
                 slots.into_iter().all(|slot| match slot {
-                    IntrinsicSlot::Global(_) | IntrinsicSlot::Static(..) => current.intact(slot),
+                    IntrinsicSlot::Global(_) | IntrinsicSlot::Static(..) => own_intact(slot),
                     _ => prototype_intact(slot),
                 })
             })
@@ -442,13 +527,13 @@ impl OwnSlotWrites {
             ) {
                 match &target.receiver {
                     NativeReceiverPath::Constructor(family)
-                        if current.intact(IntrinsicSlot::Global(*family)) =>
+                        if own_intact(IntrinsicSlot::Global(*family)) =>
                     {
                         self.symbol_statics.insert(*family);
                     }
                     NativeReceiverPath::GlobalObject => {}
                     NativeReceiverPath::Prototype(family)
-                        if current.intact(IntrinsicSlot::Global(*family)) => {}
+                        if own_intact(IntrinsicSlot::Global(*family)) => {}
                     NativeReceiverPath::ArrayIteratorPrototype
                     | NativeReceiverPath::SetIteratorPrototype
                         if derivation_intact => {}
@@ -461,7 +546,7 @@ impl OwnSlotWrites {
                     self.global_keys.insert(key);
                 }
                 NativeReceiverPath::Constructor(family)
-                    if current.intact(IntrinsicSlot::Global(*family)) =>
+                    if own_intact(IntrinsicSlot::Global(*family)) =>
                 {
                     // An update of the binding itself (`Map++`) has this
                     // keyless path too.
@@ -477,7 +562,7 @@ impl OwnSlotWrites {
                     self.static_keys.insert((*family, key));
                 }
                 NativeReceiverPath::Prototype(family)
-                    if current.intact(IntrinsicSlot::Global(*family)) =>
+                    if own_intact(IntrinsicSlot::Global(*family)) =>
                 {
                     self.prototype_keys.insert((*family, key));
                 }
@@ -823,9 +908,11 @@ impl<'a> CensusExplanation<'a> {
     fn reach(&self, witness: &NativeMutationWitness, slot: &SlotName) -> Option<SlotReach> {
         if let Some(own) = slot.own() {
             let mut single = OwnSlotWrites::default();
-            single.add(witness, &self.own_slot_writes, |slot| {
-                prototype_slot_intact(&self.mutated, slot)
-            });
+            single.add(
+                witness,
+                |slot| self.own_slot_writes.intact(slot),
+                |slot| prototype_slot_intact(&self.mutated, slot),
+            );
             return single.reach(own);
         }
         let family = slot.family();
@@ -1172,6 +1259,55 @@ mod tests {
             intact(&[symbol_keyed, replaced_for], PROBES),
             [KEYS, ENTRIES]
         );
+    }
+
+    #[test]
+    fn slot_invalidation_revisits_only_readers_of_the_changed_identity() {
+        for width in [1, 16, 128, 512] {
+            let mut witnesses: Vec<_> = [NativeIntrinsic::Object, NativeIntrinsic::Set]
+                .into_iter()
+                .flat_map(|family| {
+                    (0..width).map(move |index| {
+                        witness(
+                            family,
+                            NativeReceiverPath::Constructor(family),
+                            string(&format!("property{index}")),
+                            &[],
+                        )
+                    })
+                })
+                .collect();
+            // This producer runs after both groups have read absent facts.
+            witnesses.push(witness(
+                NativeIntrinsic::Object,
+                NativeReceiverPath::GlobalObject,
+                string("Object"),
+                &[],
+            ));
+            let references: Vec<_> = witnesses.iter().collect();
+            let queried_slots = BTreeSet::from([
+                IntrinsicSlot::Global(NativeIntrinsic::Object),
+                IntrinsicSlot::Global(NativeIntrinsic::Set),
+            ]);
+            let solved = IterativeInference::new(OwnWriteRules {
+                witnesses: &references,
+                queried_slots: &queried_slots,
+                prototype_intact: |_| true,
+            })
+            .solve_values_resumable(0..witnesses.len());
+            assert!(
+                solved
+                    .get(&IntrinsicSlot::Global(NativeIntrinsic::Object))
+                    .is_some()
+            );
+            assert!(
+                solved
+                    .get(&IntrinsicSlot::Global(NativeIntrinsic::Set))
+                    .is_none()
+            );
+            // All rules run once; only the Object readers run a second time.
+            assert_eq!(solved.evaluations(), 3 * width + 1);
+        }
     }
 
     #[test]
