@@ -75,8 +75,21 @@ def build_dashboard() -> dashboard.Dashboard:
             .title("Battery and external-power state")
             .datasource(mimir())
             .grid_pos(dashboard.GridPos(h=8, x=12))
-            .with_target(mimir_table_query('node_power_supply_info{instance=~"$instance",type=~"Battery|Mains|USB"}'))
+            .with_target(
+                mimir_table_query(
+                    'max by (power_supply, type, status, health, capacity_level) (node_power_supply_info{instance=~"$instance",type=~"Battery|Mains|USB"})'
+                )
+            )
             .with_transformation(dashboard.DataTransformerConfig(id_val="labelsToFields", options={}))
+            .with_transformation(
+                dashboard.DataTransformerConfig(
+                    id_val="organize",
+                    options={
+                        "excludeByName": {"Time": True, "Value": True},
+                        "indexByName": {"power_supply": 0, "type": 1, "status": 2, "health": 3, "capacity_level": 4},
+                    },
+                )
+            )
         )
         .with_panel(
             _power_panel(3, "RAPL power draw", 0, 8, 24, ["lastNotNull", "mean", "max"])
