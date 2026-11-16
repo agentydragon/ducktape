@@ -17,9 +17,11 @@ priorities is separately deferred as AR10 there.
   regressions, through final required-engine adoption.
 - Verify preparation cost for selected-view corpus proposals. Reuse compatible
   captured program/source and full-base selector preparation across the corpus;
-  never rebuild them per inventory seed. Measure source/selector preparation
-  separately from constructor queries and selected-plan certification. A fast
-  single-chunk loop does not establish practical whole-corpus preparation.
+  retain multi-chunk runtime, exact-capture isolation and invalidation tests.
+  Never rebuild preparation per inventory seed. Measure source/selector work
+  separately from graph loading/provenance verification, constructor queries
+  and selected-plan certification. A fast single-chunk loop or preparation
+  work count does not establish practical whole-corpus preparation.
 - Private migration and required-engine adoption remain partial. Complete all
   configured specs, including diagnostic configurations, and run their relevant
   controls on the final landed pin. Preparatory replay on the permissive schema

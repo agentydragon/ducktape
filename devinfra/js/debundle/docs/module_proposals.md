@@ -78,6 +78,20 @@ path and the same tree config. Generated/catchall residual routing is reported
 as unsupported by this initial constructor. An aggregate negative covers only
 the supported chunks and stated family; it never treats exclusions as exhaustion.
 
+Selected-view rows from the same verified capture share source parsing and
+full-base selector preparation within the command. Reuse requires identical
+complete input provenance, relocated run context and roots, and captured view
+path and bytes. Distinct captures receive separate preparations. Each chunk's
+candidate selectors, final priority and complete realized-assignment comparison
+remain independent; a prepared chunk is consumed once. Preparation or writer
+failure leaves the affected rows as `inventory_only` with no plans.
+
+The corpus JSON's `preparation.selected_programs` counts selected source/base
+preparation attempts, including failed attempts. It is zero when no selected
+row reaches source preflight. This is a work count, not a timing or a guarantee
+about graph loading and provenance verification cost. No preparation persists
+across commands; check, preview and apply verify their inputs again.
+
 ## Scope and outcomes
 
 The initial complete operation has one policy: preserve existing owners and

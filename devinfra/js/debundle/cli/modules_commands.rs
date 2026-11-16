@@ -450,12 +450,17 @@ fn run_assignment_search(
     Ok(())
 }
 
-fn search_one_graph(
+struct ConstructedProposal {
+    chunk_id: String,
+    graph: PathBuf,
+    input: Option<analysis::DependencyGraphInput>,
+    search: peel::search::SearchReport,
+}
+
+fn construct_one_graph(
     args: &ProposeArgs,
     graph_path: &std::path::Path,
-    stderr: &mut (dyn std::io::Write + Send),
-    source_context: Option<&VerifiedGraphSourceContext>,
-) -> Result<(String, peel::search::SearchReport, Option<AssignmentPlan>)> {
+) -> Result<ConstructedProposal> {
     let input = analysis::DependencyGraphInput::read(graph_path)?;
     let chunk_id = input.report().chunk_id.clone();
     let problem = AssignmentProblem::new(&input)?;
@@ -473,67 +478,218 @@ fn search_one_graph(
             .map(|path| -> Result<Vec<String>> { Ok(serde_json::from_slice(&fs::read(path)?)?) })
             .transpose()?,
     };
-    let mut report = peel::search::search(&problem, &options)?;
-    if report.status == peel::search::SearchStatus::Found {
-        if let Some(source_root) = args.source_root.as_deref() {
-            let context = source_context.filter(|context| context.chunk_id() == chunk_id);
-            // Compatibility verification accepts the exact configured chunk
-            // subtree as --modules, but the source-unit resolver needs the
-            // full physical tree root to interpret ModuleTreeScope roots.
-            let modules_root = args
-                .tree_config
+    let search = peel::search::search(&problem, &options)?;
+    let input = (search.status == peel::search::SearchStatus::Found).then_some(input);
+    Ok(ConstructedProposal {
+        chunk_id,
+        graph: graph_path.to_path_buf(),
+        input,
+        search,
+    })
+}
+
+fn reject_selector_realization(report: &mut peel::search::SearchReport, error: &anyhow::Error) {
+    report.status = peel::search::SearchStatus::InventoryOnly;
+    report.blockers.push(format!(
+        "selected closure cannot be realized by the source-unit writer: {error:#}"
+    ));
+}
+
+fn proposal_apply_options<'a>(
+    args: &'a ProposeArgs,
+    report: &peel::search::SearchReport,
+    assignments: Vec<SourceUnitAssignment>,
+) -> crate::source_unit_apply::SourceUnitApplyOptions<'a> {
+    crate::source_unit_apply::SourceUnitApplyOptions {
+        tree_config: args.tree_config.as_deref(),
+        assignments,
+        import_order: Some(report.import_order.clone()),
+        readable_names: Default::default(),
+        selector_overrides: Default::default(),
+        dry_run: true,
+        effect_assessment_context: None,
+    }
+}
+
+fn preflight_one_proposal(
+    args: &ProposeArgs,
+    proposal: &mut ConstructedProposal,
+    stderr: &mut (dyn std::io::Write + Send),
+    context: Option<&VerifiedGraphSourceContext>,
+) {
+    if proposal.search.status != peel::search::SearchStatus::Found {
+        return;
+    }
+    let Some(source_root) = args.source_root.as_deref() else {
+        proposal.search.status = peel::search::SearchStatus::InventoryOnly;
+        proposal.search.blockers.push(
+            "provide --source-root to preflight selector synthesis before receiving an executable plan".into(),
+        );
+        proposal.input = None;
+        return;
+    };
+    let context = context.filter(|context| context.chunk_id() == proposal.chunk_id);
+    let modules_root = args
+        .tree_config
+        .as_ref()
+        .and(context)
+        .and_then(VerifiedGraphSourceContext::modules_root)
+        .unwrap_or(&args.modules_root);
+    let preflight = (|| {
+        let assignments = crate::module_apply::physical_plan_changes(
+            proposal.search.changes.clone(),
+            proposal
+                .input
                 .as_ref()
-                .and(context)
-                .and_then(VerifiedGraphSourceContext::modules_root)
-                .unwrap_or(&args.modules_root);
-            let preflight = (|| {
-                let assignments = crate::module_apply::physical_plan_changes(
-                    report.changes.clone(),
-                    &input,
-                    args.tree_config.as_deref(),
-                    modules_root,
-                    context,
-                )?;
-                crate::source_unit_apply::run_source_unit_apply(
-                    stderr,
-                    modules_root,
-                    graph_path,
-                    source_root,
-                    context,
-                    crate::source_unit_apply::SourceUnitApplyOptions {
-                        tree_config: args.tree_config.as_deref(),
-                        assignments,
-                        import_order: Some(report.import_order.clone()),
-                        readable_names: Default::default(),
-                        selector_overrides: Default::default(),
-                        dry_run: true,
-                        effect_assessment_context: None,
-                    },
-                )
-            })();
-            if let Err(error) = preflight {
-                report.status = peel::search::SearchStatus::InventoryOnly;
-                report.blockers.push(format!(
-                    "selected closure cannot be realized by the source-unit writer: {error:#}"
-                ));
+                .expect("found proposal retains its graph"),
+            args.tree_config.as_deref(),
+            modules_root,
+            context,
+        )?;
+        crate::source_unit_apply::run_source_unit_apply(
+            stderr,
+            modules_root,
+            &proposal.graph,
+            source_root,
+            context,
+            proposal_apply_options(args, &proposal.search, assignments),
+        )
+    })();
+    if let Err(error) = preflight {
+        reject_selector_realization(&mut proposal.search, &error);
+    }
+    proposal.input = None;
+}
+
+fn take_proposal_plan(proposal: &mut ConstructedProposal) -> Result<Option<AssignmentPlan>> {
+    if proposal.search.status != peel::search::SearchStatus::Found {
+        return Ok(None);
+    }
+    Ok(Some(AssignmentPlan {
+        snapshot: AssignmentSnapshot::read(&proposal.graph)?,
+        changes: std::mem::take(&mut proposal.search.changes),
+        import_order: std::mem::take(&mut proposal.search.import_order),
+    }))
+}
+
+fn search_one_graph(
+    args: &ProposeArgs,
+    graph_path: &std::path::Path,
+    stderr: &mut (dyn std::io::Write + Send),
+    context: Option<&VerifiedGraphSourceContext>,
+) -> Result<(String, peel::search::SearchReport, Option<AssignmentPlan>)> {
+    let mut proposal = construct_one_graph(args, graph_path)?;
+    preflight_one_proposal(args, &mut proposal, stderr, context);
+    let plan = take_proposal_plan(&mut proposal)?;
+    Ok((proposal.chunk_id, proposal.search, plan))
+}
+
+/// Preflight every selected row from one exact capture in one scoped source /
+/// full-base frontend session. A failure remains graph-feasible inventory.
+fn preflight_selected_corpus(
+    args: &ProposeArgs,
+    proposals: &mut [ConstructedProposal],
+    contexts: &crate::VerifiedGraphContexts,
+    stderr: &mut (dyn std::io::Write + Send),
+) -> Result<usize> {
+    struct Group {
+        provenance: graph_provenance::GraphProvenance,
+        rows: Vec<usize>,
+    }
+    let mut groups =
+        std::collections::BTreeMap::<pipeline::SelectedOwnershipProgramKey, Group>::new();
+    for (row, proposal) in proposals.iter_mut().enumerate() {
+        let context = contexts
+            .get(&proposal.chunk_id)
+            .context("missing verified graph context")?;
+        if proposal.search.status != peel::search::SearchStatus::Found {
+            continue;
+        }
+        if args.source_root.is_none()
+            || proposal
+                .input
+                .as_ref()
+                .expect("found proposal retains its graph")
+                .report()
+                .ownership_subset
+                .is_none()
+        {
+            preflight_one_proposal(args, proposal, stderr, Some(context));
+            continue;
+        }
+        let header = graph_provenance::read_graph_header(&proposal.graph)?;
+        ensure!(
+            header.chunk_id == proposal.chunk_id,
+            "graph chunk changed during proposal preparation"
+        );
+        let provenance = header
+            .provenance
+            .context("selected-view editing requires graph provenance")?;
+        let key = pipeline::SelectedOwnershipProgram::key(context, &provenance)?;
+        match groups.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Group {
+                    provenance,
+                    rows: vec![row],
+                });
             }
-        } else {
-            report.status = peel::search::SearchStatus::InventoryOnly;
-            report.blockers.push(
-                "provide --source-root to preflight selector synthesis before receiving an executable plan".into(),
-            );
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().rows.push(row);
+            }
         }
     }
-    let plan = if report.status == peel::search::SearchStatus::Found {
-        Some(AssignmentPlan {
-            snapshot: AssignmentSnapshot::read(graph_path)?,
-            changes: std::mem::take(&mut report.changes),
-            import_order: std::mem::take(&mut report.import_order),
-        })
-    } else {
-        None
-    };
-    Ok((chunk_id, report, plan))
+    let mut preparations = 0;
+    for group in groups.into_values() {
+        let first = &proposals[group.rows[0]];
+        let context = contexts.get(&first.chunk_id).expect("verified context");
+        let targets = group
+            .rows
+            .iter()
+            .map(|row| proposals[*row].chunk_id.clone())
+            .collect();
+        preparations += 1;
+        let prepared = (|| {
+            let request = crate::graph_transform_request(context)?;
+            let program =
+                pipeline::SelectedOwnershipProgram::prepare(&request, context, &group.provenance)?;
+            command_diagnostics::run(stderr, |diagnostics| {
+                program.with_preflight_session(targets, diagnostics, |session| {
+                    for row in &group.rows {
+                        let proposal = &mut proposals[*row];
+                        let context = contexts.get(&proposal.chunk_id).expect("verified context");
+                        let realized = (|| {
+                            program.verify_context(context, &group.provenance)?;
+                            // Selected plans and their view keys are chunk-logical.
+                            crate::selected_view_apply::run_prepared(
+                                context,
+                                proposal
+                                    .input
+                                    .take()
+                                    .expect("each selected proposal consumes its graph once"),
+                                proposal_apply_options(
+                                    args,
+                                    &proposal.search,
+                                    proposal.search.changes.clone(),
+                                ),
+                                session,
+                            )
+                        })();
+                        if let Err(error) = realized {
+                            reject_selector_realization(&mut proposal.search, &error);
+                        }
+                    }
+                    Ok(())
+                })
+            })
+        })();
+        if let Err(error) = prepared {
+            for row in &group.rows {
+                reject_selector_realization(&mut proposals[*row].search, &error);
+                proposals[*row].input = None;
+            }
+        }
+    }
+    Ok(preparations)
 }
 
 fn run_graph_corpus_search(
@@ -570,8 +726,16 @@ fn run_graph_corpus_search(
     }
 
     #[derive(Serialize)]
+    struct PreparationWork {
+        /// Number of selected source/full-base preparation attempts, including
+        /// failed attempts. Each attempt serves one exact verified capture.
+        selected_programs: usize,
+    }
+
+    #[derive(Serialize)]
     struct CorpusReport {
         status: CorpusStatus,
+        preparation: PreparationWork,
         scope: CorpusScope,
         chunks: Vec<ChunkResult>,
     }
@@ -586,25 +750,29 @@ fn run_graph_corpus_search(
         skipped_unconfigured,
     } = scope_graphs_to_tree(&graphs, config)?;
 
-    let mut chunks = Vec::with_capacity(configured.len());
+    let mut proposals = Vec::with_capacity(configured.len());
     for (chunk_id, graph) in configured {
-        let context = source_contexts.get(&chunk_id).with_context(|| {
-            format!("missing verified source context for configured chunk {chunk_id}")
-        })?;
-        let (graph_chunk_id, search, plan) = search_one_graph(args, &graph, stderr, Some(context))?;
+        let proposal = construct_one_graph(args, &graph)?;
         ensure!(
-            search.scope.required_units.is_empty(),
+            proposal.search.scope.required_units.is_empty(),
             "multi-graph proposal cannot carry required source-unit IDs"
         );
         ensure!(
-            graph_chunk_id == chunk_id,
+            proposal.chunk_id == chunk_id,
             "graph header chunk ID changed while reading {}",
             graph.display()
         );
+        proposals.push(proposal);
+    }
+    let selected_programs =
+        preflight_selected_corpus(args, &mut proposals, source_contexts, stderr)?;
+    let mut chunks = Vec::with_capacity(proposals.len());
+    for mut proposal in proposals {
+        let plan = take_proposal_plan(&mut proposal)?;
         chunks.push(ChunkResult {
-            chunk_id,
-            graph,
-            search,
+            chunk_id: proposal.chunk_id,
+            graph: proposal.graph,
+            search: proposal.search,
             plan,
         });
     }
@@ -630,6 +798,7 @@ fn run_graph_corpus_search(
     let configured_chunks = chunks.iter().map(|chunk| chunk.chunk_id.clone()).collect();
     let report = CorpusReport {
         status,
+        preparation: PreparationWork { selected_programs },
         scope: CorpusScope {
             evaluated: "configured_chunks_only",
             configured_chunks,
