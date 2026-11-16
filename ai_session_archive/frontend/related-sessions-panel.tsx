@@ -1,34 +1,72 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Badge, Button, Group, Loader, Paper, Popover, Stack, Text } from "@mantine/core";
 import { Link } from "react-router";
 
+import type { SessionBrowserApi } from "./api";
 import type { SessionSummary } from "./schema";
 import { formatDateTime } from "./session-viewer-formatting";
 
-export type RelatedSessionsPanelModel = {
+export function RelatedSessionsPanel({
+  api,
+  session,
+  layoutWidth,
+  pathForSession,
+  onNavigate,
+}: {
+  api: SessionBrowserApi;
   session: SessionSummary;
-  parent: {
-    session: SessionSummary | null;
-    loading: boolean;
-    error: string | null;
-  };
-  children: {
-    items: SessionSummary[];
-    loading: boolean;
-    loadingNext: boolean;
-    error: string | null;
-    cursor: string | null;
-    hasNextPage: boolean;
-    onLoadMore: () => void;
-  };
   layoutWidth: number;
   pathForSession: (sessionId: string) => string;
   onNavigate: () => void;
-};
-
-export function RelatedSessionsPanel({ model }: { model: RelatedSessionsPanelModel }): JSX.Element | null {
+}): JSX.Element | null {
   const [opened, setOpened] = useState(false);
-  const { session, parent, children } = model;
+  const parentSessionId = session.parent_session_id;
+  const parentQuery = useQuery({
+    queryKey: ["ai-session-archive", "session", parentSessionId],
+    queryFn: ({ signal }) => {
+      if (parentSessionId === null) throw new Error("A parent session ID is required.");
+      return api.getSession(parentSessionId, signal);
+    },
+    enabled: parentSessionId !== null,
+  });
+  const childQuery = useInfiniteQuery({
+    queryKey: ["ai-session-archive", "children", session.id],
+    queryFn: ({ pageParam, signal }) =>
+      api.listSessions(
+        {
+          parentSessionId: session.id,
+          ...(pageParam === null ? {} : { cursor: pageParam }),
+          limit: 50,
+        },
+        signal
+      ),
+    initialPageParam: null as string | null,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  });
+  const childPages = childQuery.data?.pages ?? [];
+  const childSessions = useMemo(() => {
+    const byId = new Map<string, SessionSummary>();
+    for (const page of childPages) for (const child of page.data) byId.set(child.id, child);
+    return [...byId.values()];
+  }, [childPages]);
+  const parent = {
+    session: parentQuery.data?.id === parentSessionId ? parentQuery.data : null,
+    loading: parentSessionId !== null && parentQuery.isLoading,
+    error: parentQuery.error === null ? null : errorMessage(parentQuery.error),
+  };
+  const children = {
+    items: childSessions,
+    loading: childQuery.isLoading,
+    loadingNext: childQuery.isFetchingNextPage,
+    error: childQuery.error === null ? null : errorMessage(childQuery.error),
+    cursor: childPages.at(-1)?.next_cursor ?? null,
+    hasNextPage: childQuery.hasNextPage,
+    onLoadMore: () => {
+      // Join an in-flight page when scroll/layout events fire before the next render.
+      if (childQuery.hasNextPage) void childQuery.fetchNextPage({ cancelRefetch: false });
+    },
+  };
 
   useEffect(() => {
     setOpened(false);
@@ -55,14 +93,14 @@ export function RelatedSessionsPanel({ model }: { model: RelatedSessionsPanelMod
 
   const closeForNavigation = (): void => {
     setOpened(false);
-    model.onNavigate();
+    onNavigate();
   };
 
   return (
     <Popover
       opened={opened}
       onChange={setOpened}
-      position={model.layoutWidth <= 760 ? "top-end" : "bottom-end"}
+      position={layoutWidth <= 760 ? "top-end" : "bottom-end"}
       offset={8}
       width="min(440px, calc(100vw - 32px))"
       withinPortal
@@ -105,7 +143,7 @@ export function RelatedSessionsPanel({ model }: { model: RelatedSessionsPanelMod
                   {session.parent_session_id !== null && parent.session !== null ? (
                     <Button
                       component={Link}
-                      to={model.pathForSession(parent.session.id)}
+                      to={pathForSession(parent.session.id)}
                       variant="subtle"
                       size="xs"
                       onClick={closeForNavigation}
@@ -164,7 +202,7 @@ export function RelatedSessionsPanel({ model }: { model: RelatedSessionsPanelMod
                         <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
                           <Button
                             component={Link}
-                            to={model.pathForSession(child.id)}
+                            to={pathForSession(child.id)}
                             variant="subtle"
                             size="xs"
                             onClick={closeForNavigation}
@@ -232,4 +270,8 @@ function RelatedSessionsIcon(): JSX.Element {
       <circle cx="18" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
     </svg>
   );
+}
+
+function errorMessage(reason: unknown): string {
+  return reason instanceof Error ? reason.message : "Could not load local sessions.";
 }
