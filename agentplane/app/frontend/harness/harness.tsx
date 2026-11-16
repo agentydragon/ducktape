@@ -1,8 +1,8 @@
-import { WatchSessionsResponseSchema } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import {
   SessionSchema,
   SessionStatus_Materialization,
   SessionStatus_RequiredEnvironment,
+  WatchSessionsResponseSchema,
   type Session,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { AutosuspendBlockerSchema } from "../../../proto/environment_lifecycle_pb";
