@@ -4,9 +4,7 @@
 //! from ordinary native-integrity inference.
 
 use super::property_keys::{PropertyKeyDomain, PropertyKeyExpr};
-use super::{
-    IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr,
-};
+use super::{IntrinsicRoots, NativeReceiverRoot, NativeReceiverRoots, ValueExpr};
 use crate::analysis_inputs::{HostBehaviorKey, NativeIntegrity, NativeIntrinsic};
 use crate::inference::{FactContext, IterativeInference, IterativeRules};
 use crate::reports::schema::{
