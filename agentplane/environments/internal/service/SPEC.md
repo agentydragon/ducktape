@@ -81,6 +81,13 @@ current `spec.identity` name and UID checks as direct Identity calls. The dispat
 identity at Session admission. Discovery is not an authorization lease and is not a substitute for
 mutation-time checks.
 
+## Runtime diagnostics
+
+`GetRuntimeDiagnostics` is the App-only live diagnostic read described in the
+[Environments contract](../../SPEC.md#live-runtime-diagnostics). It uses replica-local fenced
+Runtime transport and uncached Sandbox incarnation checks, separately from inventory and lifecycle
+roles. The read has no wake or mutation effect.
+
 ## Snapshot reads and watches
 
 `GetEnvironment` returns the current descriptor without waiting for a condition.

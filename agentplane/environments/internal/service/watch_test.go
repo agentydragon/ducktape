@@ -192,7 +192,7 @@ func newWatchFixture(t *testing.T) watchFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, ManagementOptions{ServiceReaders: sets.New(peertls.CentralSamplerURI)})
+	service, err := New(namespace, observedObjects, runtimeconfig.Catalog{}, manager, Options{ServiceReaders: sets.New(peertls.CentralSamplerURI)})
 	if err != nil {
 		t.Fatal(err)
 	}

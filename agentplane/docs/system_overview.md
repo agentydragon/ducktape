@@ -17,6 +17,10 @@ receiver audience/account/delegation settings decode without authority until man
 rollout. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
 EnvironmentService and opens no direct Runtime watch.
 
+EnvironmentService also serves an App-only `GetRuntimeDiagnostics` read through its replica-local,
+incarnation/boot-fenced Runtime transport. It is independent of controller leadership and never
+wakes an environment. The receiver is staged before moving the App's raw-proxy status reads.
+
 Managed Sandbox CLIs use a separate `AGENTPLANE_ENVIRONMENTS_URL` on the local platform listener.
 Its exact EnvironmentService prefix selects Sandbox-SVID TLS through central CONNECT to
 `sandbox-controller:8082`; Session calls keep their Gateway route.

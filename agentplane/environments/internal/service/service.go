@@ -15,6 +15,7 @@ import (
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -47,6 +48,7 @@ type Service struct {
 	serviceManagers        sets.Set[string]
 	serviceLaunchers       sets.Set[string]
 	collectionAuthInterval time.Duration
+	runtimeDiagnostics     RuntimeDiagnostics
 }
 
 func New(
@@ -54,7 +56,7 @@ func New(
 	objects client.WithWatch,
 	runtime runtimeconfig.Catalog,
 	lifecycleManager *resume.Manager,
-	management ManagementOptions,
+	options Options,
 ) (*Service, error) {
 	if namespace == "" || objects == nil || lifecycleManager == nil {
 		return nil, errors.New("Sandbox namespace, uncached Kubernetes watch client, and lifecycle manager are required")
@@ -66,18 +68,20 @@ func New(
 	return &Service{
 		namespace: namespace, objects: objects, sandboxes: sandboxes, runtime: runtime,
 		lifecycle:              lifecycleManager,
-		serviceReaders:         management.ServiceReaders,
-		serviceManagers:        management.ServiceManagers,
-		serviceLaunchers:       management.ServiceLaunchers,
+		runtimeDiagnostics:     options.RuntimeDiagnostics,
+		serviceReaders:         options.ServiceReaders,
+		serviceManagers:        options.ServiceManagers,
+		serviceLaunchers:       options.ServiceLaunchers,
 		collectionAuthInterval: auth.DefaultVerdictTTL,
 	}, nil
 }
 
-// ManagementOptions grants mutation authority independently of inventory and resume grants.
-type ManagementOptions struct {
-	ServiceReaders   sets.Set[string]
-	ServiceManagers  sets.Set[string]
-	ServiceLaunchers sets.Set[string]
+// Options supplies independent component roles and the optional replica-local Runtime transport.
+type Options struct {
+	RuntimeDiagnostics RuntimeDiagnostics
+	ServiceReaders     sets.Set[string]
+	ServiceManagers    sets.Set[string]
+	ServiceLaunchers   sets.Set[string]
 }
 
 // Methods admits workload SVID Identities to inventory and resume; direct service roles are
@@ -87,11 +91,16 @@ func Methods(resolver *auth.SVIDResolver) auth.Methods {
 	if err != nil {
 		panic(err) // An empty allowlist is always valid.
 	}
+	diagnostics, err := auth.Services([]string{peertls.AppURI})
+	if err != nil {
+		panic(err)
+	}
 	identityRead := rule
 	if resolver != nil {
 		identityRead = auth.AnySubject(resolver)
 	}
 	return auth.Methods{
+		environmentpb.EnvironmentService_GetRuntimeDiagnostics_FullMethodName:        diagnostics,
 		environmentpb.EnvironmentService_ListEnvironmentTemplates_FullMethodName:     rule,
 		environmentpb.EnvironmentService_CreateEnvironment_FullMethodName:            rule,
 		environmentpb.EnvironmentService_ListEnvironments_FullMethodName:             identityRead,

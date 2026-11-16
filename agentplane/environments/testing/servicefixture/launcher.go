@@ -25,7 +25,7 @@ func Launcher(t *testing.T, namespace string, objects client.WithWatch) environm
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := environmentservice.New(namespace, objects, runtimeconfig.Catalog{}, manager, environmentservice.ManagementOptions{
+	service, err := environmentservice.New(namespace, objects, runtimeconfig.Catalog{}, manager, environmentservice.Options{
 		ServiceLaunchers: sets.New(peertls.ActionsURI),
 	})
 	if err != nil {
