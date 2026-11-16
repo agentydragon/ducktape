@@ -40,7 +40,10 @@ source, analysis projection and engine (`staged_analysis/analysis_projection.rs`
 - **One effect producer.** One domain and one builtin table
   (`facts/abstract_domain/`, `facts/sync_effects/`) produce a per-statement
   effect set. Its algorithm is owned by <analysis_consolidation.md>: bounded
-  interprocedural may-analysis with ordered proof refinement.
+  interprocedural may-analysis in the extended `IterativeInference`, with ordered
+  proof refinement. Existing ad hoc analyses migrate into shared typed facts and
+  rules; their superseded producers are removed with the last consumer. Mutually
+  dependent fact families share dependency tracking and convergence.
   The effects include:
   - reads and writes of cells: bindings including their initialization, heap
     cells, global and intrinsic slots, host queues;

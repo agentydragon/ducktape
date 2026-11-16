@@ -9,10 +9,12 @@ or landed first. Implement this plan through bounded migrations; the complete
 redesign and the real icons extraction are not prerequisites for an individual
 slice.
 
-The goal is to consolidate existing inference and operation semantics while
-extending cross-chunk effects. Do not add another production solver or parallel
-semantic implementation. This plan owns the consolidation algorithm and sequence;
-other plans retain their separate capability, artifact-cache and gate-migration
+The goal is to extend `IterativeInference` to absorb the existing ad hoc analyses
+into a shared semantic domain while extending cross-chunk effects. Migrate their
+decisions into explicit facts and rules, then delete the superseded producers;
+wrapping each old analyzer in the common scheduler is not consolidation. This
+plan owns the consolidation algorithm and sequence; other plans retain their
+separate capability, artifact-cache and gate-migration
 obligations. The design below is a target, not a completed correctness proof.
 
 ## Problem and contract
@@ -197,14 +199,34 @@ Write the complete atom/tuple inventory before implementing the solver. Every
 new generated identity, relation arity, primitive domain and provenance field
 must have a bound in source/input size, not just in the heap it happened to build.
 
-### 3. Compute summaries through constraints, not execution replay
+### 3. Consolidate analyses in IterativeInference
 
-Extend `FlowRules` and the existing program-wide effect/callable rules with
-monotone constraints over values, heap slots, captures, call targets and effects.
-Keep the typed domains separate where their joins differ, under the same
-production inference framework. A physical global store is not required for
-independent closed strata; shared semantic ownership and complete dependencies
-are required. A callable summary is a shared set of constraints and
+`IterativeInference` owns convergence and dependency tracking for the growing
+semantic facts. Extend `FlowRules` and the existing program-wide effect/callable
+rules with constraints over values, heap slots, captures, call targets and
+effects. The shared domain is a typed product of these bounded lattices, with
+common source-qualified identities and operation semantics. Different joins
+remain explicit; a single untyped fact or safety bit is not the goal.
+
+Mutually dependent fact families converge together through one tracked dependency
+graph. For example, a newly discovered callable can add effects and captured
+values, which can discover further callees. Every such read and contribution must
+cross the same dependency boundary, including dependencies between chunks.
+Extend the existing typed `FactContext` adapters and rule registration as needed;
+do not hide a recursive solver or an opaque analyzer invocation behind an adapter.
+Independent completed strata can keep separate stores only when later rules
+cannot refine their inputs. Positive certificates retain their completion
+boundary rather than treating an unfinished may-relation as evidence of absence.
+
+Migrate each ad hoc analyzer by identifying its facts, transfer rules, dependencies
+and consumers. Move its semantic decisions into the shared rules and switch its
+consumers to those facts. Delete the replaced interpretation, private convergence
+loop and redundant fact copies with the last consumer. Ordered execution remains
+a bounded proof refinement over the same operation semantics and shared facts;
+its execution order is not a substitute fixed point. Each migration must name
+the duplicate decisions it removes, not merely the common API it now calls.
+
+A callable summary is a shared set of constraints and
 effect/return relations referring to its formals and abstract locations. Applying
 it binds those inputs and contributes output facts. It is not a saved
 `Outcome` or a cached resulting `World`.
@@ -453,6 +475,12 @@ bounded consolidations.
 
 For each slice, the review records its source of reused code, removed duplicate
 decisions, remaining legacy consumers, relevant assumptions and exact checks.
+For each absorbed analyzer, record the old entry point and consumers, replacement
+fact keys and joins, rule reads/contributions, completion boundary and deleted
+code. Include the cross-family dependency and delta behavior in its polynomial
+bound. The first semantic migration must exercise a feedback cycle between fact
+families and a local/two-chunk CLI control, not merely run two unchanged analyses
+in sequence.
 Temporary parallel comparison is diagnostic and has a named removal criterion;
 it must not become another permanent effect producer.
 
