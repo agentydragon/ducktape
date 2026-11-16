@@ -40,7 +40,7 @@ fn hoisted_provider_control() {
 }
 
 #[test]
-fn isolated_initializer_and_export_alias_are_available_after_splitting() {
+fn passive_initializer_and_export_alias_are_available_after_splitting() {
     for provider in [
         "export const factory = callback => ({ invoke: callback });",
         "const factory = callback => ({ invoke: callback }); export { factory };",
@@ -77,15 +77,29 @@ fn isolated_initializer_and_export_alias_are_available_after_splitting() {
     }
 }
 
+#[test]
+fn passive_provider_preserves_a_deferred_primitive_capture() {
+    for (body, expected) in [
+        ("[callback(), captured][0]", "42\n"),
+        ("callback() + captured", "49\n"),
+    ] {
+        let provider = format!(
+            "const captured = 7; export const factory = callback => ({{ invoke: () => {body} }});"
+        );
+        let fixture = run_fixture(options(&[("static/peer", &provider)]));
+        assert_preserved_entry_output(&fixture, expected);
+    }
+}
+
 /// Valid splits waiting on the provider-initialization proof: each provider
 /// binding is initialized before the importer calls it, but its initializer
-/// is not a proved-available hoisted or isolated export. The effect verdict
+/// is not a proved-available hoisted or passive export. The effect verdict
 /// accepts the order; the legacy gate's ordering veto refuses it.
 #[test]
 fn unproved_provider_initializers_stay_pending() {
     for provider in [
         "export let factory = callback => ({ invoke: callback }); factory = callback => ({ invoke: callback });",
-        "const captured = 7; export const factory = callback => ({ invoke: () => [callback(), captured][0] });",
+        "let captured = 7; export const factory = callback => ({ invoke: () => [callback(), captured][0] }); captured = 8;",
         "import './app.js'; export const factory = callback => ({ invoke: callback });",
         "export { factory } from './leaf.js';",
         "const api = { factory(callback) { return { invoke: callback }; } }; export const factory = api.factory;",

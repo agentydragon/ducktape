@@ -813,8 +813,8 @@ Two consumers read the completed census:
   class declarations remain distinct. Publishing their body summaries does
   not prove class readiness or the readiness of captured cells. A callable
   initializer is eligible when its closed provider has passive initialization
-  and the derived body reads and retains no provider cells. Other providers
-  keep their existing fallback. The availability proof below is independent of
+  and the derived call has no provider-cell read or retained-capture obligations.
+  Other providers keep their existing fallback. The availability proof below is independent of
   the body summary and does not import future values into a caller's prefix.
 
 **Preservation.** Preparation records every owner previously counted by the
@@ -849,8 +849,12 @@ Imports, reexports, mutable declarations and every other executable shape
 refuse the certificate. The completed census marks direct callable initializer
 sites only after all source items have been checked. Callable inference still
 requires one stable function value, no dynamic scope, a successful shared body
-derivation, and no read or retained provider cell. A passive provider does not
-make an invoking or effectful body eligible.
+derivation, and no provider-cell read or retained-capture obligations on that
+call summary. Deferred methods can still refer to the provider's immutable
+primitives; those cells are initialized before importer execution, and later
+method calls retain their opaque execution and callback handling. Passive
+initialization does not certify a method's effects or make an invoking or
+effectful factory body eligible.
 
 **Availability under emission.** Every emitted provider owner contains only
 these inert source items. Generated imports and export forwards point to other

@@ -575,8 +575,9 @@ availability proof. Besides existing declaration summaries, a direct `const`
 function/arrow initializer is supported in a closed passive provider: every
 source item is a simple `const` initialized with a function, arrow or primitive
 literal, a function declaration, an empty statement, or a local named export.
-The body summary must read and retain no provider cells. Split provider owners
-may have lazy-reference cycles, but contain no executable initializer that can
+The derived call summary must carry no provider-cell read or retained-capture
+obligations. Split provider owners may have lazy-reference cycles, but contain
+no executable initializer that can
 reenter an importer; every dependency stays inside the provider. The imported
 initializer therefore finishes before its consuming module executes.
 This proof is independent of the callable body's invocation, return and callback
