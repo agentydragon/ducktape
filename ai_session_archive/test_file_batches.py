@@ -21,7 +21,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
 
-from ai_session_archive import ingest
+from ai_session_archive import file_publication, ingest
 from ai_session_archive.database import (
     FileVersionImportRecordRow,
     FileVersionImportRow,
@@ -291,14 +291,14 @@ def test_large_checkpoint_and_growing_publication(postgres_engine: Engine) -> No
     record_count = 50_000
     contents = b'{"type":"assistant"}\n' * record_count
     importer = _ingestor(postgres_engine, contents)
-    publish = importer._publish_version
+    publish = file_publication.publish_file_version
     profile = cProfile.Profile()
     output = undeclared_outputs_dir()
 
     def profile_publication(*args: Any, **kwargs: Any) -> None:
         profile.runcall(publish, *args, **kwargs)
 
-    with patch.object(importer, "_publish_version", side_effect=profile_publication):
+    with patch.object(file_publication, "publish_file_version", side_effect=profile_publication):
         assert importer.ingest().files_complete == 1
     profile.dump_stats(output / "publication-50000.prof")
     with (output / "publication-50000.txt").open("w") as stream:
@@ -320,7 +320,7 @@ def test_large_checkpoint_and_growing_publication(postgres_engine: Engine) -> No
 
     profile.clear()
     with (
-        patch.object(importer, "_publish_version", side_effect=profile_publication),
+        patch.object(file_publication, "publish_file_version", side_effect=profile_publication),
         patch.object(importer._staging, "store_record_batch", side_effect=inspect_staging),
     ):
         assert importer.ingest().files_complete == 2
@@ -376,7 +376,7 @@ def test_prefix_retry_and_changed_parent_reconstruct_checkpoint(postgres_engine:
         assert stage is not None
         assert stage.imported_record_count == stage.shared_prefix_record_count == 500
         assert db.scalar(select(func.count()).select_from(FileVersionImportRecordRow)) == 0
-    publish = importer._publish_version
+    publish = file_publication.publish_file_version
 
     def change_ancestry_before_publication(*args: Any, **kwargs: Any) -> None:
         # Exercise publication's revalidation after snapshot ancestry is repaired independently.
@@ -386,7 +386,7 @@ def test_prefix_retry_and_changed_parent_reconstruct_checkpoint(postgres_engine:
             snapshot.comparison_snapshot_id = alternate.id
         publish(*args, **kwargs)
 
-    with patch.object(importer, "_publish_version", side_effect=change_ancestry_before_publication):
+    with patch.object(file_publication, "publish_file_version", side_effect=change_ancestry_before_publication):
         assert importer.ingest().files_complete == 3
     assert importer.ingest().files_complete == 4
     with sessionmaker(postgres_engine)() as db:
