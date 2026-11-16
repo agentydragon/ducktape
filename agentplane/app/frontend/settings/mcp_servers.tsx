@@ -16,7 +16,7 @@ import {
   McpRefreshAction,
   type McpServerLinkage,
 } from "../../../action_service/api/contracts/operator_action_service_pb";
-import { followActionGroups, type ActionGroupWatchFrame } from "../actions/client";
+import { followActionGroups } from "../actions/client";
 import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../actions/presentation";
 import { TimeAgo } from "../time_ago";
 import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "../mcp_linkage_client";
@@ -42,31 +42,32 @@ function useMcpLinkages(): {
         // stream's full snapshot arrives.
         pendingSnapshot = new Map();
       },
-      onFrame: (frame) => {
-        switch (frame.kind) {
+      onFrame: (message) => {
+        const frame = message.frame;
+        switch (frame.case) {
           case "snapshot":
             if (pendingSnapshot === null) throw new Error("MCP linkage snapshot arrived after completion.");
-            for (const linkage of frame.linkages) pendingSnapshot.set(linkage.serverId, linkage);
+            for (const linkage of frame.value.linkages) pendingSnapshot.set(linkage.serverId, linkage);
             break;
-          case "snapshot_complete":
+          case "snapshotComplete":
             if (pendingSnapshot === null) throw new Error("MCP linkage snapshot completed more than once.");
             setSnapshot([...pendingSnapshot.values()]);
             pendingSnapshot = null;
             break;
           case "upsert":
             if (pendingSnapshot !== null) {
-              pendingSnapshot.set(frame.linkage.serverId, frame.linkage);
+              pendingSnapshot.set(frame.value.serverId, frame.value);
               break;
             }
             setSnapshot((current) => {
               if (current === null) return current;
-              const exists = current.some((linkage) => linkage.serverId === frame.linkage.serverId);
+              const exists = current.some((linkage) => linkage.serverId === frame.value.serverId);
               return exists
-                ? current.map((linkage) => (linkage.serverId === frame.linkage.serverId ? frame.linkage : linkage))
-                : [...current, frame.linkage];
+                ? current.map((linkage) => (linkage.serverId === frame.value.serverId ? frame.value : linkage))
+                : [...current, frame.value];
             });
             break;
-          case "reconnect_required":
+          case "reconnectRequired":
             // The server ends this stream after the frame; followWatch opens a fresh snapshot.
             break;
         }
@@ -91,25 +92,26 @@ function useActionGroupHealth(): {
       onOpen: () => {
         replay = [];
       },
-      onFrame: (frame: ActionGroupWatchFrame) => {
-        switch (frame.kind) {
+      onFrame: (message) => {
+        const frame = message.frame;
+        switch (frame.case) {
           case "snapshot":
-            replay.push(...frame.groups);
+            replay.push(...frame.value.actionGroups);
             break;
-          case "snapshot_complete":
+          case "snapshotComplete":
             setSnapshot(replay);
             replay = [];
             break;
           case "upsert":
             setSnapshot((current) => {
-              if (current === null) return [frame.group];
-              const exists = current.some(({ key }) => key === frame.group.key);
+              if (current === null) return [frame.value];
+              const exists = current.some(({ key }) => key === frame.value.key);
               return exists
-                ? current.map((group) => (group.key === frame.group.key ? frame.group : group))
-                : [...current, frame.group].sort((left, right) => left.key.localeCompare(right.key));
+                ? current.map((group) => (group.key === frame.value.key ? frame.value : group))
+                : [...current, frame.value].sort((left, right) => left.key.localeCompare(right.key));
             });
             break;
-          case "reconnect_required":
+          case "reconnectRequired":
             break;
         }
       },

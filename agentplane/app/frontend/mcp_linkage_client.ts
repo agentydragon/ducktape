@@ -10,15 +10,10 @@ import {
   StartMcpServerLinkageResponseSchema,
   WatchMcpServersResponseSchema,
   type McpServerLinkage,
+  type WatchMcpServersResponse,
 } from "../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTION_FACADE = "/upstream/actions";
-
-export type McpLinkageWatchFrame =
-  | { kind: "snapshot"; linkages: McpServerLinkage[] }
-  | { kind: "snapshot_complete" }
-  | { kind: "upsert"; linkage: McpServerLinkage }
-  | { kind: "reconnect_required" };
 
 function required<T>(value: T | undefined, field: string): T {
   if (value === undefined) throw new Error(`The Action Service omitted ${field}.`);
@@ -93,7 +88,7 @@ export async function disconnectMcpLinkage(
 
 export function followMcpLinkages(handlers: {
   onOpen: () => void;
-  onFrame: (frame: McpLinkageWatchFrame) => void;
+  onFrame: (frame: WatchMcpServersResponse) => void;
   onConnection: (connection: StreamConnection) => void;
 }): () => void {
   return followWatch(`${ACTION_FACADE}/v1/operator/mcp-servers:watch`, {
@@ -102,20 +97,15 @@ export function followMcpLinkages(handlers: {
       const response = fromJson(WatchMcpServersResponseSchema, result);
       switch (response.frame.case) {
         case "snapshot":
-          handlers.onFrame({ kind: "snapshot", linkages: response.frame.value.linkages.map(validateLinkage) });
-          break;
-        case "snapshotComplete":
-          handlers.onFrame({ kind: "snapshot_complete" });
+          response.frame.value.linkages.forEach(validateLinkage);
           break;
         case "upsert":
-          handlers.onFrame({ kind: "upsert", linkage: validateLinkage(response.frame.value) });
-          break;
-        case "reconnectRequired":
-          handlers.onFrame({ kind: "reconnect_required" });
+          validateLinkage(response.frame.value);
           break;
         case undefined:
           throw new Error("The Action Service returned an empty MCP linkage watch frame.");
       }
+      handlers.onFrame(response);
     },
   });
 }

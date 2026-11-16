@@ -55,13 +55,13 @@ export function Connections(): JSX.Element {
         readingSnapshot = true;
       },
       onFrame: (value) => {
-        const frame = readConnectionWatchFrame(value);
-        switch (frame.kind) {
+        const { frame } = readConnectionWatchFrame(value);
+        switch (frame.case) {
           case "snapshot":
             if (!readingSnapshot) throw new Error("ConnectionService sent a snapshot outside its initial replay");
-            snapshot.push(...frame.connections);
+            snapshot.push(...frame.value.connections);
             return;
-          case "snapshot_complete":
+          case "snapshotComplete":
             if (!readingSnapshot) throw new Error("ConnectionService completed a snapshot that was not open");
             readingSnapshot = false;
             setRows(snapshot);
@@ -69,14 +69,14 @@ export function Connections(): JSX.Element {
           case "upsert":
             if (readingSnapshot) throw new Error("ConnectionService sent an update before completing its snapshot");
             setRows((current) => {
-              if (current === null) return [frame.connection];
-              const found = current.some((row) => row.id === frame.connection.id);
+              if (current === null) return [frame.value];
+              const found = current.some((row) => row.id === frame.value.id);
               return found
-                ? current.map((row) => (row.id === frame.connection.id ? frame.connection : row))
-                : [...current, frame.connection];
+                ? current.map((row) => (row.id === frame.value.id ? frame.value : row))
+                : [...current, frame.value];
             });
             return;
-          case "reconnect_required":
+          case "reconnectRequired":
             // The frame is followed by EOF; followWatch reopens with a fresh snapshot.
             return;
         }

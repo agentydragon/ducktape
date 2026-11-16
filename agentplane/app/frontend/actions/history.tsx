@@ -381,8 +381,9 @@ function ActionHistoryRequests({
     }
     const stop = followActionRequests({
       onOpen: () => undefined,
-      onFrame: (frame) => {
-        if (frame.kind === "snapshot_complete" || frame.kind === "upsert") void refresh();
+      onFrame: (message) => {
+        const frame = message.frame;
+        if (frame.case === "snapshotComplete" || frame.case === "upsert") void refresh();
       },
       onConnection: setConnection,
     });
