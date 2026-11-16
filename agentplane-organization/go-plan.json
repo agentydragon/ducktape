@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
-  "observed_at_utc": "2026-11-16T11:25:00Z",
+  "source_sha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
+  "observed_at_utc": "2026-11-16T21:20:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1356,
-    "directories": 250,
-    "production": 748,
-    "tests": 608
+    "files": 1363,
+    "directories": 253,
+    "production": 751,
+    "tests": 612
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -34,7 +34,7 @@
     "status": "AGREED DIRECTION",
     "status_note": "Operator proposal, 2026-11-14 05:11 UTC; adopted as the agreed reorg direction at 05:29 UTC (card \"Adopt the two-binary shape as the agreed reorg direction?\": \"Adopt it\"). Automatic wake decided at 05:19 UTC (card \"Choose which binary performs automatic wakes after the split\": \"Sessions binary wakes\"). Directories decided at 05:49 UTC (card \"Choose directory names for the Sessions and Environments binaries\": \"session_dispatcher + environments\"); deployed names stay until their own migration. Identity fence decided at 07:20 UTC: Sessions re-check the live Identity; no call between the binaries. Explicit resume decided at 07:41 UTC: no wake budget.",
     "proposal_quote": "So, what's the plan on how we will structure binaries? One binary that handles sandbox controller kubernetes stuff and also communicates with the env runtimes in those sandboxes for running commands and starting native sessions in hosted harnesses and codex exec server stuff? And a separate binary handles the routing of commands to *sessions*, which would go either to central sampler or to hosted harnesses through the first binary?",
-    "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway's code is gone: the Runtime proxy and Executor serve from the Environments binary (#16656, #16723; the Gateway's registration retired in #16760, #16768, #16775 and #16782), and the rest is the Sessions binary at `session_dispatcher/` (#16785), still deployed as `runner-gateway` until the unscheduled `RUNNER_GATEWAY_RENAME`. Since the connection Lease's removal (#16365) the proxy and Executor keep no Lease or epoch, and the Dispatcher always called the proxy over the network, so moving it out added no hop. Before this direction the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
+    "summary": "Two binaries replace `runner-gateway` and `sandbox-controller`. The Environments binary owns Sandboxes and everything that calls an Environment Runtime; the Sessions binary owns Session admission, the durable command queue and routing, and reaches Runtimes only through the Environments binary. The Runner Gateway's code is gone: the Runtime proxy and Executor serve from the Environments binary (#16656, #16723; the Gateway's registration retired in #16760, #16768, #16775 and #16782), and the rest is the Sessions binary at `session_dispatcher/` (#16785), still deployed as `runner-gateway` until `RUNNER_GATEWAY_RENAME`, whose migration plan merged in #17051 (execution not released). Since the connection Lease's removal (#16365) the proxy and Executor keep no Lease or epoch, and the Dispatcher always called the proxy over the network, so moving it out added no hop. Before this direction the plan, and the merge contract drafted in #16311 (closed as superseded), kept the Gateway as Dispatcher plus proxy.",
     "today": [
       {
         "name": "runner-gateway",
@@ -1683,8 +1683,8 @@
       "id": "central_sampler",
       "path": "agentplane/central_sampler",
       "counts": {
-        "files": 158,
-        "directories": 24
+        "files": 165,
+        "directories": 27
       },
       "directories": [
         {
@@ -1738,11 +1738,29 @@
           ]
         },
         {
+          "path": "agentplane/central_sampler/internal/environmentcontext",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/environmentcontext/context.go",
+            "agentplane/central_sampler/internal/environmentcontext/context_test.go"
+          ]
+        },
+        {
           "path": "agentplane/central_sampler/internal/eventcodec",
           "production": 1,
           "tests": 0,
           "files": [
             "agentplane/central_sampler/internal/eventcodec/event_storage.go"
+          ]
+        },
+        {
+          "path": "agentplane/central_sampler/internal/executionstate",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/executionstate/status.go",
+            "agentplane/central_sampler/internal/executionstate/status_test.go"
           ]
         },
         {
@@ -1813,6 +1831,16 @@
           ]
         },
         {
+          "path": "agentplane/central_sampler/internal/providerrequest",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/central_sampler/internal/providerrequest/content.go",
+            "agentplane/central_sampler/internal/providerrequest/preparation.go",
+            "agentplane/central_sampler/internal/providerrequest/preparation_test.go"
+          ]
+        },
+        {
           "path": "agentplane/central_sampler/internal/residentruntime",
           "production": 14,
           "tests": 13,
@@ -1861,7 +1889,7 @@
         {
           "path": "agentplane/central_sampler/internal/sessionstore",
           "production": 27,
-          "tests": 10,
+          "tests": 11,
           "files": [
             "agentplane/central_sampler/internal/sessionstore/admission.go",
             "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
@@ -1870,7 +1898,6 @@
             "agentplane/central_sampler/internal/sessionstore/content_store.go",
             "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
             "agentplane/central_sampler/internal/sessionstore/conversations.go",
-            "agentplane/central_sampler/internal/sessionstore/environment_context.go",
             "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
             "agentplane/central_sampler/internal/sessionstore/evidence.go",
             "agentplane/central_sampler/internal/sessionstore/execution.go",
@@ -1898,6 +1925,8 @@
             "agentplane/central_sampler/internal/sessionstore/request_plan_test.go",
             "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
             "agentplane/central_sampler/internal/sessionstore/sessions.go",
+            "agentplane/central_sampler/internal/sessionstore/status.go",
+            "agentplane/central_sampler/internal/sessionstore/status_test.go",
             "agentplane/central_sampler/internal/sessionstore/store.go",
             "agentplane/central_sampler/internal/sessionstore/types.go"
           ]
@@ -1955,7 +1984,7 @@
         },
         {
           "path": "agentplane/central_sampler/protocol",
-          "production": 10,
+          "production": 9,
           "tests": 1,
           "files": [
             "agentplane/central_sampler/protocol/content.go",
@@ -1965,7 +1994,6 @@
             "agentplane/central_sampler/protocol/evidence.go",
             "agentplane/central_sampler/protocol/instructions.go",
             "agentplane/central_sampler/protocol/provider_hooks.go",
-            "agentplane/central_sampler/protocol/status.go",
             "agentplane/central_sampler/protocol/tool_definitions.go",
             "agentplane/central_sampler/protocol/tool_invocation.go",
             "agentplane/central_sampler/protocol/tool_surface.go"
@@ -2014,8 +2042,6 @@
       ],
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
         "sampler-content-persistence",
         "sampler-executor-boundary",
         "sampler-resident-session",
@@ -2043,13 +2069,16 @@
           "agentplane/central_sampler/internal/actions",
           "agentplane/central_sampler/internal/codemode",
           "agentplane/central_sampler/internal/content",
+          "agentplane/central_sampler/internal/environmentcontext",
           "agentplane/central_sampler/internal/eventcodec",
+          "agentplane/central_sampler/internal/executionstate",
           "agentplane/central_sampler/internal/executor",
           "agentplane/central_sampler/internal/jsonwire",
           "agentplane/central_sampler/internal/outputbuffer",
           "agentplane/central_sampler/internal/ownershiprewrite",
           "agentplane/central_sampler/internal/promptimage",
           "agentplane/central_sampler/internal/providerio",
+          "agentplane/central_sampler/internal/providerrequest",
           "agentplane/central_sampler/internal/residentruntime",
           "agentplane/central_sampler/internal/rpc",
           "agentplane/central_sampler/internal/sessionstore",
@@ -2153,6 +2182,23 @@
           }
         },
         {
+          "path": "agentplane/central_sampler/internal/environmentcontext",
+          "role": "Renders the model-visible environment context and its updates.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from `sessionstore/environment_context.go` by #17050 (sampler-request-preparation); Store keeps the persisted baseline and clock.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/environmentcontext/context.go"
+          ],
+          "declared_packages": ["environmentcontext"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/central_sampler/internal/eventcodec",
           "role": "Sampler evidence to canonical History events",
           "decision": "retain",
@@ -2170,6 +2216,23 @@
           }
         },
         {
+          "path": "agentplane/central_sampler/internal/executionstate",
+          "role": "Process and cell lifecycle vocabulary (`ProcessStatus`, `CellStatus`) and its validated parsing.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted from the provider protocol by #17050 (sampler-execution-state); Store-private SQL adapters keep scan/value validation, and stored spellings stay distinct.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/executionstate/status.go"
+          ],
+          "declared_packages": ["executionstate"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/central_sampler/internal/executor",
           "role": "Model tool binding to an incarnation-fenced remote Executor",
           "decision": "design",
@@ -2184,10 +2247,7 @@
             "agentplane/central_sampler/internal/executor/executor.go"
           ],
           "declared_packages": ["executor"],
-          "pending_tracks": [
-            "sampler-execution-state",
-            "sampler-executor-boundary"
-          ],
+          "pending_tracks": ["sampler-executor-boundary"],
           "counts": {
             "non_test": 8,
             "tests": 5
@@ -2280,6 +2340,24 @@
           }
         },
         {
+          "path": "agentplane/central_sampler/internal/providerrequest",
+          "role": "Native provider request assembly: frozen authored prefixes, provider profiles and compaction recipes.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted by #17050 (sampler-request-preparation). Store calls `Prepare` only inside its transaction; the builder has no commit or dispatch API, and no mutable Conversation, SQL transaction or Store callback crosses it.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/providerrequest/content.go",
+            "agentplane/central_sampler/internal/providerrequest/preparation.go"
+          ],
+          "declared_packages": ["providerrequest"],
+          "pending_tracks": ["sampler-content-persistence"],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/central_sampler/internal/residentruntime",
           "role": "Replica scheduler and leased per-session execution",
           "decision": "design",
@@ -2323,23 +2401,18 @@
           "target_paths": [
             "agentplane/central_sampler/internal/sessionstore",
             "agentplane/central_sampler/internal/providerrequest",
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-            "agentplane/central_sampler/internal/environmentcontext"
+            "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
           ],
-          "reason": "Retain locks, ownership generations, admission and commit authority. Request rendering and content persistence are named extraction candidates, not permission to spread Store receiver methods across packages.",
+          "reason": "Retain locks, ownership generations, admission and commit authority. #17050 moved request assembly to `providerrequest` and environment rendering to `environmentcontext`; content persistence is the remaining named extraction candidate, not permission to spread Store receiver methods across packages.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/sessionstore/admission.go"
           ],
           "declared_packages": ["sessionstore"],
-          "pending_tracks": [
-            "sampler-execution-state",
-            "sampler-request-preparation",
-            "sampler-content-persistence"
-          ],
+          "pending_tracks": ["sampler-content-persistence"],
           "counts": {
             "non_test": 27,
-            "tests": 10
+            "tests": 11
           }
         },
         {
@@ -2430,18 +2503,15 @@
         {
           "path": "agentplane/central_sampler/protocol",
           "role": "Provider-neutral context, tool and evidence contracts",
-          "decision": "rework",
-          "target_paths": [
-            "agentplane/central_sampler/protocol",
-            "agentplane/central_sampler/internal/executionstate"
-          ],
-          "reason": "The current package also implements HTTP timers and SQL status conversion; its JSON helpers left for `internal/jsonwire` in #16415. Narrow it to contracts and give concrete behavior explicit owners.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Provider-neutral contracts only: #17050 moved the process and cell status vocabulary to `internal/executionstate`, and its JSON helpers left for `internal/jsonwire` in #16415.",
           "gate": "",
           "evidence_paths": ["agentplane/central_sampler/protocol/content.go"],
           "declared_packages": ["protocol"],
-          "pending_tracks": ["sampler-execution-state"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 10,
+            "non_test": 9,
             "tests": 1
           }
         },
@@ -9489,106 +9559,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "sampler-execution-state",
-      "title": "Give process/cell state and SQL conversion explicit owners",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/protocol/status.go",
-        "agentplane/central_sampler/internal/sessionstore/types.go",
-        "agentplane/central_sampler/internal/executor/processes.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/sessionstore"
-      ],
-      "source_owner": "agentplane/central_sampler/protocol",
-      "status": "DESIGN REQUIRED",
-      "summary": "Move shared process/cell lifecycle vocabulary out of the provider contract. Keep SQL decoding at durable-state boundaries.",
-      "how": [
-        "Inventory status consumers in executor, runtime and durable state.",
-        "Create a typed executionstate leaf for validated lifecycle values; retain SQL scan/value conversion at the Store boundary without duplicate status vocabularies.",
-        "Update persisted-row and exited-with-unread-output coverage together with call sites."
-      ],
-      "gate": "Choose the status decode API before removing methods from the current types. Preserve the distinction between exited, exited_unread and unknown.",
-      "preserve": "Stored status spelling, unread output, semantic type distinctions and no automatic mutation replay.",
-      "validation": [
-        "//agentplane/central_sampler/protocol:protocol_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test",
-        "//agentplane/central_sampler/internal/executor:executor_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/protocol/status.go",
-        "agentplane/central_sampler/internal/sessionstore/types.go",
-        "agentplane/central_sampler/internal/executor/processes.go",
-        "agentplane/central_sampler/protocol/BUILD.bazel",
-        "agentplane/central_sampler/internal/sessionstore/BUILD.bazel",
-        "agentplane/central_sampler/internal/executor/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 6,
-      "group": "sampler-leaves",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "sampler-request-preparation",
-      "title": "Extract native request assembly from transaction authority",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/internal/sessionstore/provider_request.go",
-        "agentplane/central_sampler/internal/sessionstore/request_plan.go",
-        "agentplane/central_sampler/internal/sessionstore/content_request.go",
-        "agentplane/central_sampler/internal/sessionstore/environment_context.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/environmentcontext",
-        "agentplane/central_sampler/internal/sessionstore"
-      ],
-      "source_owner": "agentplane/central_sampler/internal/sessionstore",
-      "status": "DESIGN REQUIRED",
-      "summary": "A request builder owns model-visible rendering and native request recipes. Store retains the locked snapshot, generation checks, content writes and commit.",
-      "how": [
-        "Specify immutable preparation inputs and the narrow content reader/writer contract from the locked conversation.",
-        "Extract environment rendering and provider-native recipe construction without moving network calls into the transaction.",
-        "Invoke the builder inside the current transaction, persist the exact prepared wire request, then permit runtime dispatch after commit."
-      ],
-      "gate": "Resolve which projection/cache fields and content references are read under the lock. A broad Store callback or mutable Conversation escape is not the target API.",
-      "preserve": "Exactly-once request preparation, stored wire evidence, owner/context fences, provider continuation and commit-before-dispatch.",
-      "validation": [
-        "//agentplane/central_sampler/protocol:protocol_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/internal/sessionstore/provider_request.go",
-        "agentplane/central_sampler/internal/sessionstore/request_plan.go",
-        "agentplane/central_sampler/internal/sessionstore/content_request.go",
-        "agentplane/central_sampler/internal/sessionstore/environment_context.go",
-        "agentplane/central_sampler/internal/sessionstore/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 7,
-      "group": "sampler-state",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "sampler-content-persistence",
       "title": "Isolate transaction-scoped content persistence",
       "components": ["central_sampler"],
@@ -9609,7 +9579,7 @@
         "Give contentdb the caller-owned transaction and verified content values; Store owns begin/commit/rollback.",
         "Move representative content, projection and rollback coverage with the implementation."
       ],
-      "gate": "The current contentStore calls both provider codecs and uses conversation fields. Split responsibilities first; do not move the whole file unchanged. The sampler keeps its own copy of the conversation, which the open Journal service design (history-journals) may change; check that design before moving content storage.",
+      "gate": "The current contentStore calls both provider codecs and uses conversation fields. Split responsibilities first; do not move the whole file unchanged. The sampler keeps its own copy of the conversation, which the open Journal service design (history-journals) may change; check that design before moving content storage. On 2026-11-16 the extraction worker left it for that design. #17050 kept content reads and writes in Store behind `providerrequest.Content`.",
       "preserve": "Canonical content hashes, deterministic write ordering, bounded batched reads, verified references and rollback.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9624,7 +9594,7 @@
         "agentplane/central_sampler/internal/sessionstore/request_plan.go",
         "agentplane/central_sampler/internal/sessionstore/BUILD.bazel"
       ],
-      "dependencies": ["sampler-request-preparation"],
+      "dependencies": [],
       "priority": 8,
       "group": "sampler-state",
       "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
@@ -9759,7 +9729,7 @@
         "After the map, define API/state owners; do not split methods by receiver file.",
         "Candidate transitions owner needs a small state snapshot/update API; candidate execution lifecycle owner needs explicit generation/fence and worker join interfaces. Keep COSI, session manager, and journal ownership in their existing private packages unless the map proves a different seam."
       ],
-      "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close. Candidate directories are provisional; do not create them until the state/worker/API map proves callers can use narrow interfaces without duplicating locks or worker ownership.",
+      "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close. Candidate directories are provisional; do not create them until the state/worker/API map proves callers can use narrow interfaces without duplicating locks or worker ownership. On 2026-11-16 the extraction worker found no candidate boundary that owns the coordinator's locks and worker joins, so it stays whole for now.",
       "preserve": "Journal admission/no replay; Generation/incarnation fences; retain old owner until fence proved; Final History ACK at exact sealed cursor before Delivered; Cancel/drain/join before resources close",
       "validation": [
         "//agentplane/env/runtime/internal/coordinator:coordinator_test",
@@ -9816,7 +9786,7 @@
         "Define the per-session owner inputs and terminal result; scheduler owns its registry and shutdown ordering.",
         "Extract a bounded driver path with existing recovery, interrupt, unknown-effect and drain tests."
       ],
-      "gate": "Do not distribute Runtime receiver methods across packages or pass the whole Runtime aggregate into a child package.",
+      "gate": "Do not distribute Runtime receiver methods across packages or pass the whole Runtime aggregate into a child package. On 2026-11-16 the extraction worker found no clean boundary yet.",
       "preserve": "Single resident owner, lease loss fencing, durable provider progress, host-loss recovery and ordered drain.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9867,7 +9837,7 @@
         "Specify child lifetime and a typed terminal notification to logical Sessions.",
         "Extract transport or logical-session state only when the split removes mutual access; retain a single package if the probe shows the current encapsulation is tighter."
       ],
-      "gate": "A candidate hierarchy is conditional on a smaller dependency surface; a file-count reduction alone is not acceptance.",
+      "gate": "A candidate hierarchy is conditional on a smaller dependency surface; a file-count reduction alone is not acceptance. On 2026-11-16 the extraction worker found no clean boundary yet.",
       "preserve": "Shared host identity, logical-session routing, pending response outcomes and journal-before-effect.",
       "validation": [
         "//agentplane/central_sampler/internal/codemode:codemode_test",
@@ -9959,7 +9929,7 @@
         "Define runtimecredentials inputs/results around object UID, incarnation and expected revision; it cannot independently publish reconciler status.",
         "Define VM create/update/stop/cleanup outcomes with one owner for fencing and child deletion. Extract one bounded path and its failure/rollback tests per PR."
       ],
-      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613 and the Runtime proxy and Executor in #16656.",
+      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613 and the Runtime proxy and Executor in #16656. On 2026-11-16 the extraction worker found that the credential logic also writes VM state, so a cut needs a single VM-state writer first.",
       "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state.",
       "validation": [
         "//agentplane/environments/internal/controller:controller_test",
@@ -10631,8 +10601,6 @@
       "work": [
         "mcp-edge-command-action-client",
         "action-service-grpcgate",
-        "sampler-execution-state",
-        "sampler-request-preparation",
         "sampler-content-persistence",
         "sampler-executor-boundary",
         "env-supervision-backends",
@@ -10642,7 +10610,7 @@
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. The rest are not released."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the execution-state and request-preparation extractions. The workers found no clean cut yet for five tracks; their gates say why."
     },
     {
       "stage": 5,
@@ -10669,12 +10637,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 250,
-    "go_files": 1356,
+    "go_packages": 253,
+    "go_files": 1363,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
+    "review_source_sha": "5c1f192594176e05f9f90b87616e32f43db5d22a",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10691,8 +10659,8 @@
       {
         "slice": "central_sampler",
         "components": ["central_sampler"],
-        "packages": 24,
-        "go_files": 158
+        "packages": 27,
+        "go_files": 165
       },
       {
         "slice": "cli",
