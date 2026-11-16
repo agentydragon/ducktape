@@ -13,7 +13,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from starlette import status
 
-from ai_session_archive import queries, version_queries
+from ai_session_archive import progress_queries, queries, version_queries
 from ai_session_archive.database import make_session_factory
 from ai_session_archive.models import (
     EventDirection,
@@ -66,11 +66,11 @@ def create_app(*, engine: Engine, settings: WebSettings, frontend_dir: Path | No
 
     @api.get("/machines")
     def machines(db: ArchiveSession) -> Machines:
-        return Machines(data=queries.list_machines(db))
+        return Machines(data=progress_queries.list_machines(db))
 
     @api.get("/import-progress")
     def import_progress(db: ArchiveSession) -> ImportProgress:
-        return ImportProgress(data=queries.list_import_progress(db))
+        return ImportProgress(data=progress_queries.list_import_progress(db))
 
     @api.get("/sessions")
     def sessions(

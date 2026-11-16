@@ -11,7 +11,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import ORMExecuteState, sessionmaker
 
 from ai_session_archive.database import MachineRow, ResticSnapshotRow, SnapshotFileRow
-from ai_session_archive.queries import list_import_progress
+from ai_session_archive.progress_queries import list_import_progress
 
 pytest_plugins = ["util.testing.postgres_fixtures", "ai_session_archive.testing"]
 
