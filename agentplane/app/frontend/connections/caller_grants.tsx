@@ -1,7 +1,7 @@
 import { Alert, Group, Stack, Text, Title } from "@mantine/core";
 import type { JSX } from "react";
 
-import { BINDING_GRANT_HELP, BindingsTable } from "../bindings/table";
+import { BINDING_GRANT_HELP, BindingsTable } from "../policy/table";
 import { usePolicyResources } from "../policy/watch";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { Identity } from "../../../proto/identity_pb";

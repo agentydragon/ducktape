@@ -15,10 +15,12 @@ filegroup(
     visibility = ["//agentplane/app/frontend:__pkg__"],
 )
 
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
 ts_library(
     name = "watch",
     srcs = ["watch.ts"],
-    tsconfig = "//agentplane/app/frontend:tsconfig",
+    tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@types/react",
@@ -44,3 +46,48 @@ agentplane_vitest_test(
         "//agentplane/proto:identity_pb",
     ],
 )
+
+ts_library(
+    name = "state",
+    srcs = ["state.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "state_test",
+    srcs = ["state.test.ts"],
+    deps = [
+        ":state",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/vitest",
+        "//agentplane/policy/v1:policy_service_pb",
+    ],
+)
+
+ts_library(
+    name = "table",
+    srcs = ["table.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":state",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend:mark_glyph",
+        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/bindings:credential_watch",
+        "//agentplane/egress/api/rules:egress_rules_pb",
+        "//agentplane/policy/api/v1alpha1:policy_types_pb",
+        "//agentplane/policy/v1:policy_service_pb",
+        "//util/frontend:code_block",
+    ],
+)
+
+check_vitest_specs()

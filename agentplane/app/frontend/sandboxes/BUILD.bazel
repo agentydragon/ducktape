@@ -228,7 +228,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:app_config_client",
         "//agentplane/app/frontend:client",
-        "//agentplane/app/frontend/bindings:table",
+        "//agentplane/app/frontend/policy:table",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/policy/v1:policy_service_pb",
