@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -16,11 +17,11 @@ type OperatorService struct {
 	// updates wakes a watch of the MCP servers on each commit to a linkage: it listens on linkage.UpdatesChannel.
 	updates *wakeups.Hub
 	// gate admitted each call; a watch asks it again before every frame.
-	gate     *Gate
+	gate     *grpcgate.Gate
 	linkages *linkage.Authority
 }
 
-func NewOperatorService(requests *store.Store, updates *wakeups.Hub, gate *Gate, linkages *linkage.Authority) *OperatorService {
+func NewOperatorService(requests *store.Store, updates *wakeups.Hub, gate *grpcgate.Gate, linkages *linkage.Authority) *OperatorService {
 	return &OperatorService{store: requests, updates: updates, gate: gate, linkages: linkages}
 }
 
@@ -36,7 +37,7 @@ func (s *OperatorService) DecideActionRequest(ctx context.Context, request *oper
 		return nil, invalidRequest("verdict %v is not a verdict", request.GetVerdict())
 	}
 	// The Gate admits only operators to this service.
-	operator := admitted(ctx).principal.(store.OperatorPrincipal)
+	operator := grpcgate.Admitted(ctx).Principal.(store.OperatorPrincipal)
 	decided, _, err := s.store.Decide(ctx, id, store.DecisionInput{
 		Verdict: verdict, ExpectedVersion: request.GetExpectedVersion(), IdempotencyKey: request.GetIdempotencyKey(),
 		DecisionNote: request.DecisionNote,

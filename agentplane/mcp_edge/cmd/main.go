@@ -23,6 +23,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/operator"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/admission"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/authserver"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
@@ -146,7 +147,7 @@ func serve(ctx context.Context, c config, kubeConfig *rest.Config, rpcTLSListene
 		return fmt.Errorf("configure Action client metadata: %w", err)
 	}
 	defer metadataConnection.Close()
-	routes.Handle("GET "+actionClientMetadataPath, actionClientMetadata(linkage_servicepb.NewLinkageServiceClient(metadataConnection)))
+	routes.Handle("GET "+actionclient.ClientMetadataPath, actionclient.MetadataHandler(linkage_servicepb.NewLinkageServiceClient(metadataConnection)))
 	if c.OAuth != nil {
 		connection, err := mountOAuth(ctx, routes, c, db, connectionStore, identities)
 		if err != nil {
@@ -195,17 +196,21 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 	if err != nil {
 		return nil, fmt.Errorf("starting external MCP authorization: %w", err)
 	}
-	caller := &coreCaller{
-		authority: func(ctx context.Context, bearer string) (*connections.ResolvedGrant, error) {
+	client, err := actionclient.New(actionclient.Config{
+		ResolveGrant: func(ctx context.Context, bearer string) (*connections.ResolvedGrant, error) {
 			info, err := authority.VerifyConnectionBearer(ctx, bearer)
 			if err != nil {
 				return nil, err
 			}
 			return &info.Grant, nil
 		},
-		recheckPeriod: 5 * time.Second, logger: slog.Default(),
+		RecheckPeriod: 5 * time.Second,
+		Logger:        slog.Default(),
+	})
+	if err != nil {
+		return nil, err
 	}
-	connection, err := dialActions(c.ActionsTarget, c.ActionsTokenFile, 30*time.Second, c.ActionsTLS, caller)
+	connection, err := client.Dial(c.ActionsTarget, c.ActionsTokenFile, 30*time.Second, c.ActionsTLS)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +220,7 @@ func mountOAuth(ctx context.Context, routes *http.ServeMux, c config, db *sql.DB
 	})
 	routes.Handle("/mcp", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		bearer, _ := auth.BearerToken(r.Header.Values("Authorization"))
-		mcp.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), edgeBearerKey{}, bearer)))
+		mcp.ServeHTTP(w, r.WithContext(actionclient.WithBearer(r.Context(), bearer)))
 	}))
 	routes.Handle("/", authority.Handler())
 	return connection, nil

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policyview"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
@@ -18,7 +19,7 @@ import (
 func (s *Service) GetActionPolicy(ctx context.Context, request *action_servicepb.GetActionPolicyRequest) (*action_servicepb.GetActionPolicyResponse, error) {
 	var own reader.Subject
 	viewer := policyview.Workload
-	switch principal := admitted(ctx).principal.(type) {
+	switch principal := grpcgate.Admitted(ctx).Principal.(type) {
 	case store.Owner:
 		own = policySubject(principal)
 	case store.OperatorPrincipal:
@@ -67,7 +68,7 @@ func (s *Service) WatchActionPolicy(request *action_servicepb.GetActionPolicyReq
 				return err
 			}
 		case <-s.gate.DrainingContext().Done():
-			return errDraining
+			return grpcgate.ErrDraining
 		case <-ctx.Done():
 			return ctx.Err()
 		}

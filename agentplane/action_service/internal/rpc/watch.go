@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	"github.com/google/uuid"
@@ -47,7 +48,7 @@ func satisfies(until action_servicepb.WatchUntil) (func(action_servicepb.ActionS
 // follower is a watch's subscription to the changes of what it shows: the commits of requests or linkages, or the
 // catalog's next change.
 type follower struct {
-	gate    *Gate
+	gate    *grpcgate.Gate
 	updates <-chan struct{}
 	// due fires when what the watch shows changes with the clock alone; nil when nothing does.
 	due <-chan time.Time
@@ -65,7 +66,7 @@ func (s *Service) follow() (follower, func(), error) {
 // changed blocks until a change may have changed what the watch shows: a wakeup, or due. The wakeup that follows a
 // reconnection of the LISTEN connection is one, so a commit made while it was down is read late but not missed.
 // Between changes it checks the bearer again every recheckInterval. It fails once the bearer is no longer accepted,
-// the service drains (errDraining), or the call ends.
+// the service drains (grpcgate.ErrDraining), or the call ends.
 func (f follower) changed(ctx context.Context) error {
 	recheck := time.NewTicker(recheckInterval)
 	defer recheck.Stop()
@@ -76,7 +77,7 @@ func (f follower) changed(ctx context.Context) error {
 		case <-f.due:
 			return nil
 		case <-f.gate.DrainingContext().Done():
-			return errDraining
+			return grpcgate.ErrDraining
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-recheck.C:
@@ -88,7 +89,7 @@ func (f follower) changed(ctx context.Context) error {
 }
 
 // send checks the bearer again, then sends the frame.
-func send[Frame any](ctx, writeCtx context.Context, gate *Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
+func send[Frame any](ctx, writeCtx context.Context, gate *grpcgate.Gate, stream grpc.ServerStreamingServer[Frame], frame *Frame) error {
 	if err := gate.Recheck(ctx); err != nil {
 		return err
 	}
@@ -99,7 +100,7 @@ func send[Frame any](ctx, writeCtx context.Context, gate *Gate, stream grpc.Serv
 	case errors.Is(err, context.Canceled) && ctx.Err() != nil:
 		return status.FromContextError(ctx.Err()).Err()
 	case errors.Is(err, context.Canceled) && gate.DrainingContext().Err() != nil:
-		return errDraining
+		return grpcgate.ErrDraining
 	case errors.Is(err, context.Canceled):
 		return status.FromContextError(context.Canceled).Err()
 	case errors.Is(err, context.DeadlineExceeded):
@@ -109,7 +110,7 @@ func send[Frame any](ctx, writeCtx context.Context, gate *Gate, stream grpc.Serv
 	}
 }
 
-func watchWriteContext(ctx context.Context, gate *Gate) (context.Context, func()) {
+func watchWriteContext(ctx context.Context, gate *grpcgate.Gate) (context.Context, func()) {
 	writeCtx, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(gate.DrainingContext(), cancel)
 	return writeCtx, func() {
@@ -138,7 +139,7 @@ func (s *Service) WatchActionRequest(request *action_servicepb.WatchActionReques
 	// Versions start at 1, so the first read is always sent.
 	var sent int64
 	for {
-		found, err := s.store.Get(ctx, id, admitted(ctx).principal)
+		found, err := s.store.Get(ctx, id, grpcgate.Admitted(ctx).Principal)
 		if err != nil {
 			return err
 		}
@@ -174,13 +175,13 @@ func (s *Service) WatchActionRequests(request *action_servicepb.WatchActionReque
 	defer unsubscribe()
 	writeCtx, stopWrites := watchWriteContext(ctx, s.gate)
 	defer stopWrites()
-	w := setWatch{service: s, ctx: ctx, writeCtx: writeCtx, stream: stream, principal: admitted(ctx).principal, states: states}
+	w := setWatch{service: s, ctx: ctx, writeCtx: writeCtx, stream: stream, principal: grpcgate.Admitted(ctx).Principal, states: states}
 	if err := w.snapshot(); err != nil {
 		return err
 	}
 	for {
 		if err := f.changed(ctx); err != nil {
-			if errors.Is(err, errDraining) {
+			if errors.Is(err, grpcgate.ErrDraining) {
 				// A planned renewal: the client connects again, to a replica that is not going away.
 				return w.sendReconnect(&action_servicepb.WatchActionRequestsResponse{
 					Frame: &action_servicepb.WatchActionRequestsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},

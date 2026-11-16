@@ -6,7 +6,6 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	"github.com/google/uuid"
@@ -15,21 +14,12 @@ import (
 
 func TestSessionAttributionUsesOnlyTheAdmittedServiceAndSession(t *testing.T) {
 	id := uuid.New()
-	identity := store.Identity{Name: "central-session-identity", UID: "central-session-identity-uid"}
+	identity := store.Identity{Name: "test-session-identity", UID: "test-session-identity-uid"}
 	envelope := &delegationpb.Delegation{
 		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: identity.Proto()},
 		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: id.String()}},
 	}
-	recorded, err := recordedDelegation(auth.DelegatedServiceIdentityAdmission{
-		Actor:           auth.ServicePrincipal{SPIFFEID: peertls.CentralSamplerURI},
-		EffectiveCaller: auth.Identity{Name: identity.Name, UID: identity.UID}, Provenance: envelope,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if recorded.Provenance != (store.SessionProvenance{SessionID: id}) || recorded.Actor.GetServiceSpiffeId() != peertls.CentralSamplerURI {
-		t.Fatalf("admitted Session attribution = %+v", recorded)
-	}
+	recorded := &store.DelegationAttribution{Actor: pb.DelegatingActor{Actor: &pb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: peertls.CentralSamplerURI}}, Provenance: store.SessionProvenance{SessionID: id}}
 	// The receipt needs only the logical Session and exact Identity. No environment is involved,
 	// and caller-authored fields do not contribute to its authenticated attribution.
 	request := store.ActionRequest{

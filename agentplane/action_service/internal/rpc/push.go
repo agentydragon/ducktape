@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/push"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -38,16 +39,16 @@ type PushService struct {
 	// updates wakes a watch on each commit to a subscription.
 	updates *wakeups.Hub
 	// gate admitted each call; a watch asks it again before every frame.
-	gate *Gate
+	gate *grpcgate.Gate
 }
 
-func NewPushService(subscriptions *push.Subscriptions, identity *push.Identity, updates *wakeups.Hub, gate *Gate) *PushService {
+func NewPushService(subscriptions *push.Subscriptions, identity *push.Identity, updates *wakeups.Hub, gate *grpcgate.Gate) *PushService {
 	return &PushService{subscriptions: subscriptions, identity: identity, updates: updates, gate: gate}
 }
 
 // pushOperator is the operator the call acts as: the Gate admits only operators to this service.
 func pushOperator(ctx context.Context) store.OperatorPrincipal {
-	return admitted(ctx).principal.(store.OperatorPrincipal)
+	return grpcgate.Admitted(ctx).Principal.(store.OperatorPrincipal)
 }
 
 func subscriptionView(subscription push.Subscription) *web_push_servicepb.PushSubscription {
@@ -163,7 +164,7 @@ func (s *PushService) WatchPushSubscriptions(_ *web_push_servicepb.WatchPushSubs
 	}
 	for {
 		if err := f.changed(ctx); err != nil {
-			if errors.Is(err, errDraining) {
+			if errors.Is(err, grpcgate.ErrDraining) {
 				// A planned renewal, as for WatchActionRequests.
 				return send(ctx, ctx, s.gate, stream, &web_push_servicepb.WatchPushSubscriptionsResponse{
 					Frame: &web_push_servicepb.WatchPushSubscriptionsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},

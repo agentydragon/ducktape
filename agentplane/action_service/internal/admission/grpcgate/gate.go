@@ -1,4 +1,4 @@
-package rpc
+package grpcgate
 
 import (
 	"context"
@@ -30,14 +30,18 @@ type Callers interface {
 	AdmitsIdentity(identity auth.Identity) bool
 }
 
-// errDraining is a call that reaches a service that no longer accepts work.
-var errDraining = errors.New("Action Service is draining")
+// ErrDraining is a call that reaches a service that no longer accepts work.
+var ErrDraining = errors.New("Action Service is draining")
 
-// unauthenticated does not disclose whether the presented Identity exists or is admitted.
-var unauthenticated = status.Error(codes.Unauthenticated, "invalid credentials")
+// ErrUnauthenticated does not disclose whether the presented Identity exists or is admitted.
+var ErrUnauthenticated = status.Error(codes.Unauthenticated, "invalid credentials")
 
-// GateOptions are whom a Gate admits.
-type GateOptions struct {
+// ErrorMapper translates handler failures using the RPC service's domain contract.
+type ErrorMapper func(context.Context, error) error
+
+// Options configures admission and the RPC-owned error mapper.
+type Options struct {
+	ErrorMapper      ErrorMapper
 	ServiceReaders   []string
 	OperatorServices []string
 	// SVID resolves verified workload certificates on the shared TLS listener; operator tokens still use OIDC.
@@ -56,6 +60,7 @@ type GateOptions struct {
 // Gate admits only methods its service policy lists. It refuses every call while the service drains, resolves the
 // credentials to the principal the call acts as, and answers a failed call with the status code that names its failure.
 type Gate struct {
+	failure              ErrorMapper
 	serviceReaders       sets.Set[string]
 	operatorServices     sets.Set[string]
 	svid                 *auth.SVIDResolver
@@ -63,22 +68,26 @@ type Gate struct {
 	operators            *operatoroidc.Verifier
 	connectionDelegation auth.Methods
 	sessionDelegation    auth.Methods
-	methods              map[string]func(context.Context) (admission, error)
+	methods              map[string]func(context.Context) (Admission, error)
 	// draining ends when the service stops accepting work; open watches end with it.
 	draining context.Context
 	drain    context.CancelFunc
 }
 
-func NewGate(options GateOptions) *Gate {
+func New(options Options) *Gate {
+	if options.ErrorMapper == nil {
+		panic("grpcgate: ErrorMapper is required")
+	}
 	draining, drain := context.WithCancel(context.Background())
 	g := &Gate{
+		failure:        options.ErrorMapper,
 		serviceReaders: sets.New(options.ServiceReaders...), operatorServices: sets.New(options.OperatorServices...),
 		svid: options.SVID, callers: options.Callers, operators: options.Operators,
 		connectionDelegation: options.ConnectionDelegation,
 		sessionDelegation:    options.SessionDelegation,
 		draining:             draining, drain: drain,
 	}
-	g.methods = map[string]func(context.Context) (admission, error){
+	g.methods = map[string]func(context.Context) (Admission, error){
 		action_servicepb.ActionService_SubmitActionRequest_FullMethodName:                    g.authenticateAction(action_servicepb.ActionService_SubmitActionRequest_FullMethodName),
 		action_servicepb.ActionService_ListActionRequests_FullMethodName:                     g.authenticateAction(action_servicepb.ActionService_ListActionRequests_FullMethodName),
 		action_servicepb.ActionService_ListActionRequestHistory_FullMethodName:               g.authenticateAction(action_servicepb.ActionService_ListActionRequestHistory_FullMethodName),
@@ -114,10 +123,10 @@ func NewGate(options GateOptions) *Gate {
 // Drain refuses every call from now on and ends the open watches.
 func (g *Gate) Drain() { g.drain() }
 
-// admission is the principal the verified credentials proved.
-type admission struct {
-	principal   store.ReadPrincipal
-	attribution *store.DelegationAttribution
+// Admission is the principal the verified credentials proved.
+type Admission struct {
+	Principal   store.ReadPrincipal
+	Attribution *store.DelegationAttribution
 	delegation  delegationProfile
 	authContext context.Context
 }
@@ -134,75 +143,75 @@ const (
 
 type admissionKey struct{}
 
-// admitted is the principal the Gate admitted the call as.
-func admitted(ctx context.Context) admission { return ctx.Value(admissionKey{}).(admission) }
+// Admitted is the principal the Gate admitted the call as.
+func Admitted(ctx context.Context) Admission { return ctx.Value(admissionKey{}).(Admission) }
 
 // bearer is the call's one Bearer token.
 func bearer(ctx context.Context) (string, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	token, err := auth.BearerToken(md.Get("authorization"))
 	if err != nil {
-		return "", unauthenticated
+		return "", ErrUnauthenticated
 	}
 	return token, nil
 }
 
 // authenticate verifies a workload or service SVID, or a separately configured operator ID token.
-func (g *Gate) authenticate(ctx context.Context) (admission, error) {
+func (g *Gate) authenticate(ctx context.Context) (Admission, error) {
 	if hasSVIDPeer(ctx) {
 		id, err := peertls.PeerIdentity(ctx)
 		if err != nil {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		if peertls.IsServiceURI(id) {
 			md, _ := metadata.FromIncomingContext(ctx)
 			if len(md.Get(auth.DelegationMetadataKey)) > 0 {
-				return admission{}, unauthenticated
+				return Admission{}, ErrUnauthenticated
 			}
 			if len(md.Get("authorization")) > 0 {
 				return g.authenticateOperator(ctx)
 			}
 			if !g.serviceReaders.Has(id) {
-				return admission{}, unauthenticated
+				return Admission{}, ErrUnauthenticated
 			}
-			return admission{principal: store.ServiceSVIDReaderPrincipal{SPIFFEID: id}}, nil
+			return Admission{Principal: store.ServiceSVIDReaderPrincipal{SPIFFEID: id}}, nil
 		}
 		md, _ := metadata.FromIncomingContext(ctx)
 		if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 || g.svid == nil {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		subject, err := g.svid.ResolveSubject(ctx)
 		if err != nil {
-			return admission{}, err
+			return Admission{}, err
 		}
 		identity, ok := subject.(auth.IdentityPrincipal)
 		if !ok {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		return g.workloadIdentity(identity.Identity)
 	}
 	token, err := bearer(ctx)
 	if err != nil {
-		return admission{}, err
+		return Admission{}, err
 	}
 	if g.operators != nil && g.operators.MatchesUnverifiedIssuer(token) {
 		return g.operator(ctx, token)
 	}
-	return admission{}, unauthenticated
+	return Admission{}, ErrUnauthenticated
 }
 
 // workloadIdentity admits an Identity incarnation a live PolicyBinding names, as itself. No Identity is a service
 // reader: the reader allowlist names exact service SPIFFE IDs.
-func (g *Gate) workloadIdentity(identity auth.Identity) (admission, error) {
+func (g *Gate) workloadIdentity(identity auth.Identity) (Admission, error) {
 	if !g.callers.AdmitsIdentity(identity) {
-		return admission{}, unauthenticated
+		return Admission{}, ErrUnauthenticated
 	}
-	return admission{principal: store.IdentityPrincipal{Identity: store.Identity{Name: identity.Name, UID: identity.UID}}}, nil
+	return Admission{Principal: store.IdentityPrincipal{Identity: store.Identity{Name: identity.Name, UID: identity.UID}}}, nil
 }
 
 // Operator is the issuer and subject of the operator the Gate admitted a call of an operator-only service as.
 func (g *Gate) Operator(ctx context.Context) (issuer, subject string) {
-	operator := admitted(ctx).principal.(store.OperatorPrincipal)
+	operator := Admitted(ctx).Principal.(store.OperatorPrincipal)
 	return operator.Issuer, operator.Subject
 }
 
@@ -212,14 +221,14 @@ func (g *Gate) DrainingContext() context.Context { return g.draining }
 // Recheck verifies the call's credentials again before every watch frame: it fails once they are no
 // longer accepted as the principal the call was admitted as.
 func (g *Gate) Recheck(ctx context.Context) error {
-	profile := admitted(ctx).delegation
+	profile := Admitted(ctx).delegation
 	if profile != directDelegation {
 		if err := auth.RevalidateStream(ctx); err != nil {
 			return err
 		}
 		verified, err := auth.Admitted(ctx)
 		if err != nil {
-			return unauthenticated
+			return ErrUnauthenticated
 		}
 		var identityCaller auth.Identity
 		switch profile {
@@ -228,15 +237,15 @@ func (g *Gate) Recheck(ctx context.Context) error {
 		case connectionDelegation:
 			identityCaller, err = g.connectionIdentity(verified)
 		default:
-			return unauthenticated
+			return ErrUnauthenticated
 		}
 		if err != nil {
 			return err
 		}
 
 		identity := store.IdentityPrincipal{Identity: store.Identity{Name: identityCaller.Name, UID: identityCaller.UID}}
-		if identity != admitted(ctx).principal {
-			return unauthenticated
+		if identity != Admitted(ctx).Principal {
+			return ErrUnauthenticated
 		}
 		return nil
 	}
@@ -244,8 +253,8 @@ func (g *Gate) Recheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if current.principal != admitted(ctx).principal {
-		return unauthenticated
+	if current.Principal != Admitted(ctx).Principal {
+		return ErrUnauthenticated
 	}
 	return nil
 }
@@ -253,8 +262,8 @@ func (g *Gate) Recheck(ctx context.Context) error {
 // authenticateAction accepts Connection delegation only from the existing Connection rules, and
 // Session delegation only from the Central Sampler's separate, narrower rules. Direct
 // workload/SVID authentication keeps the existing path.
-func (g *Gate) authenticateAction(method string) func(context.Context) (admission, error) {
-	return func(ctx context.Context) (admission, error) {
+func (g *Gate) authenticateAction(method string) func(context.Context) (Admission, error) {
+	return func(ctx context.Context) (Admission, error) {
 		md, _ := metadata.FromIncomingContext(ctx)
 		delegated := len(md.Get(auth.DelegationMetadataKey)) != 0
 		for _, value := range md.Get("authorization") {
@@ -263,10 +272,10 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		if !delegated {
 			result, err := g.authenticate(ctx)
 			if err != nil {
-				return admission{}, err
+				return Admission{}, err
 			}
-			if _, service := result.principal.(store.ServiceSVIDReaderPrincipal); service && !serviceReadMethod(method) {
-				return admission{}, status.Error(codes.PermissionDenied, "service is not admitted on this method")
+			if _, service := result.Principal.(store.ServiceSVIDReaderPrincipal); service && !serviceReadMethod(method) {
+				return Admission{}, status.Error(codes.PermissionDenied, "service is not admitted on this method")
 			}
 			return result, nil
 		}
@@ -275,7 +284,7 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		if hasSVIDPeer(ctx) {
 			id, err := peertls.PeerIdentity(ctx)
 			if err != nil {
-				return admission{}, unauthenticated
+				return Admission{}, ErrUnauthenticated
 			}
 			if id == peertls.CentralSamplerURI {
 				delegation = g.sessionDelegation
@@ -283,15 +292,15 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 			}
 		}
 		if _, configured := delegation[method]; !configured {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		admittedContext, err := delegation.AdmitContext(ctx, method, 5*time.Second)
 		if err != nil {
-			return admission{}, err
+			return Admission{}, err
 		}
 		verified, err := auth.Admitted(admittedContext)
 		if err != nil {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		var effective auth.Identity
 		switch profile {
@@ -300,20 +309,20 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 		case connectionDelegation:
 			effective, err = g.connectionIdentity(verified)
 		default:
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 		if err != nil {
-			return admission{}, err
+			return Admission{}, err
 		}
 
 		attribution, err := recordedDelegation(verified)
 		if err != nil {
-			return admission{}, err
+			return Admission{}, err
 		}
-		return admission{
-			attribution: attribution,
+		return Admission{
+			Attribution: attribution,
 			delegation:  profile,
-			principal: store.IdentityPrincipal{Identity: store.Identity{
+			Principal: store.IdentityPrincipal{Identity: store.Identity{
 				Name: effective.Name, UID: effective.UID,
 			}},
 			authContext: admittedContext,
@@ -323,23 +332,23 @@ func (g *Gate) authenticateAction(method string) func(context.Context) (admissio
 
 // authenticateOperator resolves the bearer of a call only an operator may make: a workload's token is not
 // reviewed.
-func (g *Gate) authenticateOperator(ctx context.Context) (admission, error) {
+func (g *Gate) authenticateOperator(ctx context.Context) (Admission, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if len(md.Get(auth.DelegationMetadataKey)) > 0 {
-		return admission{}, unauthenticated
+		return Admission{}, ErrUnauthenticated
 	}
 	if hasSVIDPeer(ctx) {
 		id, err := peertls.PeerIdentity(ctx)
 		if err != nil || !g.operatorServices.Has(id) {
-			return admission{}, unauthenticated
+			return Admission{}, ErrUnauthenticated
 		}
 	}
 	token, err := bearer(ctx)
 	if err != nil {
-		return admission{}, err
+		return Admission{}, err
 	}
 	if g.operators == nil || !g.operators.MatchesUnverifiedIssuer(token) {
-		return admission{}, unauthenticated
+		return Admission{}, ErrUnauthenticated
 	}
 	return g.operator(ctx, token)
 }
@@ -362,38 +371,38 @@ func (g *Gate) rejectMixedCredentials(ctx context.Context) error {
 	md, _ := metadata.FromIncomingContext(ctx)
 	id, err := peertls.PeerIdentity(ctx)
 	if err != nil {
-		return unauthenticated
+		return ErrUnauthenticated
 	}
 	if peertls.IsServiceURI(id) {
 		if len(md.Get("authorization")) > 0 && (len(md.Get(auth.DelegationMetadataKey)) > 0 || !g.operatorServices.Has(id)) {
-			return unauthenticated
+			return ErrUnauthenticated
 		}
 		return nil
 	}
 	if len(md.Get("authorization")) > 0 || len(md.Get(auth.DelegationMetadataKey)) > 0 {
-		return unauthenticated
+		return ErrUnauthenticated
 	}
 	return nil
 }
 
-func (g *Gate) operator(ctx context.Context, token string) (admission, error) {
+func (g *Gate) operator(ctx context.Context, token string) (Admission, error) {
 	verified, err := g.operators.Verify(ctx, token)
 	if err != nil {
-		return admission{}, unauthenticated
+		return Admission{}, ErrUnauthenticated
 	}
-	return admission{principal: store.OperatorPrincipal{Issuer: verified.Issuer, Subject: verified.Subject}}, nil
+	return Admission{Principal: store.OperatorPrincipal{Issuer: verified.Issuer, Subject: verified.Subject}}, nil
 }
 
 // authenticator resolves the method's authentication policy and reports whether the method is admitted at all.
-func (g *Gate) authenticator(method string) (func(context.Context) (admission, error), bool) {
+func (g *Gate) authenticator(method string) (func(context.Context) (Admission, error), bool) {
 	authenticate, ok := g.methods[method]
 	return authenticate, ok
 }
 
-// admit is the Gate's work before a gated call runs: the context it runs in, which carries its principal.
-func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (admission, error)) (context.Context, error) {
+// admit is the Gate's work before a gated call runs: the context it runs in, which carries its Principal.
+func (g *Gate) admit(ctx context.Context, authenticate func(context.Context) (Admission, error)) (context.Context, error) {
 	if g.draining.Err() != nil {
-		return nil, failure(ctx, errDraining)
+		return nil, g.failure(ctx, ErrDraining)
 	}
 	admitted, err := authenticate(ctx)
 	if err != nil {
@@ -423,7 +432,7 @@ func (g *Gate) UnaryInterceptor(ctx context.Context, request any, info *grpc.Una
 	}
 	response, err := handler(admittedContext, request)
 	if err != nil {
-		return nil, failure(admittedContext, err)
+		return nil, g.failure(admittedContext, err)
 	}
 	return response, nil
 }
@@ -444,7 +453,7 @@ func (g *Gate) StreamInterceptor(server any, stream grpc.ServerStream, info *grp
 	if err != nil {
 		return err
 	}
-	return failure(admittedContext, handler(server, admittedStream{ServerStream: stream, ctx: admittedContext}))
+	return g.failure(admittedContext, handler(server, admittedStream{ServerStream: stream, ctx: admittedContext}))
 }
 
 // admittedStream is a stream whose context carries the principal the Gate admitted it as.
@@ -462,14 +471,14 @@ func (g *Gate) connectionIdentity(proof auth.Admission) (auth.Identity, error) {
 	switch delegated := proof.(type) {
 	case auth.DelegatedServiceIdentityAdmission:
 		if delegated.Provenance.GetConnection() == nil {
-			return effective, unauthenticated
+			return effective, ErrUnauthenticated
 		}
 		effective = delegated.EffectiveCaller
 	default:
-		return effective, unauthenticated
+		return effective, ErrUnauthenticated
 	}
 	if !g.callers.AdmitsIdentity(effective) {
-		return auth.Identity{}, unauthenticated
+		return auth.Identity{}, ErrUnauthenticated
 	}
 	return effective, nil
 }
@@ -479,10 +488,10 @@ func (g *Gate) connectionIdentity(proof auth.Admission) (auth.Identity, error) {
 func (g *Gate) sessionIdentity(proof auth.Admission) (auth.Identity, error) {
 	delegated, ok := proof.(auth.DelegatedServiceIdentityAdmission)
 	if !ok || delegated.Actor.SPIFFEID != peertls.CentralSamplerURI || delegated.Provenance.GetSession() == nil {
-		return auth.Identity{}, unauthenticated
+		return auth.Identity{}, ErrUnauthenticated
 	}
 	if !g.callers.AdmitsIdentity(delegated.EffectiveCaller) {
-		return auth.Identity{}, unauthenticated
+		return auth.Identity{}, ErrUnauthenticated
 	}
 	return delegated.EffectiveCaller, nil
 }

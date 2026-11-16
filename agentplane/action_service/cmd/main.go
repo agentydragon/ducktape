@@ -26,6 +26,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/web_push/web_push_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
@@ -324,9 +325,9 @@ func webPush(c config, d deps, db *sql.DB, requests *store.Store) (*push.Identit
 }
 
 // gate admits workload Identities and exact service SVIDs, with separately verified operator OIDC.
-func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
+func gate(c config, d deps, callers grpcgate.Callers) (*grpcgate.Gate, error) {
 	var err error
-	options := rpc.GateOptions{Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
+	options := grpcgate.Options{ErrorMapper: rpc.Failure, Callers: callers, ServiceReaders: c.ServiceReaders, OperatorServices: c.OperatorServices}
 	if c.ConnectionDelegationService != "" || c.SessionDelegationService != "" {
 		scheme := runtime.NewScheme()
 		if err := policyapi.AddToScheme(scheme); err != nil {
@@ -365,7 +366,7 @@ func gate(c config, d deps, callers rpc.Callers) (*rpc.Gate, error) {
 			return nil, err
 		}
 	}
-	return rpc.NewGate(options), nil
+	return grpcgate.New(options), nil
 }
 
 // actionConnectionDelegation grants the MCP edge only the Action calls needed to serve a Connection. The actor's

@@ -1,4 +1,4 @@
-package main
+package actionclient_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	pb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient"
 	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/connections"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
@@ -92,8 +93,8 @@ func TestConnectionDelegationUsesProjectedActorTokenAndTypedProvenance(t *testin
 	}
 	var mu sync.Mutex
 	revoked := false
-	caller := &coreCaller{
-		authority: func(_ context.Context, bearer string) (*connections.ResolvedGrant, error) {
+	client, err := actionclient.New(actionclient.Config{
+		ResolveGrant: func(_ context.Context, bearer string) (*connections.ResolvedGrant, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			if bearer != "external-connection-token" || revoked {
@@ -102,15 +103,18 @@ func TestConnectionDelegationUsesProjectedActorTokenAndTypedProvenance(t *testin
 			grant := testGrant
 			return &grant, nil
 		},
-		recheckPeriod: 10 * time.Millisecond,
+		RecheckPeriod: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	clientConn, err := dialActions(target, tokenPath, time.Second, nil, caller)
+	clientConn, err := client.Dial(target, tokenPath, time.Second, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = clientConn.Close() })
 
-	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "external-connection-token")
+	ctx := actionclient.WithBearer(t.Context(), "external-connection-token")
 	watch, err := pb.NewActionServiceClient(clientConn).WatchActionRequest(ctx, &pb.WatchActionRequestRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -152,15 +156,18 @@ func TestConnectionDelegationRefusesInvalidBearerWithoutActorFallback(t *testing
 	if err := os.WriteFile(tokenPath, []byte(projectedToken), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	caller := &coreCaller{authority: func(context.Context, string) (*connections.ResolvedGrant, error) {
+	client, err := actionclient.New(actionclient.Config{ResolveGrant: func(context.Context, string) (*connections.ResolvedGrant, error) {
 		return nil, errors.Join(mcpauth.ErrInvalidToken, errors.New("revoked grant"))
-	}}
-	clientConn, err := dialActions(target, tokenPath, time.Second, nil, caller)
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientConn, err := client.Dial(target, tokenPath, time.Second, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = clientConn.Close() })
-	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "revoked-token")
+	ctx := actionclient.WithBearer(t.Context(), "revoked-token")
 	_, err = pb.NewActionServiceClient(clientConn).WatchActionRequest(ctx, &pb.WatchActionRequestRequest{})
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("invalid Connection bearer: %v", err)
@@ -185,22 +192,23 @@ func TestConnectionDelegationUsesMCPServiceSVIDWithoutBearerFallback(t *testing.
 		CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
 		CertFile: clientCertificate.CertFile, KeyFile: clientCertificate.KeyFile, ClientURI: peertls.MCPEdgeURI,
 	}
-	caller := &coreCaller{
-		authority: func(_ context.Context, bearer string) (*connections.ResolvedGrant, error) {
-			if bearer != "external-connection-token" {
-				return nil, mcpauth.ErrInvalidToken
-			}
-			grant := testGrant
-			return &grant, nil
-		},
+	client, err := actionclient.New(actionclient.Config{ResolveGrant: func(_ context.Context, bearer string) (*connections.ResolvedGrant, error) {
+		if bearer != "external-connection-token" {
+			return nil, mcpauth.ErrInvalidToken
+		}
+		grant := testGrant
+		return &grant, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	clientConn, err := dialActions(target, "", time.Second, transport, caller)
+	clientConn, err := client.Dial(target, "", time.Second, transport)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = clientConn.Close() })
 
-	ctx := context.WithValue(t.Context(), edgeBearerKey{}, "external-connection-token")
+	ctx := actionclient.WithBearer(t.Context(), "external-connection-token")
 	watch, err := pb.NewActionServiceClient(clientConn).WatchActionRequest(ctx, &pb.WatchActionRequestRequest{})
 	if err != nil {
 		t.Fatal(err)

@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
@@ -120,7 +121,7 @@ func setCallerLabel(ctx context.Context, account auth.Account, labeled bool) err
 type served struct {
 	store  *store.Store
 	db     *sql.DB
-	gate   *Gate
+	gate   *grpcgate.Gate
 	issuer *testissuer.Issuer
 	// policy is the namespace whose PolicySets and PolicyBindings the policy index reads, this API's alone.
 	policy string
@@ -287,6 +288,19 @@ func serveWithPolicy(
 	servers ...linkage.Server,
 ) *served {
 	t.Helper()
+	return serveWithPolicyOptions(t, groups, namespace, index, nil, servers...)
+}
+
+func serveWithGateOptions(t *testing.T, configure func(*grpcgate.Options, policyNamespace)) *served {
+	t.Helper()
+	namespace := newPolicyNamespace(t)
+	return serveWithPolicyOptions(t, newCatalog(t, submissionCatalog), namespace, namespace.watch(t), configure)
+}
+
+func serveWithPolicyOptions(t *testing.T, groups *catalog.Catalog, namespace policyNamespace, index *informer.Index,
+	configure func(*grpcgate.Options, policyNamespace), servers ...linkage.Server,
+) *served {
+	t.Helper()
 	dsn := integrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
 	// The LISTEN connection is named so a test can drop it.
@@ -321,10 +335,15 @@ func serveWithPolicy(
 		t.Fatal(err)
 	}
 	serverCredentials, svid := s.configureCertificates(t)
-	s.gate = NewGate(GateOptions{
-		SVID: svid, Callers: index, ServiceReaders: []string{peertls.NotificationsURI, peertls.AppURI},
+	options := grpcgate.Options{
+		ErrorMapper: Failure,
+		SVID:        svid, Callers: index, ServiceReaders: []string{peertls.NotificationsURI, peertls.AppURI},
 		Operators: operators,
-	})
+	}
+	if configure != nil {
+		configure(&options, namespace)
+	}
+	s.gate = grpcgate.New(options)
 	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials), grpc.ChainUnaryInterceptor(s.gate.UnaryInterceptor), grpc.ChainStreamInterceptor(s.gate.StreamInterceptor))
 	action_servicepb.RegisterActionServiceServer(grpcServer, NewService(s.store, updates, groups, s.gate, index, s.submissions(t)))
 	operator_action_servicepb.RegisterOperatorActionServiceServer(grpcServer, NewOperatorService(s.store, updates, s.gate, s.linkages))

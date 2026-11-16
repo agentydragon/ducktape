@@ -6,6 +6,7 @@ go_library(
     srcs = ["issuer.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/identity/operator/testissuer",
     visibility = [
+        "//agentplane/action_service/internal/admission/grpcgate:__pkg__",
         "//agentplane/action_service/internal/rpc:__pkg__",
         "//agentplane/identity/operator:__pkg__",
     ],

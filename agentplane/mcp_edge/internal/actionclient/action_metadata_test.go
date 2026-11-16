@@ -1,4 +1,4 @@
-package main
+package actionclient_test
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/mcp_edge/internal/actionclient"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -37,7 +38,7 @@ func TestActionClientMetadata(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
-			actionClientMetadata(test.client).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, actionClientMetadataPath, nil))
+			actionclient.MetadataHandler(test.client).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, actionclient.ClientMetadataPath, nil))
 			if recorder.Code != test.want {
 				t.Fatalf("status = %d; want %d", recorder.Code, test.want)
 			}

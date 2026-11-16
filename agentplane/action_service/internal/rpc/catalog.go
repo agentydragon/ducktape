@@ -9,6 +9,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/grpcgate"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -24,7 +25,7 @@ var errCatalogAction = errors.New("catalog Action cannot be shown")
 
 // showsHealthDetail is whether the call's principal reads McpHealth.detail.
 func showsHealthDetail(ctx context.Context) bool {
-	_, operator := admitted(ctx).principal.(store.OperatorPrincipal)
+	_, operator := grpcgate.Admitted(ctx).Principal.(store.OperatorPrincipal)
 	return operator
 }
 
@@ -158,7 +159,7 @@ func (s *Service) WatchActionGroups(_ *action_servicepb.WatchActionGroupsRequest
 			}
 		}
 		if err := (follower{gate: s.gate, updates: changed}).changed(ctx); err != nil {
-			if errors.Is(err, errDraining) {
+			if errors.Is(err, grpcgate.ErrDraining) {
 				// A planned renewal, as for WatchActionRequests.
 				return send(ctx, ctx, s.gate, stream, &action_servicepb.WatchActionGroupsResponse{
 					Frame: &action_servicepb.WatchActionGroupsResponse_ReconnectRequired{ReconnectRequired: &emptypb.Empty{}},
