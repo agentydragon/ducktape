@@ -18,7 +18,6 @@ from python.runfiles import Runfiles
 from agentplane.central_sampler.settings import Settings as CentralSamplerSettings
 from agentplane.egress.settings import Settings as EgressSettings
 from agentplane.env.runtime.harness import Harness
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.llm_ingress.settings import Settings as LlmIngressSettings
 from agentplane.mcp_edge.oauth_settings import OAuthSettings
 from agentplane.net.peertls.config import (
@@ -217,7 +216,10 @@ def test_direct_fixture_uses_gateway_and_embedded_migrations(runfiles: Runfiles)
     assert app_container["startupProbe"]["httpGet"]["path"] == "/healthz"
     actions_container = _resource(docs, "Deployment", "actions")["spec"]["template"]["spec"]["containers"][0]
     actions_settings = yaml.safe_load(_resource(docs, "ConfigMap", "actions-settings")["data"]["settings.yaml"])
-    assert actions_settings["connection_delegation_actor"] == {"namespace": NAMESPACE, "name": "mcp-edge"}
+    assert "connection_delegation_actor" not in actions_settings
+    assert "reader_accounts" not in actions_settings
+    assert actions_settings["connection_delegation_service"] == MCP_EDGE_URI
+    assert [auth["mode"] for auth in actions_settings["rpc"]["auth"]] == ["spiffe"]
     for workload in ("actions", "notifications", "history-service", "runner-gateway", "llm-ingress"):
         pod = _resource(docs, "Deployment", workload)["spec"]["template"]["spec"]
         container = pod["containers"][0]
@@ -814,11 +816,12 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_config["policy_namespace"] == NAMESPACE
     assert llm_config["central_sampler_identity_callers"] is True
     assert llm_config["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
-    assert llm_config["token_audience"] == WORKLOAD_TOKEN_AUDIENCE
+    assert "token_audience" not in llm_config
+    assert [auth["mode"] for auth in llm_config["rpc"]["auth"]] == ["spiffe"]
     assert AnyHttpUrl(llm_config["litellm_url"]) == AnyHttpUrl(_TEST_LOCAL_MODEL.url)
     assert llm_config["log_levels"] == {}
     assert "litellm_key" not in llm_config
-    assert llm_config["central_sampler_accounts"] == [f"{NAMESPACE}/{central_sampler.NAME}"]
+    assert "central_sampler_accounts" not in llm_config
     gateway_config = yaml.safe_load(_resource(docs, "ConfigMap", "runner-gateway-settings")["data"]["settings.yaml"])
     sampler_target = gateway_config["central_sampler"]
     assert sampler_target["target"] == central_sampler.target(NAMESPACE)

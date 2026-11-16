@@ -208,7 +208,8 @@ def test_cross_owner_reader_is_explicit_in_static_settings(staging_manifests: li
         doc for doc in staging_manifests if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "actions-settings"
     )
     settings = yaml.safe_load(config["data"]["settings.yaml"])
-    assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
+    assert "reader_accounts" not in settings
+    assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["session_delegation_service"] == CENTRAL_SAMPLER_URI
     action_policy = one(
         doc
@@ -247,9 +248,9 @@ def test_action_service_allows_only_configured_service_callers(staging_manifests
     assert settings["service_readers"] == [NOTIFICATIONS_URI]
     assert settings["operator_services"] == [APP_URI]
     assert settings["connection_delegation_service"] == MCP_EDGE_URI
-    assert settings["connection_delegation_actor"] == {"namespace": staging.ENV.namespace, "name": "mcp-edge"}
-    assert settings["reader_accounts"] == [{"namespace": staging.ENV.namespace, "name": "notifications"}]
-    assert {auth["mode"] for auth in settings["rpc"]["auth"]} == {"kubernetes_bearer", "spiffe"}
+    assert "connection_delegation_actor" not in settings
+    assert "reader_accounts" not in settings
+    assert {auth["mode"] for auth in settings["rpc"]["auth"]} == {"spiffe"}
     spiffe = one(auth for auth in settings["rpc"]["auth"] if auth["mode"] == "spiffe")
     assert spiffe["ca_file"] == workload_tls.TRUST_BUNDLE_FILE
 

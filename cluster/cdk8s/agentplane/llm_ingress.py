@@ -22,8 +22,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from pydantic import AnyHttpUrl
 
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
-from agentplane.identity.auth.listener import TLS, KubernetesBearerAuth, Listener, SPIFFEAuth
+from agentplane.identity.auth.listener import TLS, Listener, SPIFFEAuth
 from agentplane.llm_ingress.settings import Settings
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI
 from cluster.cdk8s import cilium, node_scheduling
@@ -192,14 +191,8 @@ class LlmIngress(Construct):
         static_settings = Settings(
             allowed_service_account_namespaces=frozenset({env.namespace}),
             policy_namespace=env.namespace,
-            central_sampler_accounts=(
-                frozenset({f"{env.namespace}/{central_sampler.NAME}"})
-                if env.central_sampler is not None
-                else frozenset()
-            ),
             central_sampler_services=([CENTRAL_SAMPLER_URI] if env.central_sampler is not None else []),
             central_sampler_identity_callers=env.central_sampler is not None,
-            token_audience=WORKLOAD_TOKEN_AUDIENCE,
             log_llm_requests=env.llm_ingress.log_llm_requests,
             models=list(env.llm_ingress.models),
             attribution=env.llm_ingress.attribution,
@@ -209,17 +202,16 @@ class LlmIngress(Construct):
             rpc=Listener(
                 listen_address=f"0.0.0.0:{self.service.pod_port}",
                 tls=TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[
-                    SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-                    KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-                ],
+                auth=[SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
             ),
         )
         settings = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(static_settings),
+            content=yaml_config(
+                static_settings.model_dump(mode="json", exclude={"central_sampler_accounts", "token_audience"})
+            ),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)

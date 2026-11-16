@@ -1402,10 +1402,7 @@ data:
     policy_namespace: agentplane-staging
     central_sampler_services:
       - spiffe://agentplane/central-sampler
-    central_sampler_accounts:
-      - agentplane-staging/central-sampler
     central_sampler_identity_callers: true
-    token_audience: agentplane-egress
     log_llm_requests: false
     models: []
     attribution:
@@ -1448,9 +1445,6 @@ data:
       auth:
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-egress
 immutable: false
 ---
 apiVersion: cilium.io/v2
@@ -7329,9 +7323,6 @@ data:
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
       auth:
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-egress
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     service_readers:
@@ -7340,12 +7331,6 @@ data:
       - spiffe://agentplane/app
     connection_delegation_service: spiffe://agentplane/mcp-edge
     session_delegation_service: spiffe://agentplane/central-sampler
-    reader_accounts:
-      - namespace: agentplane-staging
-        name: notifications
-    connection_delegation_actor:
-      namespace: agentplane-staging
-      name: mcp-edge
     policy_namespace: agentplane-staging
     caller_service_account_namespaces:
       - agentplane-staging
@@ -9163,8 +9148,6 @@ data:
         client_uri: spiffe://agentplane/notifications
       target: history-service.agentplane-staging.svc.cluster.local:8080
       request_timeout_s: 20
-    token_audience: agentplane-notifications
-    operator_reader_account: app
     operator_reader_services:
       - spiffe://agentplane/app
     quotas:
@@ -9186,9 +9169,6 @@ data:
         cert_file: /run/agentplane/workload-tls/tls.crt
         key_file: /run/agentplane/workload-tls/tls.key
       auth:
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-notifications
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
     http_port: 8081

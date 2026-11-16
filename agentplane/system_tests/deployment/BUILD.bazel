@@ -156,7 +156,6 @@ py_test(
         "//agentplane/central_sampler:settings",
         "//agentplane/egress:settings",
         "//agentplane/env/runtime:harness",
-        "//agentplane/identity/auth:audience",
         "//agentplane/llm_ingress:settings",
         "//agentplane/mcp_edge:oauth_settings",
         "//agentplane/net/peertls:config",

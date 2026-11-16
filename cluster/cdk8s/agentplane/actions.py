@@ -35,7 +35,6 @@ from agentplane.action_service.session_delegation.binding import SessionDelegati
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.crd_group import GROUP
 from agentplane.identity.auth import listener
-from agentplane.identity.auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -375,10 +374,7 @@ class Actions(Construct):
         rpc = listener.Listener(
             listen_address=f"0.0.0.0:{self.service.pod_port}",
             tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[
-                listener.KubernetesBearerAuth(audiences=frozenset({WORKLOAD_TOKEN_AUDIENCE})),
-                listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file)),
-            ],
+            auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
         )
         settings = SettingsFile(
             self,
@@ -392,9 +388,7 @@ class Actions(Construct):
                     connection_delegation_service=MCP_EDGE_URI,
                     policy_namespace=env.namespace,
                     caller_service_account_namespaces=props.caller_service_account_namespaces,
-                    connection_delegation_actor=props.connection_delegation_actor,
                     session_delegation_service=CENTRAL_SAMPLER_URI if props.central_sampler_session_delegation else "",
-                    reader_accounts=frozenset({ServiceAccountRef(namespace=env.namespace, name=notifications.NAME)}),
                     operator_oidc=props.operator_oidc,
                     direct_wait_seconds=30,
                     web_push=web_push,
@@ -418,7 +412,7 @@ class Actions(Construct):
                     history_service=history_peer,
                     session_delegation_dispatcher=delegated_dispatcher_peer,
                     session_delegation_history=delegated_history_peer,
-                )
+                ).model_dump(mode="json", exclude={"reader_accounts", "connection_delegation_actor"})
             ),
             path="/etc/agentplane-actions/settings.yaml",
         )
