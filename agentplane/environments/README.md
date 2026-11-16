@@ -177,5 +177,8 @@ The shared lifecycle manager remains outside that internal boundary until the ex
 split; automatic wake execution and budget ownership stay with Dispatcher.
 
 Runtime process, Session and lifecycle evidence is available through the App-only
-`EnvironmentService.GetRuntimeDiagnostics` RPC; see the [diagnostic contract](SPEC.md#live-runtime-diagnostics).
-The App reads this RPC over its existing EnvironmentService connection, independently of the proxy reader grants.
+`EnvironmentService.GetRuntimeDiagnostics` RPC and the App's authenticated generated facade at
+`GET /upstream/environments/v1/environments/{namespace}/{name}:runtime-diagnostics?target.uid={uid}`.
+The App reads this RPC over its existing EnvironmentService connection and App service SVID; the
+Controller adds no HTTP listener. The route ships with the App's generated gateway; the backend RPC
+already exists. See the [diagnostic contract](SPEC.md#live-runtime-diagnostics).

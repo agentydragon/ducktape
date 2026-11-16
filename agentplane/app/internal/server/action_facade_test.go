@@ -13,6 +13,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	operatoractionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
@@ -29,16 +30,25 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type generatedEnvironmentService struct {
 	environmentpb.UnimplementedEnvironmentServiceServer
-	authorization  []string
-	created        *environmentpb.CreateEnvironmentRequest
-	deleted        *identitypb.EnvironmentTarget
-	recordTarget   *identitypb.EnvironmentTarget
-	identityChange *environmentpb.SetEnvironmentIdentityRequest
+	authorization       []string
+	created             *environmentpb.CreateEnvironmentRequest
+	deleted             *identitypb.EnvironmentTarget
+	recordTarget        *identitypb.EnvironmentTarget
+	identityChange      *environmentpb.SetEnvironmentIdentityRequest
+	diagnosticsTarget   *identitypb.EnvironmentTarget
+	diagnosticsResponse *environmentpb.GetRuntimeDiagnosticsResponse
+	diagnosticsError    error
+	diagnosticsPeer     string
+	diagnosticsAuth     []string
+	diagnosticsCookie   []string
 }
 
 func (s *generatedEnvironmentService) CreateEnvironment(ctx context.Context, request *environmentpb.CreateEnvironmentRequest) (*identitypb.EnvironmentTarget, error) {
@@ -60,6 +70,25 @@ func (s *generatedEnvironmentService) GetEnvironmentIdentityRecord(ctx context.C
 	s.authorization = append(s.authorization, md.Get("authorization")...)
 	s.recordTarget = request.GetTarget()
 	return &environmentpb.EnvironmentIdentityRecord{Identity: &identitypb.Identity{Name: "test-agent", Uid: "identity-uid"}}, nil
+}
+
+func (s *generatedEnvironmentService) GetRuntimeDiagnostics(ctx context.Context, request *environmentpb.GetRuntimeDiagnosticsRequest) (*environmentpb.GetRuntimeDiagnosticsResponse, error) {
+	peer, err := peertls.PeerIdentity(ctx)
+	if err != nil || peer != peertls.AppURI {
+		return nil, status.Error(codes.Unauthenticated, "App SVID is required")
+	}
+	s.diagnosticsPeer = peer
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.diagnosticsAuth = append(s.diagnosticsAuth, md.Get("authorization")...)
+	s.diagnosticsCookie = append(s.diagnosticsCookie, md.Get("cookie")...)
+	if len(md.Get("authorization")) != 0 || len(md.Get("cookie")) != 0 {
+		return nil, status.Error(codes.Unauthenticated, "browser credentials must not be forwarded")
+	}
+	s.diagnosticsTarget = request.GetTarget()
+	if s.diagnosticsError != nil {
+		return nil, s.diagnosticsError
+	}
+	return s.diagnosticsResponse, nil
 }
 
 func (s *generatedEnvironmentService) SetEnvironmentIdentity(ctx context.Context, request *environmentpb.SetEnvironmentIdentityRequest) (*emptypb.Empty, error) {
@@ -120,6 +149,104 @@ func TestGeneratedEnvironmentFacadeRoutesManagementWithAppServiceToken(t *testin
 	}
 	if len(service.authorization) != 4 || service.authorization[0] != "Bearer app-pod-token" || service.authorization[1] != "Bearer app-pod-token" || service.authorization[2] != "Bearer app-pod-token" || service.authorization[3] != "Bearer app-pod-token" {
 		t.Fatalf("generated facade authorization = %v", service.authorization)
+	}
+}
+
+func TestGeneratedEnvironmentFacadeReturnsRuntimeDiagnosticsEnvelopeAndErrors(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	observedAt := time.Date(2026, time.November, 16, 12, 34, 56, 0, time.UTC)
+	target := &identitypb.EnvironmentTarget{Namespace: "team-a", Name: "sandbox-1", Uid: "sandbox-uid"}
+	service := &generatedEnvironmentService{diagnosticsResponse: &environmentpb.GetRuntimeDiagnosticsResponse{
+		Target: target, IncarnationUid: "pod-uid", ObservedAt: timestamppb.New(observedAt),
+		Status: &sessionpb.EnvironmentRuntimeStatus{
+			EnvironmentRuntimeBootId: "boot-id",
+			Sessions:                 []*sessionpb.SessionStatus{{SessionId: "session-1", Busy: true}},
+		},
+	}}
+	ca := peertlstesting.NewCA(t)
+	controllerSVID := ca.Issue(t, peertls.SandboxControllerURI)
+	serverCredentials, err := controllerSVID.ServerCredentials(peertls.AppURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	grpcServer := grpc.NewServer(grpc.Creds(serverCredentials))
+	environmentpb.RegisterEnvironmentServiceServer(grpcServer, service)
+	serveDone := make(chan struct{})
+	go func() {
+		defer close(serveDone)
+		_ = grpcServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		grpcServer.Stop()
+		_ = listener.Close()
+		<-serveDone
+	})
+	appSVID := ca.Issue(t, peertls.AppURI)
+	handler, err := facade.NewHandlerWithOptions(
+		t.Context(), listener.Addr().String(), 10*time.Second,
+		facade.HandlerOptions{TLS: &peertls.ClientTLS{
+			CAFile: ca.RootFile, ServerURI: peertls.SandboxControllerURI,
+			CertFile: appSVID.CertFile, KeyFile: appSVID.KeyFile, ClientURI: peertls.AppURI,
+		}},
+		environmentpb.RegisterEnvironmentServiceHandlerFromEndpoint,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upstream := upstreamproxy.NewHandlerUpstream(handler, "")
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/upstream/environments/v1/environments/team-a/sandbox-1:runtime-diagnostics?target.uid=sandbox-uid",
+		nil,
+	)
+	request.Header.Set("Authorization", "Bearer browser-token")
+	request.Header.Set("Cookie", "session=browser-cookie")
+	response := httptest.NewRecorder()
+	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/environments/team-a/sandbox-1:runtime-diagnostics", ""); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("diagnostics facade = %d: %s", response.Code, response.Body.String())
+	}
+	got := &environmentpb.GetRuntimeDiagnosticsResponse{}
+	if err := protojson.Unmarshal(response.Body.Bytes(), got); err != nil {
+		t.Fatalf("decode diagnostics facade response %q: %v", response.Body.String(), err)
+	}
+	if !proto.Equal(got, service.diagnosticsResponse) {
+		t.Fatalf("diagnostics facade response = %v, want full envelope %v", got, service.diagnosticsResponse)
+	}
+	if service.diagnosticsTarget == nil || service.diagnosticsTarget.GetNamespace() != target.GetNamespace() ||
+		service.diagnosticsTarget.GetName() != target.GetName() || service.diagnosticsTarget.GetUid() != target.GetUid() {
+		t.Fatalf("diagnostics target = %v", service.diagnosticsTarget)
+	}
+	if service.diagnosticsPeer != peertls.AppURI || len(service.diagnosticsAuth) != 0 || len(service.diagnosticsCookie) != 0 {
+		t.Fatalf("diagnostics peer=%q authorization=%v cookies=%v", service.diagnosticsPeer, service.diagnosticsAuth, service.diagnosticsCookie)
+	}
+
+	service.diagnosticsError = status.Error(codes.NotFound, "environment not found")
+	request = httptest.NewRequest(
+		http.MethodGet,
+		"/upstream/environments/v1/environments/team-a/sandbox-1:runtime-diagnostics?target.uid=sandbox-uid",
+		nil,
+	)
+	response = httptest.NewRecorder()
+	if err := upstream.ForwardHTTP(response, request, request.Context(), "v1/environments/team-a/sandbox-1:runtime-diagnostics", ""); err != nil {
+		t.Fatal(err)
+	}
+	var gatewayError struct {
+		Code int `json:"code"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &gatewayError); err != nil {
+		t.Fatalf("decode diagnostics gateway error %q: %v", response.Body.String(), err)
+	}
+	if response.Code != http.StatusNotFound || gatewayError.Code != int(codes.NotFound) {
+		t.Fatalf("diagnostics error = %d: %s", response.Code, response.Body.String())
+	}
+	if service.diagnosticsPeer != peertls.AppURI || len(service.diagnosticsAuth) != 0 || len(service.diagnosticsCookie) != 0 {
+		t.Fatalf("diagnostics error peer=%q authorization=%v cookies=%v", service.diagnosticsPeer, service.diagnosticsAuth, service.diagnosticsCookie)
 	}
 }
 
