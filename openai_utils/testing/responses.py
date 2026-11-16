@@ -1,6 +1,6 @@
-"""Response factories and mock runners for agent tests (non-MCP).
+"""Shared model-response factories and mock runners for tests.
 
-Provides declarative test response building:
+Provides shared test response building:
 - ResponsesFactory: Builds mock ResponsesResult objects
 - GeneratorMock + DecoratorMock: Class-based generator mocks
 - extract_call_output / tool_roundtrip: Typed tool output extraction

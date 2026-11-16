@@ -12,8 +12,8 @@ from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.handlers import FinishOnTextMessageHandler
-from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from openai_utils.model import UserMessage
+from openai_utils.testing.responses import DecoratorMock, tool_roundtrip
 from util.exec.models import BaseExecResult, Exited
 
 ECHO_CMD = ["/bin/echo", "-n", "hello"]

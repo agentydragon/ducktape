@@ -23,8 +23,8 @@ from __future__ import annotations
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core.testing.responses import PlayGen
 from mcp_infra.testing.matchers import exited_successfully
+from openai_utils.testing.responses import PlayGen
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.core.agent_types import CriticDevImproveTypeConfig
 from props.db.database import Database

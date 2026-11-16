@@ -15,7 +15,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from agent_core.testing.responses import PlayGen
+from openai_utils.testing.responses import PlayGen
 from props.agents.grader.testing.mocks import GraderMock
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence

@@ -31,7 +31,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":echo_server",
-        "//agent_core/testing:responses",
         "//openai_utils:model",
+        "//openai_utils/testing:responses",
     ],
 )

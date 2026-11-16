@@ -14,7 +14,6 @@ from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.matchers import assert_items_include_instances
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME, EchoInput
 from agent_core.testing.mcp.responses import EchoMock
-from agent_core.testing.responses import DecoratorMock
 from openai_utils.model import (
     AssistantMessage,
     FunctionCallItem,
@@ -25,6 +24,7 @@ from openai_utils.model import (
     UserMessage,
 )
 from openai_utils.testing.openai_mock import FakeOpenAIModel, NoopOpenAIClient
+from openai_utils.testing.responses import DecoratorMock
 
 
 class _ApiRequestRecorder(BaseHandler):

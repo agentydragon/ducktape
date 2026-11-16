@@ -6,8 +6,8 @@ from uuid import UUID
 
 from more_itertools import one
 
-from agent_core.testing.responses import DecoratorMock, tool_roundtrip
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest
+from openai_utils.testing.responses import DecoratorMock, tool_roundtrip
 from props.agents.grader.drift_handler import Drift
 from props.agents.grader.tools import (
     ClusterMemberSpec,
