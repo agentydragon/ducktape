@@ -3,10 +3,10 @@ import { type QueryClient, QueryClientProvider, queryOptions } from "@tanstack/r
 import { IconCheck, IconX } from "../icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
-import { displayableError } from "../client";
-import type { StreamConnection } from "../stream_reader";
-import { useOptionalStreamStatus } from "../stream_status";
-import { createAppQueryClient } from "../query";
+import { displayableError } from "../transport/client";
+import type { StreamConnection } from "../transport/stream_reader";
+import { useOptionalStreamStatus } from "../transport/stream_status";
+import { createAppQueryClient } from "../transport/query";
 import { ActionCall } from "./call";
 import {
   ActionState,

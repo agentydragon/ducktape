@@ -9,7 +9,7 @@ import { intlFormatDistance } from "date-fns";
 import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { attachedHarness, harnessBehavior } from "../harness_behavior";
 import { harnessLabel, modelsForHarness } from "../model_catalog";
 import { listModels } from "../app_config_client";
@@ -20,7 +20,7 @@ import { ThreadFeedStatus, type ThreadEntity } from "../../../history_service/ap
 import { historyRows } from "./history_rows";
 import { useRequiredThreadsLive } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
-import { useOptionalStreamStatus } from "../stream_status";
+import { useOptionalStreamStatus } from "../transport/stream_status";
 import { RetainedDisclosureProvider } from "../../../../util/frontend/transcript/retained_disclosures";
 import { pendingSentMessage } from "./thread_cards";
 import { PendingInputMessages, LocalControlCommands } from "./thread_commands";

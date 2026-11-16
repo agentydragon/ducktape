@@ -10,7 +10,7 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import type { Identity } from "../../../policy/v1/policy_service_pb";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";
 import type { Session } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { deleteIdentity, listIdentitySessions, type DeleteOutcome } from "../identities/client";
 import { identityOrigin } from "../identities/origin";
 import { remainingIdentityReferences } from "../identities/references";

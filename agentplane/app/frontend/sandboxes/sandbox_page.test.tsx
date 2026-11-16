@@ -32,7 +32,7 @@ import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 import * as sandboxClient from "./client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
-import type { Live } from "../live";
+import type { Live } from "../transport/live";
 import { SandboxRoute } from "../shell/app";
 import { SandboxPage } from "./sandbox_page";
 import { TopbarContext } from "../shell/topbar";

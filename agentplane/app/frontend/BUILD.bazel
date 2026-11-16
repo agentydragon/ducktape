@@ -37,6 +37,7 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
+        "//agentplane/app/frontend/transport:typed_lint_srcs",
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
@@ -215,31 +216,11 @@ js_library(
 )
 
 ts_library(
-    name = "client",
-    srcs = ["client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":operator_login",
-        ":parsed_json",
-        ":schema",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/openapi-fetch",
-    ],
-)
-
-ts_library(
-    name = "app_service_client",
-    srcs = ["app_service_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-ts_library(
     name = "app_config_client",
     srcs = ["app_config_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":app_service_client",
+        "//agentplane/app/frontend/transport:app_service_client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
         "//agentplane/proto:session_pb",
@@ -254,29 +235,6 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/proto:session_pb",
     ],
-)
-
-agentplane_vitest_test(
-    name = "client_test",
-    srcs = ["client.test.ts"],
-    deps = [
-        ":client",
-        ":operator_login",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "operator_login",
-    srcs = ["operator_login.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
-    name = "query",
-    srcs = ["query.ts"],
-    tsconfig = ":tsconfig",
-    deps = ["//:node_modules/@tanstack/react-query"],
 )
 
 ts_library(
@@ -346,12 +304,6 @@ ts_library(
 )
 
 ts_library(
-    name = "parsed_json",
-    srcs = ["parsed_json.ts"],
-    tsconfig = TSCONFIG,
-)
-
-ts_library(
     name = "inline_name",
     srcs = [
         "inline_name.tsx",
@@ -386,106 +338,11 @@ ts_library(
 )
 
 ts_library(
-    name = "stream_reader",
-    srcs = ["stream_reader.ts"],
-    tsconfig = TSCONFIG,
-    deps = [":client"],
-)
-
-agentplane_vitest_test(
-    name = "stream_reader_test",
-    srcs = ["stream_reader.test.ts"],
-    deps = [
-        ":stream_reader",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:watch",
-    ],
-)
-
-ts_library(
-    name = "live_stream",
-    srcs = ["live_stream.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":stream_reader",
-        "//:node_modules/eventsource-parser",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "live_stream_test",
-    srcs = ["live_stream.test.ts"],
-    deps = [
-        ":live_stream",
-        ":stream_reader",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:watch",
-    ],
-)
-
-ts_library(
-    name = "watch_stream",
-    srcs = ["watch_stream.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":stream_reader",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/zod",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "watch_stream_test",
-    srcs = ["watch_stream.test.ts"],
-    deps = [
-        ":stream_reader",
-        ":watch_stream",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/testing:watch",
-    ],
-)
-
-ts_library(
-    name = "stream_status",
-    srcs = ["stream_status.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":format_time",
-        ":stream_reader",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "stream_status_test",
-    srcs = ["stream_status.test.tsx"],
-    deps = [
-        ":stream_reader",
-        ":stream_status",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
-        "//:node_modules/react",
-        "//:node_modules/react-dom",
-        "//:node_modules/vitest",
-    ],
-)
-
-ts_library(
-    name = "live",
-    srcs = ["live.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [":stream_status"],
-)
-
-ts_library(
     name = "sandbox_status",
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        "//agentplane/app/frontend/transport:client",
         ":format_time",
         ":schema",
         ":status_mark",
@@ -499,7 +356,7 @@ agentplane_vitest_test(
     name = "sandbox_status_test",
     srcs = ["sandbox_status.test.ts"],
     deps = [
-        ":client",
+        "//agentplane/app/frontend/transport:client",
         ":sandbox_status",
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
@@ -553,9 +410,9 @@ ts_library(
     srcs = ["settings/push.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
-        ":stream_reader",
-        ":watch_stream",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:stream_reader",
+        "//agentplane/app/frontend/transport:watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -569,7 +426,7 @@ ts_library(
     srcs = ["main.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":operator_login",
+        "//agentplane/app/frontend/transport:operator_login",
         ":tracing",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -638,12 +495,12 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        ":client",
+        "//agentplane/app/frontend/transport:client",
         ":harness_network",
-        ":live",
+        "//agentplane/app/frontend/transport:live",
         ":schema",
         ":shell_command_view",
-        ":stream_status",
+        "//agentplane/app/frontend/transport:stream_status",
         ":text_block",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",

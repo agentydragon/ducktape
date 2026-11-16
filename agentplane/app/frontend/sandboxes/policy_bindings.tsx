@@ -4,7 +4,7 @@ import { type JSX, useEffect, useState } from "react";
 import type { PolicyBinding } from "../../../policy/v1/policy_service_pb";
 import type { PolicyResources } from "../policy/watch";
 import { BINDING_GRANT_HELP, BindingsTable } from "../policy/table";
-import { displayableError, fetchText } from "../client";
+import { displayableError, fetchText } from "../transport/client";
 import { getSandboxForm } from "../app_config_client";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import type { EnvironmentTarget } from "../../../proto/identity_pb";

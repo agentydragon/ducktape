@@ -3,7 +3,7 @@ import createClient from "openapi-fetch";
 
 import { parsedJson } from "./parsed_json";
 
-import type { paths } from "./schema";
+import type { paths } from "../schema";
 import { redirectToLogin } from "./operator_login";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });

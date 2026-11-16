@@ -1,5 +1,5 @@
 import { dispatchFromJson } from "./client";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 import type { LocalCommands } from "./local_commands";
 
 /** `DispatchFilter.command_ids`' bound; the commands past it go unwatched. */

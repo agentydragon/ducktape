@@ -3,7 +3,7 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import type { ThreadView } from "./client";
 import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { HarnessState, SetupState } from "../../../proto/session_pb";
-import type { Live } from "../live";
+import type { Live } from "../transport/live";
 import type { ThreadTabStatus } from "../shell/tab_metadata";
 import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
 import { attachedHarness, harnessBehavior } from "../harness_behavior";

@@ -2,11 +2,11 @@ import { fromJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useRef, useState } from "react";
 import { useMatch } from "react-router";
 
-import { displayableError } from "../client";
-import { type Live, type WatchHealth } from "../live";
-import { backoff, type StreamConnection } from "../stream_reader";
-import { useStreamStatus } from "../stream_status";
-import { followWatch } from "../watch_stream";
+import { displayableError } from "../transport/client";
+import { type Live, type WatchHealth } from "../transport/live";
+import { backoff, type StreamConnection } from "../transport/stream_reader";
+import { useStreamStatus } from "../transport/stream_status";
+import { followWatch } from "../transport/watch_stream";
 import { WatchThreadMetadataResponseSchema } from "../../app_service_pb";
 import { WatchSessionSummariesResponseSchema } from "../../../history_service/api/history/history_service_pb";
 

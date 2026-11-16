@@ -7,10 +7,10 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { CallerActionPolicySchema } from "../../../action_service/api/contracts/action_service_pb";
 import { ActionPolicySection, ActionPolicyWatch } from "./policy";
-import type { WatchHandlers } from "../watch_stream";
+import type { WatchHandlers } from "../transport/watch_stream";
 
 const watch = vi.hoisted(() => ({ calls: [] as { url: string; handlers: WatchHandlers; stopped: boolean }[] }));
-vi.mock("../watch_stream", () => ({
+vi.mock("../transport/watch_stream", () => ({
   followWatch: (url: string, handlers: WatchHandlers) => {
     const call = { url, handlers, stopped: false };
     watch.calls.push(call);

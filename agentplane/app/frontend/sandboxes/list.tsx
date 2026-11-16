@@ -26,7 +26,7 @@ import { IconDotsVertical } from "../icons";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { getSandboxForm, listSandboxPresets } from "../app_config_client";
 import type { NewSandboxDefaults, SandboxPreset } from "../../app_service_pb";
 import { IdleSuspendField, IdleSuspendInput } from "./idle_suspend";

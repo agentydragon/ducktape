@@ -2,7 +2,7 @@ import "@mantine/core/styles.css";
 
 import { createRoot } from "react-dom/client";
 
-import { restoreRouteAfterLogin } from "./operator_login";
+import { restoreRouteAfterLogin } from "./transport/operator_login";
 import { initializeBrowserTracing } from "./tracing";
 import { ThemeProvider } from "./shell/theme";
 

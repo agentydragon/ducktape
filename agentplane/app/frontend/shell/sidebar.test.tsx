@@ -26,7 +26,7 @@ import { RoutedThreadsLiveProvider } from "../threads/live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "./sidebar";
 import { threadViewRecorder } from "../threads/thread_view_recorder";
-import { ConnectionIndicator, DEGRADED_AFTER_MS } from "../stream_status";
+import { ConnectionIndicator, DEGRADED_AFTER_MS } from "../transport/stream_status";
 import { latestOn, reconnected, ServedWatch, serveEventStreams } from "../testing/watch";
 import { threadView, type ThreadViewInit } from "../threads/testing/state";
 

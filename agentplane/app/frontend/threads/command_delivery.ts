@@ -9,7 +9,7 @@ import {
   submitInput,
   type CommandSubmission,
 } from "./client";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { watchDispatches } from "./dispatch_watch";
 import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";

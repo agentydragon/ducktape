@@ -6,11 +6,11 @@ import {
   WatchEnvironmentResponseSchema,
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
-import { followWatch } from "../watch_stream";
-import { type StreamConnection } from "../stream_reader";
-import { useStreamStatus } from "../stream_status";
+import { followWatch } from "../transport/watch_stream";
+import { type StreamConnection } from "../transport/stream_reader";
+import { useStreamStatus } from "../transport/stream_status";
 
-import { type Live } from "../live";
+import { type Live } from "../transport/live";
 
 export function liveSandboxesUrl(): string {
   return "/upstream/environments/v1/environments:watch";

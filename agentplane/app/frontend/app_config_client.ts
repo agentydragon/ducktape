@@ -1,6 +1,6 @@
 import { create, fromJsonString } from "@bufbuild/protobuf";
 
-import { createAppServiceClient } from "./app_service_client";
+import { createAppServiceClient } from "./transport/app_service_client";
 import {
   FrontendConfigSchema,
   GetFrontendConfigResponseSchema,

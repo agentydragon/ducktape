@@ -1,8 +1,8 @@
 import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
 
-import { fetchText, fetchWithLogin, type Fetcher } from "../client";
-import type { StreamConnection } from "../stream_reader";
-import { followWatch } from "../watch_stream";
+import { fetchText, fetchWithLogin, type Fetcher } from "../transport/client";
+import type { StreamConnection } from "../transport/stream_reader";
+import { followWatch } from "../transport/watch_stream";
 import {
   ActionState,
   Verdict,

@@ -2,7 +2,7 @@ import type { EnvironmentDescriptor } from "../../../environments/v1/environment
 import { Checkbox } from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { setEnvironmentWakeOnSend } from "./client";
 
 /**

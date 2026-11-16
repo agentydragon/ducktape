@@ -4,10 +4,10 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 
 import { useCredentialMetadata } from "./credential_watch";
-import type { WatchHandlers } from "../watch_stream";
+import type { WatchHandlers } from "../transport/watch_stream";
 
 const watch = vi.hoisted(() => ({ handlers: null as WatchHandlers | null, stopped: false }));
-vi.mock("../watch_stream", () => ({
+vi.mock("../transport/watch_stream", () => ({
   followWatch: (_url: string, handlers: WatchHandlers) => {
     watch.handlers = handlers;
     return () => {

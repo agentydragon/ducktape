@@ -6,11 +6,11 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { useIdentities, usePolicyResources, type BindingSelector } from "./watch";
-import type { WatchHandlers } from "../watch_stream";
+import type { WatchHandlers } from "../transport/watch_stream";
 import { ServiceAccountSchema } from "../../../proto/identity_pb";
 
 const watches = vi.hoisted(() => new Map<string, WatchHandlers>());
-vi.mock("../watch_stream", () => ({
+vi.mock("../transport/watch_stream", () => ({
   followWatch: (url: string, handlers: WatchHandlers) => {
     watches.set(url, handlers);
     return () => watches.delete(url);

@@ -6,7 +6,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { EnvironmentDescriptorSchema } from "../../../environments/v1/environment_service_pb";
-import { HttpError } from "../client";
+import { HttpError } from "../transport/client";
 import { EnvironmentIdentity } from "./identity";
 
 const calls = vi.hoisted(() => ({

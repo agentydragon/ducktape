@@ -4,7 +4,7 @@ import { z } from "zod";
 import { parseAllDocuments } from "yaml";
 
 import { JsonBlock, TextBlock } from "../text_block";
-import { parsedJson } from "../parsed_json";
+import { parsedJson } from "../transport/parsed_json";
 import { looksLikeJson } from "../../../../util/frontend/transcript/text_block";
 
 /** One block of a `CallToolResult`'s `content`, in the MCP wire shape of the kinds this view

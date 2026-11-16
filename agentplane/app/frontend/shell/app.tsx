@@ -19,7 +19,7 @@ import { ThreadPage } from "../threads/page";
 import { Settings, type SettingsTab } from "../settings/dialog";
 import { Sidebar } from "./sidebar";
 import { SystemStatus } from "../system/system";
-import { ConnectionIndicator } from "../stream_status";
+import { ConnectionIndicator } from "../transport/stream_status";
 import { electricThreadSync } from "../threads/electric_sync";
 import { ThreadSyncContext } from "../threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";

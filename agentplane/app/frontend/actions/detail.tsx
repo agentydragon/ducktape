@@ -5,7 +5,7 @@ import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 import { actionGroupsQuery, actionRequestQuery, ActionRequestsContext, PendingActionCard } from "./requests";
-import { displayableError } from "../client";
+import { displayableError } from "../transport/client";
 import { ActionHistoryCard } from "./history";
 import { ActionState, ExecutorKind } from "../../../action_service/api/contracts/action_service_pb";
 import { actionIdentity } from "./presentation";

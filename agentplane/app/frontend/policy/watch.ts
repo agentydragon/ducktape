@@ -11,7 +11,7 @@ import {
   type PolicySet,
   type WatchPolicyBindingsRequest,
 } from "../../../policy/v1/policy_service_pb";
-import { followWatch } from "../watch_stream";
+import { followWatch } from "../transport/watch_stream";
 
 /** The two independently owned resource collections shown together by the policy UI. */
 export type PolicyResources = { bindings: PolicyBinding[]; sets: PolicySet[] };

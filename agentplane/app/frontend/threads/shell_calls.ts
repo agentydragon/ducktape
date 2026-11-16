@@ -3,7 +3,7 @@
 // for the thread to draw as a command; any call that does not parse is drawn as its JSON.
 import { z } from "zod";
 
-import { parsedJson } from "../parsed_json";
+import { parsedJson } from "../transport/parsed_json";
 
 /** A shell command call, as the thread shows it. */
 export interface ShellCall {
