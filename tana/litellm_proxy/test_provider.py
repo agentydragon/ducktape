@@ -59,10 +59,7 @@ def _refresh_token_response() -> httpx.Response:
 
 
 def _mock_tana_transport(
-    expected_url: str,
-    response: httpx.Response,
-    *,
-    expected_authorization: str | None = None,
+    expected_url: str, response: httpx.Response, *, expected_authorization: str | None = None
 ) -> tuple[httpx.MockTransport, list[httpx.Request], list[dict[str, Any]]]:
     seen_requests: list[httpx.Request] = []
     seen_bodies: list[dict[str, Any]] = []
