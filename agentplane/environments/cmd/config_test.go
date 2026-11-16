@@ -198,7 +198,6 @@ func TestControllerGatewayCallerUsesOnlyItsOwnSVID(t *testing.T) {
 
 const environmentServiceSettings = `environment_service:
   policy_namespace: test-policy
-  audience: test-dispatcher
   rpc:
     listen_address: ":8082"
     tls:

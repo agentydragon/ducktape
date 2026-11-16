@@ -79,7 +79,6 @@ def _account(account: ServiceAccountRef) -> str:
 class EnvironmentServiceAuthority:
     """The service identity grants for the EnvironmentService receiver."""
 
-    launchers: frozenset[str]
     service_readers: frozenset[ServiceSPIFFEID]
     service_managers: frozenset[ServiceSPIFFEID]
     service_launchers: frozenset[ServiceSPIFFEID]
@@ -110,7 +109,6 @@ def environment_service_authority(
         else ()
     )
     return EnvironmentServiceAuthority(
-        launchers=launcher_accounts,
         service_readers=frozenset({APP_URI}),
         service_managers=frozenset({APP_URI}),
         service_launchers=(

@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Self
+from typing import ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import SANDBOX_CONTROLLER_URI, ClientTLS, Security, ServiceSPIFFEID
 from agentplane.sandboxes.runtimeconfig.model_catalog import Catalog
-
-type Account = Annotated[str, Field(pattern=r"^[^/]+/[^/]+$")]
 
 
 class ServiceDelegator(BaseModel):
@@ -23,13 +21,6 @@ class ServiceDelegator(BaseModel):
 class ServiceDelegation(BaseModel):
     model_config = ConfigDict(extra="forbid")
     actors: tuple[ServiceDelegator, ...] = Field(min_length=1)
-    methods: tuple[str, ...] = Field(min_length=1)
-
-
-class Delegation(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    actor: Account
-    identity_callers: Literal[True]
     methods: tuple[str, ...] = Field(min_length=1)
 
 
@@ -54,24 +45,13 @@ class EnvironmentService(BaseModel):
     model_config = ConfigDict(extra="forbid")
     rpc: Listener
     policy_namespace: str = Field(min_length=1)
-    # CLEANUP(added 2026-11-15): Remove legacy audience/account fields after manifest omission and rollout.
-    # These settings decode old deployments but grant no admission.
-    audience: str = Field(default="", exclude=True)
-    readers: tuple[Account, ...] = Field(default=(), exclude=True)
-    managers: tuple[Account, ...] = Field(default=(), exclude=True)
-    launchers: tuple[Account, ...] = Field(default=(), exclude=True)
-    operators: tuple[Account, ...] = Field(default=(), exclude=True)
     service_readers: tuple[ServiceSPIFFEID, ...] = ()
     service_managers: tuple[ServiceSPIFFEID, ...] = ()
     service_launchers: tuple[ServiceSPIFFEID, ...] = ()
     service_operators: tuple[ServiceSPIFFEID, ...] = ()
-    # CLEANUP(added 2026-11-15): Remove after manifests omit wake_callers and that rollout completes. Ignored.
-    wake_callers: tuple[Account, ...] = Field(default=(), exclude=True)
     # Read-only automatic-wake eligibility must match the Sessions broker grants.
     wake_service_callers: tuple[ServiceSPIFFEID, ...] = ()
     service_delegation: ServiceDelegation | None = None
-    # CLEANUP(added 2026-11-15): Remove after manifests omit delegation and that rollout completes.
-    delegation: Delegation | None = None
     runtime_proxy: RuntimeProxy | None = Field(default=None, exclude_if=lambda value: value is None)
     runtime_catalog: Catalog | None = None
 

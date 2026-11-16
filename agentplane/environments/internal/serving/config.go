@@ -14,38 +14,21 @@ import (
 
 // Config is opt-in until the accepting Controller image is pinned before deployment settings.
 type Config struct {
-	RPC             listener.Config `mapstructure:"rpc"`
-	PolicyNamespace string          `mapstructure:"policy_namespace"`
-	// CLEANUP(added 2026-11-15): Remove legacy audience/account fields after manifest omission and rollout.
-	// These fields decode existing settings but grant no admission.
-	Audience           string                   `mapstructure:"audience"`
-	Readers            []auth.Account           `mapstructure:"readers"`
-	Managers           []auth.Account           `mapstructure:"managers"`
-	Launchers          []auth.Account           `mapstructure:"launchers"`
-	Operators          []auth.Account           `mapstructure:"operators"`
-	WakeCallers        []auth.Account           `mapstructure:"wake_callers"`
+	RPC                listener.Config          `mapstructure:"rpc"`
+	PolicyNamespace    string                   `mapstructure:"policy_namespace"`
 	ServiceReaders     []string                 `mapstructure:"service_readers"`
 	ServiceManagers    []string                 `mapstructure:"service_managers"`
 	ServiceLaunchers   []string                 `mapstructure:"service_launchers"`
 	ServiceOperators   []string                 `mapstructure:"service_operators"`
 	WakeServiceCallers []string                 `mapstructure:"wake_service_callers"`
 	ServiceDelegation  *ServiceDelegationConfig `mapstructure:"service_delegation"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit delegation and that rollout completes.
-	// Account delegation is decoded but grants no admission.
-	Delegation     *DelegationConfig     `mapstructure:"delegation"`
-	RuntimeProxy   *RuntimeProxyConfig   `mapstructure:"runtime_proxy"`
-	RuntimeCatalog runtimeconfig.Catalog `mapstructure:"runtime_catalog"`
+	RuntimeProxy       *RuntimeProxyConfig      `mapstructure:"runtime_proxy"`
+	RuntimeCatalog     runtimeconfig.Catalog    `mapstructure:"runtime_catalog"`
 }
 
 type ServiceDelegationConfig struct {
 	Actors  []auth.ServiceDelegator `mapstructure:"actors"`
 	Methods []string                `mapstructure:"methods"`
-}
-
-type DelegationConfig struct {
-	Actor           auth.Account `mapstructure:"actor"`
-	IdentityCallers bool         `mapstructure:"identity_callers"`
-	Methods         []string     `mapstructure:"methods"`
 }
 
 func (c Config) Validate() error {

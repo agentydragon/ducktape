@@ -15,7 +15,6 @@ def receiver_settings() -> dict[str, object]:
             "auth": [{"mode": "spiffe", "ca_file": "/run/test/ca.crt"}],
         },
         "policy_namespace": "test-policy",
-        "audience": "test-dispatcher",
         "service_operators": ["spiffe://agentplane/app"],
         "service_delegation": {
             "actors": [{"spiffe_id": "spiffe://agentplane/actions"}],
@@ -120,16 +119,6 @@ def test_receiver_rejects_unreviewed_authentication(updates: dict[str, object]) 
     settings = receiver_settings() | updates
     with pytest.raises(ValidationError):
         EnvironmentService.model_validate(settings)
-
-
-@pytest.mark.parametrize("audience", ["", "test-dispatcher"])
-def test_receiver_ignores_legacy_bearer_settings(audience: str) -> None:
-    source = EnvironmentService.model_validate(receiver_settings()).model_dump(mode="json")
-    source["audience"] = audience
-    source["delegation"] = {"actor": "test/actions", "identity_callers": True, "methods": ["/other.Service/Method"]}
-    settings = EnvironmentService.model_validate(source)
-    assert settings.audience == audience
-    assert settings.delegation is not None
 
 
 if __name__ == "__main__":
