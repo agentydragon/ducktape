@@ -1,7 +1,8 @@
 # Transcript batch publication measurements
 
 The PostgreSQL-backed `test_file_batches` target retains `cProfile` artifacts for
-`SnapshotIngestor._publish_version`, including its transaction commit. The synthetic
+`file_publication.publish_file_version` (formerly `SnapshotIngestor._publish_version`),
+including its transaction commit. The synthetic
 input repeats one short valid physical line, then appends one distinct valid record.
 These measurements cover compact mapping publication on an RBE test database;
 they do not establish throughput or latency on the archive's production HDD storage.
