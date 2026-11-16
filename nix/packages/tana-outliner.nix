@@ -3,14 +3,11 @@
 #
 # To update:
 #   nix run nixpkgs#nix-update -- --flake tana-outliner
-{
-  lib,
-  pkgs,
-}:
+{ lib, pkgs }:
 let
   version = "1.531.0";
 in
-pkgs.stdenv.mkDerivation {
+pkgs.callPackage ./mk-electron-deb.nix { } {
   pname = "tana-outliner";
   inherit version;
 
@@ -19,80 +16,13 @@ pkgs.stdenv.mkDerivation {
     hash = "sha256-FV/iOkQLuCZHUVdO002426xRpu1tDif4jLH0ASIFS8I=";
   };
 
-  nativeBuildInputs = with pkgs; [
-    autoPatchelfHook
-    makeWrapper
-  ];
-
-  buildInputs = with pkgs; [
-    alsa-lib
-    at-spi2-atk
-    at-spi2-core
-    cairo
-    cups
-    dbus
-    expat
-    glib
-    gtk3
-    libdrm
+  libraryPath = with pkgs; [
     libGL
     libxkbcommon
     mesa
-    nspr
-    nss
-    pango
     libx11
-    libxcomposite
-    libxdamage
-    libxext
-    libxfixes
-    libxrandr
     libxcb
   ];
-
-  runtimeDependencies = with pkgs; [
-    (lib.getLib systemd)
-  ];
-
-  dontBuild = true;
-  dontConfigure = true;
-
-  dontUnpack = true;
-
-  installPhase = ''
-    runHook preInstall
-
-    # Extract .deb using bsdtar (handles SUID chrome-sandbox without errors)
-    ${pkgs.libarchive}/bin/bsdtar -xf $src --no-same-permissions
-    ${pkgs.libarchive}/bin/bsdtar -xf data.tar.* --no-same-permissions
-
-    # Install everything from usr/
-    mkdir -p $out/lib
-    cp -r usr/share $out/share
-    cp -r usr/lib/tana-outliner $out/lib/tana-outliner
-
-    # Create wrapper binary
-    mkdir -p $out/bin
-    makeWrapper $out/lib/tana-outliner/tana-outliner $out/bin/tana-outliner \
-      --prefix LD_LIBRARY_PATH : "${
-        lib.makeLibraryPath (
-          with pkgs;
-          [
-            libGL
-            libxkbcommon
-            mesa
-            libx11
-            libxcb
-          ]
-        )
-      }"
-
-    # Fix desktop entry to use full path
-    substituteInPlace $out/share/applications/tana-outliner.desktop \
-      --replace-fail "Exec=tana-outliner" "Exec=$out/bin/tana-outliner"
-
-    runHook postInstall
-  '';
 
   meta = {
     description = "Tana - knowledge graph for you & your team";

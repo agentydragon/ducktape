@@ -4,14 +4,11 @@
 # The documented `latest/` URL is mutable, so keep the version and hash pinned
 # to the versioned pool artifact. Update both from OpenAI's APT Packages index:
 # https://persistent.oaistatic.com/codex-app-prod/linux/deb/dists/stable/main/binary-amd64/Packages
-{
-  lib,
-  pkgs,
-}:
+{ lib, pkgs }:
 let
   version = "26.1103.60933";
 in
-pkgs.stdenv.mkDerivation {
+pkgs.callPackage ./mk-electron-deb.nix { } {
   pname = "chatgpt";
   inherit version;
 
@@ -20,43 +17,35 @@ pkgs.stdenv.mkDerivation {
     hash = "sha256-B0bpuldRgvXb4yYXuCpkXrk61XyliOWpNYaVprZa7nE=";
   };
 
-  nativeBuildInputs = with pkgs; [
-    autoPatchelfHook
-    makeWrapper
-  ];
+  binary = "codex-launcher";
+  desktopExec = "chatgpt ";
+  dataArchive = "data.tar.xz";
 
-  # These are the shared libraries named by the bundled Electron runtime and
-  # native modules. libsecret is dlopen'd by Electron's safeStorage backend so
-  # GNOME Keyring can persist the app's sign-in state.
-  buildInputs = with pkgs; [
-    alsa-lib
-    at-spi2-atk
-    at-spi2-core
-    cairo
-    cups
-    dbus
-    expat
+  # Electron safeStorage dlopens libsecret to persist sign-in via the keyring.
+  extraBuildInputs = with pkgs; [
     gdk-pixbuf
-    glib
-    gtk3
-    libdrm
-    libGL
     libnotify
     libsecret
     libusb1
+    tpm2-tss
+  ];
+
+  libraryPath = with pkgs; [
+    libGL
+    libdrm
+    libsecret
     libxkbcommon
     mesa
-    nspr
-    nss
-    pango
-    tpm2-tss
     libx11
-    libxcomposite
-    libxdamage
-    libxext
-    libxfixes
-    libxrandr
     libxcb
+  ];
+
+  # The launcher needs its sandbox, project and desktop integration tools.
+  path = with pkgs; [
+    bubblewrap
+    git
+    glib
+    xdg-utils
   ];
 
   # The universal bundle includes optional Qt shims without their Qt runtime,
@@ -71,57 +60,6 @@ pkgs.stdenv.mkDerivation {
     "libQt6Widgets.so.6"
     "libc.musl-x86_64.so.1"
   ];
-
-  runtimeDependencies = [ (lib.getLib pkgs.systemd) ];
-
-  dontBuild = true;
-  dontConfigure = true;
-  dontUnpack = true;
-
-  installPhase = ''
-    runHook preInstall
-
-    # Extract the .deb without preserving Debian ownership or setuid bits.
-    ${pkgs.libarchive}/bin/bsdtar -xf $src --no-same-permissions
-    ${pkgs.libarchive}/bin/bsdtar -xf data.tar.xz --no-same-permissions
-
-    mkdir -p $out/lib
-    cp -r usr/share $out/share
-    cp -r usr/lib/chatgpt $out/lib/chatgpt
-
-    # The app invokes bwrap for its Linux sandbox, xdg-open for links/files,
-    # and git for project integration; Debian would normally provide these via
-    # package dependencies or the host PATH.
-    mkdir -p $out/bin
-    makeWrapper $out/lib/chatgpt/codex-launcher $out/bin/chatgpt \
-      --prefix LD_LIBRARY_PATH : "${
-        lib.makeLibraryPath (
-          with pkgs;
-          [
-            libGL
-            libdrm
-            libsecret
-            libxkbcommon
-            mesa
-            libx11
-            libxcb
-          ]
-        )
-      }" \
-      --prefix PATH : "${
-        lib.makeBinPath [
-          pkgs.bubblewrap
-          pkgs.git
-          pkgs.glib
-          pkgs.xdg-utils
-        ]
-      }"
-
-    substituteInPlace $out/share/applications/chatgpt.desktop \
-      --replace-fail "Exec=chatgpt " "Exec=$out/bin/chatgpt "
-
-    runHook postInstall
-  '';
 
   meta = {
     description = "ChatGPT desktop app for Linux with Codex";
