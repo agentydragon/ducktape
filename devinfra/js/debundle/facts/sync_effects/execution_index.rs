@@ -1421,7 +1421,7 @@ pub(super) struct Callable {
     pub(super) reads: BTreeSet<Id>,
     bare_reads: BTreeSet<Id>,
     pub(super) rebinds: BTreeSet<Id>,
-    pub(super) calls: Vec<Call>,
+    pub(super) calls: Vec<Arc<Call>>,
     pub(super) local_assignments: Vec<(Id, ValueExpr)>,
     pub(super) declared_locals: BTreeSet<Id>,
     /// Locals a read can observe before any assignment, as `undefined`: a
@@ -4715,7 +4715,7 @@ pub(super) struct ExecutionIndex {
     namespace_privacy: NamespacePrivacy,
     fresh_error_claims: Vec<FreshErrorWriteClaim>,
     pub(super) intrinsic_writes: Vec<IntrinsicWriteTarget>,
-    prototype_calls: Vec<Call>,
+    prototype_calls: Vec<Arc<Call>>,
     prototype_field_writes: Vec<(SourceUnitOrdinal, Option<u32>, Span, PropertyKeyExpr)>,
     pub(super) prototype_callable_reads: BTreeMap<u32, BTreeSet<Id>>,
     /// Per callable, the bindings it or a callable nested in it writes
@@ -4770,7 +4770,7 @@ pub(super) struct ExecutionIndex {
     hoisted_nested_functions: BTreeSet<u32>,
     pub(super) owner_callable_prefix_effects: Vec<Option<CallablePrefixEffects>>,
     pub(super) uncovered_callable_effect_owners: BTreeSet<SourceUnitOrdinal>,
-    pub(super) top_calls: Vec<Vec<Call>>,
+    pub(super) top_calls: Vec<Vec<Arc<Call>>>,
     /// Top-level calls that syntax may skip even when an execution path
     /// happens to evaluate them during abstract interpretation.
     conditional_top_member_reads: BTreeSet<CallSite>,
@@ -6479,7 +6479,7 @@ impl ExecutionIndex {
             return None;
         }
         let (row, _) = native_call_identity_key(CallKind::Call, &call.callee)?;
-        (row.op == IntrinsicOp::ObjectFreeze).then(|| call.clone())
+        (row.op == IntrinsicOp::ObjectFreeze).then(|| call.as_ref().clone())
     }
 
     fn known_array_iterator_protocol_mutation_with(
@@ -8638,7 +8638,8 @@ impl ExecutionIndex {
 
     fn record_call(&mut self, call: Call) {
         // Native property integrity includes deferred and post-await bodies.
-        self.prototype_calls.push(call.clone());
+        let call = Arc::new(call);
+        self.prototype_calls.push(Arc::clone(&call));
         if matches!(&call.callee, ValueExpr::Binding(id) if id.0.as_ref() == "eval") {
             self.dynamic_scope_owners.insert(self.owner);
         }

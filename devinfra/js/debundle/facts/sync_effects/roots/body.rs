@@ -15,6 +15,7 @@ use crate::execution_evidence::{AssumedEffectReason, ExecutionOperation};
 use crate::facts::{OwnerInitializationCoverageRefusalReason, RootAttempt, RootAttemptRewind};
 use source_identity::SourceUnitOrdinal;
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::Id;
 
@@ -123,7 +124,7 @@ fn execute_statement(
 fn attempt_seal(
     executor: &Executor<'_, '_>,
     outcome: &Outcome,
-    lexical_root_calls: Option<&[Call]>,
+    lexical_root_calls: Option<&[Arc<Call>]>,
 ) -> Result<(), RootAttemptRewind> {
     use RootAttemptRewind::*;
     let seal = |failed: bool, reason| if failed { Err(reason) } else { Ok(()) };
@@ -169,7 +170,7 @@ fn attempt_seal(
 
 /// The root's own call and construction sites, which its lexical receipt
 /// must cover.
-pub(super) fn expected_root_calls(calls: &[Call]) -> BTreeSet<(u32, u32)> {
+pub(super) fn expected_root_calls(calls: &[Arc<Call>]) -> BTreeSet<(u32, u32)> {
     calls
         .iter()
         .filter(|call| matches!(call.kind, CallKind::Call | CallKind::New))

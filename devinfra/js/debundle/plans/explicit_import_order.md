@@ -20,15 +20,27 @@ keep contracts and proofs in maintained docs:
 
 1. **Bound source-analysis memory before resuming large consumers.** A fresh
    configured analysis was killed at 42.7 GiB resident memory with no completed
-   artifact. A bounded heap profile locates large retained fact tables in the
-   source value-flow stratum. A neutral input with O(N + P) source constructs
-   reproduces N × P property facts. Reduce demonstrated metadata, table,
-   dependency and bitmap duplication; preserve the full conservative relation,
-   typed proof dependencies and invalidation behavior. Start with empty proof
-   metadata, then profile the remaining cost rather than raising memory limits
-   or rerunning identical unbounded jobs. Keep a CLI-to-Node memory regression,
-   matched optimized measurements and the existing proof-growth controls.
+   artifact. The CLI-to-Node memory regression covers a neutral input with
+   O(N + P) source constructs and N × P property facts. Profile completed
+   commands to locate the remaining peak after each improvement; reducing a
+   type's layout alone does not establish lower whole-command memory. Remove
+   demonstrated duplicate census records and eager local property projections
+   of the shared completed relation; measure retained interpreter state too.
+   Preserve the full conservative relation, typed proof dependencies, deferred
+   native-integrity census and invalidation behavior. Keep matched optimized
+   measurements and the existing proof-growth controls. Do not raise memory
+   limits or rerun identical unbounded jobs as a substitute for a repair.
+   For heap-escape consumers, derive the requested-root union with bitmap
+   operations and stop when its mask saturates; preserve an independent
+   small-set oracle and CLI behavior checks for overlapping reachability.
    A synthetic improvement is not proof that the configured consumer completes.
+   The combined storage repairs still exceed a 4 GiB/no-swap cap. Plain-speed
+   pre-OOM stacks locate the remaining growth in program-wide value-flow fact
+   insertion and dependency subscriptions; the short allocation trace ends in
+   earlier provider preparation. Measure fact-row and subscription-edge counts
+   on a representative completed neutral case before changing their storage.
+   Preserve the full relation and dependency wakeups; prior watcher-vector and
+   fact-boxing experiments did not lower the completed matrix's peak RSS.
    Resume one bounded real analysis after measured improvement; require a normal
    completed artifact and report cold time and peak memory separately from
    prepared placement queries. Publish independently validated improvements as
