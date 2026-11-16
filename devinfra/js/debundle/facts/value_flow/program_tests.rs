@@ -8,6 +8,10 @@ fn id(name: &str) -> Id {
 }
 
 fn flow(source: &str) -> Arc<ChunkValueFlow> {
+    program(source).flows.remove("caller").unwrap()
+}
+
+fn program(source: &str) -> ProgramValueFlows {
     let caller = raw_js_test_support::parse(source);
     let provider = raw_js_test_support::parse(
         "export function relay(value) { return value; }\nexport function wrap(value) { return { box: value }; }\n",
@@ -65,9 +69,27 @@ fn flow(source: &str) -> Arc<ChunkValueFlow> {
             },
         ],
     )
-    .flows
-    .remove("caller")
-    .unwrap()
+}
+
+#[test]
+fn returned_descendant_accesses_do_not_become_invocation_witnesses() {
+    let program =
+        program("var cell = 0;\nfunction outer() { return () => { cell = 1; return cell; }; }\n");
+    let flow = &program.flows["caller"];
+    let view = flow.program.as_ref().unwrap();
+    let Value::Alloc(Kind::Function, outer) =
+        flow.values_of_binding(&id("outer")).iter().next().unwrap()
+    else {
+        panic!("function identity");
+    };
+    let function = view.sites[&outer];
+    let cell = view.bindings[&id("cell")].0;
+    let invoked = &program.cell_effects[&FlowKey::InvokedCells(function)];
+    let retained = &program.cell_effects[&FlowKey::RetainedCells(function)];
+    assert!(!invoked.reads.contains(cell));
+    assert!(!invoked.writes.contains(cell));
+    assert!(retained.reads.contains(cell));
+    assert!(retained.writes.contains(cell));
 }
 
 #[test]

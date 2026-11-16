@@ -51,6 +51,7 @@ pub struct ProgramBindings {
     export_ids: BTreeMap<(SourceModuleKey, String), ExportId>,
     bindings: Vec<Binding>,
     module_bindings: BTreeMap<SourceModuleKey, BTreeMap<String, BindingId>>,
+    source_cells: Vec<Option<BindingId>>,
 }
 
 impl ProgramBindings {
@@ -79,7 +80,39 @@ impl ProgramBindings {
         for (module, export) in extra_exports {
             graph.intern_export(&module, &export);
         }
+        graph.resolve_source_cells();
         graph
+    }
+
+    /// Each binding has at most one import successor. Resolve shared tails
+    /// once; a missing provider or a cycle without a local cell stays absent.
+    fn resolve_source_cells(&mut self) {
+        let mut visited = vec![false; self.bindings.len()];
+        self.source_cells = vec![None; self.bindings.len()];
+        for start in 0..self.bindings.len() {
+            if visited[start] {
+                continue;
+            }
+            let mut path = Vec::new();
+            let mut current = BindingId(start);
+            let terminal = loop {
+                if visited[current.0] {
+                    break self.source_cells[current.0];
+                }
+                visited[current.0] = true;
+                path.push(current);
+                let Some(export) = self.import_target(current) else {
+                    break Some(current);
+                };
+                let Some(next) = self.local_export(export) else {
+                    break None;
+                };
+                current = next;
+            };
+            for binding in path {
+                self.source_cells[binding.0] = terminal;
+            }
+        }
     }
 
     fn intern_export(&mut self, module: &str, name: &str) -> ExportId {
@@ -131,6 +164,11 @@ impl ProgramBindings {
 
     pub fn binding_name(&self, binding: BindingId) -> &(SourceModuleKey, String) {
         &self.bindings[binding.0].name
+    }
+
+    /// Identity only: this is no initialization, stability or value proof.
+    pub fn source_cell(&self, binding: BindingId) -> Option<BindingId> {
+        self.source_cells[binding.0]
     }
 
     pub fn import_target(&self, binding: BindingId) -> Option<ExportId> {

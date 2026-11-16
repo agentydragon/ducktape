@@ -1752,3 +1752,8 @@ debundle_e2e_test(
         "//devinfra/js/debundle:analysis_model",
     ],
 )
+
+debundle_e2e_test(
+    name = "program_call_effects_test",
+    saved_analysis_tools = True,
+)

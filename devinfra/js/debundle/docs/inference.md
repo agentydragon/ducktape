@@ -573,7 +573,7 @@ rejecting; a successful corpus run alone is insufficient evidence for a rule.
 ## Program value flow
 
 `facts/value_flow/program.rs` prepares a source-qualified instance of the existing
-`FlowRules` and `CandidateRules`. `cross_module_purity` builds it after the raw
+`FlowRules`, lexical-access rules and `CandidateRules`. `cross_module_purity` builds it after the raw
 native census and inferred Set roots have closed, then hands its chunk views to
 callback-capability inference and structural/purity preparation. The transient
 `ProgramValueFlows` also travels through `ProgramSummary` to final chunk-fact
@@ -594,8 +594,9 @@ that alternative; discovering a provider function is not a certificate that
 calling it is effect-free, synchronous or ready during initialization.
 
 One growing value stratum closes assignments, static properties, call arguments
-and returns, with watched reads including absent keys. One candidate stratum
-then closes containment over the immutable value facts. Candidate propagation
+and returns, with watched reads including absent keys. A lexical-access stratum
+composes source witnesses over those completed values. The candidate stratum
+closes containment over the immutable value facts. Candidate propagation
 uses the existing changed-key rules; it never wakes source events. There is no
 source replay, fresh solver-iteration identity, second points-to transfer or
 placement-dependent analysis.
@@ -687,3 +688,96 @@ lookup and an Arc clone. The stated time bounds
 assume ordinary hash-table operations. Even adversarial collisions add at most
 `O(K+R+n)` work per lookup, a further polynomial factor; no bound relies on a
 hash collision being impossible.
+
+### Shared lexical-access summaries
+
+`FlowProgramCollector` records source-qualified binding reads and writes while
+performing its existing visit. Function bodies reference the already lowered
+invocation events by index; effect collection neither rescans source nor lowers
+callees again. Parameter and return propagation remain owned by `FlowRules`.
+After value closure, `CallEffectRules` resolves each call's possible function
+origins once and runs in the same `IterativeInference` store. Effects never
+refine value facts, so this completion barrier loses no feedback.
+
+For each qualified function `f`, three keys carry pairs of sparse binding sets:
+
+```text
+source(f)   = direct(f) union { source(h) | h is a syntactic descendant of f }
+invoked(f)  = direct(f) union { invoked(g) | g is a possible callee of f }
+retained(f) = source(f) union invoked(f)
+                      union { retained(g) | g is a possible callee of f }
+```
+
+Both coordinates join by union. These are positive source-access witnesses,
+not complete operation effects: unknown targets, dynamic scope, implicit calls,
+unsupported heap behavior and suspension retain their existing conservative
+treatment. Even the invocation set can overapproximate execution. No consumer
+may infer purity, absence of effects, completion or availability from an empty
+set. Descendants contribute their source references, but their call edges are
+not followed merely because the enclosing function creates them. This retains
+the conservative lexical-reference policy without treating a returned
+wrapper's later callback invocation as invocation at wrapper creation. Calls
+inside async/generator bodies, class evaluation and object accessor bodies do
+not add edges to their enclosing function's graph in this slice; these
+unmodeled timing boundaries retain their source references and existing havoc.
+
+Each rule registers all successor reads, including absent keys. Subsequent
+evaluations consume only changed successors; they do not resolve targets or
+revisit unchanged neighbors. Recursive components therefore share the same
+finite facts as acyclic calls, without enumerating call paths or executions.
+The old shallow function/import-reference scan has no remaining consumer.
+
+The cyclic-export fallback consumes `retained` and projects reads union writes
+onto caller-local exported cells. Including lvalues preserves this conservative
+consumer's reference semantics. These remain assumed may-reads, not observed
+reads or evidence that a provider completed. `ProgramBindings::source_cell`
+resolves import/re-export aliases once by following the functional binding
+graph and finishing each visited path. Shared tails reuse their terminal cell;
+missing exports and alias cycles without a terminal cell remain unresolved.
+Ordinary value copies keep their own cells.
+
+Projection groups consumers by function and importing module, normalizes each
+function's shared access bitmap once, and intersects it with that module's
+export mask. Aliases reuse this intersection. Invocation syntax is retired
+after call-graph preparation; access summaries and their source-name index are
+retired at this final projection before per-chunk analysis. Saved analysis
+persists the existing derived callable obligations and chunk facts, not another
+transient effect graph.
+
+**Closure and preservation.** All keys, slots and graph edges are input-derived.
+Direct witnesses are seeds; union transfers are monotone and idempotent. By
+induction on graph-path length, invocation edges close `invoked` and syntactic
+descendant edges close `source`. The typed `retained` relation permits a path of
+call edges followed by source-descendant edges; it cannot follow a call edge
+after entering a deferred descendant. Complete watchers and fair scheduling
+reach its least fixed point. This proves the finite source-witness relation, not all JavaScript
+semantics. The existing fallback still handles behavior outside that relation.
+Every import reference under a previously scanned top-level function remains
+in its retained descendants or direct accesses, including lvalues. Alias
+projection reaches the same caller cell and can add witnesses through helper
+calls, parameter/return flow and local re-exports. It removes no prior
+cyclic-cell obligation and grants no new execution certificate.
+
+**Bounds.** Let `F` be function sites, `B` binding slots and `E` distinct edges
+between the `3F` access keys. There are at most `6FB` read/write bit insertions
+and `3F` initial fact insertions. Each successor changes at most `2B+1` times,
+so changed-successor transfer visits are `O(E(B+1))`, in addition to `O(F+E)`
+initial work. A worst-case bitmap join costs `O(B+1)`. Including ordered rule
+queues and indexes gives `O((F+E(B+1))(B+1+log(F+2)))` closure time and
+`O(FB+F+E)` space. This explicitly charges dense shared summaries; it does not
+expand one transitive path vector per caller.
+
+For input size `n`, `F,B=O(n)` and `E=O(n²)`. Resolving targets uses the existing
+expression evaluator once per prepared invocation. With `D` total lowered
+callee-expression nodes and `A` origins, its bound is
+`O(D(A+1)² log(n+2))`; charging nested expressions conservatively gives
+`D=O(n²)`. Source-cell resolution visits every binding once, using `O(n)` extra
+time and space after linkage construction. Consumer projection costs
+`O(FB+QB+U+Z)` integer/bitmap work, where `Q` is distinct function/module pairs,
+`U` function/import edges, and `Z` materialized result names. All are bounded
+by the input-derived function, import and export products. Charging name bytes
+and ordered lookups gives a loose `O(n⁴ log(n+2))` bound for the added phase,
+with `O(n³)` space including copied names. The preceding value-flow bound
+continues to cover the combined phase. As above, adversarial hash collisions
+add a polynomial table-size factor. These bounds add no runtime caps and say
+nothing about ordered callback replay or exact ESM scheduling.

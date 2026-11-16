@@ -79,10 +79,10 @@ returned records activate `ForeignDeferredRecord`, which conservatively promotes
 all importer cells rather than projecting exact read identities.
 
 The successor transports a separate `CallableSummary::may_read_importer_cells`
-set. `ModuleScanVisitor` records direct top-level function-declaration import
-references in the canonical shallow walk. Program-summary construction resolves
-the provider's imported name back through the caller's export alias to its local
-binding. Application execution promotes those SWC binding IDs before either call
+set. The shared value-flow collector records lexical access witnesses and
+composes them across source-known calls, parameters, returns and local re-export
+aliases. Its retained-descendant projection resolves source cells back to caller
+exports. Application execution promotes those SWC binding IDs before either call
 transfer, under fallback provenance. Existing unknown effects, sealed summaries
 and completeness stay independent. The saved callable payload carries this set.
 
@@ -111,7 +111,8 @@ globalThis.inspect = () => console.log(typeof callback);
 
 The named-call projection has no callable import at this callsite. Neither an
 empty may-read set nor current callback availability proves that future export
-cells are unobservable. Transitive calls, re-export chains, namespace calls and
-non-declaration callable bindings are also outside this partial projection.
+cells are unobservable. Namespace calls and unresolved callable identities are
+also outside this partial projection. The shared source-access relation and its
+bounds are documented in <../docs/inference.md#shared-lexical-access-summaries>.
 Close those lanes with behavioral CLI refusals and unchanged frozen canonical
 acceptance; do not certify arbitrary opaque execution from this bounded repair.

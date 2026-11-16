@@ -1515,7 +1515,7 @@ pub fn resolve_imported_callable_summaries(
         .map(|(module, facts)| (module, top_level_item_views(facts.body)))
         .collect();
     let empty_sets = BTreeMap::new();
-    let structural_flows = crate::facts::program_value_flows(
+    let mut structural_flows = crate::facts::program_value_flows(
         bindings,
         flow_views
             .iter()
@@ -1877,7 +1877,18 @@ pub fn resolve_imported_callable_summaries(
             );
         }
     }
-    let imported_callables = solve_callable_import_projections(bindings, export_summaries);
+    let mut imported_callables = solve_callable_import_projections(bindings, export_summaries);
+    for (module, calls) in structural_flows.take_importer_cell_reads(bindings) {
+        for (callee, cells) in calls {
+            imported_callables
+                .entry(module.clone())
+                .or_default()
+                .entry(callee)
+                .or_default()
+                .may_read_importer_cells
+                .extend(cells);
+        }
+    }
     Ok(ResolvedCallableSummaries {
         bundle_globals,
         imported_callables,
