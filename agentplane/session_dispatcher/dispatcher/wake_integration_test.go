@@ -143,6 +143,7 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 		if err != nil || owner == nil {
 			t.Fatalf("claim owner for %s: owner=%+v error=%v", kind, owner, err)
 		}
+		deliveryOwner := claimSessionOwner(t, store, *owner, sessionID)
 		var ready bool
 		var prepareErr error
 		if kind == "dispatch" {
@@ -153,13 +154,13 @@ func TestDeliveryUsesRetainedEffectiveCallerUIDForWakeBudget(t *testing.T) {
 			if err != nil {
 				t.Fatal("enqueue attributed wake command:", err)
 			}
-			ready, prepareErr = worker.prepareDispatch(ctx, row, sandbox, *owner)
+			ready, prepareErr = worker.prepareDispatch(ctx, row, sandbox, deliveryOwner)
 		} else {
 			row, err := store.GetSession(ctx, sessionID)
 			if err != nil {
 				t.Fatal("read attributed wake opening:", err)
 			}
-			ready, prepareErr = worker.prepareSession(ctx, row, sandbox, *owner)
+			ready, prepareErr = worker.prepareSession(ctx, row, sandbox, deliveryOwner)
 		}
 		if prepareErr != nil || ready {
 			t.Fatalf("prepare %s: ready=%v error=%v", kind, ready, prepareErr)
@@ -218,6 +219,7 @@ func TestDispatchWithoutCallerIdentityDoesNotWake(t *testing.T) {
 	if err != nil || owner == nil {
 		t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
 	}
+	deliveryOwner := claimSessionOwner(t, store, *owner, row.SessionID)
 	wake := &callbackWake{store: store}
 	worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
 	worker.init()
@@ -225,7 +227,7 @@ func TestDispatchWithoutCallerIdentityDoesNotWake(t *testing.T) {
 	_, err = worker.prepareDispatch(ctx, row, SandboxSnapshot{
 		Name: "historical-wake-sandbox", Namespace: wakeCaller.Namespace, UID: uid,
 		Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
-	}, *owner)
+	}, deliveryOwner)
 	if err != nil {
 		t.Fatal("prepare dispatch without caller Identity:", err)
 	}
@@ -375,6 +377,7 @@ func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 			if err != nil || owner == nil {
 				t.Fatalf("claim owner: owner=%+v error=%v", owner, err)
 			}
+			deliveryOwner := claimSessionOwner(t, store, *owner, sessionID)
 			wake := &identityWake{}
 			worker := &DeliveryWorker{Store: store, Wake: wake, Leases: testLease{store: store}}
 			worker.init()
@@ -382,7 +385,7 @@ func TestAnIdentitySenderWakesASuspendedRecipient(t *testing.T) {
 			ready, err := worker.prepareDispatch(ctx, row, SandboxSnapshot{
 				Name: sandboxName, Namespace: "agentplane", UID: sandboxUID,
 				Incarnation: "old-pod", Blocker: "sandbox_suspended", WakeOnSend: true,
-			}, *owner)
+			}, deliveryOwner)
 			if err != nil || ready {
 				t.Fatalf("prepare the Identity sender's input: ready=%v error=%v", ready, err)
 			}

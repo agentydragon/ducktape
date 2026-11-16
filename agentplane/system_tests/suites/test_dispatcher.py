@@ -29,6 +29,15 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
 
 
 @pytest.mark.timeout(600)
+async def test_replica_dies_after_runtime_admission_and_peer_recovers_session(
+    crictl_command: tuple[str, ...], cluster: Cluster
+) -> None:
+    await dispatcher.deployed_dispatcher_waits_for_ready_then_records_runner_admission(
+        crictl_command, cluster, replica_failover=False, crash_mid_delivery=True
+    )
+
+
+@pytest.mark.timeout(600)
 async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends(
     crictl_command: tuple[str, ...], cluster: Cluster
 ) -> None:

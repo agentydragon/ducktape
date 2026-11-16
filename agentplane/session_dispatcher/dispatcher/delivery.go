@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/observability"
+	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -67,11 +68,13 @@ type DeliveryWorker struct {
 	Delivery SessionDelivery
 	Hub      *WatchHub
 	Logger   *slog.Logger
-	// Ready closes after the first successful, complete reconciliation. Serving
-	// must wait for this so admission never precedes queue recovery.
+	// Ready closes after the first complete inventory and pending-work scan.
+	// Each queued Session recovers under its own lease before processing its head.
 	Ready chan struct{}
 
-	mu      sync.Mutex
+	mu sync.Mutex
+	// CLEANUP(added 2026-11-16): Remove Sandbox ownership scheduling in PR 2,
+	// after the coordinator confirms every staging Sessions replica runs the compatibility image.
 	owners  map[string]Owner
 	refused map[string]string
 	queue   workqueue.TypedRateLimitingInterface[string]
@@ -233,26 +236,12 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 			return err
 		}
 		w.mu.Lock()
-		old, had := w.owners[sandbox.UID]
 		if owner == nil {
 			delete(w.owners, sandbox.UID)
 		} else {
 			w.owners[sandbox.UID] = *owner
 		}
 		w.mu.Unlock()
-		if owner != nil && (!had || old != *owner) {
-			recoveryCtx, recoverySpan := observability.Start(ctx, "Dispatcher Reconcile Recover Sandbox", trace.WithAttributes(attribute.String("sandbox.name", sandbox.Name)))
-			current, err := w.Store.RecoverSandbox(recoveryCtx, *owner)
-			observability.End(recoverySpan, err)
-			if err != nil {
-				return err
-			}
-			if !current {
-				w.mu.Lock()
-				delete(w.owners, sandbox.UID)
-				w.mu.Unlock()
-			}
-		}
 	}
 	// A Sandbox without pending work is dropped here and no longer renewed, so its
 	// Lease lapses; the next work for it reacquires.
@@ -265,15 +254,8 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		}
 	}
 	w.mu.Unlock()
-	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Session Heads")
-	sessions, err := w.Store.SessionHeads(listCtx)
-	observability.End(listSpan, err)
-	if err != nil {
-		return err
-	}
-	listCtx, listSpan = observability.Start(ctx, "Dispatcher Reconcile Command Heads")
-	heads, err := w.Store.Heads(listCtx)
-	observability.End(listSpan, err)
+	// Include in-flight work: it has no runnable head until a successor takes its Session lease.
+	sessions, err := w.Store.SessionsWithPendingWork(ctx)
 	if err != nil {
 		return err
 	}
@@ -281,12 +263,6 @@ func (w *DeliveryWorker) reconcile(ctx context.Context, renew bool) (result erro
 		sandbox, live := byName[session.SandboxName]
 		if live && sandbox.UID == session.SandboxUID {
 			w.enqueue(session.SessionID)
-		}
-	}
-	for _, head := range heads {
-		sandbox, live := byName[head.SandboxName]
-		if live && sandbox.UID == head.SandboxUID {
-			w.enqueue(head.SessionID)
 		}
 	}
 	return nil
@@ -348,6 +324,67 @@ func (w *DeliveryWorker) workFor(sessionID string) string {
 func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (result error) {
 	ctx, span := observability.Start(ctx, "Dispatcher Process Session", trace.WithAttributes(attribute.String("session.id", sessionID)))
 	defer func() { observability.End(span, result) }()
+	stored, err := w.Store.GetSession(ctx, sessionID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sandbox, live, err := w.Catalog.GetSandbox(ctx, stored.SandboxName)
+	if err != nil || !live || sandbox.UID != stored.SandboxUID {
+		return err
+	}
+	legacy, okay := w.ownerFor(stored.SandboxUID)
+	if !okay {
+		return nil
+	}
+	current, err := w.Leases.StillOwns(ctx, legacy)
+	if err != nil || !current {
+		w.forgetOwner(stored.SandboxUID, legacy)
+		return err
+	}
+	acquired, err := w.Store.AcquireSessionLease(ctx, sessionID)
+	var held *lease.HeldError
+	if errors.As(err, &held) {
+		w.queue.AddAfter(sessionID, time.Until(held.Until))
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	owner := *acquired
+	owner.Owner = legacy
+	ctx, cancel := context.WithCancel(ctx)
+	renewed := make(chan struct{})
+	go func() {
+		defer close(renewed)
+		ticker := time.NewTicker(LeaseRenewInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := w.Store.RenewSessionLease(ctx, owner); err != nil {
+					w.Logger.Warn("Session delivery lease lost", "session_id", sessionID, "error", err)
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		cancel()
+		<-renewed
+		releaseCtx, releaseCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer releaseCancel()
+		result = errors.Join(result, w.Store.ReleaseSessionLease(releaseCtx, owner))
+	}()
+	current, err = w.Store.RecoverSession(ctx, owner)
+	if err != nil || !current {
+		return err
+	}
 	session, head, err := w.Store.SessionHead(ctx, sessionID)
 	if err != nil {
 		return err
@@ -356,11 +393,9 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.clearRetry(sessionID)
 		return nil
 	}
-	name, uid, workID := "", "", ""
-	if session != nil {
-		name, uid, workID = session.SandboxName, session.SandboxUID, "session:"+session.SessionID
-	} else {
-		name, uid, workID = head.SandboxName, head.SandboxUID, head.CommandID
+	workID := "session:" + sessionID
+	if head != nil {
+		workID = head.CommandID
 	}
 	w.mu.Lock()
 	if previous := w.retries[sessionID].workID; previous != "" && previous != workID {
@@ -368,22 +403,6 @@ func (w *DeliveryWorker) processSession(ctx context.Context, sessionID string) (
 		w.queue.Forget(sessionID)
 	}
 	w.mu.Unlock()
-	sandbox, live, err := w.Catalog.GetSandbox(ctx, name)
-	if err != nil {
-		return err
-	}
-	if !live || sandbox.UID != uid {
-		return nil
-	}
-	owner, okay := w.ownerFor(uid)
-	if !okay {
-		return nil
-	}
-	current, err := w.Leases.StillOwns(ctx, owner)
-	if err != nil || !current {
-		w.forgetOwner(uid, owner)
-		return err
-	}
 	queuedSession := session
 	principalSession := session
 	if principalSession == nil {
@@ -447,7 +466,7 @@ func (w *DeliveryWorker) executionCurrent(ctx context.Context, session *Session,
 	return found && sameIdentity(identity, session.ExecutionIdentity), nil
 }
 
-func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *Session, head *Dispatch, owner Owner) error {
+func (w *DeliveryWorker) failExecutionIdentity(ctx context.Context, session *Session, head *Dispatch, owner SessionOwner) error {
 	if head == nil {
 		_, err := w.Store.SettleSession(ctx, session.SessionID, owner, []string{SessionWaitingState}, SessionFailedState, "execution_identity_changed")
 		if err == nil {
@@ -572,7 +591,7 @@ func (w *DeliveryWorker) retryStorage(ctx context.Context, fn func() error) {
 	}
 }
 
-func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner Owner, session *Session) bool {
+func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, sandbox SandboxSnapshot, owner SessionOwner, session *Session) bool {
 	if session == nil {
 		return false
 	}
@@ -648,7 +667,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	return true
 }
 
-func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner Owner) bool {
+func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, sandbox SandboxSnapshot, owner SessionOwner) bool {
 	ctx = observability.WithTraceparent(ctx, session.Traceparent)
 	ctx, span := observability.Start(
 		ctx, "Dispatcher Deliver Session",
