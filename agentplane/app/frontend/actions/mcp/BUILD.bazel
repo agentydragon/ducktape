@@ -1,0 +1,85 @@
+load("//agentplane/app/frontend:vitest.bzl", "agentplane_vitest_test")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+TSCONFIG = "//agentplane/app/frontend:tsconfig"
+
+ts_library(
+    name = "mcp_linkage_client",
+    srcs = ["mcp_linkage_client.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:watch_stream",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "mcp_linkage_client_test",
+    srcs = ["mcp_linkage_client.test.ts"],
+    deps = [
+        ":mcp_linkage_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend/testing:watch",
+    ],
+)
+
+ts_library(
+    name = "mcp_servers",
+    srcs = ["mcp_servers.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":mcp_linkage_client",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend:stream_reader",
+        "//agentplane/app/frontend:time_ago",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:presentation",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "mcp_servers_test",
+    srcs = ["mcp_servers.test.tsx"],
+    deps = [
+        ":mcp_servers",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/vitest",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/action_service/api/contracts:operator_action_service_pb",
+        "//agentplane/app/frontend:client",
+        "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions/testing:harness",
+    ],
+)
+
+check_vitest_specs()

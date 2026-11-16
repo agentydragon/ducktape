@@ -38,6 +38,7 @@ filegroup(
         allow_empty = True,
     ) + [
         "//agentplane/app/frontend/actions:typed_lint_srcs",
+        "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
         "//agentplane/app/frontend/actions/testing:typed_lint_srcs",
         "//agentplane/app/frontend/bindings:typed_lint_srcs",
@@ -399,79 +400,15 @@ js_library(
 )
 
 ts_library(
-    name = "mcp_linkage_client",
-    srcs = ["mcp_linkage_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":stream_reader",
-        ":watch_stream",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/action_service/api/contracts:operator_action_service_pb",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "mcp_linkage_client_test",
-    srcs = ["mcp_linkage_client.test.ts"],
-    deps = [
-        ":mcp_linkage_client",
-        ":stream_reader",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@types/react",
-        "//:node_modules/vitest",
-        "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/testing:watch",
-    ],
-)
-
-ts_library(
-    name = "mcp_servers",
-    srcs = ["settings/mcp_servers.tsx"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        ":mcp_linkage_client",
-        ":stream_reader",
-        ":time_ago",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/actions:presentation",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "mcp_servers_test",
-    srcs = ["settings/mcp_servers.test.tsx"],
-    deps = [
-        ":client",
-        ":mcp_servers",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//:node_modules/vitest",
-        "//agentplane/action_service/api/contracts:action_service_pb",
-        "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/actions:action_client",
-        "//agentplane/app/frontend/actions/testing:harness",
-    ],
-)
-
-ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":mcp_servers",
         ":push",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//agentplane/app/frontend/actions/mcp:mcp_servers",
         "//agentplane/app/frontend/connections:management",
     ],
 )

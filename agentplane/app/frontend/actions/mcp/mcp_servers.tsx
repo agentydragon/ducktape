@@ -2,24 +2,24 @@ import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/c
 import { type Dispatch, type JSX, type ReactNode, type SetStateAction, useEffect, useState } from "react";
 import { toJson } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
-import { type StreamConnection } from "../stream_reader";
+import { type StreamConnection } from "../../stream_reader";
 
-import { displayableError } from "../client";
+import { displayableError } from "../../client";
 import {
   ExecutorKind,
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
-} from "../../../action_service/api/contracts/action_service_pb";
+} from "../../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   type McpServerLinkage,
-} from "../../../action_service/api/contracts/operator_action_service_pb";
-import { followActionGroups } from "../actions/client";
-import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../actions/presentation";
-import { TimeAgo } from "../time_ago";
-import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "../mcp_linkage_client";
+} from "../../../../action_service/api/contracts/operator_action_service_pb";
+import { followActionGroups } from "../client";
+import { mcpLifecycleLabel, mcpUnavailableReasonLabel } from "../presentation";
+import { TimeAgo } from "../../time_ago";
+import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_linkage_client";
 
 type McpHealth = ActionGroup["health"];
 
