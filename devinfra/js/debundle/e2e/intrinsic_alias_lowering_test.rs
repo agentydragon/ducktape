@@ -396,7 +396,7 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
     }
 }
 
-fn define_property_alias_modules(alias_name: &str) -> Vec<LogicalModuleEntry> {
+fn define_property_alias_modules(alias_name: &'static str) -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "model",
