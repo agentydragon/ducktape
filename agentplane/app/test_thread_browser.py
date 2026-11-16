@@ -20,6 +20,7 @@ import pytest
 import pytest_bazel
 from google.protobuf import json_format
 from google.protobuf.empty_pb2 import Empty
+from kubernetes_asyncio import client as k8s_client
 from playwright.async_api import (
     APIResponse,
     Locator,
@@ -167,7 +168,12 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         session_dispatcher_pb2.CreateSessionRequest(session_id=str(thread_id), spec=thread_source.attached.spec),
     )
     await sandbox.custom_objects.delete_namespaced_custom_object(
-        "agentplane.allegedly.works", "v1alpha1", sandbox.namespace, "sandboxes", sandbox.name
+        "agentplane.allegedly.works",
+        "v1alpha1",
+        sandbox.namespace,
+        "sandboxes",
+        sandbox.name,
+        body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=sandbox.uid)),
     )
     await history.set_attached(thread_id, thread_source.attached)
     await history.record(thread_id, thread_source.entries)
