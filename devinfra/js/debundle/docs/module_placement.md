@@ -131,6 +131,12 @@ and distinct failed states or states not retained by the cache can repeat work.
 This proves exactness, not polynomial complexity. Independent tiny raw-import
 permutation oracles remain the completeness reference.
 
+The [scheduling complexity proof and polynomial construction](polynomial_esm_scheduling.md)
+show that exact feasibility is NP-complete, even with an acyclic constraining
+graph. The document also proposes a sound incomplete constructor with
+`O(n(n + m + c))` time and `O(n + m + c)` space. This proposed replacement is not
+implemented; the exact constructor described here remains the current behavior.
+
 ### Independent SCC formulation and UNSAT evidence
 
 Reject any C edge from a nonentry module into entry first. Treat entry as already
