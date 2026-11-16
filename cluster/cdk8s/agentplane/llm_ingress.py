@@ -216,9 +216,7 @@ class LlmIngress(Construct):
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{_NAME}-settings", namespace=env.namespace),
-            content=yaml_config(
-                static_settings.model_dump(mode="json", exclude={"central_sampler_accounts", "token_audience"})
-            ),
+            content=yaml_config(static_settings),
             path="/etc/agentplane-llm-ingress/settings.yaml",
         )
         settings.mount_into(workload.container, env=Settings.config_file_env)

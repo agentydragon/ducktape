@@ -175,6 +175,3 @@ not need an environment attachment; the typed proof names the execution Identity
 
 `model_config_service_callers` separately grants exact service SPIFFE IDs access to ModelConfig
 RPCs. Both service allowlists require listener SPIFFE client trust and default empty.
-
-Legacy `central_sampler_accounts` and `token_audience` remain decoded and ignored until their
-manifest omission has rolled out.
