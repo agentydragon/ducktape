@@ -86,8 +86,9 @@ first query over a high-fanout family.
 Use `describe`, `coverage`, `atoms` and source inspection to understand current
 claims and structural constraints. Choose semantic destinations from source
 behavior and callers. Check a complete `{unit_id, module}` map with
-`modules check --batch`, then preview and apply it with
-`modules apply --assignments`. Exact apply preserves existing selector entries
+`modules check --batch changes.json`. Preview with
+`modules apply --assignments changes.json --dry-run`, then apply the same
+assignments without `--dry-run`. Exact apply preserves existing selector entries
 and their metadata, including grouped source matches and anonymous statements.
 The [CLI guide](cli.md#applying-explicit-assignments-modules-apply-assignments)
 defines the batch and validation contract.
