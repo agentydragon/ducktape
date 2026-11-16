@@ -1,12 +1,12 @@
 {
   "schema_version": 3,
-  "source_sha": "85eed7057f692cf12e9c5499d91ed7470cab1b73",
-  "observed_at_utc": "2026-11-16T05:56:00Z",
+  "source_sha": "a8fc73e4f5e4627b77a878ad7460aa96ddc93652",
+  "observed_at_utc": "2026-11-16T06:19:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1344,
+    "files": 1345,
     "directories": 249,
-    "production": 743,
+    "production": 744,
     "tests": 601
   },
   "legend": {
@@ -8402,7 +8402,6 @@
         "agentplane/session_dispatcher/dispatcher/internal/notification/dispatcher_notification.proto"
       ],
       "pending_tracks": [
-        "gateway-replica-ownership",
         "runner-gateway-dispatcher-store",
         "settings-single-source",
         "protobuf-alignment"
@@ -8458,7 +8457,7 @@
             "agentplane/session_dispatcher/dispatcher",
             "agentplane/session_dispatcher/dispatcher/internal/store"
           ],
-          "reason": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. Keep the package intact until its ownership/design gate is met; no new destination is selected. Moved unchanged by #16785; any Store extraction follows the per-Session lease (gateway-replica-ownership).",
+          "reason": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. Keep the package intact until its ownership/design gate is met; no new destination is selected. Moved unchanged by #16785; its owner fence is the per-Session lease since #16858.",
           "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage.",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
@@ -8467,10 +8466,7 @@
             "agentplane/session_dispatcher/dispatcher/central_delivery_test.go"
           ],
           "declared_packages": ["dispatcher"],
-          "pending_tracks": [
-            "gateway-replica-ownership",
-            "runner-gateway-dispatcher-store"
-          ],
+          "pending_tracks": ["runner-gateway-dispatcher-store"],
           "counts": {
             "non_test": 12,
             "tests": 16
@@ -8942,7 +8938,7 @@
       "id": "testing",
       "path": "agentplane/testing",
       "counts": {
-        "files": 12,
+        "files": 13,
         "directories": 8
       },
       "directories": [
@@ -8981,9 +8977,10 @@
         },
         {
           "path": "agentplane/testing/kubeapiserver",
-          "production": 2,
+          "production": 3,
           "tests": 0,
           "files": [
+            "agentplane/testing/kubeapiserver/fixture.go",
             "agentplane/testing/kubeapiserver/kubeapiserver.go",
             "agentplane/testing/kubeapiserver/reviews.go"
           ]
@@ -9149,7 +9146,7 @@
           "declared_packages": ["kubeapiserver"],
           "pending_tracks": [],
           "counts": {
-            "non_test": 2,
+            "non_test": 3,
             "tests": 0
           }
         },
@@ -10371,43 +10368,6 @@
       "proposed_file_targets": []
     },
     {
-      "source_paths": [
-        "agentplane/session_dispatcher/dispatcher/session_lease.go"
-      ],
-      "target_paths": [],
-      "dependencies": [],
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "proposed_file_targets": [],
-      "source_owner": null,
-      "id": "gateway-replica-ownership",
-      "title": "Finish replacing the Dispatcher's ownership Lease with a per-Session Postgres lease",
-      "components": ["session_dispatcher"],
-      "status": "READY",
-      "kind": "service boundary design",
-      "stage": 5,
-      "priority": 8,
-      "summary": "Decided (operator 2026-11-15 00:06 UTC, card \"Record it\"; recorded in the DAG node `DISPATCHER_PERSISTENCE_MODEL_DESIGN` by #16458): a `postgres/lease` per Session replaces the Dispatcher's per-Sandbox Kubernetes ownership Lease and its database ownership generation. Built: #16852 added the per-Session lease (`dispatcher/session_lease.go`, migration 00022) with compatibility fencing, and #16858 made delivery use it alone and deleted `ownership.go`; on staging since 2026-11-16 05:34 UTC. No replica owns a Sandbox or a queue: any Sessions replica dequeues a runnable Session head and takes that Session's lease. The key is the Session because it is the ordering unit with at most one head in flight, the step starts before any command is claimed (wake, Session materialization), and a Session needs no Sandbox. It is a timed lease, not a lock held in a transaction, because the claim outlives the delivery RPC and the delivery attempt commits before it.",
-      "how": [
-        "Drop the `sandbox_ownership` table in a new migration.",
-        "Remove the runner-gateway Role's Lease grant, then delete the leftover `dispatcher-<sandbox UID>` Leases; controller leader election is unaffected.",
-        "Then design the Dispatcher store split (runner-gateway-dispatcher-store) once, on this ownership."
-      ],
-      "gate": "Released by the operator 2026-11-16 02:57 UTC (card \"Which of the three ready tracks should workers start now?\": \"Lease and renames\"); the cleanup (table, Lease grant and leftover Leases) released 2026-11-16 05:52 UTC. It lands as its own change, with a system test in which a replica dies mid-delivery and another takes over.",
-      "preserve": "Per-Session order, one deliverer per Session head, fencing of a stale deliverer's writes, and incarnation fencing of deliveries.",
-      "validation": [
-        "//agentplane/session_dispatcher/dispatcher:store_integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/session_dispatcher/dispatcher/session_lease.go",
-        "agentplane/postgres/lease/lease.go",
-        "agentplane/session_dispatcher/dispatcher/store.go",
-        "agentplane/env/runtime/journal/journal.go"
-      ],
-      "review_size": "One migration PR dropping the table; one PR removing the Lease grant; the Lease deletion is a staging request."
-    },
-    {
       "id": "runner-gateway-dispatcher-store",
       "title": "Keep dispatcher settlement cohesive pending a concrete Store owner design",
       "status": "DESIGN REQUIRED",
@@ -10423,7 +10383,7 @@
         "Keep integration tests spanning caller-visible outcomes.",
         "Do not move shared receiver methods wholesale."
       ],
-      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence becomes the per-Session `postgres/lease` decided in gateway-replica-ownership; design the store after that lands.",
+      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858).",
       "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
       "validation": [
         "//agentplane/session_dispatcher/dispatcher:methods_test",
@@ -10440,7 +10400,7 @@
         "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
         "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
       ],
-      "dependencies": ["gateway-replica-ownership"],
+      "dependencies": [],
       "priority": 10,
       "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
       "candidate_owner_paths": [
@@ -10688,12 +10648,11 @@
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner",
-        "gateway-replica-ownership",
         "runner-gateway-dispatcher-store",
         "history-journals",
         "settings-single-source"
       ],
-      "result": "The Notification split, the Journal service and a single settings source are open; the Dispatcher delivers under a per-Session `postgres/lease` since #16858, and its cleanup is released. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
+      "result": "The Notification split, the Journal service and a single settings source are open. Code under them stays put, including decided moves such as the Notification command placement, so nothing moves twice."
     },
     {
       "stage": 6,
@@ -10705,11 +10664,11 @@
   "scope_coverage": {
     "top_level_areas": 36,
     "go_packages": 249,
-    "go_files": 1344,
+    "go_files": 1345,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "85eed7057f692cf12e9c5499d91ed7470cab1b73",
+    "review_source_sha": "a8fc73e4f5e4627b77a878ad7460aa96ddc93652",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10907,7 +10866,7 @@
         "slice": "testing",
         "components": ["testing"],
         "packages": 8,
-        "go_files": 12
+        "go_files": 13
       },
       {
         "slice": "watchhealth",
@@ -10923,15 +10882,7 @@
       }
     ]
   },
-  "next_prs": [
-    {
-      "id": "next-1",
-      "track": "gateway-replica-ownership",
-      "title": "Finish replacing the Dispatcher's ownership Lease with a per-Session Postgres lease",
-      "readiness": "READY",
-      "first_step": "Drop the `sandbox_ownership` table, then remove the Sessions Role's Lease grant and the leftover Leases."
-    }
-  ],
+  "next_prs": [],
   "maintenance": {
     "canonical_plan": "agentplane-organization/go-plan.json",
     "file_ledger": "agentplane-organization/go-files.json",
