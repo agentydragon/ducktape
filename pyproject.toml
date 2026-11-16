@@ -17,6 +17,7 @@ version = "0.0.0"
 requires-python = ">=3.14"
 dependencies = [
     # Core
+    "absl-py",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.0.0",
     "typer>=0.27.2",
@@ -160,10 +161,6 @@ dependencies = [
 
     # ducktape-llm-common
     "humanize>=4.0.0",
-
-    # finance
-    "absl-py",
-    "splitwise",
 
     # unidiff
     "unidiff>=0.7.5",
