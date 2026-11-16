@@ -1069,14 +1069,9 @@ impl LocalContinuation {
                 value,
                 span,
             } => {
-                // A store to a binding outside this body composes its own
-                // fragment in `store_binding`.
-                if body.bindings.contains_key(&binding) {
-                    self.frame
-                        .ledger
-                        .effects
-                        .compose(&EffectCoverageFragment::default());
-                }
+                // Operand effects compose while the RHS runs. The checked
+                // PutValue in `store_binding` supplies the store's fragment;
+                // preemptively opening it would discard that evidence.
                 self.steps.push(Step::Assign(binding, span));
                 self.steps.push(Step::Expression(value.as_ref().clone()));
             }
@@ -1745,8 +1740,9 @@ fn store_binding(
     if matches!(kind, LocalBinding::Parameter | LocalBinding::Let)
         && frame.initialized_bindings.contains(binding)
     {
-        // The adapter's declarative-cell proof already rejects live captured
-        // cells. Assignment's earlier unknown fragment remains unknown.
+        // Only an initialized activation-local mutable binding can carry
+        // this receipt. The shared cell policy rejects live captured cells;
+        // composing the store never closes an unknown RHS effect.
         let effects = cells::declarative_binding_operation(context, body, binding);
         frame.ledger.effects.compose(&effects);
     } else {
