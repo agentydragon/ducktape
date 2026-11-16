@@ -207,8 +207,6 @@ const environmentServiceSettings = `environment_service:
     auth:
       - mode: spiffe
         ca_file: /run/test/ca.crt
-      - mode: kubernetes_bearer
-        audiences: [test-dispatcher]
   service_readers: [spiffe://agentplane/app]
   service_managers: [spiffe://agentplane/app]
   service_operators: [spiffe://agentplane/app]

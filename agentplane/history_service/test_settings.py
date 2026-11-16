@@ -89,7 +89,7 @@ def test_service_callers_require_exact_service_ids_and_spiffe_listener() -> None
             Settings.model_validate(invalid_source)
 
     no_spiffe = _settings_source(spiffe_listener=False)
-    with pytest.raises(ValidationError, match=r"rpc.auth must enable spiffe client trust"):
+    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
         Settings.model_validate(no_spiffe)
 
 

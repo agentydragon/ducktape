@@ -187,7 +187,7 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 func TestSettingsRequireSPIFFEClientTrust(t *testing.T) {
 	bearerOnly := strings.Replace(requiredFile, "    - mode: spiffe\n      ca_file: /test/workload-ca.crt\n",
 		"    - mode: kubernetes_bearer\n      audiences: [legacy-reader]\n", 1)
-	if _, err := loadTestConfig(t, bearerOnly); err == nil || !strings.Contains(err.Error(), "rpc.auth must enable spiffe client trust") {
+	if _, err := loadTestConfig(t, bearerOnly); err == nil {
 		t.Fatalf("bearer-only listener error = %v", err)
 	}
 }

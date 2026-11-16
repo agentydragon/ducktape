@@ -126,7 +126,6 @@ def test_receiver_rejects_unreviewed_authentication(updates: dict[str, object]) 
 def test_receiver_ignores_legacy_bearer_settings(audience: str) -> None:
     source = EnvironmentService.model_validate(receiver_settings()).model_dump(mode="json")
     source["audience"] = audience
-    source["rpc"]["auth"].append({"mode": "kubernetes_bearer", "audiences": ["wrong-audience"]})
     source["delegation"] = {"actor": "test/actions", "identity_callers": True, "methods": ["/other.Service/Method"]}
     settings = EnvironmentService.model_validate(source)
     assert settings.audience == audience

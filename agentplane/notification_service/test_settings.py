@@ -237,7 +237,7 @@ def test_receiver_requires_spiffe_trust() -> None:
         "listen_address": "0.0.0.0:8080",
         "auth": [{"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]}],
     }
-    with pytest.raises(ValidationError, match="rpc requires SPIFFE client trust"):
+    with pytest.raises(ValidationError, match="does not match any of the expected tags"):
         Settings.model_validate(values)
 
 
