@@ -599,6 +599,27 @@ spec:
         managed = "goauthentik.io/providers/oauth2/scope-offline_access"
       }
 
+      moved {
+        from = authentik_provider_oauth2.forgejo
+        to   = authentik_provider_oauth2.confidential["forgejo"]
+      }
+      moved {
+        from = authentik_provider_oauth2.grafana
+        to   = authentik_provider_oauth2.confidential["grafana"]
+      }
+      moved {
+        from = authentik_provider_oauth2.langfuse
+        to   = authentik_provider_oauth2.confidential["langfuse"]
+      }
+      moved {
+        from = authentik_provider_oauth2.matrix
+        to   = authentik_provider_oauth2.confidential["matrix"]
+      }
+      moved {
+        from = authentik_provider_oauth2.props
+        to   = authentik_provider_oauth2.confidential["props"]
+      }
+
 
       # Action-only JWT-bearer target. See agentplane/docs/operator_federation.md for
       # the pinned Authentik/provider source proving the shared subject mode and grant.
@@ -1119,36 +1140,10 @@ spec:
 
       # Forgejo — OIDC login for the git server
 
-      resource "authentik_provider_oauth2" "forgejo" {
-        name               = "forgejo-oauth2"
-        client_id          = "forgejo"
-        client_type        = "confidential"
-        authorization_flow = data.authentik_flow.implicit_consent.id
-        invalidation_flow  = data.authentik_flow.invalidation.id
-        signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-        issuer_mode                = "per_provider"
-        include_claims_in_id_token = true
-
-        property_mappings = [
-          data.authentik_property_mapping_provider_scope.openid.id,
-          data.authentik_property_mapping_provider_scope.email.id,
-          data.authentik_property_mapping_provider_scope.profile.id,
-        ]
-
-        allowed_redirect_uris = [
-          {
-            matching_mode     = "strict"
-            url               = "https://git.allegedly.works/user/oauth2/authentik/callback"
-            redirect_uri_type = "authorization"
-          },
-        ]
-      }
-
       resource "authentik_application" "forgejo" {
         name              = "Forgejo"
         slug              = "forgejo"
-        protocol_provider = authentik_provider_oauth2.forgejo.id
+        protocol_provider = authentik_provider_oauth2.confidential["forgejo"].id
         meta_description  = "Forgejo Git Repository Management"
         meta_publisher    = "Forgejo"
         meta_icon         = "https://cdn.simpleicons.org/forgejo"
@@ -1175,8 +1170,8 @@ spec:
         }
 
         data = {
-          key    = authentik_provider_oauth2.forgejo.client_id
-          secret = authentik_provider_oauth2.forgejo.client_secret
+          key    = authentik_provider_oauth2.confidential["forgejo"].client_id
+          secret = authentik_provider_oauth2.confidential["forgejo"].client_secret
         }
       }
 
@@ -1266,36 +1261,10 @@ spec:
 
       # Grafana — OIDC login for the monitoring dashboard
 
-      resource "authentik_provider_oauth2" "grafana" {
-        name               = "grafana-oauth2"
-        client_id          = "grafana"
-        client_type        = "confidential"
-        authorization_flow = data.authentik_flow.implicit_consent.id
-        invalidation_flow  = data.authentik_flow.invalidation.id
-        signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-        issuer_mode                = "per_provider"
-        include_claims_in_id_token = true
-
-        property_mappings = [
-          data.authentik_property_mapping_provider_scope.openid.id,
-          data.authentik_property_mapping_provider_scope.email.id,
-          data.authentik_property_mapping_provider_scope.profile.id,
-        ]
-
-        allowed_redirect_uris = [
-          {
-            matching_mode     = "strict"
-            url               = "https://grafana.allegedly.works/login/generic_oauth"
-            redirect_uri_type = "authorization"
-          },
-        ]
-      }
-
       resource "authentik_application" "grafana" {
         name              = "Grafana"
         slug              = "grafana"
-        protocol_provider = authentik_provider_oauth2.grafana.id
+        protocol_provider = authentik_provider_oauth2.confidential["grafana"].id
         meta_icon         = "https://cdn.simpleicons.org/grafana"
         open_in_new_tab   = true
       }
@@ -1319,8 +1288,8 @@ spec:
         }
 
         data = {
-          GF_AUTH_GENERIC_OAUTH_CLIENT_ID     = authentik_provider_oauth2.grafana.client_id
-          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET = authentik_provider_oauth2.grafana.client_secret
+          GF_AUTH_GENERIC_OAUTH_CLIENT_ID     = authentik_provider_oauth2.confidential["grafana"].client_id
+          GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET = authentik_provider_oauth2.confidential["grafana"].client_secret
         }
       }
 
@@ -1445,36 +1414,10 @@ spec:
       # AUTH_CUSTOM_CLIENT_ID / AUTH_CUSTOM_CLIENT_SECRET. Login is gated to the
       # admins group; email/password login is disabled in the chart (SSO-only).
 
-      resource "authentik_provider_oauth2" "langfuse" {
-        name               = "langfuse-oauth2"
-        client_id          = "langfuse"
-        client_type        = "confidential"
-        authorization_flow = data.authentik_flow.implicit_consent.id
-        invalidation_flow  = data.authentik_flow.invalidation.id
-        signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-        issuer_mode                = "per_provider"
-        include_claims_in_id_token = true
-
-        property_mappings = [
-          data.authentik_property_mapping_provider_scope.openid.id,
-          data.authentik_property_mapping_provider_scope.email.id,
-          data.authentik_property_mapping_provider_scope.profile.id,
-        ]
-
-        allowed_redirect_uris = [
-          {
-            matching_mode     = "strict"
-            url               = "https://langfuse.allegedly.works/api/auth/callback/custom"
-            redirect_uri_type = "authorization"
-          },
-        ]
-      }
-
       resource "authentik_application" "langfuse" {
         name              = "Langfuse"
         slug              = "langfuse"
-        protocol_provider = authentik_provider_oauth2.langfuse.id
+        protocol_provider = authentik_provider_oauth2.confidential["langfuse"].id
         meta_description  = "LLM observability and tracing dashboard"
         meta_launch_url   = "https://langfuse.allegedly.works"
         meta_icon         = "https://cdn.simpleicons.org/langfuse"
@@ -1501,43 +1444,17 @@ spec:
         }
 
         data = {
-          client-id     = authentik_provider_oauth2.langfuse.client_id
-          client-secret = authentik_provider_oauth2.langfuse.client_secret
+          client-id     = authentik_provider_oauth2.confidential["langfuse"].client_id
+          client-secret = authentik_provider_oauth2.confidential["langfuse"].client_secret
         }
       }
 
       # Matrix — OIDC login for Element Web / Synapse
 
-      resource "authentik_provider_oauth2" "matrix" {
-        name               = "matrix-oauth2"
-        client_id          = "matrix"
-        client_type        = "confidential"
-        authorization_flow = data.authentik_flow.implicit_consent.id
-        invalidation_flow  = data.authentik_flow.invalidation.id
-        signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-        issuer_mode                = "per_provider"
-        include_claims_in_id_token = true
-
-        property_mappings = [
-          data.authentik_property_mapping_provider_scope.openid.id,
-          data.authentik_property_mapping_provider_scope.email.id,
-          data.authentik_property_mapping_provider_scope.profile.id,
-        ]
-
-        allowed_redirect_uris = [
-          {
-            matching_mode     = "strict"
-            url               = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
-            redirect_uri_type = "authorization"
-          },
-        ]
-      }
-
       resource "authentik_application" "matrix" {
         name              = "Element"
         slug              = "matrix"
-        protocol_provider = authentik_provider_oauth2.matrix.id
+        protocol_provider = authentik_provider_oauth2.confidential["matrix"].id
         meta_description  = "Matrix Chat (Element Web)"
         meta_launch_url   = "https://chat.allegedly.works"
         meta_icon         = "https://cdn.simpleicons.org/element"
@@ -1572,8 +1489,8 @@ spec:
                 - idp_id: authentik
                   idp_name: "Authentik SSO"
                   issuer: "https://auth.allegedly.works/application/o/matrix/"
-                  client_id: "${authentik_provider_oauth2.matrix.client_id}"
-                  client_secret: "${authentik_provider_oauth2.matrix.client_secret}"
+                  client_id: "${authentik_provider_oauth2.confidential["matrix"].client_id}"
+                  client_secret: "${authentik_provider_oauth2.confidential["matrix"].client_secret}"
                   discover: true
                   scopes:
                     - openid
@@ -1970,36 +1887,10 @@ spec:
       # secret in the authentik namespace and reflected into the props namespace,
       # where the Deployment consumes them as PROPS_OIDC_* env vars.
 
-      resource "authentik_provider_oauth2" "props" {
-        name               = "props-oauth2"
-        client_id          = "props"
-        client_type        = "confidential"
-        authorization_flow = data.authentik_flow.implicit_consent.id
-        invalidation_flow  = data.authentik_flow.invalidation.id
-        signing_key        = data.authentik_certificate_key_pair.self_signed.id
-
-        issuer_mode                = "per_provider"
-        include_claims_in_id_token = true
-
-        property_mappings = [
-          data.authentik_property_mapping_provider_scope.openid.id,
-          data.authentik_property_mapping_provider_scope.email.id,
-          data.authentik_property_mapping_provider_scope.profile.id,
-        ]
-
-        allowed_redirect_uris = [
-          {
-            matching_mode     = "strict"
-            url               = "https://props.allegedly.works/auth/callback"
-            redirect_uri_type = "authorization"
-          },
-        ]
-      }
-
       resource "authentik_application" "props" {
         name              = "Props"
         slug              = "props"
-        protocol_provider = authentik_provider_oauth2.props.id
+        protocol_provider = authentik_provider_oauth2.confidential["props"].id
         meta_description  = "LLM critic evaluation dashboard"
         meta_launch_url   = "https://props.allegedly.works"
       }
@@ -2032,8 +1923,8 @@ spec:
         }
 
         data = {
-          client-id      = authentik_provider_oauth2.props.client_id
-          client-secret  = authentik_provider_oauth2.props.client_secret
+          client-id      = authentik_provider_oauth2.confidential["props"].client_id
+          client-secret  = authentik_provider_oauth2.confidential["props"].client_secret
           session-secret = random_password.props_session_secret.result
         }
       }
@@ -2190,6 +2081,64 @@ spec:
           session_secret     = random_password.study_casino_session_secret.result
           rng_secret         = random_password.study_casino_rng_secret.result
         }
+      }
+
+      locals {
+        confidential_oauth_providers = {
+          forgejo = {
+            name         = "forgejo-oauth2"
+            client_id    = "forgejo"
+            redirect_uri = "https://git.allegedly.works/user/oauth2/authentik/callback"
+          }
+          grafana = {
+            name         = "grafana-oauth2"
+            client_id    = "grafana"
+            redirect_uri = "https://grafana.allegedly.works/login/generic_oauth"
+          }
+          langfuse = {
+            name         = "langfuse-oauth2"
+            client_id    = "langfuse"
+            redirect_uri = "https://langfuse.allegedly.works/api/auth/callback/custom"
+          }
+          matrix = {
+            name         = "matrix-oauth2"
+            client_id    = "matrix"
+            redirect_uri = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
+          }
+          props = {
+            name         = "props-oauth2"
+            client_id    = "props"
+            redirect_uri = "https://props.allegedly.works/auth/callback"
+          }
+        }
+      }
+
+      resource "authentik_provider_oauth2" "confidential" {
+        for_each = local.confidential_oauth_providers
+
+        name               = each.value.name
+        client_id          = each.value.client_id
+        client_type        = "confidential"
+        authorization_flow = data.authentik_flow.implicit_consent.id
+        invalidation_flow  = data.authentik_flow.invalidation.id
+        signing_key        = data.authentik_certificate_key_pair.self_signed.id
+
+        issuer_mode                = "per_provider"
+        include_claims_in_id_token = true
+
+        property_mappings = [
+          data.authentik_property_mapping_provider_scope.openid.id,
+          data.authentik_property_mapping_provider_scope.email.id,
+          data.authentik_property_mapping_provider_scope.profile.id,
+        ]
+
+        allowed_redirect_uris = [
+          {
+            matching_mode     = "strict"
+            url               = each.value.redirect_uri
+            redirect_uri_type = "authorization"
+          },
+        ]
       }
 
       # Google OAuth Source — "Sign in with Google" for Authentik

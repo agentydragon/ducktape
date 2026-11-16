@@ -1,29 +1,29 @@
 locals {
   confidential_oauth_providers = {
     forgejo = {
-      name          = "forgejo-oauth2"
-      client_id     = "forgejo"
-      redirect_uri  = "https://git.allegedly.works/user/oauth2/authentik/callback"
+      name         = "forgejo-oauth2"
+      client_id    = "forgejo"
+      redirect_uri = "https://git.allegedly.works/user/oauth2/authentik/callback"
     }
     grafana = {
-      name          = "grafana-oauth2"
-      client_id     = "grafana"
-      redirect_uri  = "https://grafana.allegedly.works/login/generic_oauth"
+      name         = "grafana-oauth2"
+      client_id    = "grafana"
+      redirect_uri = "https://grafana.allegedly.works/login/generic_oauth"
     }
     langfuse = {
-      name          = "langfuse-oauth2"
-      client_id     = "langfuse"
-      redirect_uri  = "https://langfuse.allegedly.works/api/auth/callback/custom"
+      name         = "langfuse-oauth2"
+      client_id    = "langfuse"
+      redirect_uri = "https://langfuse.allegedly.works/api/auth/callback/custom"
     }
     matrix = {
-      name          = "matrix-oauth2"
-      client_id     = "matrix"
-      redirect_uri  = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
+      name         = "matrix-oauth2"
+      client_id    = "matrix"
+      redirect_uri = "https://matrix.allegedly.works/_synapse/client/oidc/callback"
     }
     props = {
-      name          = "props-oauth2"
-      client_id     = "props"
-      redirect_uri  = "https://props.allegedly.works/auth/callback"
+      name         = "props-oauth2"
+      client_id    = "props"
+      redirect_uri = "https://props.allegedly.works/auth/callback"
     }
   }
 }
