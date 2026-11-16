@@ -16,9 +16,9 @@ import (
 
 func TestRelistRemovesNamesThatVanishedWhileTheWatchWasDown(t *testing.T) {
 	f := newFixture(t)
-	f.create(f.policySet("test-stays", testRule()))
+	f.Create(f.policySet("test-stays", testRule()))
 	vanishes := f.policySet("test-vanishes", testRule())
-	f.create(vanishes)
+	f.Create(vanishes)
 	f.start()
 	names := []string{"test-stays", "test-vanishes", "test-arrives"}
 	f.eventually("the first list", func() bool {
@@ -30,8 +30,8 @@ func TestRelistRemovesNamesThatVanishedWhileTheWatchWasDown(t *testing.T) {
 	release := f.faults.hold(PolicySets)
 	f.faults.sever(PolicySets)
 	listed := f.faults.listCount(PolicySets)
-	f.remove(vanishes)
-	f.create(f.policySet("test-arrives", testRule()))
+	f.Delete(vanishes)
+	f.Create(f.policySet("test-arrives", testRule()))
 	f.faults.expire(PolicySets)
 	release()
 
@@ -69,8 +69,8 @@ func TestAKindWhoseRequestsFailIsUnavailableUntilItsWatchResumes(t *testing.T) {
 
 func TestTheConditionFollowsTheSetsABindingNames(t *testing.T) {
 	f := newFixture(t)
-	f.create(f.policySet("test-early", testRule(), testRule()))
-	f.create(f.policyBinding("test-grant", "test-early", "test-late"))
+	f.Create(f.policySet("test-early", testRule(), testRule()))
+	f.Create(f.policyBinding("test-grant", "test-early", "test-late"))
 	// Another reader's condition, which this one must leave alone.
 	grant := f.binding("test-grant")
 	grant.Status.Conditions = []metav1.Condition{{
@@ -97,7 +97,7 @@ func TestTheConditionFollowsTheSetsABindingNames(t *testing.T) {
 	}
 
 	late := f.policySet("test-late", testRule())
-	f.create(late)
+	f.Create(late)
 	ready := f.eventuallyCondition("test-grant", func(c *metav1.Condition) bool { return c.Status == metav1.ConditionTrue })
 	if ready.Reason != testCondition.Reason || ready.ObservedGeneration != written.Generation {
 		t.Errorf("a binding whose sets all exist: %+v", ready)
@@ -105,20 +105,20 @@ func TestTheConditionFollowsTheSetsABindingNames(t *testing.T) {
 
 	// Another rule changes what is enforced, not whether it is: the message follows, the transition does not.
 	late.Spec.Rules = append(late.Spec.Rules, testRule())
-	f.update(late)
+	f.Update(late)
 	recounted := f.eventuallyCondition("test-grant", func(c *metav1.Condition) bool { return c.Message != ready.Message })
 	if recounted.Status != metav1.ConditionTrue || !recounted.LastTransitionTime.Equal(&ready.LastTransitionTime) {
 		t.Errorf("a set that changed without changing readiness: %+v", recounted)
 	}
 
-	f.remove(late)
+	f.Delete(late)
 	f.eventuallyCondition("test-grant", func(c *metav1.Condition) bool { return c.Status == metav1.ConditionFalse })
 }
 
 func TestTheConditionIsNotWrittenBeforeEveryKindHasListed(t *testing.T) {
 	f := newFixture(t)
-	f.create(f.policySet("test-set", testRule()))
-	f.create(f.policyBinding("test-grant", "test-set"))
+	f.Create(f.policySet("test-set", testRule()))
+	f.Create(f.policyBinding("test-grant", "test-set"))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	watcher, err := client.NewWithWatch(apiConfig, client.Options{Scheme: apiScheme})
@@ -156,8 +156,8 @@ func TestTheConditionIsNotWrittenBeforeEveryKindHasListed(t *testing.T) {
 
 func TestTheConditionIsNotRewrittenWhenUnchanged(t *testing.T) {
 	f := newFixture(t)
-	f.create(f.policySet("test-set", testRule()))
-	f.create(f.policyBinding("test-first", "test-set"))
+	f.Create(f.policySet("test-set", testRule()))
+	f.Create(f.policyBinding("test-first", "test-set"))
 	f.start()
 	f.eventuallyCondition("test-first", func(c *metav1.Condition) bool { return c.Status == metav1.ConditionTrue })
 	f.eventually("the reader to see its own write", func() bool {
@@ -168,7 +168,7 @@ func TestTheConditionIsNotRewrittenWhenUnchanged(t *testing.T) {
 
 	// The queue is in order, so the second binding is judged after the first is judged again.
 	f.reader.enqueueBindings()
-	f.create(f.policyBinding("test-second", "test-set"))
+	f.Create(f.policyBinding("test-second", "test-set"))
 	f.eventuallyCondition("test-second", func(c *metav1.Condition) bool { return c.Status == metav1.ConditionTrue })
 
 	if got := f.faults.patchCount("test-first"); got != written {
@@ -178,13 +178,13 @@ func TestTheConditionIsNotRewrittenWhenUnchanged(t *testing.T) {
 
 func TestAnIdentityBindingAnswersOnlyALookupOfItsLiveIdentity(t *testing.T) {
 	f := newFixture(t)
-	f.create(f.policySet("test-set", testRule()))
+	f.Create(f.policySet("test-set", testRule()))
 	agent := f.identity("test-agent")
-	f.create(agent)
-	f.create(f.policyBinding("test-account-grant", "test-set"))
+	f.Create(agent)
+	f.Create(f.policyBinding("test-account-grant", "test-set"))
 	identityGrant := f.policyBinding("test-identity-grant", "test-set")
 	identityGrant.Spec.Subject = policyapi.Subject{Identity: &policyapi.IdentityRef{Name: agent.Name}}
-	f.create(identityGrant)
+	f.Create(identityGrant)
 	f.start()
 	live := Identity{Name: agent.Name, UID: agent.UID}
 	f.eventually("the identity binding to grant", func() bool {
@@ -206,13 +206,13 @@ func TestAnIdentityBindingAnswersOnlyALookupOfItsLiveIdentity(t *testing.T) {
 		t.Errorf("a lookup naming no UID found %v", grantedBindings(got))
 	}
 
-	f.remove(agent)
+	f.Delete(agent)
 	f.eventually("the deleted Identity to grant nothing", func() bool { return len(f.index.Grants(live)) == 0 })
 
 	// A same-named Identity is another incarnation: what the deleted one's UID could do, it still
 	// cannot, while the new one's UID holds the binding that names the name.
 	recreated := f.identity(agent.Name)
-	f.create(recreated)
+	f.Create(recreated)
 	f.eventually("the recreated Identity to grant", func() bool {
 		return slices.Equal(grantedBindings(f.index.Grants(Identity{Name: recreated.Name, UID: recreated.UID})), []string{"test-identity-grant"})
 	})

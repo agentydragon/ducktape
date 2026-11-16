@@ -1,7 +1,6 @@
 package informer
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -53,6 +52,7 @@ func TestMain(m *testing.M) {
 
 // fixture is one test's namespaces, its Index, and an Informer against the shared API server.
 type fixture struct {
+	kubeapiserver.TestClient
 	t        *testing.T
 	index    *policy.Index
 	informer *Informer
@@ -64,10 +64,10 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
-		t: t, rules: prefix + "-rules", credentials: prefix + "-credentials", elsewhere: prefix + "-elsewhere",
+		t: t, TestClient: kubeapiserver.NewTestClient(t, apiClient), rules: prefix + "-rules", credentials: prefix + "-credentials", elsewhere: prefix + "-elsewhere",
 	}
 	for _, namespace := range []string{f.rules, f.credentials, f.elsewhere} {
-		f.create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
+		f.Create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
 	}
 	return f
 }
@@ -89,42 +89,12 @@ func (f *fixture) startThrough(base *rest.Config) {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		f.informer.Run(ctx)
-	}()
-	f.t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	kubeapiserver.RunUntilCleanup(f.t, f.informer.Run)
 }
 
 func (f *fixture) eventually(what string, condition func() bool) {
 	f.t.Helper()
 	eventually.Eventually(f.t, what, condition)
-}
-
-func (f *fixture) create(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Create(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) update(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Update(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) remove(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Delete(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
 }
 
 func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.PolicySet {

@@ -52,6 +52,7 @@ func TestMain(m *testing.M) {
 
 // fixture is one test's namespaces, its Index, and an Informer against the shared API server.
 type fixture struct {
+	kubeapiserver.TestClient
 	t      *testing.T
 	index  *Index
 	faults *failingPaths
@@ -64,11 +65,11 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
-		t: t, faults: &failingPaths{failing: map[string]bool{}},
+		t: t, TestClient: kubeapiserver.NewTestClient(t, apiClient), faults: &failingPaths{failing: map[string]bool{}},
 		policy: prefix + "-policy", callers: prefix + "-callers", moreCallers: prefix + "-more-callers", elsewhere: prefix + "-elsewhere",
 	}
 	for _, namespace := range []string{f.policy, f.callers, f.moreCallers, f.elsewhere} {
-		f.create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
+		f.Create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
 	}
 	return f
 }
@@ -83,16 +84,7 @@ func (f *fixture) start() {
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		informer.Run(ctx)
-	}()
-	f.t.Cleanup(func() {
-		cancel()
-		<-done
-	})
+	kubeapiserver.RunUntilCleanup(f.t, informer.Run)
 }
 
 // eventually waits for the condition; on giving up, it reports what each of lastSeen says.
@@ -102,27 +94,6 @@ func (f *fixture) eventually(what string, condition func() bool, lastSeen ...fun
 }
 
 func (f *fixture) available() bool { return f.index.Health.Available() }
-
-func (f *fixture) create(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Create(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) update(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Update(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
-
-func (f *fixture) remove(object client.Object) {
-	f.t.Helper()
-	if err := apiClient.Delete(context.Background(), object); err != nil {
-		f.t.Fatal(err)
-	}
-}
 
 // serviceAccount is the account's ServiceAccount, created with the given caller label value, or without the label
 // when the value is empty.
@@ -134,7 +105,7 @@ func (f *fixture) serviceAccount(account auth.Account, label string) *corev1.Ser
 	}
 	if label != "" {
 		created.Labels = map[string]string{callers.ServiceAccountLabelKey: label}
-		f.update(created)
+		f.Update(created)
 	}
 	return created
 }
@@ -156,18 +127,14 @@ func (f *fixture) policyBinding(namespace, name string, subject reader.ServiceAc
 func (f *fixture) set(name string) *policyapi.PolicySet {
 	f.t.Helper()
 	set := &policyapi.PolicySet{}
-	if err := apiClient.Get(context.Background(), client.ObjectKey{Namespace: f.policy, Name: name}, set); err != nil {
-		f.t.Fatal(err)
-	}
+	f.Get(f.policy, name, set)
 	return set
 }
 
 func (f *fixture) binding(namespace, name string) *policyapi.PolicyBinding {
 	f.t.Helper()
 	binding := &policyapi.PolicyBinding{}
-	if err := apiClient.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: name}, binding); err != nil {
-		f.t.Fatal(err)
-	}
+	f.Get(namespace, name, binding)
 	return binding
 }
 
