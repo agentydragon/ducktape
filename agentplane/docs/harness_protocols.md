@@ -194,15 +194,15 @@ A second `turn/start` while a turn is active is a separate experiment from `turn
 the active turn: Core appends the input to that turn's in-memory pending-input list
 (`core/src/session/input_queue.rs`), drained only after the current model response and every tool
 call it requested have finished (`core/src/session/turn.rs`), never mid-stream. Joining is
-recorded into history (and echoed as `item/started`/`item/completed` for a `userMessage` item
-carrying back `clientUserMessageId`) at the moment it drains, immediately before the next model
+recorded into history (and echoed as `item/started`/`item/completed` for a `userMessage` whose
+`clientId` contains the value supplied as `clientUserMessageId`) at the moment it drains, immediately before the next model
 request goes out — there is no separate "now sending to the model" signal. `turn/interrupt` is the
 only cancellation primitive for joined input, and it is not selective: aborting the turn also
 clears whatever was pending for it (`InputQueue::clear_pending`), so there is no way to pull back
 one joined message without killing the turn it joined.
 
 Codex additionally ships a **separate, durable queue** unrelated to steering/joining
-(`codex-rs/ext/queue`, present in the runner-matched `rust-v0.157.0` source): `thread/queue/{add,list,update,delete,
+(`codex-rs/ext/queue`, present in upstream `rust-v0.157.0` source): `thread/queue/{add,list,update,delete,
 reorder,start}` plus a `thread/queue/changed {threadId}` notification (all `#[experimental(...)]`
 on the wire — opt-in requirements against the pinned binary are unconfirmed). Unlike joining, a
 queued item does not affect the active turn at all; it is SQLite-backed
@@ -220,14 +220,13 @@ Promotion itself is observable, not just inferrable from absence: `thread/queue/
 (`thread_queue_processor.rs::add` → `submission_into_turn_input`), and dispatch starts the queued
 item as ordinary turn-start input, so it goes through the exact same
 `record_user_prompt_and_emit_turn_item` path as joining — the same `item/started`/`item/completed`
-`userMessage` pair, carrying that same `clientUserMessageId` back as `client_id`, fires the moment
+`userMessage` pair, carrying that same value in the returned item's `clientId`, fires the moment
 Core records it into history, immediately before it goes out in the turn's first model request.
 Concretely, promotion looks like: a `thread/queue/changed {threadId}` (the delete-on-dispatch that
 removed it from the queue, indistinguishable on its own from any other queue mutation), a
 `turn/started` for a brand-new turn (dispatch always starts fresh, never joins), then
 `item/started`/`item/completed` for the `userMessage` item — that last pair, matched by
-`clientUserMessageId`, is the actual "entered the transcript, about to be sent" signal. Not yet
-exercised by the driver or captured live.
+`clientId` (the value supplied as `clientUserMessageId`), is the actual "entered the transcript, about to be sent" signal. Durable queue promotion remains untested by the driver or captured live.
 
 ### Resume
 

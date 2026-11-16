@@ -86,6 +86,31 @@ py_test(
 )
 
 py_test(
+    name = "test_client_user_message_id",
+    size = "medium",
+    srcs = ["test_client_user_message_id.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:probe_support",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:async_process",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_compaction",
     size = "medium",
     srcs = ["test_compaction.py"],
