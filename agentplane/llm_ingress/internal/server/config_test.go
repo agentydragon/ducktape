@@ -12,13 +12,11 @@ const testLiteLLMKey = "test-provider-secret"
 
 const validSettings = `allowed_service_account_namespaces: [yaml-namespace]
 policy_namespace: test-policy
-token_audience: yaml-audience
 litellm_url: http://127.0.0.1:8100/prefix
 log_llm_requests: true
 rpc: {listen_address: "127.0.0.1:6060", tls: {cert_file: /tls/cert, key_file: /tls/key}, auth: [{mode: spiffe, ca_file: /tls/ca}]}
 codex_model_catalog_file: /yaml/codex_models.json
 kubeconfig: /yaml/kubeconfig
-central_sampler_accounts: [yaml-namespace/sampler]
 log_levels: {root: INFO}
 models:
   - model: test/model
@@ -35,7 +33,6 @@ func loadSettings(t *testing.T, contents string, extra ...string) (config, error
 func TestStaticSettingsComeOnlyFromFileAndProviderKeyIsExplicit(t *testing.T) {
 	c, err := loadSettings(
 		t, validSettings,
-		"AGENTPLANE_LLM_INGRESS_TOKEN_AUDIENCE=env-audience",
 		"AGENTPLANE_LLM_INGRESS_LITELLM_URL=http://env.invalid",
 		"AGENTPLANE_LLM_INGRESS_LOG_LLM_REQUESTS=false",
 		"AGENTPLANE_LLM_INGRESS_KUBECONFIG=/env/kubeconfig",
@@ -43,11 +40,11 @@ func TestStaticSettingsComeOnlyFromFileAndProviderKeyIsExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.TokenAudience != "yaml-audience" || c.RPC.ListenAddress != "127.0.0.1:6060" || c.LiteLLMKey != testLiteLLMKey || !c.LogLLMRequests ||
+	if c.RPC.ListenAddress != "127.0.0.1:6060" || c.LiteLLMKey != testLiteLLMKey || !c.LogLLMRequests ||
 		len(c.AllowedServiceAccountNamespaces) != 1 || c.AllowedServiceAccountNamespaces[0] != "yaml-namespace" ||
 		c.LiteLLMURL != "http://127.0.0.1:8100/prefix" || len(c.Models) != 1 || c.Models[0].TotalContextBudgetTokens != 8192 ||
 		c.CodexModelCatalogFile != "/yaml/codex_models.json" || c.Kubeconfig != "/yaml/kubeconfig" ||
-		len(c.CentralSamplerAccounts) != 1 || c.CentralSamplerAccounts[0] != "yaml-namespace/sampler" || c.LogLevels["root"] != "INFO" {
+		c.LogLevels["root"] != "INFO" {
 		t.Fatalf("unexpected file settings: %+v", c)
 	}
 }
@@ -165,7 +162,6 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 	c := config{
 		AllowedServiceAccountNamespaces: []string{"test-namespace"},
 		PolicyNamespace:                 "test-policy",
-		TokenAudience:                   testAudience,
 		LiteLLMURL:                      "http://127.0.0.1:8100",
 		LiteLLMKey:                      testLiteLLMKey,
 		Attribution:                     defaultAttribution(),
@@ -180,13 +176,8 @@ func TestSharedListenerRequiresTLS(t *testing.T) {
 	}
 }
 
-func TestRetiredBearerSettingsMayBeOmittedAndDoNotEnableDelegation(t *testing.T) {
-	withoutLegacy := strings.ReplaceAll(validSettings, "token_audience: yaml-audience\n", "")
-	withoutLegacy = strings.ReplaceAll(withoutLegacy, "central_sampler_accounts: [yaml-namespace/sampler]\n", "")
-	if _, err := loadSettings(t, withoutLegacy); err != nil {
-		t.Fatalf("retired settings still required: %v", err)
-	}
+func TestSamplerIdentityDelegationRequiresServiceActors(t *testing.T) {
 	if _, err := loadSettings(t, validSettings+"central_sampler_identity_callers: true\n"); err == nil {
-		t.Fatal("legacy sampler accounts granted typed service delegation")
+		t.Fatal("sampler Identity delegation accepted without a service actor")
 	}
 }

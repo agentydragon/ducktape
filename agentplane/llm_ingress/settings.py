@@ -44,20 +44,9 @@ class Settings(BaseModel):
         default_factory=list,
         description="Exact service SPIFFE IDs allowed to delegate Session inference when central_sampler_identity_callers is enabled.",
     )
-    # CLEANUP(added 2026-11-15): Remove after manifests omit central_sampler_accounts and that rollout completes.
-    central_sampler_accounts: frozenset[str] = Field(
-        default_factory=frozenset, description="Legacy decoded setting; grants no caller admission."
-    )
-
-    @field_serializer("central_sampler_accounts")
-    def sort_central_sampler_accounts(self, value: frozenset[str]) -> list[str]:
-        return sorted(value)
-
     central_sampler_identity_callers: bool = Field(
         default=False, description="Whether trusted central samplers may act as delegating actors for an Identity."
     )
-    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-    token_audience: str | None = Field(default=None, description="Legacy decoded setting; grants no caller admission.")
     log_llm_requests: bool = Field(
         default=False,
         description=(

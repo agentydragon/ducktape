@@ -71,16 +71,11 @@ type modelConfig struct {
 type config struct {
 	ModelConfigServiceCallers []string `mapstructure:"model_config_service_callers"`
 	CentralSamplerServices    []string `mapstructure:"central_sampler_services"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit central_sampler_accounts and that rollout completes.
-	// Decoded for rollout compatibility; no longer admits callers.
-	CentralSamplerAccounts []string `mapstructure:"central_sampler_accounts"`
 	// CentralSamplerIdentityCallers enables the exact service actors to call for a live Identity.
 	CentralSamplerIdentityCallers   bool     `mapstructure:"central_sampler_identity_callers"`
 	AllowedServiceAccountNamespaces []string `mapstructure:"allowed_service_account_namespaces"`
 	// PolicyNamespace holds the Identities a Sandbox SVID may name.
-	PolicyNamespace string `mapstructure:"policy_namespace"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes. Ignored.
-	TokenAudience         string            `mapstructure:"token_audience"`
+	PolicyNamespace       string            `mapstructure:"policy_namespace"`
 	LogLLMRequests        bool              `mapstructure:"log_llm_requests"`
 	Models                []modelConfig     `mapstructure:"models"`
 	Attribution           attributionConfig `mapstructure:"attribution"`
