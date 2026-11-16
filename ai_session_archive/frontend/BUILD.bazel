@@ -364,6 +364,24 @@ ts_library(
 )
 
 ts_library(
+    name = "json_values",
+    srcs = ["json-values.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+)
+
+ts_library(
+    name = "codex_record",
+    srcs = ["codex-record.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":json_values",
+        ":schema",
+    ],
+)
+
+ts_library(
     name = "transcript_rows",
     srcs = ["transcript-rows.ts"],
     isolated_typecheck = True,
@@ -372,7 +390,11 @@ ts_library(
         "//agentplane:__subpackages__",
         "//ai_session_archive/frontend:__pkg__",
     ],
-    deps = [":schema"],
+    deps = [
+        ":codex_record",
+        ":json_values",
+        ":schema",
+    ],
 )
 
 ts_library(

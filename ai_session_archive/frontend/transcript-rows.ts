@@ -1,3 +1,7 @@
+import { agentMessageContent, reasoningText, responsePayload } from "./codex-record";
+import type { AgentMessageContent } from "./codex-record";
+import { nonemptyString, object, string } from "./json-values";
+import type { ObjectValue } from "./json-values";
 import type { EventRecord } from "./schema";
 
 export type RecordPresentation = "user" | "assistant" | "activity" | "metadata" | "compaction" | "record";
@@ -30,8 +34,6 @@ export type TranscriptRow =
   | { key: string; kind: "metadata"; records: EventRecord[] }
   | { key: string; kind: "activity"; records: EventRecord[]; steps: ActivityStep[] };
 
-type ObjectValue = Record<string, unknown>;
-type AgentMessageContent = { kind: "text"; text: string } | { kind: "encrypted"; text: string | null };
 type ToolNamespace = "claude" | "codex";
 type ToolEvent = {
   key: string;
@@ -51,24 +53,6 @@ type MutableTranscriptRow =
   | { kind: "record"; records: EventRecord[] }
   | { kind: "metadata"; records: EventRecord[] }
   | { kind: "activity"; records: EventRecord[]; stepRecords: EventRecord[] };
-
-function object(value: unknown): ObjectValue | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as ObjectValue) : null;
-}
-
-function string(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function nonemptyString(value: unknown): string | null {
-  const candidate = string(value);
-  return candidate !== null && candidate.trim().length > 0 ? candidate : null;
-}
-
-function responsePayload(record: EventRecord): ObjectValue | null {
-  const parsed = object(record.parsed);
-  return parsed?.type === "response_item" ? object(parsed.payload) : null;
-}
 
 function claudeContent(record: EventRecord): unknown[] | null {
   if (record.parse_error != null) return null;
@@ -550,41 +534,6 @@ function claudeThinkingEntries(record: EventRecord): Array<{ blockIndex: number;
     return text === null ? [] : [{ blockIndex, text }];
   });
 }
-
-function reasoningText(payload: ObjectValue): string | null {
-  if (!Array.isArray(payload.summary)) return null;
-  const chunks = payload.summary.flatMap((value) => {
-    const part = object(value);
-    if (part?.type !== "summary_text" || typeof part.text !== "string" || part.text.trim().length === 0) return [];
-    return [part.text];
-  });
-  return chunks.length === 0 ? null : chunks.join("\n");
-}
-
-function agentMessageContent(payload: ObjectValue): AgentMessageContent | null {
-  if (!Array.isArray(payload.content)) return null;
-  const chunks: string[] = [];
-  let encrypted = false;
-  // Observed Codex rollout shape: input_text blocks, optionally followed by encrypted_content.
-  for (const value of payload.content) {
-    const block = object(value);
-    if (block?.type === "input_text" && typeof block.text === "string") {
-      const body = block.text.replace(AGENT_ROUTING_PREAMBLE, "");
-      if (body.trim().length > 0) chunks.push(body);
-    } else if (block?.type === "encrypted_content" && typeof block.encrypted_content === "string") {
-      encrypted = true;
-    } else {
-      return null;
-    }
-  }
-  const text = chunks.length > 0 ? chunks.join("\n") : null;
-  if (encrypted) return { kind: "encrypted", text };
-  return text === null ? null : { kind: "text", text };
-}
-
-// Codex archives can store the agent-routing header as text before encrypted message content.
-const AGENT_ROUTING_PREAMBLE =
-  /^Message Type: MESSAGE\r?\nTask name: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nSender: \/root(?:\/[A-Za-z0-9_-]+)*\r?\nPayload:\r?\n/;
 
 function uniqueRecords(records: readonly EventRecord[]): EventRecord[] {
   const byOrdinal = new Map<number, EventRecord>();
