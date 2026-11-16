@@ -138,6 +138,8 @@ def main_proxy_config() -> dict:
             # client and every upstream, not only the Claude lanes.
             "forward_client_headers_to_llm_api": True,
             "store_model_in_db": False,
+            # Keep key/team spend counters while avoiding per-request database logs.
+            "disable_spend_logs": True,
         },
     }
 
