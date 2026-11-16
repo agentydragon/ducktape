@@ -7691,9 +7691,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
         values: impl IntoIterator<Item = &'v AbstractValue>,
     ) {
         let mut pending: Vec<_> = values.into_iter().cloned().collect();
-        let mut visited = BTreeSet::new();
+        let mut visited = FxHashSet::default();
         while let Some(value) = pending.pop() {
-            if !visited.insert(value.clone()) {
+            if visited.contains(&value) {
                 continue;
             }
             let mut expand_stored_references = true;
@@ -7742,6 +7742,10 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                     pending.push(reference.clone());
                 });
             }
+            // Retained children are queued and processed only after this loop
+            // iteration, so recording the owned value here is cycle-safe and
+            // avoids cloning it into the membership set.
+            visited.insert(value);
         }
     }
 
