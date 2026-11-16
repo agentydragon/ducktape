@@ -46,6 +46,60 @@ export function gmailThreadUrl(threadId: string): string {
   return `https://mail.google.com/mail/u/0/#all/${threadId}`;
 }
 
+function fetchGmailThreadPreview(threadId: string): Promise<GmailThreadPreview | null> {
+  return fetchGmailThreadPreviews([threadId]).then((previews) => previews[threadId] ?? null);
+}
+
+function GmailIdentityPreview({
+  id,
+  fetchPreview,
+  kind,
+  variant,
+}: {
+  id: string;
+  fetchPreview: (id: string) => Promise<Pick<GmailThreadPreview, "subject" | "gmail_url"> | null>;
+  kind: "thread" | "message";
+  variant: "compact" | "detailed";
+}) {
+  const [preview, setPreview] = useState<Pick<GmailThreadPreview, "subject" | "gmail_url"> | null | undefined>(
+    undefined
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setPreview(undefined);
+    fetchPreview(id).then(
+      (result) => {
+        if (alive) setPreview(result);
+      },
+      (error: unknown) => {
+        console.warn(`Could not resolve Gmail ${kind} preview ${id}`, error);
+        if (alive) setPreview(null);
+      }
+    );
+    return () => {
+      alive = false;
+    };
+  }, [id, fetchPreview, kind]);
+
+  if (preview === undefined) return <Loader size="xs" />;
+  if (preview === null) {
+    return <PreviewText c="dimmed">{id} (couldn&apos;t load preview)</PreviewText>;
+  }
+  return (
+    <Stack gap={2}>
+      <ExternalLink href={preview.gmail_url} size="sm">
+        {preview.subject ?? "(no subject)"}
+      </ExternalLink>
+      {variant === "detailed" && (
+        <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
+          {id}
+        </PreviewText>
+      )}
+    </Stack>
+  );
+}
+
 function GmailThreadRow({
   threadId,
   preview,
@@ -147,79 +201,11 @@ function ModifyGmailThreadLabelsPreview({ args, variant }: PreviewProps<ModifyGm
 // real subject by fetching it, the same way ModifyGmailThreadLabelsPreview does. The raw id still
 // rides along dimmed in detailed.
 function GetGmailThreadPreview({ args, variant }: PreviewProps<GetGmailThreadArgs>) {
-  const [preview, setPreview] = useState<GmailThreadPreview | null | undefined>(undefined);
-
-  useEffect(() => {
-    let alive = true;
-    setPreview(undefined);
-    fetchGmailThreadPreviews([args.id]).then(
-      (result) => {
-        if (alive) setPreview(result[args.id] ?? null);
-      },
-      (error: unknown) => {
-        console.warn(`Could not resolve Gmail thread preview ${args.id}`, error);
-        if (alive) setPreview(null);
-      }
-    );
-    return () => {
-      alive = false;
-    };
-  }, [args.id]);
-
-  if (preview === undefined) return <Loader size="xs" />;
-  if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
-  }
-  return (
-    <Stack gap={2}>
-      <ExternalLink href={preview.gmail_url} size="sm">
-        {preview.subject ?? "(no subject)"}
-      </ExternalLink>
-      {variant === "detailed" && (
-        <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
-          {args.id}
-        </PreviewText>
-      )}
-    </Stack>
-  );
+  return <GmailIdentityPreview id={args.id} fetchPreview={fetchGmailThreadPreview} kind="thread" variant={variant} />;
 }
 
 function GetGmailMessagePreview({ args, variant }: PreviewProps<GetGmailMessageArgs>) {
-  const [preview, setPreview] = useState<GmailMessagePreview | null | undefined>(undefined);
-
-  useEffect(() => {
-    let alive = true;
-    setPreview(undefined);
-    fetchGmailMessagePreview(args.id).then(
-      (result) => {
-        if (alive) setPreview(result);
-      },
-      (error: unknown) => {
-        console.warn(`Could not resolve Gmail message preview ${args.id}`, error);
-        if (alive) setPreview(null);
-      }
-    );
-    return () => {
-      alive = false;
-    };
-  }, [args.id]);
-
-  if (preview === undefined) return <Loader size="xs" />;
-  if (preview === null) {
-    return <PreviewText c="dimmed">{args.id} (couldn&apos;t load preview)</PreviewText>;
-  }
-  return (
-    <Stack gap={2}>
-      <ExternalLink href={preview.gmail_url} size="sm">
-        {preview.subject ?? "(no subject)"}
-      </ExternalLink>
-      {variant === "detailed" && (
-        <PreviewText size="xs" c="dimmed" className="haku-shell-mono">
-          {args.id}
-        </PreviewText>
-      )}
-    </Stack>
-  );
+  return <GmailIdentityPreview id={args.id} fetchPreview={fetchGmailMessagePreview} kind="message" variant={variant} />;
 }
 
 /** Per-tool preview widgets for the `gmail` server. */
