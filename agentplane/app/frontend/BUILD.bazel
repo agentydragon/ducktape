@@ -37,7 +37,6 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
-        "//agentplane/app/frontend/shell:typed_lint_srcs",
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
@@ -50,6 +49,7 @@ filegroup(
         "//agentplane/app/frontend/policy:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
         "//agentplane/app/frontend/service_worker:typed_lint_srcs",
+        "//agentplane/app/frontend/shell:typed_lint_srcs",
         "//agentplane/app/frontend/system:typed_lint_srcs",
         "//agentplane/app/frontend/testing:typed_lint_srcs",
         "//agentplane/app/frontend/threads:typed_lint_srcs",
@@ -569,15 +569,15 @@ ts_library(
     srcs = ["main.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/shell:app",
         ":operator_login",
-        "//agentplane/app/frontend/shell:theme",
         ":tracing",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/app/frontend/shell:app",
+        "//agentplane/app/frontend/shell:theme",
     ],
 )
 
@@ -638,7 +638,6 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/shell:app",
         ":client",
         ":harness_network",
         ":live",
@@ -646,7 +645,6 @@ ts_library(
         ":shell_command_view",
         ":stream_status",
         ":text_block",
-        "//agentplane/app/frontend/shell:theme",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -664,6 +662,8 @@ ts_library(
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/sandboxes:decision_fixture",
         "//agentplane/app/frontend/sandboxes:live",
+        "//agentplane/app/frontend/shell:app",
+        "//agentplane/app/frontend/shell:theme",
         "//agentplane/app/frontend/testing:model_catalog",
         "//agentplane/app/frontend/testing:runner_status",
         "//agentplane/app/frontend/testing:sandbox",
