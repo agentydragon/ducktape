@@ -351,7 +351,7 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// materializer auto-grows entry's export list to cover them — that
 /// way peeling a body whose lazy/eager reads target an
 /// unexported residual binding emits valid JS without making the
-/// peel proposer responsible for predicting the materializer's
+/// placement search responsible for predicting the materializer's
 /// export policy. See docs/design.md "Valid peels and atomic modules"
 /// (importability clause).
 ///

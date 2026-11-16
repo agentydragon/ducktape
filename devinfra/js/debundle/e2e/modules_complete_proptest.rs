@@ -75,7 +75,7 @@ proptest! {
         }
         let only_path = fixture.root().join("only.json");
         fs::write(&only_path, serde_json::to_vec(&ids).unwrap()).unwrap();
-        let mut args = vec!["modules", "propose", "--strategy", "complete", "--only-units", only_path.to_str().unwrap(), "--require", required, "--format", "json"];
+        let mut args = vec!["modules", "propose", "--only-units", only_path.to_str().unwrap(), "--require", required, "--format", "json"];
         for target in &targets { args.extend(["--into", target]); }
         let output = fixture.command(&args);
         prop_assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));

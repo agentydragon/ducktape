@@ -57,9 +57,7 @@ impl ModuleAssignment {
     }
 
     /// Construct an assignment from a dense `Vec<ModuleId>` indexed by
-    /// `SourceUnitId.0`. Caller-supplied entry destination; intended for the
-    /// peel planner's projection of `QuotientGraph` class assignments back
-    /// to `ModuleAssignment` slots before running `check_realizability`.
+    /// `SourceUnitId.0`, with the caller-supplied entry destination.
     pub fn from_assignments(of: Vec<ModuleId>, entry_destination: EntryDestination) -> Self {
         Self {
             of,

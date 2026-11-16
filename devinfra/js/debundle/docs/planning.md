@@ -47,9 +47,7 @@ propose` strategy. Review the complete mapping and destinations, check the plan,
   `found` result is graph acceptance only; selector resolution and runtime
   behavior are separate. `exhausted_no_peel` is scoped to its reported graph
   constraints and permitted moves. Budget exhaustion is incomplete. The
-  explicit `--strategy auto` factorizer remains advisory and cannot establish
-  impossibility.
-  Send the exact accepted plan and source evidence to intake; changing its
+  Send the exact accepted plan and source evidence to the worker; changing its
   destinations needs another complete check.
 - For existing claims, review the source units and choose semantic destinations,
   then use `modules check --batch` to validate the complete assignment before
@@ -64,56 +62,21 @@ destinations, selector anchors, candidate verdict, and unresolved questions.
 Keep planning reports distinct from the operation's edit-batch format; the linked
 CLI recipe defines that format.
 
-## Prepare seeds
+## Prepare a residual-placement handoff
 
-Intake consumes residual proposals. Reviewed maps for already-claimed source
-units go directly to workers. Use short source slices to infer purpose from
-implementations, callers, stable strings/properties, and source proximity. If
-choosing a destination requires broad architectural discovery, mark low confidence
-and route to the architect.
+Use short source slices to infer purpose from implementations, callers, stable
+strings/properties, and source proximity. If choosing a destination requires
+broad architectural discovery, mark low confidence and route to the architect.
 
-An exact-placement result has one snapshot-bound `plan`, rather than a queue of
-independent `proposals[]` rows. Preserve that whole plan as one worker packet,
-including jointly required atoms and all its destinations. Add semantic names
-and source evidence separately; changing the plan's destinations or combining
-plans requires planning to recheck the resulting complete batch. A graph witness
-still needs selector realization, materialization and behavioral evidence.
-`incomplete` is not a blocked-code or no-peel conclusion. `exhausted_no_peel`
-only covers the request's owner policy, destination set, required units and
-other recorded scope.
-
-For each `proposals[]` row with `landable_today: true`, classify it as `fresh`,
-`extend_active`, or `side_effect_cell`, keep its complete source-unit set, and
-choose a tentative destination/name. Skip diagnostic rows. A row with
-`landable_today: false` is dispatchable only as a combined dependency closure;
-otherwise report it as blocked. Unaddressable anonymous units remain advisory
-until their selector question is resolved.
-
-Write the adapter's `<scratch>/seeds.json`:
-
-```json
-[
-  {
-    "proposal_id": "auto_partition_0042",
-    "kind": "fresh",
-    "source_unit_ids": ["..."],
-    "binding_ids": ["..."],
-    "extends_module_id": null,
-    "proposed_destination": "path/to/module.yaml",
-    "proposed_names": { "minifiedBinding": "readableName" },
-    "notes": "Why this appears to be one module.",
-    "confidence": "high"
-  }
-]
-```
-
-Blocked dependency-closure seeds use `status: blocked_residual_dependency`.
-Preserve planner order, preferring coherent high-confidence active-module
-extensions and ordinary binding cells before riskier side-effect cells nearby.
-Carry proposal IDs, units, reviewed destination and names into the worker packet;
-the worker reviews the operation's dry-run selectors and can still reject or skip
-it. Intake does not edit YAML, run gates/regeneration, or integrate branches.
+An exact placement result is one snapshot-bound plan, including jointly
+required atoms and all destinations. Keep the plan intact as one worker packet;
+add semantic names and source evidence separately. Splitting or combining its
+changes requires checking the resulting complete assignment again. A graph
+witness still needs selector realization, materialization and behavioral
+evidence. `incomplete` is not a blocked-code or no-placement conclusion, and
+`exhausted_no_peel` covers only the request's recorded owner policy,
+destination set, required units and other scope.
 
 Track source units by the current graph's unit IDs and bindings by chunk/name,
-with the source/spec revisions that produced them. These identities are scoped
-to one captured input program; proposal IDs may renumber after integration.
+with the source/spec revisions that produced them. Unit IDs are scoped to one
+captured input program; refresh the graph before handing off a changed spec.

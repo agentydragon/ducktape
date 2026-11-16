@@ -727,8 +727,7 @@ match the other opt-in edit assessments. Omitting `--analysis` preserves the
 ordinary deletion and gate behavior.
 
 `modules apply --analysis <artifact>` assesses the exact typed module
-documents after selected residual proposals and their selectors are applied in
-memory. It uses the existing `--modules` and `--tree-config` arguments as the
+documents after the requested source-unit assignments are applied in memory. It uses the existing `--modules` and `--tree-config` arguments as the
 transform root and config, then runs after the expected-member and realizability
 gates pass but before YAML writes. The assessment requires a verified staged
 artifact, full-tree context for exactly one materialized graph chunk, and
@@ -1088,11 +1087,6 @@ with `--graph-source-root`, which maps each captured source-root-relative path
 under the new root. `--source-root` is only a selector lookup boundary and
 does not change that physical mapping.
 
-Description reports include `module_proposals` and `module_proposal_diagnostics`
-only when proposal analysis runs. Their limits sections use the same field names.
-Proposals name their outgoing residual quotient-class dependencies with
-`edges_to_other_residual_classes` and `other_residual_classes_referenced`.
-
 `cluster <binding>` emits at most 20 incoming and 20 outgoing module neighbors
 by default. `--limit N` sets a positive cap for each direction; `--all` emits
 every neighbor and sets `limits.limit` to `0`. The
@@ -1103,21 +1097,21 @@ section.
 
 `describe` and `inspect-source --id` reject an unsupported identifier-like
 prefix before graph compatibility checks or graph loading. Accepted typed
-prefixes are `unit:`, `logical:`, `atomic:`, `diagnostic:`, `extend:`, and
-`auto_partition_`. Existing module paths are checked before rejecting an
-unknown colon prefix because colons are legal in module filenames.
+prefixes are `unit:`, `logical:`, and `atomic:`. Existing module paths are
+checked before rejecting an unknown colon prefix because colons are legal in
+module filenames.
 
 `describe --tree-config <file>` may query with `--modules` set to the full
 app-level modules tree. It checks the graph's captured config and resolves
 module paths and binding homes only from the configured YAML roots for that
 graph chunk. Claims from those roots are resolved together with the ordinary
-selector resolver. `--include-proposals` uses the same chunk scope. Without
-`--tree-config`, the existing single-root `--modules` query remains in effect.
+selector resolver. Without `--tree-config`, the existing single-root
+`--modules` query remains in effect.
 
 `describe --batch` accepts a nonempty JSON array of identifiers and returns the
 same per-selection reports as separate `describe` calls, in request order with
 duplicates retained. One invocation loads and verifies one graph and shares
-binding-home and requested proposal lookups. All selections use the same
+binding-home lookups. All selections use the same
 roots, limits and filters; module source claims retain the ordinary resolver's
 semantics. JSON wraps the reports in `results`; NDJSON emits one report per
 item. A failed item emits only the command failure, with no partial reports.
@@ -1132,8 +1126,8 @@ the full canonical graph gate, `exhausted_no_peel` after every compatible
 constraint-contraction branch in that scope has been exhausted, or `incomplete`
 after an explicit work/time budget. Errors and interruption never establish no
 peel. Complete mode has no implicit size/check/time budget. Placement is
-constructed from graph constraints and exact import scheduling; the proposer
-does not enumerate the Cartesian product of atom-to-destination choices. Its
+constructed from graph constraints and exact import scheduling; search does
+not enumerate the Cartesian product of atom-to-destination choices. Its
 necessary contraction clauses can branch, so the worst case can be exponential.
 The status is relative to the captured graph, assumptions, owner policy and
 destination scope. Selector realization and emitted runtime behavior remain
@@ -1142,10 +1136,6 @@ CLI workflow. The [schedule-existence proof](docs/polynomial_esm_scheduling.md)
 explains the complexity boundary; the
 [explicit-order model](docs/placement_algorithm.md) specifies the scoped target
 constructor, which does not establish the current CLI already implements it.
-
-`modules propose --strategy auto` remains an explicit advisory factorization
-inventory. Readiness labels and empty output do not establish that no peel
-exists.
 
 `modules check` overlays a JSON batch of source-unit destination changes on the
 accepted graph assignment, retaining the destination of every omitted unit.
@@ -1220,8 +1210,8 @@ module-quotient edges. Reason values are the serialized `DepKind` names:
 `deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, and
 `local_effect`; repeated
 values are combined with OR. Rows have stable ID ordering, with the selected
-binding, source unit, atomic group, proposal, or diagnostic kept first in its
-matching section before truncation.
+binding, source unit, or atomic group kept first in its matching section
+before truncation.
 
 ## Unassigned source
 

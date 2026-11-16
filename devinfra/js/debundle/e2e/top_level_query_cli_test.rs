@@ -387,7 +387,7 @@ fn inspect_source_rejects_stale_graph_source_and_old_command() {
 }
 
 #[test]
-fn atoms_summary_and_proposals_describe_the_real_graph() {
+fn atoms_and_summary_describe_the_real_graph() {
     let fixture = fixture();
     let atoms = fixture.json(&["atoms"]);
     assert_eq!(atoms["atomic_groups"].as_array().unwrap().len(), 2);
@@ -396,15 +396,6 @@ fn atoms_summary_and_proposals_describe_the_real_graph() {
     assert_eq!(summary["atomic_group_count"], 2);
     assert!(summary.get("proposal_count").is_none());
     assert!(summary.get("diagnostic_count").is_none());
-    let proposals = fixture.json(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--size-cap-lines",
-        "10000",
-    ]);
-    assert!(!proposals["proposals"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -490,7 +481,7 @@ fn source_match_claims_combine_with_members() {
 }
 
 #[test]
-fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
+fn anonymous_only_module_path_is_resolved_as_a_module() {
     let fixture = GraphFixture::new(
         "console.log(\"task\");\n",
         &[(
@@ -498,15 +489,13 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
             "anonymous_statements: [{match: 'console.log(\"task\");'}]\n",
         )],
     );
-    for id in ["auto_partition/auto_partition_0187", "auto_partition_0187"] {
-        let report = fixture.json(&["describe", id]);
-        assert_eq!(report["query"]["kind"], "module");
-        assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
-        assert_eq!(
-            report["atomic_groups"][0]["anonymous_statement_source_unit_ids"],
-            json!(["unit:0"])
-        );
-    }
+    let report = fixture.json(&["describe", "auto_partition/auto_partition_0187"]);
+    assert_eq!(report["query"]["kind"], "module");
+    assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
+    assert_eq!(
+        report["atomic_groups"][0]["anonymous_statement_source_unit_ids"],
+        json!(["unit:0"])
+    );
     let report = fixture.json(&[
         "inspect-source",
         "--id",
@@ -524,51 +513,6 @@ fn anonymous_only_module_path_dispatches_before_proposal_prefix() {
             .unwrap()
             .contains("console.log(\"task\");")
     );
-}
-
-#[test]
-fn duplicate_anonymous_statements_are_advisory_not_landable_proposals() {
-    let fixture = GraphFixture::new("console.log(\"task\");\nconsole.log(\"task\");\n", &[]);
-    let report = fixture.json(&[
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--size-cap-lines",
-        "10000",
-    ]);
-    let proposals = report["proposals"].as_array().unwrap();
-    // Real sequencing edges may group both statements into one proposal.
-    // Whichever assignment the heuristic chooses, neither ambiguous source_unit is
-    // addressable by a unique selector, and no containing proposal is landable.
-    let mut unaddressable: Vec<_> = proposals
-        .iter()
-        .flat_map(|p| {
-            p["unaddressable_anonymous_source_unit_ids"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|id| id.as_str().unwrap())
-        })
-        .collect();
-    unaddressable.sort_unstable();
-    assert_eq!(unaddressable, ["unit:0", "unit:1"]);
-    assert!(proposals.iter().all(|p| p["landable_today"] == false));
-}
-
-#[test]
-fn stale_proposal_and_diagnostic_ids_report_their_kind_and_recovery_command() {
-    let fixture = fixture();
-    for (id, kind) in [
-        ("auto_partition_0499", "proposal"),
-        ("diagnostic:size_cap_0001", "diagnostic"),
-    ] {
-        let out = fixture.command(&["inspect-source", "--id", id]);
-        assert!(!out.status.success());
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        assert!(stderr.contains(&format!("{kind} id {id:?}")), "{stderr}");
-        assert!(stderr.contains("debundle modules propose"), "{stderr}");
-    }
 }
 
 #[test]
@@ -668,7 +612,7 @@ fn atoms_filters_residual_and_renamed_atomic_groups_and_groups_them_by_destinati
 }
 
 #[test]
-fn coverage_matches_proposals_to_module_claims_only_on_request() {
+fn coverage_reports_module_claims_without_proposal_enrichment() {
     let fixture = module_home_fixture();
     let row = |report: &Value, path: &str| {
         report["rows"]
@@ -687,16 +631,10 @@ fn coverage_matches_proposals_to_module_claims_only_on_request() {
             .get("matching_proposal_ids")
             .is_none()
     );
-
-    let proposed = fixture.json(&["coverage", "--include-proposals"]);
-    assert_eq!(
-        row(&proposed, "home/middle")["matching_proposal_ids"],
-        json!([])
-    );
 }
 
 #[test]
-fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request() {
+fn describe_joins_graph_and_spec_context_without_proposal_enrichment() {
     let fixture = module_home_fixture();
     let report = fixture.json(&["describe", "primary"]);
     assert_eq!(report["source_unit_ids"], json!(["unit:0"]));
@@ -712,13 +650,6 @@ fn describe_joins_graph_and_spec_context_and_runs_the_proposer_only_on_request()
     assert_eq!(report["atomic_groups"][0]["id"], "atomic:0");
     assert!(report.get("module_proposals").is_none());
     assert!(report.get("module_proposal_diagnostics").is_none());
-
-    let report = fixture.json(&["describe", "primary", "--include-proposals"]);
-    assert_eq!(
-        report["module_proposals"][0]["proposed_module_id"],
-        "auto_partition_0000"
-    );
-    assert!(report["module_proposal_diagnostics"].is_array());
 }
 
 #[test]
@@ -998,35 +929,7 @@ fn inspect_source_context_is_clamped_to_the_source_file() {
 }
 
 #[test]
-fn modules_propose_limit_keeps_a_prefix_and_reports_the_total() {
-    let fixture = module_home_fixture();
-    // A one-line cap keeps the three residual owners in separate proposals.
-    let args = [
-        "modules",
-        "propose",
-        "--strategy",
-        "auto",
-        "--size-cap-lines",
-        "1",
-    ];
-    let all = fixture.json(&args);
-    assert_eq!(all["proposals"].as_array().unwrap().len(), 3);
-    assert!(all.get("limits").is_none());
-
-    let mut limited_args = args.to_vec();
-    limited_args.extend(["--limit", "1"]);
-    let limited = fixture.json(&limited_args);
-    assert_eq!(limited["proposals"], json!([all["proposals"][0].clone()]));
-    assert_eq!(limited["proposals"][0]["landable_today"], true);
-    assert_eq!(limited["limits"]["limit"], 1);
-    assert_eq!(
-        limited["limits"]["sections"]["proposals"],
-        json!({"total": 3, "emitted": 1, "truncated": true})
-    );
-}
-
-#[test]
-fn modules_propose_defaults_to_exact_and_auto_stays_explicitly_advisory() {
+fn modules_propose_uses_exact_assignment_search_by_default() {
     let fixture = GraphFixture::new(
         "const anchor = 1;\nconst dep = 2;\nconst consumer = dep + 1;\nconsole.log(anchor, consumer);\n",
         &[(
@@ -1052,8 +955,6 @@ fn modules_propose_defaults_to_exact_and_auto_stays_explicitly_advisory() {
     let scoped = fixture.json(&[
         "modules",
         "propose",
-        "--existing-assignments",
-        "fixed",
         "--destinations",
         "both",
         "--only-units",
@@ -1064,10 +965,6 @@ fn modules_propose_defaults_to_exact_and_auto_stays_explicitly_advisory() {
     assert_eq!(scoped["status"], "found", "{scoped}");
     assert_eq!(scoped["residual_units_extracted"], 2);
 
-    let advisory = fixture.json(&["modules", "propose", "--strategy", "auto"]);
-    assert!(advisory["proposals"].is_array(), "{advisory}");
-    assert!(advisory.get("status").is_none(), "{advisory}");
-
     let rejected = fixture.command(&[
         "modules",
         "propose",
@@ -1077,10 +974,5 @@ fn modules_propose_defaults_to_exact_and_auto_stays_explicitly_advisory() {
         only_units,
     ]);
     assert!(!rejected.status.success());
-    assert!(
-        String::from_utf8_lossy(&rejected.stderr)
-            .contains("assignment search options are only valid with --strategy complete"),
-        "{}",
-        String::from_utf8_lossy(&rejected.stderr)
-    );
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("unexpected argument"));
 }

@@ -31,10 +31,9 @@ For an accepted partial spec, inspect the graph and source, then use
 `modules propose` (exact by default). Review the full mapping, check and
 preview/apply its snapshot-bound plan, then regenerate and run relevant behavior
 checks. `exhausted_no_peel` is scoped to the reported owner policy and move
-domain; budgets, interruptions, errors and empty advisory inventories do not
-establish impossibility. Explicit `modules propose --strategy auto` remains an
-advisory factorizer for source inventory. A graph witness still needs selector realization, normal
-materialization and runtime evidence.
+domain; budgets, interruptions and errors do not establish impossibility. A graph
+witness still needs selector realization, normal materialization and runtime
+evidence.
 
 For structural inventory, inspect the atomic groups in the graph report and use
 `modules check` to validate an authored assignment, or ask a worker for an isolated

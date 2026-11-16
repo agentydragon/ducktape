@@ -30,7 +30,7 @@ the validator enforces) before working on the splitting pipeline.
   readiness labels cannot replace it. Recheck combined batches, and keep graph
   acceptance distinct from selector realization and emitted runtime evidence.
 - For residual placement, inspect the graph/source, then use the default exact
-  `modules propose` strategy (or spell `--strategy complete` for clarity).
+  `modules propose` command.
   Review the full mapping, check and preview/apply its saved plan, and run
   materialization plus relevant behavior
   checks. Only `exhausted_no_peel` rules out a placement in the reported fixed-

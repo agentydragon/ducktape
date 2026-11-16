@@ -15,14 +15,14 @@ use graph_provenance::{CurrentRoots, VerifiedGraphSourceContext};
 use peel::assignment::{
     AssignmentPlan, AssignmentProblem, AssignmentSnapshot, SourceUnitAssignment, accepted,
 };
-use peel::{CommonArgs, OutputFormat, PlanWorkArgs, run_plan_work_report};
+use peel::{CommonArgs, OutputFormat, PlanWorkArgs};
 use std::path::PathBuf;
 use std::{fs, io::Read};
 
 /// Args for `debundle modules ...`. Aggregates the existing
 /// comment-edit verb (in `cli::comment`) with the new
 /// `merge` / `delete` / `propose` verbs lifted from `module merge`
-/// and the proposal planner.
+/// and the exact placement search.
 #[derive(Debug, ClapArgs)]
 pub(super) struct ModulesNs {
     #[command(subcommand)]
@@ -149,25 +149,15 @@ enum ModulesNsCommand {
     /// commutation for the exact post-delete candidate. It requires the full
     /// tree transform context and does not change the legacy gate.
     Delete(Box<DeleteArgs>),
-    /// Find a realizable residual placement. Exact constructive search is the
-    /// default; `--strategy auto` emits an advisory atomic-DAG inventory.
+    /// Find a realizable residual placement using exact constructive search.
     ///
     /// Read-only. The default exact strategy returns a snapshot-bound plan or
     /// a scoped search outcome; check and preview the plan before applying it.
-    /// Explicit `--strategy auto` returns advisory proposal rows and diagnostics
-    /// for source review. With `--source-root`, auto rows carry `landable_today`,
-    /// `unaddressable_anonymous_source_unit_ids`, and `landability_notes` from
-    /// full-JS-AST selector uniqueness. They also carry bounded
-    /// `observed_consumers` evidence for incoming value reads, writes, and
-    /// scheduling/promoted edges to added source units. This evidence does not
-    /// infer semantic ownership. `landable_today` is false for unaddressable
-    /// anonymous statements and `blocked_residual_dependency` rows; the latter
-    /// need closure growth or manual co-location before they can land.
     Propose(PlanWorkArgs),
     /// Check an explicit source-unit destination batch against the complete
     /// accepted assignment. Omitted units retain their owners; writes no spec.
     Check(ModulesCheckArgs),
-    /// Apply exact source-unit assignments, or claim reviewed proposal bindings.
+    /// Apply exact source-unit assignments.
     /// `--assignments` accepts the same changes as `modules check --batch`,
     /// including anonymous and existing units, and proves the entire resolved map.
     /// `--dry-run --analysis` additionally reports statement-order commutation for
@@ -297,11 +287,7 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
     Ok(())
 }
 
-fn run_complete_proposals(args: &PlanWorkArgs, output: &mut dyn std::io::Write) -> Result<()> {
-    ensure!(
-        args.size_cap_lines.is_none() && args.limit == 0,
-        "complete search does not use size or display caps; use explicit search budgets"
-    );
+fn run_modules_propose(args: &PlanWorkArgs, output: &mut dyn std::io::Write) -> Result<()> {
     let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let problem = AssignmentProblem::new(&input)?;
     let mut into = args.into.clone();
@@ -353,7 +339,7 @@ fn run_complete_proposals(args: &PlanWorkArgs, output: &mut dyn std::io::Write) 
             text.push('\n');
             Ok(())
         },
-        "writing complete search",
+        "writing placement search",
     )?;
     ensure!(
         !incomplete,
@@ -614,37 +600,6 @@ fn run_modules_refine(
 // Each query command needs a text rendering for tty output. v1 keeps
 // these compact: one line per item plus a brief summary header.
 
-fn render_plan_work_text(report: &peel::PlanWorkReport, out: &mut String) {
-    out.push_str(&format!(
-        "{} proposal(s), {} diagnostic(s)\n",
-        report.report.proposals.len(),
-        report.report.diagnostics.len(),
-    ));
-    for proposal in &report.report.proposals {
-        let landable = if proposal.landable_today {
-            "landable"
-        } else {
-            "needs-manual-work"
-        };
-        out.push_str(&format!(
-            "  {}  source_units={} size={} {}\n",
-            proposal.proposed_module_id,
-            proposal.source_unit_ids.len(),
-            proposal.size_lines_estimate,
-            landable,
-        ));
-        for note in &proposal.landability_notes {
-            out.push_str(&format!("    note: {note}\n"));
-        }
-        if !proposal.unaddressable_anonymous_source_unit_ids.is_empty() {
-            out.push_str(&format!(
-                "    unaddressable anonymous source units: {}\n",
-                proposal.unaddressable_anonymous_source_unit_ids.join(", "),
-            ));
-        }
-    }
-}
-
 pub(super) fn run(
     stderr: &mut (dyn std::io::Write + Send),
     args: ModulesNs,
@@ -660,33 +615,7 @@ pub(super) fn run(
         ModulesNsCommand::Delete(d) => {
             run_delete(output, stderr, *d, source_context, analysis_engine_sha256)
         }
-        ModulesNsCommand::Propose(p) => {
-            if p.strategy == peel::plan::ProposalStrategy::Complete {
-                return run_complete_proposals(&p, output);
-            }
-            ensure!(
-                p.existing_assignments.is_none()
-                    && p.destinations.is_none()
-                    && p.into.is_empty()
-                    && p.required.is_empty()
-                    && p.only_units.is_none()
-                    && p.max_new_modules.is_none()
-                    && p.max_checks.is_none()
-                    && p.time_budget_ms.is_none(),
-                "assignment search options are only valid with --strategy complete"
-            );
-            let report = run_plan_work_report(&p, source_context)?;
-            emit_report(
-                output,
-                p.format,
-                &report,
-                |report, out| {
-                    render_plan_work_text(report, out);
-                    Ok(())
-                },
-                "writing propose output",
-            )
-        }
+        ModulesNsCommand::Propose(p) => run_modules_propose(&p, output),
         ModulesNsCommand::Check(args) => run_modules_check(args, output),
         ModulesNsCommand::Apply(args) => {
             run_modules_apply(output, stderr, args, source_context, analysis_engine_sha256)

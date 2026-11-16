@@ -302,19 +302,26 @@ fn cluster_and_shared_queries_reject_unknown_typed_prefixes_before_graph_work() 
     assert_eq!(typed.status.code(), Some(1));
     let typed: Value = serde_json::from_slice(&typed.stdout).unwrap();
     assert_eq!(typed["reason"], "io");
-    for id in [
-        "logical:7",
-        "atomic:3",
-        "diagnostic:example",
-        "extend:example",
-        "auto_partition_0007",
-        "alpha",
-    ] {
+    for id in ["logical:7", "atomic:3", "alpha"] {
         let out = fixture.command(&["describe", id, "--graph", missing_graph, "--format", "json"]);
         assert_eq!(out.status.code(), Some(1), "{id}");
         let failure: Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(failure["reason"], "io", "{id}: {failure:#}");
     }
+    for id in ["diagnostic:example", "extend:example"] {
+        let out = fixture.command(&["describe", id, "--graph", missing_graph, "--format", "json"]);
+        assert_eq!(out.status.code(), Some(1), "{id}");
+        let failure: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(
+            failure["reason"], "unsupported_identifier_prefix",
+            "{id}: {failure:#}"
+        );
+    }
+
+    let ordinary_name = GraphFixture::new("const auto_partition_0007 = 1;\n", &[]);
+    let described = ordinary_name.json(&["describe", "auto_partition_0007"]);
+    assert_eq!(described["query"]["kind"], "binding");
+    assert_eq!(described["query"]["value"], "auto_partition_0007");
 
     let colon_path = GraphFixture::new(
         "const alpha = 1;\n",

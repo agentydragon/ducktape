@@ -48,8 +48,6 @@ fn a_large_required_chain_is_constructed_with_bounded_graph_work() {
     let report = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "new",
         "--max-new-modules",
@@ -80,8 +78,6 @@ fn a_large_fanout_needs_one_certified_witness() {
     let report = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "new",
         "--max-new-modules",
@@ -136,8 +132,6 @@ fn lazy_import_star_requires_a_merge_even_though_eager_graph_is_acyclic() {
     let report = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "new",
         "--only-units",
@@ -191,8 +185,6 @@ fn a_dependency_in_generated_residual_is_not_a_fixed_entry_blocker() {
     let report = fixture.json(&[
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--only-units",
         &only,
         "--require",

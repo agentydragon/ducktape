@@ -7,8 +7,8 @@ authored owner, or move to a fresh authored/extracted owner. Fresh extracted
 owners are distinct from generated residual layout and true entry. The search
 uses structural atoms and graph-derived constraints, then certifies a constructed
 placement with the global canonical realizability gate. Its result is a graph
-placement witness or a scoped no-placement decision. Select `--strategy auto`
-only for the advisory atomic-DAG inventory.
+placement witness or a scoped no-placement decision. `modules propose` always
+runs this exact search; `--strategy` is not supported.
 
 The [scheduling complexity proof](polynomial_esm_scheduling.md) explains the
 cost of the current general operation. The
@@ -69,7 +69,6 @@ The controls and defaults are:
 
 | Control                              | Meaning                                                                                                         |
 | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `--existing-assignments fixed`       | Fixed authored source-unit ownership; this is the only supported policy and the default.                        |
 | `--destinations new\|existing\|both` | Allowed destination kinds; default `both`.                                                                      |
 | `--into MODULE`                      | Restrict destinations to exact module paths; repeatable. Existing owners are checked in place.                  |
 | `--require UNIT`                     | Require every returned placement to extract this residual unit; necessary companions may also move. Repeatable. |
@@ -95,8 +94,7 @@ uses a distinct path.
 
 Preflight, unsupported scope, malformed input, execution and serialization errors
 fail without a no-placement result. Interruption cannot become exhaustion.
-`--limit` and `--size-cap-lines` remain advisory output controls and are rejected
-in complete mode. The report records the move scope, work counts for partition
+The report records the move scope, work counts for partition
 states, quotient projections, cooperative schedule checkpoints, forced
 contractions, branch attempts, final certifications and clause categories, plus residual gain and existing-unit
 disturbance.
@@ -110,7 +108,7 @@ multiple compatible alternatives. Chains and fanouts of forced constraints
 contract directly; the search does not enumerate the Cartesian product of every
 atom's stay/target choices. It supports joint moves and placements across several
 destinations without requiring accepted single-atom intermediate states. At
-each analyzed partition, the proposer rebuilds quotient projections from the
+each analyzed partition, the search rebuilds quotient projections from the
 prepared edge set to derive graph constraints. It runs the full canonical gate
 once after constructing a complete placement; it does not maintain the batch
 incremental index through every contraction.
@@ -137,11 +135,6 @@ steps. An interrupted schedule trial is neither an obstruction nor a proof of
 exhaustion. Individual graph construction, cloning and verification operations
 may finish before the next poll, so this is a cooperative deadline rather than a
 hard process timeout. Graph loading and accepted-baseline preparation precede it.
-
-The explicit `--strategy auto` branch remains a heuristic inventory for source
-review. Its readiness labels, diagnostics and empty output cannot establish that
-no peel exists. `--limit` and `--size-cap-lines` are advisory inventory controls;
-the exact strategy rejects them.
 
 The placement proof is a graph argument relative to the captured assumptions
 and conservative checker. It is not evidence of selector stability or runtime

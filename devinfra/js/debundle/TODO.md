@@ -445,9 +445,8 @@ closure`, conflating unresolved host requests, missing captured chunks,
   while changes to the selected declaration, source or effect contract still
   invalidate them.
 
-Proposer-gate, `debundle run` (report opt-out, chunk-level incremental
-rebuilds, codegen cache), and materialize-stage performance work lives in
-<perf/proposer.md>.
+`debundle run` (report opt-out, chunk-level incremental rebuilds, codegen
+cache), and materialize-stage performance work lives in <perf/pipeline.md>.
 
 1. `JsChunk::{get_file,remove_file}` (`artifacts/artifact.rs`) are linear
    scans over `files`, so passes that touch every file go O(n²) per chunk.
@@ -559,11 +558,6 @@ how to confirm. An entry is deleted when it is reproduced and fixed with a test,
 or disproved. Status says how far it was checked; "reported" means nobody has
 confirmed it.
 
-- **One SCC reads differently by path in the peel kernel.** Status: reported,
-  likely benign. The post-seed reporting in `peel/quotient.rs` keeps an SCC
-  whose owners collapse into one class, while the `translate_*` helpers drop it
-  and `would_be_cycles_after_contract` fabricates a two-class evidence.
-
 ## CLI usability
 
 Open usability and scripting-safety findings from exercising the documented
@@ -594,7 +588,7 @@ paths and source-unit IDs belong in the consuming repo.
   Use ordinary reports for assignment and acceptance probes; request complete
   graph sidecars when the operation needs them. Check the combined canonical
   result and relevant runtime behavior after reuse. Coordinate the implementation
-  with the existing incremental/codegen work in <perf/proposer.md>.
+  with the existing incremental/codegen work and retain phase-specific evidence.
 - **W5 — Reduce cached-emission and graph-export memory.** Analysis reuse still
   leaves large action peaks in these later stages. Identify duplicate retained
   representations and unnecessary lifetimes, then remove a demonstrated source
@@ -660,26 +654,11 @@ paths and source-unit IDs belong in the consuming repo.
 
 ### Planner CLI follow-ups
 
-- **Diagnostics toggle for `modules propose --strategy auto`.** `--limit` bounds
-  proposals and diagnostics and the `limits` summary reports totals
-  when details are truncated, but there is still no explicit
-  diagnostics on/off toggle for first-pass planning, where proposal
-  rows are the only thing the caller wants.
-- **Concise explain mode.** Proposal/diagnostic structures on
-  `describe` are already opt-in (`--include-proposals`), but there is
-  still no compact mode focused on: selected source-unit IDentity and source
-  span, atomic-group membership, matching proposal (if any), immediate
-  constraining neighbors, and the exact reason the owner is not
-  landable today.
-- **Patch-plan naming.** `coverage` is useful for intersecting existing
-  module YAML with atomic-group coverage, but it is not the only way to
-  discover readable work: `atoms --readable-only` and the explicit
-  `modules propose --strategy auto` inventory may show candidate work even when
-  no whole patch section is ready. Default `modules propose` constructs an exact
-  positive-gain placement or gives a scoped complete/incomplete outcome.
-  Docs and skill text should reserve "plan" for proposed edits that can be
-  reviewed/applied, and avoid implying that empty coverage output means there
-  is no landable work.
+- **Patch-plan naming.** `coverage` reports current module claims against
+  atomic-group coverage. `atoms --readable-only` and the exact default
+  `modules propose` search can help identify work; a reviewed snapshot-bound
+  plan is the only proposed edit artifact. Do not imply that empty coverage
+  output means there is no placement.
 
 ### Cache graph export across authored presentation edits
 

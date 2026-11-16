@@ -194,8 +194,6 @@ fn derived_schedule_removes_the_old_two_fresh_owner_requirement() {
     let common = [
         "modules",
         "propose",
-        "--strategy",
-        "complete",
         "--destinations",
         "new",
         "--only-units",

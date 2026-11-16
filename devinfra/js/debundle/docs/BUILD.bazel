@@ -8,7 +8,6 @@ exports_files([
     "integration.md",
     "module_search.md",
     "naming.md",
-    "peel_proposer.md",
     "planning.md",
     "placement_algorithm.md",
     "polynomial_esm_scheduling.md",

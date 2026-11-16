@@ -1055,186 +1055,6 @@ witness is certified through the full primitive. Do not introduce a second
 interpretation of edge kinds or a weaker gate. Adjacent diagnostics may read the
 verdict's dependency-edge provenance without becoming acceptance authority.
 
-### Peel planner unification
-
-The peel proposer's kernel (`QuotientGraph` in `peel/quotient.rs`) decides
-every merge with the same primitive as the materializer. It must not
-reimplement the gate over a JSON `DependencyGraphReport` projection: a
-constraining-only projection drops `LazyUse` and `HoistedUse` edges and becomes blind to
-asymmetric `(eager forward, lazy back)` I-cycles that the
-`EsmEvaluationSimulator` pass catches.
-
-1. `DependencyGraphInput` loads a report once and reconstructs one immutable typed
-   `DependencyGraph`, with every edge (constraining and lazy), its original
-   `DepKind`, edge role and commuting premise. Inspection, proposals, assignment
-   checks and post-edit gates borrow that topology; quotient working states
-   share it through `Arc`. Only the input boundary reconstructs the graph.
-   Report rows retain external IDs, binding labels, saved destinations and
-   diagnostic facts. Saved module and atomic projections remain report data:
-   they describe an assignment, while the source graph describes dependencies.
-   Report-backed graphs do not supply the hygienic bindings and analysis facts
-   needed for compiler assignment assembly. Compatibility checks still read the
-   small provenance header before loading full graph input. Final edit validation
-   resolves claims from the post-edit documents against that same graph input.
-2. `QuotientGraph::from_graph` keeps the shared `DependencyGraph` and builds a
-   `RealizabilityIndex` over the class projection: each class is one
-   `ModuleId`, except that classes made only of residual-destined source units
-   (and not anchored to an existing module) share the residual
-   `ModuleId(0)`. Every committed mutation — `contract`, the
-   `is_pre_existing_module` promotion in `set_class_pre_existing_module` —
-   applies the matching `ModuleAssignmentDelta::MoveSourceUnits` to the index.
-3. The speculative queries — the boolean `merge_preserves_invariants` and the
-   evidence-producing `would_be_cycles_after_contract` — are one evaluation
-   through the index's tier ladder (below). `realizability_verdict()` reads the
-   index's maintained verdict.
-
-Original-home rejoining begins with a fully realizable assignment and must
-preserve that property after every contraction. Its pair and whole-home
-commit paths retain their structural and size checks, then run
-`RealizabilityIndex::verdict_after_moving_source_units` over the complete post-move
-quotient. The index patches its maintained canonical I-graph, constraining
-edge evidence, and cross-rebinds with the proposed incident-edge overlay;
-the pure reference and this overlay use the same full SCC and ESM simulator
-gate body. A merge can change global ESM import order and expose a TDZ in an
-I-SCC outside the merged module, which a touching verdict cannot see.
-`verdict_after_batch` evaluates the global canonical verdict after overlaying
-the entire final mapping, including remote SCC diagnoses; the exact residual
-placement search uses this path for each constructed candidate. It does not
-turn a touching-only verdict into a global decision. General seed/greedy
-contractions can start from an unrealizable assignment while repairing it; the
-final proposal verdict checks their result.
-
-#### Cost and the tier ladder
-
-A from-scratch `check_realizability` call is `O(|V| + |E|)`; asking it per
-merge candidate would make a seeding pass `O(|V|² · |E|)`. The persistent
-index instead maintains the constraining-edge graph SCC state, the I-graph
-adjacency, the `EsmEvaluationSimulator` per-pair bucket, and the cross-rebind
-set incrementally.
-
-A speculative merge enters the index's tier ladder
-(`ladder_decision_after_moving_source_units_touching`) with the merge's post-state
-`ModuleId` (`projected_winner_module_after_merge`) and the `±edge` overlay
-from `compute_merge_deltas`. Each tier either decides — provably equal to the
-full `check_realizability` verdict, restricted to diagnoses touching the
-post-merge module — or escalates:
-
-- **Tier 0 — delta-free short-circuit.** No deltas (both classes
-  already project to the post-merge module, e.g. merges inside the
-  gate-residual pile): post-state == pre-state, so accept iff the
-  cached pre-state touching verdict is clean.
-- **Tier 1 — constraining condensation order.** A maintained
-  `CondensationOrder` over the module-level constraining graph (a
-  union-find of SCC membership plus a Pearce–Kelly topological
-  order over the condensation DAG): reject iff the post-merge
-  module's constraining SCC is multi-module — an `O(α)` find, or,
-  when the overlay adds an adjacency pair, a cone-bounded DFS over
-  the overlay-patched effective adjacency — or a clause-2
-  cross-rebind touches it. A tier-1
-  reject is exactly the `MutualConstrainingCycle` clause of the
-  full verdict; a pass establishes Pass 1 is clean and escalates.
-- **Entry-last guard.** Before any I-SCC vacuity shortcut, reject an
-  effective constraining edge into the entry destination that touches the
-  queried module.
-  Entry evaluates last, including when its implicit import is the only return
-  edge. This reads the maintained edge counts plus the overlay delta; it does
-  not add universal fan-out to the I-condensation.
-- **Tier 2 — I-graph condensation order.** A second
-  `CondensationOrder` over the I-graph (constraining ∪ lazy): if
-  the post-merge module's I-SCC is not multi-module, or contains
-  no effective constraining pair, Pass 2 is vacuous — accept.
-  When the overlay removes an edge internal to a multi-module
-  I-SCC (the one case where the maintained union-find is
-  stale-coarse), the order answers through its exact bidirectional
-  reachability fallback (`exact_multi_scc`); a multi-module verdict
-  then has `OverlayGraphView::scc_containing` materialize the I-SCC
-  for the constraining-pair check.
-- **Tier 3 — scoped ESM simulator.** The shared
-  `EsmEvaluationSimulator` over the overlay-patched I-SCC: reject
-  iff any TDZ pair. This is the same code `check_realizability`'s
-  Pass 2 executes — drift is impossible by construction.
-
-The tiers are short-circuits whose skip conditions are theorems
-about the predicate, not a second decision procedure. The boolean
-gate is the ladder with evidence materialization elided;
-`would_be_cycles_after_contract` is the same ladder, materializing
-source-unit-level evidence (through the index's non-mutating
-`verdict_after_moving_source_units_touching` overlay) only on a reject —
-one entry point, two output shapes. Each query reads SCCs touching
-the hypothetical destination only — `O(|cone|)`, not
-`O(|V| + |E|)`. This remains a merge-specific diagnostic optimization and
-does not certify arbitrary final placements. Multi-target prediction uses a
-typed batch overlay: it applies one final mapping and projects each impacted
-edge once, then obtains the full global canonical verdict from the shared
-index. The committed batch and hypothetical batch therefore share edge
-contribution semantics, while the verdict still includes remote ESM TDZs.
-
-#### References
-
-The incremental realizability path draws on the following lines of
-research; cited here so the trade-offs in "Cost and the tier
-ladder" and "Why not Pearce-Kelly verbatim" can be cross-checked
-against the primary sources.
-
-- **Bender, Fineman, Gilbert, Tarjan.** _Incremental Cycle
-  Detection, Topological Ordering, and Strong Component
-  Maintenance._ ACM Transactions on Algorithms 12(2):14, 2015. The
-  BFGT amortized bound for arc-insertion cycle detection.
-  ([arXiv:1105.2397](https://arxiv.org/abs/1105.2397))
-- **Pearce, Kelly.** _A Dynamic Topological Sort Algorithm for
-  Directed Acyclic Graphs._ ACM Journal of Experimental
-  Algorithmics 12, 2007. The "PK" algorithm for online topological
-  order under edge insertion.
-- **Fähndrich, Foster, Su, Aiken.** _Partial Online Cycle
-  Elimination in Inclusion Constraint Graphs._ PLDI 1998. Localized
-  bounded-cone cycle elimination in pointer-analysis constraint
-  graphs — the structural closest match to the kernel's
-  contraction-driven primitive.
-- **Hardekopf, Lin.** _The Ant and the Grasshopper: Fast and
-  Accurate Pointer Analysis for Millions of Lines of Code._ PLDI
-  2007 (with subsequent 2009 work on lazy / hybrid cycle detection).
-  Practical scaling of constraint-graph cycle elimination.
-
-#### Why not Pearce–Kelly verbatim
-
-The literature on incremental SCC maintenance — Pearce & Kelly's
-online topological order plus Bender, Fineman, Gilbert, and Tarjan's
-work (BFGT) — solves cycle detection under arc **insertion** with
-single-edge insertion as the user primitive. The peel proposer's
-primitive is **contraction** (vertex identification): a merge fuses
-two classes' incident edges and may collapse multiple
-constraining-edge cycles to single classes that get dropped. Naive
-"reinsert every loser-incident edge into the winner" simulations
-match Pearce–Kelly's insertion model but waste work — the merge can
-also delete edges (intra-class self-loops, cycles that shrink to a
-single class). The persistent index instead maintains the maintained
-quotient adjacency directly via `IncrementalQuotient::add/remove_current_edge`,
-which is structurally closer to the bounded-cone local-search
-algorithms from pointer-analysis literature (Fähndrich–Foster–
-Su–Aiken; Hardekopf–Lin).
-
-Pearce–Kelly's core does survive — as the heart of the
-`gate` crate's `CondensationOrder` (window Kahn, epoch
-visited-marks), re-keyed from kernel classes to condensation
-nodes of the index's maintained module graphs, with a union-find
-for SCC membership so the PK order lives over a structure that
-stays a DAG by construction even when the underlying graph is
-cyclic. Insertion monotonicity — edge insertion only ever coarsens
-the SCC partition — is what licenses a plain non-rollbackable
-union-find instead of full dynamic-SCC machinery (kernel-side index
-mutation is commit-only); a committed removal internal to an SCC
-marks the structure stale and the next query rebuilds it rather than
-splitting eagerly.
-
-The kernel itself maintains **no** decision-making derived order or
-cycle state: the gate ladder lives inside the index ("Cost and the
-tier ladder" above), so the "no bespoke parallel walks" invariant
-holds here too — one source of truth for accept/reject.
-`rank_candidate`'s cycle-reduction key byte reads the same
-maintained condensation through an `O(α)` union-find probe
-(`modules_share_constraining_multi_scc`) instead of an advisory
-cache.
-
 ## At-init call promotion
 
 A function body's lazy reads/rebinds fire at module-init from the
@@ -3049,8 +2869,7 @@ Five layers, bottom-up:
 5. **Module placement reports** — the default `debundle modules propose`
    strategy constructs exact graph placements from the captured graph and
    reports a witness, scoped exhaustion, or incomplete analysis. Explicit
-   `--strategy auto` emits DAG-derived advisory recommendations over
-   `atomic_graph`. Neither report is emitted by `debundle run`.
+   Neither report is emitted by `debundle run`.
 
 When debugging planner output, start with the atomic group. If an
 assignment would split a unit, the assignment is wrong regardless
@@ -3249,40 +3068,7 @@ atomic-group DAG in `dependency_graph.json.gz`. Top-level read-only queries
 (`modules propose`, `atoms`, `coverage`, `describe`, `inspect-source --id`,
 `scc`, `cluster`, and `graph-summary`) produce graph-grounded reports from
 that stable graph. `modules propose` uses the exact constructive placement
-search by default; `--strategy auto` selects the advisory atomic-DAG inventory.
-The other queries report advisory views.
-
-<peel_proposer.md> is the current-state implementation note for how
-`modules propose --strategy auto` builds and greedily extends its quotient
-before rendering proposal rows. The default exact placement contract is in
-<module_search.md>.
-
-The explicit auto strategy labels each proposal source-unit set with a status:
-
-- **`peelable_now`** — this closed atomic-DAG source-unit set has no outgoing
-  constraining edges into other residual classes; it can be promoted on
-  its own.
-- **`blocked_residual_dependency`** — the cell reads other residual
-  cells (`edges_to_other_residual_classes > 0`); promoting it alone would
-  route those reads through `residual_entry`, so the referenced cells
-  must land first or together.
-
-`landable_today` derives from the same predicate as the status (plus
-anonymous-statement addressability): it is `true` only for
-`peelable_now` proposals whose anonymous source units are all addressable.
-A `blocked_residual_dependency` proposal is never `landable_today` —
-`modules apply` rejects it; grow the closure so the
-referenced cells land together, or co-locate them manually, first.
-
-Classes whose spec-edit size exceeds `--size-cap-lines` are not
-proposals at all — they surface as diagnostics with reason
-`exceeds_size_cap`.
-
-The important invariant is that the proposal queue is a projection over
-`atomic_graph`, not a separate fact emitted by the transform pipeline.
-Ordinary `debundle run` emits source-unit facts, module quotient facts, and the
-atomic DAG; the read-only query surface ranks and groups those facts for
-authoring workflows.
+search; the other queries report graph and ownership views.
 
 ### Detailed graph side output
 
@@ -3435,41 +3221,6 @@ the chunk) was already a runtime `ReferenceError` in the upstream
 source and remains one in the debundled output — emit doesn't try
 to invent a binding it can't resolve.
 
-### Advisory factorization proposals
-
-`factorize` (`debundle modules propose --strategy auto`) proposes module
-assignments for code that currently lives in the residual surface. Its output has the same
-correctness contract as a handwritten YAML edit. The algorithm — a seed
-quotient, then lazy-priority-queue greedy contraction with every merge gated
-by the realizability primitive — is described in <peel_proposer.md>.
-
-- A **proposal** is a source-unit set plus destination assignment that is already
-  proven valid.
-- A **diagnostic** may describe why a class did not become a proposal. It is
-  never presented as a module assignment the author can land.
-
-Every emitted proposal satisfies:
-
-1. It corresponds to a concrete destination assignment.
-2. The assignment passes the realizability primitive: no cross-destination
-   rebinding write and no unrealizable quotient SCC. (Residual dependencies and
-   anonymous-statement addressability, which decide `landable_today`, are
-   reported separately.)
-3. The proof is static and local to the dependency graph. It does not rely on
-   emitting JS, running a browser, or observing production-scale behavior.
-
-The generator may be conservative and miss valid modules. It may not emit an
-invalid module as a proposal:
-
-> `factorize` emits only certified proposals.
-
-Local-effect annotations belong in the shared analysis layer, not in
-factorize-specific code. Once the analyzer turns a recognized decorator helper
-call into a target-local dependency edge, the materializer rejects a handwritten
-split of the class and decorator statement, the atomic DAG records the
-required unit, and the proposer never splits it either. No consumer gets to
-reinterpret `effect:` independently.
-
 ### Pipeline trajectory
 
 The pipeline (`pipeline.rs`) separates source preparation, reconstruction,
@@ -3607,24 +3358,15 @@ When a decorator application matches an annotated
 `effect: typescript_decorate_helper`, the dependency graph records it as a
 target-local effect on the class/prototype binding. That makes the
 anonymous statement a required companion of the class source unit for
-materialization and factorize. The author still
-materializes it with `anonymous_statements:` because it has no binding
-name, but the atomic-group closure that contains the class also covers
-the anonymous source unit, so a proposal containing the class also contains the
-anonymous source unit (listed under `anonymous_statement_source_unit_ids`, or
-`extension_source_unit_ids` when it extends an existing module) and the
-proposer never proposes the class alone.
+materialization. The author still materializes it with
+`anonymous_statements:` because it has no binding name, and the atomic group
+keeps it with the class.
 
 The unannotated case — `__decorate(...)`, `register(...)`, and
 target-mutating `Foo.x = ...` installs that the analyzer cannot tag
-as target-local because no helper annotation matches — relies on a
-separate route. The proposer's greedy contraction merges a residual
-class into an existing active module when the realizability gate accepts
-the merge, and the merged source units surface as an extension
-(`extends_module_id`, `extension_source_unit_ids`). The consumer of the proposal
-reads source-unit shape (named bindings vs anonymous statements) to decide whether
-to write a `members:` or `anonymous_statements:` entry into the extended
-module's yaml.
+as target-local because no helper annotation matches — must be reviewed against
+the graph and source. Any chosen module boundary still passes through the
+materializer's shared realizability checks.
 
 ### Resolution
 

@@ -1,7 +1,7 @@
 # Editing the spec: modules and bindings
 
-Proposing, moving, merging, and renaming modules and bindings; peel heuristics;
-`comment:` fields. Operational base: `cli.md`.
+Planning, moving, merging, and renaming modules and bindings; `comment:` fields.
+Operational base: `cli.md`.
 
 ## References to logical members
 
@@ -88,9 +88,8 @@ destination scope. Follow this sequence:
 
 1. **Inspect.** Review `graph-summary`, residual `atoms`, and relevant source
    and edge evidence with `describe` and `inspect-source --id`.
-2. **Propose a complete placement.** Run
-   `debundle modules propose --strategy complete --format json` and save the
-   `.plan` only when the status is `found`.
+2. **Propose a complete placement.** Run `debundle modules propose --format json`
+   and save the `.plan` only when the status is `found`.
 3. **Review.** Check the full source-unit-to-destination map, semantic module
    boundaries, fresh paths, and required companions. Do not split or combine
    the plan without rechecking the resulting complete mapping.
@@ -107,36 +106,9 @@ reported permitted scope; `incomplete` and errors do not establish that no
 placement exists. The linked guide describes the exact graph contract, context
 identity and complexity limits.
 
-The explicit `--strategy auto` factorizer remains an advisory inventory for
-source review. It cannot establish that no peel exists:
-
-For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml`
-to both `modules propose` and `modules apply` so proposals and the edit gate
-use the module roots mapped to the graph's chunk.
-
-1. **`debundle modules propose --strategy auto --format json > proposals.json`** —
-   proposer proposals + diagnostics derived from the atomic DAG.
-2. **Skim the diagnostics.** Each diagnostic carries a `reason`
-   explaining why a closed atomic-DAG set could not become a proposal
-   (currently `exceeds_size_cap`: the spec edit is larger than
-   `--size-cap-lines`).
-3. **Review fresh residual claims** with `modules apply --dry-run --format json`
-   after choosing semantic destinations and readable names. Inspect every
-   `selector_reviews` entry: check that its selector targets the intended binding
-   and that retained literals and property names are reasonable rebuild anchors.
-   A successful uniqueness proof is specific to the current source snapshot.
-   See <cli.md> § Claiming fresh proposals and <selectors.md> for selector
-   stability guidance.
-4. **Apply the reviewed batch.** Supply a `selectors` override for a binding
-   whose synthesized selector needs a better structural anchor, or omit an
-   unready proposal from the batch so it stays residual. Then apply and run
-   the project's extraction gate.
-
-```bash
-# Author reviewed.json with proposal_id, source_unit_ids, module, and readable_names.
-debundle modules apply --batch reviewed.json --dry-run --format json
-debundle modules apply --batch reviewed.json
-```
+For an app-level multi-chunk spec, pass `--tree-config spec_config.yaml` to both
+`modules propose` and `modules apply` so they use the module roots mapped to the
+graph's chunk.
 
 For aggregate counts before drilling in:
 
@@ -144,27 +116,15 @@ For aggregate counts before drilling in:
 debundle graph-summary --format text
 ```
 
-Use `debundle graph-summary --include-proposals` only when aggregate
-proposal and diagnostic counts matter; the default is a fast graph
-summary.
-
 For a bounded owner pass, choose `graph-summary --limit N` when looking for
-large residual atomic groups or `modules propose --strategy auto --limit N`
-when choosing among heuristic proposals. Put the owners to inspect in `owners.json`, then query their raw
-incoming edges with `debundle describe --batch owners.json --direction incoming
---limit N`; add repeated `--reason KIND` filters when they narrow the question.
-The report's `edge_census` keeps the complete filtered counts by dependency kind
-and normalized role while detail rows are limited. Incoming and outgoing
-counts are separate incidences, and an internal edge can occur in both. Treat
-the census as navigation evidence; only the assignment gate evaluates whether
-an edit is valid.
-
-For a focused look at one proposal before applying:
-
-```bash
-debundle describe <proposal-id>
-debundle inspect-source --id <proposal-id> --context-statements 1
-```
+large residual atomic groups. Put the owners to inspect in `owners.json`, then
+query their raw incoming edges with `debundle describe --batch owners.json
+--direction incoming --limit N`; add repeated `--reason KIND` filters when they
+narrow the question. The report's `edge_census` keeps complete filtered counts
+by dependency kind and normalized role while detail rows are limited. Incoming
+and outgoing counts are separate incidences, and an internal edge can occur in
+both. Treat the census as navigation evidence; only the assignment gate
+evaluates whether an edit is valid.
 
 ## Workflow: moving a binding from one module to another
 
@@ -225,9 +185,7 @@ JSON shape:
 ]
 ```
 
-`sym` and `module` are required; `readable` is optional. `--batch` also
-accepts selected `modules propose` rows: <cli.md> § `--batch` JSON format.
-Duplicate and contradictory entries: <cli.md> § Batch atomicity.
+`sym` and `module` are required; `readable` is optional. Duplicate and contradictory entries: <cli.md> § Batch atomicity.
 
 ### Default validation, `--dry-run`, `--no-verify`
 
@@ -375,10 +333,10 @@ and report `dry-run` / `applied` when only selector grouping changes.
 ## Peel heuristics: patterns that should move together
 
 These patterns surface repeatedly when peeling minified bundles. Each
-one usually appears as a singleton or two-statement `auto_partition_*`
-shell whose source happens to live one line below a named binding;
-the proposer can't always see the textual adjacency, so the human
-peeler (or a custom propose-side heuristic) makes the call.
+one often appears as a singleton or two-statement generated residual
+shell whose source happens to live one line below a named binding. Use source
+order and graph neighbors as evidence when deciding whether the units belong
+together; the generated grouping alone does not determine semantic ownership.
 
 ### TypeScript decorator wirings live with the class they decorate
 
@@ -406,8 +364,8 @@ edges they carry already point at the class).
 
 If source units at consecutive statement ordinals `N` and `N+1` are each
 the other's only edge target/source, they were lines next to each
-other in the source and their current homes put them in
-sibling shells. Merge the two `auto_partition_*` modules into one.
+other in the source and the decomposer assigned them to
+sibling shells. Assign the two adjacent source units to one semantic module.
 Detectable via `cluster(A).out == [B] && cluster(B).in == [A]` plus
 `|N+1 - N| == 1`.
 
