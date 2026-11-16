@@ -1,89 +1,68 @@
 {
-  "reviewed_at_utc": "2026-11-15T14:21:13.511989+00:00",
-  "invocation": "7f3112be-d448-4de5-9055-f975e00f0f0b",
-  "url": "https://app.buildbuddy.io/invocation/7f3112be-d448-4de5-9055-f975e00f0f0b",
-  "command": "bbr test //agentplane/x/ci_latency_preview:test_preview --nocache_test_results",
-  "result": "PASS; two parameterized browser cases in one Bazel target",
-  "site_archive_sha256": "e3cd807c8ac3b0c162b24d0466b0341ce88d147531543c85629fcf863e183f91",
-  "report_sha256": "b9087334f9b2cf466884fd0bec70739c0b4ddf32d639e046683e0b342307ff7a",
-  "root_index_sha256": "932a2f5ece56b4a1896333ca713b415a8ab6843c3a9d7ce010e80fdc98657831",
-  "evidence_sha256": "24be321cb50a474f14789166445677ea978f46832d3e2871c576fb7f78e1c2ca",
+  "reviewed_at_utc": "2026-11-16T11:32:57.837155+00:00",
+  "invocation": "08fde914-bf02-4be2-a1eb-9773e9bdac8d",
+  "url": "https://app.buildbuddy.io/invocation/08fde914-bf02-4be2-a1eb-9773e9bdac8d",
+  "command": "bbr test //devinfra/ci/x/latency_preview:test_preview --nocache_test_results --test_output=errors",
+  "result": "PASS; two browser cases, no errors or skips; all six screenshots manually reviewed",
+  "site_archive_sha256": "28aa161d4b43177179a510e6fa3a5995aa41fd35581870f3f2308d6a935fdde7",
+  "report_sha256": "11c32b6aaf8b1378de8df4b56b010db59d656b52210b5e03870c773ce513d619",
+  "evidence_sha256": "f2481655b98298849005728a282bed9c0ae0df023328147efc8f65e77f011f32",
+  "root_index_sha256": "445dba1142086e753a857b9a99022163ff9c8181efcee3bb50e9be0c11249804",
   "checks": [
-    "real pinned CDN assets loaded",
-    "desktop1440:initial light\u2192live dark",
-    "mobile390:initial dark\u2192live light",
-    "feedback and capacity SVG charts present and manually reviewed",
-    "exact-head and prior-work disclosures opened/closed",
-    "report and root navigation card in both themes",
+    "real pinned CDN loading",
+    "desktop1440 initial light, live switch to dark",
+    "mobile390 initial dark, live switch to light",
+    "feedback/capacity charts and nested phase timeline present",
+    "all three disclosures opened and closed",
+    "both themes in root navigation card",
     "no document horizontal overflow"
   ],
   "captures": [
     {
-      "artifact_basename": "0f499d6ae6e0ae1b4cecd0580b6624f783caf72c1522b2485f74d270a3733aa4.png",
-      "bytes_sha256": "cc3f4ff8324a5ccc537878d56ebfe6fa818eaf7441da49a5aee075825e403a99",
-      "width": 390,
-      "height": 10297,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
-    },
-    {
-      "artifact_basename": "1faddaf87702d78de265bd76e6acb52f8a7d640c3d6e6e0b183409008c11e219.png",
-      "bytes_sha256": "aa67c55b164a3b55098bd3daa5e913d4229db36aee4dbd5f6915d651eec0c0a5",
+      "artifact_basename": "0c1252b887c4bc36773c5a8fad527d0cc9a081fb7be74723ae69435e300008a1.png",
+      "bytes_sha256": "2781215db4b56ff03d35f61ddc9b0d2b482c4d400b2048d23293648274753c71",
       "width": 373,
       "height": 463,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     },
     {
-      "artifact_basename": "228e92ef3913064ff3b7a4f7716560b6606cbb3f6fc158078d75d1cff20a91a6.png",
-      "bytes_sha256": "b7bb4df58ac752d844c597edfdb76ea5ff63feb8d0d8a8e83abf0cbf31fad300",
+      "artifact_basename": "63077ffc7aa80669b61ceb192dcc905cd359ab3138a258f97ee6e15944e69510.png",
+      "bytes_sha256": "a1c9f751113c1cfc791f5295346e761c7c64e3daac8330f42d40005d319a0508",
       "width": 1440,
-      "height": 6257,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "height": 5929,
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     },
     {
-      "artifact_basename": "423842b63a93585f11b0a115c99815e48989c469679165105d3f60a873d68047.png",
-      "bytes_sha256": "a0dd6814825c78fb877d728232e6aed1ca220a199d53ea99a3069f2b19a5ffba",
+      "artifact_basename": "6536fb858cc889543f5d4502f5df8c9688a09dfa92935fc1e151c4b8c567dd88.png",
+      "bytes_sha256": "60370121b41a6cda8c96795cf04be63edbccd1ec66bf0cce31ad4449e13f52be",
       "width": 390,
-      "height": 10297,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "height": 10582,
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     },
     {
-      "artifact_basename": "491e9e5116580e46dfeb6da5fbb166fc3c06693dd8b84958f604f43b007820b6.png",
-      "bytes_sha256": "6fe5be1d93f5cebd6730534b006db7f2530e17623911f74505f269f281a5be7f",
+      "artifact_basename": "71af1a56fda822dfcafe8d5ea9ef3447162f9ad82fd080917843f0cdb733d150.png",
+      "bytes_sha256": "a6529c4cf1b790d089a9e22da32b5c880d54a761d2ac9abf586f566104be9dcb",
       "width": 358,
-      "height": 364,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "height": 389,
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     },
     {
-      "artifact_basename": "9c7d0b50d197f5d99247df0e577737b2446f70dad7730b594c2c57bf6520a2c6.png",
-      "bytes_sha256": "cfcc5f942af8606d730c5e787369184d242177199a94e664375b8283efcf0602",
-      "width": 358,
-      "height": 364,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
-    },
-    {
-      "artifact_basename": "c7a354b7efcf20f5751ed0e0c1ea23653364f3f1bd14c6bf1fa6a03f70599c53.png",
-      "bytes_sha256": "62f641a7f7e6835ab33557cf0cc73141f4da90acad88fbaae9015347223d691a",
+      "artifact_basename": "88b447cb12a34f71be417521fa36ff7b345c97a60d1c50e3de905e2f443dd895.png",
+      "bytes_sha256": "6841fe22b43bedb4371df8f3f319c00abfbb61c8506ead40ebda0fee0a721352",
       "width": 1440,
-      "height": 6257,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "height": 5929,
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     },
     {
-      "artifact_basename": "d5f366868696e516b4746aadc41e8e913e019dfc17e869b3257955318b84e0a4.png",
-      "bytes_sha256": "c249f3a58d6fd616c5f709bac5e789cb236753e4843410053cc67ff330835d7e",
-      "width": 373,
-      "height": 463,
-      "manual_review": "readable charts and prose, scoped table scrolling, expected theme, no document overflow"
+      "artifact_basename": "b93aadcc2de1cdc68ee60608a80b035c5c32e818b5f791aac5b58613c6b6cba8.png",
+      "bytes_sha256": "ca72be95711dd5eccc413946ef69c123210eaf39451c851df7e1e2abcbdbc3f9",
+      "width": 390,
+      "height": 10582,
+      "manual_review": "Reviewed final screenshot: meaningful bars, readable prose and scoped table/timeline scrolling, expected color scheme; no document overflow."
     }
   ],
   "limits": [
-    "Presentation proof is a private RBE overlay with a frozen site archive, not a production CI performance experiment.",
-    "Only latency card was changed in root index; other report cards preserved.",
-    "Raw artifact downloads remain private; reviewed hashes and invocation pointer only."
-  ],
-  "post_rebase_validation": {
-    "root_index_sha256": "a779942bb19768850ab5673c0e9bc4dbd2b5f8db6a199c82eb9dd2eb57de177d",
-    "latency_card_identical_to_captured_archive": true,
-    "latency_card_source_sha256": "897fb6f0376e02975429357660645701df77324323b0f9fc1df8978af798e281",
-    "reason": "Concurrent gh-pages root edit only repinned a different report card; latency card and report assets are unchanged."
-  }
+    "Private RBE overlay, not a production CI performance experiment.",
+    "Raw screenshots and logs remain private; hashes and exact invocation link are published."
+  ]
 }
