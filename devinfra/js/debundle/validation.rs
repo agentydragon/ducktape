@@ -698,6 +698,48 @@ pub fn validate_assignment_with_verdict(
     validation_from_verdict(dependency_graph, assignment, module_path, verdict)
 }
 
+/// Validate exactly the authored shared priority and retain its concrete
+/// schedule. A rejected priority is returned as a gate verdict; it is not
+/// repaired by searching for another schedule.
+pub fn validate_assignment_with_priority(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    nodes: &BTreeSet<ModuleId>,
+    priority: &[ModulePath],
+) -> Result<
+    (AssignmentValidation, crate::esm_schedule::EsmImportSchedule),
+    crate::esm_schedule::ImportScheduleError,
+> {
+    let entry = assignment.entry_destination().module_id();
+    let by_path: BTreeMap<_, _> = nodes
+        .iter()
+        .copied()
+        .filter(|&module| module != entry)
+        .map(|module| (module_path(module), module))
+        .collect();
+    if by_path.len() != nodes.len().saturating_sub(1)
+        || priority.len() != by_path.len()
+        || priority.iter().collect::<BTreeSet<_>>() != by_path.keys().collect()
+    {
+        return Err(crate::esm_schedule::ImportScheduleError::PriorityPaths {
+            expected: by_path.keys().cloned().collect(),
+            actual: priority.to_vec(),
+        });
+    }
+    let ids: Vec<_> = priority.iter().map(|path| by_path[path]).collect();
+    let (verdict, schedule) = crate::realizability::check_realizability_with_priority(
+        dependency_graph,
+        assignment,
+        nodes,
+        &ids,
+    )?;
+    Ok((
+        validation_from_verdict(dependency_graph, assignment, module_path, verdict),
+        schedule,
+    ))
+}
+
 /// Independently certify a constructed schedule against the canonical graph,
 /// without deriving the same schedule again. Target validation remains exact.
 pub fn validate_assignment_with_schedule(

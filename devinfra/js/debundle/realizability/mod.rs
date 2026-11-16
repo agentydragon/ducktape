@@ -201,11 +201,60 @@ pub fn check_realizability_with_schedule(
     check_realizability_using_schedule(dependency_graph, assignment, Some(schedule))
 }
 
+/// Verify the supplied shared priority with one canonical source projection.
+/// A failed ordering is returned as its concrete verdict; no alternatives are
+/// tried and no schedule-existence claim is inferred from that failure.
+pub fn check_realizability_with_priority(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    nodes: &BTreeSet<ModuleId>,
+    priority: &[ModuleId],
+) -> Result<(RealizabilityVerdict, EsmImportSchedule), ImportScheduleError> {
+    if assignment
+        .iter()
+        .any(|(_, module)| !nodes.contains(&module))
+    {
+        return Err(ImportScheduleError::ModuleUniverse);
+    }
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    let entry = assignment.entry_destination().module_id();
+    let schedule =
+        EsmImportSchedule::from_priority(entry, &canonical.i_successors, nodes, priority)?;
+    let verdict = verdict_from_canonical_scheduled(canonical, cross_rebinds, entry, &schedule);
+    Ok((verdict, schedule))
+}
+
 fn check_realizability_using_schedule(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     schedule: Option<&EsmImportSchedule>,
 ) -> Result<RealizabilityVerdict, ImportScheduleError> {
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    let entry = assignment.entry_destination().module_id();
+    if let Some(schedule) = schedule {
+        let nodes = schedule.modules();
+        if assignment
+            .iter()
+            .any(|(_, module)| !nodes.contains(&module))
+        {
+            return Err(ImportScheduleError::ModuleUniverse);
+        }
+        schedule.check_targets(entry, &canonical.i_successors, &nodes)?;
+        Ok(verdict_from_canonical_scheduled(
+            canonical,
+            cross_rebinds,
+            entry,
+            schedule,
+        ))
+    } else {
+        Ok(verdict_from_canonical(canonical, cross_rebinds, entry))
+    }
+}
+
+fn canonical_assignment_constraints(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+) -> (ChunkConstrainingEdgeSet, Vec<CrossRebindEdge>) {
     // Cross-destination rebinds are a separate clause-2 violation and
     // not part of the I-graph. Collect them in a single pass over
     // source unit edges; the canonical edge set handles everything else.
@@ -236,25 +285,7 @@ fn check_realizability_using_schedule(
     // includes lazy import back-edges for Pass 2's ESM evaluation topology.
     // Sharing the projection does not make the two SCC partitions equivalent.
     let canonical = chunk_constraining_module_edges(dependency_graph, assignment);
-    let entry = assignment.entry_destination().module_id();
-    if let Some(schedule) = schedule {
-        let nodes = schedule.modules();
-        if assignment
-            .iter()
-            .any(|(_, module)| !nodes.contains(&module))
-        {
-            return Err(ImportScheduleError::ModuleUniverse);
-        }
-        schedule.check_targets(entry, &canonical.i_successors, &nodes)?;
-        Ok(verdict_from_canonical_scheduled(
-            canonical,
-            cross_rebinds,
-            entry,
-            schedule,
-        ))
-    } else {
-        Ok(verdict_from_canonical(canonical, cross_rebinds, entry))
-    }
+    (canonical, cross_rebinds)
 }
 
 /// Run the complete gate over the canonical module projection. The pure

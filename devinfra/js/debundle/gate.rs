@@ -41,14 +41,15 @@ pub use realizability::{
     LegacyEdgeComparisonCounts, ModuleAssignmentBatch, ModuleAssignmentDelta, RealizabilityIndex,
     RealizabilityVerdict, SccDiagnosis, SccRejection, TranslationValidationEvidenceReport,
     TranslationValidationReport, TranslationValidationResult, check_realizability,
-    check_realizability_touching, check_realizability_with_schedule,
-    simulated_evaluation_post_order,
+    check_realizability_touching, check_realizability_with_priority,
+    check_realizability_with_schedule, simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
     BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
     render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
-    validate_assignment, validate_assignment_with_schedule, validate_assignment_with_verdict,
+    validate_assignment, validate_assignment_with_priority, validate_assignment_with_schedule,
+    validate_assignment_with_verdict,
 };
 
 /// A `define_logical_module` member whose `binding.name` did not
