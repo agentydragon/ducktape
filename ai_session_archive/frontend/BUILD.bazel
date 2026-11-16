@@ -115,6 +115,7 @@ ts_library(
     deps = [
         ":api",
         ":schema",
+        ":session_viewer_formatting",
         ":session_viewer_url",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -122,6 +123,28 @@ ts_library(
         "//:node_modules/react-router",
         "//util/frontend:resize_handle",
     ],
+)
+
+ts_library(
+    name = "related_sessions_panel",
+    srcs = ["related-sessions-panel.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":schema",
+        ":session_viewer_formatting",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+    ],
+)
+
+ts_library(
+    name = "session_viewer_formatting",
+    srcs = ["session-viewer-formatting.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
 )
 
 ts_library(
@@ -136,8 +159,10 @@ ts_library(
         ":api",
         ":history_recorder",
         ":import_progress",
+        ":related_sessions_panel",
         ":schema",
         ":session_list_sidebar",
+        ":session_viewer_formatting",
         ":session_viewer_url",
         ":transcript",
         "//:node_modules/@mantine/core",

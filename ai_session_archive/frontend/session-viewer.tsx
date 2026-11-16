@@ -11,19 +11,20 @@ import {
   Loader,
   Menu,
   Paper,
-  Popover,
   Stack,
   Text,
   Title,
 } from "@mantine/core";
-import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
 import type { EventRecord, Harness, SessionSummary } from "./schema";
-import { SessionListSidebar, TranscriptStatusBadge, formatDateTime, transcriptStatus } from "./session-list-sidebar";
+import { RelatedSessionsPanel } from "./related-sessions-panel";
+import { SessionListSidebar, TranscriptStatusBadge, transcriptStatus } from "./session-list-sidebar";
+import { formatDateTime } from "./session-viewer-formatting";
 import {
   readSessionViewerSearch,
   SESSION_KINDS,
@@ -51,25 +52,6 @@ function maxSessionSidebarWidth(layoutWidth: number): number {
   );
 }
 
-function parentLinkLabel(kind: string | null): string | null {
-  switch (kind) {
-    case null:
-      return null;
-    case "claude_path_inferred":
-      return "Parent inferred from Claude subagent path";
-    case "codex_parent_thread_id":
-      return "Parent linked from Codex parent_thread_id";
-    case "codex_parent_thread_id_unresolved":
-      return "Codex parent_thread_id is unresolved";
-    case "codex_parent_thread_id_ambiguous":
-      return "Codex parent_thread_id is ambiguous";
-    case "codex_parent_thread_id_inconsistent":
-      return "Conflicting Codex parent_thread_id values";
-    default:
-      return `Parent link source: ${kind.replaceAll("_", " ")}`;
-  }
-}
-
 function noVersionExplanation(status: SessionSummary["transcript_status"]): string {
   switch (status) {
     case "pending":
@@ -81,17 +63,6 @@ function noVersionExplanation(status: SessionSummary["transcript_status"]): stri
     case "captured":
       return "The index reports a captured version, but no version details are available.";
   }
-}
-
-function RelatedSessionsIcon(): JSX.Element {
-  return (
-    <svg aria-hidden="true" focusable="false" width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <path d="M6 7v10m0 0h5a7 7 0 0 0 7-7V7" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="6" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="6" cy="19" r="2" stroke="currentColor" strokeWidth="1.8" />
-      <circle cx="18" cy="5" r="2" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
-  );
 }
 
 export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): JSX.Element {
@@ -109,7 +80,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const layoutRef = useRef<HTMLDivElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
-  const [relatedSessionsOpen, setRelatedSessionsOpen] = useState(false);
   const sidebarMaxWidth = maxSessionSidebarWidth(layoutWidth);
   const storedSidebarPane = usePaneSize(
     "ai-session-archive-sidebar-width",
@@ -299,27 +269,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     selectedSession !== null &&
     selectedSession.latest_version_id !== null &&
     selectedVersion.id !== selectedSession.latest_version_id;
-  const hasParentRelation =
-    selectedSession !== null &&
-    (selectedSession.parent_session_id !== null || selectedSession.parent_link_kind !== null);
-  const hasParentMetadata =
-    hasParentRelation ||
-    (selectedSession !== null &&
-      (selectedSession.parent_native_session_id !== null ||
-        selectedSession.parent_native_session_id_conflict === true ||
-        (selectedSession.parent_native_session_id_candidates?.length ?? 0) > 0));
-  const hasCapturedParentSession = selectedSession !== null && selectedSession.parent_session_id !== null;
-  const relatedSessionCount = childSessions.length + Number(hasCapturedParentSession);
-  const hasMoreRelatedChildren = childSessionsQuery.hasNextPage;
-  const relatedSessionCountLabel = `${relatedSessionCount}${hasMoreRelatedChildren ? "+" : ""}`;
-  const loadingRelatedSessions = loadingParentSession || loadingChildSessions;
-  const hasRelatedSessions =
-    selectedSession !== null &&
-    (hasParentMetadata ||
-      childSessions.length > 0 ||
-      loadingRelatedSessions ||
-      parentSessionLoadError !== null ||
-      childSessionsLoadError !== null);
 
   useEffect(() => {
     const layout = layoutRef.current;
@@ -336,10 +285,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     observer.observe(layout);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    setRelatedSessionsOpen(false);
-  }, [selectedSession?.id]);
 
   useEffect(() => {
     if (sessionId === undefined && loadedSessionScope && !loadingSessions && sessions[0]) {
@@ -513,171 +458,28 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                     <Title order={2} size="h4" style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>
                       {selectedSession.title || "Untitled session"}
                     </Title>
-                    {hasRelatedSessions && (
-                      <Popover
-                        opened={relatedSessionsOpen}
-                        onChange={setRelatedSessionsOpen}
-                        position={layoutWidth <= 760 ? "top-end" : "bottom-end"}
-                        offset={8}
-                        width="min(440px, calc(100vw - 32px))"
-                        withinPortal
-                        shadow="md"
-                      >
-                        <Popover.Target>
-                          <Button
-                            className="session-browser-related-trigger"
-                            variant="subtle"
-                            size="xs"
-                            onClick={() => setRelatedSessionsOpen((open) => !open)}
-                            aria-label={`Related sessions (${relatedSessionCount} shown${hasMoreRelatedChildren ? ", more available" : ""})`}
-                            aria-controls="session-browser-related-dropdown"
-                            aria-expanded={relatedSessionsOpen}
-                          >
-                            <RelatedSessionsIcon />
-                            <Badge
-                              className="session-browser-related-count"
-                              size="sm"
-                              variant="light"
-                              aria-hidden="true"
-                            >
-                              {relatedSessionCountLabel}
-                            </Badge>
-                          </Button>
-                        </Popover.Target>
-                        <Popover.Dropdown className="session-browser-related-dropdown">
-                          <Paper
-                            component="section"
-                            id="session-browser-related-dropdown"
-                            aria-label="Related sessions"
-                          >
-                            <Stack gap="xs">
-                              <Text size="sm" fw={600}>
-                                Related sessions
-                              </Text>
-                              {hasParentMetadata && (
-                                <Stack gap={4}>
-                                  <Group gap="xs" wrap="wrap">
-                                    <Text size="xs" c="dimmed">
-                                      Parent
-                                    </Text>
-                                    {selectedSession.parent_session_id !== null && parentSession !== null ? (
-                                      <Button
-                                        component={Link}
-                                        to={sessionPath(parentSession.id)}
-                                        variant="subtle"
-                                        size="xs"
-                                        onClick={() => {
-                                          setRelatedSessionsOpen(false);
-                                          setMobileSessionListOpen(false);
-                                        }}
-                                      >
-                                        {parentSession.title || "Untitled parent session"}
-                                      </Button>
-                                    ) : selectedSession.parent_session_id !== null && loadingParentSession ? (
-                                      <Loader size="xs" aria-label="Loading parent session" />
-                                    ) : parentSessionLoadError !== null ? (
-                                      <Text size="xs" c="red" role="alert">
-                                        Could not load parent session: {parentSessionLoadError}
-                                      </Text>
-                                    ) : (
-                                      <Text size="xs" c="dimmed">
-                                        Parent session could not be resolved to a captured session.
-                                      </Text>
-                                    )}
-                                    {parentLinkLabel(selectedSession.parent_link_kind) !== null && (
-                                      <Badge className="session-browser-relation-badge" color="orange" variant="light">
-                                        {parentLinkLabel(selectedSession.parent_link_kind)}
-                                      </Badge>
-                                    )}
-                                    {typeof selectedSession.parent_native_session_id === "string" && (
-                                      <Text size="xs" c="dimmed">
-                                        Native parent ID: {selectedSession.parent_native_session_id}
-                                      </Text>
-                                    )}
-                                    {selectedSession.parent_native_session_id_conflict && (
-                                      <Text size="xs" c="red" style={{ overflowWrap: "anywhere" }}>
-                                        Conflicting native parent ID candidates:{" "}
-                                        {(selectedSession.parent_native_session_id_candidates ?? []).join(", ") ||
-                                          "unavailable"}
-                                      </Text>
-                                    )}
-                                    {parentSession?.identity_inferred && (
-                                      <Text size="xs" c="orange">
-                                        Parent transcript is not captured; its identity is inferred.
-                                      </Text>
-                                    )}
-                                  </Group>
-                                </Stack>
-                              )}
-                              {(childSessions.length > 0 ||
-                                loadingChildSessions ||
-                                childSessionsLoadError !== null) && (
-                                <Stack gap={2}>
-                                  <Text size="xs" c="dimmed">
-                                    Child sessions
-                                  </Text>
-                                  {childSessions.length > 0 && (
-                                    <div
-                                      className="session-browser-related-children"
-                                      role="region"
-                                      aria-label="Child sessions"
-                                      tabIndex={0}
-                                    >
-                                      <Stack gap={2} role="list">
-                                        {childSessions.map((child) => (
-                                          <Group key={child.id} gap="xs" wrap="wrap" role="listitem">
-                                            <Button
-                                              component={Link}
-                                              to={sessionPath(child.id)}
-                                              variant="subtle"
-                                              size="xs"
-                                              onClick={() => {
-                                                setRelatedSessionsOpen(false);
-                                                setMobileSessionListOpen(false);
-                                              }}
-                                            >
-                                              {child.title || "Untitled child session"}
-                                            </Button>
-                                            {parentLinkLabel(child.parent_link_kind) !== null && (
-                                              <Badge
-                                                className="session-browser-relation-badge"
-                                                color="orange"
-                                                variant="light"
-                                              >
-                                                {parentLinkLabel(child.parent_link_kind)}
-                                              </Badge>
-                                            )}
-                                            <Text size="xs" c="dimmed">
-                                              {formatDateTime(child.last_activity_at)}
-                                            </Text>
-                                          </Group>
-                                        ))}
-                                      </Stack>
-                                    </div>
-                                  )}
-                                  {loadingChildSessions && <Loader size="xs" aria-label="Loading child sessions" />}
-                                  {childSessionsLoadError !== null && (
-                                    <Text size="xs" c="red" role="alert">
-                                      Could not load child sessions: {childSessionsLoadError}
-                                    </Text>
-                                  )}
-                                  {childSessionCursor !== null && (
-                                    <Button
-                                      variant="default"
-                                      size="xs"
-                                      loading={loadingMoreRelatedSessions}
-                                      onClick={() => void loadMoreRelatedSessions()}
-                                    >
-                                      Load more child sessions
-                                    </Button>
-                                  )}
-                                </Stack>
-                              )}
-                            </Stack>
-                          </Paper>
-                        </Popover.Dropdown>
-                      </Popover>
-                    )}
+                    <RelatedSessionsPanel
+                      model={{
+                        session: selectedSession,
+                        parent: {
+                          session: parentSession,
+                          loading: loadingParentSession,
+                          error: parentSessionLoadError,
+                        },
+                        children: {
+                          items: childSessions,
+                          loading: loadingChildSessions,
+                          loadingNext: loadingMoreRelatedSessions,
+                          error: childSessionsLoadError,
+                          cursor: childSessionCursor,
+                          hasNextPage: childSessionsQuery.hasNextPage,
+                          onLoadMore: loadMoreRelatedSessions,
+                        },
+                        layoutWidth,
+                        pathForSession: sessionPath,
+                        onNavigate: () => setMobileSessionListOpen(false),
+                      }}
+                    />
                   </Group>
                   <Group gap="xs" align="baseline">
                     {selectedSession.cwd !== null && (
