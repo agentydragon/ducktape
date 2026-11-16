@@ -157,7 +157,6 @@ known-first-party = [
     "homeassistant",
     "inventree_utils",
     "laser",
-    "llm",
     "loom",
     "mcp_infra",
     "openai_utils",
