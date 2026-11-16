@@ -72,7 +72,7 @@ func New(
 		serviceReaders:         options.ServiceReaders,
 		serviceManagers:        options.ServiceManagers,
 		serviceLaunchers:       options.ServiceLaunchers,
-		collectionAuthInterval: auth.DefaultVerdictTTL,
+		collectionAuthInterval: auth.DefaultRevalidationInterval,
 	}, nil
 }
 

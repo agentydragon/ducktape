@@ -102,34 +102,6 @@ func TestAMethodNoRuleListsIsRefusedBeforeResolvingItsSubject(t *testing.T) {
 	}
 }
 
-func TestAnAccountsRuleAdmitsOnlyItsAccountsAndHandsTheHandlerTheCaller(t *testing.T) {
-	pod, token := workload(t, app)
-	_, strangerToken := workload(t, auth.Account{Namespace: testNamespace, Name: "test-stranger"})
-	resolver := newResolver(t, api.TokenReviews())
-	rule := auth.Accounts(resolver, []auth.Account{app})
-	client, callers := serveHealth(t, auth.Methods{
-		healthpb.Health_Check_FullMethodName: rule, healthpb.Health_Watch_FullMethodName: rule,
-	}, 0)
-	both(t, bearing(t, ""), client, codes.Unauthenticated)
-	both(t, bearing(t, "test-token-unknown"), client, codes.Unauthenticated)
-	both(t, bearing(t, strangerToken), client, codes.PermissionDenied)
-	both(t, bearing(t, token), client, codes.OK)
-	for range 2 {
-		if caller := <-callers; caller.Account != app || caller.PodUID != string(pod.UID) {
-			t.Errorf("handler saw caller %+v, want %v in %s", caller, app, pod.Name)
-		}
-	}
-}
-
-func TestAnAccountsRuleWithNoAccountsAdmitsNobody(t *testing.T) {
-	_, token := workload(t, app)
-	rule := auth.Accounts(newResolver(t, api.TokenReviews()), nil)
-	client, _ := serveHealth(t, auth.Methods{
-		healthpb.Health_Check_FullMethodName: rule, healthpb.Health_Watch_FullMethodName: rule,
-	}, 0)
-	both(t, bearing(t, token), client, codes.PermissionDenied)
-}
-
 func TestHealthMethodsNeedNoBearer(t *testing.T) {
 	client, callers := serveHealth(t, auth.HealthMethods(), 0)
 	both(t, bearing(t, ""), client, codes.OK)
@@ -155,7 +127,7 @@ func TestTheAdmissionTimeoutBoundsSubjectResolution(t *testing.T) {
 	both(t, bearing(t, ""), client, codes.DeadlineExceeded)
 }
 
-func TestCallerRefusesACallNoAccountRuleAdmitted(t *testing.T) {
+func TestCallerRefusesACallWithoutAccountProof(t *testing.T) {
 	if _, err := auth.Caller(context.Background()); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Caller without an admission: %v", err)
 	}

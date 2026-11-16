@@ -13,7 +13,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 type ruleKind int
@@ -22,8 +21,6 @@ const (
 	// The zero Rule refuses every caller, so a Rule left unset fails closed.
 	ruleRefuse ruleKind = iota
 	rulePublic
-	ruleAccounts
-	ruleReviewedServiceAccount
 	ruleAnySubject
 	ruleServices
 )
@@ -31,9 +28,7 @@ const (
 // Rule is who may call one gRPC method.
 type Rule struct {
 	kind              ruleKind
-	resolver          *Resolver
 	subjectResolver   SubjectResolver
-	accounts          sets.Set[Account]
 	serviceCallers    map[string]struct{}
 	serviceDelegation *serviceDelegationPolicy
 }
@@ -42,23 +37,11 @@ type Rule struct {
 // probes carry no bearer.
 func Public() Rule { return Rule{kind: rulePublic} }
 
-// Accounts admits a caller whose bearer the resolver reviews for one of the listed accounts. An empty list admits nobody.
-func Accounts(resolver *Resolver, accounts []Account) Rule {
-	return Rule{kind: ruleAccounts, resolver: resolver, accounts: sets.New(accounts...)}
-}
-
 // AnySubject admits any workload this resolver authenticates, a ServiceAccount or an Identity
 // subject. A ServiceAccount caller is admitted with a Principal; an Identity caller only as an
 // IdentityAdmission, so the handler must read Admitted.
 func AnySubject(subjectResolver SubjectResolver) Rule {
 	return Rule{kind: ruleAnySubject, subjectResolver: subjectResolver}
-}
-
-// ReviewedServiceAccount admits any reviewed ServiceAccount in the Resolver's namespace policy.
-// It stores a typed ReviewedCaller proof so account-scoped handlers can use the SA UID while
-// existing Principal callers continue to require Pod-bound TokenReview claims.
-func ReviewedServiceAccount(resolver *Resolver) Rule {
-	return Rule{kind: ruleReviewedServiceAccount, resolver: resolver}
 }
 
 // Methods maps the full name (`/package.Service/Method`) of each method a gRPC server serves to the Rule
@@ -110,7 +93,7 @@ func HealthMethods() Methods {
 var (
 	// errMethodNotAllowed refuses a method the server's Methods do not list.
 	errMethodNotAllowed = status.Error(codes.PermissionDenied, "method not allowed")
-	// errNotAdmitted is a handler asking for the caller of a call no account Rule admitted.
+	// errNotAdmitted is a handler asking for the caller of a call without a ServiceAccount admission.
 	errNotAdmitted = status.Error(codes.Unauthenticated, "call not admitted")
 )
 
@@ -121,7 +104,7 @@ func WithCaller(ctx context.Context, principal Principal) context.Context {
 	return context.WithValue(ctx, callerKey{}, principal)
 }
 
-// Caller is the ServiceAccount principal an account rule admitted. A call no such Rule admitted is
+// Caller is the ServiceAccount principal retained in the context. A call without that proof is
 // refused as unauthenticated; Identity callers are read with Admitted.
 func Caller(ctx context.Context) (Principal, error) {
 	principal, ok := ctx.Value(callerKey{}).(Principal)
@@ -130,8 +113,6 @@ func Caller(ctx context.Context) (Principal, error) {
 	}
 	return principal, nil
 }
-
-type reviewedCallerKey struct{}
 
 type revalidateKey struct{}
 
@@ -165,20 +146,6 @@ func sameAdmission(a, b Admission) bool {
 	default:
 		return false
 	}
-}
-
-// WithReviewedCaller stores the account proof and its separate optional Pod proof.
-func WithReviewedCaller(ctx context.Context, caller ReviewedCaller) context.Context {
-	return context.WithValue(ctx, reviewedCallerKey{}, caller)
-}
-
-// AdmittedReviewedCaller is available only to a ServiceAccount caller a ReviewedServiceAccount method admitted.
-func AdmittedReviewedCaller(ctx context.Context) (ReviewedCaller, error) {
-	caller, ok := ctx.Value(reviewedCallerKey{}).(ReviewedCaller)
-	if !ok {
-		return ReviewedCaller{}, errNotAdmitted
-	}
-	return caller, nil
 }
 
 // ServerOptions admits each call by its method's Rule before any handler runs. admissionTimeout bounds caller
@@ -246,7 +213,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 		}
 		return ctx, nil
-	case ruleAccounts, ruleReviewedServiceAccount, ruleAnySubject, ruleServices:
+	case ruleAnySubject, ruleServices:
 	default:
 		return nil, errMethodNotAllowed
 	}
@@ -271,34 +238,14 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	if len(delegations) > 0 || delegatedAttempt(authorization) {
 		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
-	var principal Principal
-	var err error
-	if rule.kind == ruleAccounts {
-		principal, err = rule.resolver.RequireAccount(resolveContext, rule.accounts)
-	} else if rule.kind == ruleReviewedServiceAccount {
-		caller, err := rule.resolver.ResolveReviewedCaller(resolveContext)
-		if err != nil {
-			return nil, err
-		}
-		principal := caller.ServiceAccount
-		admitted := withAdmission(ctx, DirectAdmission{
-			Caller: principal,
-			Pod:    caller.Pod,
-		})
-		return WithReviewedCaller(admitted, caller), nil
-	} else if rule.kind == ruleAnySubject {
-		var subject Subject
-		if subject, err = rule.subjectResolver.ResolveSubject(resolveContext); err != nil {
-			return nil, err
-		}
-		if identity, ok := subject.(IdentityPrincipal); ok {
-			return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
-		}
-		principal = subject.(Principal)
-	}
+	subject, err := rule.subjectResolver.ResolveSubject(resolveContext)
 	if err != nil {
 		return nil, err
 	}
+	if identity, ok := subject.(IdentityPrincipal); ok {
+		return withAdmission(ctx, IdentityAdmission{Caller: identity}), nil
+	}
+	principal := subject.(Principal)
 	caller := serviceAccountPrincipal(principal.Account, principal.ServiceAccountUID)
 	callerContext := withAdmission(ctx, DirectAdmission{Caller: caller, Pod: &principal})
 	return WithCaller(callerContext, principal), nil

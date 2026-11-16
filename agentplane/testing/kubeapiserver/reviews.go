@@ -4,14 +4,18 @@ import (
 	"context"
 	"sync/atomic"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TokenReviews is the API operation observed by receiver tests that forbid TokenReview.
+type TokenReviews interface {
+	Create(context.Context, *authenticationv1.TokenReview, metav1.CreateOptions) (*authenticationv1.TokenReview, error)
+}
+
 // CountedReviews passes reviews to TokenReviews and counts them.
 type CountedReviews struct {
-	auth.TokenReviews
+	TokenReviews
 	Calls atomic.Int32
 }
 

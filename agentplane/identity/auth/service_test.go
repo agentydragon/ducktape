@@ -249,9 +249,6 @@ func TestServicesRequiresAnExactServiceCertificate(t *testing.T) {
 			if _, err := auth.EffectiveCaller(ctx); err == nil {
 				t.Fatal("service acquired effective account authority")
 			}
-			if _, err := auth.AdmittedReviewedCaller(ctx); err == nil {
-				t.Fatal("service acquired reviewed account proof")
-			}
 		})
 	}
 	for _, callers := range [][]string{{peertls.AppURI, peertls.AppURI}, {"spiffe://agentplane/app/"}, {"spiffe://other/app"}} {
