@@ -968,7 +968,8 @@ impl ChunkValueFlow {
             | FlowKey::Parameters(_)
             | FlowKey::ReadyParameters(_)
             | FlowKey::InvokedCells(_)
-            | FlowKey::RetainedCells(_) => None,
+            | FlowKey::RetainedCells(_)
+            | FlowKey::SourceCells(_) => None,
         }
     }
 
@@ -1421,6 +1422,7 @@ enum FlowKey {
     ReadyParameters(u32),
     InvokedCells(u32),
     RetainedCells(u32),
+    SourceCells(u32),
 }
 
 #[derive(Clone)]
@@ -1490,6 +1492,7 @@ impl FlowProgram {
             origins: BTreeSet::from([Value::Top]),
             source_unit: SourceUnitOrdinal(0),
             current_function: None,
+            collect_effect_calls: true,
             canonical: BTreeMap::new(),
             callable_source_unit: BTreeMap::new(),
             native_set_allocations: native_set_allocations.clone(),
@@ -1681,6 +1684,7 @@ struct FlowProgramCollector {
     origins: BTreeSet<Value>,
     source_unit: SourceUnitOrdinal,
     current_function: Option<u32>,
+    collect_effect_calls: bool,
     canonical: BTreeMap<Value, Id>,
     callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     native_set_allocations: BTreeMap<u32, crate::analysis_inputs::ProvenSetAllocation>,
@@ -1701,7 +1705,9 @@ impl FlowProgramCollector {
     }
 
     fn record_invoke(&mut self, callee: &Expr, args: &[ExprOrSpread]) {
-        if let Some(function) = self.current_function {
+        if self.collect_effect_calls
+            && let Some(function) = self.current_function
+        {
             self.cell_effects
                 .entry(function)
                 .or_default()
@@ -1715,6 +1721,14 @@ impl FlowProgramCollector {
                 .map(|arg| FlowValueExpr::from_ast(&arg.expr, &mut self.symbols))
                 .collect(),
         });
+    }
+
+    /// The access projection retains these source references, but does not
+    /// infer execution through an unmodeled lazy/class evaluation boundary.
+    fn without_effect_calls(&mut self, visit: impl FnOnce(&mut Self)) {
+        let previous = std::mem::replace(&mut self.collect_effect_calls, false);
+        visit(self);
+        self.collect_effect_calls = previous;
     }
 }
 
@@ -1920,7 +1934,12 @@ impl Visit for FlowProgramCollector {
                 .collect(),
         });
         let previous = self.enter_function(function);
+        let previous_calls = std::mem::replace(
+            &mut self.collect_effect_calls,
+            !node.is_async && !node.is_generator,
+        );
         node.visit_children_with(self);
+        self.collect_effect_calls = previous_calls;
         self.current_function = previous;
     }
 
@@ -1948,6 +1967,7 @@ impl Visit for FlowProgramCollector {
                 .collect(),
         });
         let previous = self.enter_function(function);
+        let previous_calls = std::mem::replace(&mut self.collect_effect_calls, !node.is_async);
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
             self.events.push(FlowEvent::Return {
                 function,
@@ -1955,13 +1975,22 @@ impl Visit for FlowProgramCollector {
             });
         }
         node.visit_children_with(self);
+        self.collect_effect_calls = previous_calls;
         self.current_function = previous;
     }
 
     fn visit_class(&mut self, node: &Class) {
         self.origins
             .insert(Value::Alloc(Kind::Class, node.span.lo.0));
-        node.visit_children_with(self);
+        self.without_effect_calls(|this| node.visit_children_with(this));
+    }
+
+    fn visit_getter_prop(&mut self, node: &GetterProp) {
+        self.without_effect_calls(|this| node.visit_children_with(this));
+    }
+
+    fn visit_setter_prop(&mut self, node: &SetterProp) {
+        self.without_effect_calls(|this| node.visit_children_with(this));
     }
 
     fn visit_return_stmt(&mut self, node: &ReturnStmt) {
@@ -2449,7 +2478,7 @@ impl IterativeRules for CandidateRules {
 fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
     match (key, current, contribution) {
         (
-            FlowKey::InvokedCells(_) | FlowKey::RetainedCells(_),
+            FlowKey::InvokedCells(_) | FlowKey::RetainedCells(_) | FlowKey::SourceCells(_),
             FlowFact::Cells(current),
             FlowFact::Cells(contribution),
         ) => current.union_with(&contribution),

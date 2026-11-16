@@ -53,25 +53,26 @@ impl CallEffectRules {
         for (function, body) in bodies {
             let invoked = FlowKey::InvokedCells(function);
             let retained = FlowKey::RetainedCells(function);
-            rules.direct.insert(
-                invoked,
-                KnownCellAccesses {
-                    reads: Arc::new(body.reads.into_iter().map(|slot| slot.0).collect()),
-                    writes: Arc::new(body.writes.into_iter().map(|slot| slot.0).collect()),
-                },
-            );
+            let source = FlowKey::SourceCells(function);
+            let direct = KnownCellAccesses {
+                reads: Arc::new(body.reads.into_iter().map(|slot| slot.0).collect()),
+                writes: Arc::new(body.writes.into_iter().map(|slot| slot.0).collect()),
+            };
+            rules.direct.insert(invoked, direct.clone());
+            rules.direct.insert(source, direct);
             rules.direct.insert(retained, KnownCellAccesses::default());
             rules
                 .successors
                 .entry(retained)
                 .or_default()
                 .insert(invoked);
+            rules.successors.entry(retained).or_default().insert(source);
             for descendant in body.descendants {
                 rules
                     .successors
-                    .entry(retained)
+                    .entry(source)
                     .or_default()
-                    .insert(FlowKey::RetainedCells(descendant));
+                    .insert(FlowKey::SourceCells(descendant));
             }
             for event in body.calls {
                 let FlowEvent::Invoke { callee, .. } = &events[event] else {

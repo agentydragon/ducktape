@@ -699,12 +699,13 @@ After value closure, `CallEffectRules` resolves each call's possible function
 origins once and runs in the same `IterativeInference` store. Effects never
 refine value facts, so this completion barrier loses no feedback.
 
-For each qualified function `f`, two keys carry pairs of sparse binding sets:
+For each qualified function `f`, three keys carry pairs of sparse binding sets:
 
 ```text
-invoked(f)  = direct(f) union { invoked(g)  | g is a possible callee of f }
-retained(f) = invoked(f) union { retained(g) | g is a possible callee of f }
-                        union { retained(h) | h is a syntactic descendant of f }
+source(f)   = direct(f) union { source(h) | h is a syntactic descendant of f }
+invoked(f)  = direct(f) union { invoked(g) | g is a possible callee of f }
+retained(f) = source(f) union invoked(f)
+                      union { retained(g) | g is a possible callee of f }
 ```
 
 Both coordinates join by union. These are positive source-access witnesses,
@@ -712,8 +713,13 @@ not complete operation effects: unknown targets, dynamic scope, implicit calls,
 unsupported heap behavior and suspension retain their existing conservative
 treatment. Even the invocation set can overapproximate execution. No consumer
 may infer purity, absence of effects, completion or availability from an empty
-set. A returned closure's body enters `retained`, without entering `invoked`
-solely because its enclosing function creates it.
+set. Descendants contribute their source references, but their call edges are
+not followed merely because the enclosing function creates them. This retains
+the conservative lexical-reference policy without treating a returned
+wrapper's later callback invocation as invocation at wrapper creation. Calls
+inside async/generator bodies, class evaluation and object accessor bodies do
+not add edges to their enclosing function's graph in this slice; these
+unmodeled timing boundaries retain their source references and existing havoc.
 
 Each rule registers all successor reads, including absent keys. Subsequent
 evaluations consume only changed successors; they do not resolve targets or
@@ -740,10 +746,11 @@ transient effect graph.
 
 **Closure and preservation.** All keys, slots and graph edges are input-derived.
 Direct witnesses are seeds; union transfers are monotone and idempotent. By
-induction on graph-path length, every direct witness reachable along invocation
-edges enters `invoked`; adding descendant edges gives exactly the stated
-`retained` closure. Complete watchers and fair scheduling reach its least fixed
-point. This proves the finite source-witness relation, not all JavaScript
+induction on graph-path length, invocation edges close `invoked` and syntactic
+descendant edges close `source`. The typed `retained` relation permits a path of
+call edges followed by source-descendant edges; it cannot follow a call edge
+after entering a deferred descendant. Complete watchers and fair scheduling
+reach its least fixed point. This proves the finite source-witness relation, not all JavaScript
 semantics. The existing fallback still handles behavior outside that relation.
 Every import reference under a previously scanned top-level function remains
 in its retained descendants or direct accesses, including lvalues. Alias
@@ -752,8 +759,8 @@ calls, parameter/return flow and local re-exports. It removes no prior
 cyclic-cell obligation and grants no new execution certificate.
 
 **Bounds.** Let `F` be function sites, `B` binding slots and `E` distinct edges
-between the `2F` access keys. There are at most `4FB` read/write bit insertions
-and `2F` initial fact insertions. Each successor changes at most `2B+1` times,
+between the `3F` access keys. There are at most `6FB` read/write bit insertions
+and `3F` initial fact insertions. Each successor changes at most `2B+1` times,
 so changed-successor transfer visits are `O(E(B+1))`, in addition to `O(F+E)`
 initial work. A worst-case bitmap join costs `O(B+1)`. Including ordered rule
 queues and indexes gives `O((F+E(B+1))(B+1+log(F+2)))` closure time and
