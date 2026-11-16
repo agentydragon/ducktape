@@ -39,6 +39,8 @@ filegroup(
     ) + [
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
+        "//agentplane/app/frontend/actions/push:typed_lint_srcs",
+        "//agentplane/app/frontend/actions/push/service_worker:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
         "//agentplane/app/frontend/actions/testing:typed_lint_srcs",
         "//agentplane/app/frontend/connections:typed_lint_srcs",
@@ -48,8 +50,6 @@ filegroup(
         "//agentplane/app/frontend/notifications:typed_lint_srcs",
         "//agentplane/app/frontend/policy:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
-        "//agentplane/app/frontend/actions/push:typed_lint_srcs",
-        "//agentplane/app/frontend/actions/push/service_worker:typed_lint_srcs",
         "//agentplane/app/frontend/shell:typed_lint_srcs",
         "//agentplane/app/frontend/system:typed_lint_srcs",
         "//agentplane/app/frontend/testing:typed_lint_srcs",
@@ -198,11 +198,11 @@ ts_library(
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/actions/push:push",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/app/frontend/actions/mcp:mcp_servers",
+        "//agentplane/app/frontend/actions/push",
         "//agentplane/app/frontend/connections:management",
     ],
 )
@@ -236,7 +236,6 @@ agentplane_vitest_test(
         "//agentplane/environments/v1:environment_service_pb",
     ],
 )
-
 
 ts_library(
     name = "main_lib",
@@ -465,7 +464,6 @@ agentplane_visual_test(
     src = "test_visual_operation_presentation.py",
     title = "Agentplane: shared Action presentation",
 )
-
 
 ts_library(
     name = "harness_network",
