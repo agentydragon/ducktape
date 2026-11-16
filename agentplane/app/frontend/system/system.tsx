@@ -2,11 +2,11 @@ import { Badge, Stack, Table, Text, Title } from "@mantine/core";
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { type JSX, useEffect, useState } from "react";
 
-import { displayableError } from "./client";
+import { displayableError } from "../client";
 import { getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
-import { SystemComponentState } from "../app_service_pb";
-import { TimeAgo } from "./time_ago";
-import { TopbarTitle } from "./topbar";
+import { SystemComponentState } from "../../app_service_pb";
+import { TimeAgo } from "../time_ago";
+import { TopbarTitle } from "../topbar";
 import "./system.css";
 
 const REFRESH_SECONDS = 15;

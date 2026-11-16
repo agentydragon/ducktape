@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 
-import { SystemComponentState, SystemComponentStatusSchema } from "../app_service_pb";
+import { SystemComponentState, SystemComponentStatusSchema } from "../../app_service_pb";
 import type { CheckedComponentStatus } from "./system_status_client";
 import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
