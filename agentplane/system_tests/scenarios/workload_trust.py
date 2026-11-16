@@ -275,7 +275,7 @@ async def _proxy_handshake_failures(cluster: Cluster, sandbox: str) -> list[str]
     for line in logs.splitlines():
         with contextlib.suppress(json.JSONDecodeError):
             record = json.loads(line)
-            if record.get("msg") == "runner observer reconnecting" and record.get("sandbox") == sandbox:
+            if record.get("msg") == "Environment Runtime observer reconnecting" and record.get("sandbox") == sandbox:
                 failures.append(record["error"])
     return failures
 
