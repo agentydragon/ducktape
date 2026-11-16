@@ -26,6 +26,108 @@ fn parse_and_build(source: &str) -> DependencyGraph {
 }
 
 #[test]
+fn typed_assignment_projection_separates_imports_constraints_and_rebinds() {
+    let graph = analysis::DependencyGraphInput::from_report(singleton_graph(
+        vec![
+            residual_source_unit("lazy_caller", 0, &["lazy_caller"], 1),
+            residual_source_unit("target", 1, &["target"], 1),
+            residual_source_unit("sequenced_caller", 2, &["sequenced_caller"], 1),
+            residual_source_unit("eager_caller", 3, &["eager_caller"], 1),
+            residual_source_unit("writer", 4, &["writer"], 1),
+        ],
+        vec![
+            dependency_edge(
+                "edge:lazy",
+                "lazy_caller",
+                "target",
+                DepKind::LazyUse,
+                false,
+            ),
+            dependency_edge(
+                "edge:eager",
+                "eager_caller",
+                "target",
+                DepKind::EagerUse,
+                true,
+            ),
+            dependency_edge(
+                "edge:sequenced:first",
+                "sequenced_caller",
+                "target",
+                DepKind::Sequenced,
+                true,
+            ),
+            dependency_edge(
+                "edge:sequenced:second",
+                "sequenced_caller",
+                "target",
+                DepKind::Sequenced,
+                true,
+            ),
+            dependency_edge(
+                "edge:rebind",
+                "writer",
+                "target",
+                DepKind::EagerRebind,
+                false,
+            ),
+        ],
+    ))
+    .unwrap()
+    .shared_graph();
+    let assignment = ModuleAssignment::from_assignments(
+        vec![
+            ModuleId(1),
+            ModuleId(2),
+            ModuleId(3),
+            ModuleId(4),
+            ModuleId(5),
+        ],
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+
+    let constraints = project_assignment_constraints(&graph, &assignment);
+
+    assert_eq!(
+        constraints.canonical.i_successors,
+        BTreeMap::from([
+            (ModuleId(1), BTreeSet::from([ModuleId(2)])),
+            (ModuleId(3), BTreeSet::from([ModuleId(2)])),
+            (ModuleId(4), BTreeSet::from([ModuleId(2)])),
+        ]),
+        "lazy imports remain in the canonical I-graph, while rebinds do not"
+    );
+    assert_eq!(
+        constraints
+            .canonical
+            .edges
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([(ModuleId(3), ModuleId(2)), (ModuleId(4), ModuleId(2)),]),
+        "only initialization-constraining edges enter the C graph"
+    );
+    assert_eq!(
+        constraints
+            .canonical
+            .edges_for(ModuleId(3), ModuleId(2))
+            .len(),
+        1,
+        "parallel sequenced source edges contribute one C-edge witness"
+    );
+    assert_eq!(constraints.cross_rebinds.len(), 1);
+    assert_eq!(constraints.cross_rebinds[0].from, ModuleId(5));
+    assert_eq!(constraints.cross_rebinds[0].to, ModuleId(2));
+    assert_eq!(
+        graph
+            .edge(constraints.cross_rebinds[0].dependency_edge)
+            .from,
+        SourceUnitId(4),
+        "the separate rebind witness retains its source edge identity"
+    );
+}
+
+#[test]
 fn supplied_priority_verification_does_not_repair_a_failed_witness() {
     let graph = parse_and_build(
         "const hub = () => [a, b];\n\
