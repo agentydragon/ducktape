@@ -4,7 +4,9 @@
 use std::path::Path;
 
 use debundle_e2e_support::{
-    parse_stdout_json, run_match_selector, run_synthesize_selectors, write_text_file,
+    BindingGroup, FixtureOpts, assert_entry_output, assert_generated_module_after_entry_script,
+    logical_module_with_binding_groups, parse_stdout_json, run_fixture, run_match_selector,
+    run_synthesize_selectors, write_text_file,
 };
 
 fn synthesized_match(root: &Path, source: &str) -> String {
@@ -124,6 +126,80 @@ register("primary", c);
 function c(x) { return x.trim(); }
 "#;
     assert_matches_rebuilt_source(original, rebuilt, "c");
+}
+
+fn assert_variable_use_site(source: &str, rebuilt: &str) {
+    assert_matches_rebuilt_source(source, rebuilt, "selected");
+    let dir = tempfile::tempdir().unwrap();
+    let selector = synthesized_match(dir.path(), source);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_binding_groups(
+                "app/example",
+                &[],
+                &[BindingGroup::source_alpha(
+                    selector,
+                    &[("Selected", "Selected")],
+                )],
+            )],
+        )
+        .with_import_order(&["residual", "app/example"]),
+    );
+    assert_entry_output(&fixture, "function\n");
+    assert_generated_module_after_entry_script(
+        &fixture,
+        "const entry = await import('./static/app/entry.js');\n\
+         const chosen = await import('./static/app/modules/app/example.js');\n\
+         console.log(chosen.Selected === entry.a, chosen.Selected !== entry.b);",
+        "true true\n",
+    );
+}
+
+#[test]
+fn identical_variable_initializers_use_a_distant_named_property() {
+    let source = r#"
+function make(callback) { return callback; }
+const a = make(() => {});
+const b = make(() => {});
+const c = make(() => {});
+const d = make(() => {});
+const e = make(() => {});
+const roles = { primary: a, secondary: b };
+console.log(typeof roles.primary);
+export { a, b };
+"#;
+    let rebuilt = r#"
+function factory(callback) { return callback; }
+const other = factory(() => {});
+const selected = factory(() => {});
+const roles = { secondary: other, extra: 1, primary: selected };
+"#;
+    assert_variable_use_site(source, rebuilt);
+}
+
+#[test]
+fn identical_variable_initializers_use_a_distant_registration() {
+    let source = r#"
+function make(callback) { return callback; }
+function register(label, value) { if (label === "primary") console.log(typeof value); }
+const a = make(() => {});
+const b = make(() => {});
+const c = make(() => {});
+const d = make(() => {});
+const e = make(() => {});
+register("primary", a);
+register("secondary", b);
+export { a, b };
+"#;
+    let rebuilt = r#"
+function factory(callback) { return callback; }
+const other = factory(() => {});
+const selected = factory(() => {});
+register("secondary", other);
+register("primary", selected);
+"#;
+    assert_variable_use_site(source, rebuilt);
 }
 
 #[test]

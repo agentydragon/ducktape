@@ -10,6 +10,7 @@ use swc_common::Spanned;
 use swc_ecma_ast::*;
 
 use super::object::{object_anchor_ranking, try_object_read_off_candidates};
+use super::use_site::{render_via_call_use_site, render_via_named_object_use_site};
 use super::var::try_var_read_off_candidates;
 use super::{relax_exact_declaration, render_var_slots, render_via_neighbor_context};
 use crate::regex_anchor::{accepted_regex_anchors, collect_regex_anchor_candidates};
@@ -271,6 +272,15 @@ fn try_var_group_read_off(
             return Ok(Some((selector, true)));
         }
         if let [target] = targets {
+            // A variable's role can be visible only at a use site, just as for
+            // a function or class. Reuse the indexed, independently proven
+            // references before depending on incidental neighboring statements.
+            if let Some(selector) = render_via_named_object_use_site(index, decl, target)? {
+                return Ok(Some((selector, false)));
+            }
+            if let Some(selector) = render_via_call_use_site(index, decl, target)? {
+                return Ok(Some((selector, false)));
+            }
             let scaffold = render_with(&BTreeSet::new(), &no_regex)?;
             return Ok(render_via_neighbor_context(index, decl, target, &scaffold)?
                 .map(|selector| (selector, false)));
