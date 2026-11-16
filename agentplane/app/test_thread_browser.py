@@ -20,6 +20,7 @@ import pytest
 import pytest_bazel
 from google.protobuf import json_format
 from google.protobuf.empty_pb2 import Empty
+from kubernetes_asyncio import client as k8s_client
 from playwright.async_api import (
     APIResponse,
     Locator,
@@ -34,7 +35,6 @@ from sqlalchemy import func, select, update
 from agentplane.app.frontend.testing.history_interactions import frames, holding_still, read_at, tool_call_in, wheel
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.browser_certificate import BrowserCertificate
-from agentplane.app.testing.gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.http2_proxy import http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
@@ -68,11 +68,10 @@ from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, Client
 from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
-from agentplane.sandboxes.testing.sandbox_namespace import SandboxNamespace
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
-from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
+from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.tls import issue_workload_leaf, make_ca
 from devinfra.testing.output_writer import BoundTestOutputs
@@ -148,25 +147,6 @@ async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxClust
         yield started
 
 
-@pytest.fixture
-async def empty_gateway_access(
-    api_server: KubernetesApiServer,
-    namespace: SandboxNamespace,
-    dispatcher_database_url: str,
-    app_token_file: Path,
-    tmp_path: Path,
-) -> AsyncIterator[GatewayAccess]:
-    """A real inventory service for tests whose Sandbox has already been deleted."""
-    async with run_gateway(
-        namespace.kubeconfig,
-        database_url=dispatcher_database_url,
-        namespace=namespace.name,
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
-    ) as gateway:
-        yield GatewayAccess(gateway.target, None, gateway.client_tls, gateway.environment_service.ca)
-
-
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     review_view: VisualPage,
     db_url: str,
@@ -176,11 +156,25 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
     thread_source: ReplicationSource,
     electric: ElectricService,
     certificate: BrowserCertificate,
-    namespace: SandboxNamespace,
-    empty_gateway_access: GatewayAccess,
+    sandbox: SandboxCluster,
+    gateway_access: GatewayAccess,
+    session_dispatcher: SessionDispatcherClient,
 ) -> None:
     page = review_view.page
     thread_id = await event_logs.seed(SANDBOX, SESSION)
+    thread_source.attached.spec.placement.environment_hosted.environment.uid = sandbox.uid
+    await session_dispatcher.unary(
+        session_dispatcher.stub.CreateSession,
+        session_dispatcher_pb2.CreateSessionRequest(session_id=str(thread_id), spec=thread_source.attached.spec),
+    )
+    await sandbox.custom_objects.delete_namespaced_custom_object(
+        "agentplane.allegedly.works",
+        "v1alpha1",
+        sandbox.namespace,
+        "sandboxes",
+        sandbox.name,
+        body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=sandbox.uid)),
+    )
     await history.set_attached(thread_id, thread_source.attached)
     await history.record(thread_id, thread_source.entries)
     await store.rename(thread_id, "Test archived thread")
@@ -188,8 +182,8 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         app_process(
             db_url,
             history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=namespace.kubeconfig, namespace=namespace.name),
-            gateway=empty_gateway_access,
+            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
+            gateway=gateway_access,
             browser_login=True,
             certificate=certificate,
             electric_url=electric.url,
@@ -228,6 +222,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
                 "Sandbox no longer exists. Showing archived Thread history; controls are disabled.", exact=True
             )
         ).to_be_visible()
+        await expect(page.get_by_role("navigation").get_by_text("Test archived thread", exact=True)).to_be_visible()
         await review_view.capture(label="Archived Thread after reload")
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
@@ -772,11 +767,13 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     sandbox: SandboxCluster,
     gateway_service: GatewayProcess,
     sandbox_control: SandboxControlClient,
+    session_dispatcher: SessionDispatcherClient,
     gateway_access: GatewayAccess,
     tmp_path: Path,
 ) -> None:
     page = review_view.page
     source = ReplicationSource()
+    source.attached.spec.placement.environment_hosted.environment.uid = sandbox.uid
     source.attached.active_turn_id = "test-projected-turn"
     source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-projected-turn")))
@@ -843,6 +840,11 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         http2_proxy(app.url, certificate) as ingress,
         asyncio.timeout(60),
     ):
+        await session_dispatcher.unary(
+            session_dispatcher.stub.CreateSession,
+            session_dispatcher_pb2.CreateSessionRequest(session_id=str(thread), spec=source.attached.spec),
+        )
+        await accepted_session(session_dispatcher, thread)
         await app.login(page)
         opened = await source.opened.get()
         opened.replay.set()
@@ -920,6 +922,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         expanded_reasoning = reasoning_details.locator(".ui-disclosure-panel .ui-markdown")
         await expect(expanded_reasoning).to_contain_text("On-demand reasoning reaches past one line.")
         await expect(expanded_reasoning.locator("strong").first).to_have_text("reaches")
+        await expect(page.get_by_role("navigation").get_by_text("Streamed thread", exact=True)).to_be_visible()
         await review_view.capture(label="Streamed Thread with tool call and reasoning open")
 
         await page.reload()
