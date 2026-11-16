@@ -32,6 +32,8 @@ The library's existing public test helpers are re-exported by `mod.rs`:
 - `runtime.rs` owns Node/Bun execution checks, source-versus-output parity, and
   emitted-module behavior probes. Case-owned launches go through the evidence wrapper;
   the raw process boundary remains a separate lower-level API.
+- `unescaped_local_callable.rs` owns the two-module spec and emitted-output checks for
+  unescaped local callable reachability cases.
 - `mod.rs` is the public harness facade and owns flat-fixture setup, CLI workflows, and report
   fixtures. Runtime-only `extra_files` are mirrored
   into `app/` after transformation and before exit handling; on a failed exit, mirroring
