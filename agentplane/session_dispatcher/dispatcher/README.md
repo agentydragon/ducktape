@@ -23,7 +23,8 @@ The manual queue, replica and wake probes are documented in the
   precondition. `command_id` is the idempotency key across every command RPC.
 - **Watching**: `WatchDispatches` sends the Dispatches in scope, then one `CaughtUp` frame, then a Dispatch
   again whenever it changes. `DispatchFilter.command_ids` (at most 1000) narrows either scope to those
-  commands, so a caller holding a few of them does not replay a whole Session.
+  commands, so a caller holding a few of them does not replay a whole Session. The current RPC has no
+  resume token or durable replay; reconnecting starts with a new snapshot.
 - **Browser access**: the app serves an authenticated HTTP/JSON facade and calls the Gateway over native gRPC.
 - **Delivery states** say where a command is: `DELIVERY_STATE_QUEUED_IN_DISPATCHER`,
   `DELIVERY_STATE_DELIVERING_TO_RUNNER`, `DELIVERY_STATE_RUNNER_ADMITTED`,
@@ -98,7 +99,10 @@ The manual queue, replica and wake probes are documented in the
   transactional PostgreSQL notifications in bounded chunks, in the same transaction that deletes the rows,
   so active `WatchDispatches` streams on any connected replica receive them. A listener disconnect, reconnect
   gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
-  so a later read or watch is `NOT_FOUND`/empty.
+  so a later `GetDispatch` or current watch is `NOT_FOUND`/empty. Versioned storage groundwork retains
+  deleted receipt snapshots under command-ID/version tombstones with no Sandbox name or UID, but the current
+  watch and read APIs do not consume those tombstones. The storage migration does not change watch responses
+  or add resume-token support.
 - **Deletion admission fence**: cleanup retains an exact-UID tombstone in Dispatcher PostgreSQL.
   Later Session creation requests and queued commands cannot recreate deleted state, even from
   another replica's stale inventory. Admissions that commit before cleanup are included in cleanup.

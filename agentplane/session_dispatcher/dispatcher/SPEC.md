@@ -271,12 +271,30 @@ entry and cursor. `UNKNOWN` does not negate that proven journal acceptance. An u
 as known-unsent; a requeued possibly-forwarded command becomes `UNKNOWN` on environment deletion.
 
 Deletion snapshots are transactional PostgreSQL notifications to connected `WatchDispatches`
-listeners. Cleanup then removes the command receipts but keeps the Session record. These notifications provide no
-durable outcome read for a later subscriber. An already-terminal row is not included in cleanup
-snapshots: a connected watcher delayed behind its earlier invalidation can miss that outcome when
-cleanup removes the row. Broadcasting all retained receipts is not a bounded solution: terminal
-subscription buffers can overflow, and reconnect has no retained receipt to recover. Runtime journals and History remain separate evidence
-owners; cleanup neither deletes retained History nor converts missing evidence into failure.
+listeners. Cleanup removes the command receipts but keeps the Session record. An already-terminal
+row is not included in cleanup snapshots: a connected watcher delayed behind its earlier invalidation
+can miss that outcome when cleanup removes the row. Broadcasting all retained receipts is not a
+bounded solution: terminal subscription buffers can overflow. Runtime journals and History remain
+separate evidence owners; cleanup neither deletes retained History nor converts missing evidence
+into failure.
+
+The additive dispatch-version storage migration backfills each dispatch with a sequence-backed
+version, and database triggers assign a fresh version on every later insert or update. The triggers
+also cover writers running an older application image. Deletion triggers retain receipt snapshots in
+tombstones keyed by command ID and version, with no Sandbox name/UID or dispatch command/routing
+columns. The version keeps deletion records distinct if a command ID is reused. Retained admission
+evidence may include the original command content. The retained Session row supplies ownership and
+read scope. Tombstones are pruned after 24 hours,
+while a durable global pruned-through version records that older deletion history is no longer
+available. This storage step does not change `WatchDispatches`, `GetDispatch`, or facade behavior:
+current streams still rely on chunked notifications and have no durable replay, and a subscriber
+behind a disconnect can still miss a deleted receipt. `OUT_OF_RANGE` coverage reporting and
+resume-token support belong to the later versioned-watch receiver.
+
+**Sequence allocation is not commit order.** A versioned reader must establish its checkpoint under
+brief PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, so writers that already
+allocated lower versions commit before the reader advances its cursor. It must release the locks and
+finish database transactions before sending stream frames.
 
 Treating an unmarked claim as known-unsent requires a cutover with no old command writers still
 running; overlapping old writers do not provide this evidence. A lost marker-commit reply is retried

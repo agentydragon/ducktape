@@ -156,6 +156,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return fmt.Errorf("configure Gateway SVID authentication: %w", err)
 	}
 	failed := make(chan error, 8)
+	go func() { reportUnexpected(ctx, failed, "Dispatcher tombstone retention", store.RunTombstonePruner(ctx)) }()
 	go func() {
 		reportUnexpected(ctx, failed, "Sandbox cache", inventory.Start(ctx))
 	}()

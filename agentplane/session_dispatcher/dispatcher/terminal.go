@@ -86,6 +86,9 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 				return err
 			}
 		}
+		// CLEANUP: remove chunked terminal notifications only after every writer versions
+		// dispatches, every serving replica uses durable versioned watches, and no supported
+		// rollback image needs this channel. Client resume enablement follows the serving pin.
 		for _, event := range events {
 			payloads, err := terminalnotice.Encode(event)
 			if err != nil {

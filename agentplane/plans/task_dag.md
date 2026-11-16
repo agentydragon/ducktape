@@ -3676,6 +3676,14 @@ a specific stopping condition.
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
+- **`DISPATCHER_CHUNKED_WATCH_CLEANUP` (blocked):** `CLEANUP(added 2026-11-15):` remove the
+  chunked PostgreSQL notification encoder/reassembler and its timeout and pending-cap handling only
+  after every serving replica uses durable versioned watches, all dispatch writers are on the
+  versioned migration, and no supported rollback image depends on that path. The current rollback
+  pin, `git.allegedly.works/ducktape-ci/agentplane-runner-gateway:devel-20261116062955-a8fc73e`,
+  still uses it; wait for `DISPATCHER_WATCH_RESUMABLE_SERVER`, replacement of that pin, and closure
+  of the supported rollback window. Client enablement is a separate gate. Source:
+  [versioned watch rollout](standard_idioms.md#dispatcher_watch_versions).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3761,7 +3769,10 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
     DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery]
-    DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch]
+    DISPATCHER_WATCH_VERSIONS[In progress: dispatch version storage, PR1]
+    DISPATCHER_WATCH_RESUMABLE_SERVER[Blocked: versioned watch receiver]
+    DISPATCHER_WATCH_CLIENT_CUTOVER[Blocked: client enablement after staging pin]
+    DISPATCHER_WATCH_VERSIONS --> DISPATCHER_WATCH_RESUMABLE_SERVER --> DISPATCHER_WATCH_CLIENT_CUTOVER
 ```
 
 ### `SAMPLER_JOURNAL_DIET` — what the sampler journals
@@ -3773,6 +3784,31 @@ raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decis
 
 The operator released `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` on 2026-11-16 at
 06:40 UTC; each builds in its own PR.
+
+### `DISPATCHER_WATCH_VERSIONS` — persist dispatch change versions
+
+**In progress; coding agent, 2026-11-15 PST. Operator released the build on 2026-11-16 at
+06:40 UTC.** PR1 adds sequence-backed versions, a backfill, address-free deletion tombstones and
+24-hour pruning with a durable coverage floor. Existing watches and chunked notices stay in place.
+The [versioned watch plan](standard_idioms.md#dispatcher_watch_versions) owns the rollout and
+remaining acceptance. Exit: additive migration, old-writer compatibility, retention and rollback
+checks pass, including the k3s Dispatcher suite.
+
+### `DISPATCHER_WATCH_RESUMABLE_SERVER` — serve versioned dispatch replay
+
+**Blocked on the storage release and every writer bumping versions.** Serve versioned database
+reads through `wakeups.Hub`, with filter-bound resume tokens and explicit retained-coverage loss.
+Keep chunked notices for old serving replicas and supported rollback images. Exit: disconnect and
+restart replay, deletion, expired coverage, concurrent commit ordering and multi-replica notification
+integration tests pass; the k3s Dispatcher suite remains green.
+
+### `DISPATCHER_WATCH_CLIENT_CUTOVER` — enable versioned watch clients
+
+**Blocked on the versioned receiver's serving-image staging pin.** Enable App and
+`session_client/observe_input.go` resume tokens only after receivers ship. Clients surface
+`OUT_OF_RANGE` coverage loss before taking a fresh snapshot. The
+[plan](standard_idioms.md#dispatcher_watch_versions) inventories clients and test helpers.
+Exit: reconnect and coverage-loss behavior pass through the actual clients.
 
 ## 17. Two binaries and the Go layout
 
