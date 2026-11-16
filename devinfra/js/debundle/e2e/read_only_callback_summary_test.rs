@@ -117,6 +117,39 @@ fn prefix_values_and_saved_analysis_are_rechecked_between_host_calls() {
 }
 
 #[test]
+fn a_later_callable_return_forfeits_the_primitive_summary() {
+    let source = "import { host } from './peer.js';\n\
+        let value = 7;\n\
+        function reader() { return value; }\n\
+        function next() { return later; }\n\
+        const first = host(reader);\n\
+        value = next;\n\
+        const second = host(reader);\n\
+        const later = 'ready';\n\
+        console.log(first, second);\n";
+    let peer = [(
+        "static/peer",
+        "export function host(callback) { try { const value = callback(); return typeof value === 'function' ? value() : value; } catch (error) { return error.name; } }\n",
+    )];
+    let fixture = run_fixture(
+        FixtureOpts::new(source, vec![])
+            .with_extra_chunks(&peer)
+            .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&fixture, "7 ReferenceError\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("later", &[Member::new("later")])],
+        )
+        .with_extra_chunks(&peer)
+        .with_unassigned_mode(unassigned_mode_inline()),
+        &["later"],
+        &[],
+    );
+}
+
+#[test]
 fn wide_read_only_pool_keeps_future_lexical_observations() {
     let source = pool(
         "",
