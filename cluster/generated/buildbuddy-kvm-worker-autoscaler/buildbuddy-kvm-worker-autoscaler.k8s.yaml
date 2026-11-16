@@ -23,7 +23,7 @@ spec:
     behavior: currentReplicasIfHigher
     failureThreshold: 3
     replicas: 1
-  maxReplicaCount: 3
+  maxReplicaCount: 8
   minReplicaCount: 1
   pollingInterval: 30
   scaleTargetRef:

@@ -1032,15 +1032,6 @@ spec:
                         operator: In
                         values:
                           - "true"
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchExpressions:
-                      - key: app.kubernetes.io/part-of
-                        operator: In
-                        values:
-                          - buildbuddy-kvm-worker
-                  topologyKey: kubernetes.io/hostname
           domain:
             cpu:
               cores: 4
@@ -1086,7 +1077,7 @@ spec:
                 cpu: "4"
                 memory: 8Gi
               requests:
-                cpu: "4"
+                cpu: "2"
                 memory: 8Gi
           networks:
             - name: default

@@ -22,10 +22,6 @@ from kubevirt_virtualmachinepool_crds.io.kubevirt.pool import (
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTerms,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecutionNodeSelectorTermsMatchExpressions,
-    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinity,
-    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution,
-    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector,
-    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpu,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainCpuFeatures,
     VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources,
@@ -196,10 +192,12 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                 for feature in ("svm", "vmx")
             ],
         ),
+        # Reserve the observed sustained demand while allowing all four vCPUs to burst.
+        # Sizing evidence: devinfra/buildbuddy/debug/2026_11_16_kvm_pool_capacity.md.
         resources=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResources(
             requests={
                 "cpu": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(
-                    Cpu.units(4).amount
+                    Cpu.units(2).amount
                 ),
                 "memory": VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecDomainResourcesRequests.from_string(
                     _MEMORY.as_string()
@@ -233,23 +231,7 @@ def _pool_worker_template() -> VirtualMachinePoolSpecVirtualMachineTemplate:
                         for feature in ("svm", "vmx")
                     ]
                 )
-            ),
-            # Keep each worker off any node that already runs another one, whichever kind it is.
-            pod_anti_affinity=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinity(
-                required_during_scheduling_ignored_during_execution=[
-                    VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecution(
-                        topology_key="kubernetes.io/hostname",
-                        label_selector=VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelector(
-                            match_expressions=[
-                                VirtualMachinePoolSpecVirtualMachineTemplateSpecTemplateSpecAffinityPodAntiAffinityRequiredDuringSchedulingIgnoredDuringExecutionLabelSelectorMatchExpressions(
-                                    key=key, operator="In", values=[value]
-                                )
-                                for key, value in _WORKER_LABELS.items()
-                            ]
-                        ),
-                    )
-                ]
-            ),
+            )
         ),
         # Ready once the executor has registered with BuildBuddy, not merely once the VM runs, so a rollout does
         # not restart the next member while the pool has no executor. `/readyz` answers 200 when registered and 503
@@ -471,7 +453,7 @@ def autoscaler_chart(app: App) -> Chart:
                 api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
             ),
             min_replica_count=1,
-            max_replica_count=3,
+            max_replica_count=8,
             polling_interval=30,
             fallback=keda.ScaledObjectSpecFallback(
                 failure_threshold=3,
