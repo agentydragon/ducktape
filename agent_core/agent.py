@@ -4,13 +4,11 @@ import contextlib
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import anyio
 import pydantic_core
-from pydantic import TypeAdapter
 
 from agent_core.events import (
     ApiRequest,
@@ -23,16 +21,7 @@ from agent_core.events import (
     UserText,
 )
 from agent_core.handler import BaseHandler
-from agent_core.loop_control import (
-    Abort,
-    AllowAnyToolOrTextMessage,
-    Compact,
-    InjectItems,
-    LoopDecision,
-    NoAction,
-    RequireAnyTool,
-    ToolPolicy,
-)
+from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, LoopDecision, NoAction, RequireAnyTool, ToolPolicy
 from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
@@ -280,57 +269,6 @@ class Agent:
             return await self._dynamic_instructions()
         return None
 
-    async def compact_transcript(self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None) -> bool:
-        """Summarize the transcript prefix before the last `keep_recent_turns` items.
-
-        The prefix needs at least three items; it becomes one summary `UserMessage`.
-        If no prompt is supplied, load `compaction_prompt.md`. Return whether compaction occurred.
-        """
-
-        boundary_index = max(0, len(self._transcript) - keep_recent_turns)
-
-        if boundary_index < 1:
-            return False
-
-        all_to_compact = self._transcript[:boundary_index]
-        recent_region = self._transcript[boundary_index:]
-
-        if len(all_to_compact) < 3:
-            return False
-
-        summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
-
-        summary_msg = UserMessage.text(summary_text)
-
-        self._transcript = [
-            summary_msg,
-            *recent_region,  # Keep recent transcript items unchanged.
-        ]
-
-        return True
-
-    async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
-        """Serialize messages, reasoning items, function calls, and outputs for the summarizer."""
-        # TODO: Consider stripping/formatting to remove fields without semantic content
-        #  (e.g., tool call IDs, encrypted reasoning data, internal metadata)
-        adapter = TypeAdapter(list[TranscriptItem])
-        conversation = adapter.dump_json(items, exclude_none=True, indent=2).decode()
-
-        if custom_prompt is None:
-            prompt_file = Path(__file__).parent / "compaction_prompt.md"
-            custom_prompt = prompt_file.read_text()
-
-        req = ResponsesRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
-
-        resp = await self._client.sample(self._client.prepare(req))
-
-        if resp.output and len(resp.output) > 0:
-            first = resp.output[0]
-            if isinstance(first, AssistantMessageOut):
-                return first.text
-
-        raise RuntimeError("Summary generation failed: LLM response missing assistant message")
-
     async def step(self) -> bool:
         """Run one step and resolve pending calls.
 
@@ -454,40 +392,6 @@ class Agent:
         if isinstance(decision, Abort):
             self.finished = True
             return
-        if isinstance(decision, Compact):
-            # ReasoningItems cannot be reused outside their original response context,
-            # so compaction must not be triggered if the last transcript item is a ReasoningItem
-            if self._transcript and isinstance(self._transcript[-1], ReasoningItem):
-                raise RuntimeError(
-                    "Cannot compact transcript when last item is a ReasoningItem. "
-                    "Handlers must not return Compact() after receiving reasoning output."
-                )
-            compacted = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
-            if compacted:
-                logger.info(
-                    "Transcript compacted (kept %d recent turns, compacted %d items)",
-                    decision.keep_recent_turns,
-                    len(self._transcript) - decision.keep_recent_turns - 1,  # -1 for summary message
-                )
-            else:
-                logger.info("Compaction skipped (not enough items to compact)")
-
-            for h in self._handlers:
-                h.on_compaction_complete(compacted=compacted)
-
-            return  # Continue to next iteration after compaction
-
-        if isinstance(decision, InjectItems):
-            for item in decision.items:
-                self._transcript.append(item)
-                self._notify_handlers_for_transcript_item(item)
-
-                if isinstance(item, FunctionCallItem):
-                    self.pending_function_calls.append(item)
-
-            # Let step() resolve injected calls before another sample.
-            return
-
         resp_output: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] | None = None
 
         should_sample_llm = False
