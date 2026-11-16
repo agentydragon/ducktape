@@ -60,7 +60,10 @@ def test_holding_positions_must_reference_known_accounts() -> None:
             accounts=(),
             holdings=(
                 make_security_holding(
-                    position_id="voo_position", account_id=AccountId("missing"), lot_id=LotId("voo_lot")
+                    position_id="voo_position",
+                    account_id=AccountId("missing"),
+                    lot_id=LotId("voo_lot"),
+                    security_kind=HoldingKind.ETF,
                 ),
             ),
         )
@@ -86,6 +89,9 @@ def test_holding_lot_ids_must_be_unique() -> None:
                     symbol="GOOG",
                     security_kind=HoldingKind.STOCK,
                     unit_value=Decimal(180),
+                    holding_period_months_at_start=35,
+                    quantity=5.0,
+                    cost_basis=Decimal(500),
                 ),
             ),
         )
@@ -110,6 +116,9 @@ def test_holding_positions_sharing_series_must_share_unit_value() -> None:
                     lot_id=LotId("sp500_b_lot"),
                     symbol="VOO",
                     unit_value=Decimal(600),
+                    holding_period_months_at_start=35,
+                    quantity=5.0,
+                    cost_basis=Decimal(500),
                 ),
             ),
         )
