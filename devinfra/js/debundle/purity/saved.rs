@@ -14,7 +14,37 @@ use serde::{Deserialize, Serialize};
 use swc_common::{BytePos, Span};
 
 #[path = "saved_dependencies.rs"]
-mod dependencies;
+pub(crate) mod dependencies;
+
+pub(crate) fn encode_source_location(location: &SourceLocation) -> proto::SourceLocation {
+    proto::SourceLocation {
+        source_path: location.source_path.clone(),
+        start_line: location.start_line as u64,
+        end_line: location.end_line as u64,
+        start_column: location.start_column.map(|column| column as u64),
+    }
+}
+
+pub(crate) fn decode_source_location(location: proto::SourceLocation) -> Result<SourceLocation> {
+    Ok(SourceLocation {
+        source_path: location.source_path,
+        start_line: location.start_line.try_into()?,
+        end_line: location.end_line.try_into()?,
+        start_column: location.start_column.map(usize::try_from).transpose()?,
+    })
+}
+
+pub(crate) fn encode_span(span: Span) -> proto::Span {
+    proto::Span {
+        start: span.lo.0,
+        end: span.hi.0,
+    }
+}
+
+pub(crate) fn decode_span(span: proto::Span) -> Result<Span> {
+    ensure!(span.start <= span.end, "invalid saved purity span");
+    Ok(Span::new(BytePos(span.start), BytePos(span.end)))
+}
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -47,22 +77,15 @@ impl<'a> PuritySnapshot<'a> {
                     .iter()
                     .map(|reason| proto::Reason {
                         rule: Some(reason.rule as i32),
-                        source_location: reason.source_location.as_ref().map(|location| {
-                            proto::SourceLocation {
-                                source_path: location.source_path.clone(),
-                                start_line: location.start_line as u64,
-                                end_line: location.end_line as u64,
-                                start_column: location.start_column.map(|column| column as u64),
-                            }
-                        }),
+                        source_location: reason
+                            .source_location
+                            .as_ref()
+                            .map(encode_source_location),
                         detail: reason.detail.clone(),
                         author_guidance: reason.author_guidance.clone(),
                         cause_ref: reason.cause_ref.clone(),
                         cause: reason.cause.as_ref().map(|cause| self.snapshot(cause).0),
-                        span: Some(proto::Span {
-                            start: reason.span.lo.0,
-                            end: reason.span.hi.0,
-                        }),
+                        span: Some(encode_span(reason.span)),
                     })
                     .collect(),
             }),
@@ -115,25 +138,15 @@ impl RestoredPurities {
                         .reasons
                         .into_iter()
                         .map(|reason| {
-                            let span = reason.span.context("missing saved purity span")?;
-                            ensure!(span.start <= span.end, "invalid saved purity span");
+                            let span =
+                                decode_span(reason.span.context("missing saved purity span")?)?;
                             Ok(PurityReason {
                                 rule: PurityRule::try_from(
                                     reason.rule.context("missing saved purity rule")?,
                                 )?,
                                 source_location: reason
                                     .source_location
-                                    .map(|location| -> Result<_> {
-                                        Ok(SourceLocation {
-                                            source_path: location.source_path,
-                                            start_line: location.start_line.try_into()?,
-                                            end_line: location.end_line.try_into()?,
-                                            start_column: location
-                                                .start_column
-                                                .map(usize::try_from)
-                                                .transpose()?,
-                                        })
-                                    })
+                                    .map(decode_source_location)
                                     .transpose()?,
                                 detail: reason.detail,
                                 author_guidance: reason.author_guidance,
@@ -142,7 +155,7 @@ impl RestoredPurities {
                                     .cause
                                     .map(|id| self.get(PurityNodeId(id)))
                                     .transpose()?,
-                                span: Span::new(BytePos(span.start), BytePos(span.end)),
+                                span,
                             })
                         })
                         .collect::<Result<_>>()?,

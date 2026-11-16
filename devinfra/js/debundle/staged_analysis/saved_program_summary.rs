@@ -6,7 +6,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use analysis::analysis_inputs::saved::{SavedCallableSummary, SavedNativeIntegrity};
+use analysis::analysis_inputs::saved::SavedNativeIntegrity;
 use analysis::analysis_inputs::{
     ArgumentInputEvidence, ImportedPrimitiveRead, InferredSetConstruction, InferredSetOperation,
     InitializerCallEffectInputRef, NativeOperationInputEvidence, ResolvedArgumentInput,
@@ -32,7 +32,7 @@ pub(super) struct SavedProgramSummary<'a> {
     primitive_reads: Cow<'a, BTreeMap<String, BTreeMap<String, ImportedPrimitiveRead>>>,
     fluent: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
     constructors: Cow<'a, BTreeMap<String, BTreeSet<String>>>,
-    imported_callables: BTreeMap<String, BTreeMap<String, SavedCallableSummary<'a>>>,
+    imported_callables: Vec<u8>,
     /// Required field, nullable value: missing must differ from explicit None.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     native_integrity: Option<SavedNativeIntegrity<'a>>,
@@ -90,21 +90,9 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
-        let imported_callables = summary
-            .imported_callables
-            .iter()
-            .map(|(chunk, callables)| {
-                (
-                    chunk.clone(),
-                    callables
-                        .iter()
-                        .map(|(name, callable)| {
-                            (name.clone(), SavedCallableSummary::snapshot(callable))
-                        })
-                        .collect(),
-                )
-            })
-            .collect();
+        let imported_callables = analysis::analysis_inputs::saved_callable::encode_callable_table(
+            &summary.imported_callables,
+        );
         let native_operation_inputs = summary
             .native_operation_inputs
             .iter()
@@ -240,19 +228,9 @@ impl<'a> SavedProgramSummary<'a> {
                 ))
             })
             .collect::<Result<_>>()?;
-        let imported_callables = self
-            .imported_callables
-            .into_iter()
-            .map(|(chunk, callables)| {
-                Ok((
-                    chunk,
-                    callables
-                        .into_iter()
-                        .map(|(name, callable)| Ok((name, callable.restore()?)))
-                        .collect::<Result<_>>()?,
-                ))
-            })
-            .collect::<Result<_>>()?;
+        let imported_callables = analysis::analysis_inputs::saved_callable::decode_callable_table(
+            &self.imported_callables,
+        )?;
         let native_operation_inputs = self
             .native_operation_inputs
             .into_iter()

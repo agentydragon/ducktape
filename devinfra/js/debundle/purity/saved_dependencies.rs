@@ -13,7 +13,7 @@ fn author_input(defining_chunk: &str, input_index: usize) -> proto::AuthorInputR
     }
 }
 
-pub(super) fn encode(dependencies: &ProofDependencies) -> proto::ProofDependencies {
+pub(crate) fn encode(dependencies: &ProofDependencies) -> proto::ProofDependencies {
     proto::ProofDependencies {
         value_inputs: dependencies
             .value_inputs
@@ -67,7 +67,7 @@ pub(super) fn encode(dependencies: &ProofDependencies) -> proto::ProofDependenci
     }
 }
 
-pub(super) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDependencies> {
+pub(crate) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDependencies> {
     Ok(ProofDependencies {
         value_inputs: dependencies
             .value_inputs
@@ -151,7 +151,7 @@ pub(super) fn decode(dependencies: proto::ProofDependencies) -> Result<ProofDepe
     })
 }
 
-fn encode_host_behavior(key: &HostBehaviorKey) -> proto::HostBehaviorKey {
+pub(crate) fn encode_host_behavior(key: &HostBehaviorKey) -> proto::HostBehaviorKey {
     use proto::HostBehaviorFlag;
     use proto::host_behavior_key::Key;
     proto::HostBehaviorKey {
@@ -178,7 +178,7 @@ fn encode_host_behavior(key: &HostBehaviorKey) -> proto::HostBehaviorKey {
     }
 }
 
-fn decode_host_behavior(key: proto::HostBehaviorKey) -> Result<HostBehaviorKey> {
+pub(crate) fn decode_host_behavior(key: proto::HostBehaviorKey) -> Result<HostBehaviorKey> {
     use proto::HostBehaviorFlag;
     use proto::host_behavior_key::Key;
     Ok(match key.key.context("missing saved host behavior key")? {

@@ -3,7 +3,7 @@
 
 use crate::emit_report;
 use analysis::ProgramGraphReport;
-use analysis::analysis_inputs::NativeIntrinsic;
+use analysis::analysis_inputs::{NativeIntrinsic, native_intrinsic_from_spec};
 use analysis::execution_evidence::{
     ExecutionPrecisionLoss, ExecutionPrecisionLossReason, SourceLocation,
 };
@@ -224,7 +224,7 @@ fn possible_discharges(
 ) -> Vec<PossibleDischarge> {
     let mut possible_discharges = spec::ALL_INTRINSIC_FAMILIES
         .into_iter()
-        .any(|author_family| NativeIntrinsic::from(author_family) == family)
+        .any(|author_family| native_intrinsic_from_spec(author_family) == family)
         .then_some(PossibleDischarge::IntrinsicsNeverWritten)
         .into_iter()
         .collect::<Vec<_>>();

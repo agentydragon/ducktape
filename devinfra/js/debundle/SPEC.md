@@ -382,9 +382,11 @@ still reject stale or mismatched facts.
 The analysis and apply projection files use typed proto3 messages. Their generated
 Rust types are built by Bazel. Stored projections have no cross-version
 compatibility guarantee and must be regenerated with the consuming engine.
-Saved analysis uses a compressed MessagePack container with a typed protobuf
-purity table. Saved facts refer to its verdicts by index; shared cause references
-must point to earlier table entries. Other saved-analysis facts retain MessagePack.
+Saved analysis uses a compressed MessagePack container with typed protobuf
+purity and imported-callable tables. The callable table preserves trusted
+provider dependencies for analysis; runtime reports continue to omit them.
+Saved purity facts refer to verdicts by index; shared cause references must
+point to earlier table entries. Other saved-analysis facts retain MessagePack.
 
 The analysis projection omits only fields explicitly declared as author-note
 provenance. Semantic map entries remain data even when a chunk, export, or

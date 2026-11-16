@@ -1,0 +1,149 @@
+syntax = "proto3";
+package debundle.saved_callable;
+
+import "devinfra/js/debundle/saved_purity.proto";
+import "devinfra/js/debundle/spec_wire.proto";
+
+// Imported callable capabilities are persisted as one native protobuf table.
+// The outer ProgramSummary remains MessagePack while its other records migrate.
+message CallableTable {
+  map<string, CallableChunk> chunks_by_id = 1;
+}
+
+message CallableChunk {
+  map<string, CallableSummary> callables_by_local = 1;
+}
+
+message CallableSummary {
+  repeated CallbackFactoryEvidence callback_factory_evidence = 1;
+  ReturnedRecordSummary returned_record = 2;
+  NamespaceWrapperSummary namespace_wrapper = 3;
+  CallbackObjectArguments callback_object_arguments = 4;
+  DescriptorCopyFactorySummary descriptor_copy_factory = 5;
+  ForeignCallSummary foreign_call = 6;
+  repeated string may_read_importer_cells = 7;
+}
+
+message CallbackFactoryEvidence {
+  oneof origin {
+    AuthorAssertion author_assertion = 1;
+    InferredImmutableWrapper inferred_immutable_wrapper = 2;
+  }
+}
+
+message AuthorAssertion {
+  string defining_module = 1;
+  string export = 2;
+}
+
+message InferredImmutableWrapper {
+  string defining_module = 1;
+  string export = 2;
+  string local = 3;
+  debundle.saved_purity.SourceLocation source_location = 4;
+}
+
+message CallbackObjectArguments {
+  CallbackFactoryEvidence wrapper = 1;
+  repeated uint64 object_arguments = 2;
+}
+
+message ReturnedRecordSummary {
+  string defining_module = 1;
+  string export = 2;
+  string local = 3;
+  debundle.saved_purity.SourceLocation source_location = 4;
+  repeated DeferredRecordMember members = 5;
+  InferenceUse inference = 6;
+  optional string replacement_package = 7;
+}
+
+message DeferredRecordMember {
+  string name = 1;
+  debundle.saved_purity.SourceLocation source_location = 2;
+  repeated string captures = 3;
+}
+
+message NamespaceWrapperSummary {
+  string defining_module = 1;
+  string export = 2;
+  string local = 3;
+  debundle.saved_purity.SourceLocation source_location = 4;
+  InferenceUse inference = 5;
+  // Trusted provider judgment; omitted from report-facing Serde.
+  debundle.saved_purity.ProofDependencies dependencies = 6;
+}
+
+message InferenceUse {
+  optional InferenceRule conclusion = 1;
+  repeated InferenceRule derivation_rules = 2;
+  repeated debundle.saved_purity.AuthorInputRef value_input_refs = 3;
+  repeated debundle.saved_purity.DescriptorCopyAuthorRef descriptor_copy_author_refs = 4;
+  repeated debundle.saved_purity.AuthorInputRef argument_input_refs = 5;
+  repeated debundle.saved_purity.AuthorInputRef native_operation_input_refs = 6;
+  repeated debundle.saved_purity.AuthorInputRef imported_primitive_array_spread_input_refs = 7;
+}
+
+message DescriptorCopyFactorySummary {
+  string defining_module = 1;
+  string export = 2;
+  string author_location = 3;
+  repeated debundle.spec.DescriptorCopyFactorySignature signatures = 4;
+}
+
+message ForeignCallSummary {
+  string defining_module = 1;
+  string export = 2;
+  string local = 3;
+  debundle.saved_purity.SourceLocation source_location = 4;
+  optional ForeignInvocation invocation = 5;
+  repeated ForeignReturn returns = 6;
+  repeated uint64 retained_arguments = 7;
+  repeated string retained_provider_captures = 8;
+  repeated string provider_cell_reads = 9;
+  repeated debundle.saved_purity.NativeIntrinsic native_constructions = 10;
+  optional string replacement_package = 11;
+  // Trusted provider judgment; omitted from report-facing Serde.
+  debundle.saved_purity.ProofDependencies dependencies = 12;
+}
+
+message ForeignReturn {
+  oneof value {
+    uint64 argument_index = 1;
+    ForeignReturnSimple simple = 2;
+  }
+}
+
+enum ForeignReturnSimple {
+  FOREIGN_RETURN_SIMPLE_FRESH_ALLOCATION = 0;
+  FOREIGN_RETURN_SIMPLE_PRIMITIVE = 1;
+}
+
+enum ForeignInvocation {
+  FOREIGN_INVOCATION_CALL = 0;
+  FOREIGN_INVOCATION_CONSTRUCT = 1;
+}
+
+enum InferenceRule {
+  INFERENCE_RULE_NATIVE_INTEGRITY = 0;
+  INFERENCE_RULE_NATIVE_CALL_IDENTITY = 1;
+  INFERENCE_RULE_NATIVE_OWN_DATA_READ = 2;
+  INFERENCE_RULE_EMPTY_COLLECTION_CONSTRUCTION = 3;
+  INFERENCE_RULE_LOCAL_CLASS_CONSTRUCTION = 4;
+  INFERENCE_RULE_PRIMITIVE_SET_ITERATION = 5;
+  INFERENCE_RULE_STABLE_PRIMITIVE_ARRAY_SPREAD = 6;
+  INFERENCE_RULE_IMPORTED_PRIMITIVE_ARRAY_SPREAD = 7;
+  INFERENCE_RULE_STABLE_FUNCTION = 8;
+  INFERENCE_RULE_STABLE_PROVIDER = 9;
+  INFERENCE_RULE_ARGUMENT_NO_ESCAPE = 10;
+  INFERENCE_RULE_RETURNED_RECORD = 11;
+  INFERENCE_RULE_NAMESPACE_WRAPPER = 12;
+  INFERENCE_RULE_OWN_PROPERTY_SOURCE_ORIGIN = 13;
+  INFERENCE_RULE_OWN_PROPERTY_SHAPE = 14;
+  INFERENCE_RULE_OWN_PROPERTY_PREFIX_STATE = 15;
+  INFERENCE_RULE_OWN_PROPERTY_NAMES_PROJECTION = 16;
+  INFERENCE_RULE_OWN_PROPERTY_DESCRIPTOR_PROJECTION = 17;
+  INFERENCE_RULE_DESCRIPTOR_COPY_PROVIDER = 18;
+  INFERENCE_RULE_DESCRIPTOR_COPY_FACTORY = 19;
+  INFERENCE_RULE_FOREIGN_CALL_SUMMARY = 20;
+}

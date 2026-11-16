@@ -1123,6 +1123,7 @@ pub fn iteration_row(member: &str, args: &[ExprOrSpread]) -> Option<&'static Ite
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis_inputs::NativeIntrinsicExt;
 
     /// `lookup` returns the first match, so one op has one row; every write
     /// to the fresh allocation needs that allocation.
