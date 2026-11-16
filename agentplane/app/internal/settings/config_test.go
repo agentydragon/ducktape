@@ -45,7 +45,6 @@ action_federation:
   scope: actions:operator
 sandbox_namespace: sandboxes
 runner_gateway_target: runner-gateway:9090
-runner_gateway_control_target: 'runtime-proxy.test:8080'
 session_dispatcher_target: session-dispatcher:9090
 policy_service_target: policy-controller:8083
 policy_service_tls:
@@ -86,7 +85,6 @@ func validTestConfig() Config {
 		SandboxNamespace:                    "sandboxes",
 		RunnerGatewayTarget:                 "runner-gateway:9090",
 		SessionDispatcherTarget:             "session-dispatcher:9090",
-		RunnerGatewayControlTarget:          "runtime-proxy.test:8080",
 		HistoryServiceTarget:                "history:9090",
 		PolicyServiceTarget:                 "policy-controller:8083",
 		PolicyServiceTLS:                    &peertls.ClientTLS{CAFile: "/run/trust/ca.pem", ServerURI: peertls.PolicyControllerURI},
@@ -262,18 +260,6 @@ func TestLoadEnvironmentServicePeerUsesControllerTargetAndSVID(t *testing.T) {
 	}
 }
 
-func TestLoadConfigAllowsMissingRunnerGatewayControlTarget(t *testing.T) {
-	settings := strings.Replace(validSettingsYAML, "runner_gateway_control_target: 'runtime-proxy.test:8080'\n", "", 1)
-	writeConfig(t, settings)
-	config, err := Load()
-	if err != nil {
-		t.Fatalf("load without runner gateway control target: %v", err)
-	}
-	if config.RunnerGatewayControlTarget != "" {
-		t.Fatalf("omitted runner gateway control target = %q", config.RunnerGatewayControlTarget)
-	}
-}
-
 func TestLoadConfigRequiresPolicyServiceTargetAndTLS(t *testing.T) {
 	t.Run("target", func(t *testing.T) {
 		writeConfig(t, strings.Replace(validSettingsYAML, "policy_service_target: policy-controller:8083\n", "", 1))
@@ -366,9 +352,6 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		}
 		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
 			t.Fatalf("database Secret input = %q", c.DatabaseURL)
-		}
-		if c.RunnerGatewayControlTarget != "runtime-proxy.test:8080" {
-			t.Fatalf("runner gateway control target = %q", c.RunnerGatewayControlTarget)
 		}
 		if c.NotificationsRequestTimeoutSeconds != 5 || c.RunnerGatewayLifecycleTimeoutSecs != 310 {
 			t.Fatalf("omitted defaults changed: notifications=%v lifecycle=%v", c.NotificationsRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)

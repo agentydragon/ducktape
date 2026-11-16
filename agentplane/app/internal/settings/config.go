@@ -66,9 +66,7 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	// CLEANUP(added 2026-11-16): Remove after the relaxed App image is pinned on staging and Flux applies the omission.
-	RunnerGatewayControlTarget string `mapstructure:"runner_gateway_control_target"`
-	sandboxPresetOrder         []string
+	sandboxPresetOrder                  []string
 }
 
 // EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required

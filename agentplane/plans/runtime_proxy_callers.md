@@ -221,8 +221,7 @@ The k3s `//agentplane/system_tests/suites:test_pod` scenario
 App HTTP status against a live Runtime, refuses App raw `GetStatus`/`ListSessions`, and preserves
 Notifications reads and stale-incarnation denial. Reverting the grant-removal PR restores the App
 raw-reader authorization; after Flux applies it, check Controller readiness, App diagnostics and
-Session delivery. `runner_gateway_control_target` is optional in the pinned staging App image and
-remains decoded until Flux applies the manifest omission; then the Go field can be deleted.
+Session delivery.
 
 ## Review question
 
