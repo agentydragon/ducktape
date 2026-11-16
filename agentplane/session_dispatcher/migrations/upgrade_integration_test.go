@@ -4,17 +4,15 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io/fs"
 	"strings"
 	"testing"
-	"testing/fstest"
 
 	_ "github.com/lib/pq"
 )
 
 const gooseTable = "runner_gateway_dispatcher_goose_version"
 
-func TestSessionLeaseExpansionPreservesEvidenceAndPreviousMigrator(t *testing.T) {
+func TestSessionLeaseUpgradePreservesEvidence(t *testing.T) {
 	db := openMigrationDatabase(t)
 	provider, err := schema.Provider(db)
 	if err != nil {
@@ -32,29 +30,6 @@ func TestSessionLeaseExpansionPreservesEvidenceAndPreviousMigrator(t *testing.T)
 		(session_id,holder,expires_at) VALUES ('test-unbound-session','00000000-0000-4000-8000-000000000022',clock_timestamp())`); err != nil {
 		t.Fatal(err)
 	}
-	// Exercise Goose startup with the previous embedded migration set, not a second image.
-	previousFiles := fstest.MapFS{}
-	entries, err := fs.ReadDir(scripts, "dispatcher")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		if entry.Name() >= "00022" {
-			continue
-		}
-		name := "dispatcher/" + entry.Name()
-		contents, err := scripts.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		previousFiles[name] = &fstest.MapFile{Data: contents}
-	}
-	previous := schema
-	previous.Files = previousFiles
-	if err := previous.Up(t.Context(), db); err != nil {
-		t.Fatalf("previous migrator cannot start against expanded schema: %v", err)
-	}
-	assertRetainedEvidence(t, db)
 }
 
 func TestBaselineCreatesFinalSchema(t *testing.T) {

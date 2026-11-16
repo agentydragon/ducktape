@@ -332,15 +332,8 @@ serializes `MarkDeliveryAttempt` and settlement with notice classification witho
 Sandbox between transactions or holding a transaction across an RPC.
 
 Cleanup also locks every affected Session lease before touching delivery rows. It creates an
-expired placeholder when a lease row is missing, in sorted Session order, so a compatibility
-replica cannot acquire a missing row and write through cleanup. The no-op conflict update keeps
-an existing holder and expiry unchanged while locking it. Cleanup invalidates those leases in
-its transaction. Compatibility workers already fence their Session lease before writes; their
-own cleanup takes the same exclusive deletion advisory lock. Both versions therefore serialize
-terminal notices and attempt evidence during the roll. A marker committed first remains possible
-forwarding evidence; cleanup committed first prevents a marker or settlement from reviving work.
-
-The serving image never reads, locks, updates or deletes `sandbox_ownership`; its table and data
-remain for compatibility rollback. Its later drop removes no live terminal-notice lock. The
-[rollout gates and rollback](README.md#delivery-lease-rollout) constrain removal of the stored data
-and Sessions Lease RBAC.
+expired placeholder when a lease row is missing, in sorted Session order, so lease acquisition
+serializes with cleanup. The no-op conflict update keeps an existing holder and expiry unchanged
+while locking it. Cleanup invalidates those leases in its transaction. A marker committed first
+remains possible forwarding evidence; cleanup committed first prevents a marker or settlement
+from reviving work.

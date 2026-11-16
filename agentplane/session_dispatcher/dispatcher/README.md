@@ -112,8 +112,7 @@ The manual queue, replica and wake probes are documented in the
   in-flight work and preserves `delivery_attempted` and command IDs. The lease key needs no
   Environment. Current Session creation still requires an Environment.
   No replica owns a Sandbox or queue. Environment deletion and terminal notices serialize with
-  worker attempts and settlements through the deletion advisory lock and Session lease rows;
-  `sandbox_ownership` is no longer read or written.
+  worker attempts and settlements through the deletion advisory lock and Session lease rows.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff;
   other command errors are `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
@@ -145,25 +144,6 @@ Sandboxes) or a retry deadline. Every ten seconds each replica rescans pending S
 stranded in-flight work with no lease row. Active steps renew their Session lease every ten seconds;
 a lease lasts thirty seconds.
 
-## Delivery lease rollout
-
-This image uses only PostgreSQL delivery leases. The compatibility image from #16852 was pinned
-on staging as `devel-20261116042224-6543415` and ran on every Sessions replica before this release
-was authorized. Compatibility and Postgres-only replicas share the Session lease and recover only
-the Session they hold. Never overlap an original, pre-compatibility image with Postgres-only
-replicas, including during rollback.
-
-Rollback by restoring the compatibility image pin, leaving the lease table, `sandbox_ownership`
-and Goose history intact. Verify Session materialization, delivery and peer takeover after it
-rolls. Returning to an original image requires first completing a rollback to compatibility and
-removing every Postgres-only replica. The k3s tests run replicas of this image; they do not exercise
-two image versions. The coordinator observes version overlap during staged pins.
-
-A later, separately approved PR may drop `sandbox_ownership` only after no pinned image reads it,
-the compatibility rollback window has closed, and the operator has agreed through the coordinator.
-Remove Sessions' Lease RBAC last, after the image making no Lease calls is pinned and running.
-Leftover staging `dispatcher-*` objects require an operator deletion request through the coordinator.
-
 ## Deviations and gaps
 
 - A Dispatcher admission proves only that the Runner journaled the command. History owns command outcomes,
@@ -173,7 +153,7 @@ Leftover staging `dispatcher-*` objects require an operator deletion request thr
   inert. Dispatcher certificate admission and exact service grants remain unchanged. A concrete
   MCP/client caller and History provenance propagation remain outside this transport change.
 
-The detailed ownership, compatibility and transport contract is in [SPEC.md](SPEC.md).
+The detailed delivery and transport contract is in [SPEC.md](SPEC.md).
 
 ## Running
 

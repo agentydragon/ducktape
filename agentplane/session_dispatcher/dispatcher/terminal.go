@@ -26,9 +26,9 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) ([]terminalno
 			return err
 		}
 		// Lock every Session lease before touching delivery rows. Inserting an
-		// expired placeholder also serializes a compatibility replica acquiring a
-		// missing lease row. The exclusive Sandbox advisory lock above prevents new
-		// admission and Postgres-only worker writes until terminal notices commit.
+		// expired placeholder also serializes acquisition of a missing lease row. The
+		// exclusive Sandbox advisory lock above prevents new admission and worker
+		// writes until terminal notices commit.
 		if _, err := tx.ExecContext(ctx, `INSERT INTO session_delivery_lease (session_id,holder,expires_at)
 			SELECT session_id,$2,'-infinity'::timestamptz FROM session WHERE sandbox_uid=$1
 			ORDER BY session_id ON CONFLICT (session_id) DO UPDATE SET session_id=EXCLUDED.session_id`, sandboxUID, uuid.Nil); err != nil {
