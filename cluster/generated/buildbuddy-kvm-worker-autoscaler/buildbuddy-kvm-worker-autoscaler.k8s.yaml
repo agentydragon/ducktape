@@ -15,10 +15,10 @@ spec:
           stabilizationWindowSeconds: 900
         scaleUp:
           policies:
-            - periodSeconds: 900
+            - periodSeconds: 60
               type: Pods
-              value: 1
-          stabilizationWindowSeconds: 120
+              value: 4
+          stabilizationWindowSeconds: 0
   fallback:
     behavior: currentReplicasIfHigher
     failureThreshold: 3

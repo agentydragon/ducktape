@@ -464,10 +464,10 @@ def autoscaler_chart(app: App) -> Chart:
                 horizontal_pod_autoscaler_config=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfig(
                     behavior=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehavior(
                         scale_up=keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleUp(
-                            stabilization_window_seconds=120,
+                            stabilization_window_seconds=0,
                             policies=[
                                 keda.ScaledObjectSpecAdvancedHorizontalPodAutoscalerConfigBehaviorScaleUpPolicies(
-                                    type="Pods", value=1, period_seconds=900
+                                    type="Pods", value=4, period_seconds=60
                                 )
                             ],
                         ),
