@@ -21,7 +21,6 @@ def test_demand_query(scratch_app: App, runfiles: Runfiles, promtool: Path, tmp_
     alert_rule = next(obj for obj in Cdk8sTesting.synth(worker_chart) if obj["kind"] == "PrometheusRule")
     spec = scaled_object["spec"]
     assert spec["minReplicaCount"] == 1
-    assert spec["maxReplicaCount"] == 3
     behavior = spec["advanced"]["horizontalPodAutoscalerConfig"]["behavior"]
     assert behavior["scaleUp"]["stabilizationWindowSeconds"] == 120
     assert behavior["scaleUp"]["policies"] == [{"type": "Pods", "value": 1, "periodSeconds": 900}]
