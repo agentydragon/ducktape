@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type JSX } from "react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ActionIcon,
   Alert,
@@ -21,10 +20,11 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, SessionSummary } from "./schema";
+import type { SessionSummary } from "./schema";
 import { RelatedSessionsPanel } from "./related-sessions-panel";
 import { SessionListSidebar, TranscriptStatusBadge, transcriptStatus } from "./session-list-sidebar";
 import { formatDateTime } from "./session-viewer-formatting";
+import { useSessionViewerQueries } from "./session-viewer-queries";
 import {
   readSessionViewerSearch,
   SESSION_KINDS,
@@ -38,7 +38,6 @@ import { usePaneSize, type PaneSize } from "../../util/frontend/resize_handle";
 import { HistoryRecorderTools } from "../../util/frontend/transcript/history_recorder_tools";
 import { historyRecorder } from "./history-recorder";
 
-const SESSION_PAGE_SIZE = 50;
 const SESSION_SIDEBAR_MIN_WIDTH = 240;
 const SESSION_SIDEBAR_MAX_WIDTH = 520;
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
@@ -76,7 +75,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     versionId: requestedVersionId,
   } = readSessionViewerSearch(location.search);
   const selectedKinds = useMemo(() => sessionKindsFromScope(kindScope), [kindScope]);
-  const queryClient = useQueryClient();
   const layoutRef = useRef<HTMLDivElement>(null);
   const [layoutWidth, setLayoutWidth] = useState(() => Math.max(0, window.innerWidth - 32));
   const [mobileSessionListOpen, setMobileSessionListOpen] = useState(false);
@@ -95,170 +93,54 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
     resize: (size) => storedSidebarPane.resize(Math.min(size, sidebarMaxWidth)),
     step: (delta) => storedSidebarPane.step(delta),
   };
-  const machinesQuery = useQuery({
-    queryKey: ["ai-session-archive", "machines"],
-    queryFn: ({ signal }) => api.listMachines(signal),
-  });
-  const machines = machinesQuery.data ?? [];
   const {
     progress: importProgress,
     loading: loadingImportProgress,
     error: importProgressError,
   } = useMachineImportProgress(api);
-  const sessionListQueryKey = [
-    "ai-session-archive",
-    "sessions",
-    selectedMachineId || null,
-    selectedHarness || null,
+  const {
+    machines,
+    loadingMachines,
+    sessions,
+    sessionCursor,
+    loadingSessions,
+    loadingMoreSessions,
+    loadedSessionScope,
+    selectedSession,
+    loadingSelectedSession,
+    selectedSessionError,
+    versions,
+    requestedVersionUnavailable,
+    selectedVersionId,
+    selectedVersion,
+    loadingVersions,
+    events,
+    eventCursor,
+    loadingEvents,
+    loadingEarlierEvents,
+    eventScope,
+    parentSession,
+    loadingParentSession,
+    parentSessionLoadError,
+    childSessions,
+    childSessionCursor,
+    loadingChildSessions,
+    loadingMoreRelatedSessions,
+    childSessionsLoadError,
+    hasMoreChildSessions,
+    errorText,
+    loadMoreSessions,
+    loadEarlierEvents,
+    loadMoreRelatedSessions,
+    refreshSessionList,
+  } = useSessionViewerQueries({
+    api,
+    sessionId,
+    selectedMachineId,
+    selectedHarness,
     selectedKinds,
-  ] as const;
-  const sessionsQuery = useInfiniteQuery({
-    queryKey: sessionListQueryKey,
-    queryFn: ({ pageParam, signal }) =>
-      api.listSessions(
-        {
-          ...(selectedMachineId === "" ? {} : { machineId: selectedMachineId }),
-          ...(selectedHarness === "" ? {} : { harness: selectedHarness as Harness }),
-          ...(pageParam === null ? {} : { cursor: pageParam }),
-          kinds: selectedKinds,
-          limit: SESSION_PAGE_SIZE,
-        },
-        signal
-      ),
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
-    enabled: selectedKinds.length > 0,
+    requestedVersionId,
   });
-  const sessionPages = sessionsQuery.data?.pages ?? [];
-  const sessions = useMemo(
-    () =>
-      mergeById(
-        [],
-        sessionPages.flatMap((page) => page.data)
-      ),
-    [sessionPages]
-  );
-  const sessionCursor = sessionPages.at(-1)?.next_cursor ?? null;
-  const loadingSessions = selectedKinds.length > 0 && sessionsQuery.isLoading;
-  const loadingMoreSessions = sessionsQuery.isFetchingNextPage;
-  const loadedSessionScope = selectedKinds.length === 0 || sessionsQuery.data !== undefined;
-
-  const listedSelectedSession = sessions.find((session) => session.id === sessionId) ?? null;
-  const selectedSessionQuery = useQuery({
-    queryKey: ["ai-session-archive", "session", sessionId ?? null],
-    queryFn: ({ signal }) => {
-      if (sessionId === undefined) throw new Error("A session ID is required.");
-      return api.getSession(sessionId, signal);
-    },
-    enabled: sessionId !== undefined && listedSelectedSession === null,
-  });
-  const fetchedSession =
-    sessionId !== undefined && selectedSessionQuery.data?.id === sessionId ? selectedSessionQuery.data : null;
-  const selectedSession = listedSelectedSession ?? fetchedSession;
-  const loadingSelectedSession =
-    sessionId !== undefined && listedSelectedSession === null && selectedSessionQuery.isLoading;
-  const selectedSessionError = selectedSessionQuery.error === null ? null : errorMessage(selectedSessionQuery.error);
-
-  const versionsQuery = useQuery({
-    queryKey: [
-      "ai-session-archive",
-      "versions",
-      selectedSession?.id ?? null,
-      selectedSession?.latest_version_id ?? null,
-    ],
-    queryFn: ({ signal }) => {
-      if (selectedSession === null) throw new Error("A selected session is required.");
-      return api.listVersions(selectedSession.id, signal);
-    },
-    enabled: selectedSession !== null,
-  });
-  const versions = versionsQuery.data ?? [];
-  const hasLoadedVersions = versionsQuery.data !== undefined;
-  const requestedVersionUnavailable =
-    requestedVersionId !== null && hasLoadedVersions && !versions.some((version) => version.id === requestedVersionId);
-  const selectedVersionId = !hasLoadedVersions
-    ? null
-    : requestedVersionId !== null
-      ? (versions.find((version) => version.id === requestedVersionId)?.id ?? null)
-      : (versions.find((version) => version.id === selectedSession?.latest_version_id)?.id ?? versions[0]?.id ?? null);
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) ?? null;
-  const loadingVersions = selectedSession !== null && versionsQuery.isLoading;
-
-  const eventQuery = useInfiniteQuery({
-    queryKey: ["ai-session-archive", "events", selectedSession?.id ?? null, selectedVersionId],
-    queryFn: ({ pageParam, signal }) => {
-      if (selectedSession === null || selectedVersionId === null) {
-        throw new Error("A selected session version is required.");
-      }
-      return api.listEvents(selectedSession.id, selectedVersionId, pageParam, signal);
-    },
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
-    enabled: selectedSession !== null && selectedVersionId !== null,
-  });
-  const eventPages = eventQuery.data?.pages ?? [];
-  const events = useMemo(
-    () =>
-      mergeByOrdinal(
-        [],
-        eventPages.flatMap((page) => page.data)
-      ),
-    [eventPages]
-  );
-  const eventCursor = eventPages.at(-1)?.next_cursor ?? null;
-  const loadingEvents = eventQuery.isLoading;
-  const loadingEarlierEvents = eventQuery.isFetchingNextPage;
-  const eventScope = `${selectedSession?.id ?? ""}\u0000${selectedVersionId ?? ""}`;
-
-  const parentSessionId = selectedSession?.parent_session_id ?? null;
-  const parentSessionQuery = useQuery({
-    queryKey: ["ai-session-archive", "session", parentSessionId],
-    queryFn: ({ signal }) => {
-      if (parentSessionId === null) throw new Error("A parent session ID is required.");
-      return api.getSession(parentSessionId, signal);
-    },
-    enabled: parentSessionId !== null,
-  });
-  const parentSession = parentSessionQuery.data?.id === parentSessionId ? parentSessionQuery.data : null;
-  const loadingParentSession = parentSessionId !== null && parentSessionQuery.isLoading;
-  const parentSessionLoadError = parentSessionQuery.error === null ? null : errorMessage(parentSessionQuery.error);
-
-  const childSessionsQuery = useInfiniteQuery({
-    queryKey: ["ai-session-archive", "children", selectedSession?.id ?? null],
-    queryFn: ({ pageParam, signal }) => {
-      if (selectedSession === null) throw new Error("A selected session is required.");
-      return api.listSessions(
-        {
-          parentSessionId: selectedSession.id,
-          ...(pageParam === null ? {} : { cursor: pageParam }),
-          limit: SESSION_PAGE_SIZE,
-        },
-        signal
-      );
-    },
-    initialPageParam: null as string | null,
-    getNextPageParam: (page) => page.next_cursor ?? undefined,
-    enabled: selectedSession !== null,
-  });
-  const childPages = childSessionsQuery.data?.pages ?? [];
-  const childSessions = useMemo(
-    () =>
-      mergeById(
-        [],
-        childPages.flatMap((page) => page.data)
-      ),
-    [childPages]
-  );
-  const childSessionCursor = childPages.at(-1)?.next_cursor ?? null;
-  const loadingChildSessions = selectedSession !== null && childSessionsQuery.isLoading;
-  const loadingMoreRelatedSessions = childSessionsQuery.isFetchingNextPage;
-  const childSessionsLoadError = childSessionsQuery.error === null ? null : errorMessage(childSessionsQuery.error);
-  const error =
-    [machinesQuery.error, sessionsQuery.error, versionsQuery.error, eventQuery.error].find(
-      (reason): reason is Error => reason !== null
-    ) ?? null;
-  const errorText = error === null ? null : errorMessage(error);
-  const loadingMachines = machinesQuery.isLoading;
 
   const machineNames = useMemo(
     () => new Map(machines.map((machine) => [machine.id, machine.display_name])),
@@ -291,20 +173,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       navigate(`/sessions/${encodeURIComponent(sessions[0].id)}${location.search}`, { replace: true });
     }
   }, [sessionId, loadedSessionScope, loadingSessions, sessions, location.search, navigate]);
-
-  // Scroll and layout callbacks can call these again before a render publishes isFetchingNextPage.
-  // cancelRefetch: false joins the in-flight page; the default would abort it and refetch.
-  const loadMoreSessions = (): void => {
-    if (sessionsQuery.hasNextPage) void sessionsQuery.fetchNextPage({ cancelRefetch: false });
-  };
-
-  const loadEarlierEvents = (): void => {
-    if (eventQuery.hasNextPage) void eventQuery.fetchNextPage({ cancelRefetch: false });
-  };
-
-  const loadMoreRelatedSessions = (): void => {
-    if (childSessionsQuery.hasNextPage) void childSessionsQuery.fetchNextPage({ cancelRefetch: false });
-  };
 
   const sessionPath = (targetId: string): string => {
     return buildSessionPath(targetId, location.search);
@@ -342,7 +210,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
       loading: loadingSessions,
       loadingNext: loadingMoreSessions,
       onLoadMore: loadMoreSessions,
-      onRefresh: () => void queryClient.resetQueries({ queryKey: sessionListQueryKey, exact: true }),
+      onRefresh: refreshSessionList,
     },
     layout: {
       mobileOpen: mobileSessionListOpen,
@@ -472,7 +340,7 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
                           loadingNext: loadingMoreRelatedSessions,
                           error: childSessionsLoadError,
                           cursor: childSessionCursor,
-                          hasNextPage: childSessionsQuery.hasNextPage,
+                          hasNextPage: hasMoreChildSessions,
                           onLoadMore: loadMoreRelatedSessions,
                         },
                         layoutWidth,
@@ -621,18 +489,6 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   );
 }
 
-function mergeById<T extends { id: string }>(previous: T[], incoming: T[]): T[] {
-  const byId = new Map(previous.map((item) => [item.id, item]));
-  for (const item of incoming) byId.set(item.id, item);
-  return [...byId.values()];
-}
-
-function mergeByOrdinal(previous: EventRecord[], incoming: EventRecord[]): EventRecord[] {
-  const byOrdinal = new Map(previous.map((event) => [event.ordinal, event]));
-  for (const event of incoming) byOrdinal.set(event.ordinal, event);
-  return [...byOrdinal.values()].sort((left, right) => left.ordinal - right.ordinal);
-}
-
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];
@@ -642,8 +498,4 @@ function formatBytes(bytes: number): string {
     if (value < 1024 || unit === "GB") return `${value.toFixed(value < 10 ? 1 : 0)} ${unit}`;
   }
   return `${bytes} B`;
-}
-
-function errorMessage(reason: unknown, fallback = "Could not load local sessions."): string {
-  return reason instanceof Error ? reason.message : fallback;
 }
