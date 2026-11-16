@@ -2114,7 +2114,7 @@ py_library(
         ":namespace_access",
         "//agentplane/crds:kubernetesroleset",
         "//agentplane/crds:policyset",
-        "//agentplane/sandboxes:kubernetes_grants",
+        "//cluster/cdk8s/agentplane:kubernetes_grants",
         "//cluster/cdk8s/plaid_mcp:pgweb",
         "//cluster/cdk8s/plaid_mcp:spend",
         "//cluster/cdk8s/providers/agentplane:kubernetes_role_set",

@@ -9,9 +9,9 @@ from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ApiResource, IApiResource, Role, RoleBinding, RolePolicyRule, ServiceAccount, k8s
 from constructs import Construct
 
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s.agentplane.managed_account_admission import add_managed_account_admission
 from cluster.cdk8s.agentplane.policy_controller import NAME
 from cluster.cdk8s.api_resource import custom_resource, named_resource

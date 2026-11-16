@@ -48,7 +48,6 @@ from agentplane.identity.operator.settings import OperatorOidcSettings
 from agentplane.llm_ingress.models import AttributionConfig, AttributionField, AttributionJsonHeader, VerifiedClaim
 from agentplane.net.peertls.config import CENTRAL_SAMPLER_URI, LLM_INGRESS_URI, TLS
 from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
     agent_access_profiles,
@@ -113,6 +112,7 @@ from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
+from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE, kubernetes_accounts_namespace
 from cluster.cdk8s.agentplane.sandbox_pod import SECRET_NAME as SANDBOX_SECRET_NAME, TOOL_CONFIG_GRANT

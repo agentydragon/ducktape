@@ -15,9 +15,9 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT

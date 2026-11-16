@@ -25,7 +25,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
-from agentplane.sandboxes.kubernetes_grants import (
+from cluster.cdk8s.agentplane.kubernetes_grants import (
     ClusterRoleBindingGrant,
     ClusterRoleRef,
     KubernetesGrant,
