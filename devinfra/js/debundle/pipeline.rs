@@ -106,6 +106,9 @@ impl RunArtifacts {
 pub struct TransformRunOptions {
     /// Retain only these ownership claims after resolving the complete spec.
     pub ownership_subset: Option<OwnershipSubset>,
+    /// Original CLI file and exact bytes parsed into `ownership_subset`.
+    /// Library callers may supply a normalized subset without a file input.
+    pub ownership_subset_input: Option<OwnershipSubsetInput>,
     pub output: RunOutput,
     pub artifacts: RunArtifacts,
     pub graph_reports: GraphReportSelection,
@@ -125,6 +128,12 @@ pub struct TransformRunOptions {
     pub effect_conflicts_chunks: BTreeSet<String>,
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnershipSubsetInput {
+    pub path: PathBuf,
+    pub bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -868,6 +877,7 @@ fn validate_report_chunk_selection(
 fn audit_options() -> TransformRunOptions {
     TransformRunOptions {
         ownership_subset: None,
+        ownership_subset_input: None,
         output: RunOutput::DryRun,
         artifacts: RunArtifacts::Program,
         graph_reports: GraphReportSelection::None,
@@ -891,6 +901,25 @@ fn prepare_transform(
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
+    if let Some(input) = &options.ownership_subset_input {
+        anyhow::ensure!(
+            options.ownership_subset.is_some(),
+            "ownership subset input bytes were retained without a parsed subset"
+        );
+        let parsed: OwnershipSubset = serde_json::from_slice(&input.bytes)
+            .context("parsing retained ownership subset input bytes")?;
+        anyhow::ensure!(
+            options.ownership_subset.as_ref() == Some(&parsed),
+            "parsed ownership subset differs from the exact retained input bytes"
+        );
+        capture.record_ownership_subset(&input.path, &input.bytes)?;
+    }
+    anyhow::ensure!(
+        options.ownership_subset.is_none()
+            || options.ownership_subset_input.is_some()
+            || !options.graph_reports.enabled(),
+        "graph export for ownership subsets requires the exact --ownership-subset input file"
+    );
     if let TransformSpecSource::Tree(tree) = &cli.spec_source
         && projection.is_none()
     {
@@ -922,6 +951,12 @@ fn prepare_transform(
             serde_json::to_vec(&spec)? == serde_json::to_vec(expected)?,
             "authored spec changed during contract audit"
         );
+    }
+    if let Some(subset) = &options.ownership_subset {
+        capture
+            .set_selected_ownership(subset.normalized_by_chunk(
+                &spec.materialize_chunk_ids().into_iter().collect::<Vec<_>>(),
+            ))?;
     }
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         capture.set_tree_scope(&tree.config_path, module_roots_by_chunk.clone())?;
@@ -1325,6 +1360,7 @@ fn provenance_roots(cli: &TransformRequest) -> Result<(ProvenanceRoots, Option<P
         ProvenanceRoots {
             spec: spec_root,
             source,
+            ownership_subset: None,
             packages,
         },
         modules_directory,
@@ -1372,6 +1408,9 @@ fn canonical_generation_command(
             "--package-root".to_string(),
             format!("{name}={}", path_arg(path)?),
         ]);
+    }
+    if let Some(input) = &options.ownership_subset_input {
+        argv.extend(["--ownership-subset".to_string(), path_arg(&input.path)?]);
     }
     if let Some(root) = &cli.packages_root {
         argv.extend(["--packages-root".to_string(), path_arg(root)?]);
@@ -1585,6 +1624,7 @@ mod tests {
 
     const KEEP_GOING_RUN: TransformRunOptions = TransformRunOptions {
         ownership_subset: None,
+        ownership_subset_input: None,
         output: RunOutput::Accepted,
         artifacts: RunArtifacts::Program,
         graph_reports: GraphReportSelection::None,
@@ -1924,6 +1964,7 @@ mod tests {
                 &fixture.request,
                 TransformRunOptions {
                     ownership_subset: None,
+                    ownership_subset_input: None,
                     output: RunOutput::DryRun,
                     artifacts: RunArtifacts::Program,
                     graph_reports: GraphReportSelection::None,

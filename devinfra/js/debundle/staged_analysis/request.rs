@@ -58,6 +58,7 @@ pub fn analyze_from_projection(
         ProvenanceRoots {
             spec: projection_dir,
             source: source_root.clone(),
+            ownership_subset: None,
             packages,
         },
         None,

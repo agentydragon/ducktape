@@ -43,10 +43,15 @@ pub struct OwnershipSubset {
 
 impl OwnershipSubset {
     pub fn read(path: &Path) -> Result<Self> {
+        Self::read_with_bytes(path).map(|(subset, _)| subset)
+    }
+
+    pub fn read_with_bytes(path: &Path) -> Result<(Self, Vec<u8>)> {
         let bytes = std::fs::read(path)
             .with_context(|| format!("read ownership subset {}", path.display()))?;
-        serde_json::from_slice(&bytes)
-            .with_context(|| format!("parse ownership subset {}", path.display()))
+        let subset = serde_json::from_slice(&bytes)
+            .with_context(|| format!("parse ownership subset {}", path.display()))?;
+        Ok((subset, bytes))
     }
 
     pub(super) fn validate(
@@ -158,6 +163,27 @@ impl OwnershipSubset {
                     .anonymous_statements
                     .as_ref()
                     .map(|indices| indices.iter().copied().collect()),
+            })
+            .collect()
+    }
+
+    pub fn normalized_by_chunk(
+        &self,
+        chunks: &[String],
+    ) -> BTreeMap<String, Vec<graph_provenance::SelectedOwnershipModule>> {
+        chunks
+            .iter()
+            .map(|chunk| {
+                let modules = self
+                    .modules_for_chunk(chunk)
+                    .into_iter()
+                    .map(|module| graph_provenance::SelectedOwnershipModule {
+                        module: module.module.to_string(),
+                        bindings: module.bindings,
+                        anonymous_statements: module.anonymous_statements,
+                    })
+                    .collect();
+                (chunk.clone(), modules)
             })
             .collect()
     }

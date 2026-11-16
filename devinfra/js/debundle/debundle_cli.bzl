@@ -68,6 +68,7 @@ def debundle_cli(
         source_data = None,
         spec_root = None,
         graph_source_data = None,
+        ownership_subset = None,
         package_roots = {},
         debundler = _DEBUNDLER,
         visibility = None,
@@ -88,6 +89,8 @@ def debundle_cli(
       source_data: Generated directory artifact used as the selector root.
       spec_root: Workspace-relative spec root passed to graph-backed commands.
       graph_source_data: Relocatable generated directory used for graph source inputs.
+      ownership_subset: The exact subset file used by `debundle`; its runfile
+          directory is passed as the graph's relocatable ownership-subset root.
       package_roots: Directory targets mapped to saved-graph package names.
       debundler: CLI executable label; defaults to the pipeline's public label flag.
       visibility: Optional visibility for the runner target.
@@ -155,6 +158,11 @@ def debundle_cli(
 
     if graph_source_tree:
         args.extend(["--graph-source-root", "$(rlocationpath {})".format(graph_source_tree)])
+
+    if ownership_subset:
+        subset_file = native.package_relative_label(str(ownership_subset))
+        args.extend(["--ownership-subset-root", "$(rlocationpath {})".format(subset_file)])
+        data.append(subset_file)
 
     package_names = {}
     for index, (package_root, package_name) in enumerate(package_roots.items()):

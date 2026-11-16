@@ -790,6 +790,12 @@ fn inspection_root_args(roots: &CurrentRoots) -> Vec<String> {
             graph_source_root.display().to_string(),
         ]);
     }
+    if let Some(ownership_subset_root) = &roots.ownership_subset {
+        args.extend([
+            "--graph-ownership-subset-root".to_owned(),
+            ownership_subset_root.display().to_string(),
+        ]);
+    }
     for (package, path) in &roots.packages {
         args.extend([
             "--graph-package-root".to_owned(),
@@ -811,6 +817,7 @@ mod inspection_command_tests {
         let roots = CurrentRoots {
             spec: Some(PathBuf::from("spec root")),
             source: Some(PathBuf::from("graph source root")),
+            ownership_subset: Some(PathBuf::from("subset root")),
             packages: BTreeMap::from([
                 ("package one".to_owned(), PathBuf::from("package root one")),
                 ("package two".to_owned(), PathBuf::from("package root two")),
@@ -824,6 +831,8 @@ mod inspection_command_tests {
                 "spec root",
                 "--graph-source-root",
                 "graph source root",
+                "--graph-ownership-subset-root",
+                "subset root",
                 "--graph-package-root",
                 "package one=package root one",
                 "--graph-package-root",

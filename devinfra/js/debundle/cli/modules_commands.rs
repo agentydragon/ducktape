@@ -24,15 +24,11 @@ pub(super) struct ModulesNs {
 }
 
 impl ModulesNs {
-    pub(super) fn writes_with_graph(&self) -> bool {
+    pub(super) fn edits_with_graph(&self) -> bool {
         match &self.command {
-            ModulesNsCommand::Merge(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Delete(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            ModulesNsCommand::Apply(args) => !args.dry_run,
+            ModulesNsCommand::Merge(args) => args.edit.dependency_graph_path.is_some(),
+            ModulesNsCommand::Delete(args) => args.edit.dependency_graph_path.is_some(),
+            ModulesNsCommand::Apply(_) => true,
             _ => false,
         }
     }
@@ -230,6 +226,11 @@ struct ModulesCheckArgs {
 }
 
 fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) -> Result<()> {
+    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
+    anyhow::ensure!(
+        input.report().ownership_subset.is_none(),
+        "modules check cannot produce an executable plan from a selected-ownership graph; selected-view overlay authoring is not supported"
+    );
     let bytes = if args.batch.as_deref() == Some("-") {
         let mut bytes = Vec::new();
         std::io::stdin().read_to_end(&mut bytes)?;
@@ -256,7 +257,6 @@ fn run_modules_check(args: ModulesCheckArgs, output: &mut dyn std::io::Write) ->
             };
             (serde_json::from_slice(&bytes)?, import_order)
         };
-    let input = analysis::DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     if args.plan.is_none()
         && let Some(config) = &args.tree_config
     {
@@ -398,7 +398,12 @@ fn search_one_graph(
             .transpose()?,
     };
     let mut report = peel::search::search(&problem, &options)?;
-    if report.status == peel::search::SearchStatus::Found {
+    if input.report().ownership_subset.is_some() {
+        report.status = peel::search::SearchStatus::InventoryOnly;
+        report.blockers.push(
+            "selected-ownership graphs are inspection-only until selected-view overlay authoring is supported".into(),
+        );
+    } else if report.status == peel::search::SearchStatus::Found {
         if let Some(source_root) = args.source_root.as_deref() {
             let context = source_context.filter(|context| context.chunk_id() == chunk_id);
             // Compatibility verification accepts the exact configured chunk

@@ -23,6 +23,7 @@ source_mode=""
 source_value=""
 spec_root=""
 graph_source_runfile=""
+ownership_subset_runfile=""
 package_root_args=()
 
 while (($#)); do
@@ -61,6 +62,11 @@ while (($#)); do
     --graph-source-root)
       (($# >= 2)) || fail "missing value for --graph-source-root"
       graph_source_runfile="$2"
+      shift 2
+      ;;
+    --ownership-subset-root)
+      (($# >= 2)) || fail "missing value for --ownership-subset-root"
+      ownership_subset_runfile="$2"
       shift 2
       ;;
     --package-root)
@@ -117,6 +123,10 @@ if [[ -n "$spec_root" ]]; then
 fi
 if [[ -n "$graph_source_runfile" ]]; then
   graph_root_args+=(--graph-source-root "$(rlocation "$graph_source_runfile")")
+fi
+if [[ -n "$ownership_subset_runfile" ]]; then
+  ownership_subset_file="$(rlocation "$ownership_subset_runfile")"
+  graph_root_args+=(--graph-ownership-subset-root "$(dirname "$ownership_subset_file")")
 fi
 
 export DEBUNDLE_MODULES="$workspace/$modules_path"
