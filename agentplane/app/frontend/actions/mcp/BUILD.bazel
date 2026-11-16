@@ -40,8 +40,8 @@ agentplane_vitest_test(
         "//:node_modules/@types/react",
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend/testing:watch",
+        "//agentplane/app/frontend/transport:stream_reader",
     ],
 )
 
@@ -57,11 +57,11 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/transport:client",
-        "//agentplane/app/frontend/transport:stream_reader",
         "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:presentation",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:stream_reader",
     ],
 )
 
@@ -76,9 +76,9 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/testing:harness",
+        "//agentplane/app/frontend/transport:client",
     ],
 )
 
