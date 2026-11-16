@@ -1796,3 +1796,8 @@ debundle_e2e_test(
     name = "program_call_effects_test",
     saved_analysis_tools = True,
 )
+
+debundle_e2e_test(
+    name = "source_fact_memory_test",
+    deps = ["@crates//:libc"],
+)
