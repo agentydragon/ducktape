@@ -1,6 +1,7 @@
-import type { AgentMessageContent } from "./codex-record";
 import type { ObjectValue } from "./json-values";
 import type { EventRecord } from "./schema";
+
+export type AgentMessageContent = { kind: "text"; text: string } | { kind: "encrypted"; text: string | null };
 
 export type RecordPresentation = "user" | "assistant" | "activity" | "metadata" | "compaction" | "record";
 

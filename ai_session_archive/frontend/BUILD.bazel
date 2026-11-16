@@ -417,6 +417,7 @@ ts_library(
     deps = [
         ":json_values",
         ":schema",
+        ":transcript_row_types",
     ],
 )
 
@@ -426,7 +427,6 @@ ts_library(
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":codex_record",
         ":json_values",
         ":schema",
     ],

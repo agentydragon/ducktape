@@ -1,6 +1,5 @@
-import { agentMessageContent, reasoningText, responsePayload } from "./codex-record";
+import { agentMessageContent, codexToolEvent, codexToolStep, reasoningText, responsePayload } from "./codex-record";
 import { nonemptyString, object, string } from "./json-values";
-import type { ObjectValue } from "./json-values";
 import type { EventRecord } from "./schema";
 import {
   claudeActivitySteps,
@@ -23,46 +22,14 @@ type MutableTranscriptRow =
   | { kind: "metadata"; records: EventRecord[] }
   | { kind: "activity"; records: EventRecord[]; stepRecords: EventRecord[] };
 
-const TOOL_CALL_TYPES = new Set(["function_call", "custom_tool_call"]);
-const TOOL_OUTPUT_TYPES = new Set(["function_call_output", "custom_tool_call_output"]);
-
 function toolEvents(record: EventRecord): ToolEvent[] {
   const parsed = object(record.parsed);
   if (parsed?.type === "user" || parsed?.type === "assistant") {
     return claudeToolEvents(record);
   }
 
-  if (record.parse_error != null) return [];
-  const payload = responsePayload(record);
-  const type = string(payload?.type);
-  if (payload === null || type === null) return [];
-  if (TOOL_CALL_TYPES.has(type)) {
-    return [
-      {
-        key: String(record.ordinal),
-        namespace: "codex",
-        kind: "call",
-        payload,
-        callId: nonemptyString(payload.call_id),
-        record,
-        blockIndex: 0,
-      },
-    ];
-  }
-  if (TOOL_OUTPUT_TYPES.has(type)) {
-    return [
-      {
-        key: String(record.ordinal),
-        namespace: "codex",
-        kind: "output",
-        payload,
-        callId: nonemptyString(payload.call_id),
-        record,
-        blockIndex: 0,
-      },
-    ];
-  }
-  return [];
+  const event = codexToolEvent(record);
+  return event === null ? [] : [event];
 }
 
 const CODEX_METADATA = new Set([
@@ -92,7 +59,7 @@ export function recordPresentation(record: EventRecord): RecordPresentation {
   const payload = object(parsed.payload);
   if (parsed.type === "response_item" && payload) {
     const type = string(payload.type);
-    if (type !== null && (TOOL_CALL_TYPES.has(type) || TOOL_OUTPUT_TYPES.has(type))) return "activity";
+    if (codexToolEvent(record) !== null) return "activity";
     if (type === "message") {
       if (payload.role === "user") return "user";
       if (payload.role === "assistant") return "assistant";
@@ -309,45 +276,8 @@ function toolCandidate(event: ToolEvent, call: ToolEvent | null): StepCandidate 
   const step =
     event.namespace === "claude"
       ? buildClaudeToolStep(event, call, records, displayValue)
-      : codexToolStep(event, call, records);
+      : codexToolStep(event, call, records, displayValue);
   return { step, ordinal: event.record.ordinal, blockIndex: event.blockIndex };
-}
-
-function codexToolStep(event: ToolEvent, call: ToolEvent | null, records: EventRecord[]): ActivityStep {
-  const missingCall = event.kind === "output" && call === null;
-  const callPayload = call?.payload ?? event.payload;
-  const outputPayload = event.kind === "output" ? event.payload : null;
-  const callType = string(callPayload.type);
-  return {
-    key: event.key,
-    kind: "tool",
-    records,
-    name: missingCall
-      ? "Tool result"
-      : (nonemptyString(callPayload.name) ?? (callType === "custom_tool_call" ? "Custom tool" : "Tool call")),
-    input: missingCall ? null : codexToolInput(callPayload),
-    output: outputPayload === null ? null : codexToolOutput(outputPayload.output),
-    // Codex's typed tool-output record has no failure flag. Keep error-like extra fields in Raw JSONL.
-    failed: false,
-    missingCall,
-  };
-}
-
-function codexToolInput(payload: ObjectValue): string | null {
-  if (payload.type === "function_call") return displayValue(payload.arguments);
-  if (payload.type === "custom_tool_call") return displayValue(payload.input);
-  return null;
-}
-
-function codexToolOutput(value: unknown): string | null {
-  if (
-    Array.isArray(value) &&
-    value.length > 0 &&
-    value.every((item) => object(item)?.type === "input_text" && typeof object(item)?.text === "string")
-  ) {
-    return value.map((item) => object(item)!.text as string).join("\n");
-  }
-  return displayValue(value);
 }
 
 function displayValue(value: unknown): string | null {
