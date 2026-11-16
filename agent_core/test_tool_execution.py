@@ -159,7 +159,9 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
 # --- Parallel tool call tests ---
 
 
-async def test_parallel_tool_calls_run_concurrently(rendezvous_server, recording_handler, responses_factory):
+async def test_parallel_tool_calls_run_concurrently(
+    rendezvous_server, recording_handler, responses_factory: ResponsesFactory
+):
     tc1 = responses_factory.tool_call("rendezvous", {}, call_id="call_1")
     tc2 = responses_factory.tool_call("rendezvous", {}, call_id="call_2")
 
