@@ -40,7 +40,7 @@ nohup dockerd > /tmp/dockerd.log 2>&1 &
   `http_proxy`/`https_proxy` env when explicit proxy variables are present.
 - Docker Hub pulls hit unauthenticated rate limits quickly; mirror via
   `public.ecr.aws/docker/library/...` when iterating.
-- Verified end-to-end with the `loom/wayback/proxy/compose.yaml` topology
+- Verified end-to-end with the `x/loom/wayback/proxy/compose.yaml` topology
   (one container on an internal-only network whose sole peer is a sidecar on
   internal+egress, upstream reached via `host-gateway`).
 

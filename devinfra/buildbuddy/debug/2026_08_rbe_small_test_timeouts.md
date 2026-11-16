@@ -222,7 +222,7 @@ nothing is prefetched, so the transfer cost reappears inside execution as latenc
 `PYTHONPROFILEIMPORTTIME` sees only 1.5s: it measures CPU spent in the import, not the stalls around
 the file opens.
 
-**It is not Python.** A `rust_test` (`//loom/wayback/cache:wayback_cache_test`), same fleet, two
+**It is not Python.** A `rust_test` (`//x/loom/wayback/cache:wayback_cache_test`), same fleet, two
 executions of the identical action: `EXEC 2.66s / ioWait 3.06s / cpu 1.27s`, and
 `EXEC 32.33s / ioWait 32.35s / cpu 0.99s`. `EXEC` tracks `ioWait` and CPU is noise, in a language with
 no venv and no site-packages. Python tests are the usual victims only because their runfiles tree is

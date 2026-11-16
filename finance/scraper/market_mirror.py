@@ -17,7 +17,7 @@ field order preserved) sorted ascending by (createdTime, id).
 Known accepted limitation: Manifold mutates *maker* limit-order bet rows in place as
 they fill; stored rows are never rewritten. Preserve the raw bet history anyway:
 the planned market harvest needs dated `probAfter` values from taker rows for
-price-as-of reconstruction (see `loom/plans/market_harvest.md`). The mirror does
+price-as-of reconstruction (see `x/loom/plans/market_harvest.md`). The mirror does
 not parse bets or calculate historical prices.
 
 Polymarket id forms: a `0x...` condition id is fetched via `?condition_ids=` (the

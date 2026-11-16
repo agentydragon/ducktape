@@ -1,0 +1,154 @@
+# On-demand x/loom/gym forecasting-eval run. Applied by hand (not Flux) into
+# claude-sandbox; the driver orchestrates Inspect-AI docker-compose sandboxes on
+# the in-cluster docker-ci DinD over mTLS, and the contestant/proxy containers
+# reach the wayback cache via its in-cluster ClusterIP (no public gateway, so no
+# Envoy 60s cap). See README.md for the create-secret + apply + fetch-results flow.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: loom-gym-eval
+  namespace: claude-sandbox
+spec:
+  backoffLimit: 0 # an eval run is not idempotent — never auto-retry
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # Stage the sandbox images into the docker-ci daemon under the bare
+        # :latest tags the compose expects (x-local — no pull at sandbox-create
+        # time). The daemon has clean egress, so it does the GHCR pull; we retag.
+        - name: stage-images
+          image: docker:27-cli
+          command:
+            - sh
+            - -ceu
+            - |
+              for img in wayback-proxy loom-gym-sandbox; do
+                docker pull "ghcr.io/agentydragon/$img:latest"
+                docker tag "ghcr.io/agentydragon/$img:latest" "$img:latest"
+              done
+          env:
+            - name: DOCKER_HOST
+              value: tcp://docker-ci.docker-ci.svc.cluster.local:2376
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /certs
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      containers:
+        - name: eval
+          image: ghcr.io/agentydragon/loom-gym-eval:latest
+          args:
+            - --model-id
+            - glm-4.5
+            # Reach litellm by its in-cluster service name (NO_PROXY excludes
+            # .svc.cluster.local), so the model API calls go direct and skip the
+            # agent mitmproxy — whose MITM cert the model client (httpx) doesn't
+            # trust, which otherwise hangs every call. Same bypass as DOCKER_HOST.
+            - --base-url
+            - http://litellm.litellm.svc.cluster.local:4000
+            - --task-filter
+            - manifold-
+            # Cap concurrent samples (one docker sandbox each) well under docker-ci's
+            # ~31-network address pool, leaving margin against orphaned networks from
+            # any interrupted run. Keep this conservative while cold Wayback misses
+            # are bottlenecked on IA CDX/replay acquisition queues.
+            - --max-samples
+            - "4"
+            - --message-limit
+            - "1000"
+            # GLM-4.5 has a 128k context window; compact around 90% so the
+            # next turn still has room for tool schemas and output.
+            - --compaction-threshold-tokens
+            - "115000"
+            - --wayback-upstream
+            - http://wayback-cache.wayback-cache.svc.cluster.local:8080
+            - --langfuse-tags
+            - loom-gym,wayback-archive,manifold
+            - --log-dir
+            - /work/logs
+          env:
+            # Remote daemon over mTLS. We target docker-ci by its in-cluster
+            # service name, which the cluster NO_PROXY excludes — so the connection
+            # goes direct, bypassing the agent mitmproxy entirely (no passthrough,
+            # no public-gateway hairpin). Requires this name in the docker-ci server
+            # cert SAN.
+            - name: DOCKER_HOST
+              value: tcp://docker-ci.docker-ci.svc.cluster.local:2376
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /certs
+            # pygit2 ensure_checkout clones augur-evidence under $HOME/.cache; logs
+            # and compose temp dirs also want a writable home on the emptyDir.
+            - name: HOME
+              value: /work
+            - name: TMPDIR
+              value: /work
+            - name: LITELLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: litellm-master-key
+                  key: api-key
+            - name: AUGUR_EVIDENCE_GIT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: claude-forgejo-credentials
+                  key: username
+            - name: AUGUR_EVIDENCE_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: claude-forgejo-credentials
+                  key: password
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+            - name: work
+              mountPath: /work
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              # The heavy work (sandbox containers) runs on docker-ci, not here;
+              # this is just the Inspect driver + model HTTP calls.
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        # cert-manager issues docker-ci-client into this namespace with the
+        # standard tls.* keys; project them to the ca.pem/cert.pem/key.pem names
+        # the docker CLI reads from DOCKER_CERT_PATH.
+        - name: certs
+          secret:
+            secretName: docker-ci-client
+            # 0444 (not 0400): the eval image runs as non-root (uid 1000) and must
+            # read the projected mTLS material the docker CLI loads from
+            # DOCKER_CERT_PATH. The root-run stage-images initContainer reads it
+            # either way.
+            defaultMode: 0444
+            items:
+              - key: ca.crt
+                path: ca.pem
+              - key: tls.crt
+                path: cert.pem
+              - key: tls.key
+                path: key.pem
+        - name: work
+          emptyDir: {}

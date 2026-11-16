@@ -5,7 +5,7 @@
 # only) also captures the full bet + comment history; snapshot-only entries just
 # track `market.json`.
 #
-# The three markets below were verified end-to-end in loom/plans/market_harvest.md
+# The three markets below were verified end-to-end in x/loom/plans/market_harvest.md
 # and double as the loader test fixtures' provenance.
 markets:
   # January 2024: Will Bitcoin hit $50,000? — resolved NO; harvest-verified binary

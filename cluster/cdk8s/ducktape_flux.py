@@ -176,7 +176,7 @@ def chart(app: App) -> Chart:
                 "secrets/shared/",
                 "agentplane/crds/manifests/",
                 "cluster/charts/browsertrix/",
-                "loom/wayback/deploy/",
+                "x/loom/wayback/deploy/",
                 "props/deploy/",
                 f"{TF_GITOPS_ROOT}/",
             ],

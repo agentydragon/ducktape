@@ -136,16 +136,16 @@
       "registry": "forgejo"
     },
     "loom-gym-eval": {
-      "target": "//loom/gym:eval_image",
-      "test": "//loom/gym/..."
+      "target": "//x/loom/gym:eval_image",
+      "test": "//x/loom/gym/..."
     },
     "wayback-proxy": {
-      "target": "//loom/wayback/proxy:image",
-      "test": "//loom/wayback/proxy/..."
+      "target": "//x/loom/wayback/proxy:image",
+      "test": "//x/loom/wayback/proxy/..."
     },
     "wayback-archive": {
-      "target": "//loom/wayback/cache:image",
-      "test": "//loom/wayback/cache:wayback_cache_test",
+      "target": "//x/loom/wayback/cache:image",
+      "test": "//x/loom/wayback/cache:wayback_cache_test",
       "registry": "forgejo"
     },
     "authentik-jwt-rotation": {

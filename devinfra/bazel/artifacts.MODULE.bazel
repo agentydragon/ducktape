@@ -871,13 +871,13 @@ http_file(
     urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-linux-amd64"],
 )
 
-# Docker CLI (static binaries) + `docker compose` v2 plugin for the loom/gym
+# Docker CLI (static binaries) + `docker compose` v2 plugin for the x/loom/gym
 # eval driver image. Inspect-AI's docker sandbox provider shells out to the
 # `docker` CLI and the `docker compose` plugin, neither of which Debian packages
 # as a v2 plugin (docker.io ships only the CLI/daemon; there is no
 # docker-compose-v2 in Debian main). Fetch the upstream static builds instead.
 # The tarball also bundles dockerd/containerd/runc; only `docker` is used here
-# (the eval talks to a remote daemon via $DOCKER_HOST), and //loom/gym packages
+# (the eval talks to a remote daemon via $DOCKER_HOST), and //x/loom/gym packages
 # just the CLI into the image layer.
 http_archive(
     name = "docker_cli_static",
