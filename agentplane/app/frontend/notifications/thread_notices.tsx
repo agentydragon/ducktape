@@ -4,7 +4,7 @@ import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
 
-import { clockTime } from "../format_time";
+import { clockTime } from "../ui/format_time";
 import { followWatch } from "../transport/watch_stream";
 import { WatchInboxResponseSchema, type Inbox } from "../../../notification_service/api/notifications/notifications_pb";
 

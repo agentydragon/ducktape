@@ -1,6 +1,6 @@
 import { Alert, Button, Group, Stack, Text, Title } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
-import { IconArrowLeft } from "../icons";
+import { IconArrowLeft } from "../ui/icons";
 import { type JSX, useContext, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 

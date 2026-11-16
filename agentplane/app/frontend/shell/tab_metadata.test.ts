@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { THREAD_STATUS_MARKS } from "../status_mark";
+import { THREAD_STATUS_MARKS } from "../ui/status_mark";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "./tab_metadata";
 
 describe("browser tab titles", () => {

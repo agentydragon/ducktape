@@ -4,7 +4,7 @@ import { Group } from "@mantine/core";
 
 import { displayableError } from "../transport/client";
 import { type ThreadView, renameThread } from "./client";
-import { InlineName } from "../inline_name";
+import { InlineName } from "../ui/inline_name";
 import "./thread_title.css";
 
 /** The thread's name. The placeholder is the thread ID; a blank name clears it back to that. */

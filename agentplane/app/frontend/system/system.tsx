@@ -5,7 +5,7 @@ import { type JSX, useEffect, useState } from "react";
 import { displayableError } from "../transport/client";
 import { getSystemStatus, type CheckedComponentStatus } from "./system_status_client";
 import { SystemComponentState } from "../../app_service_pb";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { TopbarTitle } from "../shell/topbar";
 import "./system.css";
 

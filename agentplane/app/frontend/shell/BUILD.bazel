@@ -30,7 +30,7 @@ ts_library(
     name = "tab_metadata",
     srcs = ["tab_metadata.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
-    deps = ["//agentplane/app/frontend:status_mark"],
+    deps = ["//agentplane/app/frontend/ui:status_mark"],
 )
 
 agentplane_vitest_test(
@@ -39,7 +39,7 @@ agentplane_vitest_test(
     deps = [
         ":tab_metadata",
         "//:node_modules/vitest",
-        "//agentplane/app/frontend:status_mark",
+        "//agentplane/app/frontend/ui:status_mark",
     ],
 )
 
@@ -65,7 +65,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:thread_list",
         "//agentplane/app/frontend/threads:thread_view_recorder",
@@ -134,7 +134,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend:icons",
+        "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend:settings",
         "//agentplane/app/frontend/actions:detail",
         "//agentplane/app/frontend/actions:history",

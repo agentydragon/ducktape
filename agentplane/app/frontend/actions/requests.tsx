@@ -1,6 +1,6 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { type QueryClient, QueryClientProvider, queryOptions } from "@tanstack/react-query";
-import { IconCheck, IconX } from "../icons";
+import { IconCheck, IconX } from "../ui/icons";
 import { createContext, type JSX, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { displayableError } from "../transport/client";

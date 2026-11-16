@@ -1,5 +1,5 @@
 import { ActionIcon, Stack, Text, Title } from "@mantine/core";
-import { IconMenu2 } from "../icons";
+import { IconMenu2 } from "../ui/icons";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
 import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParams } from "react-router";
 

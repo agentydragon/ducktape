@@ -3,7 +3,7 @@ import { Badge, Group, Stack, Text, Tooltip } from "@mantine/core";
 import type { JSX } from "react";
 
 import type { PolicyBinding } from "../../../policy/v1/policy_service_pb";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import type { KubernetesAccounts } from "./accounts";
 import type { IdentityOrigin } from "./origin";
 

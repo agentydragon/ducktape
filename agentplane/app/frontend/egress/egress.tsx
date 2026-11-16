@@ -4,7 +4,7 @@ import { fromJson, type JsonValue } from "@bufbuild/protobuf";
 import { useSearchParams } from "react-router";
 
 import { WatchDecisionsResponseSchema, type Decision } from "../../../egress/api/admin/egress_admin_pb";
-import { TimeAgo } from "../time_ago";
+import { TimeAgo } from "../ui/time_ago";
 import { decisionAt, decisionOutcome, decisionReason, type DecisionGroup, groupDecisions } from "./decision_groups";
 import { followWatch } from "../transport/watch_stream";
 import { type StreamConnection } from "../transport/stream_reader";

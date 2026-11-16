@@ -1,5 +1,5 @@
 import type { PolicyBinding, PolicySet } from "../../../policy/v1/policy_service_pb";
-import type { BindingStateKind } from "../status_mark";
+import type { BindingStateKind } from "../ui/status_mark";
 
 export interface BindingState {
   kind: BindingStateKind;

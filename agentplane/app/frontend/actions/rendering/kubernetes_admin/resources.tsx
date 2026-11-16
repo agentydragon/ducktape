@@ -3,7 +3,7 @@ import type { JSX } from "react";
 import { stringify } from "yaml";
 import { z } from "zod";
 
-import { TextBlock } from "../../../text_block";
+import { TextBlock } from "../../../ui/text_block";
 import { defineResultPreview, type ResultPreview } from "../result_entry";
 import {
   isKubernetesResource,

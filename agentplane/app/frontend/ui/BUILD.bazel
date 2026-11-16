@@ -1,0 +1,183 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//devinfra/js:ts_library.bzl", "ts_library")
+load("//devinfra/js:vitest.bzl", "check_vitest_specs")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    testonly = True,
+    srcs = glob([
+        "*.ts",
+        "*.tsx",
+    ]),
+)
+
+# Shared Tabler imports and their ambient subpath types. Feature targets depend on this
+# facade rather than importing the untyped package subpaths themselves.
+ts_library(
+    name = "icons",
+    srcs = [
+        "icons.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "status_mark",
+    srcs = ["status_mark.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":custom_mark_icons",
+        ":icons",
+        "//:node_modules/@types/react",
+    ],
+)
+
+ts_library(
+    name = "custom_mark_icons",
+    srcs = [
+        "custom_mark_icons.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":custom_mark_icons_css",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "custom_mark_icons_css",
+    srcs = ["custom_mark_icons.css"],
+)
+
+ts_library(
+    name = "raw_switch",
+    srcs = ["raw_switch.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "operation_section_css",
+    srcs = ["operation_section.css"],
+)
+
+ts_library(
+    name = "operation_section",
+    srcs = [
+        "operation_section.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":operation_section_css",
+        "//:node_modules/@types/react",
+        "//util/frontend:code_block",
+        "//util/frontend:code_block_css",
+    ],
+)
+
+ts_library(
+    name = "text_block",
+    srcs = ["text_block.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":operation_section",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:clamped_block",
+        "//util/frontend:code_block",
+    ],
+)
+
+ts_library(
+    name = "argv_text",
+    srcs = ["argv_text.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+)
+
+ts_library(
+    name = "shell_command_view",
+    srcs = ["shell_command_view.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":argv_text",
+        ":operation_section",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//util/frontend:clamped_block",
+        "//util/frontend:code_block",
+        "//util/frontend:disclosure",
+        "//util/frontend:json_view",
+    ],
+)
+
+ts_library(
+    name = "inline_name",
+    srcs = [
+        "inline_name.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":inline_name_css",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "inline_name_css",
+    srcs = ["inline_name.css"],
+)
+
+ts_library(
+    name = "mark_glyph",
+    srcs = [
+        "mark_glyph.tsx",
+    ],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":mark_glyph_css",
+        ":status_mark",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "mark_glyph_css",
+    srcs = ["mark_glyph.css"],
+)
+
+ts_library(
+    name = "time_ago",
+    srcs = ["time_ago.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":format_time",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "format_time",
+    srcs = ["format_time.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = ["//:node_modules/date-fns"],
+)
+
+check_vitest_specs()

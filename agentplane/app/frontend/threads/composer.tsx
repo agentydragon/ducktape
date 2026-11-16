@@ -1,7 +1,7 @@
 import { ActionIcon, Button, Group, Textarea } from "@mantine/core";
 import { type JSX, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
-import { IconPlayerStop, IconSend } from "../icons";
+import { IconPlayerStop, IconSend } from "../ui/icons";
 
 export const DEFAULT_COMPOSER_PLACEHOLDER = "Enter sends, Shift+Enter or Ctrl+Enter for a new line";
 

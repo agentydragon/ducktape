@@ -1,4 +1,4 @@
-import { IconCheck } from "../icons";
+import { IconCheck } from "../ui/icons";
 import { type JSX, useState } from "react";
 
 /** Only durable evidence advances the lights; a lost reply is not a runner refusal. */

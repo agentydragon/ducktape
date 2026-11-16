@@ -17,13 +17,13 @@ import { Link, useLocation, useSearchParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
-import { durationLabel } from "../format_time";
-import { IconArrowRight } from "../icons";
-import { RawSwitch } from "../raw_switch";
-import { TimeAgo } from "../time_ago";
+import { durationLabel } from "../ui/format_time";
+import { IconArrowRight } from "../ui/icons";
+import { RawSwitch } from "../ui/raw_switch";
+import { TimeAgo } from "../ui/time_ago";
 import { displayableError } from "../transport/client";
 import { ClampedBlock, lineCount, TEXT_MAX_HEIGHT_REM } from "../../../../util/frontend/clamped_block";
-import { JsonBlock } from "../text_block";
+import { JsonBlock } from "../ui/text_block";
 import { useOptionalStreamStatus } from "../transport/stream_status";
 import type { StreamConnection } from "../transport/stream_reader";
 import { ActionCall } from "./call";

@@ -1,7 +1,7 @@
 import { ActionIcon, Button, Drawer, Group, Stack, Text } from "@mantine/core";
 import { create, toJson } from "@bufbuild/protobuf";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
-import { IconHistory } from "../icons";
+import { IconHistory } from "../ui/icons";
 
 import { nextStored, threadObservationEntry, threadObservations } from "./client";
 import { displayableError } from "../transport/client";

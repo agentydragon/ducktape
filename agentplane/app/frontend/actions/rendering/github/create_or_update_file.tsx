@@ -1,7 +1,7 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
 
-import { TextBlock } from "../../../text_block";
+import { TextBlock } from "../../../ui/text_block";
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { pushedFileSize } from "../../schemas/github/push_files";
