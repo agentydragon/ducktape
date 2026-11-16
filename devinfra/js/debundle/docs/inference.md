@@ -838,3 +838,69 @@ there is no whole-module scan per callable candidate. The shared store retires
 these facts into source views during projection, and those views own them for
 their existing analysis lifetime. Saved artifacts retain the derived chunk
 facts and callable obligations, with no new persisted declaration graph.
+
+### Read-only opaque callback pools
+
+Source preparation records a closed shape certificate for synchronous,
+zero-parameter functions and arrows whose bodies contain only empty statements,
+bare identifier/primitive-literal expression statements, and returns of those
+operands or `undefined` by a bare `return`. Calls, writes, allocations, local
+declarations, control flow, property operations, coercions, regex literals,
+implicit receivers and parameter evaluation are outside this family. The
+certificate reuses `CallEffectBody.reads`; it does not infer effect absence
+from an empty may-read set. `CallEffectRules` publishes each immutable
+`ReadOnlyCallback(function)` fact once in the existing inference engine.
+Its returned-binding set is separate from the read set. Sites and binding slots
+are program-qualified, then projected only to the defining source.
+
+`summarize_read_only_callback_pool` requires the complete admitted pool to
+consist of these source function values. Captured closures, foreign callbacks,
+mixed pools, active recursion, dynamic scope, incomplete reachability and array
+iteration keep the existing execution path. Every read must resolve to a local
+module binding; imports, globals and implicit `arguments` are excluded. At each
+request the shared returned cells are checked once against current prefix
+values. Every alternative must be primitive or `Unavailable`; empty/unknown,
+object and callable results retain replay. Potential whole-program values do
+not establish this condition. Function-surface taint is harmless for this
+grammar: mutating a function's properties cannot change its source body, and
+the body performs no operation on that surface.
+
+**Correctness.** A covered member cannot change any lexical cell, heap surface,
+native capability or publication root. Its only possible abrupt outcome is a
+lexical read throwing; its successful return exposes no object or callable.
+Consequently any finite skip/repeat/permutation of the admitted pool contributes
+a subset of the union of its lexical may-reads at this cut. Each member's read
+set is promoted once with the existing owner, opaque-call assumption and current
+uninitialized-cell obligations. Unreachable reads may conservatively remain.
+No normal-read, ordered-call or whole-owner completion receipt is created.
+Owner/admission bookkeeping is preserved; extending owner reachability cannot
+change the pool's export-prefix/escaped-value/heap roots, and dynamic scope is
+excluded. The ordinary argument taint and retention transfer still follows
+the summary. Unsupported members prevent the shortcut for the entire pool;
+there is no assumption that a covered member stays read-only beside a writer.
+There is no invocation or whole-world observation for a covered pool, and no
+invocation-limit loss manufactured solely by its size.
+
+**Bounds and lifetime.** Let `n` count source/input bytes, `F` admitted source
+functions, `R` their total explicit read/return incidences, and `B` distinct
+returned bindings. `F,R,B=O(n)`: no source body can create a fresh summary key
+on invocation. Shallow shape preparation, source qualification and projection
+visit each incidence once. Each certificate producer has no watched inputs,
+runs once, and asserts agreement if its immutable fact is contributed again.
+Charging copied/compared identifier bytes gives `O(n² log(n+2))` added
+preparation time and `O(n²)` retained certificate space.
+
+For one pool request, membership/owner/read unions cost
+`O((F+R) log(n+2))` index operations. Each returned binding is queried once;
+primitive-kind alternatives have a fixed finite universe, and the first
+nonprimitive alternative refuses the shortcut. Name copying/comparison and
+effect insertion give a conservative `O(n² log(n+2))` bound, in addition to
+the existing owner-reachability transfer and callback-pool discovery. There
+is no enumeration of orders, subsets, argument products or execution paths.
+For `K` upstream requests the added work is `O(K n² log(n+2))`; this is a
+per-request/phase bound, not a new bound on the entire ordered interpreter or
+ESM scheduler. Certificates live with the existing source-flow views; the
+per-request unions retire at return. Saved analysis retains their derived
+effects and obligations, with no process-local execution cache or new saved
+graph. Later requests recheck current cells, including after initialization
+or mutation; no recency policy controls validity.

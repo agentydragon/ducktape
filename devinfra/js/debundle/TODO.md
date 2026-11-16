@@ -111,6 +111,10 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   until its semantic and placement obligations are proved.
 
 - **AR2 — Bound opaque callback analysis with composable summaries.**
+  Complete read-only lexical-observer pools use shared source certificates
+  and current-prefix primitive-return checks without replay
+  (<docs/inference.md>). Remaining families include writers, source calls,
+  foreign callbacks, captured environments and heap operations.
   `invoke_callback_pool_once` in <facts/sync_effects/interpreter.rs> supplies
   other callbacks as possible arguments, evaluates against evolving state, and
   falls back at depth, expansion and pool limits. Reduce repeated cross-product

@@ -1,5 +1,6 @@
 //! Call-site execution effects distinguish function values from function bodies: returning a closure never executes it.
 
+mod read_only_callbacks;
 pub(crate) mod synchronous_calls;
 
 use super::adapters::application::{LocalExecutionContext, LocalExecutionScope};
@@ -9079,6 +9080,9 @@ impl<'source, 'rule> Executor<'source, 'rule> {
                 &mut foreign_promoted,
                 outcome,
             );
+            if self.summarize_read_only_callback_pool(&callbacks, outcome) {
+                break;
+            }
             let before = self.callback_pool_observation();
             if self.invoke_callback_pool_once(
                 &callbacks,

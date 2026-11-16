@@ -1618,6 +1618,15 @@ debundle_e2e_test(
 
 debundle_e2e_test(name = "callback_pool_order_test")
 
+debundle_e2e_test(
+    name = "read_only_callback_summary_test",
+    saved_analysis_tools = True,
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
 debundle_e2e_test(name = "opaque_receiver_callbacks_test")
 
 debundle_e2e_test(

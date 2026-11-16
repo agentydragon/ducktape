@@ -506,6 +506,12 @@ pub(crate) fn program_value_flows<'a>(
                     .into_iter()
                     .map(|slot| mapping.binding(slot))
                     .collect();
+                body.read_only_returns = body.read_only_returns.map(|returned| {
+                    returned
+                        .into_iter()
+                        .map(|slot| mapping.binding(slot))
+                        .collect()
+                });
                 body.writes = body
                     .writes
                     .into_iter()
@@ -568,6 +574,7 @@ pub(crate) fn program_value_flows<'a>(
     let mut parameters = BTreeMap::new();
     let mut cell_effects = BTreeMap::new();
     let mut initializations = BTreeMap::new();
+    let mut read_only_callbacks = BTreeMap::new();
     // Move completed facts into their read indexes. Do not keep a second full
     // value-key map alive while constructing source projections.
     for (key, fact) in facts {
@@ -586,6 +593,9 @@ pub(crate) fn program_value_flows<'a>(
             }
             (key, FlowFact::Cells(accesses)) => {
                 cell_effects.insert(key, accesses);
+            }
+            (FlowKey::ReadOnlyCallback(function), FlowFact::ReadOnlyCallback(summary)) => {
+                read_only_callbacks.insert(function, summary);
             }
             (FlowKey::Initialization(binding), FlowFact::Initialization(sites)) => {
                 initializations.insert(binding, sites);
@@ -651,6 +661,10 @@ pub(crate) fn program_value_flows<'a>(
             .collect();
         let local_sites = view.sites.clone();
         for (offset, site) in &local_sites {
+            if let Some(summary) = read_only_callbacks.remove(site) {
+                flow.read_only_callbacks
+                    .insert(*offset, summary.map(|slot| inverse[slot].clone()));
+            }
             if let Some(values) = shared.values.get(&FlowKey::Properties(*site)) {
                 flow.property_unions
                     .insert(*offset, view.prepare_projection(values, &flow));
