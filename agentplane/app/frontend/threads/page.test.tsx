@@ -38,7 +38,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CommandSchema, Operation, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
-import { ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
+import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import type * as SandboxClientModule from "../sandboxes/client";
 import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
