@@ -29,7 +29,15 @@ from agentplane.central_sampler.settings import (
     ModelConfig,
     Settings,
 )
-from agentplane.central_sampler.testing import METADATA, create_request, follow_turn, service, settings, submit
+from agentplane.central_sampler.testing import (
+    METADATA,
+    create_request,
+    follow_turn,
+    service,
+    settings,
+    submit,
+    submit_input,
+)
 from agentplane.central_sampler.testing_store import IntentSnapshot, Store
 from agentplane.env.runtime.control import environment_runtime_pb2
 from agentplane.proto import event_pb2
@@ -351,15 +359,13 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         assert not compacted.blocked
 
     async with service(config) as stub:
-        await stub.SubmitInput(
-            environment_runtime_pb2.SubmitInputRequest(
-                session_id=request.session_id,
-                command_id="anthropic-resume",
-                text=f"{resumed_marker}: what was the exact vault word I asked you to retain? Then use exec exactly "
-                f"once to run exec_command and print {token} again.",
-            ),
-            metadata=METADATA,
-            timeout=10,
+        await submit_input(
+            stub,
+            session_id=request.session_id,
+            command_id="anthropic-resume",
+            text=f"{resumed_marker}: what was the exact vault word I asked you to retain? Then use exec exactly "
+            f"once to run exec_command and print {token} again.",
+            timeout_s=10,
         )
         resumed = await follow_turn(stub, request.session_id, "anthropic-resume", timeout_s=FOLLOW_SECONDS)
         state = await sampler_session(request.session_id, database_url)
