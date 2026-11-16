@@ -24,7 +24,13 @@ pub(crate) struct Judgment<Key, Fact> {
     // Source-derived facts have no author dependencies. Keep their empty
     // metadata shared rather than embedding every dependency set in each row.
     dependencies: Option<Box<ProofDependencies>>,
-    premises: BTreeSet<Key>,
+    // Value-only closures retain no explanatory graph. Empty premise sets
+    // must not occupy a BTreeSet in every dense source-fact row either.
+    #[allow(
+        clippy::box_collection,
+        reason = "keep absent premise metadata to one word per fact"
+    )]
+    premises: Option<Box<BTreeSet<Key>>>,
 }
 
 impl<Key, Fact> Judgment<Key, Fact> {
@@ -41,8 +47,8 @@ impl<Key, Fact> Judgment<Key, Fact> {
     }
 
     /// Returns the direct inference premises used by the proof.
-    pub fn premises(&self) -> &BTreeSet<Key> {
-        &self.premises
+    pub fn premises(&self) -> impl Iterator<Item = &Key> {
+        self.premises.iter().flat_map(|premises| premises.iter())
     }
 }
 
@@ -54,6 +60,6 @@ mod tests {
     fn source_fact_metadata_stays_compact() {
         // Dense value-flow stores can contain millions of source-only rows.
         // Empty proof categories must not each occupy a BTreeSet in every row.
-        assert!(std::mem::size_of::<Judgment<u32, u32>>() <= 6 * std::mem::size_of::<usize>());
+        assert!(std::mem::size_of::<Judgment<u32, u32>>() <= 3 * std::mem::size_of::<usize>());
     }
 }

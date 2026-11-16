@@ -574,7 +574,7 @@ impl SemanticFacts {
             let judgment = self.inference.get(&key)?;
             derivation_rules.insert(key.rule());
             derivation_rules.extend(self.consulted.get(&key).into_iter().flatten().copied());
-            pending.extend(judgment.premises().iter().cloned());
+            pending.extend(judgment.premises().cloned());
         }
         Some(InferenceUse {
             conclusion: key.rule(),
