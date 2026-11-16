@@ -560,14 +560,20 @@ runs; canonical fixtures live in gaffer-private.
 
 ### 6.2 Constraints on the remaining domain migration
 
-- Preserve forward-only settled prefixes and dependency-tracked invocation
-  memoization; no parent replay or retrospective refinement of earlier purity.
+<analysis_consolidation.md> owns the finite-domain, fixed-point and dependency design.
+The migration here must implement that contract; callback-pool replay and
+count-preserving hypothetical traces are not required compatibility behavior.
+
+- Preserve forward-only settled prefixes and explicit dependencies; no parent
+  replay or retrospective refinement of earlier purity. Reuse transfer summaries
+  rather than treating a saved whole-world invocation as a semantic summary.
 - Keep persistent snapshots shared, fallback reach summarized through shared
   SCCs, and heap barriers linear in the live frontier.
 - Importers consume cross-module summaries rather than executing provider
   bodies repeatedly. Keep captured contexts and callback sets shared.
-- Retain invocation-depth, invocation-count and callback-pool budgets with
-  conservative havoc and recorded losses.
+- Bound ordered proof work cumulatively across alternatives and root retries,
+  with conservative havoc or terminal refusal and recorded losses. The may
+  solver converges through its finite domain, not invocation/pool caps.
 - Make the enlarged domain finite-height: constants widen to `Any`, repeated
   births to `Many`, distinct argument shapes to `Top`, and unknown keys absorb
   property maps. Budgets bound cost; they must not hide missing effects.
