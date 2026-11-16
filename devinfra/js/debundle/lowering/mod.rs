@@ -170,7 +170,6 @@ pub enum FullReportKind {
     TranslationValidation,
     ExportReentry,
     ResidualAtomicGroups,
-    ResidualExtractions,
 }
 
 /// Full graph serialization is independent of report timing and evidence detail.
@@ -249,7 +248,6 @@ pub struct MaterializeLogicalModulesOptions {
     pub effect_conflicts_chunks: BTreeSet<String>,
     pub full_reports: BTreeSet<FullReportKind>,
     pub full_report_chunks: BTreeSet<String>,
-    pub residual_extraction_atoms: BTreeSet<String>,
     pub gate_rejection: GateRejectionPolicy,
     /// Stop materialization after the report-only effect relocation sweep for
     /// each finalized assignment plan. This requires loaded staged analysis
@@ -487,7 +485,6 @@ pub fn materialize_logical_modules(
                                     effect_conflicts_chunks: &options.effect_conflicts_chunks,
                                     full_reports: &options.full_reports,
                                     full_report_chunks: &options.full_report_chunks,
-                                    residual_extraction_atoms: &options.residual_extraction_atoms,
                                     gate_rejection: options.gate_rejection,
                                     assessment_only: options.assessment_only,
                                     export_reentry_reports: &export_reentry_reports,
