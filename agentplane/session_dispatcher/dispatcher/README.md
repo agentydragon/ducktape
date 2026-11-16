@@ -151,10 +151,12 @@ The manual queue, replica and wake probes are documented in the
   sampler Session bypasses execution-Sandbox readiness and wake so its input remains deliverable
   while the execution environment is suspended.
 
-Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
-Sandboxes) or a retry deadline. Every ten seconds each replica rescans pending Sessions, including
-stranded in-flight work with no lease row. Active steps renew their Session lease every ten seconds;
-a lease lasts thirty seconds.
+Delivery enqueues the affected Session on a committed command or Session change (keyed PostgreSQL
+`NOTIFY`), a Sandbox informer event, or a per-Session retry deadline. Startup and listener reconnect
+resync pending and in-flight Sessions; there is no periodic delivery rescan. A held lease schedules
+that Session at expiry; transient claim errors use exponential backoff. Active steps renew their
+Session lease every ten seconds; a lease lasts thirty seconds. See the
+[recovery contract](SPEC.md#delivery-scheduling-and-recovery).
 
 ## Deviations and gaps
 

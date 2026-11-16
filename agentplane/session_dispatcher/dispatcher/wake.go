@@ -151,7 +151,7 @@ func (s *Store) NoteWaking(ctx context.Context, id string, owner SessionOwner, i
 			return err
 		}
 		stillQueued = true
-		return notify(ctx, tx)
+		return notify(ctx, tx, owner.SessionID)
 	})
 	return stillQueued, err
 }
@@ -171,7 +171,7 @@ func (s *Store) NoteWakeRequestedAt(ctx context.Context, id string, owner Sessio
 			RETURNING wake_requested_at`, id, owner.SessionID, requestedAt, waiting).Scan(&requested)
 		if err == nil {
 			result = &requested
-			return notify(ctx, tx)
+			return notify(ctx, tx, owner.SessionID)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -213,7 +213,7 @@ func (s *Store) ClearWakeState(ctx context.Context, id string, owner SessionOwne
 			return err
 		}
 		if n > 0 {
-			return notify(ctx, tx)
+			return notify(ctx, tx, owner.SessionID)
 		}
 		return nil
 	})
@@ -287,7 +287,7 @@ func (s *Store) FailExpiredWake(
 		if err != nil {
 			return err
 		}
-		return notify(ctx, tx)
+		return notify(ctx, tx, owner.SessionID)
 	})
 	return dispatch, session, remaining, err
 }

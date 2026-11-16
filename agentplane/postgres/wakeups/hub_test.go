@@ -3,7 +3,9 @@ package wakeups
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -214,4 +216,50 @@ func TestKeyedSubscribersReceiveOnlyTheirCommittedKeys(t *testing.T) {
 	}
 	awaitWakeup(t, b)
 	assertQuiet(t, a)
+}
+
+func TestPayloadSubscriptionHandsOffEveryDistinctCommittedKey(t *testing.T) {
+	db, hub := openDB(t), listen(t, "test-payload-handoff", "test_payloads")
+	var mu sync.Mutex
+	seen := map[string]bool{}
+	done := make(chan struct{})
+	stop, err := hub.SubscribePayload("test_payloads", func(key string) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen[key] = true
+		if key == "test-barrier" {
+			close(done)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 100 {
+		if _, err := tx.ExecContext(t.Context(), "SELECT pg_notify('test_payloads',$1)", fmt.Sprint(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tx.ExecContext(t.Context(), "SELECT pg_notify('test_payloads','test-barrier')"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(awaitBound):
+		t.Fatal("payloads did not arrive")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range 100 {
+		if !seen[fmt.Sprint(i)] {
+			t.Fatalf("lost key %d", i)
+		}
+	}
 }

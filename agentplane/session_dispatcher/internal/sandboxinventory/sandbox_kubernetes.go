@@ -28,7 +28,6 @@ type KubernetesSandboxes struct {
 	inventory cache.Cache
 	informer  cache.Informer
 	namespace string
-	changed   chan struct{}
 	reader    *sandboxreader.Reader
 }
 
@@ -44,29 +43,38 @@ func NewKubernetesSandboxes(inventory cache.Cache, objects client.Client, namesp
 	if err != nil {
 		return nil, err
 	}
-	result := &KubernetesSandboxes{
+	return &KubernetesSandboxes{
 		objects: objects, inventory: inventory, informer: informer,
-		namespace: namespace, changed: make(chan struct{}, 1), reader: reader,
+		namespace: namespace, reader: reader,
+	}, nil
+}
+
+func (k *KubernetesSandboxes) WatchSandboxes(enqueue func(dispatcher.SandboxKey)) (func(), error) {
+	signal := func(object any) {
+		if tombstone, ok := object.(toolscache.DeletedFinalStateUnknown); ok {
+			object = tombstone.Obj
+		}
+		sandbox := object.(*sandboxapi.Sandbox)
+		enqueue(dispatcher.SandboxKey{Name: sandbox.Name, UID: string(sandbox.UID)})
 	}
-	_, err = informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
-		AddFunc:    func(any) { result.signal() },
-		UpdateFunc: func(any, any) { result.signal() },
-		DeleteFunc: func(any) { result.signal() },
+	registration, err := k.informer.AddEventHandler(toolscache.ResourceEventHandlerFuncs{
+		AddFunc: signal, UpdateFunc: func(_, current any) { signal(current) }, DeleteFunc: signal,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	return func() { _ = k.informer.RemoveEventHandler(registration) }, nil
 }
 
-func (k *KubernetesSandboxes) signal() {
-	select {
-	case k.changed <- struct{}{}:
-	default:
+func (k *KubernetesSandboxes) SandboxExists(ctx context.Context, key dispatcher.SandboxKey) (bool, error) {
+	var object sandboxapi.Sandbox
+	err := k.objects.Get(ctx, types.NamespacedName{Namespace: k.namespace, Name: key.Name}, &object)
+	if apierrors.IsNotFound(err) {
+		return false, nil
 	}
+	return err == nil && string(object.UID) == key.UID, err
 }
 
-func (k *KubernetesSandboxes) Changes() <-chan struct{} { return k.changed }
 func (k *KubernetesSandboxes) WaitSynced(ctx context.Context) bool {
 	return k.inventory.WaitForCacheSync(ctx)
 }

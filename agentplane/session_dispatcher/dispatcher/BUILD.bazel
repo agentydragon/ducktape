@@ -119,6 +119,7 @@ go_test(
     size = "medium",
     srcs = [
         "authorization_integration_test.go",
+        "claim_retry_integration_test.go",
         "delegated_identity_integration_test.go",
         "environment_grants_integration_test.go",
         "execution_identity_integration_test.go",

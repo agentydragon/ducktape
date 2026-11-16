@@ -188,7 +188,6 @@ reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of
 | Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                              |
 | -------------------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
-| Keyed Dispatcher delivery              | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                          |
 | Versioned dispatch watch               | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                              |
 | Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
 | Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                                 |
@@ -207,7 +206,6 @@ removed). Not released:
 ```mermaid
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery, section 16]
     DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch, section 16]
     DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists, section 13]
 ```
@@ -3815,7 +3813,6 @@ accepted; `SAMPLER_JOURNAL_DIET` awaits the operator's view.
 ```mermaid
 flowchart LR
     SAMPLER_JOURNAL_DIET[Decision: what the sampler journals]
-    DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery]
     DISPATCHER_WATCH_VERSIONS[In progress: dispatch version storage, PR1]
     DISPATCHER_WATCH_RESUMABLE_SERVER[Blocked: versioned watch receiver]
     DISPATCHER_WATCH_CLIENT_CUTOVER[Blocked: client enablement after staging pin]
@@ -3829,8 +3826,7 @@ raw events once) are in the [plan](standard_idioms.md#sampler_journal_diet-decis
 
 ### In flight
 
-The operator released `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` on 2026-11-16 at
-06:40 UTC; each builds in its own PR.
+The operator released `DISPATCHER_WATCH_VERSIONS` on 2026-11-16 at 06:40 UTC.
 
 ### `DISPATCHER_WATCH_VERSIONS` — persist dispatch change versions
 

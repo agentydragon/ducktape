@@ -1,6 +1,6 @@
 // Package wakeups tells replica-local readers that the rows they follow may have changed.
 //
-// A NOTIFY carries nothing and the committed rows stay the authority: a woken reader re-reads what it follows,
+// A NOTIFY carries a routing key and the committed rows stay the authority: a woken reader re-reads what it follows,
 // so commits on any replica, and commits made while the LISTEN connection was down, are read from the tables.
 // Re-establishing the connection wakes every channel for the same reason.
 package wakeups
@@ -25,6 +25,7 @@ type Hub struct {
 	// subscribers holds each listened channel's subscribers' signals.
 	subscribers map[string]map[chan struct{}]struct{}
 	keyed       map[string]map[string]map[chan struct{}]struct{}
+	payloads    map[string]map[*payloadSubscription]struct{}
 }
 
 // Listen opens the LISTEN connection to dsn and returns once it listens to every channel, or fails when ctx
@@ -64,6 +65,29 @@ func Listen(ctx context.Context, dsn string, channels ...string) (*Hub, error) {
 	}
 	go hub.fanOut()
 	return hub, nil
+}
+
+type payloadSubscription struct{ enqueue func(string) }
+
+// SubscribePayload calls enqueue synchronously for every committed payload on channel.
+// enqueue must return promptly (for example, workqueue.Add), and must not call Hub methods.
+// Unlike a bounded channel, this hands off every key without dropping distinct payloads.
+// Use Subscribe and Generation on the same channel to recover connection gaps.
+func (h *Hub) SubscribePayload(channel string, enqueue func(string)) (func(), error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, ok := h.subscribers[channel]; !ok {
+		return nil, fmt.Errorf("not listening to channel %q", channel)
+	}
+	if h.payloads == nil {
+		h.payloads = make(map[string]map[*payloadSubscription]struct{})
+	}
+	if h.payloads[channel] == nil {
+		h.payloads[channel] = make(map[*payloadSubscription]struct{})
+	}
+	sub := &payloadSubscription{enqueue: enqueue}
+	h.payloads[channel][sub] = struct{}{}
+	return func() { h.mu.Lock(); delete(h.payloads[channel], sub); h.mu.Unlock() }, nil
 }
 
 // SubscribeKey receives notifications whose payload is exactly key. On listener loss or reconnect
@@ -167,6 +191,9 @@ func (h *Hub) fanOut() {
 func (h *Hub) wakeKey(channel, key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	for sub := range h.payloads[channel] {
+		sub.enqueue(key)
+	}
 	for signal := range h.keyed[channel][key] {
 		select {
 		case signal <- struct{}{}:

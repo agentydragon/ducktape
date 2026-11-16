@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -39,9 +40,15 @@ type SandboxCatalog interface {
 	// CurrentSandboxUIDs performs an uncached, complete API read. Call it after
 	// collecting stored deletion candidates; cached absence cannot authorize cleanup.
 	CurrentSandboxUIDs(context.Context) (map[string]struct{}, error)
-	Changes() <-chan struct{}
+	// WatchSandboxes hands each add/update/delete directly to enqueue, including relist deletions.
+	WatchSandboxes(enqueue func(SandboxKey)) (func(), error)
+	// SandboxExists checks the exact UID against the API server, never cached absence.
+	SandboxExists(context.Context, SandboxKey) (bool, error)
 	WaitSynced(context.Context) bool
 }
+
+// SandboxKey addresses one incarnation; an empty key is reserved for a full resync.
+type SandboxKey struct{ Name, UID string }
 
 // WakeRequester shares the lifecycle owner's live authorization, guarded mutation and budget
 // path with explicit resume. Dispatcher supplies only the retained effective sender: the
@@ -60,7 +67,7 @@ type DeliveryWorker struct {
 	Catalog  SandboxCatalog
 	Wake     WakeRequester
 	Delivery SessionDelivery
-	Hub      *WatchHub
+	Hub      *wakeups.Hub
 	Logger   *slog.Logger
 	// Ready closes after the first complete inventory and pending-work scan.
 	// Each queued Session recovers under its own lease before processing its head.
@@ -89,55 +96,111 @@ func (w *DeliveryWorker) Run(ctx context.Context) error {
 	if w.Store == nil || w.Catalog == nil || w.Wake == nil || w.Delivery == nil || w.Hub == nil {
 		return errors.New("dispatcher delivery dependencies are required")
 	}
+	ctx, cancel := context.WithCancel(ctx)
 	w.init()
-	defer w.queue.ShutDown()
-	var ready sync.Once
+	reconciles := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[SandboxKey]())
+	var workers sync.WaitGroup
+	defer func() { cancel(); w.queue.ShutDown(); reconciles.ShutDown(); workers.Wait() }()
+	generation := w.Hub.Generation()
+	changed, unsubscribe, err := w.Hub.Subscribe(NotifyChannel)
+	if err != nil {
+		return err
+	}
+	defer unsubscribe()
+	stopPayloads, err := w.Hub.SubscribePayload(NotifyChannel, func(id string) {
+		if id == "" {
+			// Pre-keyed replicas still send empty invalidations during a rolling deploy.
+			reconciles.Add(SandboxKey{})
+		} else {
+			w.enqueue(id)
+		}
+	})
+	if err != nil {
+		return err
+	}
+	defer stopPayloads()
+	stopSandboxes, err := w.Catalog.WatchSandboxes(func(key SandboxKey) { reconciles.Add(key) })
+	if err != nil {
+		return err
+	}
+	defer stopSandboxes()
 	if !w.Catalog.WaitSynced(ctx) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		return errors.New("Sandbox inventory did not synchronize")
 	}
-	// Startup may race the listener's initial connection. Never run without
-	// notifications indefinitely: retry subscription, and retain the 10s sweep.
-	var sub *watchSubscription
-	var unsubscribe func()
-	for sub == nil {
-		var err error
-		sub, unsubscribe, err = w.Hub.subscribeChanges()
-		if err == nil {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Second):
-		}
-	}
-	defer unsubscribe()
-	// A queue key is a Session ID, so even with multiple workers a Session
-	// and its commands cannot be delivered concurrently in this process.
 	for range deliveryWorkerCount {
-		go w.runQueue(ctx)
+		workers.Go(func() { w.runQueue(ctx) })
 	}
-	ticker := time.NewTicker(LeaseRenewInterval)
-	defer ticker.Stop()
-	for {
-		if err := w.reconcile(ctx); err != nil {
-			w.Logger.Warn("dispatcher delivery reconciliation unavailable; retrying", "error", err)
-		} else if w.Ready != nil {
-			ready.Do(func() { close(w.Ready) })
+	workers.Go(func() {
+		var ready sync.Once
+		for {
+			key, shutdown := reconciles.Get()
+			if shutdown {
+				return
+			}
+			func() {
+				defer reconciles.Done(key)
+				if ctx.Err() != nil {
+					return
+				}
+				var err error
+				if key.UID == "" {
+					err = w.reconcile(ctx)
+				} else {
+					err = w.reconcileSandbox(ctx, key)
+				}
+				if err != nil {
+					w.Logger.Warn("dispatcher reconciliation unavailable; retrying", "sandbox_uid", key.UID, "error", err)
+					reconciles.AddRateLimited(key)
+					return
+				}
+				reconciles.Forget(key)
+				if key.UID == "" && w.Ready != nil {
+					ready.Do(func() { close(w.Ready) })
+				}
+			}()
 		}
+	})
+	// Subscribe before scanning: commits during the scan remain keyed in the queue.
+	reconciles.Add(SandboxKey{})
+	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
-		case <-sub.changed:
-		case <-w.Catalog.Changes():
-		case message := <-sub.failure:
-			return fmt.Errorf("dispatcher listener lost notifications: %s", message)
+		case <-changed:
+			if current := w.Hub.Generation(); current != generation {
+				// Loss invalidates the generation; reconnect establishes LISTEN
+				// before its nil wakeup requests the recovery snapshot.
+				if w.Hub.Connected() {
+					generation = current
+					reconciles.Add(SandboxKey{})
+				}
+			}
 		}
 	}
+}
+
+func (w *DeliveryWorker) reconcileSandbox(ctx context.Context, key SandboxKey) error {
+	sessions, err := w.Store.SandboxSessions(ctx, key.UID)
+	if err != nil {
+		return err
+	}
+	// Freeze the candidate UID before the authoritative API read. A stale informer
+	// cannot authorize deletion, including when a same-name replacement is live.
+	live, err := w.Catalog.SandboxExists(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !live {
+		_, err := w.Store.EndSandbox(ctx, key.UID)
+		return err
+	}
+	for _, id := range sessions {
+		w.enqueue(id)
+	}
+	return nil
 }
 
 func (w *DeliveryWorker) reconcile(ctx context.Context) (result error) {
@@ -511,6 +574,7 @@ func (w *DeliveryWorker) deliverCommand(ctx context.Context, head *Dispatch, san
 	if err != nil {
 		span.SetStatus(otelcodes.Error, "dispatch claim failed")
 		w.Logger.Error("cannot claim queued dispatch", "command_id", head.CommandID, "error", err)
+		w.backoff(head.SessionID, head.CommandID)
 		return false
 	}
 	if claimed == nil {
@@ -585,6 +649,7 @@ func (w *DeliveryWorker) deliverSession(ctx context.Context, session *Session, s
 	if err != nil {
 		span.SetStatus(otelcodes.Error, "Session claim failed")
 		w.Logger.Error("cannot claim queued session", "session_id", session.SessionID, "error", err)
+		w.backoff(session.SessionID, "session:"+session.SessionID)
 		return false
 	}
 	if claimed == nil {

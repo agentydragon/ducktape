@@ -356,6 +356,40 @@ while locking it. Cleanup invalidates those leases in its transaction. A marker 
 remains possible forwarding evidence; cleanup committed first prevents a marker or settlement
 from reviving work.
 
+## Delivery scheduling and recovery
+
+Each replica feeds a rate-limited workqueue keyed by Session ID. A committed command or Session
+change sends its bare Session ID on the delivery `NOTIFY` channel. The listener hands every payload
+directly to the deduplicating queue; bounded channels never discard distinct Session keys. A head
+step that completes requeues its Session for the next head. Transient claim errors in command
+and Session materialization schedule that Session's exponential backoff, from 500 ms up to 30 s.
+Other transient processing and delivery errors use the same keyed retry path. Wake retry times
+and readiness deadlines retain their existing per-Session delayed scheduling.
+
+A replica subscribes before its startup resync, which lists current Sandboxes, confirms deletion
+candidates with the API server, and seeds all Sessions with pending or in-flight work, including
+work without a lease row. `Ready` closes after the first successful complete resync. Listener loss
+invalidates `wakeups.Hub.Generation()`; after LISTEN is re-established, the generation change
+requests another full resync. Commits in the connection gap are recovered from PostgreSQL.
+Notifications delivered while listening are lossless in-process. There is no periodic delivery
+rescan and no recovery promise for a deliberately suppressed notification on a healthy connection.
+
+If another replica holds the Session lease, the worker schedules that exact Session at the reported
+lease expiry. It rechecks the lease then, rescheduling if renewed, or recovering only that Session's
+in-flight work under a fresh holder. A crashed holder therefore needs no inventory sweep: other
+replicas already saw the same committed work notification, or seed it on startup/reconnect.
+
+Sandbox informer adds, updates and deletes enqueue the exact Sandbox UID. Relisting after a watch
+gap retains deletion detection. Reconciliation reads only that UID's Sessions and enqueues them;
+API-confirmed absence runs `EndSandbox` for that UID. Cached absence and a same-name replacement
+cannot authorize delivery or bypass the deletion fence. Database and API failures retry the affected
+Sandbox key. Session lease fencing, head ordering and terminal-notice serialization remain unchanged.
+
+During an overlapping deployment, empty delivery notifications from pre-keyed replicas request a
+full resync. Both implementations use the same Session leases and Runtime command-ID deduplication;
+neither can concurrently commit a head step under another holder. Keyed notifications remain ordinary
+invalidations to old replicas. This scheduling change needs no schema migration; rollback reverts it.
+
 ## Session watch
 
 `WatchSessions` and its generated `GET /v1/sessions:watch` JSON facade use exactly
