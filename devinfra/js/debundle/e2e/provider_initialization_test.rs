@@ -68,7 +68,7 @@ fn passive_provider_cycles_and_saved_analysis_preserve_availability() {
         )
         .with_extra_chunks(&peers)
         .with_extra_chunk_logical_modules(&provider_modules)
-        .with_chunk_import_order("static/peer", &["first", "second"])
+        .with_chunk_import_order("static/peer", &["first", "second", "residual"])
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     assert_node_output(
