@@ -496,12 +496,20 @@ impl CandidateObjectIndex<'_> {
     /// Visit the union of reachable requested roots, once per root. Expanding
     /// each origin separately repeats every shared descendant at the sink.
     pub(crate) fn for_values(&self, values: &Values, mut visit: impl FnMut(Value)) {
+        if self.mask.is_empty() {
+            return;
+        }
+
         let mut reached = RoaringBitmap::new();
         for value in values {
+            // Every union is intersected with the mask, so equal cardinality
+            // means the requested roots have all been reached.
+            if reached.len() == self.mask.len() {
+                break;
+            }
             if let Some(bits) = self.flow.candidate_reachability.get(&value) {
-                for_each_bitmap_intersection(bits, &self.mask, |index| {
-                    reached.insert(index);
-                });
+                let intersection = bits.as_ref() & &self.mask;
+                reached |= &intersection;
             }
         }
         for index in reached {
