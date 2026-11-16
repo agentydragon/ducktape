@@ -26,9 +26,6 @@ import (
 
 const settingPrefix = "AGENTPLANE_NOTIFICATIONS_"
 
-// tokenAudience is retained for decoding pre-retirement settings only.
-const tokenAudience = "agentplane-notifications"
-
 // config is the Notification Service's deployment contract. Static settings come only from the YAML file named by
 // AGENTPLANE_NOTIFICATIONS_CONFIG_FILE. The database URL, GitHub private key and webhook secret are narrow runtime
 // Secret inputs read explicitly from their existing environment keys after static settings are decoded.
@@ -36,12 +33,6 @@ type config struct {
 	DatabaseURL string `mapstructure:"-"`
 	// Namespace holds the Sandboxes that destinations may name and the callers the service admits.
 	Namespace string `mapstructure:"namespace"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-	// This legacy setting grants no admission.
-	TokenAudience string `mapstructure:"token_audience"`
-	// CLEANUP(added 2026-11-15): Remove after manifests omit operator_reader_account and that rollout completes.
-	// This legacy setting grants no admission.
-	OperatorReaderAccount string `mapstructure:"operator_reader_account"`
 	// OperatorReaderServices are exact service SVIDs admitted to the same read-only diagnostic methods.
 	OperatorReaderServices []string     `mapstructure:"operator_reader_services"`
 	Quotas                 store.Quotas `mapstructure:"quotas"`
@@ -133,7 +124,6 @@ func (p actionPeer) grpcEndpoint() (actionGRPCEndpoint, error) {
 
 func defaultConfig() config {
 	return config{
-		TokenAudience: tokenAudience,
 		Quotas: store.Quotas{
 			InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000, UnacknowledgedMessagesPerSender: 128,
 		},

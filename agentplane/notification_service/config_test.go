@@ -44,16 +44,13 @@ session_dispatcher:
 const deploymentFile = `rpc:
   listen_address: 0.0.0.0:8080
   auth:
-    - mode: kubernetes_bearer
-      audiences: [test-notifications]
     - mode: spiffe
       ca_file: /test/ca.pem
   tls:
     cert_file: /test/tls.crt
     key_file: /test/tls.key
 namespace: test-agentplane
-token_audience: test-notifications
-operator_reader_account: test-app
+operator_reader_services: [spiffe://agentplane/app]
 github_delivery_retention_days: 14
 notice_debounce:
   quiet_seconds: 60
@@ -107,8 +104,8 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" || c.TokenAudience != "test-notifications" ||
-		c.OperatorReaderAccount != "test-app" || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
+	if c.DatabaseURL == "" || c.Namespace != "test-agentplane" ||
+		len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != peertls.AppURI || (c.GitHubRetention.Days == nil || *c.GitHubRetention.Days != 14) || c.NoticeDebounce.QuietSeconds != 60 || c.NoticeDebounce.MaxWaitSeconds != 120 ||
 		c.Actions.URL != "http://test-actions.invalid:8080" || c.Actions.TokenFile != "/test/tokens/actions" ||
 		c.RunnerGateway.ControlTarget != "runner-gateway.{namespace}.svc:8080" || c.RunnerGateway.TokenFile != "/test/tokens/gateway" ||
 		c.HistoryService.Target != "test-history.invalid:8080" || c.HistoryService.TokenFile != "/test/tokens/history" ||
@@ -126,28 +123,12 @@ func TestTheSettingsTheDeploymentManifestsSetLoadWithTheirSecretsFromTheEnvironm
 	}
 }
 
-func TestLegacyOperatorReaderSettingStillDecodes(t *testing.T) {
-	file := strings.Replace(
-		deploymentFile,
-		"operator_reader_account: test-app\n",
-		"operator_reader_account: test-app\noperator_reader_services: [spiffe://agentplane/app]\n",
-		1,
-	)
-	c, err := loadTestConfig(t, file, webhookSecretEnv, privateKeyEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.OperatorReaderAccount != "test-app" || len(c.OperatorReaderServices) != 1 || c.OperatorReaderServices[0] != "spiffe://agentplane/app" {
-		t.Fatalf("operator readers were not retained together: account=%q services=%v", c.OperatorReaderAccount, c.OperatorReaderServices)
-	}
-}
-
 func TestWhatADeploymentLeavesUnsetTakesItsDefault(t *testing.T) {
 	c, err := loadTestConfig(t, requiredFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Host != "0.0.0.0" || c.RPC.ListenAddress != "0.0.0.0:8080" || c.HTTPPort != 8081 || c.TokenAudience != "agentplane-notifications" || c.OperatorReaderAccount != "" {
+	if c.Host != "0.0.0.0" || c.RPC.ListenAddress != "0.0.0.0:8080" || c.HTTPPort != 8081 {
 		t.Errorf("listener or admission defaults: %+v", c)
 	}
 	if c.Quotas.InboxesPerAccount != 64 || c.Quotas.ActiveSubscriptionsPerInbox != 64 || c.Quotas.EntriesPerInbox != 10_000 {
@@ -370,13 +351,8 @@ func TestNullGitHubRetentionDisablesExpiry(t *testing.T) {
 	}
 }
 
-func TestReceiverRequiresSVIDTrustAndIgnoresLegacyAudience(t *testing.T) {
+func TestReceiverRequiresSVIDTrust(t *testing.T) {
 	if _, err := loadTestConfig(t, strings.Replace(requiredFile, "mode: spiffe\n      ca_file: /test/ca.pem", "mode: kubernetes_bearer\n      audiences: [agentplane-notifications]", 1)); err == nil {
 		t.Fatal("bearer-only listener accepted")
-	}
-	for _, audience := range []string{"retired-audience", "\"\""} {
-		if _, err := loadTestConfig(t, requiredFile+"token_audience: "+audience+"\noperator_reader_account: retired-account\n"); err != nil {
-			t.Fatal(err)
-		}
 	}
 }

@@ -18,7 +18,6 @@ from agentplane.net.peertls.config import (
 )
 from util.urls import HttpEndpointUrl
 
-TOKEN_AUDIENCE = "agentplane-notifications"
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
 
 
@@ -173,14 +172,6 @@ class Settings(BaseModel):
     runner_gateway: RunnerGatewaySettings
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
-    # CLEANUP(added 2026-11-15): Remove after manifests omit token_audience and that rollout completes.
-    token_audience: str = Field(
-        default=TOKEN_AUDIENCE, description="Ignored legacy setting; remove after manifest omission and rollout."
-    )
-    # CLEANUP(added 2026-11-15): Remove after manifests omit operator_reader_account and that rollout completes.
-    operator_reader_account: str | None = Field(
-        default=None, description="Ignored legacy setting; remove after manifest omission and rollout."
-    )
     operator_reader_services: list[ServiceSPIFFEID] = Field(
         default_factory=list,
         exclude_if=lambda value: not value,

@@ -152,22 +152,17 @@ def test_outbound_service_svid_authentication_rejects_mixed_or_wrong_callers() -
         Settings.model_validate(server_only_values)
 
 
-def test_legacy_operator_reader_setting_still_decodes() -> None:
+def test_service_operator_readers_decode() -> None:
     values = static_values()
-    values["operator_reader_account"] = "test-app"
     values["operator_reader_services"] = ["spiffe://agentplane/app"]
     values["rpc"] = {
         "listen_address": "0.0.0.0:8080",
-        "auth": [
-            {"mode": "kubernetes_bearer", "audiences": ["agentplane-notifications"]},
-            {"mode": "spiffe", "ca_file": "/trust/workload-ca.pem"},
-        ],
+        "auth": [{"mode": "spiffe", "ca_file": "/trust/workload-ca.pem"}],
         "tls": {"cert_file": "/tls/tls.crt", "key_file": "/tls/tls.key"},
     }
 
     settings = Settings.model_validate(values)
 
-    assert settings.operator_reader_account == "test-app"
     assert settings.operator_reader_services == ["spiffe://agentplane/app"]
 
 
