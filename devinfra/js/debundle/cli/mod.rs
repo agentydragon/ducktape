@@ -588,6 +588,11 @@ fn run_debundle_cli(
         DebundleCommand::Modules(args) => args.edits_with_graph(),
         _ => false,
     };
+    let writes_with_graph = match &args.command {
+        DebundleCommand::Bindings(args) => args.writes_with_graph(),
+        DebundleCommand::Modules(args) => args.writes_with_graph(),
+        _ => false,
+    };
     if edits_with_graph
         && source_contexts
             .values()
@@ -728,7 +733,7 @@ fn run_debundle_cli(
                     .downcast_ref::<command_output::FailedOperationOutput>()
                     .is_none()
         });
-    if operation_completed && edits_with_graph {
+    if operation_completed && writes_with_graph {
         return command_diagnostics::finish(
             result,
             command_diagnostics::write_diagnostic(
