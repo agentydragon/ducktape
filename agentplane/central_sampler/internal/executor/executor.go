@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -25,39 +27,19 @@ import (
 )
 
 type Executor struct {
-	store                *sessionstore.Store
-	owner                sessionstore.Owner
-	client               executorClient
-	connection           *grpc.ClientConn
-	scopeMu              sync.RWMutex
-	scope                *executorpb.ExecutionScope
-	cwd                  string
-	codexPath            string
-	environment          map[string]string
-	shell                *execShell
-	prepareMu            sync.Mutex
-	workspacePrepared    bool
-	rpcMu                sync.Mutex
-	sessionStateMu       sync.Mutex
-	dispatchMu           sync.Mutex
-	stopping             bool
-	reconnectRequired    bool
-	lostSessionConfirmed bool
-	processMu            sync.Mutex
-	processLocks         map[string]*sync.Mutex
-	processChangesMu     sync.Mutex
-	processChanged       chan struct{}
-	rpcTimeout           time.Duration
-	initializeTimeout    time.Duration
-	reconnectTimeout     time.Duration
-	lifetime             context.Context
-	sessionStream        executorSessionStream
-	sessionCancel        context.CancelFunc
-	sessionDone          chan struct{}
-	sessionID            string
-	sessionGeneration    uint64
-	sessionError         error
-	closing              bool
+	store             *sessionstore.Store
+	owner             sessionstore.Owner
+	transport         *transport.Transport
+	cwd               string
+	codexPath         string
+	environment       map[string]string
+	prepareMu         sync.Mutex
+	workspacePrepared atomic.Bool
+	dispatchMu        sync.Mutex
+	stopping          bool
+	processMu         sync.Mutex
+	processLocks      map[string]*sync.Mutex
+	processChanges    *processChangeBroadcaster
 }
 
 // New restores local executor state without contacting the execution environment.
@@ -89,19 +71,16 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 			return nil, nil, err
 		}
 	}
-	client := typedExecutorClient{ExecutorClient: executorpb.NewExecutorClient(connection)}
-	executor := &Executor{
-		store: store, owner: owner, client: client, connection: connection,
-		scope: &executorpb.ExecutionScope{
-			Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
-		},
-		lifetime: ctx, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
-		environment: map[string]string{"AGENTPLANE_SESSION_ID": session.ID}, processLocks: map[string]*sync.Mutex{},
-		rpcTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
-		initializeTimeout: settings.ExecutorInitializeTimeout(),
-		reconnectTimeout:  settings.ExecutorReconnectTimeout(),
-		workspacePrepared: session.WorkspacePrepared,
+	client := executorpb.NewExecutorClient(connection)
+	scope := &executorpb.ExecutionScope{
+		Destination: request.GetExecutor(), ExpectedIncarnationUid: request.GetExpectedIncarnationUid(), SessionId: session.ID,
 	}
+	processChanges := &processChangeBroadcaster{}
+	executor := &Executor{
+		store: store, owner: owner, cwd: request.GetSpec().GetCwd(), codexPath: settings.ExecutorCodex,
+		environment: map[string]string{"AGENTPLANE_SESSION_ID": session.ID}, processLocks: map[string]*sync.Mutex{}, processChanges: processChanges,
+	}
+	executor.workspacePrepared.Store(session.WorkspacePrepared)
 	state, err := store.ExecutionState(ctx, owner)
 	if err != nil {
 		_ = connection.Close()
@@ -113,6 +92,7 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 		return nil, nil, err
 	}
 	needsRemote := false
+	initialSessionID := ""
 	for _, process := range state.Processes {
 		if process.Status != executionstate.ProcessExited && process.Status != executionstate.ProcessExitedUnread && process.Status != executionstate.ProcessAbandoned {
 			needsRemote = true
@@ -123,9 +103,15 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 			_ = connection.Close()
 			return nil, nil, &protocol.UnknownEffectError{Reason: "live execution handles have no retained execution session; session substitution is unsafe"}
 		}
-		executor.sessionID = *conversation.ExecutorSession
-		executor.reconnectRequired = true
+		initialSessionID = *conversation.ExecutorSession
 	}
+	bindings := &storeBindings{store: store, owner: owner, workspacePrepared: &executor.workspacePrepared}
+	executor.transport = transport.New(transport.Config{
+		Client: client, Connection: connection, Journal: bindings, Bindings: bindings, ProcessChanges: processChanges,
+		Scope: scope, Lifetime: ctx, InitialSessionID: initialSessionID,
+		RPCTimeout:        time.Duration(settings.RPCTimeoutSeconds) * time.Second,
+		InitializeTimeout: settings.ExecutorInitializeTimeout(), ReconnectTimeout: settings.ExecutorReconnectTimeout(),
+	})
 	return executor, executor.close, nil
 }
 
@@ -134,13 +120,10 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 func (e *Executor) prepareWorkspace(ctx context.Context) error {
 	e.prepareMu.Lock()
 	defer e.prepareMu.Unlock()
-	e.rpcMu.Lock()
-	err := e.ensureSessionLocked(ctx, executorMethodProcessStart, "")
-	e.rpcMu.Unlock()
-	if err != nil {
+	if _, err := operationValue(e.transport.EnsureSession(ctx)); err != nil {
 		return err
 	}
-	if e.workspacePrepared {
+	if e.workspacePrepared.Load() {
 		return nil
 	}
 	processID, sessionID, unlock, err := e.startProcess(ctx, []string{"/bin/sh", "-c", "mkdir -p -- " + shellQuote(e.cwd)}, "/", e.environment, false)
@@ -155,10 +138,10 @@ func (e *Executor) prepareWorkspace(ctx context.Context) error {
 	if observation.exitCode == nil || *observation.exitCode != 0 {
 		return &toolcontract.Rejection{Message: fmt.Sprintf("workspace preparation did not complete successfully (process session_id %d): %s; the requested operation was not dispatched", sessionID, tooloutput.LossyUTF8(observation.output.WithOmissionMarker()))}
 	}
-	if err := e.store.PreparedWorkspace(ctx, e.owner, e.scopeSnapshot().GetSessionId()); err != nil {
+	if err := e.store.PreparedWorkspace(ctx, e.owner, e.transport.ScopeSnapshot().GetSessionId()); err != nil {
 		return err
 	}
-	e.workspacePrepared = true
+	e.workspacePrepared.Store(true)
 	return nil
 }
 
@@ -190,37 +173,37 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		defer cancel()
 	}
 	// Resume failure wraps a transport error, but settlement belongs to this operation and its process.
-	var notDispatched *executorNotDispatchedError
-	if errors.As(err, &notDispatched) {
+	if notDispatched := findTransportFailure(err, transport.FailureNotDispatched); notDispatched != nil {
 		// ensureSessionLocked rejected this operation before recording or sending its
 		// request. Without an associated process there is no prior process effect to
 		// reconcile; an existing process keeps its prior unknown/running status.
 		outcome := sessionstore.NestedNotDispatched
 		var afterSequence *uint64
-		if notDispatched.processID != "" {
-			process, processErr := e.store.Process(ctx, e.owner, notDispatched.processID)
+		if notDispatched.ProcessID != "" {
+			process, processErr := e.store.Process(ctx, e.owner, notDispatched.ProcessID)
 			if processErr != nil {
-				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
+				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.ProcessID, processErr)
 			}
 			outcome = sessionstore.NestedUnknown
 			if process.Status == executionstate.ProcessStarting {
 				outcome = sessionstore.NestedNotDispatched
 			}
-			afterSequence = notDispatched.afterSequence
+			afterSequence = notDispatched.AfterSequence
 			if afterSequence == nil {
 				afterSequence = process.AfterSequence
 			}
 			if outcome == sessionstore.NestedNotDispatched {
-				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, executionstate.ProcessExited, nil, true); settleErr != nil {
-					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.processID, settleErr)
+				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.ProcessID, afterSequence, executionstate.ProcessExited, nil, true); settleErr != nil {
+					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.ProcessID, settleErr)
 				}
-			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
-				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.processID, abandonErr)
+			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.ProcessID, afterSequence, notDispatched.Output, outcome, notDispatched.ExecutionSessionID); abandonErr != nil {
+				return fmt.Errorf("record process %s after failed executor reconnect: %w", notDispatched.ProcessID, abandonErr)
 			}
 		}
-		failure := notDispatched.executionFailureRecord(outcome)
-		failure.environmentState = executionEnvironmentStateStringerFromError(notDispatched.cause)
-		if notDispatched.processID != "" {
+		failure := executionFailureProjection(notDispatched)
+		failure.remoteOutcome = outcome
+		failure.environmentState = executionEnvironmentStateFromError(notDispatched.Cause)
+		if notDispatched.ProcessID != "" {
 			failure.afterSequence = afterSequence
 		}
 		message, encodeErr := executionFailureMessage(failure)
@@ -231,9 +214,8 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		evidence.phase = ""
 		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: evidence.intentEvidence()}
 	}
-	var failureSource executionFailureSource
-	if errors.As(err, &failureSource) {
-		failure := failureSource.executionFailureRecord()
+	if source := findTransportFailure(err, transport.FailureEnvironment, transport.FailureIncarnationFence); source != nil {
+		failure := executionFailureProjection(source)
 		if settleErr := e.settleExecutionFailure(ctx, failure); settleErr != nil {
 			return settleErr
 		}
@@ -243,52 +225,53 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: failure.toolEvidence()}
 	}
-	var transport *executorTransportError
-	if errors.As(err, &transport) {
-		if transport.processID != "" {
-			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transport.processID, transport.afterSequence, transport.output, sessionstore.NestedUnknown, transport.retainedSession); abandonErr != nil {
-				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transport.processID, transport.method, abandonErr)
+	if transportFailure := findTransportFailure(err, transport.FailureTransport); transportFailure != nil {
+		if transportFailure.ProcessID != "" {
+			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transportFailure.ProcessID, transportFailure.AfterSequence, transportFailure.Output, sessionstore.NestedUnknown, transportFailure.ExecutionSessionID); abandonErr != nil {
+				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transportFailure.ProcessID, transportFailure.Method, abandonErr)
 			}
 		}
-		message, encodeErr := observedProcessFailureMessage(transport)
+		message, encodeErr := executionFailureMessage(executionFailureProjection(transportFailure))
 		if encodeErr != nil {
 			return fmt.Errorf("encode observed process failure: %w", encodeErr)
 		}
-		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: transport.evidence(transport.retainedSession)}
+		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: executionFailureProjection(transportFailure).intentEvidence()}
 	}
-	var rejected *executorRejectedError
-	if errors.As(err, &rejected) {
-		if rejected.method == executorMethodProcessRead {
-			if rejected.processID == "" {
+	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+		if rejected.Method == transport.MethodProcessRead {
+			if rejected.ProcessID == "" {
 				return errors.New("settle rejected process/read without a process ID")
 			}
-			process, processErr := e.store.Process(ctx, e.owner, rejected.processID)
+			process, processErr := e.store.Process(ctx, e.owner, rejected.ProcessID)
 			if processErr != nil {
-				return fmt.Errorf("inspect process %s after rejected process/read: %w", rejected.processID, processErr)
+				return fmt.Errorf("inspect process %s after rejected process/read: %w", rejected.ProcessID, processErr)
 			}
 			if process.Status == executionstate.ProcessExited || process.Status == executionstate.ProcessExitedUnread {
 				return &toolcontract.Rejection{Message: rejected.Error()}
 			}
 			if process.Status != executionstate.ProcessAbandoned {
-				afterSequence := rejected.afterSequence
+				afterSequence := rejected.AfterSequence
 				if afterSequence == nil {
 					afterSequence = process.AfterSequence
 				}
-				if abandonErr := e.store.AbandonProcess(ctx, e.owner, rejected.processID, afterSequence, rejected.output, sessionstore.NestedUnknown, rejected.executionSessionID); abandonErr != nil {
-					return fmt.Errorf("record unknown process %s outcome after rejected process/read: %w", rejected.processID, abandonErr)
+				if abandonErr := e.store.AbandonProcess(ctx, e.owner, rejected.ProcessID, afterSequence, rejected.Output, sessionstore.NestedUnknown, rejected.ExecutionSessionID); abandonErr != nil {
+					return fmt.Errorf("record unknown process %s outcome after rejected process/read: %w", rejected.ProcessID, abandonErr)
 				}
 			}
 			message := rejected.Error() + "; the process handle was abandoned with unknown outcome and was not replayed"
 			return &ToolOutcomeError{
 				rejection: &toolcontract.Rejection{Message: message},
 				evidence: rejectedProcessReadEvidence{
-					Error: message, ExecutorIntentID: rejected.intentID,
-					ProcessID: rejected.processID, ExecutionSessionID: rejected.executionSessionID,
+					Error: message, ExecutorIntentID: rejected.IntentID,
+					ProcessID: rejected.ProcessID, ExecutionSessionID: rejected.ExecutionSessionID,
 					RemoteOutcome: sessionstore.NestedUnknown, AutomaticReplay: false,
 				},
 			}
 		}
 		return &toolcontract.Rejection{Message: rejected.Error()}
+	}
+	if unavailable := findTransportFailure(err, transport.FailureScopeUnavailable); unavailable != nil {
+		return &toolcontract.Rejection{Message: unavailable.Error()}
 	}
 	return err
 }
@@ -301,7 +284,7 @@ func (e *Executor) settleExecutionFailure(ctx context.Context, failure execution
 	if err != nil {
 		return fmt.Errorf("inspect process %s after structured execution failure: %w", failure.processID, err)
 	}
-	if failure.method == executorMethodProcessStart && failure.remoteOutcome == sessionstore.NestedNotDispatched && process.Status == executionstate.ProcessStarting {
+	if failure.method == transport.MethodProcessStart && failure.remoteOutcome == sessionstore.NestedNotDispatched && process.Status == executionstate.ProcessStarting {
 		if err := e.store.ProcessResult(ctx, e.owner, failure.processID, failure.afterSequence, executionstate.ProcessExited, nil, true); err != nil {
 			return fmt.Errorf("settle process %s after known not-dispatched start: %w", failure.processID, err)
 		}
@@ -316,12 +299,11 @@ func (e *Executor) settleExecutionFailure(ctx context.Context, failure execution
 	return nil
 }
 
-func executionEnvironmentStateStringerFromError(err error) fmt.Stringer {
-	var environment *executorEnvironmentFailureError
-	if errors.As(err, &environment) {
-		return &environment.state
+func executionEnvironmentStateFromError(err error) string {
+	if environment := findTransportFailure(err, transport.FailureEnvironment); environment != nil {
+		return environment.EnvironmentState
 	}
-	return nil
+	return ""
 }
 
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs handle_call and
@@ -331,10 +313,8 @@ func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (
 	if err != nil {
 		return nil, err
 	}
-	ctx = withExpectedIncarnationUID(ctx, args.ExpectedIncarnationUID)
-	e.rpcMu.Lock()
-	shell := e.shell
-	e.rpcMu.Unlock()
+	ctx = transport.WithExpectedIncarnationUID(ctx, args.ExpectedIncarnationUID)
+	shell := e.transport.ShellSnapshot()
 	if shell != nil {
 		if _, err := args.plan(e.cwd, shell); err != nil {
 			return nil, err
@@ -343,9 +323,7 @@ func (e *Executor) execCommand(ctx context.Context, arguments json.RawMessage) (
 	if err := e.prepareWorkspace(ctx); err != nil {
 		return nil, err
 	}
-	e.rpcMu.Lock()
-	plan, err := planExecCommand(arguments, e.cwd, e.shell)
-	e.rpcMu.Unlock()
+	plan, err := planExecCommand(arguments, e.cwd, e.transport.ShellSnapshot())
 	if err != nil {
 		return nil, err
 	}

@@ -21,8 +21,9 @@ connection to the Runner and does not create the logical Session.
 The shared child process, wire framing, request routing and logical-session lifecycle live in
 `internal/codemode`. The sampler binds each session to its lease-fenced journal and delegated tool
 handler; model tool adaptation, nested executor intents and result evidence remain sampler-owned.
-The concrete Runner adapter, including session handshake/rebind, process and file RPCs, cursor
-reconciliation and execution evidence, lives in `internal/executor`.
+The `internal/executor` facade owns Store settlement, process cursors and model-visible tool results.
+Its `internal/executor/transport` package owns the Runner connection, session handshake/rebind and
+typed process and file RPCs; narrow bindings keep durable session transitions in the Store.
 
 The service, sampling loop and persistence are implemented in Go. History export lives in the
 `historyexport` package and reaches sampler state through its durable outbox interface. The
@@ -215,7 +216,9 @@ the extant bound Sandbox object; the standalone API can inspect/control its own 
 Run `//agentplane/central_sampler/internal/residentruntime:unit_test` for the remaining runtime unit tests
 without starting PostgreSQL. `//agentplane/central_sampler/internal/residentruntime:integration_test` runs runtime and
 provider integration cases. `//agentplane/central_sampler/internal/executor:executor_test` covers
-Runner session/resume, cursor, image and no-replay behavior;
+facade settlement, cursor, image and model-visible no-replay behavior;
+`//agentplane/central_sampler/internal/executor/transport:transport_test` covers Runner
+session/resume, typed RPC and transport-level no-replay behavior;
 `//agentplane/central_sampler/internal/sessionstore:sessionstore_test` covers Store, recovery,
 outbox and migration adoption. RPC auth/status and request-streaming tests live in
 `//agentplane/central_sampler/internal/rpc:unit_test` and `:integration_test`.

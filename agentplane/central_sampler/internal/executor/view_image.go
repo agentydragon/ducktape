@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/google/uuid"
 )
@@ -73,9 +74,9 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*V
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(e.cwd, path)
 	}
-	metadata, err := executorRPC[executorFSMetadata](ctx, e, executorMethodFSGetMetadata, executorFSGetMetadata{Path: fileURI(path)})
-	if rejected := (*executorRejectedError)(nil); errors.As(err, &rejected) {
-		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.message)}
+	metadata, err := operationValue(e.transport.GetMetadata(ctx, transport.GetMetadataRequest{Path: fileURI(path)}))
+	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to locate image at `%s`: %s", path, rejected.RejectionMessage)}
 	} else if err != nil {
 		return nil, err
 	}
@@ -86,8 +87,8 @@ func (e *Executor) viewImage(ctx context.Context, arguments json.RawMessage) (*V
 		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("image at `%s` is %d bytes; view_image reads at most %d bytes", path, metadata.Size, maxViewImageBytes)}
 	}
 	data, err := e.readFile(ctx, path)
-	if rejected := (*executorRejectedError)(nil); errors.As(err, &rejected) {
-		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to read image at `%s`: %s", path, rejected.message)}
+	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+		return nil, &toolcontract.Rejection{Message: fmt.Sprintf("unable to read image at `%s`: %s", path, rejected.RejectionMessage)}
 	} else if err != nil {
 		return nil, err
 	}
@@ -106,12 +107,12 @@ func (e *Executor) readFile(ctx context.Context, path string) ([]byte, error) {
 	// Codex rust-v0.162.1 exec-server/src/remote_file_stream.rs open: a simple UUID fits the
 	// server's 32-byte handle limit.
 	handle := strings.ReplaceAll(uuid.NewString(), "-", "")
-	if _, err := executorRPC[executorFSOpened](ctx, e, executorMethodFSOpen, executorFSOpen{HandleID: handle, Path: fileURI(path), Mode: "read"}); err != nil {
+	if _, err := operationValue(e.transport.OpenFile(ctx, transport.OpenFileRequest{HandleID: handle, Path: fileURI(path), Mode: "read"})); err != nil {
 		return nil, err
 	}
 	data, err := e.readBlocks(ctx, handle)
-	_, closeErr := executorRPC[executorEmpty](ctx, e, executorMethodFSClose, executorFSClose{HandleID: handle})
-	if rejected := (*executorRejectedError)(nil); errors.As(closeErr, &rejected) {
+	_, closeErr := operationValue(e.transport.CloseFile(ctx, transport.CloseFileRequest{HandleID: handle}))
+	if rejected := findTransportFailure(closeErr, transport.FailureRejected); rejected != nil {
 		// Upstream also ignores close failures; the rejection is journaled.
 		slog.Warn("exec-server rejected fs/close", "handle", handle, "error", closeErr)
 	} else if err == nil {
@@ -123,8 +124,7 @@ func (e *Executor) readFile(ctx context.Context, path string) ([]byte, error) {
 func (e *Executor) readBlocks(ctx context.Context, handle string) ([]byte, error) {
 	var data []byte
 	for {
-		block, err := executorRPCWithEvidence[executorFSBlock](ctx, e, executorMethodFSReadBlock,
-			executorFSReadBlock{HandleID: handle, Offset: uint64(len(data)), Len: viewImageBlockBytes}, blockEvidence)
+		block, err := operationValue(e.transport.ReadBlock(ctx, transport.ReadBlockRequest{HandleID: handle, Offset: uint64(len(data)), Len: viewImageBlockBytes}))
 		if err != nil {
 			return nil, err
 		}
@@ -142,12 +142,4 @@ func (e *Executor) readBlocks(ctx context.Context, handle string) ([]byte, error
 			return nil, errors.New("fs/readBlock returned an empty non-terminal block")
 		}
 	}
-}
-
-func blockEvidence(result map[string]any) map[string]any {
-	if chunk, ok := result["chunk"].(string); ok {
-		digest := sha256.Sum256([]byte(chunk))
-		result["chunk"] = map[string]any{"base64_bytes": len(chunk), "base64_sha256": hex.EncodeToString(digest[:])}
-	}
-	return result
 }

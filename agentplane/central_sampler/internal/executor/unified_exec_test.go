@@ -7,12 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 )
 
-var testBash = &execShell{Name: "bash", Path: "/bin/bash"}
+var testBash = &transport.Shell{Name: "bash", Path: "/bin/bash"}
 
 func TestPlanExecCommandClampsYield(t *testing.T) {
 	for _, tc := range []struct {
@@ -59,7 +60,7 @@ func TestPlanExecCommandResolvesShellAndWorkdir(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		args     string
-		shell    *execShell
+		shell    *transport.Shell
 		wantArgv []string
 		wantCwd  string
 	}{

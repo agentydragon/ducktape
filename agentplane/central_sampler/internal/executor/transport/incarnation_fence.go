@@ -1,11 +1,9 @@
-package executor
+package transport
 
 import (
 	"context"
 	"errors"
 	"fmt"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -16,7 +14,7 @@ import (
 
 type expectedIncarnationUIDContextKey struct{}
 
-func withExpectedIncarnationUID(ctx context.Context, uid *string) context.Context {
+func WithExpectedIncarnationUID(ctx context.Context, uid *string) context.Context {
 	if uid == nil {
 		return ctx
 	}
@@ -64,7 +62,7 @@ func incarnationRebindFromContext(ctx context.Context) (incarnationRebind, bool)
 	return rebind, ok
 }
 
-func (e *Executor) scopeSnapshot() *executorpb.ExecutionScope {
+func (e *Transport) ScopeSnapshot() *executorpb.ExecutionScope {
 	e.scopeMu.RLock()
 	defer e.scopeMu.RUnlock()
 	if e.scope == nil {
@@ -73,7 +71,7 @@ func (e *Executor) scopeSnapshot() *executorpb.ExecutionScope {
 	return proto.Clone(e.scope).(*executorpb.ExecutionScope)
 }
 
-func (e *Executor) setScope(scope *executorpb.ExecutionScope) {
+func (e *Transport) setScope(scope *executorpb.ExecutionScope) {
 	e.scopeMu.Lock()
 	defer e.scopeMu.Unlock()
 	if scope == nil {
@@ -83,58 +81,21 @@ func (e *Executor) setScope(scope *executorpb.ExecutionScope) {
 	e.scope = proto.Clone(scope).(*executorpb.ExecutionScope)
 }
 
-// executorIncarnationFenceError is returned only for an authenticated
-// SandboxIncarnationChanged detail. In particular, ordinary authorization or
-// routing failures never carry a current UID through this error.
-type executorIncarnationFenceError struct {
-	currentIncarnationUID string
-	remoteOutcome         sessionstore.NestedOutcome
-	method                executionMethod
-	intentID              string
-	processID             string
-	executionSessionID    string
-	afterSequence         *uint64
-	output                *outputbuffer.Buffer
-	recorded              bool
-	cause                 error
-}
-
-func (e *executorIncarnationFenceError) Error() string {
-	if e.remoteOutcome == sessionstore.NestedUnknown {
-		return fmt.Sprintf("execution incarnation fence rejected %s; the existing process outcome is unknown and was not replayed; current authorized incarnation UID is %s", e.method, e.currentIncarnationUID)
-	}
-	return fmt.Sprintf("execution incarnation fence rejected %s before dispatch; current authorized incarnation UID is %s", e.method, e.currentIncarnationUID)
-}
-
-func (e *executorIncarnationFenceError) Unwrap() error { return e.cause }
-
-func (e *executorIncarnationFenceError) executionFailureRecord() executionFailureRecord {
-	requestOutcome := sessionstore.NestedNotDispatched
-	return executionFailureRecord{
-		message: e.Error(), method: e.method, intentID: e.intentID, processID: e.processID,
-		executionSessionID: e.executionSessionID, afterSequence: e.afterSequence,
-		remoteOutcome: e.remoteOutcome, requestOutcome: &requestOutcome, automaticReplay: false,
-		currentIncarnationUID: e.currentIncarnationUID, output: e.output,
-	}
-}
-
-func (e *executorIncarnationFenceError) intentEvidence() executionFailureEvidence {
-	return e.executionFailureRecord().intentEvidence()
-}
-
-func (e *Executor) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method executionMethod, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome sessionstore.NestedOutcome) *executorIncarnationFenceError {
+// incarnationFenceError accepts only authenticated SandboxIncarnationChanged details.
+func (e *Transport) incarnationFenceError(err error, scope *executorpb.ExecutionScope, method Method, intentID, processID, executionSessionID string, afterSequence *uint64, output *outputbuffer.Buffer, remoteOutcome Outcome) *Failure {
 	changed, ok := sandboxIncarnationChanged(err, scope)
 	if !ok {
 		return nil
 	}
-	return &executorIncarnationFenceError{
-		currentIncarnationUID: changed.GetIncarnationUid(), remoteOutcome: remoteOutcome,
-		method: method, intentID: intentID, processID: processID, executionSessionID: executionSessionID,
-		afterSequence: afterSequence, output: output, cause: err,
+	return &Failure{
+		Kind: FailureIncarnationFence, Method: method, IntentID: intentID, ProcessID: processID,
+		ExecutionSessionID: executionSessionID, AfterSequence: afterSequence, Output: output,
+		RemoteOutcome: remoteOutcome, RequestOutcome: outcomePointer(NotDispatched),
+		CurrentIncarnationUID: changed.GetIncarnationUid(), Cause: err,
 	}
 }
 
-func (e *Executor) stopCurrentSessionStream(ctx context.Context) error {
+func (e *Transport) stopCurrentSessionStream(ctx context.Context) error {
 	if e.sessionCancel == nil {
 		return nil
 	}

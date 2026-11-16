@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -29,6 +30,29 @@ type rejectedProcessReadEvidence struct {
 	ExecutionSessionID string                     `json:"execution_session_id"`
 	RemoteOutcome      sessionstore.NestedOutcome `json:"remote_outcome"`
 	AutomaticReplay    bool                       `json:"automatic_replay"`
+}
+
+func processReadOutput(result *transport.ReadResult) []byte {
+	var output []byte
+	for _, chunk := range result.Chunks {
+		output = append(output, chunk.Chunk...)
+	}
+	return output
+}
+
+func processReadUncertain(result *transport.ReadResult) bool {
+	return result.Failure != nil || result.Closed && !result.Exited
+}
+
+func processReadDrained(result *transport.ReadResult) bool {
+	return result.Exited && result.Closed && len(result.Chunks) == 0
+}
+
+func describeProcessReadFailure(result *transport.ReadResult) string {
+	if result.Failure != nil {
+		return *result.Failure
+	}
+	return "output stream closed before an exit was observed"
 }
 
 // startProcess registers a model-visible process under a fresh unified exec session number and
@@ -58,12 +82,11 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 			return "", 0, nil, err
 		}
 	}
-	_, err := executorRPC[executorStarted](ctx, e, executorMethodProcessStart, executorStart{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty})
+	_, err := operationValue(e.transport.Start(ctx, transport.StartRequest{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty}))
 	if err != nil {
-		var rejected *executorRejectedError
-		var fence *executorIncarnationFenceError
-		if errors.As(err, &rejected) && rejected.method == executorMethodProcessStart ||
-			errors.As(err, &fence) && fence.method == executorMethodProcessStart && fence.remoteOutcome == sessionstore.NestedNotDispatched {
+		failure := findTransportFailure(err, transport.FailureRejected, transport.FailureIncarnationFence)
+		if failure != nil && failure.Method == transport.MethodProcessStart &&
+			(failure.Kind == transport.FailureRejected || failure.RemoteOutcome == transport.NotDispatched) {
 			// No process exists; release its session number.
 			if settleErr := e.store.ProcessResult(ctx, e.owner, processID, nil, executionstate.ProcessExited, nil, true); settleErr != nil {
 				lock.Unlock()
@@ -89,8 +112,8 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 // default shell environment policy (inherit all, default excludes ignored) with the Session's
 // variables set. Without a policy the exec-server passes only `env`, so PATH and HOME are missing.
 // Codex rust-v0.162.1 config/src/shell_environment_policy.rs From<ShellEnvironmentPolicyToml>.
-func (e *Executor) envPolicy() *executorEnvPolicy {
-	return &executorEnvPolicy{Inherit: "all", IgnoreDefaultExcludes: true, Exclude: []string{}, Set: e.environment, IncludeOnly: []string{}}
+func (e *Executor) envPolicy() *transport.EnvironmentPolicy {
+	return &transport.EnvironmentPolicy{Inherit: "all", IgnoreDefaultExcludes: true, Exclude: []string{}, Set: e.environment, IncludeOnly: []string{}}
 }
 
 // newChunkID is six random hex digits.
@@ -107,7 +130,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	if err := e.store.RegisterProcess(ctx, e.owner, processID, false); err != nil {
 		return 0, err
 	}
-	if _, err := executorRPC[executorStarted](ctx, e, executorMethodProcessStart, executorStart{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), EnvPolicy: e.envPolicy(), Env: e.environment}); err != nil {
+	if _, err := operationValue(e.transport.Start(ctx, transport.StartRequest{ProcessID: processID, Argv: []string{"/bin/sh", "-eu", "-c", script}, Cwd: fileURI(e.cwd), EnvPolicy: e.envPolicy(), Env: e.environment})); err != nil {
 		return 0, e.outcomeToolError(ctx, err)
 	}
 	if err := e.store.ProcessResult(ctx, e.owner, processID, nil, executionstate.ProcessRunning, nil, false); err != nil {
@@ -118,7 +141,7 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 	for {
 		changed := e.ProcessChanges()
 		pageCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		result, err := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000, ObservedOutput: observed})
+		result, err := operationValue(e.transport.Read(pageCtx, transport.ReadRequest{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: 1000, ObservedOutput: observed}))
 		cancel()
 		if err != nil {
 			return 0, e.outcomeToolError(ctx, err)
@@ -134,11 +157,11 @@ func (e *Executor) Setup(ctx context.Context, script string, output func(string,
 			sequence := result.NextSeq - 1
 			after = &sequence
 		}
-		if result.uncertain() {
+		if processReadUncertain(result) {
 			_ = e.store.ProcessResult(ctx, e.owner, processID, after, executionstate.ProcessUnknown, nil, false)
 			return 0, fmt.Errorf("setup process outcome unknown: %v", result.Failure)
 		}
-		if result.drained() {
+		if processReadDrained(result) {
 			exitCode := result.ExitCode
 			if exitCode == nil {
 				return 0, errors.New("setup process exited without an exit code")
@@ -199,7 +222,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 			}
 			if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
 				if err := e.dispatchInput(ctx, func() error {
-					_, err := executorRPC[executorEmpty](ctx, e, executorMethodProcessSignal, executorSignal{ProcessID: process.ID, Signal: "interrupt"})
+					_, err := operationValue(e.transport.Signal(ctx, transport.SignalRequest{ProcessID: process.ID, Signal: "interrupt"}))
 					return err
 				}); err != nil {
 					return nil, err
@@ -208,7 +231,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 		} else if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
 			// A write to an exited terminal is moot; the poll below reports the exit.
 			if err := e.dispatchInput(ctx, func() error {
-				result, err := executorRPC[executorWriteResult](ctx, e, executorMethodProcessWrite, executorWrite{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()})
+				result, err := operationValue(e.transport.Write(ctx, transport.WriteRequest{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()}))
 				if err != nil {
 					return err
 				}
@@ -274,30 +297,27 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		changed := e.ProcessChanges()
 		waitMS := min(max(int(time.Until(deadline)/time.Millisecond), 0), 1000)
 		attemptTimeout := time.Duration(waitMS+eRPCSlackMS) * time.Millisecond
-		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(attemptTimeout))
-		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, attemptTimeout)
-		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS, ObservedOutput: output})
+		pageCtx, cancel := context.WithTimeout(ctx, e.transport.ReadBudget(attemptTimeout))
+		result, rpcErr := operationValue(e.transport.Read(pageCtx, transport.ReadRequest{
+			ProcessID: processID, AfterSeq: after, MaxBytes: 65536, WaitMS: waitMS,
+			AttemptTimeout: attemptTimeout, ObservedOutput: output,
+		}))
 		cancel()
 		if rpcErr != nil {
-			var notDispatched *executorNotDispatchedError
-			if errors.As(rpcErr, &notDispatched) {
-				notDispatched.afterSequence, notDispatched.output = after, output
+			if failure := findTransportFailure(rpcErr, transport.FailureNotDispatched); failure != nil {
+				failure.AfterSequence, failure.Output = after, output
 			}
-			var transport *executorTransportError
-			if errors.As(rpcErr, &transport) {
-				transport.afterSequence, transport.output = after, output
+			if failure := findTransportFailure(rpcErr, transport.FailureTransport); failure != nil {
+				failure.AfterSequence, failure.Output = after, output
 			}
-			var rejected *executorRejectedError
-			if errors.As(rpcErr, &rejected) && rejected.method == executorMethodProcessRead {
-				rejected.afterSequence, rejected.output = after, output
+			if failure := findTransportFailure(rpcErr, transport.FailureRejected); failure != nil && failure.Method == transport.MethodProcessRead {
+				failure.AfterSequence, failure.Output = after, output
 			}
-			var environment *executorEnvironmentFailureError
-			if errors.As(rpcErr, &environment) && environment.method == executorMethodProcessRead {
-				environment.afterSequence, environment.output = after, output
+			if failure := findTransportFailure(rpcErr, transport.FailureEnvironment); failure != nil && failure.Method == transport.MethodProcessRead {
+				failure.AfterSequence, failure.Output = after, output
 			}
-			var fence *executorIncarnationFenceError
-			if errors.As(rpcErr, &fence) && fence.method == executorMethodProcessRead {
-				fence.afterSequence, fence.output = after, output
+			if failure := findTransportFailure(rpcErr, transport.FailureIncarnationFence); failure != nil && failure.Method == transport.MethodProcessRead {
+				failure.AfterSequence, failure.Output = after, output
 			}
 			return nil, rpcErr
 		}
@@ -311,14 +331,15 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		if result.Exited && result.ExitCode != nil {
 			exitCode = result.ExitCode
 		}
-		if result.uncertain() {
-			return nil, &executorTransportError{
-				method: executorMethodProcessRead, phase: "observation", processID: processID,
-				retainedSession: e.retainedSessionID(ctx), afterSequence: after, output: output,
-				cause: errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
+		if processReadUncertain(result) {
+			return nil, &transport.Failure{
+				Kind: transport.FailureTransport, Method: transport.MethodProcessRead, Phase: "observation", ProcessID: processID,
+				ExecutionSessionID: e.retainedExecutorSession(ctx), AfterSequence: after, Output: output,
+				RemoteOutcome: transport.Unknown,
+				Cause:         errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
 			}
 		}
-		if result.drained() {
+		if processReadDrained(result) {
 			if err := e.store.ProcessResult(ctx, e.owner, processID, after, executionstate.ProcessExited, result.ExitCode, true); err != nil {
 				return nil, err
 			}
@@ -376,13 +397,15 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, err
 		}
-		pageCtx, cancel := context.WithTimeout(ctx, e.readBudget(timeout))
-		pageCtx = context.WithValue(pageCtx, executorReadAttemptTimeoutKey{}, timeout)
-		result, rpcErr := executorRPC[executorReadResult](pageCtx, e, executorMethodProcessRead, executorRead{ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536, ObservedOutput: readOutput})
+		pageCtx, cancel := context.WithTimeout(ctx, e.transport.ReadBudget(timeout))
+		result, rpcErr := operationValue(e.transport.Read(pageCtx, transport.ReadRequest{
+			ProcessID: row.ID, AfterSeq: row.AfterSequence, MaxBytes: 65536,
+			AttemptTimeout: timeout, ObservedOutput: readOutput,
+		}))
 		cancel()
 		if rpcErr != nil {
-			var fence *executorIncarnationFenceError
-			if errors.As(rpcErr, &fence) && fence.method == executorMethodProcessRead {
+			fence := findTransportFailure(rpcErr, transport.FailureIncarnationFence)
+			if fence != nil && fence.Method == transport.MethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolFailure *toolcontract.Rejection
 				if !errors.As(handled, &toolFailure) {
@@ -393,8 +416,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				continue
 			}
-			var rejected *executorRejectedError
-			if errors.As(rpcErr, &rejected) && rejected.method == executorMethodProcessRead {
+			rejected := findTransportFailure(rpcErr, transport.FailureRejected)
+			if rejected != nil && rejected.Method == transport.MethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolFailure *toolcontract.Rejection
 				if !errors.As(handled, &toolFailure) {
@@ -405,12 +428,12 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				continue
 			}
-			var transport *executorTransportError
-			var notDispatched *executorNotDispatchedError
-			if errors.As(rpcErr, &transport) || errors.As(rpcErr, &notDispatched) {
-				if transport != nil {
-					transport.afterSequence = row.AfterSequence
-				}
+			transportFailure := findTransportFailure(rpcErr, transport.FailureTransport)
+			notDispatched := findTransportFailure(rpcErr, transport.FailureNotDispatched)
+			if transportFailure != nil {
+				transportFailure.AfterSequence = row.AfterSequence
+			}
+			if transportFailure != nil || notDispatched != nil {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolOutcome *ToolOutcomeError
 				if !errors.As(handled, &toolOutcome) {
@@ -420,8 +443,9 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				return true, nil
 			}
-			var failureSource executionFailureSource
-			if errors.As(rpcErr, &failureSource) {
+			environment := findTransportFailure(rpcErr, transport.FailureEnvironment)
+			fence = findTransportFailure(rpcErr, transport.FailureIncarnationFence)
+			if environment != nil || fence != nil {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolOutcome *ToolOutcomeError
 				if !errors.As(handled, &toolOutcome) {
@@ -434,7 +458,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			lock.Unlock()
 			return progressed, rpcErr
 		}
-		if result.uncertain() {
+		if processReadUncertain(result) {
 			output, err := outputbuffer.Restore(outputbuffer.MaxBytes, row.BufferedOutput, row.OmittedBytes)
 			if err != nil {
 				lock.Unlock()
@@ -448,10 +472,11 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				sequence := result.NextSeq - 1
 				after = &sequence
 			}
-			failure := &executorTransportError{
-				method: executorMethodProcessRead, phase: "observation", processID: row.ID,
-				retainedSession: e.retainedSessionID(ctx), afterSequence: after, output: output,
-				cause: errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
+			failure := &transport.Failure{
+				Kind: transport.FailureTransport, Method: transport.MethodProcessRead, Phase: "observation", ProcessID: row.ID,
+				ExecutionSessionID: e.retainedExecutorSession(ctx), AfterSequence: after, Output: output,
+				RemoteOutcome: transport.Unknown,
+				Cause:         errors.New("process observation ended without a confirmed outcome: " + describeProcessReadFailure(result)),
 			}
 			handled := e.outcomeToolError(ctx, failure)
 			lock.Unlock()
@@ -461,16 +486,16 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 			return true, nil
 		}
 		chunks := result.Chunks
-		output := result.output()
+		output := processReadOutput(result)
 		afterValue := result.NextSeq
 		newExit := result.Exited && result.ExitCode != nil && (row.ExitCode == nil || *row.ExitCode != *result.ExitCode)
-		if len(chunks) > 0 || result.drained() || newExit {
+		if len(chunks) > 0 || processReadDrained(result) || newExit {
 			seq := uint64(0)
 			if afterValue > 0 {
 				seq = uint64(afterValue - 1)
 			}
 			exitCode := result.ExitCode
-			if err := e.store.RetainProcessOutput(ctx, e.owner, row.ID, seq, output, result.drained(), exitCode); err != nil {
+			if err := e.store.RetainProcessOutput(ctx, e.owner, row.ID, seq, output, processReadDrained(result), exitCode); err != nil {
 				lock.Unlock()
 				return progressed, err
 			}
@@ -506,7 +531,7 @@ func (e *Executor) InterruptAll(ctx context.Context) (map[string]any, error) {
 			return outcomes, err
 		}
 		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, terminateErr := executorRPC[executorTerminateResult](requestCtx, e, executorMethodProcessTerminate, executorTerminate{ProcessID: process.ID})
+		_, terminateErr := operationValue(e.transport.Terminate(requestCtx, transport.TerminateRequest{ProcessID: process.ID}))
 		cancel()
 		if terminateErr == nil {
 			lock := e.processLock(process.ID)
@@ -536,28 +561,6 @@ func (e *Executor) processLock(id string) *sync.Mutex {
 		e.processLocks[id] = &sync.Mutex{}
 	}
 	return e.processLocks[id]
-}
-
-// processChanges broadcasts executor stream changes to foreground readers and the idle driver.
-// The channel is replaced after every change, so a subscriber can take a snapshot before reading
-// and cannot miss a notification that races that read.
-// ProcessChanges returns a coalesced wakeup channel; Store cursors remain authoritative.
-func (e *Executor) ProcessChanges() <-chan struct{} {
-	e.processChangesMu.Lock()
-	defer e.processChangesMu.Unlock()
-	if e.processChanged == nil {
-		e.processChanged = make(chan struct{})
-	}
-	return e.processChanged
-}
-
-func (e *Executor) signalProcessChange() {
-	e.processChangesMu.Lock()
-	defer e.processChangesMu.Unlock()
-	if e.processChanged != nil {
-		close(e.processChanged)
-	}
-	e.processChanged = make(chan struct{})
 }
 
 func shellQuote(value string) string {

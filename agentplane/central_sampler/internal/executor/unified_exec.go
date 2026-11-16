@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
@@ -90,16 +91,9 @@ func missingField(name string) error {
 	return &toolcontract.Rejection{Message: fmt.Sprintf("failed to parse function arguments: missing field `%s`", name)}
 }
 
-// execShell is the shell an executor reports at initialization.
-// Codex rust-v0.162.1 exec-server-protocol/src/protocol.rs ShellInfo.
-type execShell struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
 // fallbackExecShell stands in when an exec-server reports no shell. Upstream would use the
 // Codex host user's shell, which the sampler does not have.
-var fallbackExecShell = execShell{Name: "sh", Path: "/bin/sh"}
+var fallbackExecShell = transport.Shell{Name: "sh", Path: "/bin/sh"}
 
 // detectShellType names a shell by its executable, or "" when unrecognized.
 // Codex rust-v0.162.1 shell-command/src/shell_detect.rs detect_shell_type.
@@ -147,7 +141,7 @@ func parseExecCommand(input json.RawMessage) (execCommandArgs, error) {
 // planExecCommand validates arguments and resolves the command line.
 // Codex rust-v0.162.1 core/src/tools/handlers/unified_exec/exec_command.rs
 // ExecCommandHandler::handle_call and unified_exec.rs get_command, for a remote environment.
-func planExecCommand(input json.RawMessage, cwd string, shell *execShell) (*execCommandPlan, error) {
+func planExecCommand(input json.RawMessage, cwd string, shell *transport.Shell) (*execCommandPlan, error) {
 	args, err := parseExecCommand(input)
 	if err != nil {
 		return nil, err
@@ -155,7 +149,7 @@ func planExecCommand(input json.RawMessage, cwd string, shell *execShell) (*exec
 	return args.plan(cwd, shell)
 }
 
-func (args execCommandArgs) plan(cwd string, shell *execShell) (*execCommandPlan, error) {
+func (args execCommandArgs) plan(cwd string, shell *transport.Shell) (*execCommandPlan, error) {
 	if args.Workdir != nil && *args.Workdir != "" {
 		if filepath.IsAbs(*args.Workdir) {
 			cwd = filepath.Clean(*args.Workdir)
