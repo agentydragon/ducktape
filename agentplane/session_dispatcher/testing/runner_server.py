@@ -6,7 +6,6 @@ import asyncio
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from uuid import uuid4
 
 import grpc
 from cryptography import x509
@@ -67,12 +66,13 @@ class _WatchStateInterceptor(grpc.aio.ServerInterceptor):
 
 @asynccontextmanager
 async def runner_server(
-    listen_address: str, tls: TLS, add_services: Callable[[grpc.aio.Server], None]
+    listen_address: str, tls: TLS, add_services: Callable[[grpc.aio.Server], None], *, boot_id: str
 ) -> AsyncIterator[grpc.aio.Server]:
     """Serve the scripted Runner RPCs on `listen_address` until the context exits.
 
     `tls` carries the Runner's server certificate and the CA used to authenticate the Runtime proxy client.
-    `add_services` registers the scripted Runner methods; WatchState is supplied by this fixture.
+    `add_services` registers the scripted Runner methods; WatchState is supplied by this fixture
+    with the same `boot_id` that the scripted Runtime returns in GetStatus.
     """
     if tls.ca_file is None or tls.key_file is None or tls.cert_file is None:
         raise ValueError("scripted Runner requires file-backed TLS credentials")
@@ -84,7 +84,7 @@ async def runner_server(
     credentials = grpc.ssl_server_credentials(
         [(private_key, certificate_chain)], root_certificates=root_certificates, require_client_auth=True
     )
-    server = grpc.aio.server(interceptors=(_WatchStateInterceptor(str(uuid4())),))
+    server = grpc.aio.server(interceptors=(_WatchStateInterceptor(boot_id),))
     add_services(server)
     if server.add_secure_port(listen_address, credentials) == 0:
         raise OSError(f"could not bind scripted Runner to {listen_address}")
