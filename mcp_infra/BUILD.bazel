@@ -60,8 +60,6 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
-        "//agent_core/testing:fixtures",
-        "//agent_core/testing/mcp:fixtures",
         "//mcp_infra/testing:fixtures",
         "//util:db_url",
         "//util/testing:postgres_fixtures",
