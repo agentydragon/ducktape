@@ -3,8 +3,8 @@
 from collections.abc import Generator
 from uuid import UUID
 
-from agent_core.testing.responses import tool_roundtrip
 from openai_utils.model import FunctionCallItem, ResponsesRequest
+from openai_utils.testing.responses import tool_roundtrip
 from props.agents.critic_dev.loop import ReportFailureArgs, WaitUntilCriticCompletedArgs, WaitUntilGradedToolArgs
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.testing.mocks import SubprocessExecMock

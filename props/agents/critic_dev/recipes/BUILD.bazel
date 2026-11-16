@@ -82,10 +82,10 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agent_core/testing:responses",
         "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
         "//openai_utils:model",
+        "//openai_utils/testing:responses",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/core:agent_types",
@@ -116,9 +116,9 @@ py_test(
     requires_docker = True,
     deps = [
         "//:conftest",
-        "//agent_core/testing:responses",
         "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
+        "//openai_utils/testing:responses",
         "//props:conftest",
         "//props/agents/critic_dev/testing:mocks",
         "//props/agents/critic_dev/testing:orchestration_fixtures",

@@ -16,7 +16,7 @@ from uuid import uuid4
 
 import pytest_bazel
 
-from agent_core.testing.responses import PlayGen
+from openai_utils.testing.responses import PlayGen
 from props.agents.grader.drift_handler import get_drift
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec

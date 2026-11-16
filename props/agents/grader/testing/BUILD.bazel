@@ -8,8 +8,8 @@ py_library(
     srcs = ["mocks.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//agent_core/testing:responses",
         "//openai_utils:model",
+        "//openai_utils/testing:responses",
         "//props/agents/grader:drift_handler",
         "//props/agents/grader:tools",
         "@pypi//more_itertools",

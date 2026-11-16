@@ -10,8 +10,8 @@ py_library(
     srcs = ["mocks.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//agent_core/testing:responses",
         "//openai_utils:model",
+        "//openai_utils/testing:responses",
         "//util/exec:models",
         "//util/exec:subprocess",
     ],

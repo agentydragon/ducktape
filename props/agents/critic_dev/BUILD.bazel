@@ -174,10 +174,10 @@ py_test(
     deps = [
         ":registry_push_probe",
         "//:conftest",
-        "//agent_core/testing:responses",
         "//devinfra/oci",
         "//mcp_infra/testing:fixtures",
         "//mcp_infra/testing:matchers",
+        "//openai_utils/testing:responses",
         "//props:conftest",
         "//props/agents/critic/testing:mocks",
         "//props/agents/critic_dev/testing:mocks",

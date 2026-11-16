@@ -22,11 +22,11 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.handlers import FinishOnTextMessageHandler
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
-from agent_core.testing.responses import DecoratorMock, ResponsesFactory
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.testing.openai_mock import make_mock
+from openai_utils.testing.responses import DecoratorMock, ResponsesFactory
 
 
 def test_agent_tool_boundary_validates_nested_union() -> None:

@@ -35,15 +35,3 @@ py_library(
         "@pypi//pyhamcrest",
     ],
 )
-
-py_library(
-    name = "responses",
-    srcs = ["responses.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//openai_utils:builders",
-        "//openai_utils:model",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-    ],
-)

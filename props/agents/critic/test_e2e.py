@@ -19,8 +19,8 @@ from __future__ import annotations
 import pytest_bazel
 from hamcrest import all_of, assert_that
 
-from agent_core.testing.responses import DecoratorMock, PlayGen
 from mcp_infra.testing.matchers import exited_successfully, stdout_contains
+from openai_utils.testing.responses import DecoratorMock, PlayGen
 from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
 from props.agents.critic.testing.mocks import CriticMock
 from props.db.database import Database
