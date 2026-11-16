@@ -60,8 +60,9 @@ sampling; this does not establish the cause of the failed invocation.
 A [controlled diagnostic invocation](https://app.buildbuddy.io/invocation/c58dabd2-8f53-41fc-a445-2ad2655dfd2f)
 forced three orders: yield before the executor open response; yield after start dispatch; and
 provider entry before the nested delegate starts. All reached the provider and drain. This was a
-modified diagnostic test, not a rerun of the failed assertion. It excludes those simple orderings
-as sufficient causes; it does not explain the original failure. Temporary probes were removed.
+modified diagnostic test, not a rerun of the failed assertion. Those passing executions do not
+establish which interleaving occurred in the failed invocation or explain its cause. Temporary
+probes were removed.
 
 The original artifacts do not show whether the host accepted the yielded frame, its journal writes
 completed, or the driver prepared a provider request. The cause remains unknown.
