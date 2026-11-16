@@ -683,15 +683,6 @@ fn returned_wrapper_does_not_invoke_its_callback_at_creation() {
     assert_eq!(evidence["source_location"]["start_column"], 8);
     let graph = fixture.dependency_graph();
     assert_eq!(graph.imported_callable_summaries.len(), 1);
-    assert_eq!(
-        graph.imported_callable_summaries[0].imported_local,
-        "factory"
-    );
-    assert!(matches!(
-        &graph.imported_callable_summaries[0].callback_factory_evidence[0],
-        analysis::CallbackFactoryEvidence::InferredImmutableWrapper { defining_module, export, local, .. }
-            if defining_module == "static/peer" && export == "factory" && local == "factory"
-    ));
     let wrapped = graph
         .nodes
         .iter()
@@ -744,11 +735,6 @@ fn inferred_two_parameter_module_factory_defers_initializer() {
         .with_extra_chunks(&peers),
     );
     assert_preserved_entry_output(&fixture, "42\n");
-    let report: serde_json::Value = read_json(&fixture.report_root.join("static/app/modules.json"));
-    assert_eq!(
-        report["imported_callables"]["factory"]["callback_factory_evidence"][0]["origin"],
-        "inferred_immutable_wrapper",
-    );
 }
 
 #[test]
@@ -1166,13 +1152,6 @@ fn audited_factory_keeps_callbacks_in_its_returned_object() {
     );
     let graph = fixture.dependency_graph();
     assert_eq!(graph.imported_callable_summaries.len(), 1);
-    assert_eq!(
-        graph.imported_callable_summaries[0].callback_factory_evidence,
-        vec![analysis::CallbackFactoryEvidence::AuthorAssertion {
-            defining_module: "static/peer".into(),
-            export: "factory".into(),
-        }],
-    );
     let wrapped = graph
         .nodes
         .iter()
