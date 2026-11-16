@@ -113,10 +113,10 @@ action. The session-scoped fixture normally calls the loader once for each
 image per pytest action, so the warm-hit microbenchmark should not be applied
 to every PostgreSQL test as a saving.
 
-The August [Docker timeout investigation](../buildbuddy/debug/2026_08_14_docker_test_timeouts.md)
-records a plausible concurrent-load herd and the rationale for a per-tag lock.
-It is historical evidence, not a current controlled measurement of shared
-RBE daemon state or a current importer-speed result. The manual
+The August [Docker timeout diagnostic](../buildbuddy/debug/2026_08_14_docker_test_timeouts.md)
+records a plausible concurrent-load herd and a `//haku/console:test_operator_identity`
+timeout of 308.8s against a 27.7s alone run. It does not establish that the affected
+RBE actions shared a daemon or that image loading caused that timeout. The manual
 `:compare_concurrent` target bounds four same-action callers under one daemon;
 that tests lock behavior only within that action. Its one passing
 [invocation](https://app.buildbuddy.io/invocation/711d2038-d7f7-4192-aa00-da8ee4689754)

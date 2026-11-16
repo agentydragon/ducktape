@@ -80,11 +80,10 @@ def start_postgres_container(image: str = postgres_18.LAYOUT_RLOCATION) -> Postg
     `image` selects a different Postgres build — e.g. `PGVECTOR_PG18` for packages whose schema
     needs the `vector` extension, which the stock image does not ship.
 
-    **Every step says how long it took.** This runs in session fixture setup, before pytest has
-    emitted a line, so when it wedges the whole test log is silence — which is how a five-minute
-    hang came to be read as a slow test (<../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>). The
-    load itself is serialised per tag inside `load_oci_image`; what is left unbounded is the
-    daemon's own container start, so the least this can do is name where the time went.
+    `container_setup.log` records image-lock wait, load, and container-start timings. This runs
+    before pytest emits output, so the setup log locates a timeout that an empty test log cannot
+    (<../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>). Image loads are
+    serialized per reference; the daemon's container start remains unbounded.
     """
     with _onto_disk():
         load_oci_image(ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)

@@ -226,9 +226,9 @@ py_test(
 
 py_test(
     name = "test_split_based_rls",
-    # Genuine slowness, unlike the four in
-    # <../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>: 54.1s alone against an uncontended
-    # daemon, of which pytest reports 49.1s, so `small`'s 60s leaves it no room at all.
+    # Unlike the full-run-only timeout in
+    # <../../devinfra/buildbuddy/debug/2026_08_14_docker_test_timeouts.md>, this took 54.1s alone
+    # against an uncontended daemon (49.1s in pytest), leaving little margin under `small`'s 60s.
     size = "medium",
     srcs = [
         "test_split_based_rls.py",
