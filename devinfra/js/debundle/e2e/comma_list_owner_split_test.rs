@@ -134,16 +134,19 @@ fn partial_claim_leaves_unclaimed_in_residual() {
     // mod_x claims `a` and `c`; `b` is unclaimed and must remain
     // in residual (as part of a 1-decl `const b = 2;` — the split
     // drops the comma-list).
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1, b = 2, c = 3;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const a = 1, b = 2, c = 3;
 console.log(a, b, c);
 export { a, b, c };
 "#,
-        vec![logical_module(
-            "mod_x",
-            &[Member::new("a"), Member::new("c")],
-        )],
-    ));
+            vec![logical_module(
+                "mod_x",
+                &[Member::new("a"), Member::new("c")],
+            )],
+        )
+        .with_import_order(&["mod_x", "residual"]),
+    );
 
     assert_module_variable_declarators(
         &fixture.out_root,
@@ -168,17 +171,20 @@ fn mixed_purity_sibling_init_preserves_side_effect_module() {
     // `const A = 1, B = sideEffect();` — `B`'s init is impure.
     // Splitting must keep `B`'s init evaluation in `mod_b`. The
     // entry imports both modules so `B`'s init runs.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function sideEffect() { console.log("init"); return 42; }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function sideEffect() { console.log("init"); return 42; }
 const A = 1, B = sideEffect();
 console.log(A, B);
 export { A, B };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("A")]),
-            logical_module("mod_b", &[Member::new("B")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("A")]),
+                logical_module("mod_b", &[Member::new("B")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
 
     assert_module_variable_declarators(
         &fixture.out_root,
@@ -322,7 +328,8 @@ export { x, y };
             logical_module("mod_x", &[Member::new("x")]),
             logical_module("mod_y", &[Member::new("y")]),
         ],
-    );
+    )
+    .with_import_order(&["mod_x", "mod_y", "residual"]);
     // The common projection reports the typed conflict and retains both
     // explicitly requested destination module paths in its refusal.
     expect_rejection_containing_all(
@@ -342,18 +349,21 @@ fn comma_list_with_destructuring_sibling_splits() {
     // `const a = 1, { x, y } = obj, b = 2;` — three declarators
     // sharing one `const`. Each can go to a different module;
     // the destructuring one moves atomically.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const obj = { x: 10, y: 20 };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const obj = { x: 10, y: 20 };
 const a = 1, { x, y } = obj, b = 2;
 console.log(a, x, y, b);
 export { a, x, y, b };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_xy", &[Member::new("x")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("a")]),
+                logical_module("mod_xy", &[Member::new("x")]),
+                logical_module("mod_b", &[Member::new("b")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_xy", "mod_b", "residual"]),
+    );
 
     assert_module_variable_declarators(
         &fixture.out_root,
@@ -378,16 +388,19 @@ fn overlapping_shared_var_destructuring_groups_pull_from_later_claim() {
     // The two declarators redeclare `b`, so the retained destructuring groups
     // overlap on the same hygienic binding identity. Claiming only `c` in the
     // later declarator must pull `b` and then `a` into the same module.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const first = { a: 10, b: 20 };
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const first = { a: 10, b: 20 };
 const second = { b: 30, c: 40 };
 var { a, b } = first;
 var { b, c } = second;
 console.log(a, b, c);
 export { a, b, c };
 "#,
-        vec![logical_module("mod_group", &[Member::new("c")])],
-    ));
+            vec![logical_module("mod_group", &[Member::new("c")])],
+        )
+        .with_import_order(&["mod_group", "residual"]),
+    );
 
     assert_module_variable_declarators(
         &fixture.out_root,
@@ -407,19 +420,22 @@ fn comma_list_evaluates_in_source_order_after_split() {
     // `const a = touch("a"), b = touch("b");` — split into two
     // modules. The ESM linker must run the two modules in source
     // order so the prints come out "a" then "b".
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const log = [];
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const log = [];
 function touch(t) { log.push(t); return t; }
 const a = touch("a"), b = touch("b");
 console.log(log.join(","));
 console.log(a, b);
 export { a, b };
 "#,
-        vec![
-            logical_module("mod_a", &[Member::new("a")]),
-            logical_module("mod_b", &[Member::new("b")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("a")]),
+                logical_module("mod_b", &[Member::new("b")]),
+            ],
+        )
+        .with_import_order(&["mod_a", "mod_b", "residual"]),
+    );
 
     assert_module_variable_declarators(
         &fixture.out_root,

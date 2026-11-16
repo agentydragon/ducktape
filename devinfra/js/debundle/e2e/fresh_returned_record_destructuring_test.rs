@@ -26,6 +26,7 @@ fn split(source: &str) -> FixtureOpts<'_> {
             logical_module("inner", &[Member::new("middle")]),
         ],
     )
+    .with_import_order(&["inner", "outer", "residual"])
 }
 
 fn declarations(factory: &str) -> String {
@@ -58,13 +59,16 @@ const { selected: last } = factory();
 console.log(first, middle, last);
 export { first, middle, last };
 "#;
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("outer", &[Member::new("first"), Member::new("last")]),
-            logical_module("inner", &[Member::new("seed"), Member::new("middle")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("outer", &[Member::new("first"), Member::new("last")]),
+                logical_module("inner", &[Member::new("seed"), Member::new("middle")]),
+            ],
+        )
+        .with_import_order(&["outer", "inner", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "ready ready ready\n");
     assert_module_exports(
         &fixture.out_root,
