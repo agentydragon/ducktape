@@ -94,10 +94,13 @@ fn class_instance_initializers_stay_lazy_until_constructor_invocation() {
 }\n\
 const queue = new WorkQueue(3);\n\
 console.log(queue.running, queue.pending.length, queue.limit, globalThis.fieldRuns, globalThis.constructed);\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module("work_queue", &[Member::new("WorkQueue")])],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("work_queue", &[Member::new("WorkQueue")])],
+        )
+        .with_import_order(&["work_queue", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "1 0 3 1 3\n");
 
     let report = fixture.effect_translation_validation();

@@ -24,6 +24,10 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
+fn primitive_fixture_opts(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(source, split_modules()).with_import_order(&["later", "compute"])
+}
+
 fn anchored_inversion_modules(computation: &'static str) -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
@@ -37,9 +41,8 @@ fn anchored_inversion_modules(computation: &'static str) -> Vec<LogicalModuleEnt
 fn assert_primitive(peer: &str, import: &str, expression: &str, expected: &str) -> Fixture {
     let source = source(import, expression);
     let peers = [("static/peer", peer)];
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(&source, split_modules()).with_extra_chunks(&peers),
-    );
+    let fixture =
+        run_fixture_with_graphs(primitive_fixture_opts(&source).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, expected);
     let graph = fixture.dependency_graph();
     let computed = source_unit_for_binding(&graph, "computed");
@@ -422,6 +425,7 @@ fn symbol_coercion_throw_happens_after_the_right_operand() {
                   try { add(); } catch (error) { console.log(calls, error.name); }\n";
     let fixture = run_fixture(
         FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&[("static/peer", "export const token = Symbol.for('token');\n")]),
     );
     assert_preserved_entry_output(&fixture, "1 TypeError\n");
@@ -462,6 +466,7 @@ fn local_copies_preserve_imported_primitive_callback_timing() {
                 logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
             ],
         )
+        .with_import_order(&["later", "compute"])
         .with_extra_chunks(&[("static/peer", "export var limit = 2;\n")]),
     );
     assert_preserved_entry_output(&fixture, "264 42\n");
@@ -715,9 +720,7 @@ fn imported_template_and_numeric_values_survive_copy_and_reexport_chains() {
              export const limit = amount;\n",
         ),
     ];
-    let fixture = run_fixture_with_graphs(
-        FixtureOpts::new(source, split_modules()).with_extra_chunks(&peers),
-    );
+    let fixture = run_fixture_with_graphs(primitive_fixture_opts(source).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, "coerce\ntool_notes_tool_notes_280 42\n");
 
     let graph = fixture.dependency_graph();
@@ -870,8 +873,7 @@ fn conditional_and_logical_results_require_primitive_value_alternatives() {
         ),
         ("static/provider", "export const limit = 6;\n"),
     ];
-    let fixture =
-        run_fixture(FixtureOpts::new(&app_source, split_modules()).with_extra_chunks(&peers));
+    let fixture = run_fixture(primitive_fixture_opts(&app_source).with_extra_chunks(&peers));
     assert_preserved_entry_output(&fixture, "14 42\n");
 }
 
@@ -1001,7 +1003,7 @@ fn selected_provider_uses_its_canonical_primitive_facts() {
         vec![logical_module("limits", &[Member::new("limit")])],
     )];
     let fixture = run_fixture(
-        FixtureOpts::new(&source, split_modules())
+        primitive_fixture_opts(&source)
             .with_extra_chunks(&peers)
             .with_extra_chunk_logical_modules(&peer_modules),
     );
@@ -1030,7 +1032,7 @@ fn vendor_marked_provider_keeps_its_primitive_facts() {
         bundled_vendor_mark(bundle_path, &["limit"]),
     )];
     let fixture = run_fixture_with_args(
-        FixtureOpts::new(&source, split_modules())
+        primitive_fixture_opts(&source)
             .with_extra_chunks(&peers)
             .with_vendor_marks(&vendor_marks),
         &[

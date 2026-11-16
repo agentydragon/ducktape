@@ -69,7 +69,7 @@ console.log(collection.value);
         &["values/collection", "values/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
 }
 
@@ -110,7 +110,8 @@ fn replaced_global_collection_constructors_can_reenter() {
         let mut members = vec![Member::new("collection")];
         members.extend(mutator_members);
         let anon = ["globalThis.saved = () => later;", replacement];
-        let fixture = run_fixture(FixtureOpts::new(&source, vec![]));
+        let fixture =
+            run_fixture(FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]));
         assert_preserved_entry_output(&fixture, "ReferenceError\n");
 
         expect_atomic_conflict_rejection(
@@ -137,7 +138,7 @@ console.log(collection.value);
             "globalThis.Set = function Set() { try { globalThis.saved(); return { value: \"ready\" }; } catch (error) { return { value: error.name }; } };",
         ],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError\n");
     expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
 }
@@ -158,7 +159,7 @@ console.log(globalThis.observed, collection.size);
             "Array.prototype[Symbol.iterator] = function* () { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } yield 1; };",
         ],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 1\n");
     expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
 }
@@ -179,7 +180,7 @@ console.log(globalThis.observed, collection.size);
             "Set.prototype.add = function add(value) { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return this; };",
         ],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
     expect_atomic_conflict_rejection(opts, &["values/collection", "values/later"], &[]);
 }
@@ -204,6 +205,6 @@ console.log(globalThis.observed, collection.size);
         &["values/collection", "values/later"],
         &[],
     );
-    let fixture = run_fixture(FixtureOpts::new(source, vec![]));
+    let fixture = run_fixture(FixtureOpts::new(source, vec![]).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ReferenceError 0\n");
 }
