@@ -2,9 +2,8 @@
 
 ## Resolve legacy Codex inputs without a client message ID
 
-Some retained Codex inputs predate `clientUserMessageId`, including staging Session
-`539294ae-e5f6-4b02-ad9a-827f88ed0d7b`. A matching historical text item does not prove its
-origin: an earlier identical queued input may drain after the later request was journaled, and
+Some retained Codex inputs predate `clientUserMessageId`. A matching historical text item does
+not prove its origin: an earlier identical queued input may drain after the later request was journaled, and
 the native thread may have other writers. Define an operator-visible resolution path and any
 closed-world proof of exclusive writer, complete history and unambiguous delivery. Preserve the
 original evidence and command identity; never resend an uncertain input or clear it by inference.
