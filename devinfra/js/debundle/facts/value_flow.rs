@@ -1729,15 +1729,13 @@ fn solve_flow(
         event_executions: event_executions.clone(),
     };
     let values = IterativeInference::new(rules).solve_values_resumable(0..producer_count);
-    let values = if cell_effects.is_empty() {
-        values
+    let call_effects = if cell_effects.is_empty() {
+        BTreeMap::new()
     } else {
-        let rules = CallEffectRules::new(cell_effects, &events, &values, &declared, &origin_table);
-        let producers = rules.producers();
-        IterativeInference::from_completed(rules, values).solve_values_resumable(producers)
+        CallEffectRules::new(cell_effects, &events, &values, &declared, &origin_table).solve()
     };
     drop(events);
-    let facts = if candidate_objects.is_empty() {
+    let mut facts = if candidate_objects.is_empty() {
         values.into_values()
     } else {
         let rules = CandidateRules::new(
@@ -1757,6 +1755,7 @@ fn solve_flow(
         }
         inference.solve_values([])
     };
+    facts.extend(call_effects);
     #[cfg(test)]
     let counts = (event_executions.get(), argument_evaluations.get());
     #[cfg(not(test))]
