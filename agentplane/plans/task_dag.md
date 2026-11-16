@@ -183,18 +183,15 @@ its old ordering does not give it precedence over the selected tracks.
 ### Released work in flight, 2026-11-15
 
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
-reorganization behind the Runtime proxy move is [section 17](#17-two-binaries-and-the-go-layout).
-States as of 14:55 UTC.
+reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 00:35 UTC.
 
-| Track                                      | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                          |
-| ------------------------------------------ | ---------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Retire bearer admission (auth stage 5)     | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver, History last (#16728, 14:35 UTC); retired keys omitted and fields deleted for Policy (#16718), Gateway (#16722) and the sampler (#16729); the other receivers' key and field removal, the shared TokenReview code and its RBAC follow |
-| Runtime proxy and Executor to Environments | 2026-11-15             | `RUNTIME_PROXY_TO_ENVIRONMENTS`  | Cutover and credential/permission cleanup (#16768, #16775) rolled and verified; retired settings decoder deletion completes the track                                                                                                                                          |
-| Runtime proxy caller audit                 | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                              |
-| Sessions binary directory                  | 2026-11-15 11:35       | `SESSIONS_BINARY_DIRECTORY`      | In flight after verified proxy cleanup; source moves to session_dispatcher/ with assembly in internal/app                                                                                                                                                                      |
+| Track                                  | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                                                                   |
+| -------------------------------------- | ---------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Retire bearer admission (auth stage 5) | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver; retired keys and decoders removed for Policy, Gateway, the sampler and History (#16757, #16766); receiver TokenReview RBAC grants removed (#16784). LLM ingress and Notifications still decode their ignored legacy keys, and the shared TokenReview code keeps test consumers |
+| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                                                                       |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), auth stages 1 to 4, one TLS listener per service (#16631, #16632, #16661), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
+routing and its cleanup (section 12), auth stages 1 to 4, one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -206,7 +203,6 @@ removed). Not released:
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
-    RUNTIME_PROXY_TO_ENVIRONMENTS[Done: Runtime proxy into Environments]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
 ```
 
@@ -2525,8 +2521,8 @@ requeue that Session's in-flight work, as `RecoverSandbox` does today for a Sand
   one is queued or delivering). The Runtime's command-ID dedupe still makes a late duplicate
   harmless; no lease fences an RPC already in flight.
 
-**Build: not released.** It lands later as its own change after `SESSIONS_BINARY_DIRECTORY`, with a
-system test in which a replica dies mid-delivery and another takes over. Its rollout keeps old
+**Build: not released.** It lands later as its own change, after the Sessions binary directory move
+(landed in #16785), with a system test in which a replica dies mid-delivery and another takes over. Its rollout keeps old
 (Kubernetes Lease) and new replicas from both delivering to one Session. It then drops the
 `dispatcher-<sandbox UID>` Leases and Sessions' Lease RBAC; controller leader election is
 unaffected.
@@ -3705,7 +3701,7 @@ which would settle the name instead; check that before dispatch.
 UTC, card "session_dispatcher + environments"); deployed names stay until this migration: the
 `runner-gateway` and `sandbox-controller` Deployments, Services, images, labels, settings and
 projected-token paths, token audiences, SPIFFE identities and certificates, image automation and
-Flux pins, docs and tests. It follows section 17's stage 3 moves.
+Flux pins, docs and tests. Section 17's directory moves it waited for have landed (#16785).
 
 ### Blocked
 
@@ -3870,48 +3866,29 @@ no wake budget (07:41 UTC, card "No budget for explicit resume"). The
 evidence and line-level steps for every track below; its stages are ordered by certainty. Stage 1
 (pre-cutover leftovers) is done and left the plan; the other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                                                            |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| 3. The two-binary moves         | `RUNTIME_PROXY_TO_ENVIRONMENTS`, `SESSIONS_BINARY_DIRECTORY`; `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION` |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                              |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`    |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                        |
+| Plan stage                      | DAG node                                                                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 2. Layout fixes                 | `GATEWAY_ERA_NAMES`                                                                                                              |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                                                            |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                           |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
+| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                     |
 
 EnvironmentService serves from every Environments replica
 ([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
-wake execution/budgeting beside Dispatcher. The Runtime proxy move and the Sessions directory move after it are released. Sessions re-checking the live
-Identity landed in #16373.
+wake execution/budgeting beside Dispatcher. The Runtime proxy and Executor moved into Environments
+(#16723 to #16775) and the Sessions binary into `session_dispatcher/` (#16785). Sessions re-checking
+the live Identity landed in #16373.
 
 ```mermaid
 flowchart LR
     PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
-    RUNTIME_PROXY_TO_ENVIRONMENTS[Done: Runtime proxy and Executor into Environments]
-    SESSIONS_BINARY_DIRECTORY[In flight: Sessions source moves to session_dispatcher/]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
+    GATEWAY_ERA_NAMES[Unscheduled: Gateway-era Go names, Go plan stage 2]
     GO_LOCAL_EXTRACTIONS[Unscheduled: stage 4 local extractions]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
-    PRIVILEGED_BACKEND_AUTH_DESIGN --> RUNTIME_PROXY_TO_ENVIRONMENTS
-    RUNTIME_PROXY_TO_ENVIRONMENTS --> SESSIONS_BINARY_DIRECTORY
-    SESSIONS_BINARY_DIRECTORY --> RUNNER_GATEWAY_RENAME
 ```
-
-### `RUNTIME_PROXY_TO_ENVIRONMENTS` — the Runtime proxy and Executor move into Environments
-
-**Done, 2026-11-15.** Caller cutover (#16723), receiver retirement (#16760), credential/mount
-cleanup (#16768) and final permission removal (#16775) are merged. Claude verified the cleanup
-rollout at 23:33 UTC: both Gateway Pods Ready on `6147538`, no restarts or warning/error logs,
-only listener/trust/Sessions-client/settings mounts; live settings omit `runner_security`, all
-`runtime_proxy_*` grants and `executor_service_callers`. Sessions continued producing events through
-Environments after the network change. The retired settings decoder fields are removed after
-this verification. Dispatcher inventory/policy RBAC, automatic wake patches and delivery Leases
-remain. No cluster objects or retained state were deleted as a cutover shortcut.
-The directory move may now proceed. The proxy remains at its final `environments/runtimeproxy`
-home. Deployed names and wire names stay unchanged. The operator
-also released the Runtime diagnostics API and App cutover after this transport migration; Session
-activity and Sandbox-independent Notifications remain their separately tracked contracts.
-**Exit:** Runtime calls reach Environments
-through its Service, and nothing in `session_dispatcher/` calls a Runtime.
 
 ### `RUNTIME_PROXY_CALLER_AUDIT` — route callers through their owning APIs
 
@@ -3923,25 +3900,23 @@ Sessions, and retaining only narrow Sessions delivery, sampler Executor and Cont
 transport authority. Notifications' admitted-versus-materialized subscription behavior needs explicit
 review; App archival safety follows `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` rather than silently
 choosing current-status ownership here. The plan tracks required APIs, caller/grant retirement,
-rollout and acceptance; those migrations are not released by this audit.
+rollout and acceptance; those migrations are not released by this audit. Recorded with the proxy
+move: the operator also released the Runtime diagnostics API and App cutover to follow that
+transport migration, which has landed; Session activity and Sandbox-independent Notifications
+remain their separately tracked contracts.
 
 **Exit:** reviewed caller dispositions, including the Notification availability choice, with the
 remaining migration work dispatched separately. The audit does not block the agreed physical proxy
 move, authorize new grants or require a Sandbox/single attachment on a Session.
 
-### `SESSIONS_BINARY_DIRECTORY` — what remains becomes the Sessions binary
+### `GATEWAY_ERA_NAMES` — Gateway-era Go names after the Gateway dissolved
 
-**In flight; released by operator, 2026-11-15 11:35 UTC.** The Runtime proxy cleanup's
-config/permission rollout was verified on staging at 23:33 UTC, satisfying its exit. Move the
-Dispatcher, migrations, Sandbox inventory, Python client/test support and command directly to
-`agentplane/session_dispatcher/`, with config and server composition in `internal/app/` and a
-minimal `cmd/` entry. Runtime-era private Go names and source filenames change with the move;
-proto wire names, deployed names, migration history and settings keys do not. Update generated
-imports, Bazel/image publication labels, runfile paths and docs together. Generated manifests must
-be byte-identical. No Session shape, storage ownership, auth, wake or delivery contract change.
-
-**Exit:** moved command and tests pass; manifest byte comparison passes; image publication follows
-`//agentplane/session_dispatcher:image` under the unchanged `agentplane-runner-gateway` image name.
+**Unscheduled; proposed as Go plan stage 2 in gh-pages #16794 (open), not released.** Private Go
+names still describe the Runner Gateway: the Runtime proxy's `Gateway` type and runner identifiers
+in `environments/runtimeproxy`, the `RunnerProxy*MetadataKey` constants in `sandboxes/api`, and the
+Dispatcher's `ProxyRunner`, `RoutingRunner`, `DeliveryRunner` and `RunnerCommands`. Settings keys,
+wire, stored and deployed names are out of scope; deployed names are `RUNNER_GATEWAY_RENAME`.
+**Exit:** those Go identifiers name their current owners.
 
 ### `ENVIRONMENT_KEEP_ALIVE_HOLDS` — keep a Sandbox awake until a time
 
