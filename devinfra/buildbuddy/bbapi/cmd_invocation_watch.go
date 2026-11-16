@@ -39,14 +39,9 @@ non-passing test result, even if Bazel is still running other tests. Use
 invocation status is observed, while keeping the live log on stdout. Log
 streaming continues after that status is recorded.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			return watchInvocation(c, args[0], os.Stdout, pollInterval, failOnTestFailure, resultFile)
-		},
+		}),
 	}
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", 2*time.Second, "How often to check for new log chunks")
 	cmd.Flags().BoolVar(&failOnTestFailure, "fail-on-test-failure", false, "Exit when the first non-passing test result is indexed")

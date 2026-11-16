@@ -17,18 +17,13 @@ import (
 // The public endpoint distinguishes an unknown invocation (an empty list) from
 // a failed request. The internal endpoint reports both as HTTP errors.
 func invocationStatusCmd() *cobra.Command {
-	return &cobra.Command{Use: "status <invocation-id>", Short: "Get invocation state; an unknown invocation returns an empty list", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	return &cobra.Command{Use: "status <invocation-id>", Short: "Get invocation state; an unknown invocation returns an empty list", Args: cobra.ExactArgs(1), RunE: withClient(func(c *client, args []string) error {
 		resp, err := getInvocationStatus(c, args[0])
 		if err != nil {
 			return err
 		}
 		return printProtoJSON(resp)
-	}}
+	})}
 }
 
 func getInvocationStatus(c *client, id string) (*publicpb.GetInvocationResponse, error) {
@@ -43,28 +38,18 @@ func readInvocationEvents(c *client, invocationID string) ([]byte, error) {
 }
 
 func invocationEventsCmd() *cobra.Command {
-	return &cobra.Command{Use: "events <invocation-id>", Short: "Export the raw JSON build event stream", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	return &cobra.Command{Use: "events <invocation-id>", Short: "Export the raw JSON build event stream", Args: cobra.ExactArgs(1), RunE: withClient(func(c *client, args []string) error {
 		body, err := readInvocationEvents(c, args[0])
 		if err != nil {
 			return err
 		}
 		_, err = os.Stdout.Write(body)
 		return err
-	}}
+	})}
 }
 
 func invocationFirstFailureCmd() *cobra.Command {
-	return &cobra.Command{Use: "first-failure <invocation-id>", Short: "Get the first failing test currently indexed by BuildBuddy", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	return &cobra.Command{Use: "first-failure <invocation-id>", Short: "Get the first failing test currently indexed by BuildBuddy", Args: cobra.ExactArgs(1), RunE: withClient(func(c *client, args []string) error {
 		label, err := failedTest(c, args[0], "")
 		if err != nil {
 			return err
@@ -72,7 +57,7 @@ func invocationFirstFailureCmd() *cobra.Command {
 		return json.NewEncoder(os.Stdout).Encode(struct {
 			Label string `json:"label"`
 		}{label})
-	}}
+	})}
 }
 
 var invocationIDPattern = regexp.MustCompile(`^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$`)
@@ -102,12 +87,7 @@ func cancelInvocations(c *client, ids []string) error {
 }
 
 func invocationCancelCmd() *cobra.Command {
-	return &cobra.Command{Use: "cancel <invocation-id>...", Short: "Cancel only the supplied invocations, concurrently", Args: cobra.MinimumNArgs(1), RunE: func(_ *cobra.Command, args []string) error {
-		c, err := newClient()
-		if err != nil {
-			return err
-		}
-		defer c.close()
+	return &cobra.Command{Use: "cancel <invocation-id>...", Short: "Cancel only the supplied invocations, concurrently", Args: cobra.MinimumNArgs(1), RunE: withClient(func(c *client, args []string) error {
 		return cancelInvocations(c, args)
-	}}
+	})}
 }

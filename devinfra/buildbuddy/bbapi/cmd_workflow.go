@@ -18,12 +18,7 @@ func workflowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow",
 		Short: "List workflows (default), or use subcommands",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
 			req := &workflowpb.GetWorkflowsRequest{}
 			resp, err := c.rpc.GetWorkflows(context.Background(), req)
 			if err != nil {
@@ -39,7 +34,7 @@ func workflowCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.AddCommand(workflowRunSubCmd())
 	return cmd
@@ -54,12 +49,7 @@ func workflowRunSubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Trigger a workflow execution",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
 			repo, err := detectRepoURL()
 			if err != nil {
 				return fmt.Errorf("auto-detect repo: %w", err)
@@ -111,7 +101,7 @@ func workflowRunSubCmd() *cobra.Command {
 				fmt.Printf("%s  invocation=%s  status=%s\n", s.GetActionName(), s.GetInvocationId(), status)
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&workflowID, "workflow-id", "", "Workflow ID (default: auto-detect from repo)")
 	cmd.Flags().StringVar(&branch, "branch", "", "Branch name (default: current git branch)")

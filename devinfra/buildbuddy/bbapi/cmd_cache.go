@@ -17,12 +17,7 @@ func cacheCmd() *cobra.Command {
 		Use:   "cache <invocation-id>",
 		Short: "Show cache scorecard (default), or use subcommands",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			req := &cachepb.GetCacheScoreCardRequest{
 				InvocationId: args[0],
 			}
@@ -40,7 +35,7 @@ func cacheCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.AddCommand(cacheMetadataSubCmd())
 	return cmd
@@ -53,12 +48,7 @@ func cacheMetadataSubCmd() *cobra.Command {
 		Use:   "metadata <hash> <size-bytes>",
 		Short: "Get metadata for a cached artifact by digest",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			var sizeBytes int64
 			if _, err := fmt.Sscanf(args[1], "%d", &sizeBytes); err != nil {
 				return fmt.Errorf("invalid size %q: %w", args[1], err)
@@ -93,7 +83,7 @@ func cacheMetadataSubCmd() *cobra.Command {
 				fmt.Printf("Last modified: %s\n", time.UnixMicro(ts).Format(time.RFC3339))
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&instance, "instance", "", "Remote instance name")
 	cmd.Flags().StringVar(&cacheType, "type", "CAS", "Cache type: CAS or AC")

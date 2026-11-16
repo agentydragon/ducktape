@@ -20,12 +20,7 @@ func targetCmd() *cobra.Command {
 		Use:   "target <invocation-id>",
 		Short: "List targets in an invocation (default), or use subcommands",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			ids, err := resolveInvocationIDs(c, args[0])
 			if err != nil {
 				return err
@@ -59,7 +54,7 @@ func targetCmd() *cobra.Command {
 			}
 			t.flush()
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&label, "label", "", "Filter to specific target label")
 	cmd.Flags().StringVar(&filter, "filter", "", "Substring filter on target labels")
@@ -79,12 +74,8 @@ func targetHistorySubCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "Show pass/fail/flake history for targets",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, _ []string) error {
+			var err error
 			if repo == "" {
 				repo, err = detectRepoURL()
 				if err != nil {
@@ -133,7 +124,7 @@ func targetHistorySubCmd() *cobra.Command {
 				t.flush()
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().StringVar(&label, "label", "", "Filter to specific target label")
@@ -435,12 +426,7 @@ Examples:
   bbapi target log <invocation-id> visual --shard 4     # one shard of a sharded test
   bbapi target log <invocation-id> visual --all         # every shard, with headers`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			defer c.close()
+		RunE: withClient(func(c *client, args []string) error {
 			artifacts, err := listArtifactsResolved(c, args[0])
 			if err != nil {
 				return err
@@ -519,7 +505,7 @@ Examples:
 				}
 			}
 			return nil
-		},
+		}),
 	}
 	cmd.Flags().StringVar(&artifactName, "artifact", "test.log", "Artifact name to download (default: test.log)")
 	cmd.Flags().BoolVar(&all, "all", false, "print every matching log, each under a header, instead of the failing ones")
