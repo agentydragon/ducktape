@@ -1160,7 +1160,11 @@ function autosuspendStarting(): void {
               uid: "0f9c1d2e-0000-4000-8000-000000000077",
             },
             feedStatus: FeedStatus.ENDED,
-            attached: { ...mapped.summary.attached!, harnessState: HarnessState.STOPPED },
+            attached: {
+              ...mapped.summary.attached!,
+              spec: visualNativeSpec(Harness.CLAUDE, "starting-sandbox"),
+              harnessState: HarnessState.STOPPED,
+            },
           },
         }
       : mapped;
