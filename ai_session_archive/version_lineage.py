@@ -50,3 +50,8 @@ def effective_payload_ids(
             raise RuntimeError(f"file version {version.id} is missing record {ordinal}")
         result.append(resolved[ordinal][1])
     return result
+
+
+def version_lineage_ranks(db: DbSession, version: FileVersionRow) -> dict[UUID, int]:
+    # Preserve the importer's existing limit, one edge more than the read API's.
+    return {row.id: rank for rank, row in enumerate(version_lineage(db, version, max_delta_depth=CHECKPOINT_INTERVAL))}
