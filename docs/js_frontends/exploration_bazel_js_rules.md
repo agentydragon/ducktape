@@ -57,9 +57,7 @@ and its deterministic context and capture API. Browser tests run on RBE, as requ
 by [AGENTS.md](../../AGENTS.md#bazel-commands).
 
 The [Props Playwright investigation](../../props/frontend/docs/playwright_bazel_investigation.md)
-retains the original module-identity failure and unsuccessful experiments:
-the JS runner and test imports resolved different instances of `@playwright/test`,
-breaking its shared test registry. Props now uses Python Playwright visual tests;
-the investigation's manual/pnpm workaround describes that historical setup and is
-not the current browser-test workflow. It remains relevant when diagnosing a
-Playwright-from-JS integration.
+records a module-identity failure: the JS runner and test import resolved separate
+`@playwright/test` instances, so they did not share Playwright's test registry. Props now
+uses Python Playwright visual tests; the finding remains relevant to other Playwright-from-JS
+Bazel integrations.
