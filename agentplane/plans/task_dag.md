@@ -3838,7 +3838,7 @@ and multi-replica notification integration tests pass; the k3s Dispatcher suite 
 ### `DISPATCHER_WATCH_CLIENT_CUTOVER` — enable versioned watch clients
 
 **Blocked until the operator confirms the versioned receiver's serving image is pinned on staging.**
-Enable App and `session_client/observe_input.go` resume tokens only after that pin. Clients surface
+Enable App and `action_service/internal/sessionclient/observe_input.go` resume tokens only after that pin. Clients surface
 `OUT_OF_RANGE` coverage loss before taking a fresh snapshot. Notifications has no `WatchDispatches`
 client. The [plan](standard_idioms.md#dispatcher_watch_resumable_server) inventories clients and test helpers.
 Exit: reconnect and coverage-loss behavior pass through the actual clients.

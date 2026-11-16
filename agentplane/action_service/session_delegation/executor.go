@@ -12,6 +12,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
+	sessionclient "github.com/agentydragon/ducktape/agentplane/action_service/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/worker"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
@@ -22,7 +23,6 @@ import (
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	sessionclient "github.com/agentydragon/ducktape/agentplane/session_client"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/google/uuid"
 	"google.golang.org/genproto/googleapis/rpc/code"

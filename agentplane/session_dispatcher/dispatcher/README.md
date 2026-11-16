@@ -76,9 +76,9 @@ The manual queue, replica and wake probes are documented in the
   authority. Pages are current reads, not a frozen snapshot: concurrent creation before the cursor
   is seen on a fresh listing. Session rows remain after Environment deletion. This includes today's
   environment-bound central Sessions without defining environment-free
-  central Sessions. The CLI exposes it as `agentplane sessions list`; `agentplane sessions create`
-  creates one and `agentplane sessions get` reads the Session alongside its independent History
-  summary.
+  central Sessions. The CLI exposes it as `agentplane session-dispatcher list`;
+  `agentplane session-dispatcher create` creates one. The `sessions/get` Action reads the Session
+  alongside its independent History summary.
 - **Watching Sessions**: `WatchSessions` streams the same authorized records, including Sessions
   History has not recorded, then `CaughtUp` and changed current records. Its opaque `resume_token`
   binds the version to the effective read scope; another scope is `INVALID_ARGUMENT`. Retained

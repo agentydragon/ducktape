@@ -22,8 +22,8 @@ or fields.
 
 For shell clients, use `agentplane --json environments list`, `agentplane environments get` with the
 returned namespace/name/UID, and `agentplane actions show environments/list`. Use
-`agentplane sessions --help` for direct Dispatcher/History commands when their credentials are
-configured. Otherwise use the Action-backed Session reads described below.
+`agentplane session-dispatcher --help` for direct Dispatcher commands when its credentials are
+configured. Use Action-backed Session reads as described below.
 
 Start with `environments__list` (or `agentplane environments list`). Its MCP input is:
 
@@ -163,20 +163,8 @@ correlate by command ID. Preserve source states, gaps, and errors when interpret
 
 ## CLI equivalent
 
-With direct Session/History credentials configured, the CLI sequence is:
-
-```sh
-agentplane sessions create '11111111-1111-4111-8111-111111111111' --sandbox '<target.name>' --sandbox-uid '<target.uid>' --spec '{"harness":"<configurations[0].harness>","model":"<configurations[0].model>","cwd":"<workspace.root>/<unique-session-directory>","reasoning_effort":"<configurations[0].reasoning_efforts[0]>"}'
-agentplane sessions submit-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --text '<your task>'
-agentplane sessions observe-input '11111111-1111-4111-8111-111111111111' --command-id '22222222-2222-4222-8222-222222222222' --wait-seconds 30
-agentplane sessions get '11111111-1111-4111-8111-111111111111'
-agentplane sessions read-turns '11111111-1111-4111-8111-111111111111' --count 20
-```
-
-Replace placeholders before running. See `agentplane sessions create --help` and
-`agentplane sessions observe-input --help` for available flags. If direct Session/History credentials
-are absent but Action access is available, use the Action-backed operations instead. They take the
-same JSON inputs as the MCP recipe; discover each schema with `agentplane actions show GROUP/ACTION`:
+The CLI submits these same operations through Actions. Discover each schema with
+`agentplane actions show GROUP/ACTION`, then supply the same JSON inputs as the MCP recipe:
 
 ```sh
 agentplane actions submit sessions/create --title 'Open a task Session' --arguments @create-session.json
@@ -186,6 +174,8 @@ agentplane actions result '<request ID from submit>'
 Put the substituted `sessions__create` input in `create-session.json` first. Then use `sessions/submit_input`,
 `sessions/observe_input`, `sessions/get`, and `sessions/read_turns` with their respective recipe inputs.
 Retain each submission's Action idempotency key and request ID as well as the Session and command IDs.
+These operations require Action access and follow its approval policy. For direct Dispatcher operations,
+see `agentplane session-dispatcher --help`.
 
 ## Stop or reconcile safely
 

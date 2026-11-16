@@ -1,18 +1,16 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "sessions",
+    name = "session_dispatcher",
     srcs = [
         "doc.go",
-        "sessions.go",
+        "session_dispatcher.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/cli/internal/sessions",
+    importpath = "github.com/agentydragon/ducktape/agentplane/cli/internal/session_dispatcher",
     visibility = ["//agentplane/cli:__subpackages__"],
     deps = [
         "//agentplane/cli/internal/invocation",
-        "//agentplane/history_service/api/history:history_service_go_proto",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/session_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session/dispatchstate",
         "@com_github_google_uuid//:uuid",
@@ -22,12 +20,12 @@ go_library(
 )
 
 go_test(
-    name = "sessions_test",
+    name = "session_dispatcher_test",
     size = "small",
     srcs = [
         "text_test.go",
     ],
-    embed = [":sessions"],
+    embed = [":session_dispatcher"],
     deps = [
         "//agentplane/proto:session_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
