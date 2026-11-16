@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
-  "source_sha": "7dba44674e2617d7e11fe9f0a4dba5752dcc7976",
-  "observed_at_utc": "2026-11-16T09:10:00Z",
+  "source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
+  "observed_at_utc": "2026-11-16T11:25:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
     "files": 1356,
@@ -206,8 +206,8 @@
       "id": "action_service",
       "path": "agentplane/action_service",
       "counts": {
-        "files": 155,
-        "directories": 23
+        "files": 160,
+        "directories": 24
       },
       "directories": [
         {
@@ -377,6 +377,18 @@
             "agentplane/action_service/internal/rpc/views.go",
             "agentplane/action_service/internal/rpc/watch.go",
             "agentplane/action_service/internal/rpc/watch_test.go"
+          ]
+        },
+        {
+          "path": "agentplane/action_service/internal/sessionclient",
+          "production": 3,
+          "tests": 2,
+          "files": [
+            "agentplane/action_service/internal/sessionclient/observe_input.go",
+            "agentplane/action_service/internal/sessionclient/observe_input_test.go",
+            "agentplane/action_service/internal/sessionclient/results.go",
+            "agentplane/action_service/internal/sessionclient/results_test.go",
+            "agentplane/action_service/internal/sessionclient/turns.go"
           ]
         },
         {
@@ -563,6 +575,7 @@
           "agentplane/action_service/internal/mcpexec",
           "agentplane/action_service/internal/push",
           "agentplane/action_service/internal/rpc",
+          "agentplane/action_service/internal/sessionclient",
           "agentplane/action_service/internal/store",
           "agentplane/action_service/internal/worker",
           "agentplane/action_service/migrations",
@@ -796,6 +809,25 @@
           }
         },
         {
+          "path": "agentplane/action_service/internal/sessionclient",
+          "role": "Session input, results and turn helpers for the two Session Actions (`orchestration_v1`, `session_delegation`).",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Moved from the shared `agentplane/session_client` by ee5a12e8c0, when the CLI's Session commands became the direct `session-dispatcher` and `history` service commands and the Actions were its only consumers.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/action_service/internal/sessionclient/BUILD.bazel",
+            "agentplane/action_service/internal/sessionclient/observe_input.go",
+            "agentplane/action_service/internal/sessionclient/results.go"
+          ],
+          "declared_packages": ["sessionclient"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 3,
+            "tests": 2
+          }
+        },
+        {
           "path": "agentplane/action_service/internal/store",
           "role": "Transactional Action request, decision, event history, cancellation, execution and lease persistence.",
           "decision": "retain",
@@ -998,8 +1030,8 @@
       "id": "app",
       "path": "agentplane/app",
       "counts": {
-        "files": 81,
-        "directories": 23
+        "files": 79,
+        "directories": 22
       },
       "directories": [
         {
@@ -1066,15 +1098,6 @@
           "files": [
             "agentplane/app/internal/historydata/historydata.go",
             "agentplane/app/internal/historydata/historydata_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/app/internal/historywatch",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/app/internal/historywatch/historywatch.go",
-            "agentplane/app/internal/historywatch/historywatch_test.go"
           ]
         },
         {
@@ -1271,7 +1294,6 @@
           "agentplane/app/internal/federation",
           "agentplane/app/internal/historyclient",
           "agentplane/app/internal/historydata",
-          "agentplane/app/internal/historywatch",
           "agentplane/app/internal/httpapi",
           "agentplane/app/internal/httpapi/operator",
           "agentplane/app/internal/httpapi/sessions",
@@ -1374,10 +1396,10 @@
         },
         {
           "path": "agentplane/app/internal/historyclient",
-          "role": "Authenticated reconnectable History RPC transport",
+          "role": "Authenticated History Service client for the App's summary reads",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Connection/redial lifetime is distinct from summary validation and the background watch consumer.",
+          "reason": "Connection lifetime stays apart from summary validation (`historydata`); #16987 removed its redial and watch adapters with the App's History workers.",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/historyclient/historyclient.go"
@@ -1391,7 +1413,7 @@
         },
         {
           "path": "agentplane/app/internal/historydata",
-          "role": "Validated History summaries and app read projections",
+          "role": "Validated History summary reads",
           "decision": "retain",
           "target_paths": [],
           "reason": "This adapter validates backend data and supplies typed app read operations without owning retained History.",
@@ -1400,23 +1422,6 @@
             "agentplane/app/internal/historydata/historydata.go"
           ],
           "declared_packages": ["historydata"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/app/internal/historywatch",
-          "role": "Cursored History summary watch and app Thread attachment updates",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "The watch owns replay/redial/recovery; it does not derive the History fold or introduce an event authority.",
-          "gate": "",
-          "evidence_paths": [
-            "agentplane/app/internal/historywatch/historywatch.go"
-          ],
-          "declared_packages": ["historywatch"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -1494,10 +1499,10 @@
         },
         {
           "path": "agentplane/app/internal/httpapi/threads",
-          "role": "Thread read, metadata and watch routes and handler behind the generated AppService routes",
+          "role": "Thread metadata routes and watch (App-held titles and archived state) behind the generated AppService routes",
           "decision": "retain",
           "target_paths": [],
-          "reason": "The first resource-owned handler of app-http-owners (landed in #16725, which moved its route registration beside it): explicit store, History, Environment, runtime-status, update and drain inputs instead of the aggregate server's dependency bag.",
+          "reason": "The first resource-owned handler of app-http-owners (landed in #16725, which moved its route registration beside it): explicit store, History, Environment, runtime-status, update and drain inputs instead of the aggregate server's dependency bag. Since #16987 it serves only App-held titles and archived state; the browser joins Dispatcher membership and History summaries from those services' facades.",
           "gate": "No move planned; preserve the generated AppService routes, caller authorization and drain behavior.",
           "evidence_paths": [
             "agentplane/app/internal/httpapi/threads/handler.go"
@@ -1593,7 +1598,7 @@
           "role": "App-local Session client: opens and inspects Sessions through the Dispatcher and reads Environment Runtime diagnostics through EnvironmentService (#16825).",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Named for its responsibility since #16394 (was `app/internal/bridge`); the shared `session_client` covers only Session input, results and turn helpers, not the app's opening or Runtime status calls.",
+          "reason": "Named for its responsibility since #16394 (was `app/internal/bridge`).",
           "gate": "",
           "evidence_paths": [
             "agentplane/app/internal/sessionclient/runtime_diagnostics.go",
@@ -1640,7 +1645,7 @@
         },
         {
           "path": "agentplane/app/internal/threads",
-          "role": "App Thread metadata and Session attachment index",
+          "role": "App-held Session titles and archived state",
           "decision": "retain",
           "target_paths": [],
           "reason": "Thread presentation metadata belongs to the app; retained events and projections belong to History.",
@@ -2501,14 +2506,14 @@
       "id": "cli",
       "path": "agentplane/cli",
       "counts": {
-        "files": 40,
-        "directories": 7
+        "files": 42,
+        "directories": 8
       },
       "directories": [
         {
           "path": "agentplane/cli",
           "production": 3,
-          "tests": 10,
+          "tests": 11,
           "files": [
             "agentplane/cli/actions_guide_test.go",
             "agentplane/cli/actions_test.go",
@@ -2519,8 +2524,9 @@
             "agentplane/cli/environments_test.go",
             "agentplane/cli/errors_test.go",
             "agentplane/cli/helpers_test.go",
+            "agentplane/cli/history_test.go",
             "agentplane/cli/notifications_test.go",
-            "agentplane/cli/sessions_test.go",
+            "agentplane/cli/session_dispatcher_test.go",
             "agentplane/cli/submit_test.go",
             "agentplane/cli/wait_test.go"
           ]
@@ -2555,6 +2561,12 @@
           ]
         },
         {
+          "path": "agentplane/cli/internal/history",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/cli/internal/history/history.go"]
+        },
+        {
           "path": "agentplane/cli/internal/invocation",
           "production": 10,
           "tests": 1,
@@ -2583,23 +2595,23 @@
           ]
         },
         {
-          "path": "agentplane/cli/internal/sessions",
+          "path": "agentplane/cli/internal/session_dispatcher",
           "production": 2,
           "tests": 1,
           "files": [
-            "agentplane/cli/internal/sessions/doc.go",
-            "agentplane/cli/internal/sessions/sessions.go",
-            "agentplane/cli/internal/sessions/text_test.go"
+            "agentplane/cli/internal/session_dispatcher/doc.go",
+            "agentplane/cli/internal/session_dispatcher/session_dispatcher.go",
+            "agentplane/cli/internal/session_dispatcher/text_test.go"
           ]
         }
       ],
       "context_paths": [],
       "pending_tracks": ["orchestration-v1-retirement"],
-      "goal_note": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, sessions, environments) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
+      "goal_note": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service since ee5a12e8c0) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
       "decision": {
         "state": "REWORK",
         "role": "Command root over one CLI invocation owner and per-family command packages",
-        "goal_summary": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, sessions, environments) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
+        "goal_summary": "Agent-facing Cobra command root composing the command families under `cli/internal/` (actions, notifications, session_dispatcher, history, environments; one group per service since ee5a12e8c0) over one invocation owner (`cli/internal/invocation`), with the executable at `cli/cmd` (#16717).",
         "reason": "Package decisions below name each current responsibility, proposed targets and its extraction/naming gate. Existing shared transactions and mutable lifecycle state are constraints to resolve, not blanket reasons to retain every file arrangement.",
         "evidence_paths": ["agentplane/cli/internal/actions/actions.go"],
         "reviewed_package_paths": [
@@ -2607,9 +2619,10 @@
           "agentplane/cli/cmd",
           "agentplane/cli/internal/actions",
           "agentplane/cli/internal/environments",
+          "agentplane/cli/internal/history",
           "agentplane/cli/internal/invocation",
           "agentplane/cli/internal/notifications",
-          "agentplane/cli/internal/sessions"
+          "agentplane/cli/internal/session_dispatcher"
         ]
       },
       "package_decisions": [
@@ -2625,7 +2638,7 @@
           "pending_tracks": ["orchestration-v1-retirement"],
           "counts": {
             "non_test": 3,
-            "tests": 10
+            "tests": 11
           }
         },
         {
@@ -2684,6 +2697,21 @@
           }
         },
         {
+          "path": "agentplane/cli/internal/history",
+          "role": "Direct History Service read commands (`history`).",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Split from `cli/internal/sessions` by ee5a12e8c0: one command group per service.",
+          "gate": "",
+          "evidence_paths": ["agentplane/cli/internal/history/history.go"],
+          "declared_packages": ["history"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/cli/internal/invocation",
           "role": "One CLI call's environment, streams, global flags, cancellation, deadlines, transport setup and output/error envelopes.",
           "decision": "retain",
@@ -2728,17 +2756,17 @@
           }
         },
         {
-          "path": "agentplane/cli/internal/sessions",
-          "role": "Session/Dispatcher and retained-History commands and their formatting.",
+          "path": "agentplane/cli/internal/session_dispatcher",
+          "role": "Direct Session Dispatcher commands (`session-dispatcher`) and their formatting.",
           "decision": "retain",
           "target_paths": [],
-          "reason": "Moved from `sessions.go` by #16717.",
+          "reason": "Moved from `sessions.go` by #16717; ee5a12e8c0 renamed it after its service and moved the History reads to `cli/internal/history`.",
           "gate": "",
           "evidence_paths": [
-            "agentplane/cli/internal/sessions/doc.go",
-            "agentplane/cli/internal/sessions/sessions.go"
+            "agentplane/cli/internal/session_dispatcher/doc.go",
+            "agentplane/cli/internal/session_dispatcher/session_dispatcher.go"
           ],
-          "declared_packages": ["sessions"],
+          "declared_packages": ["sessiondispatcher"],
           "pending_tracks": [],
           "counts": {
             "non_test": 2,
@@ -3476,27 +3504,12 @@
           ]
         },
         {
-          "path": "agentplane/env/cosi",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/env/cosi/resources.go"]
-        },
-        {
           "path": "agentplane/env/jsonrpc",
           "production": 1,
           "tests": 1,
           "files": [
             "agentplane/env/jsonrpc/jsonrpc.go",
             "agentplane/env/jsonrpc/jsonrpc_test.go"
-          ]
-        },
-        {
-          "path": "agentplane/env/oneoff",
-          "production": 1,
-          "tests": 1,
-          "files": [
-            "agentplane/env/oneoff/oneoff.go",
-            "agentplane/env/oneoff/oneoff_test.go"
           ]
         },
         {
@@ -3699,6 +3712,12 @@
           ]
         },
         {
+          "path": "agentplane/env/runtime/internal/cosi",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/env/runtime/internal/cosi/resources.go"]
+        },
+        {
           "path": "agentplane/env/runtime/internal/cosistate",
           "production": 2,
           "tests": 0,
@@ -3743,6 +3762,15 @@
           ]
         },
         {
+          "path": "agentplane/env/runtime/internal/oneoff",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/env/runtime/internal/oneoff/oneoff.go",
+            "agentplane/env/runtime/internal/oneoff/oneoff_test.go"
+          ]
+        },
+        {
           "path": "agentplane/env/runtime/internal/retained",
           "production": 2,
           "tests": 1,
@@ -3751,6 +3779,12 @@
             "agentplane/env/runtime/internal/retained/retained.go",
             "agentplane/env/runtime/internal/retained/retained_test.go"
           ]
+        },
+        {
+          "path": "agentplane/env/runtime/internal/scripts",
+          "production": 1,
+          "tests": 0,
+          "files": ["agentplane/env/runtime/internal/scripts/scripts.go"]
         },
         {
           "path": "agentplane/env/runtime/internal/workspace",
@@ -3863,12 +3897,6 @@
           "files": [
             "agentplane/env/runtime/testing/adaptertest/adapter_host.go"
           ]
-        },
-        {
-          "path": "agentplane/env/scripts",
-          "production": 1,
-          "tests": 0,
-          "files": ["agentplane/env/scripts/scripts.go"]
         }
       ],
       "context_paths": [
@@ -3901,9 +3929,7 @@
         ],
         "reviewed_package_paths": [
           "agentplane/env/configuration",
-          "agentplane/env/cosi",
           "agentplane/env/jsonrpc",
-          "agentplane/env/oneoff",
           "agentplane/env/runtime/cmd",
           "agentplane/env/runtime/codexappserver",
           "agentplane/env/runtime/control",
@@ -3918,18 +3944,20 @@
           "agentplane/env/runtime/ingress",
           "agentplane/env/runtime/internal/bootstrap",
           "agentplane/env/runtime/internal/coordinator",
+          "agentplane/env/runtime/internal/cosi",
           "agentplane/env/runtime/internal/cosistate",
           "agentplane/env/runtime/internal/harnesses/claude",
           "agentplane/env/runtime/internal/harnesses/codex",
           "agentplane/env/runtime/internal/lifecycle",
+          "agentplane/env/runtime/internal/oneoff",
           "agentplane/env/runtime/internal/retained",
+          "agentplane/env/runtime/internal/scripts",
           "agentplane/env/runtime/internal/workspace",
           "agentplane/env/runtime/journal",
           "agentplane/env/runtime/session",
           "agentplane/env/runtime/stream",
           "agentplane/env/runtime/supervision",
-          "agentplane/env/runtime/testing/adaptertest",
-          "agentplane/env/scripts"
+          "agentplane/env/runtime/testing/adaptertest"
         ]
       },
       "package_decisions": [
@@ -3954,21 +3982,6 @@
           }
         },
         {
-          "path": "agentplane/env/cosi",
-          "role": "Mechanical constructors and typed helpers for environment COSI resources; distinct from runtime persistence policy.",
-          "decision": "retain",
-          "target_paths": ["agentplane/env/cosi"],
-          "reason": "Mechanical constructors and typed helpers for environment COSI resources; distinct from runtime persistence policy. Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "No move planned; preserve API/schema and current behavior.",
-          "evidence_paths": ["agentplane/env/cosi/resources.go"],
-          "declared_packages": ["cosi"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
           "path": "agentplane/env/jsonrpc",
           "role": "JSON-RPC 2.0 frame/dialect support used by Codex app-server and exec-server clients.",
           "decision": "retain",
@@ -3980,24 +3993,6 @@
             "agentplane/env/jsonrpc/jsonrpc_test.go"
           ],
           "declared_packages": ["jsonrpc"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 1
-          }
-        },
-        {
-          "path": "agentplane/env/oneoff",
-          "role": "Owns a host asynchronous one-shot Operation slot: cancel, result publication, and worker registration remain attached until the owner consumes completion.",
-          "decision": "retain",
-          "target_paths": ["agentplane/env/oneoff"],
-          "reason": "Owns a host asynchronous one-shot Operation slot: cancel, result publication, and worker registration remain attached until the owner consumes completion. Retain the current package and path; this is an operation lifecycle owner, not a maintenance-command package.",
-          "gate": "No move planned; preserve API/schema and current behavior.",
-          "evidence_paths": [
-            "agentplane/env/oneoff/oneoff.go",
-            "agentplane/env/oneoff/oneoff_test.go"
-          ],
-          "declared_packages": ["oneoff"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -4273,6 +4268,23 @@
           }
         },
         {
+          "path": "agentplane/env/runtime/internal/cosi",
+          "role": "Mechanical constructors and typed helpers for environment COSI resources; distinct from runtime persistence policy.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16983 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/internal/cosi/resources.go"
+          ],
+          "declared_packages": ["cosi"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
+          }
+        },
+        {
           "path": "agentplane/env/runtime/internal/cosistate",
           "role": "Runtime-specific COSI selective persistence and environment-seal integration; private state adapter.",
           "decision": "retain",
@@ -4349,6 +4361,24 @@
           }
         },
         {
+          "path": "agentplane/env/runtime/internal/oneoff",
+          "role": "Owns a host asynchronous one-shot Operation slot: cancel, result publication, and worker registration remain attached until the owner consumes completion.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16985 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/internal/oneoff/oneoff.go",
+            "agentplane/env/runtime/internal/oneoff/oneoff_test.go"
+          ],
+          "declared_packages": ["oneoff"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        },
+        {
           "path": "agentplane/env/runtime/internal/retained",
           "role": "Private COSI resources and helpers for state retained across Runtime lifecycle changes.",
           "decision": "retain",
@@ -4365,6 +4395,23 @@
           "counts": {
             "non_test": 2,
             "tests": 1
+          }
+        },
+        {
+          "path": "agentplane/env/runtime/internal/scripts",
+          "role": "Runs one-shot shell scripts through an injected process launcher.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "#16990 moved it under the Runtime's internal packages, so Go's `internal` rule limits it to the Runtime; the Go package name is unchanged.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/env/runtime/internal/scripts/scripts.go"
+          ],
+          "declared_packages": ["scripts"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 0
           }
         },
         {
@@ -4483,21 +4530,6 @@
             "agentplane/env/runtime/testing/adaptertest/adapter_host.go"
           ],
           "declared_packages": ["adaptertest"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 1,
-            "tests": 0
-          }
-        },
-        {
-          "path": "agentplane/env/scripts",
-          "role": "Runs one-shot shell scripts through an injected process launcher.",
-          "decision": "retain",
-          "target_paths": ["agentplane/env/scripts"],
-          "reason": "Runs one-shot shell scripts through an injected process launcher. Retain the current path and Go package name: this is already a responsibility-specific boundary, and a broader rename would add churn without clarifying ownership.",
-          "gate": "No move planned; preserve API/schema and current behavior.",
-          "evidence_paths": ["agentplane/env/scripts/scripts.go"],
-          "declared_packages": ["scripts"],
           "pending_tracks": [],
           "counts": {
             "non_test": 1,
@@ -8788,68 +8820,6 @@
       }
     },
     {
-      "id": "session_client",
-      "path": "agentplane/session_client",
-      "counts": {
-        "files": 5,
-        "directories": 1
-      },
-      "directories": [
-        {
-          "path": "agentplane/session_client",
-          "production": 3,
-          "tests": 2,
-          "files": [
-            "agentplane/session_client/observe_input.go",
-            "agentplane/session_client/observe_input_test.go",
-            "agentplane/session_client/results.go",
-            "agentplane/session_client/results_test.go",
-            "agentplane/session_client/turns.go"
-          ]
-        }
-      ],
-      "context_paths": [],
-      "pending_tracks": [],
-      "goal_note": "Shared Session/History client protocol and projections",
-      "decision": {
-        "state": "RETAIN",
-        "role": "Shared Session client protocol",
-        "goal_summary": "Shared Session/History client protocol and projections",
-        "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
-        "evidence_paths": [
-          "agentplane/session_client/BUILD.bazel",
-          "agentplane/session_client/observe_input.go",
-          "agentplane/session_client/results.go"
-        ],
-        "reviewed_package_paths": ["agentplane/session_client"]
-      },
-      "package_decisions": [
-        {
-          "path": "agentplane/session_client",
-          "role": "Shared Session/History client protocol and projections",
-          "decision": "retain",
-          "target_paths": [],
-          "reason": "Action orchestration, delegation and CLI are three production consumers; uncertainty/coverage and response projection belong at this reusable client boundary.",
-          "gate": "Keep it client-owned, not in History server or Action implementation.",
-          "evidence_paths": [
-            "agentplane/session_client/BUILD.bazel",
-            "agentplane/session_client/observe_input.go",
-            "agentplane/session_client/results.go"
-          ],
-          "declared_packages": ["sessionclient"],
-          "pending_tracks": [],
-          "counts": {
-            "non_test": 3,
-            "tests": 2
-          }
-        }
-      ],
-      "tree_annotations": {
-        "current": [],
-        "goal": []
-      }
-    },
-    {
       "id": "session_instructions",
       "path": "agentplane/session_instructions",
       "counts": {
@@ -10704,19 +10674,19 @@
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "7dba44674e2617d7e11fe9f0a4dba5752dcc7976",
+    "review_source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
     "review_slices": [
       {
         "slice": "action_service",
         "components": ["action_service"],
-        "packages": 23,
-        "go_files": 155
+        "packages": 24,
+        "go_files": 160
       },
       {
         "slice": "app",
         "components": ["app"],
-        "packages": 23,
-        "go_files": 81
+        "packages": 22,
+        "go_files": 79
       },
       {
         "slice": "central_sampler",
@@ -10727,8 +10697,8 @@
       {
         "slice": "cli",
         "components": ["cli"],
-        "packages": 7,
-        "go_files": 40
+        "packages": 8,
+        "go_files": 42
       },
       {
         "slice": "crds",
@@ -10879,12 +10849,6 @@
         "components": ["sandboxes"],
         "packages": 4,
         "go_files": 11
-      },
-      {
-        "slice": "session_client",
-        "components": ["session_client"],
-        "packages": 1,
-        "go_files": 5
       },
       {
         "slice": "session_instructions",
