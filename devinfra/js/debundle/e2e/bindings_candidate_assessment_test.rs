@@ -84,6 +84,29 @@ fn bindings_assign_assessment_matches_the_staged_run_for_its_candidate_plan() {
     );
 }
 
+fn assert_placement_preview_matches_emission(staged: &TreeStaged, expected_output: &str) {
+    let result = staged.assign(None, Some(&staged.artifact), true);
+    assert_ok(&result.result, "bindings assign placement preview");
+    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
+    let assessment = &outcome["effect_relocation_assessment"];
+    assert_eq!(
+        assessment["placement"]["projection_violations"],
+        json!([]),
+        "placement planning must produce one finalized destination: {assessment:#}"
+    );
+    assert_eq!(
+        assessment["placement"]["coverage"]["unresolved_checks"],
+        json!([]),
+        "grouping and whole-statement placement must be covered: {assessment:#}"
+    );
+    let candidate = assert_candidate_assessment_matches_run(assessment, staged, true, false);
+    assert_node_output(
+        &candidate.output_root().join("app/main/entry.js"),
+        expected_output,
+        "",
+    );
+}
+
 #[test]
 fn destructuring_placement_preview_matches_staged_emission() {
     let source = "const { left, right } = { left: 10, right: 20 };\n\
@@ -95,26 +118,7 @@ console.log(left, right);\n";
             "members: [{selector: {binding: {name: left}}}]\n",
         )],
     );
-    let result = staged.assign(None, Some(&staged.artifact), true);
-    assert_ok(&result.result, "destructuring bindings assign preview");
-    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["placement"]["projection_violations"],
-        json!([]),
-        "the shared request-planning pull must produce one finalized destination"
-    );
-    assert_eq!(
-        assessment["placement"]["coverage"]["unresolved_checks"],
-        json!([]),
-        "destructuring grouping must be covered in the finalized preview"
-    );
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
-    assert_node_output(
-        &candidate.output_root().join("app/main/entry.js"),
-        "10 20\n",
-        "",
-    );
+    assert_placement_preview_matches_emission(&staged, "10 20\n");
 }
 
 #[test]
@@ -128,26 +132,7 @@ console.log(impl);\n";
             "members: [{selector: {binding: {name: impl}}}]\n",
         )],
     );
-    let result = staged.assign(None, Some(&staged.artifact), true);
-    assert_ok(&result.result, "nested-var bindings assign preview");
-    let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
-    let assessment = &outcome["effect_relocation_assessment"];
-    assert_eq!(
-        assessment["placement"]["projection_violations"],
-        json!([]),
-        "nested-var planning should yield one finalized whole-statement destination"
-    );
-    assert_eq!(
-        assessment["placement"]["coverage"]["unresolved_checks"],
-        json!([]),
-        "nested-var owners and whole-statement placement must be covered"
-    );
-    let candidate = assert_candidate_assessment_matches_run(assessment, &staged, true, false);
-    assert_node_output(
-        &candidate.output_root().join("app/main/entry.js"),
-        "primary\n",
-        "",
-    );
+    assert_placement_preview_matches_emission(&staged, "primary\n");
 }
 
 #[test]
