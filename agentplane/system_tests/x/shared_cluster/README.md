@@ -3,8 +3,8 @@
 **Parked in favor of the static Ubuntu KVM worker and per-action K3s fixture.** This
 directory retains the former persistent K3s-in-a-container spike for review and possible
 future revival; its node image is no longer in the CI image roster and its chart is an
-inert reference under `x/agentplane_kube_in_kube/reference/`. See the
-[parking note](../../../../x/agentplane_kube_in_kube/README.md) and the archived
+inert reference under `agentplane/x/kube_in_kube/reference/`. See the
+[parking note](../../../x/kube_in_kube/README.md) and the archived
 [contract and rollout requirements](SPEC.md).
 
 ## Trusted per-run setup
