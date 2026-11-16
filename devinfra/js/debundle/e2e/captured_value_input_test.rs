@@ -45,6 +45,7 @@ fn fixture_opts(inputs: Vec<ValueInputContract>) -> FixtureOpts<'static> {
             logical_module("later", &[Member::new("Later")]),
         ],
     )
+    .with_import_order(&["queue", "later", "residual"])
     .with_extra_chunks(PROVIDER_CHUNKS)
     .with_extra_files(OPAQUE_FILES);
     if inputs.is_empty() {
@@ -79,6 +80,7 @@ fn run_array_descendant_mutation(flow_source: &str) -> Fixture {
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
+        .with_import_order(&["queue", "later", "residual"])
         .with_extra_chunks(&chunks)
         .with_extra_files(&opaque_files)
         .with_value_inputs("static/peer", vec![captured_input(&provider)]),
@@ -323,6 +325,7 @@ fn captured_fluent_and_derived_array_values_share_cli_analysis() {
         .build()];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
             .with_chunk_export_purity(&fluent)
@@ -536,7 +539,7 @@ fn unrelated_object_literal_native_fields_do_not_create_no_input_aliases() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         "const receiver = { child: Array.prototype };\nreceiver[Symbol.iterator] = function evil() { return 0; };\nconsole.log('ready');\n",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "ready\n");
 
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
@@ -646,6 +649,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
+        .with_import_order(&["queue", "later"])
         .with_extra_chunks(&chunks)
         .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![input]),
@@ -702,6 +706,7 @@ fn descendants_and_early_alias_observations_keep_unknown_global_barriers() {
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
+        .with_import_order(&["queue", "later", "residual"])
         .with_extra_chunks(&chunks)
         .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![input]),
@@ -814,6 +819,7 @@ fn prototype_absence_keeps_captured_census_provenance() {
     let inputs = vec![captured_input(provider)];
     let fixture = run_fixture_with_graphs(
         FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", inputs),
@@ -856,6 +862,7 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
     let chunks = [("static/peer", provider)];
     let base_opts = || {
         FixtureOpts::new(source, vec![])
+            .with_import_order(&["residual"])
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
     };
@@ -999,23 +1006,27 @@ fn captured_input_cannot_override_a_set_replacement_that_calls_a_later_callback(
         "import './opaque.js';\nimport {{ ready }} from './peer.js';\nglobalThis.saved = () => later;\n{replacement}\nconst unique = new Set(['a', 'b']);\nconst later = 42;\nconsole.log(ready, unique.observed);\n"
     );
     let chunks = [("static/peer", provider)];
-    let opts = |modules| {
+    let opts = |modules, import_order: &[&str]| {
         FixtureOpts::new(&source, modules)
+            .with_import_order(import_order)
             .with_extra_chunks(&chunks)
             .with_extra_files(OPAQUE_FILES)
             .with_value_inputs("static/peer", vec![captured_input(provider)])
     };
-    let fixture = run_fixture(opts(vec![]));
+    let fixture = run_fixture(opts(vec![], &["residual"]));
     assert_preserved_entry_output(&fixture, "true ReferenceError\n");
     expect_atomic_conflict_rejection(
-        opts(vec![
-            logical_module_with_anon(
-                "collection",
-                &[Member::new("unique")],
-                &["globalThis.saved = () => later;", replacement],
-            ),
-            logical_module("value", &[Member::new("later")]),
-        ]),
+        opts(
+            vec![
+                logical_module_with_anon(
+                    "collection",
+                    &[Member::new("unique")],
+                    &["globalThis.saved = () => later;", replacement],
+                ),
+                logical_module("value", &[Member::new("later")]),
+            ],
+            &["collection", "value"],
+        ),
         &["collection", "value"],
         &[],
     );
@@ -1030,7 +1041,7 @@ fn inferred_pure_imports_keep_captured_inputs_through_two_modules() {
         FixtureOpts::new(
             "import './opaque.js';\nimport { forward, unrelated } from './middle.js';\nconst collection = forward();\nconst number = unrelated();\nconsole.log(collection.size, number);\n",
             vec![],
-        )
+        ).with_import_order(&["residual"])
         .with_extra_chunks(&chunks)
         .with_extra_files(OPAQUE_FILES)
         .with_value_inputs("static/peer", vec![captured_input(provider)]),

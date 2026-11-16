@@ -95,10 +95,10 @@ fn iteration_rows_keep_receipts_across_an_independent_inversion() {
     ] {
         let source = format!("{declarations}\n{RELOCATION}");
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module("run", &members)],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![logical_module("run", &members)])
+                .with_import_order(&["residual", "run"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, declarations);
         assert_commuting_relocation(&fixture, declarations);
@@ -143,10 +143,10 @@ fn top_level_iteration_roots_keep_receipts_across_an_independent_inversion() {
             "{declarations}const items = [1, 2, 3];\nconst independent = 7;\nconst result = {initializer};\nconsole.log(independent, [result].flat().join(','));\n"
         );
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module("run", &members)],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![logical_module("run", &members)])
+                .with_import_order(&["residual", "run"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
         assert_commuting_relocation(&fixture, initializer);
@@ -254,13 +254,16 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "run",
-                &[Member::new("run"), Member::new("result")],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "run",
+                    &[Member::new("run"), Member::new("result")],
+                )],
+            )
+            .with_import_order(&["residual", "run"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_effect_coverage_pending(&fixture, "result", "array_iteration", capability);
         assert_eq!(
@@ -280,17 +283,20 @@ fn capturing_and_early_exit_callbacks_are_pending_with_typed_refusals() {
 #[test]
 fn a_row_inside_a_legacy_row_callback_stays_legacy() {
     let source = "function wrap(x) { const inner = [x]; return inner.map((y) => y * 2); }\nconst outer = [1, 2];\nconst independent = 7;\nvar result = String(outer.map(wrap));\nconsole.log(independent, result);\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "run",
-            &[
-                Member::new("wrap"),
-                Member::new("outer"),
-                Member::new("result"),
-            ],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "run",
+                &[
+                    Member::new("wrap"),
+                    Member::new("outer"),
+                    Member::new("result"),
+                ],
+            )],
+        )
+        .with_import_order(&["run", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "7 2,4\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "nested legacy row");
 }
@@ -335,13 +341,16 @@ fn row_refusals_carry_their_typed_reasons() {
         ),
     ] {
         let source = format!("function run() {{ {body} }}\n{RELOCATION}");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "run",
-                &[Member::new("run"), Member::new("result")],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "run",
+                    &[Member::new("run"), Member::new("result")],
+                )],
+            )
+            .with_import_order(&["residual", "run"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_eq!(
             array_iteration_refusals(&fixture, "result"),
@@ -358,13 +367,16 @@ fn an_empty_receiver_keeps_its_receipt() {
     let source = format!(
         "function run() {{ const items = []; return items.map((x) => x * 2); }}\n{RELOCATION}"
     );
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        &source,
-        vec![logical_module(
-            "run",
-            &[Member::new("run"), Member::new("result")],
-        )],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            &source,
+            vec![logical_module(
+                "run",
+                &[Member::new("run"), Member::new("result")],
+            )],
+        )
+        .with_import_order(&["run", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "7 \n");
     assert_iteration_receipt(&fixture, "map", "empty receiver");
     assert_commuting_relocation(&fixture, "empty receiver");
@@ -409,10 +421,10 @@ fn unsealed_iteration_roots_rewind_to_the_flat_lane() {
             "{declarations}\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, String(result));\n"
         );
         let members: Vec<Member> = members.iter().map(|name| Member::new(name)).collect();
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module("run", &members)],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![logical_module("run", &members)])
+                .with_import_order(&["run", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, &expected);
         assert_effect_verdict_pending(&fixture, "incomplete", initializer);
     }
@@ -446,13 +458,16 @@ fn record_element_roots_beside_a_bare_assignment_stay_pending() {
         let source = format!(
             "let later = 0;\nconst entries = [{{ id: 'a', size: 1, executor: () => later }}, {{ id: 'b', size: 2, executor: () => later }}];\nconst independent = 7;\nconst result = {initializer};\nlater = 42;\nconsole.log(independent, [result].flat().join(','));\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "run",
-                &[Member::new("entries"), Member::new("result")],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "run",
+                    &[Member::new("entries"), Member::new("result")],
+                )],
+            )
+            .with_import_order(&["residual", "run"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
         assert_effect_verdict_pending(&fixture, "incomplete", initializer);
@@ -507,17 +522,20 @@ fn record_element_roots_seal_across_an_independent_inversion() {
         let source = format!(
             "let later = 0;\nconst items = [{{ size: 1, executor: () => later }}, {{ size: 2, executor: () => later }}];\nconst independent = 7;\nvar result = {initializer};\nconsole.log(independent, {printed});\n"
         );
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(
-            &source,
-            vec![logical_module(
-                "run",
-                &[
-                    Member::new("later"),
-                    Member::new("items"),
-                    Member::new("result"),
-                ],
-            )],
-        ));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module(
+                    "run",
+                    &[
+                        Member::new("later"),
+                        Member::new("items"),
+                        Member::new("result"),
+                    ],
+                )],
+            )
+            .with_import_order(&["run", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_iteration_receipt(&fixture, member, initializer);
         assert_commuting_relocation(&fixture, initializer);
@@ -530,17 +548,20 @@ fn record_element_roots_seal_across_an_independent_inversion() {
 #[test]
 fn a_record_root_with_an_aliased_store_rewinds() {
     let source = "const item = { size: 1 };\nconst entries = [item];\nconst independent = 7;\nconst result = entries.map((entry) => { item.size = 2; return entry.size; });\nconsole.log(independent, result.join(','));\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "run",
-            &[
-                Member::new("item"),
-                Member::new("entries"),
-                Member::new("result"),
-            ],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "run",
+                &[
+                    Member::new("item"),
+                    Member::new("entries"),
+                    Member::new("result"),
+                ],
+            )],
+        )
+        .with_import_order(&["run", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "7 2\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "aliased store");
     let report = fixture.effect_translation_validation();

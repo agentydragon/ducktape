@@ -92,6 +92,7 @@ fn run_configured(
     provider: &str,
     consumer_logical_modules: Vec<LogicalModuleEntry>,
     contract: ImportedPrimitiveArraySpreadInputContract,
+    import_order: &[&str],
 ) -> Fixture {
     let chunks = [("static/provider", provider)];
     let provider_logical_modules = [("static/provider", provider_modules())];
@@ -99,7 +100,8 @@ fn run_configured(
         FixtureOpts::new(consumer, consumer_logical_modules)
             .with_extra_chunks(&chunks)
             .with_extra_chunk_logical_modules(&provider_logical_modules)
-            .with_imported_primitive_array_spread_inputs("static/app", vec![contract]),
+            .with_imported_primitive_array_spread_inputs("static/app", vec![contract])
+            .with_import_order(import_order),
     )
 }
 
@@ -166,6 +168,12 @@ fn run_rejected(
     let chunks = [("static/provider", provider)];
     let provider_logical_modules = [("static/provider", provider_modules())];
     let opts = FixtureOpts::new(consumer, empty_consumer_modules())
+        .with_import_order(&[
+            "arrays/merged",
+            "callbacks/skipped",
+            "values/later",
+            "residual",
+        ])
         .with_extra_chunks(&chunks)
         .with_extra_chunk_logical_modules(&provider_logical_modules);
     run_rejection_fixture_with_graphs(match contract {
@@ -240,6 +248,12 @@ fn empty_imported_spread_breaks_the_callback_read_cycle_and_preserves_unrelated_
             "var values = [];",
             "const values = [];",
         ),
+        &[
+            "arrays/merged",
+            "callbacks/skipped",
+            "values/later",
+            "residual",
+        ],
     );
     assert_preserved_entry_output(&fixture, "0 false 0 1 0 true\n");
     assert_module_exports(
@@ -286,6 +300,7 @@ fn nonempty_imported_spread_keeps_callback_effects_and_later_provider_mutation()
             "var values = ['a'];",
             "const values = ['b'];",
         ),
+        &["arrays/merged", "callbacks/effects"],
     );
     assert_preserved_entry_output(&fixture, "a b true 2 2\n");
     assert_module_source(
@@ -330,6 +345,7 @@ fn grouped_provider_declarators_select_each_array_and_keep_sibling_writes_visibl
             "var values = ['a'], sibling = ['b'];",
             "var sibling = ['a'], values = ['b'];",
         ),
+        &["arrays/merged", "callbacks/effects"],
     );
     assert_preserved_entry_output(&fixture, "a b true 2 2\n");
 

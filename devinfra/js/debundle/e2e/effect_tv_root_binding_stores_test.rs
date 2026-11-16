@@ -53,14 +53,17 @@ fn a_hoisted_var_initialized_by_a_later_statement_commutes_with_an_independent_d
         let source = format!(
             "const independentLabel = 'label';\nvar current;\nconst independent = 7;\n{store}\nconsole.log(independent, typeof current === 'function' ? current() : current);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module_with_anon(
-                "state",
-                &[Member::new("independentLabel"), Member::new("current")],
-                &[store.as_str()],
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "state",
+                    &[Member::new("independentLabel"), Member::new("current")],
+                    &[store.as_str()],
+                )],
+            )
+            .with_import_order(&["state", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, expected);
         assert_effect_verdict_accepts(&fixture, &store);
     }
@@ -70,14 +73,17 @@ fn a_hoisted_var_initialized_by_a_later_statement_commutes_with_an_independent_d
 /// cells: the later one relocates ahead of the earlier.
 #[test]
 fn stores_to_different_bindings_commute() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "var first;\nvar second;\nfirst = 1;\nsecond = 2;\nconsole.log(first, second);\n",
-        vec![logical_module_with_anon(
-            "second",
-            &[Member::new("second")],
-            &["second = 2;"],
-        )],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "var first;\nvar second;\nfirst = 1;\nsecond = 2;\nconsole.log(first, second);\n",
+            vec![logical_module_with_anon(
+                "second",
+                &[Member::new("second")],
+                &["second = 2;"],
+            )],
+        )
+        .with_import_order(&["second", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "1 2\n");
     assert_effect_verdict_accepts(&fixture, "second = 2;");
 }
@@ -89,14 +95,17 @@ fn stores_to_different_bindings_commute() {
 #[test]
 fn a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses() {
     let source = "const record = { value: 0 };\nvar current;\nrecord.value = 1;\ncurrent = 2;\nconsole.log(record.value, current);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "state",
-            &[Member::new("current")],
-            &["current = 2;"],
-        )],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("current")],
+                &["current = 2;"],
+            )],
+        )
+        .with_import_order(&["state", "residual"]),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert!(
@@ -116,13 +125,16 @@ fn a_binding_store_commutes_with_a_record_store_where_the_legacy_chain_refuses()
 #[test]
 fn a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict() {
     let source = "var current = 0;\nconst before = current;\ncurrent = 1;\nconsole.log(before, current);\nexport { before };\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon("state", &[Member::new("current")], &["current = 1;"]),
-            logical_module("reader", &[Member::new("before")]),
-        ],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon("state", &[Member::new("current")], &["current = 1;"]),
+                logical_module("reader", &[Member::new("before")]),
+            ],
+        )
+        .with_import_order(&["reader", "state"]),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert_covered_binding_conflict(&effects, "current");
@@ -137,17 +149,20 @@ fn a_store_moved_before_a_reader_of_its_binding_is_a_cell_conflict() {
 #[test]
 fn a_store_to_a_function_binding_stays_after_its_call() {
     let source = "const anchor = 1;\nfunction readSeed(v) { return v + 40; }\nconst before = readSeed(anchor);\nreadSeed = () => 0;\nconsole.log(before, readSeed(anchor));\nexport { before };\n";
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "state",
-                &[Member::new("readSeed")],
-                &["readSeed = () => 0;"],
-            ),
-            logical_module("reader", &[Member::new("before")]),
-        ],
-    ));
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "state",
+                    &[Member::new("readSeed")],
+                    &["readSeed = () => 0;"],
+                ),
+                logical_module("reader", &[Member::new("before")]),
+            ],
+        )
+        .with_import_order(&["state", "reader", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "41 0\n");
     assert_effect_verdict_accepts(&fixture, "readSeed = () => 0;");
 }
@@ -191,13 +206,16 @@ fn two_writers_conflict_and_the_moved_writer_assigns_an_import() {
 fn a_covered_store_away_from_its_declaration_stays_a_placement_refusal() {
     let source =
         "var current;\nconst independent = 7;\ncurrent = 1;\nconsole.log(independent, current);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module("state", &[Member::new("current")]),
-            logical_module_with_anon("writer", &[], &["current = 1;"]),
-        ],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("state", &[Member::new("current")]),
+                logical_module_with_anon("writer", &[], &["current = 1;"]),
+            ],
+        )
+        .with_import_order(&["state", "writer", "residual"]),
+    );
     let candidate = rejected.candidate_relocation_assessment();
     assert_eq!(candidate["legacy_gate_accepts"], false, "{candidate:#}");
     assert_eq!(candidate["placement"]["status"], "blocked", "{candidate:#}");
@@ -217,13 +235,14 @@ fn a_covered_store_away_from_its_declaration_stays_a_placement_refusal() {
 /// independent declaration; both programs throw the same.
 #[test]
 fn throwing_stores_keep_their_typed_refusal() {
-    for (source, peers, modules, reason, error) in [
+    for (source, peers, modules, reason, error, import_order) in [
         (
             "import { shared } from './peer.js';\nshared = 1;\nconst independent = 7;\nconsole.log(independent);\n",
             &[("static/peer", "export let shared = 0;\n")][..],
             vec![logical_module("marker", &[Member::new("independent")])],
             "imported_binding_store",
             "TypeError",
+            &["marker"][..],
         ),
         (
             "const fixed = 0;\nconst independent = 7;\nfixed = 1;\nconsole.log(independent, fixed);\n",
@@ -235,6 +254,7 @@ fn throwing_stores_keep_their_typed_refusal() {
             )],
             "const_binding_store",
             "TypeError",
+            &["state", "residual"][..],
         ),
         (
             "later = 1;\nconst independent = 7;\nlet later = 0;\nconsole.log(independent, later);\n",
@@ -246,9 +266,14 @@ fn throwing_stores_keep_their_typed_refusal() {
             )],
             "uninitialized_binding_store",
             "ReferenceError",
+            &["state", "residual"][..],
         ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, modules).with_extra_chunks(peers));
+        let fixture = run_fixture(
+            FixtureOpts::new(source, modules)
+                .with_import_order(import_order)
+                .with_extra_chunks(peers),
+        );
         assert_preserved_entry_error(&fixture, error);
         let report = fixture.effect_translation_validation();
         assert!(
@@ -284,14 +309,17 @@ fn captured_and_exported_bindings_are_pending_a_store_rule() {
         if setup.starts_with("function") {
             members.push(Member::new("read"));
         }
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module_with_anon(
-                "state",
-                &members,
-                &["current = 1;"],
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "state",
+                    &members,
+                    &["current = 1;"],
+                )],
+            )
+            .with_import_order(&["state", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, "7 1\n");
         assert_effect_verdict_pending(&fixture, "incomplete", reason);
         assert_owner_coverage_refusal(&fixture.effect_translation_validation(), reason, reason);
@@ -306,14 +334,17 @@ fn captured_and_exported_bindings_are_pending_a_store_rule() {
 #[test]
 fn a_binding_read_after_an_await_in_a_closure_is_captured() {
     let source = "var current = 0;\nasync function read() { await null; console.log(current); }\nread();\nconst independent = 7;\ncurrent = 1;\nconsole.log(independent);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "state",
-            &[Member::new("current"), Member::new("read")],
-            &["current = 1;"],
-        )],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "state",
+                &[Member::new("current"), Member::new("read")],
+                &["current = 1;"],
+            )],
+        )
+        .with_import_order(&["state", "residual"]),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert!(

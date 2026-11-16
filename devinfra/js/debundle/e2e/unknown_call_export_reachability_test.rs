@@ -49,7 +49,11 @@ fn split_fixture(source: &'static str) -> FixtureOpts<'static> {
 }
 
 fn assert_split_preserved(source: &'static str) {
-    let fixture = run_fixture(split_fixture(source));
+    let fixture = run_fixture(split_fixture(source).with_import_order(&[
+        "residual",
+        "values/dynamic",
+        "values/later",
+    ]));
     assert_preserved_entry_output(&fixture, "1\n");
     assert_module_exports(
         &fixture.out_root,
@@ -73,10 +77,12 @@ fn assert_split_rejected_with_peer(
     source: &'static str,
     peer: &'static str,
     admission_overrides: &'static [&'static str],
+    import_order: &[&str],
 ) {
     let peer_chunks = [("static/peer", peer)];
     assert_split_rejected(
         split_fixture(source)
+            .with_import_order(import_order)
             .with_extra_chunks(&peer_chunks)
             .with_admission_overrides(admission_overrides),
     );
@@ -142,7 +148,9 @@ fn throw_only_initializer_does_not_supply_a_normal_stored_value() {
     ] {
         let source =
             format!("const dynamic = {initializer}; const later = dynamic; console.log(later);\n");
-        let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
+        let fixture = run_fixture_with_graphs(
+            FixtureOpts::new(&source, vec![]).with_import_order(&["residual"]),
+        );
         assert_preserved_entry_error(&fixture, "TypeError");
         let sequel = binding_execution(&fixture, "later");
         assert!(
@@ -173,6 +181,7 @@ readLater();
 export {};
 "#,
         &[],
+        &["residual", "values/dynamic", "values/later"],
     );
 }
 
@@ -194,6 +203,7 @@ readLater();
 export {};
 "#,
         &[],
+        &["values/dynamic", "values/later"],
     );
 }
 
@@ -215,6 +225,7 @@ readLater();
 export {};
 "#,
         &[],
+        &["residual", "values/dynamic", "values/later"],
     );
 }
 
@@ -237,6 +248,7 @@ opaque();
 export {};
 "#,
         &[],
+        &["residual", "values/dynamic", "values/later"],
     );
 }
 
@@ -259,13 +271,15 @@ evaluate();
 export {};
 "#,
         &["a1_eval"],
+        &["residual", "values/dynamic", "values/later"],
     );
 }
 
 #[test]
 fn opaque_export_without_private_capture_does_not_widen_to_all_source_units() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"export function opaque(callback) { callback?.(); }
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"export function opaque(callback) { callback?.(); }
 const prefix = new globalThis.Date();
 const dynamic = ((object) => {
   object[(object.key = 0)] = "value";
@@ -275,8 +289,10 @@ const later = dynamic;
 function readLater() { return later; }
 console.log(later);
 "#,
-        unescaped_local_callable_modules(),
-    ));
+            unescaped_local_callable_modules(),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
+    );
 
     assert_unescaped_local_callable_split(&fixture);
 }

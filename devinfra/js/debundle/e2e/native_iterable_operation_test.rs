@@ -104,7 +104,7 @@ var seed = new Set(["a"]), sibling = new Set(["x"]), copied = new Set([...seed, 
 console.log("after", copied.size);
 "#,
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "before\niterate\nafter 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let copied = graph["nodes"]
@@ -163,8 +163,9 @@ console.log([...copied].join(","), [...seed].join(","));
 
 #[test]
 fn accessor_iterable_keeps_the_unknown_protocol_fallback() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"const source = {
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"const source = {
     get [Symbol.iterator]() {
         console.log("iterator getter");
         return function* () { yield "value"; };
@@ -173,8 +174,10 @@ fn accessor_iterable_keeps_the_unknown_protocol_fallback() {
 const copied = new Set(source);
 console.log([...copied].join(","));
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, "iterator getter\nvalue\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let copied = graph["nodes"]
@@ -202,7 +205,7 @@ try {
 console.log("after");
 "#,
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "tail\nstop\nafter\n");
 }
 
@@ -210,14 +213,17 @@ console.log("after");
 fn side_effecting_spread_source_runs_once_and_keeps_the_protocol_fallback() {
     // Node proves emitted observable behavior. Incomplete analysis below is
     // not a claim that the flattened interpreter projected the operand once.
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"let calls = 0;
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"let calls = 0;
 function source() { calls++; console.log("source", calls); return new Set(["a"]); }
 const copied = new Set([...source(), "b"]);
 console.log("after", calls, copied.size);
 "#,
-        vec![],
-    ));
+            vec![],
+        )
+        .with_import_order(&["residual"]),
+    );
     assert_preserved_entry_output(&fixture, "source 1\nafter 1 2\n");
     let graph = serde_json::to_value(fixture.dependency_graph()).unwrap();
     let copied = graph["nodes"]

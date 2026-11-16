@@ -187,6 +187,7 @@ fn borrowed_and_static_member_sets_keep_their_existing_frontier() {
             "import { Box } from './box.js';\nconst source = ['a'];\nconst alias = source;\nconst memo = new Box(() => 1);\nconst seed = new Set(alias);\nconst lookup = { key: 'token' };\nconst unique = new Set([lookup.key]);\nconsole.log(seed.size, unique.size);\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/box",
             "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
@@ -236,6 +237,7 @@ fn direct_borrowed_root_keeps_its_runtime_prefix_and_contents_frontier() {
             "import { Box } from './box.js';\nconst input = ['a'];\nconst memo = new Box(() => 1);\nconst result = new Set(input);\nconsole.log(result.size, result.has('a'));\n",
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_extra_chunks(&[(
             "static/box",
             "export class Box { #callback; constructor(callback) { this.#callback = callback; } value() { return this.#callback(); } }\n",
@@ -345,17 +347,20 @@ fn repeated_var_input_selects_the_matched_declaration_site() {
 #[test]
 fn inferred_spread_keeps_later_alias_mutation_order() {
     let source = "var seed = new Set([1]), merged = new Set([...seed, 3]);\nconst alias = merged;\nalias.add(4);\nconst after = merged.has(4);\nconsole.log(after);\nexport {};\n";
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        source,
-        vec![logical_module(
-            "sets",
-            &[
-                Member::new("seed"),
-                Member::new("merged"),
-                Member::new("alias"),
-            ],
-        )],
-    ));
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            source,
+            vec![logical_module(
+                "sets",
+                &[
+                    Member::new("seed"),
+                    Member::new("merged"),
+                    Member::new("alias"),
+                ],
+            )],
+        )
+        .with_import_order(&["sets", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "true\n");
     let graph = fixture.dependency_graph();
     let unit = |ordinal| {
@@ -626,7 +631,7 @@ fn primitive_set_owner_keeps_its_effect_coverage_dependency() {
 #[test]
 fn weak_map_empty_input_is_site_local_and_keeps_later_behavior_opaque() {
     const SOURCE: &str = "function publish(key, value) { globalThis[key] = value; }\nconst key = {};\nconst cache = new WeakMap();\nlet other = new WeakMap();\nconst present = cache.has(key);\nconsole.log(present, Boolean(other));\n";
-    let opts = || FixtureOpts::new(SOURCE, vec![]);
+    let opts = || FixtureOpts::new(SOURCE, vec![]).with_import_order(&["residual"]);
 
     let fallback = run_fixture_with_graphs(opts());
     assert_preserved_entry_output(&fallback, "false true\n");
@@ -892,7 +897,8 @@ fn split_opts(input: Option<NativeOperationInputContract>) -> FixtureOpts<'stati
             logical_module("factory", &[Member::new("factory")]),
             logical_module("later", &[Member::new("LaterError")]),
         ],
-    );
+    )
+    .with_import_order(&["marker", "factory", "later", "residual"]);
     let opts = opts
         .with_extra_chunks(REFLECT_CHUNKS)
         .with_extra_files(REFLECT_FILES);
@@ -1172,6 +1178,7 @@ fn unselected_symbol_site_keeps_the_strict_fallback() {
             logical_module("later", &[Member::new("LaterError")]),
         ],
     )
+    .with_import_order(&["marker", "other", "factory", "later", "residual"])
     .with_extra_chunks(REFLECT_CHUNKS)
     .with_extra_files(REFLECT_FILES)
     .with_native_operation_inputs("static/app", vec![marker_input(source)]);
