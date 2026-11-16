@@ -243,6 +243,15 @@ grafana_dashboard(
 )
 
 grafana_dashboard(
+    name = "gpu",
+    srcs = ["gpu.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+grafana_dashboard(
     name = "rugged_power",
     srcs = ["rugged_power.py"],
     deps = [
