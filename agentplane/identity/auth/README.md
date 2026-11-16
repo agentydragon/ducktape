@@ -67,7 +67,7 @@ grants never become the effective Identity's grants. Connection provenance requi
 per-method grant. The envelope cannot assert a ServiceAccount as the effective caller.
 
 Handlers consume `Admitted` and apply their ordinary resource and policy checks. Legacy `Caller`,
-`EffectiveCaller` and `AdmittedReviewedCaller` accessors do not turn a workload Identity or service
+and `EffectiveCaller` accessors do not turn a workload Identity or service
 actor into a ServiceAccount proof. Retained ServiceAccount attribution is historical data, not a
 current credential or delegation grant.
 
@@ -77,16 +77,6 @@ and the `agentplane-delegation-bin` header in standard base64 (`EncodeDelegation
 their service certificate and an empty token path. The dialer sends only the typed binary envelope,
 rejects duplicate authorization/envelope metadata and disables retries. A failed or absent
 certificate never selects bearer proof.
-
-## Remaining legacy implementation
-
-[`auth.go`](auth.go) still contains the TokenReview resolver and account admission APIs for
-the undeployed [iron-proxy experiment](../../egress/x/iron_proxy/README.md) and its tests.
-`Accounts` and `ReviewedServiceAccount` are not the production receiver pattern.
-Shared listeners accept only SPIFFE authentication; public health methods may omit a client certificate. The remaining token
-client mode and audience constants do not establish an active first-party bearer caller. Remove these implementations after their final
-consumers and configuration rollout gates. Production TokenReview RBAC has been removed. Preserve
-Kubernetes API clients and retained account-attributed records.
 
 The [delegated authorization contract](../../docs/delegated_authorization.md) records the shared
 protocol. Actions' [Session delegation executor](../../action_service/session_delegation/README.md)
