@@ -453,7 +453,7 @@ def autoscaler_chart(app: App) -> Chart:
                 api_version=VirtualMachinePool.GVK.api_version, kind=VirtualMachinePool.GVK.kind, name=NAME
             ),
             min_replica_count=1,
-            max_replica_count=4,
+            max_replica_count=8,
             polling_interval=30,
             fallback=keda.ScaledObjectSpecFallback(
                 failure_threshold=3,

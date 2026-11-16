@@ -1,9 +1,9 @@
 # KVM pool capacity, 16 November 2026
 
-The pool can grow from three to four workers without required host anti-affinity.
+The pool can grow from three to eight workers without required host anti-affinity.
 Each worker reserves 2 CPU instead of 4, retaining four guest vCPUs, a 4-CPU limit,
 8 GiB RAM, an 80 GiB local SSD work disk, and one BuildBuddy action at a time.
-At the new ceiling, VM requests total 8 CPU and 32 GiB guest RAM, plus KubeVirt
+At the new ceiling, VM requests total 16 CPU and 64 GiB guest RAM, plus KubeVirt
 and sidecar overhead. Previously the ceiling reserved 12 CPU and 24 GiB guest RAM.
 The autoscaling minimum, rate limits, readiness and drain behavior stay unchanged.
 
@@ -55,21 +55,58 @@ physical cores. Shorter spikes and different workloads may exceed this sample.
 
 ## Placement and limits
 
-The inspected source base was `ce5a9a6fc5`. All six HIL nodes were Ready with no
-memory or disk pressure. The SSD storage class uses one local copy and
-`WaitForFirstConsumer`; SSD pools are on three HIL hosts. At inspection:
+Initial source base: `ce5a9a6fc5`; capacity refreshed after rebasing onto
+`0e7c9a7010`. Only three of the six HIL hosts have the required local SSD pool.
+The storage class uses one local copy and `WaitForFirstConsumer`.
 
-| Host          | Unreserved CPU | Unreserved RAM, GiB | SSD free, GiB |
-| ------------- | -------------: | ------------------: | ------------: |
-| ovh-ns1001419 |           5.54 |               42.58 |         349.1 |
-| ovh-ns104952  |           2.46 |               46.16 |         312.9 |
-| ovh-ns104963  |           1.80 |               44.12 |         325.2 |
+The 11:50 UTC snapshot subtracts all non-pool pod requests from allocatable
+resources, then accounts for **2.025 CPU and 8.460 GiB per worker pod**, including
+KubeVirt overhead and the restartable guest-console sidecar. These are total
+pool budgets, including the existing workers, not room for this many extra VMs.
 
-Unreserved values are allocatable less active pod requests, including the three
-existing workers. SSD values are LINSTOR thin-pool free capacity, not reserved
-space or an I/O performance guarantee. Other workloads can consume this headroom.
-Only HIL placement and hardware virtualization eligibility remain required.
+| Host          | CPU budget for pool | RAM budget for pool, GiB | Workers at 2 CPU requested | Workers by RAM only | Current SSD free, GiB |
+| ------------- | ------------------: | -----------------------: | -------------------------: | ------------------: | --------------------: |
+| ovh-ns1001419 |               9.548 |                   50.983 |                          4 |                   6 |                 385.4 |
+| ovh-ns104952  |               6.468 |                   54.566 |                          3 |                   6 |                 312.9 |
+| ovh-ns104963  |               5.812 |                   52.522 |                          2 |                   6 |                 325.2 |
+| Total         |              21.828 |                  158.071 |                          9 |                  18 |               1,023.5 |
+
+The new **maximum of 8** leaves one worker below the current CPU scheduling
+ceiling of 9. Eight pods request about 16.2 CPU and 67.7 GiB including overhead.
+RAM alone could fit 18, but that is not the combined resource ceiling.
+Reducing CPU requests to 1.5 would raise the CPU-only count to 13 (6 + 4 + 3),
+before memory and local disk constraints. That more aggressive CPU weighting
+and the resulting density are untested.
+
+The 80 GiB guest disk currently needs an approximately **84.8 GiB PVC** after
+CDI filesystem overhead. Eight such PVCs total about 678.4 GiB. LINSTOR reports
+thin-pool free space, not reserved space or an I/O guarantee; host placement,
+other volumes and future writes still matter. Four fully written worker PVCs
+on ovh-ns1001419 would leave roughly 46 GiB of the current free space, assuming
+no growth by other tenants. Increasing past eight should revisit local SSD
+placement and headroom as well as CPU. Docker and containerd data live on the
+work disk; guest root filesystem growth remains on node ephemeral storage.
+
+A second Mimir window, 2026-11-13 11:51:10 through 2026-11-16 11:51:10 UTC, has 4,321 samples
+per host at one-minute evaluation intervals. Host CPU excludes idle, iowait and
+steal, with a three-minute rate; memory is node-exporter MemAvailable:
+
+| Host          | Mean CPU cores | CPU p95 | CPU max | Lowest available RAM, GiB |
+| ------------- | -------------: | ------: | ------: | ------------------------: |
+| ovh-ns1001419 |          2.839 |   4.827 |   6.417 |                     33.72 |
+| ovh-ns104952  |          1.797 |   3.038 |   5.347 |                     34.37 |
+| ovh-ns104963  |          1.474 |   2.469 |   4.111 |                     38.86 |
+
+Queries use `job="node-exporter",namespace="monitoring"` and the host's
+internal IP as `instance` (`10.42.0.19:9100`, `.16:9100`, `.17:9100`):
+`sum by (instance) (rate(node_cpu_seconds_total{...,mode!~"idle|iowait|steal"}[3m]))`
+and `node_memory_MemAvailable_bytes{...}/1024^3`.
+These measurements include the previous 1–3-worker pool; they do not measure
+eight concurrent workers. Other workloads can consume this headroom.
 
 This is a capacity and reservation change, not a measured CI speedup. Co-located
 busy workers still need comparison for queue time, execution time, CPU steal,
 SSD latency, registration and graceful draining under concurrent load.
+The existing scale-up policy adds at most one VM per 15 minutes, so growing
+from one to eight takes at least 90 minutes after the first addition. The
+ceiling does not prewarm eight workers or guarantee burst admission latency.

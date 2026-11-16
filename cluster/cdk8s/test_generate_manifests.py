@@ -102,14 +102,6 @@ def test_kvm_worker_pool_members_are_selected_fenced_and_given_their_own_ssd_dis
     assert labels.items() <= template["spec"]["template"]["metadata"]["labels"].items()
     guest = template["spec"]["template"]["spec"]
     assert guest["nodeSelector"] == {"topology.kubernetes.io/region": "hil"}
-    # Every pool member avoids any node that already runs a worker.
-    (term,) = guest["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
-    assert term["topologyKey"] == "kubernetes.io/hostname"
-    assert {
-        (expression["key"], value)
-        for expression in term["labelSelector"]["matchExpressions"]
-        for value in expression["values"]
-    } == labels.items()
     # A member is ready only once its executor has registered; the readiness endpoint is the executor's own.
     probe = guest["readinessProbe"]["httpGet"]
     assert probe["path"] == "/readyz"
@@ -275,7 +267,7 @@ def test_kvm_worker_keeps_privileged_actions_inside_the_guest(
         if expression["operator"] == "In" and expression["values"] == ["true"]
     }
     assert cpu_features == allowed_features == {"svm", "vmx"}
-    assert guest["domain"]["resources"]["limits"] == guest["domain"]["resources"]["requests"]
+    assert guest["domain"]["resources"]["limits"]["memory"] == guest["domain"]["resources"]["requests"]["memory"]
     assert not guest["domain"]["devices"].get("hostDevices")
     assert not guest["domain"]["devices"].get("gpus")
     assert not any("hostDisk" in volume or "serviceAccount" in volume for volume in guest["volumes"])
