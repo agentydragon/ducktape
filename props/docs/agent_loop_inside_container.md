@@ -140,7 +140,7 @@ The `llm_run_costs` view joins `llm_requests` with `model_metadata` pricing tabl
 | Max turns     | Don't enforce (cost/timeout are sufficient)                                   |
 | Context limit | Container's responsibility; compaction is future work                         |
 | Completion    | "submit" tool validates → returns errors (agent retries) or succeeds → exit 0 |
-| Code reuse    | Uses `agent_core.Agent` with `DirectToolProvider`                             |
+| Code reuse    | Uses `props.agents.af.loop` and direct tools                                  |
 
 ### Snapshot Grader Mode
 

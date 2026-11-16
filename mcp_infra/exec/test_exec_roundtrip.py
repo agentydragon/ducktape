@@ -8,12 +8,12 @@ from __future__ import annotations
 import pytest_bazel
 from fastmcp.client import Client
 
-from agent_core.agent import Agent
-from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.mcp_provider import MCPToolProvider
-from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from openai_utils.model import UserMessage
 from openai_utils.testing.responses import DecoratorMock, tool_roundtrip
+from skills.info_gathering.evals.agent_runtime.agent import Agent
+from skills.info_gathering.evals.agent_runtime.loop_control import AllowAnyToolOrTextMessage
+from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
+from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
 from util.exec.models import BaseExecResult, Exited
 
 ECHO_CMD = ["/bin/echo", "-n", "hello"]

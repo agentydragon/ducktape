@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_core.events import AssistantText, ToolCall
+from skills.info_gathering.evals.agent_runtime.events import AssistantText, ToolCall
 
 
 class BaseHandler:

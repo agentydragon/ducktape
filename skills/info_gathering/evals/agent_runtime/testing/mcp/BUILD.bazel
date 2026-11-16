@@ -18,8 +18,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":echo_server",
-        "//agent_core:mcp_provider",
-        "//agent_core:tool_provider",
+        "//skills/info_gathering/evals/agent_runtime:mcp_provider",
+        "//skills/info_gathering/evals/agent_runtime:tool_provider",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
     ],

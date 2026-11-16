@@ -10,9 +10,9 @@ from contextlib import asynccontextmanager
 
 from fastmcp.client import Client
 
-from agent_core.mcp_provider import MCPToolProvider
 from devinfra.oci.oci import load_oci_image
 from skills.eval_infra.docker_exec import scratch_exec_server
+from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
 from third_party.containers import debian_slim
 
 logger = logging.getLogger(__name__)

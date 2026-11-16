@@ -310,7 +310,7 @@ curl -s -X POST https://litellm.allegedly.works/v1/responses \
 #   arguments '{"country":"France"}' ✓
 ```
 
-This means `agent_core` (which uses the Responses API via `openai.AsyncOpenAI`)
+This means the eval agent runtime (which uses the Responses API via `openai.AsyncOpenAI`)
 can work with the Ollama/LiteLLM stack. A smoke test exists at
 `skills/info_gathering/evals/twenty_questions/test_ollama_tool_calling.py` (mock target passes; live target
 requires `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` env vars).
@@ -356,9 +356,9 @@ bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin --
   drops tool calls (see finding #1 above).
 - The eval requires Docker for the scratch container (agent's exec tool).
 
-### agent_core Responses API smoke test
+### Eval agent runtime Responses API smoke test
 
-Separate from the eval — tests `agent_core` (Responses API) against Ollama/LiteLLM:
+Separate from the eval — tests its agent runtime (Responses API) against Ollama/LiteLLM:
 
 ```bash
 LITELLM_KEY=$(kubectl get secret litellm-master-key -n litellm \

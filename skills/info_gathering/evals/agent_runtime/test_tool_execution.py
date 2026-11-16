@@ -13,18 +13,21 @@ from fastmcp.exceptions import ToolError
 from hamcrest import anything, assert_that, contains_string, has_entries
 from more_itertools import one
 
-from agent_core.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
-from agent_core.events import ToolCallOutput
-from agent_core.loop_control import RequireAnyTool
-from agent_core.mcp_provider import MCPToolProvider
-from agent_core.testing.handlers import TextCaptureHandler, run_until_text
-from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
-from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
-from agent_core.tool_provider import ImageContent, TextContent, ToolResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.testing.openai_mock import make_mock
 from openai_utils.testing.responses import DecoratorMock, ResponsesFactory
+from skills.info_gathering.evals.agent_runtime.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
+from skills.info_gathering.evals.agent_runtime.events import ToolCallOutput
+from skills.info_gathering.evals.agent_runtime.loop_control import RequireAnyTool
+from skills.info_gathering.evals.agent_runtime.mcp_provider import MCPToolProvider
+from skills.info_gathering.evals.agent_runtime.testing.handlers import TextCaptureHandler, run_until_text
+from skills.info_gathering.evals.agent_runtime.testing.matchers import (
+    assert_function_call_output_structured,
+    tool_call_with_error_text,
+)
+from skills.info_gathering.evals.agent_runtime.testing.mcp.echo_server import ECHO_TOOL_NAME
+from skills.info_gathering.evals.agent_runtime.tool_provider import ImageContent, TextContent, ToolResult
 
 
 def test_agent_tool_boundary_validates_nested_union() -> None:

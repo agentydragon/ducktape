@@ -1,8 +1,8 @@
 """Test helpers for driving agent steps until the model produces text."""
 
-from agent_core.agent import Agent
-from agent_core.events import AssistantText
-from agent_core.handler import BaseHandler
+from skills.info_gathering.evals.agent_runtime.agent import Agent
+from skills.info_gathering.evals.agent_runtime.events import AssistantText
+from skills.info_gathering.evals.agent_runtime.handler import BaseHandler
 
 
 class TextCaptureHandler(BaseHandler):

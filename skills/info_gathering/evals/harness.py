@@ -17,9 +17,9 @@ from typing import Literal
 from pydantic import BaseModel
 from python.runfiles import Runfiles
 
-from agent_core.events import ToolCall
 from openai_utils.client_factory import get_async_openai
 from openai_utils.model import Model, ResponsesModel
+from skills.info_gathering.evals.agent_runtime.events import ToolCall
 
 logger = logging.getLogger(__name__)
 

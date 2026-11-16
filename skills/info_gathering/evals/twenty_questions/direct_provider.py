@@ -25,8 +25,8 @@ from typing import Any, get_type_hints, overload
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import to_jsonable_python
 
-from agent_core.tool_provider import ToolResult, ToolSchema
 from openai_utils.json_schema import OpenAICompatibleSchema
+from skills.info_gathering.evals.agent_runtime.tool_provider import ToolResult, ToolSchema
 
 # Tool functions can return ToolResult, str, BaseModel, list, None, or awaitables of any
 ToolReturn = ToolResult | str | BaseModel | list | None

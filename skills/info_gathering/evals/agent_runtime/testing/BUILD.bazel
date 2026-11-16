@@ -7,9 +7,9 @@ py_library(
     srcs = ["handlers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:agent",
-        "//agent_core:events",
-        "//agent_core:handler",
+        "//skills/info_gathering/evals/agent_runtime:agent",
+        "//skills/info_gathering/evals/agent_runtime:events",
+        "//skills/info_gathering/evals/agent_runtime:handler",
     ],
 )
 
@@ -18,8 +18,8 @@ py_library(
     srcs = ["matchers.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//agent_core:events",
-        "//agent_core:tool_provider",
+        "//skills/info_gathering/evals/agent_runtime:events",
+        "//skills/info_gathering/evals/agent_runtime:tool_provider",
         "@pypi//pyhamcrest",
     ],
 )

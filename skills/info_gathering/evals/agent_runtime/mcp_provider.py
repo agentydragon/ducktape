@@ -11,7 +11,7 @@ from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from mcp import types as mcp_types
 
-from agent_core.tool_provider import ImageContent, TextContent, ToolResult, ToolSchema
+from skills.info_gathering.evals.agent_runtime.tool_provider import ImageContent, TextContent, ToolResult, ToolSchema
 
 
 class MCPToolProvider:

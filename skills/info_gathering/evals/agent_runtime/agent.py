@@ -7,10 +7,6 @@ from typing import Any
 
 import pydantic_core
 
-from agent_core.events import AssistantText, ToolCall, ToolCallOutput
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool, ToolPolicy
-from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
     AssistantMessageOut,
@@ -26,6 +22,17 @@ from openai_utils.model import (
     UserMessage,
 )
 from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
+from skills.info_gathering.evals.agent_runtime.events import AssistantText, ToolCall, ToolCallOutput
+from skills.info_gathering.evals.agent_runtime.handler import BaseHandler
+from skills.info_gathering.evals.agent_runtime.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool, ToolPolicy
+from skills.info_gathering.evals.agent_runtime.tool_provider import (
+    ImageContent,
+    ResultContent,
+    TextContent,
+    ToolOutputData,
+    ToolProvider,
+    ToolResult,
+)
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
