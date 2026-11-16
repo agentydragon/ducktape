@@ -200,9 +200,20 @@ func TestRuntimeCloseWaitsForRunningPreparationAndExecutionFence(t *testing.T) {
 	}
 }
 
-func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
-	failWatch := make(chan struct{})
-	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), failWatch: failWatch, holdAfterCancel: true}
+type blockedSuccessorClose struct {
+	*Runtime
+	*heldSuccessorDemand
+	adoptionDone chan error
+	closeDone    chan error
+	release      func()
+}
+
+func startBlockedSuccessorClose(t *testing.T, failWatch <-chan struct{}) *blockedSuccessorClose {
+	t.Helper()
+	store := &heldSuccessorDemand{
+		State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}),
+		failWatch: failWatch, holdAfterCancel: true,
+	}
 	workspace := t.TempDir()
 	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
 	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
@@ -217,8 +228,9 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
 	}
-	var release sync.Once
-	t.Cleanup(func() { release.Do(func() { close(store.release) }) })
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(store.release) }) }
+	t.Cleanup(release)
 	store.armed.Store(true)
 	adoptionDone := make(chan error, 1)
 	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
@@ -230,97 +242,76 @@ func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
 	closeDone := make(chan error, 1)
 	go func() { closeDone <- r.Close(context.Background()) }()
 	waitRuntime(t, r, r.isClosing, "Close to revoke admission")
+	return &blockedSuccessorClose{Runtime: r, heldSuccessorDemand: store, adoptionDone: adoptionDone, closeDone: closeDone, release: release}
+}
+
+func TestEngineWatchFailureWakesBlockedAdoptionBeforeWorkerJoin(t *testing.T) {
+	failWatch := make(chan struct{})
+	scenario := startBlockedSuccessorClose(t, failWatch)
 	close(failWatch)
 	select {
-	case <-r.operationCoordinator.stopped:
+	case <-scenario.operationCoordinator.stopped:
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("engine watch failure did not stop operation owner")
 	}
-	if err := waitClose(t, adoptionDone); err == nil {
+	if err := waitClose(t, scenario.adoptionDone); err == nil {
 		t.Fatal("adoption succeeded after engine watch failure")
 	}
-	if err := waitClose(t, closeDone); err == nil {
+	if err := waitClose(t, scenario.closeDone); err == nil {
 		t.Fatal("Close released ownership after engine watch failure")
 	}
 	select {
-	case <-r.lifecycleDone:
+	case <-scenario.lifecycleDone:
 		t.Fatal("engine joined before the accepted preparation worker settled")
 	default:
 	}
-	release.Do(func() { close(store.release) })
+	scenario.release()
 	select {
-	case <-r.lifecycleDone:
+	case <-scenario.lifecycleDone:
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("engine did not join operation owner after blocked worker settled")
 	}
-	r.mu.Lock()
-	runErr := r.lifecycleRunErr
-	r.mu.Unlock()
+	scenario.mu.Lock()
+	runErr := scenario.lifecycleRunErr
+	scenario.mu.Unlock()
 	if runErr == nil || !strings.Contains(runErr.Error(), "injected COSI watch failure") {
 		t.Fatalf("engine failure = %v, want injected watch failure", runErr)
 	}
 }
 
 func TestCloseControllerFailureStopsBlockedOperationWithoutRuntimeRun(t *testing.T) {
-	store := &heldSuccessorDemand{State: state.WrapCore(namespaced.NewState(inmem.Build)), entered: make(chan struct{}), release: make(chan struct{}), holdAfterCancel: true}
-	workspace := t.TempDir()
-	config := lifecycleConfig(t, modelConfigServer(t).URL, workspace, nil, "/bin/false")
-	config.CodexExecServer = &codexexecserver.Config{URL: "ws://unused"}
-	config.CodexBinary = "/bin/false"
-	config.HarnessEnvironment = map[string]string{}
-	config.expectCloseError = true
-	config.deps.startExecution = func(context.Context, Config, string) (executionHandle, error) {
-		return newControllerExecutionHandle(nil), nil
-	}
-	r := newLifecycleRuntimeWithState(t, config, store)
-	client := startDirectExecutionTestClient(t, r, "test-incarnation")
-	if _, err := client.runtime.CreateSession(client.callCtx, openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
-		t.Fatal(err)
-	}
-	var release sync.Once
-	t.Cleanup(func() { release.Do(func() { close(store.release) }) })
-	store.armed.Store(true)
-	adoptionDone := make(chan error, 1)
-	go func() { adoptionDone <- r.adoptIncarnation(context.Background(), "successor") }()
+	scenario := startBlockedSuccessorClose(t, nil)
+	scenario.failCloseDesiredRead(t)
 	select {
-	case <-store.entered:
-	case <-time.After(lifecycleTestTimeout):
-		t.Fatal("successor Running preparation did not block")
-	}
-	closeDone := make(chan error, 1)
-	go func() { closeDone <- r.Close(context.Background()) }()
-	waitRuntime(t, r, r.isClosing, "Close to revoke admission")
-	store.failCloseDesiredRead(t)
-	select {
-	case <-r.lifecycleCoordinator.stopped:
+	case <-scenario.lifecycleCoordinator.stopped:
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("Close controller did not exit after desired read failure")
 	}
 	select {
-	case <-r.operationCoordinator.stopped:
+	case <-scenario.operationCoordinator.stopped:
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("Close controller exit did not stop operation owner")
 	}
-	if err := waitClose(t, adoptionDone); err == nil {
+	if err := waitClose(t, scenario.adoptionDone); err == nil {
 		t.Fatal("adoption succeeded after Close controller failure")
 	}
-	if err := waitClose(t, closeDone); err == nil {
+	if err := waitClose(t, scenario.closeDone); err == nil {
 		t.Fatal("Close released ownership after Close controller failure")
 	}
 	select {
-	case <-r.lifecycleDone:
+	case <-scenario.lifecycleDone:
 		t.Fatal("engine joined before blocked preparation settled")
 	default:
 	}
-	release.Do(func() { close(store.release) })
+	scenario.release()
 	select {
-	case <-r.lifecycleDone:
+	case <-scenario.lifecycleDone:
 	case <-time.After(lifecycleTestTimeout):
 		t.Fatal("engine did not join operation owner after Close controller failure")
 	}
-	r.mu.Lock()
-	controllerErr := r.lifecycleControllerErr
-	r.mu.Unlock()
+	scenario.mu.Lock()
+	controllerErr := scenario.lifecycleControllerErr
+	scenario.mu.Unlock()
 	if controllerErr == nil || !strings.Contains(controllerErr.Error(), "injected Close controller desired read failure") {
 		t.Fatalf("Close controller error = %v, want injected desired read failure", controllerErr)
 	}
