@@ -162,6 +162,23 @@ The JSON is `{"modules":[{"chunk":"app","module":"features/view"}]}`;
 paths must name existing materialized chunks and explicit modules. Duplicate
 entries and unknown JSON fields are errors.
 
+The optional `placements` map adds fresh output owners to the selected view:
+chunk ID → chunk-local module path → ordinary `LogicalModule` selector claims.
+These owners require `inline_in_entry` residual routing. Their paths must not
+collide with any base owner, including omitted owners. The view cannot add
+semantic annotations or anonymous `no_reentry_call` premises; the complete base
+spec remains their owner.
+
+The full-base selector solve is authoritative. Retained claims keep their
+resolved identities, including claims made unique by elimination. Every base
+named export remains a fixed reference anchor for placement selectors, even
+when its owner is omitted. Named-import anchors carry binding identity without
+a local declaration unit. Only new placement targets compete in the placement
+solve; retained ownership, including its derived whole-statement and
+indivisible-declaration claims, excludes occupied source units. Omitted base
+claims do not exclude their source units. The combined assignment passes the
+ordinary structural placement and exact-priority verifier before emission.
+
 The configured `import_order` describes the final materialized assignment,
 including ownership-subset filtering and residual synthesis. It must contain
 each final nonentry owner exactly once; the subset operation does not drop
@@ -223,7 +240,9 @@ members retain original source names. The authored spec is unchanged.
 Ownership filtering precedes residual routing for every supported residual
 policy. An omitted explicit claim at the catchall path loses its authored
 renames and annotations; ordinary residual routing can recreate that destination.
-Full graph export remains unsupported with this option.
+Full graph export binds the exact selected-view input bytes and normalized
+retained ownership to program provenance. Selected graph IDs identify that
+snapshot; they are not persistent selector coordinates.
 `run --full-report residual_atomic_groups` instead reports atomic groups that
 have at least one residual-assigned source unit, using the exact assignment
 being validated. It identifies each source unit, including non-binding

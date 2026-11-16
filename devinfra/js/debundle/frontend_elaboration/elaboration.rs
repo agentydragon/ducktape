@@ -56,6 +56,7 @@ pub struct FrontendChunk<'a> {
     pub explicit_requests: Vec<LogicalRequest>,
     pub structural_analysis: StructuralChunkSourceFacts<'a>,
     pub resolution: selector_resolve::Resolution,
+    pub placement_anchors: Option<selector_resolve::PlacementAnchors>,
     pub resolved_members: Vec<Vec<usize>>,
     pub member_claims: MemberClaimProjection,
     pub declared_assumptions: AnalysisAssumptions,
@@ -126,6 +127,8 @@ pub struct FrontendElaboration<'a> {
 
 pub struct FrontendSpecInputs<'a> {
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    /// Freeze full-base selector identities only for placement-view consumers.
+    pub placement_chunks: BTreeSet<String>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
@@ -181,6 +184,7 @@ pub fn project_analysis(
         inputs,
         FrontendSpecInputs {
             logical_modules: &spec.logical_modules,
+            placement_chunks: BTreeSet::new(),
             chunk_renames: &spec.chunk_renames,
             unassigned_mode: &spec.unassigned_mode,
             chunk_analysis_options: &spec.chunk_analysis_options,
@@ -971,7 +975,12 @@ fn prepare_chunk<'a>(
         &runtime_ast.module.body,
         spec.fail_fast,
     )?;
-    let projected = project_chunk(selectors, &explicit_requests, resolved_members)?;
+    let projected = project_chunk(
+        selectors,
+        &explicit_requests,
+        resolved_members,
+        spec.placement_chunks.contains(chunk_id),
+    )?;
     Ok(PreparedChunk {
         chunk_id: chunk_id.to_string(),
         chunk_id_interned,
@@ -986,7 +995,7 @@ fn prepare_chunk<'a>(
     })
 }
 
-fn eligible_member_indices(
+pub fn eligible_member_indices(
     chunk_id: &str,
     requests: &[LogicalRequest],
     ast: &ChunkAstAnalysis,
@@ -1085,6 +1094,7 @@ fn finish_frontend_chunk<'a>(
         resolution,
         resolved_members,
         structural_analysis,
+        placement_anchors,
     } = resolved;
     let member_claims = project_member_claims(MemberClaimInput {
         chunk_id: &prepared.chunk_id,
@@ -1117,6 +1127,7 @@ fn finish_frontend_chunk<'a>(
         explicit_requests: prepared.explicit_requests,
         structural_analysis,
         resolution,
+        placement_anchors,
         resolved_members,
         member_claims,
         declared_assumptions,
@@ -1125,19 +1136,19 @@ fn finish_frontend_chunk<'a>(
     })
 }
 
-struct MemberClaimInput<'a> {
-    chunk_id: &'a str,
-    requests: &'a [LogicalRequest],
-    resolution: &'a selector_resolve::Resolution,
-    resolved_members: &'a [Vec<usize>],
-    ast: &'a ChunkAstAnalysis,
-    top_level_mark: swc_common::Mark,
-    body: &'a [ModuleItem],
-    fail_fast: bool,
-    diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
+pub struct MemberClaimInput<'a> {
+    pub chunk_id: &'a str,
+    pub requests: &'a [LogicalRequest],
+    pub resolution: &'a selector_resolve::Resolution,
+    pub resolved_members: &'a [Vec<usize>],
+    pub ast: &'a ChunkAstAnalysis,
+    pub top_level_mark: swc_common::Mark,
+    pub body: &'a [ModuleItem],
+    pub fail_fast: bool,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
 }
 
-fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProjection> {
+pub fn project_member_claims(input: MemberClaimInput<'_>) -> Result<MemberClaimProjection> {
     let MemberClaimInput {
         chunk_id,
         requests,

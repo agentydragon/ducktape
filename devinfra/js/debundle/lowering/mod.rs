@@ -440,6 +440,17 @@ pub fn materialize_logical_modules(
             .collect(),
         frontend_elaboration::FrontendSpecInputs {
             logical_modules,
+            placement_chunks: options
+                .ownership_subset
+                .as_ref()
+                .map(|view| {
+                    view.placements
+                        .iter()
+                        .filter(|(_, modules)| !modules.is_empty())
+                        .map(|(chunk, _)| chunk.clone())
+                        .collect()
+                })
+                .unwrap_or_default(),
             chunk_renames,
             unassigned_mode,
             chunk_analysis_options,

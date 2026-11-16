@@ -1485,7 +1485,7 @@ pub use spec_wire_proto::debundle::spec::WrapperShape;
 
 // --- Logical modules -----------------------------------------------------
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct LogicalModule {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1585,7 +1585,7 @@ where
 
 /// Co-mover spec for a top-level anonymous side-effect statement.
 /// See [`LogicalModule::anonymous_statements`].
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct AnonymousStatement {
     /// JS source of the target top-level statement, verbatim.
@@ -2017,7 +2017,7 @@ mod module_path_tests {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Member {
     /// Public export name. Defaults to the bound `selector.binding.name`.
@@ -2031,7 +2031,7 @@ pub struct Member {
 
 /// The permissive selector shape stored in module YAML. It preserves missing
 /// and conflicting selector keys for validation diagnostics and repair tools.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RawMemberSelector {
     #[serde(default, skip_serializing_if = "Option::is_none")]
