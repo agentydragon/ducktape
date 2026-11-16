@@ -35,7 +35,7 @@ export type SessionViewerQueryModel = {
   loadingChildSessions: boolean;
   loadingMoreRelatedSessions: boolean;
   childSessionsLoadError: string | null;
-  hasMoreChildSessions: boolean | undefined;
+  hasMoreChildSessions: boolean;
   errorText: string | null;
   loadMoreSessions: () => void;
   loadEarlierEvents: () => void;
