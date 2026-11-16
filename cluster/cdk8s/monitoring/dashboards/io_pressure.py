@@ -6,6 +6,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     field_override,
     last_value,
     mimir,
+    mimir_multi_variable,
     mimir_query,
     mimir_table_query,
     storage_tier_variable,
@@ -326,18 +327,12 @@ def build_dashboard() -> dashboard.Dashboard:
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
                 storage_tier_variable(),
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="node",
                     label="Node",
                     query='query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}) * on (node) group_left () max by (node) (kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"})))',
-                    datasource=mimir(),
-                    current=dashboard.VariableOption(text="All", value=["$__all"]),
-                    multi=True,
                     refresh=dashboard.VariableRefresh.ON_TIME_RANGE_CHANGED,
-                    sort=dashboard.VariableSort.ALPHABETICAL_ASC,
-                    include_all=True,
                     regex='/node="([^"]+)"/',
-                    definition='query_result(max by (node) (node_pressure_io_stalled_seconds_total * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="monitoring",pod=~"prometheus-node-exporter-.+"}) * on (node) group_left () max by (node) (kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"})))',
                 ),
                 dashboard.VariableModel(
                     type_val=dashboard.VariableType.CUSTOM,

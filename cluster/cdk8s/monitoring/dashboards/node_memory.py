@@ -5,6 +5,7 @@ from grafana_foundation_sdk.models import barchart, common, dashboard, table, te
 from cluster.cdk8s.monitoring.dashboards.foundation import (
     field_override,
     mimir,
+    mimir_multi_variable,
     mimir_query,
     mimir_table_query,
     series_options,
@@ -412,33 +413,23 @@ def build_dashboard() -> dashboard.Dashboard:
         ],
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="node",
                     label="Node",
                     query=_NODE_VARIABLE_QUERY,
-                    datasource=mimir(),
-                    current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
-                    multi=True,
                     refresh=dashboard.VariableRefresh.ON_TIME_RANGE_CHANGED,
-                    sort=dashboard.VariableSort.ALPHABETICAL_ASC,
-                    include_all=True,
+                    current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
                     all_value=".*",
                     regex='/node="([^"]+)"/',
-                    definition=_NODE_VARIABLE_QUERY,
                 ),
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="namespace",
                     label="Namespace focus",
                     query=_NAMESPACE_VARIABLE_QUERY,
-                    datasource=mimir(),
-                    current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
-                    multi=True,
                     refresh=dashboard.VariableRefresh.ON_TIME_RANGE_CHANGED,
-                    sort=dashboard.VariableSort.ALPHABETICAL_ASC,
-                    include_all=True,
+                    current=dashboard.VariableOption(selected=True, text="All", value=["$__all"]),
                     all_value=".*",
                     regex='/namespace="([^"]+)"/',
-                    definition=_NAMESPACE_VARIABLE_QUERY,
                 ),
             ]
         ),

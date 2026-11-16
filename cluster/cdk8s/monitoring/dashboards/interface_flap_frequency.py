@@ -6,6 +6,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     loki_datasource,
     loki_query,
     mimir,
+    mimir_multi_variable,
     mimir_query,
     series_options,
 )
@@ -221,18 +222,11 @@ def build_dashboard() -> dashboard.Dashboard:
                         dashboard.VariableOption(selected=False, text="All", value=".*"),
                     ],
                 ),
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="device",
                     label="Interface",
                     query='label_values(node_network_carrier{instance=~"$instance",device=~"$interface_scope"}, device)',
-                    datasource=mimir(),
-                    current=dashboard.VariableOption(text="All", value=["$__all"]),
-                    multi=True,
-                    refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
-                    sort=dashboard.VariableSort.ALPHABETICAL_ASC,
-                    include_all=True,
                     all_value=".*",
-                    definition='label_values(node_network_carrier{instance=~"$instance",device=~"$interface_scope"}, device)',
                 ),
             ]
         ),

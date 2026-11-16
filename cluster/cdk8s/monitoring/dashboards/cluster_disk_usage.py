@@ -7,6 +7,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     hide_time,
     last_value,
     mimir,
+    mimir_multi_variable,
     mimir_query,
     mimir_table_query,
     series_options,
@@ -298,17 +299,10 @@ def build_dashboard() -> dashboard.Dashboard:
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
                 storage_tier_variable(),
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="node",
                     label="Machine",
                     query='label_values(kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"}, node)',
-                    datasource=mimir(),
-                    current=dashboard.VariableOption(text="All", value=["$__all"]),
-                    multi=True,
-                    refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
-                    sort=dashboard.VariableSort.ALPHABETICAL_ASC,
-                    include_all=True,
-                    definition='label_values(kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"}, node)',
                 ),
             ]
         ),
