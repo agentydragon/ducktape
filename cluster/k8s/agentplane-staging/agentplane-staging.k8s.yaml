@@ -4225,7 +4225,6 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/app
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
-    runner_gateway_control_target: sandbox-controller.{namespace}.svc:8082
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
     notifications_request_timeout_s: 5
