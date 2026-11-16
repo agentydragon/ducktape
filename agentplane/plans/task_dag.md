@@ -3911,7 +3911,7 @@ move, authorize new grants or require a Sandbox/single attachment on a Session.
 
 ### `GATEWAY_ERA_NAMES` — Gateway-era Go names after the Gateway dissolved
 
-**Unscheduled; proposed as Go plan stage 2 in gh-pages #16794 (open), not released.** Private Go
+**Unscheduled; Go plan stage 2 (gh-pages #16794, merged 2026-11-16), not released.** Private Go
 names still describe the Runner Gateway: the Runtime proxy's `Gateway` type and runner identifiers
 in `environments/runtimeproxy`, the `RunnerProxy*MetadataKey` constants in `sandboxes/api`, and the
 Dispatcher's `ProxyRunner`, `RoutingRunner`, `DeliveryRunner` and `RunnerCommands`. Settings keys,
