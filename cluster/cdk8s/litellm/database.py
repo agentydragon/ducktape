@@ -29,7 +29,7 @@ def _chart(app: App) -> Chart:
         "cluster",
         ref=DATABASE,
         profile=cluster.OVH_PIRAEUS_SSD,
-        size="5Gi",
+        size="20Gi",
         resize_in_use_volumes=False,
         initdb=cluster.same_owner_initdb("litellm"),
         wal_archive=True,
