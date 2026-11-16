@@ -89,7 +89,6 @@ manifest:
     docstring_parser: docstring_parser
     dotenv: python_dotenv
     durationpy: durationpy
-    e2e-tests: splitwise
     email_validator: email_validator
     exceptiongroup: exceptiongroup
     executing: executing
@@ -426,7 +425,6 @@ manifest:
     sortedcontainers: sortedcontainers
     soupsieve: soupsieve
     sparklines: sparklines
-    splitwise: splitwise
     sqlalchemy: sqlalchemy
     sqlparse: sqlparse
     sse_starlette: sse_starlette
@@ -440,7 +438,6 @@ manifest:
     tenacity: tenacity
     termcolor: termcolor
     testcontainers: testcontainers
-    tests: splitwise
     textual: textual
     tiktoken: tiktoken
     tiktoken_ext.openai_public: tiktoken
@@ -483,4 +480,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 560d05188a34ac37ad9dfcffe2b8740eee0aa081cbc30c8a06da3e631d262b4e
+integrity: b9d043bffeaf8f3c7e33a4cf3880ce29bda80b24957c5a452c631876f01aeb7e

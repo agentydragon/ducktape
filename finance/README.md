@@ -5,8 +5,6 @@ Finance tools and portfolio tracking utilities.
 ## Components
 
 - **Worthy**: Rust-based portfolio tracker (uses Cargo/Bazel)
-- **`reconcile/`**: matches GnuCash transactions to external systems (currently
-  Splitwise)
 - **`plaid/spend/`**: statement-cycle card spend API, terminal CLI and GNOME client
 - **`evidence/`**: shared read floor for the augur-evidence repo — source specs,
   checkout, and market snapshot loaders used by augur. The Manifold bet history

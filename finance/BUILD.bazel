@@ -8,14 +8,6 @@ py_library(
 )
 
 py_library(
-    name = "gnucash_util",
-    srcs = ["gnucash_util.py"],
-    visibility = ["//finance:__subpackages__"],
-    # TODO: add gnucash
-    deps = [],
-)
-
-py_library(
     name = "yaml_decimal",
     srcs = ["yaml_decimal.py"],
     visibility = ["//finance:__subpackages__"],

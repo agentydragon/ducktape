@@ -5305,14 +5305,11 @@ requests==2.34.2 \
     #   opentelemetry-exporter-otlp-proto-http
     #   pygithub
     #   requests-oauthlib
-    #   splitwise
     #   tiktoken
 requests-oauthlib==1.3.1 \
     --hash=sha256:2577c501a2fb8d05a304c09d090d6e47c306fef15809d102b327cf8364bddab5 \
     --hash=sha256:75beac4a47881eeb94d5ea5d6ad31ef88856affe2332b9aafb52c6452ccf0d7a
-    # via
-    #   kubernetes
-    #   splitwise
+    # via kubernetes
 respx==0.23.1 \
     --hash=sha256:242dcc6ce6b5b9bf621f5870c82a63997e8e82bc7c947f9ffe272b8f3dd5a780 \
     --hash=sha256:b18004b029935384bccfa6d7d9d74b4ec9af73a081cc28600fffc0447f4b8c1a
@@ -5588,10 +5585,6 @@ soupsieve==2.9.2 \
 sparklines==1.0.0 \
     --hash=sha256:6d3d2cd7ad955b071c3f0abcb5e04662c65cc51ab287342ed2602f3b95576033 \
     --hash=sha256:eee3ed5ac6dc954096ab092ce336941050eca790e2f33f85de65a4ea0a43cf74
-    # via ducktape (pyproject.toml)
-splitwise==3.0.0 \
-    --hash=sha256:48049bc8c025224c7df6059b2d8def80c5cb1f9a210a5650d92a410b7706f6de \
-    --hash=sha256:aaa956d3f65b0d9e716333afa612656b20f50010f10d9b8313e692f25f8b6a14
     # via ducktape (pyproject.toml)
 sqlalchemy[asyncio]==2.0.52 \
     --hash=sha256:11560064cc4696e772298b6221ede59e646386d9f2a85d549365473b972f7850 \
