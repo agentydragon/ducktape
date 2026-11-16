@@ -45,6 +45,21 @@ may add constraints but never drop callback reads or rebinds. Scale fixtures:
 
 ## Memory lifetime
 
+- Compact source does not bound fact count. An alias/property matrix with
+  O(N + P) syntax produces N × P possible property cells. Storing empty proof
+  dependencies inline in every judgment magnifies that relation; allocate
+  dependency payloads only when nonempty, preserving dependency-growth wakeups.
+  The CLI/Node resource regression is `e2e/source_fact_memory_test.rs`.
+- Measure the peak of the completed command after each repair. Boxing one
+  `FlowFact` variant shrank the enum from 56 to 32 bytes without measurably
+  reducing peak RSS after empty-proof compaction. The completed heap profile
+  instead located the dominant retained allocations in program-flow
+  projections and synchronous interpreter property state. A smaller transient
+  solver record did not shrink those live tables.
+- A truncated, resource-capped profile locates allocations in its captured
+  prefix; it cannot identify the eventual whole-command peak. Keep profiler
+  overhead distinct from uninstrumented RSS and do not treat an interrupted
+  analysis as a completed artifact.
 - Reparsed provider ASTs stayed live through parallel per-chunk analysis only
   because context ordinals were built at the end. Build `ContextOrdinals`
   (IDs only) right after cross-module analysis, then drop the ASTs.
