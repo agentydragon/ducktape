@@ -27,6 +27,155 @@ fn dependency_graph_report(assignment_analysis: &AssignmentAnalysis) -> Dependen
     )
 }
 
+fn dependency_graph_report_for_facts(facts: &[StatementFacts]) -> DependencyGraphReport {
+    let assignment_analysis = assignment_analysis_from_facts(
+        facts,
+        HashMap::new(),
+        Vec::new(),
+        EntryDestination::after_planned_modules(0),
+    );
+    dependency_graph_report(&assignment_analysis)
+}
+
+#[test]
+fn report_graph_restores_declarations_from_the_matching_source_census() {
+    let source = "import { value as imported } from './dep.js'; const first = imported, second = 2; var repeated = first; var repeated = second; function readRepeated() { return repeated; } console.log(readRepeated());";
+    let module = parse(source);
+    let structural_facts = analyze_chunk_structural(&module, None).per_statement;
+    let semantic_facts = analyze_facts(&module);
+    let mut report = dependency_graph_report_for_facts(&semantic_facts);
+    report.nodes.reverse();
+    let reported_ids: Vec<_> = report.nodes.iter().map(|node| node.id.clone()).collect();
+    let reported_ordinals: Vec<_> = report
+        .nodes
+        .iter()
+        .map(|node| node.statement_ordinal)
+        .collect();
+    assert_eq!(reported_ordinals.len(), structural_facts.len());
+    assert!(
+        structural_facts
+            .iter()
+            .any(|fact| fact.kind == StatementKind::Import),
+        "the source-only census retains import statements"
+    );
+    for binding in ["first", "second"] {
+        assert_eq!(
+            structural_facts
+                .iter()
+                .filter(|fact| {
+                    fact.declared
+                        .iter()
+                        .any(|declared| declared.0.as_ref() == binding)
+                })
+                .count(),
+            1,
+            "split declarator {binding} has its own source unit"
+        );
+    }
+    assert_eq!(
+        structural_facts
+            .iter()
+            .filter(|fact| {
+                fact.declared
+                    .iter()
+                    .any(|declared| declared.0.as_ref() == "repeated")
+            })
+            .count(),
+        2,
+        "repeated var declaration sites remain separate source units"
+    );
+
+    let input = DependencyGraphInput::from_report(report.clone()).expect("report graph");
+    let shared_graph = input.shared_graph();
+    let restored = input
+        .with_source_declarations(&structural_facts)
+        .expect("matching parsed source census");
+
+    assert_eq!(restored.graph().num_nodes(), structural_facts.len());
+    assert_eq!(restored.report().nodes.len(), reported_ids.len());
+    assert_eq!(
+        restored
+            .report()
+            .nodes
+            .iter()
+            .map(|node| node.id.clone())
+            .collect::<Vec<_>>(),
+        reported_ids
+    );
+    for (row, node) in restored.graph().iter_nodes().enumerate() {
+        assert_eq!(
+            node.statement_ordinal,
+            restored.report().nodes[row].statement_ordinal,
+            "graph IDs remain in report row order"
+        );
+        let source_fact = structural_facts
+            .iter()
+            .find(|fact| fact.ordinal == node.statement_ordinal)
+            .expect("report ordinal joins source census");
+        assert_eq!(node.declared, source_fact.declared);
+    }
+    assert!(
+        shared_graph
+            .iter_nodes()
+            .all(|node| node.declared.is_empty()),
+        "copy-on-write restoration must not mutate other graph readers"
+    );
+
+    let unshared = DependencyGraphInput::from_report(report)
+        .expect("report graph")
+        .with_source_declarations(&structural_facts)
+        .expect("unshared graph restores the source census");
+    assert_eq!(unshared.graph().num_nodes(), structural_facts.len());
+}
+
+#[test]
+fn report_graph_rejects_non_bijective_or_inconsistent_source_censuses() {
+    let module = parse(
+        "import { value as imported } from './dep.js'; const alpha = imported; function readAlpha() { return alpha; } alpha;",
+    );
+    let facts = analyze_chunk_structural(&module, None).per_statement;
+    let report = dependency_graph_report_for_facts(&analyze_facts(&module));
+    let assert_rejected = |report: DependencyGraphReport, facts: &[StructuralStatementFacts]| {
+        let input = DependencyGraphInput::from_report(report).expect("valid report topology");
+        assert!(input.with_source_declarations(facts).is_err());
+    };
+
+    assert_rejected(report.clone(), &facts[..facts.len() - 1]);
+
+    let mut duplicate_fact = facts.clone();
+    duplicate_fact.push(facts[0].clone());
+    assert_rejected(report.clone(), &duplicate_fact);
+
+    let mut changed_binding = facts.clone();
+    let declaration = changed_binding
+        .iter_mut()
+        .find(|fact| !fact.declared.is_empty())
+        .expect("fixture declaration");
+    let original = declaration.declared.pop_first().expect("binding");
+    declaration
+        .declared
+        .insert(("changedName".into(), original.1));
+    assert_rejected(report.clone(), &changed_binding);
+
+    let mut changed_kind = facts.clone();
+    changed_kind[0].kind = StatementKind::FnDecl;
+    assert_rejected(report.clone(), &changed_kind);
+
+    let mut changed_report_binding = report.clone();
+    let declaration = changed_report_binding
+        .nodes
+        .iter_mut()
+        .find(|node| !node.declared_bindings.is_empty())
+        .expect("report declaration");
+    declaration.declared_bindings[0].binding = "changedName".into();
+    assert_rejected(changed_report_binding, &facts);
+
+    let mut duplicate_report_ordinal = report;
+    duplicate_report_ordinal.nodes[1].statement_ordinal =
+        duplicate_report_ordinal.nodes[0].statement_ordinal;
+    assert_rejected(duplicate_report_ordinal, &facts);
+}
+
 fn logical(idx: usize) -> TestDestination {
     TestDestination::Planned(ModuleId(idx))
 }
