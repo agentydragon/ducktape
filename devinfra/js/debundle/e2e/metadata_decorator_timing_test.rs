@@ -74,7 +74,14 @@ fn unpublished_metadata_target_stays_deferred_after_opaque_call() {
         &[Member::new("dynamic"), Member::new("prefix")],
     ));
     let fixture = run_fixture(
-        FixtureOpts::new(&source, claimed).with_extra_chunks(&[("static/peer", PROVIDER)]),
+        FixtureOpts::new(&source, claimed)
+            .with_import_order(&[
+                "values/later",
+                "values/dynamic",
+                "controllers/controller",
+                "runtime/decorate",
+            ])
+            .with_extra_chunks(&[("static/peer", PROVIDER)]),
     );
     assert_preserved_entry_output(&fixture, "42 read,record\n");
     // These are internal modules of the designated entry, not alternative ESM
@@ -214,7 +221,14 @@ fn local_decorator_binding_reads_are_preserved() {
         MemberEffect::TypescriptMetadataDecorateHelperWithMemberDecorators,
     ] {
         expect_atomic_conflict_rejection(
-            FixtureOpts::new(&source, modules(effect)).with_extra_chunks(&peers),
+            FixtureOpts::new(&source, modules(effect))
+                .with_import_order(&[
+                    "controllers/controller",
+                    "runtime/decorate",
+                    "values/later",
+                    "residual",
+                ])
+                .with_extra_chunks(&peers),
             &["controllers/controller", "values/later"],
             &["eager_use", "sequenced"],
         );
@@ -346,6 +360,12 @@ fn member_contract_rejects_local_getter_and_proxy_providers() {
                     "api.annotate",
                 ),
             )
+            .with_import_order(&[
+                "controllers/controller",
+                "runtime/decorate",
+                "values/later",
+                "residual",
+            ])
             .with_extra_chunks(&[("static/peer", provider.as_str())]),
             &["controllers/controller", "values/later"],
             &[],

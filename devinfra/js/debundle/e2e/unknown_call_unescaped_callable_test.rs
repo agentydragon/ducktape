@@ -193,7 +193,12 @@ const later = dynamic;
                         ],
                     ),
                 ],
-            ),
+            )
+            .with_import_order(if case == "alias_getter" {
+                &["values/dynamic", "values/later", "residual"]
+            } else {
+                &["values/dynamic", "values/later"]
+            }),
             &["values/dynamic", "values/later"],
             &[],
         );
@@ -820,7 +825,8 @@ function readLater() { later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -843,7 +849,8 @@ function readLater() { return later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -866,7 +873,8 @@ function readLater() { return later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -891,6 +899,7 @@ export { dynamic, later, readLater };
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["values/dynamic", "values/later", "residual"])
         .with_extra_chunks(&[(
             "static/peer",
             r#"import { readLater } from "./app.js";
@@ -919,6 +928,7 @@ function readLater() { later; }
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
+        .with_import_order(&["values/dynamic", "values/later", "residual"])
         .with_admission_overrides(&["a1_eval"]),
         &["values/dynamic", "values/later"],
         &[],
@@ -942,7 +952,8 @@ function readLater() { return later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -966,7 +977,8 @@ function readLater() { return later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -992,7 +1004,8 @@ function readLater() { return later; }
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
@@ -1021,29 +1034,33 @@ console.log(dynamic);
                 logical_module("values/dynamic", &[Member::new("dynamic")]),
                 logical_module("values/later", &[Member::new("later")]),
             ],
-        ),
+        )
+        .with_import_order(&["values/dynamic", "values/later", "residual"]),
         &["values/dynamic", "values/later"],
         &[],
     );
 
-    let fixture = run_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "values/all",
-            &[
-                Member::new("dynamic"),
-                Member::new("later"),
-                Member::new("readLater"),
-                Member::new("observed"),
-            ],
-            &[
-                r#"Object.defineProperty(Object.prototype, "__debundle_test_probe__", {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "values/all",
+                &[
+                    Member::new("dynamic"),
+                    Member::new("later"),
+                    Member::new("readLater"),
+                    Member::new("observed"),
+                ],
+                &[
+                    r#"Object.defineProperty(Object.prototype, "__debundle_test_probe__", {
   set(value) { observed = readLater(); },
 });"#,
-                "console.log(dynamic);",
-            ],
-        )],
-    ));
+                    "console.log(dynamic);",
+                ],
+            )],
+        )
+        .with_import_order(&["values/all", "residual"]),
+    );
     assert_preserved_entry_output(&fixture, "laterundefined\n");
 }
 

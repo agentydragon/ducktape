@@ -12,14 +12,17 @@ fn preserves_source_order_evaluation_across_split_declarator_fragments() {
     // Single declaration with cross-fragment dep `c = a + b`. Selecting `c`
     // forces the closure to pull `a` and `b` into the module while `z` stays
     // in residual.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1, b = 2, c = a + b;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const a = 1, b = 2, c = a + b;
 const z = "z";
 console.log(c);
 export { c, z };
 "#,
-        vec![logical_module("x", &[Member::new("c")])],
-    ));
+            vec![logical_module("x", &[Member::new("c")])],
+        )
+        .with_import_order(&["x", "residual"]),
+    );
     assert_module_exports(&fixture.out_root, "static/app/modules/x.js", &["c"], &[]);
     assert_module_exports(
         &fixture.out_root,
@@ -104,25 +107,28 @@ export { b };
 
 #[test]
 fn canonical_source_matches_annotations_materialize_comments_and_notes_stay_yaml_only() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function selected(value) {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function selected(value) {
   return value.trim();
 }
 const output = selected("  hi  ");
 console.log(output);
 export { selected, output };
 "#,
-        vec![logical_module_with_binding_groups(
-            "format",
-            &[],
-            &[BindingGroup::source_alpha(
-                "function selected(value) {\n  return value.trim();\n}",
-                &[("selected", "FormatValue")],
-            )
-            .with_comments(&[("selected", "Formats display text.")])
-            .with_notes(&[("selected", "YAML-only migration note.")])],
-        )],
-    ));
+            vec![logical_module_with_binding_groups(
+                "format",
+                &[],
+                &[BindingGroup::source_alpha(
+                    "function selected(value) {\n  return value.trim();\n}",
+                    &[("selected", "FormatValue")],
+                )
+                .with_comments(&[("selected", "Formats display text.")])
+                .with_notes(&[("selected", "YAML-only migration note.")])],
+            )],
+        )
+        .with_import_order(&["format", "residual"]),
+    );
 
     assert_module_exports(
         &fixture.out_root,
@@ -141,14 +147,17 @@ export { selected, output };
 
 #[test]
 fn emitted_js_files_end_with_one_newline_and_no_blank_line() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const a = 1;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const a = 1;
 const b = 2;
 console.log(a + b);
 export { a, b };
 "#,
-        vec![logical_module("mod_a", &[Member::new("a")])],
-    ));
+            vec![logical_module("mod_a", &[Member::new("a")])],
+        )
+        .with_import_order(&["mod_a", "residual"]),
+    );
 
     assert_file_ends_with_single_newline(&fixture.out_root, "static/app/entry.js");
     assert_file_ends_with_single_newline(&fixture.out_root, "static/app/modules/mod_a.js");

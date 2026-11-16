@@ -33,8 +33,9 @@ use debundle_e2e_support::*;
 /// survive lowering (the decorator mutates the prototype, observable under Node).
 #[test]
 fn makes_decorate_call_pins_helper_by_decorated_class() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var g0 = Object.getOwnPropertyDescriptor;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var g0 = Object.getOwnPropertyDescriptor;
 var p0 = Object.defineProperty;
 var d0 = (decorators, target, key) => {
   const desc = g0(target, key);
@@ -52,29 +53,31 @@ d0([tag], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };
 "#,
-        vec![
-            logical_module(
-                "model",
-                &[Member::source_alpha(
-                    "DecoratedClass",
-                    r#"class C {
+            vec![
+                logical_module(
+                    "model",
+                    &[Member::source_alpha(
+                        "DecoratedClass",
+                        r#"class C {
   greet() {
     STMT_LIST;
   }
 }"#,
-                )],
-            ),
-            logical_module(
-                "decorate_helper",
-                &[Member::makes_decorate_call(
-                    "decorateClassMember",
-                    "DecoratedClass",
-                    None,
-                    None,
-                )],
-            ),
-        ],
-    ));
+                    )],
+                ),
+                logical_module(
+                    "decorate_helper",
+                    &[Member::makes_decorate_call(
+                        "decorateClassMember",
+                        "DecoratedClass",
+                        None,
+                        None,
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["model", "decorate_helper", "residual"]),
+    );
 
     // The helper resolved to the minified `d0` (the `source bindings` provenance
     // comment proves it) and lives in the `decorate_helper` module under its
@@ -92,8 +95,10 @@ export { C };
 
 #[test]
 fn makes_decorate_call_annotation_is_applied_after_selector_resolution() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var g0 = Object.getOwnPropertyDescriptor;
+    let fixture =
+        run_fixture(
+            FixtureOpts::new(
+                r#"var g0 = Object.getOwnPropertyDescriptor;
 var p0 = Object.defineProperty;
 var d0 = (decorators, target, key) => {
   const desc = g0(target, key);
@@ -111,28 +116,33 @@ d0([tag], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };
 "#,
-        vec![
-            logical_module_with_anon(
-                "model",
-                &[Member::source_alpha(
-                    "DecoratedClass",
-                    r#"class C {
+                vec![
+                    logical_module_with_anon(
+                        "model",
+                        &[Member::source_alpha(
+                            "DecoratedClass",
+                            r#"class C {
   greet() {
     STMT_LIST;
   }
 }"#,
-                )],
-                &["d0([tag], C.prototype, \"greet\", 1);"],
-            ),
-            logical_module(
-                "decorate_helper",
-                &[
-                    Member::makes_decorate_call("applyDecorators", "DecoratedClass", None, None)
-                        .with_effect(MemberEffect::TypescriptDecorateHelper),
+                        )],
+                        &["d0([tag], C.prototype, \"greet\", 1);"],
+                    ),
+                    logical_module(
+                        "decorate_helper",
+                        &[Member::makes_decorate_call(
+                            "applyDecorators",
+                            "DecoratedClass",
+                            None,
+                            None,
+                        )
+                        .with_effect(MemberEffect::TypescriptDecorateHelper)],
+                    ),
                 ],
-            ),
-        ],
-    ));
+            )
+            .with_import_order(&["model", "decorate_helper", "residual"]),
+        );
 
     assert_module_source(
         &fixture.out_root,
@@ -150,8 +160,9 @@ export { C };
 /// copies must not interfere.
 #[test]
 fn makes_decorate_call_disambiguates_two_helper_copies_by_class() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var ga = Object.getOwnPropertyDescriptor;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var ga = Object.getOwnPropertyDescriptor;
 var pa = Object.defineProperty;
 var da = (decorators, target, key) => {
   const desc = ga(target, key);
@@ -180,45 +191,47 @@ db([mark("B")], Beta.prototype, "betaLabel", 1);
 console.log(new Alpha().alphaLabel(), new Beta().betaLabel());
 export { Alpha, Beta };
 "#,
-        vec![
-            logical_module(
-                "alpha",
-                &[
-                    // Distinct method name `alphaLabel` is an invariant label, so the
-                    // source_match pins this class (not the same-shaped Beta).
-                    Member::source_alpha(
-                        "Alpha",
-                        r#"class Alpha {
+            vec![
+                logical_module(
+                    "alpha",
+                    &[
+                        // Distinct method name `alphaLabel` is an invariant label, so the
+                        // source_match pins this class (not the same-shaped Beta).
+                        Member::source_alpha(
+                            "Alpha",
+                            r#"class Alpha {
   alphaLabel() {
     STMT_LIST;
   }
 }"#,
-                    ),
-                    // Pinned by class + the decorated member literal "alphaLabel".
-                    Member::makes_decorate_call(
-                        "alphaDecorator",
-                        "Alpha",
-                        Some("alphaLabel"),
-                        None,
-                    ),
-                ],
-            ),
-            logical_module(
-                "beta",
-                &[
-                    Member::source_alpha(
-                        "Beta",
-                        r#"class Beta {
+                        ),
+                        // Pinned by class + the decorated member literal "alphaLabel".
+                        Member::makes_decorate_call(
+                            "alphaDecorator",
+                            "Alpha",
+                            Some("alphaLabel"),
+                            None,
+                        ),
+                    ],
+                ),
+                logical_module(
+                    "beta",
+                    &[
+                        Member::source_alpha(
+                            "Beta",
+                            r#"class Beta {
   betaLabel() {
     STMT_LIST;
   }
 }"#,
-                    ),
-                    Member::makes_decorate_call("betaDecorator", "Beta", None, None),
-                ],
-            ),
-        ],
-    ));
+                        ),
+                        Member::makes_decorate_call("betaDecorator", "Beta", None, None),
+                    ],
+                ),
+            ],
+        )
+        .with_import_order(&["alpha", "beta", "residual"]),
+    );
 
     // Each helper copy resolved to its own minified binding via the class it
     // decorates — `da` to the Alpha module, `db` to the Beta module — never crossing.
@@ -246,8 +259,9 @@ export { Alpha, Beta };
 /// not spuriously exclude the genuine `var` helper.)
 #[test]
 fn makes_decorate_call_constrains_by_kind() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"var gx = Object.getOwnPropertyDescriptor;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"var gx = Object.getOwnPropertyDescriptor;
 var px = Object.defineProperty;
 var dx = (decorators, target, key) => {
   const desc = gx(target, key);
@@ -265,29 +279,31 @@ dx([stamp], Widget.prototype, "name", 1);
 console.log(new Widget().name());
 export { Widget };
 "#,
-        vec![
-            logical_module(
-                "widget",
-                &[Member::source_alpha(
-                    "Widget",
-                    r#"class Widget {
+            vec![
+                logical_module(
+                    "widget",
+                    &[Member::source_alpha(
+                        "Widget",
+                        r#"class Widget {
   name() {
     STMT_LIST;
   }
 }"#,
-                )],
-            ),
-            logical_module(
-                "widget_decorate",
-                &[Member::makes_decorate_call(
-                    "widgetDecorator",
-                    "Widget",
-                    None,
-                    Some("variable_declarator"),
-                )],
-            ),
-        ],
-    ));
+                    )],
+                ),
+                logical_module(
+                    "widget_decorate",
+                    &[Member::makes_decorate_call(
+                        "widgetDecorator",
+                        "Widget",
+                        None,
+                        Some("variable_declarator"),
+                    )],
+                ),
+            ],
+        )
+        .with_import_order(&["widget", "widget_decorate", "residual"]),
+    );
 
     assert_module_source(
         &fixture.out_root,

@@ -75,6 +75,7 @@ fn a_store_to_an_existing_record_slot_commutes_with_an_independent_declaration()
                     &[store],
                 )],
             )
+            .with_import_order(&["record", "residual"])
         }) {
             let fixture = run_fixture(opts);
             assert_preserved_entry_output(&fixture, expected);
@@ -104,6 +105,7 @@ fn a_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
                 logical_module("reader", &[Member::new("read"), Member::new("before")]),
             ],
         )
+        .with_import_order(&["reader", "record"])
     }) {
         let rejected = run_emit_on_rejection_fixture(opts);
         assert_covered_slot_conflict(&rejected);
@@ -130,6 +132,7 @@ fn a_store_moved_before_a_direct_reader_of_its_slot_is_refused() {
                 logical_module("reader", &[Member::new("before")]),
             ],
         )
+        .with_import_order(&["reader", "record"])
     }) {
         let rejected = run_emit_on_rejection_fixture(opts);
         let effects = rejected.effect_translation_validation();
@@ -164,6 +167,7 @@ fn a_store_moved_before_a_descriptor_projection_of_its_record_is_a_cell_conflict
                 logical_module("copy", &[Member::new("copied")]),
             ],
         )
+        .with_import_order(&["copy", "record"])
     }) {
         let rejected = run_emit_on_rejection_fixture(opts);
         // The projection's owner still carries a legacy dataflow-opacity bit,
@@ -206,6 +210,7 @@ fn storing_an_array_into_a_record_does_not_order_a_reader_of_its_contents() {
                 &["record.items = list;"],
             )],
         )
+        .with_import_order(&["record", "residual"])
     }) {
         let fixture = run_fixture(opts);
         assert_preserved_entry_output(&fixture, "1 0 true\n");
@@ -242,14 +247,17 @@ fn a_store_moved_across_a_delete_of_its_slot_is_refused() {
 #[test]
 fn stores_to_different_records_commute_where_the_legacy_chain_refuses() {
     let source = "const first = { value: 0 };\nconst second = { value: 0 };\nfirst.value = 1;\nsecond.value = 2;\nconsole.log(first.value, second.value);\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![logical_module_with_anon(
-            "second",
-            &[Member::new("second")],
-            &["second.value = 2;"],
-        )],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module_with_anon(
+                "second",
+                &[Member::new("second")],
+                &["second.value = 2;"],
+            )],
+        )
+        .with_import_order(&["second", "residual"]),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert!(
@@ -279,14 +287,17 @@ fn global_publications_and_new_properties_are_pending_a_store_rule() {
         let source = format!(
             "const record = {{ value: 0 }};\nconst independent = 7;\n{store}\nconsole.log(independent, record.extra ?? globalThis.saved);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module_with_anon(
-                "record",
-                &[Member::new("record")],
-                &[store],
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "record",
+                    &[Member::new("record")],
+                    &[store],
+                )],
+            )
+            .with_import_order(&["record", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, "7 1\n");
         assert_effect_verdict_pending(&fixture, "incomplete", store);
         assert_owner_coverage_refusal(&fixture, "unproved_field_store", store);
@@ -309,7 +320,7 @@ fn a_store_inside_a_callable_commutes_with_an_independent_declaration() {
                 Member::new("done"),
             ],
         )],
-    ));
+    ).with_import_order(&["writer", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1 5\n");
     assert_effect_verdict_accepts(&fixture, "callable store");
 }
@@ -325,7 +336,7 @@ fn a_store_inside_a_comma_initializer_is_pending_an_ordered_lane() {
             "writer",
             &[Member::new("record"), Member::new("done")],
         )],
-    ));
+    ).with_import_order(&["writer", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1 5\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "comma store");
     assert_owner_coverage_refusal(&fixture, "unsupported_initializer", "comma store");
@@ -337,20 +348,23 @@ fn a_store_inside_a_comma_initializer_is_pending_an_ordered_lane() {
 #[test]
 fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
     let source = "const record = { value: 0 };\nfunction read() { return record.value; }\nfunction set() { record.value = 1; return 1; }\nconst before = read();\nconst done = set();\nconsole.log(before, done, record.value);\nexport { before, done };\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module(
-                "writer",
-                &[
-                    Member::new("record"),
-                    Member::new("set"),
-                    Member::new("done"),
-                ],
-            ),
-            logical_module("reader", &[Member::new("read"), Member::new("before")]),
-        ],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module(
+                    "writer",
+                    &[
+                        Member::new("record"),
+                        Member::new("set"),
+                        Member::new("done"),
+                    ],
+                ),
+                logical_module("reader", &[Member::new("read"), Member::new("before")]),
+            ],
+        )
+        .with_import_order(&["reader", "writer"]),
+    );
     assert_covered_slot_conflict(&rejected);
     assert_node_output(&source_path(&rejected), "0 1 1\n", "");
     assert_node_output(&rejected.entry_path(), "1 1 1\n", "");
@@ -362,17 +376,20 @@ fn a_callable_store_moved_before_a_reader_of_its_slot_is_a_cell_conflict() {
 #[test]
 fn a_store_through_an_own_setter_stays_uncovered() {
     let source = "const log = [];\nconst record = { set value(v) { log.push(v); } };\nconst seen = log.length;\nrecord.value = 1;\nconsole.log(seen, log.length);\nexport { seen };\n";
-    let rejected = run_emit_on_rejection_fixture(FixtureOpts::new(
-        source,
-        vec![
-            logical_module_with_anon(
-                "record",
-                &[Member::new("log"), Member::new("record")],
-                &["record.value = 1;"],
-            ),
-            logical_module("reader", &[Member::new("seen")]),
-        ],
-    ));
+    let rejected = run_emit_on_rejection_fixture(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module_with_anon(
+                    "record",
+                    &[Member::new("log"), Member::new("record")],
+                    &["record.value = 1;"],
+                ),
+                logical_module("reader", &[Member::new("seen")]),
+            ],
+        )
+        .with_import_order(&["reader", "record"]),
+    );
     let effects = rejected.effect_translation_validation();
     assert_eq!(effects["legacy_gate_accepts"], false, "{effects:#}");
     assert_ne!(effects["decision"]["status"], "accepted", "{effects:#}");
@@ -416,7 +433,8 @@ fn unproved_receivers_keep_the_typed_field_store_refusal() {
     let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 0 };\nObject.defineProperty(record, 'value', { writable: false });\nconst independent = 7;\nrecord.value = 1;\nconsole.log(independent);\n",
         vec![logical_module("marker", &[Member::new("independent")])],
-    ));
+    )
+    .with_import_order(&["marker", "residual"]));
     assert_preserved_entry_error(&fixture, "TypeError");
     assert_owner_coverage_refusal(&fixture, "unproved_field_store", "non-writable slot");
 
@@ -430,14 +448,17 @@ fn unproved_receivers_keep_the_typed_field_store_refusal() {
         let source = format!(
             "const record = {{ value: 0 }};\nconst other = {{ value: 0 }};\n{setup}\nconst independent = 7;\n{store}\nconsole.log(independent, record.value);\n"
         );
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module_with_anon(
-                "record",
-                &[Member::new("record"), Member::new("other")],
-                &[setup, store],
-            )],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(
+                &source,
+                vec![logical_module_with_anon(
+                    "record",
+                    &[Member::new("record"), Member::new("other")],
+                    &[setup, store],
+                )],
+            )
+            .with_import_order(&["record", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, "7 1\n");
         assert_effect_verdict_pending(&fixture, "incomplete", store);
         assert_owner_coverage_refusal(&fixture, "unproved_field_store", store);
@@ -455,7 +476,7 @@ fn a_store_through_a_proven_alias_commutes() {
             &[Member::new("record"), Member::new("alias")],
             &["alias.value = 1;"],
         )],
-    ));
+    ).with_import_order(&["record", "residual"]));
     assert_preserved_entry_output(&fixture, "7 1\n");
     assert_effect_verdict_accepts(&fixture, "alias.value = 1;");
 }
@@ -472,7 +493,7 @@ fn an_unsealed_store_attempt_is_labelled_and_rewound() {
             &[Member::new("record")],
             &["record.value = function* () {};"],
         )],
-    ));
+    ).with_import_order(&["record", "residual"]));
     assert_preserved_entry_output(&fixture, "7 function\n");
     assert_effect_verdict_pending(&fixture, "incomplete", "generator store");
     assert_owner_coverage_refusal(&fixture, "unproved_statement_operation", "generator store");
@@ -486,7 +507,7 @@ fn the_coverage_report_counts_sealed_and_rewound_root_attempts() {
     let fixture = run_fixture(FixtureOpts::new(
         "const record = { value: 0 };\nconst other = { value: 0 };\nrecord.value = 1;\nother.value = function* () {};\nconsole.log(record.value, typeof other.value);\n",
         vec![],
-    ));
+    ).with_import_order(&["residual"]));
     assert_preserved_entry_output(&fixture, "1 function\n");
     let report = fixture.effect_translation_validation();
     let attempts = &report["coverage"]["root_attempts"];

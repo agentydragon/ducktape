@@ -19,6 +19,7 @@ fn second_first<'a>(source: &'a str, peers: &'a [(&'a str, &'a str)]) -> Fixture
         source,
         vec![logical_module("second", &[Member::new("second")])],
     )
+    .with_import_order(&["second"])
     .with_extra_chunks(peers)
     .with_unassigned_mode(unassigned_mode_inline())
 }
