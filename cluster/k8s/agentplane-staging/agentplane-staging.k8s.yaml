@@ -1445,9 +1445,6 @@ data:
       auth:
         - mode: spiffe
           ca_file: /run/agentplane/workload-trust/ca-certificates.crt
-        - mode: kubernetes_bearer
-          audiences:
-            - agentplane-egress
 immutable: false
 ---
 apiVersion: cilium.io/v2

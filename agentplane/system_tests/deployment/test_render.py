@@ -816,6 +816,7 @@ def test_central_sampler_fixture_renders_app_ingress_gateway_and_history_wiring(
     assert llm_config["policy_namespace"] == NAMESPACE
     assert llm_config["central_sampler_identity_callers"] is True
     assert llm_config["central_sampler_services"] == [CENTRAL_SAMPLER_URI]
+    assert {mode["mode"] for mode in llm_config["rpc"]["auth"]} == {"spiffe"}
     assert "token_audience" not in llm_config
     assert AnyHttpUrl(llm_config["litellm_url"]) == AnyHttpUrl(_TEST_LOCAL_MODEL.url)
     assert llm_config["log_levels"] == {}
