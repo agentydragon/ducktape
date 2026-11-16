@@ -4544,6 +4544,12 @@ record names the first construction check that failed as a typed `rejection`
 (for example `field_may_exist_on_object_prototype` with the field, whose census
 entries are in `native_prototype_property_checks`); later checks may fail too.
 
+A complete pool of source-proved read-only lexical observers can contribute
+its may-reads without invocation replay or a pool-size loss. This requires
+current-prefix primitive-return evidence for every member; it preserves TDZ
+obligations and supplies no ordered-call or normal-completion certificate.
+Mixed and unsupported pools retain the bounded execution/fallback path.
+
 When a graph-level unresolved-call fallback expands a source-unit read closure,
 both its traversal and promoted effects use the indexed synchronous prefix for
 owners with complete callable coverage. A read only after a definite `await`

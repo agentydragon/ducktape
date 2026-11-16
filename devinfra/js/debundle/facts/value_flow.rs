@@ -11,11 +11,13 @@
 mod call_effects;
 mod initialization;
 mod program;
+mod read_only_callbacks;
 use call_effects::{CallEffectBody, CallEffectRules, KnownCellAccesses};
 pub(crate) use initialization::CallableDeclaration;
 use initialization::{InitializationCensus, InitializationSites};
 pub use program::ProgramValueFlows;
 pub(crate) use program::{ProgramFlowModule, program_value_flows};
+use read_only_callbacks::ReadOnlyCallback;
 
 use source_identity::SourceUnitOrdinal;
 #[cfg(test)]
@@ -532,6 +534,7 @@ pub(crate) struct ChunkValueFlow {
     /// over-approximating return-origin fixed point. A missing entry says
     /// nothing about the value returned by the function.
     fresh_returned_record_keys: BTreeMap<u32, BTreeSet<String>>,
+    read_only_callbacks: BTreeMap<u32, ReadOnlyCallback<Id>>,
     pub(crate) callable_source_unit: BTreeMap<Value, SourceUnitOrdinal>,
     /// Native Set construction sites backed by a validated author input or
     /// checked pre-flow source proof. Other constructor results stay unknown.
@@ -539,6 +542,10 @@ pub(crate) struct ChunkValueFlow {
 }
 
 impl ChunkValueFlow {
+    pub(crate) fn read_only_callback(&self, function: u32) -> Option<&ReadOnlyCallback<Id>> {
+        self.read_only_callbacks.get(&function)
+    }
+
     pub(crate) fn lexical_read_guards(&self) -> impl Iterator<Item = (&Id, SourceUnitOrdinal)> {
         self.initializations
             .iter()
@@ -764,7 +771,22 @@ impl ChunkValueFlow {
                 Some((program.symbols.id(*id).clone(), sites.clone()))
             })
             .collect();
+        let read_only_callbacks = program
+            .cell_effects
+            .iter()
+            .filter_map(|(function, body)| {
+                Some((
+                    *function,
+                    ReadOnlyCallback {
+                        reads: body.reads.clone(),
+                        returned: body.read_only_returns.clone()?,
+                    }
+                    .map(|slot| program.symbols.id(*slot).clone()),
+                ))
+            })
+            .collect();
         let mut flow = Self {
+            read_only_callbacks,
             origin_table: program.origin_table,
             initializations,
             ..Self::default()
@@ -997,7 +1019,8 @@ impl ChunkValueFlow {
             | FlowKey::InvokedCells(_)
             | FlowKey::RetainedCells(_)
             | FlowKey::SourceCells(_)
-            | FlowKey::Initialization(_) => None,
+            | FlowKey::Initialization(_)
+            | FlowKey::ReadOnlyCallback(_) => None,
         }
     }
 
@@ -1456,6 +1479,7 @@ enum FlowKey {
     RetainedCells(u32),
     SourceCells(u32),
     Initialization(BindingSlot),
+    ReadOnlyCallback(u32),
 }
 
 #[derive(Clone)]
@@ -1467,6 +1491,7 @@ enum FlowFact {
     ReadyParameters(Vec<Option<BindingSlot>>),
     Cells(KnownCellAccesses),
     Initialization(InitializationSites),
+    ReadOnlyCallback(ReadOnlyCallback<BindingSlot>),
 }
 
 /// Candidate reachability is a second stratum over the completed value facts:
@@ -1590,7 +1615,7 @@ impl FlowProgram {
             declared_ids,
             symbols,
             events,
-            cell_effects: _,
+            cell_effects,
             origin_table,
             candidate_objects,
             canonical,
@@ -1604,7 +1629,10 @@ impl FlowProgram {
             origin_table.clone(),
             &candidate_objects,
             native_set_allocations.keys().copied().collect(),
-            BTreeMap::new(),
+            cell_effects
+                .into_iter()
+                .filter(|(_, body)| body.read_only_returns.is_some())
+                .collect(),
         );
 
         let mut flow = ChunkValueFlow {
@@ -1632,6 +1660,11 @@ impl FlowProgram {
                 (FlowKey::Binding(slot), FlowFact::Values(values)) => {
                     flow.bindings.insert(symbols.id(slot).clone(), values);
                 }
+                (FlowKey::ReadOnlyCallback(function), FlowFact::ReadOnlyCallback(summary)) => {
+                    flow.read_only_callbacks
+                        .insert(function, summary.map(|slot| symbols.id(*slot).clone()));
+                }
+                (_, FlowFact::Cells(_)) => {}
                 (FlowKey::Initialization(slot), FlowFact::Initialization(sites)) => {
                     flow.initializations.insert(symbols.id(slot).clone(), sites);
                 }
@@ -1982,6 +2015,15 @@ impl Visit for FlowProgramCollector {
                 .collect(),
         });
         let previous = self.enter_function(function);
+        if !node.is_async && !node.is_generator && node.params.is_empty() {
+            self.cell_effects
+                .get_mut(&function)
+                .unwrap()
+                .read_only_returns = node
+                .body
+                .as_ref()
+                .and_then(|body| read_only_callbacks::block(&body.stmts, &mut self.symbols));
+        }
         let previous_calls = std::mem::replace(
             &mut self.collect_effect_calls,
             !node.is_async && !node.is_generator,
@@ -2015,6 +2057,19 @@ impl Visit for FlowProgramCollector {
                 .collect(),
         });
         let previous = self.enter_function(function);
+        if !node.is_async && node.params.is_empty() {
+            self.cell_effects
+                .get_mut(&function)
+                .unwrap()
+                .read_only_returns = match node.body.as_ref() {
+                ArrowFunctionBody::Expr(expr) => {
+                    read_only_callbacks::expression(expr, &mut self.symbols)
+                }
+                ArrowFunctionBody::FunctionBody(body) => {
+                    read_only_callbacks::block(&body.stmts, &mut self.symbols)
+                }
+            };
+        }
         let previous_calls = std::mem::replace(&mut self.collect_effect_calls, !node.is_async);
         if let ArrowFunctionBody::Expr(expr) = node.body.as_ref() {
             self.events.push(FlowEvent::Return {
@@ -2531,6 +2586,17 @@ impl IterativeRules for CandidateRules {
 
 fn merge_flow_fact(key: &FlowKey, current: &mut FlowFact, contribution: FlowFact) -> bool {
     match (key, current, contribution) {
+        (
+            FlowKey::ReadOnlyCallback(_),
+            FlowFact::ReadOnlyCallback(current),
+            FlowFact::ReadOnlyCallback(contribution),
+        ) => {
+            assert_eq!(
+                *current, contribution,
+                "immutable callback source certificate"
+            );
+            false
+        }
         (
             FlowKey::Initialization(_),
             FlowFact::Initialization(current),

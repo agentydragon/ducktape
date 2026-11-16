@@ -11,6 +11,7 @@ pub(super) struct CallEffectBody {
     pub(super) writes: BTreeSet<BindingSlot>,
     pub(super) calls: Vec<usize>,
     pub(super) descendants: BTreeSet<u32>,
+    pub(super) read_only_returns: Option<BTreeSet<BindingSlot>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -32,6 +33,7 @@ impl KnownCellAccesses {
 pub(super) struct CallEffectRules {
     direct: BTreeMap<FlowKey, KnownCellAccesses>,
     successors: BTreeMap<FlowKey, BTreeSet<FlowKey>>,
+    callbacks: BTreeMap<u32, ReadOnlyCallback<BindingSlot>>,
     #[cfg(test)]
     transfers: Rc<Cell<usize>>,
 }
@@ -47,10 +49,20 @@ impl CallEffectRules {
         let mut rules = Self {
             direct: BTreeMap::new(),
             successors: BTreeMap::new(),
+            callbacks: BTreeMap::new(),
             #[cfg(test)]
             transfers: Rc::default(),
         };
         for (function, body) in bodies {
+            if let Some(returned) = body.read_only_returns {
+                rules.callbacks.insert(
+                    function,
+                    ReadOnlyCallback {
+                        reads: body.reads.clone(),
+                        returned,
+                    },
+                );
+            }
             let invoked = FlowKey::InvokedCells(function);
             let retained = FlowKey::RetainedCells(function);
             let source = FlowKey::SourceCells(function);
@@ -106,7 +118,16 @@ impl CallEffectRules {
     }
 
     pub(super) fn producers(&self) -> Vec<FlowKey> {
-        self.direct.keys().copied().collect()
+        self.direct
+            .keys()
+            .copied()
+            .chain(
+                self.callbacks
+                    .keys()
+                    .copied()
+                    .map(FlowKey::ReadOnlyCallback),
+            )
+            .collect()
     }
 
     fn propagate(
@@ -135,6 +156,13 @@ impl IterativeRules for CallEffectRules {
     const EVALUATES_CHANGES: bool = true;
 
     fn evaluate(&self, rule: &FlowKey, context: &mut impl FactContext<FlowKey, FlowFact>) {
+        if let FlowKey::ReadOnlyCallback(function) = rule {
+            context.propose(
+                *rule,
+                FlowFact::ReadOnlyCallback(self.callbacks[function].clone()),
+            );
+            return;
+        }
         context.propose(*rule, FlowFact::Cells(self.direct[rule].clone()));
         self.propagate(
             *rule,
@@ -168,6 +196,7 @@ mod tests {
         let mut rules = CallEffectRules {
             direct: BTreeMap::new(),
             successors: BTreeMap::new(),
+            callbacks: BTreeMap::new(),
             transfers: Rc::default(),
         };
         for node in 0..=2 * layers {
