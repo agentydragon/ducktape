@@ -62,8 +62,7 @@ func ownerMatch(ctx context.Context, tx *sql.Tx, owner SessionOwner) (bool, erro
 			return false, err
 		}
 	}
-	// Admission and compatibility Session settlement take this before delivery
-	// rows. Keep their lock order while the two image versions overlap.
+	// Admission and Session settlement take this before delivery rows.
 	if err := sessionLock(ctx, tx, owner.SessionID); err != nil {
 		return false, err
 	}

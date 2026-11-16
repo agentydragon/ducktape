@@ -21,17 +21,12 @@ func expireSessionLease(t *testing.T, store *Store, owner SessionOwner) {
 	}
 }
 
-func TestCleanupLocksMissingSessionLeaseAndPreservesRollbackData(t *testing.T) {
+func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	store, databaseURL := testStoreWithURL(t, 3)
 	row, err := enqueueWithSession(t, store, ctx, "test-cleanup-no-lease-session", "test-cleanup-sandbox", sandboxUID, input("test-cleanup-command", "test input"), nil)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.DB.ExecContext(ctx, `INSERT INTO sandbox_ownership
-		(sandbox_uid,generation,lease_uid,lease_transitions,holder_identity,updated_at)
-		VALUES ($1,7,'test-retained-lease',3,'test-retained-replica',now())`, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
 	connect := func() (*Store, int) {
@@ -93,7 +88,7 @@ func TestCleanupLocksMissingSessionLeaseAndPreservesRollbackData(t *testing.T) {
 		acquired <- acquisitionResult{owner, err}
 	}()
 	// Cleanup has created and locked the previously missing lease before waiting
-	// on the dispatch row. The compatibility acquisition API must wait on it too.
+	// on the dispatch row. A concurrent acquisition must wait on it too.
 	waitBlocked(acquirerPID, deleterPID)
 	if err := gate.Commit(); err != nil {
 		t.Fatal(err)
@@ -109,15 +104,6 @@ func TestCleanupLocksMissingSessionLeaseAndPreservesRollbackData(t *testing.T) {
 	defer store.ReleaseSessionLease(context.Background(), *successor.owner)
 	if marked, err := store.MarkDeliveryAttempt(ctx, row.CommandID, *successor.owner); err != nil || marked {
 		t.Fatalf("cleanup permitted forwarding: %t %v", marked, err)
-	}
-	var generation, transitions int
-	var leaseUID, holder string
-	if err := store.DB.QueryRowContext(ctx, `SELECT generation,lease_uid,lease_transitions,holder_identity
-		FROM sandbox_ownership WHERE sandbox_uid=$1`, sandboxUID).Scan(&generation, &leaseUID, &transitions, &holder); err != nil {
-		t.Fatal(err)
-	}
-	if generation != 7 || transitions != 3 || leaseUID != "test-retained-lease" || holder != "test-retained-replica" {
-		t.Fatalf("cleanup changed compatibility rollback data: %d %s %d %s", generation, leaseUID, transitions, holder)
 	}
 }
 
