@@ -26,7 +26,7 @@ use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValida
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ImportedSourceTarget, ModuleId, ModuleRole, top_level_id};
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
@@ -95,6 +95,65 @@ pub(super) struct PreparedModuleEmission<'a> {
     explicit_renames: BTreeMap<String, String>,
     output_context: ModuleOutputContext<'a>,
     vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EmittedImportKind {
+    Named(String),
+    Default,
+    Namespace,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct EmittedImportBinding {
+    source: String,
+    kind: EmittedImportKind,
+}
+
+fn emitted_import_local_index(
+    body: &[ModuleItem],
+) -> Result<BTreeMap<String, EmittedImportBinding>> {
+    let mut bindings = BTreeMap::new();
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let source = str_value(&import.src);
+        for specifier in &import.specifiers {
+            let (local, kind) = match specifier {
+                ImportSpecifier::Named(named) => (
+                    named.local.sym.to_string(),
+                    EmittedImportKind::Named(match &named.imported {
+                        Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                        Some(ModuleExportName::Str(name)) => {
+                            name.value.to_string_lossy().into_owned()
+                        }
+                        None => named.local.sym.to_string(),
+                    }),
+                ),
+                ImportSpecifier::Default(default) => {
+                    (default.local.sym.to_string(), EmittedImportKind::Default)
+                }
+                ImportSpecifier::Namespace(namespace) => (
+                    namespace.local.sym.to_string(),
+                    EmittedImportKind::Namespace,
+                ),
+            };
+            ensure!(
+                bindings
+                    .insert(
+                        local.clone(),
+                        EmittedImportBinding {
+                            source: source.clone(),
+                            kind,
+                        },
+                    )
+                    .is_none(),
+                "module imports local {local} more than once"
+            );
+        }
+    }
+    Ok(bindings)
 }
 
 impl PreparedModuleEmission<'_> {
@@ -462,17 +521,34 @@ pub(super) fn prepare_module_emission<'output>(
         // this path, but routing through it keeps the grouping logic
         // single-sourced with `source_chunk_imports_for_moved_body`.
         let mut pairs: Vec<(String, ImportSpecifier)> = Vec::with_capacity(reexports.len());
+        let mut imported_locals = emitted_import_local_index(&body)?;
         for reexport in reexports {
             let src = match &reexport.imported_source {
                 ImportedSourceTarget::OutputPath(path) => relative_source(&dest_abs, path),
                 ImportedSourceTarget::ExternalSpecifier(specifier) => specifier.clone(),
             };
-            let specifier = imported_binding_named_specifier(
-                &reexport.local,
-                &reexport.imported_name,
-                chunk_top_level_mark,
-            );
-            pairs.push((src, specifier));
+            let expected = EmittedImportBinding {
+                source: src.clone(),
+                kind: EmittedImportKind::Named(reexport.imported_name.clone()),
+            };
+            if let Some(existing) = imported_locals.get(&reexport.local) {
+                ensure!(
+                    existing == &expected,
+                    "imported member {} in module {} is already bound by a different import: {:?}, expected {:?}",
+                    reexport.local,
+                    plan.id,
+                    existing,
+                    expected,
+                );
+            } else {
+                let specifier = imported_binding_named_specifier(
+                    &reexport.local,
+                    &reexport.imported_name,
+                    chunk_top_level_mark,
+                );
+                pairs.push((src.clone(), specifier));
+                imported_locals.insert(reexport.local.clone(), expected);
+            }
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let reexport_imports = group_specifiers_into_import_decls(pairs);

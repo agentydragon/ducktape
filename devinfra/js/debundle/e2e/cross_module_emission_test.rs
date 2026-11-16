@@ -955,6 +955,56 @@ export { a };
 }
 
 #[test]
+fn imported_member_reused_by_moved_declaration_emits_one_local_import() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"import { make as imported } from "./peer.js";
+const value = imported();
+console.log(value);
+"#,
+            vec![logical_module(
+                "features/placed",
+                &[
+                    Member::renamed_with_kind(
+                        "PlacedFactory",
+                        "imported",
+                        Some("import_specifier"),
+                    ),
+                    Member::renamed("Result", "value"),
+                ],
+            )],
+        )
+        .with_import_order(&["features/placed", "residual"])
+        .with_extra_chunks(&[("static/peer", "export function make() { return 42; }\n")]),
+    );
+
+    let placed = fs::read_to_string(
+        fixture
+            .out_root
+            .join("static/app/modules/features/placed.js"),
+    )
+    .expect("read placed module");
+    assert_preserved_entry_output(&fixture, "42\n");
+    let imported_locals = parse_module(&placed)
+        .body
+        .iter()
+        .filter_map(|item| match item {
+            ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => Some(&import.specifiers),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|specifier| match specifier {
+            ImportSpecifier::Named(named) if named.local.sym.as_ref() == "imported" => Some(named),
+            _ => None,
+        })
+        .count();
+    assert_eq!(
+        imported_locals, 1,
+        "the placed module must bind the imported local only once:\n{placed}"
+    );
+}
+
+#[test]
 fn duplicate_import_specifier_claims_are_rejected() {
     // Same rule as `duplicate_top_level_decl_claims_are_rejected`,
     // but for `kind: import_specifier`. Every binding — imported or
