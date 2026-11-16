@@ -8,9 +8,30 @@ import (
 	"sync"
 	"testing"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
+
+// FillCreateSessionRequestDefaults supplies fixture identity, executor, and placement when absent.
+func FillCreateSessionRequestDefaults(request *samplerpb.CreateSessionRequest) {
+	if request.GetExecutionIdentity() == nil {
+		request.ExecutionIdentity = &identitypb.Identity{Name: "fixture-session-identity", Uid: "fixture-session-identity-uid"}
+	}
+	if request.GetExecutor() == nil {
+		request.Executor = &identitypb.SandboxDestination{
+			Owner:  &identitypb.ServiceAccount{Namespace: "fixture", Name: "executor"},
+			Target: &identitypb.EnvironmentTarget{Namespace: "fixture", Name: "fixture-sandbox", Uid: "fixture-sandbox-uid"},
+		}
+	}
+	if request.GetSpec() != nil && request.GetSpec().GetPlacement() == nil {
+		request.Spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{
+			ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: request.GetExecutor().GetTarget().GetName(), Uid: request.GetExecutor().GetTarget().GetUid()},
+		}}}
+	}
+}
 
 type capturedLog map[string]any
 

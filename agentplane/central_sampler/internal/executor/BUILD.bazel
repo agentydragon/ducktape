@@ -52,6 +52,7 @@ go_test(
         "//agentplane/central_sampler/api:sampler_go_proto",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/internal/sessionstore",
+        "//agentplane/central_sampler/internal/testsupport",
         "//agentplane/central_sampler/internal/toolcontract",
         "//agentplane/central_sampler/migrations",
         "//agentplane/central_sampler/protocol",
