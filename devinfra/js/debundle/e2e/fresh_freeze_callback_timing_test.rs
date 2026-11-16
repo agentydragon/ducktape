@@ -2,6 +2,28 @@
 
 use debundle_e2e_support::*;
 
+fn assert_freeze_callback_split_rejected(source: &str, colocated_members: &[Member]) {
+    let colocated = run_fixture(
+        FixtureOpts::new(
+            source,
+            vec![logical_module("runtime/all", colocated_members)],
+        )
+        .with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_preserved_entry_output(&colocated, "undefined later\n");
+    expect_atomic_conflict_rejection(
+        FixtureOpts::new(
+            source,
+            vec![
+                logical_module("records/early", &[Member::new("early")]),
+                logical_module("values/later", &[Member::new("later")]),
+            ],
+        ),
+        &["records/early", "values/later"],
+        &[],
+    );
+}
+
 #[test]
 fn fresh_record_freeze_keeps_later_reads_deferred() {
     let source = r#"function makeRecord(name, header) {
@@ -46,7 +68,8 @@ export { early, later };
 
 #[test]
 fn effectful_argument_still_observes_the_early_value() {
-    let source = r#"function makeRecord(value) {
+    assert_freeze_callback_split_rejected(
+        r#"function makeRecord(value) {
   return Object.freeze({ value });
 }
 const touch = () => later;
@@ -54,70 +77,31 @@ const early = makeRecord(touch());
 var later = 'later';
 console.log(early.value, later);
 export { early, later };
-"#;
-    let colocated = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![logical_module(
-                "runtime/all",
-                &[
-                    Member::new("makeRecord"),
-                    Member::new("touch"),
-                    Member::new("early"),
-                    Member::new("later"),
-                ],
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "undefined later\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("records/early", &[Member::new("early")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        ),
-        &["records/early", "values/later"],
-        &[],
+"#,
+        &[
+            Member::new("makeRecord"),
+            Member::new("touch"),
+            Member::new("early"),
+            Member::new("later"),
+        ],
     );
 }
 
 #[test]
 fn uncertain_freeze_receiver_can_invoke_callback() {
-    let source = r#"const peek = () => later;
+    assert_freeze_callback_split_rejected(
+        r#"const peek = () => later;
 const target = new Proxy({}, { ownKeys() { globalThis.observed = peek(); return []; } });
 const early = Object.freeze(target);
 var later = 'later';
 console.log(globalThis.observed, later);
 export { early, later };
-"#;
-    let colocated = run_fixture(
-        FixtureOpts::new(
-            source,
-            vec![logical_module(
-                "runtime/all",
-                &[
-                    Member::new("peek"),
-                    Member::new("target"),
-                    Member::new("early"),
-                    Member::new("later"),
-                ],
-            )],
-        )
-        .with_unassigned_mode(unassigned_mode_inline()),
-    );
-    assert_preserved_entry_output(&colocated, "undefined later\n");
-    expect_atomic_conflict_rejection(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module("records/early", &[Member::new("early")]),
-                logical_module("values/later", &[Member::new("later")]),
-            ],
-        ),
-        &["records/early", "values/later"],
-        &[],
+"#,
+        &[
+            Member::new("peek"),
+            Member::new("target"),
+            Member::new("early"),
+            Member::new("later"),
+        ],
     );
 }
