@@ -47,7 +47,6 @@ type Config struct {
 	SessionDispatcherTarget             string                     `mapstructure:"session_dispatcher_target"`
 	PolicyServiceTarget                 string                     `mapstructure:"policy_service_target"`
 	PolicyServiceTokenFile              string                     `mapstructure:"policy_service_token_file"`
-	RunnerGatewayControlTarget          string                     `mapstructure:"runner_gateway_control_target"` // CLEANUP(added 2026-11-16): Remove after manifest omission and App config rollout.
 	HistoryServiceTarget                string                     `mapstructure:"history_service_target"`
 	NotificationsURL                    string                     `mapstructure:"notifications_url"`
 	NotificationsTokenFile              string                     `mapstructure:"notifications_token_file"`
@@ -67,7 +66,9 @@ type Config struct {
 	EgressAdminTokenFile                string                     `mapstructure:"egress_admin_token_file"`
 	EgressAdminTimeoutSeconds           float64                    `mapstructure:"egress_admin_timeout"`
 	ShutdownTimeoutSeconds              int                        `mapstructure:"shutdown_timeout"`
-	sandboxPresetOrder                  []string
+	// CLEANUP(added 2026-11-16): Remove after the relaxed App image is pinned on staging and Flux applies the omission.
+	RunnerGatewayControlTarget string `mapstructure:"runner_gateway_control_target"`
+	sandboxPresetOrder         []string
 }
 
 // EnvironmentServicePeer is an optional dedicated EnvironmentService route. Its SVID is required
@@ -402,7 +403,6 @@ func (c Config) validate() error {
 		"runner_gateway_target":             c.RunnerGatewayTarget,
 		"session_dispatcher_target":         c.SessionDispatcherTarget,
 		"policy_service_target":             c.PolicyServiceTarget,
-		"runner_gateway_control_target":     c.RunnerGatewayControlTarget,
 		"history_service_target":            c.HistoryServiceTarget,
 		"notifications_url":                 c.NotificationsURL,
 		"database_url":                      c.DatabaseURL,
