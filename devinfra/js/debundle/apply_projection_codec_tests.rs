@@ -77,6 +77,9 @@ logical_modules:
           note: annotation audit
       comment: emitted module
       note: module audit
+import_order:
+  main: [values, helpers/runtime]
+  empty: []
 chunk_renames:
   main:
     members: [{name: '', selector: {binding: {name: value}}}]
@@ -187,6 +190,14 @@ fn typed_projection_preserves_spec_content_and_optional_empty_values() {
     assert_eq!(original.encode(), decoded.encode());
     assert!(decoded.module_roots_by_chunk.contains_key("empty"));
     assert!(decoded.module_roots_by_chunk["empty"].is_empty());
+    assert_eq!(
+        decoded.spec.import_order["main"]
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["values", "helpers/runtime"]
+    );
+    assert!(decoded.spec.import_order["empty"].is_empty());
     assert!(
         decoded.spec.chunk_export_purity["main"]
             .source_markers
@@ -208,6 +219,17 @@ fn typed_projection_preserves_spec_content_and_optional_empty_values() {
         tree.source_root = None;
     }
     assert_ne!(original.encode(), absent.encode());
+}
+
+#[test]
+fn omitted_import_order_defaults_empty_without_relaxing_spec_schema() {
+    let mut value = serde_json::to_value(projection().spec).unwrap();
+    value.as_object_mut().unwrap().remove("import_order");
+    let decoded: spec::TransformSpec = serde_json::from_value(value.clone()).unwrap();
+    assert!(decoded.import_order.is_empty());
+
+    value["unexpected"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<spec::TransformSpec>(value).is_err());
 }
 
 #[test]

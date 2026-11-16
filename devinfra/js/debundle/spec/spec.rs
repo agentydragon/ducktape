@@ -45,6 +45,12 @@ pub struct TransformSpec {
     pub vendor: BTreeMap<String, VendorMark>,
     #[serde(default)]
     pub logical_modules: BTreeMap<String, BTreeMap<String, LogicalModule>>,
+    /// Explicit per-chunk priority over emitted non-entry owners. Omission is
+    /// temporarily accepted during schema rollout; the materialization gate
+    /// will require a complete owner list for each materialized chunk. An
+    /// empty list is meaningful when the chunk has no non-entry owners.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub import_order: BTreeMap<String, Vec<ModulePath>>,
     /// Per-chunk in-place renames for bindings staying in entry's
     /// body (i.e. *not* assigned to a logical module and not pulled
     /// into the explicit residual). The materializer collects these

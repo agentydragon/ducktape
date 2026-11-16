@@ -21,6 +21,11 @@ message TransformSpec {
   MaterializeLogicalModulesConfig materialize_logical_modules = 11;
   optional WriteJsTreeConfig write_js_tree = 12;
   optional EmitBrowserHarnessConfig emit_browser_harness = 13;
+  map<string, ModulePaths> import_order = 14;
+}
+
+message ModulePaths {
+  repeated string paths = 1;
 }
 
 message LoadJsChunksArgs {

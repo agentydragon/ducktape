@@ -1970,6 +1970,7 @@ mod tests {
             },
             vendor: BTreeMap::new(),
             logical_modules: BTreeMap::new(),
+            import_order: BTreeMap::new(),
             chunk_renames: BTreeMap::new(),
             unassigned_mode: BTreeMap::new(),
             chunk_analysis_options: BTreeMap::new(),
