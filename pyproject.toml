@@ -64,7 +64,6 @@ dependencies = [
     "openai>=1.40.0",
     "inspect-ai>=0.3.263",
     "anthropic",
-    "claude-code-sdk>=0.0.21,<0.1",
     "claude-agent-sdk>=0.2.152,<0.3",
     "tiktoken>=0.14.0",
     "tenacity>=8.2.0",
