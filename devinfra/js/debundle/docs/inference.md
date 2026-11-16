@@ -334,6 +334,55 @@ families, including cross-module function effects and recursive purity, still
 run to closure in their worklist. Only a completed closure is exposed outside
 a producer.
 
+### Stable imported bindings
+
+`cross_module_purity::resolve_stable_imports` assigns one Boolean fact to each
+canonical `(module, export)` identity. An export seeds `true` when it is an
+explicit `asserted_pure` assumption or its provider has an immutable top-level
+binding. Otherwise, a local export of an imported binding reads the canonical
+provider identity and becomes true only when that fact does. A missing export,
+missing module, mutable binding, or unseeded re-export cycle therefore remains
+false; an asserted export remains an assumption even when its provider is not
+analyzed. This is the existing import-cell stability premise, not a claim
+about module initialization availability or function purity.
+
+This closure preserves the old chain-walk result. By induction over proposals,
+every true fact has a finite re-export path to an assertion or immutable
+binding. Conversely, the initial rules publish each seed and watched edges
+propagate it backward; induction on path length makes every identity on such a
+path true. The old walk returns true exactly when it reaches one of those
+seeds, and otherwise ends at a missing identity, mutable binding, or repeated
+identity. The same import-to-identity projection therefore yields the same
+stable local import set, including false unseeded cycles.
+
+Preparation runs the existing immutable-declaration census once per module,
+indexes the export, import-target, and asserted identities once, and builds
+reverse import projections. Solving starts one rule for each of `V` identities.
+Each rule reads at most one re-export dependency, each of the `E` dependency
+edges can wake its consumer at most once, and each Boolean fact grows only once
+from absent/false to true. Thus closure has at most `V + E` rule evaluations,
+reads, and proposals (`E <= V`); projecting stable results visits each of the
+`I` import bindings once. No consumer restarts a chain walk, including when
+many imports share its tail.
+
+For input bounds, let `S` be the AST node count across analyzed modules, `M`
+the analyzed module count, and `L` the longest compared module, export, local,
+or declaration name in bytes. The immutable-declaration census visits each
+module body and, in the existing write collector, rescans assignment-target
+subtrees; conservatively this is `O(S^2)` node/name visits and
+`O(S^2 log S)` ordered-set operations, with at most `O(L)` bytes per name
+comparison. Canonical identity indexing and final projection use
+`O((V + I + M) log(V + I + M))` ordered key operations, each comparison also
+costing at most `O(L)` bytes. The scheduler's ordered pending set performs
+`O((V + E) log V)` operations on integer rule IDs; fact and watcher tables make
+`O(V + E)` ordinary expected constant-time hash operations. Adversarial hash
+collisions give a conservative `O(V^2)` solver-table bound, still polynomial.
+Temporary declaration-census state, canonical identities, watchers, and output
+projections use `O(S + V + I + M)` records and at most
+`O(L * (S + V + I + M))` bytes of copied names. The complete resolver
+therefore has polynomial time and space in its source AST and import/export
+input.
+
 Binding, property, parameter and return flow shares a store with candidate-object
 reachability. Return and property contributions propagate candidate identities
 through the same worklist; escape consumers get filtered read-only views.

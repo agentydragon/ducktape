@@ -940,60 +940,138 @@ pub fn resolve_stable_imports(
     modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
     asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
 ) -> BTreeMap<SourceModuleKey, BTreeSet<String>> {
-    let never_rebound: BTreeMap<&SourceModuleKey, BTreeSet<String>> = modules
-        .iter()
-        .map(|(module, facts)| {
-            (
-                module,
+    let StableImportProblem { importers, rules } = StableImportProblem::new(modules, asserted_pure);
+    let solved = IterativeInference::new(rules).solve_values(0..importers.len());
+    let mut stable_imports: BTreeMap<_, BTreeSet<_>> = modules
+        .keys()
+        .map(|module| (module.clone(), BTreeSet::new()))
+        .collect();
+    for (export, stable) in solved {
+        if !stable {
+            continue;
+        }
+        for (module, local) in &importers[export] {
+            stable_imports
+                .get_mut(module)
+                .expect("importer belongs to the analyzed module set")
+                .insert(local.clone());
+        }
+    }
+    stable_imports
+}
+
+type StableExportKey = (SourceModuleKey, String);
+
+/// One rule per canonical module-qualified export. Missing facts are false;
+/// true grows monotonically when an export is asserted or its re-export target
+/// is proved stable.
+#[derive(Clone)]
+struct StableImportRules {
+    asserted_or_immutable: Vec<bool>,
+    reexports: Vec<Option<usize>>,
+}
+
+impl IterativeRules for StableImportRules {
+    type Key = usize;
+    type Fact = bool;
+    type Rule = usize;
+
+    fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
+        if self.asserted_or_immutable[*rule] {
+            context.propose(*rule, true);
+            return;
+        }
+        let Some(provider) = self.reexports[*rule] else {
+            return;
+        };
+        if context.read(provider).copied().unwrap_or(false) {
+            context.propose(*rule, true);
+        }
+    }
+
+    fn merge(_: &Self::Key, current: &mut Self::Fact, contribution: Self::Fact) -> bool {
+        let changed = !*current && contribution;
+        *current |= contribution;
+        changed
+    }
+}
+
+struct StableImportProblem {
+    /// Provider export ID → importer-local bindings that project its verdict.
+    importers: Vec<Vec<(SourceModuleKey, String)>>,
+    rules: StableImportRules,
+}
+
+impl StableImportProblem {
+    fn new(
+        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+        asserted_pure: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
+    ) -> Self {
+        let mut keys = BTreeSet::<StableExportKey>::new();
+        for (module, facts) in modules {
+            keys.extend(
+                facts
+                    .exports
+                    .keys()
+                    .map(|export| (module.clone(), export.clone())),
+            );
+            keys.extend(
+                facts
+                    .imports
+                    .values()
+                    .map(|import| (import.module.clone(), import.export.clone())),
+            );
+        }
+        keys.extend(asserted_pure.iter().flat_map(|(module, exports)| {
+            exports
+                .iter()
+                .map(|export| (module.clone(), export.clone()))
+        }));
+        let key_ids: BTreeMap<_, _> = keys
+            .into_iter()
+            .enumerate()
+            .map(|(id, key)| (key, id))
+            .collect();
+        let mut asserted_or_immutable = vec![false; key_ids.len()];
+        let mut reexports = vec![None; key_ids.len()];
+        let mut importers = vec![Vec::new(); key_ids.len()];
+
+        for (module, exports) in asserted_pure {
+            for export in exports {
+                asserted_or_immutable[key_ids[&(module.clone(), export.clone())]] = true;
+            }
+        }
+        for (module, facts) in modules {
+            let never_rebound: BTreeSet<String> =
                 crate::purity::immutable_declarations(facts.body, |_| true)
                     .into_iter()
                     .map(|(name, _)| name.to_string())
-                    .collect(),
-            )
-        })
-        .collect();
-    let is_stable = |import: &ResolvedImport| {
-        let mut target = import;
-        let mut visited = BTreeSet::new();
-        loop {
-            if asserted_pure
-                .get(&target.module)
-                .is_some_and(|exports| exports.contains(&target.export))
-            {
-                return true;
+                    .collect();
+            for (export, local) in &facts.exports {
+                let export_id = key_ids[&(module.clone(), export.clone())];
+                if never_rebound.contains(local) {
+                    asserted_or_immutable[export_id] = true;
+                    continue;
+                }
+                if let Some(import) = facts.imports.get(local) {
+                    reexports[export_id] =
+                        Some(key_ids[&(import.module.clone(), import.export.clone())]);
+                }
             }
-            if !visited.insert((&target.module, &target.export)) {
-                return false;
-            }
-            let Some(facts) = modules.get(&target.module) else {
-                return false;
-            };
-            let Some(local) = facts.exports.get(&target.export) else {
-                return false;
-            };
-            if never_rebound[&target.module].contains(local) {
-                return true;
-            }
-            match facts.imports.get(local) {
-                Some(reexported) => target = reexported,
-                None => return false,
+            for (local, import) in &facts.imports {
+                let provider_id = key_ids[&(import.module.clone(), import.export.clone())];
+                importers[provider_id].push((module.clone(), local.clone()));
             }
         }
-    };
-    modules
-        .iter()
-        .map(|(module, facts)| {
-            (
-                module.clone(),
-                facts
-                    .imports
-                    .iter()
-                    .filter(|(_, import)| is_stable(import))
-                    .map(|(local, _)| local.clone())
-                    .collect(),
-            )
-        })
-        .collect()
+
+        Self {
+            importers,
+            rules: StableImportRules {
+                asserted_or_immutable,
+                reexports,
+            },
+        }
+    }
 }
 
 /// Callback transfer is independent of purity, including asserted purity.
@@ -2019,6 +2097,53 @@ mod tests {
                 .collect(),
             source: None,
             replacement_packages: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn stable_import_inference_work_scales_with_shared_tail_and_unseeded_cycle_size() {
+        for width in [8, 16, 32, 64] {
+            // Many heads share a single tail. Every export identity has one
+            // rule, and the assertion seeds only the tail end.
+            let tail_width = width;
+            let node_count = width + tail_width;
+            let mut reexports = vec![None; node_count];
+            for provider in reexports.iter_mut().take(width) {
+                *provider = Some(width);
+            }
+            for (node, provider) in reexports
+                .iter_mut()
+                .enumerate()
+                .take(node_count - 1)
+                .skip(width)
+            {
+                *provider = Some(node + 1);
+            }
+            let mut asserted_or_immutable = vec![false; node_count];
+            asserted_or_immutable[node_count - 1] = true;
+            let rules = StableImportRules {
+                asserted_or_immutable,
+                reexports,
+            };
+            let solved = IterativeInference::new(rules).solve_values_resumable(0..node_count);
+            assert_eq!(solved.keys().count(), node_count, "width={width}");
+            assert!(
+                solved.evaluations() <= 2 * node_count,
+                "width={width}: {} evaluations for {node_count} export identities",
+                solved.evaluations(),
+            );
+        }
+
+        for node_count in [8, 16, 32, 64, 128] {
+            let rules = StableImportRules {
+                asserted_or_immutable: vec![false; node_count],
+                reexports: (0..node_count)
+                    .map(|node| Some((node + 1) % node_count))
+                    .collect(),
+            };
+            let solved = IterativeInference::new(rules).solve_values_resumable(0..node_count);
+            assert_eq!(solved.keys().count(), 0);
+            assert_eq!(solved.evaluations(), node_count);
         }
     }
 
