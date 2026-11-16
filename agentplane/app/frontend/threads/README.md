@@ -24,7 +24,7 @@ owns their lazy evidence paging. History rows, local commands, Thread
 status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The application shell lives in `../shell/`; the Sandbox status model stays in the parent frontend package. Shared HTTP and watch transport live in `../transport/`. Generic transcript rendering lives in `util/frontend/transcript`.
 
 The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
-declarations are local copies of the parent package declarations: each TypeScript
+declarations are local copies of `../ui/tabler_icons.d.ts`: each TypeScript
 target compiles its own sources, and the Bazel rule cannot list a source from another
 package. Keep those declarations in sync when changing them. The feature
 extractions do not change the thread sync or scrolling contracts; see `../SPEC.md` for reader-facing scroll

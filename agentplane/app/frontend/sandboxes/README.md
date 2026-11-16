@@ -5,4 +5,4 @@ runtime Session diagnostics, console, status, policy, Sandbox API calls, and liv
 
 The Bazel targets live in `BUILD.bazel`. The local icon declarations are a
 package-local copy because the TypeScript Bazel rule requires target sources to
-come from their own package; keep it in sync with the parent declaration file.
+come from their own package; keep it in sync with `../ui/tabler_icons.d.ts`.
