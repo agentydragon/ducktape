@@ -23,7 +23,6 @@ import (
 func TestConfiguredHarnessNamesRoundTripThroughEnvironmentService(t *testing.T) {
 	t.Setenv(configFileEnv, writeSettings(t, validSettings+`environment_service:
   policy_namespace: agentplane
-  audience: session-dispatcher
   rpc:
     listen_address: ":8082"
     tls: {cert_file: /tmp/server-cert, key_file: /tmp/server-key}
