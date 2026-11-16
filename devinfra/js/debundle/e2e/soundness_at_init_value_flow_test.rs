@@ -5,6 +5,13 @@
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
+fn command_later_split_modules() -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module("command", &[Member::new("command")]),
+        logical_module("value", &[Member::new("later")]),
+    ]
+}
+
 #[test]
 fn local_constructor_stores_callback_until_called() {
     let fixture = run_fixture(
@@ -211,13 +218,7 @@ export { Command, factory, command, later };
     ] {
         let source = template.replace("CONFIG", config);
         expect_atomic_conflict_rejection(
-            FixtureOpts::new(
-                &source,
-                vec![
-                    logical_module("command", &[Member::new("command")]),
-                    logical_module("value", &[Member::new("later")]),
-                ],
-            ),
+            FixtureOpts::new(&source, command_later_split_modules()),
             &["command", "value"],
             &[],
         );
@@ -433,10 +434,7 @@ const later = 7;
 export {{ saved, Checker, Command, create, command, later }};
 "#
                 ),
-                vec![
-                    logical_module("command", &[Member::new("command")]),
-                    logical_module("value", &[Member::new("later")]),
-                ],
+                command_later_split_modules(),
             ),
             &["command", "value"],
             &[],
@@ -461,10 +459,7 @@ const command = create({ execute: () => later });
 const later = 7;
 export { saved, Checker, Command, create, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -485,10 +480,7 @@ const command = create({ execute: () => later });
 const later = 7;
 export { Checker, Command, create, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -507,10 +499,7 @@ const command = new Command({ execute: () => later });
 const later = 7;
 export { Command, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -534,10 +523,7 @@ const later = 7;
 export {{ Command, command, later }};
 "#
                 ),
-                vec![
-                    logical_module("command", &[Member::new("command")]),
-                    logical_module("value", &[Member::new("later")]),
-                ],
+                command_later_split_modules(),
             ),
             &["command", "value"],
             &[],
@@ -557,10 +543,7 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -580,10 +563,7 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -601,10 +581,7 @@ const command = new Command({ get weight() { return later; } });
 const later = 7;
 export { Command, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -624,10 +601,7 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Base, Command, factory, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -644,10 +618,7 @@ const command = new Command();
 console.log(command.result);
 export { Command, execute, command, later };
 "#,
-        vec![
-            logical_module("command", &[Member::new("command")]),
-            logical_module("value", &[Member::new("later")]),
-        ],
+        command_later_split_modules(),
     ));
     assert_preserved_entry_output(&fixture, "7\n");
 }
@@ -662,10 +633,7 @@ const command = new Command();
 const later = 7;
 export { Command, execute, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -704,10 +672,7 @@ const command = factory({ execute: () => later });
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["command", "value"],
         &[],
@@ -726,10 +691,7 @@ console.log("ready");
 const later = 7;
 export { Command, factory, command, later };
 "#,
-            vec![
-                logical_module("command", &[Member::new("command")]),
-                logical_module("value", &[Member::new("later")]),
-            ],
+            command_later_split_modules(),
         ),
         &["anon_residual_sentinel", "value"],
         &[],
