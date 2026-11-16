@@ -1475,6 +1475,7 @@ pub(super) fn build_spec(opts: &FixtureOpts<'_>, setup: &PreparedFixture) -> Tra
             .map(|(chunk_id, mark)| ((*chunk_id).to_string(), mark.clone()))
             .collect(),
         logical_modules,
+        import_order: BTreeMap::new(),
         chunk_renames,
         unassigned_mode,
         chunk_analysis_options,

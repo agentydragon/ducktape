@@ -179,6 +179,18 @@ pub fn encode_transform_spec(value: &spec::TransformSpec) -> pb::TransformSpec {
                 )
             })
             .collect(),
+        import_order: value
+            .import_order
+            .iter()
+            .map(|(chunk, paths)| {
+                (
+                    chunk.clone(),
+                    pb::ModulePaths {
+                        paths: paths.iter().map(ToString::to_string).collect(),
+                    },
+                )
+            })
+            .collect(),
         chunk_renames: value
             .chunk_renames
             .iter()
@@ -234,6 +246,26 @@ pub fn decode_transform_spec(v: pb::TransformSpec) -> Result<spec::TransformSpec
                         .modules
                         .into_iter()
                         .map(|(key, module)| Ok((key, decode_logical_module(module)?)))
+                        .collect::<Result<_>>()?,
+                ))
+            })
+            .collect::<Result<_>>()?,
+        import_order: v
+            .import_order
+            .into_iter()
+            .map(|(chunk, paths)| {
+                Ok((
+                    chunk.clone(),
+                    paths
+                        .paths
+                        .into_iter()
+                        .map(|path| {
+                            spec::ModulePath::parse(&path, "").with_context(|| {
+                                format!(
+                                    "invalid import_order module path {path:?} for chunk {chunk:?}"
+                                )
+                            })
+                        })
                         .collect::<Result<_>>()?,
                 ))
             })
