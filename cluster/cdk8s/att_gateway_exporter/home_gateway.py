@@ -78,7 +78,14 @@ def build_dashboard() -> dashboard.Dashboard:
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=4, w=4, x=12),
                 options=stat_options(),
-                field_config=dashboard.FieldConfigSource(defaults=dashboard.FieldConfig(unit="s")),
+                field_config=dashboard.FieldConfigSource(
+                    defaults=dashboard.FieldConfig(
+                        unit="s",
+                        thresholds=dashboard.ThresholdsConfig(
+                            steps=[dashboard.Threshold(color="orange"), dashboard.Threshold(value=3600, color="green")]
+                        ),
+                    )
+                ),
             ),
             dashboard.Panel(
                 type_val="stat",
@@ -144,11 +151,9 @@ def build_dashboard() -> dashboard.Dashboard:
                 type_val="timeseries",
                 id_val=8,
                 targets=[
+                    mimir_query("rate(att_gateway_wan_receive_bytes_total[5m]) * 8", legend="Download").build(),
                     mimir_query(
-                        "rate(att_gateway_wan_receive_bytes_total[$__rate_interval]) * 8", legend="Download"
-                    ).build(),
-                    mimir_query(
-                        "rate(att_gateway_wan_transmit_bytes_total[$__rate_interval]) * 8", legend="Upload", ref_id="B"
+                        "rate(att_gateway_wan_transmit_bytes_total[5m]) * 8", legend="Upload", ref_id="B"
                     ).build(),
                 ],
                 title="WAN throughput",
@@ -196,7 +201,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=12,
-                targets=gateway_error_queries("lan_port", "$__rate_interval", legend_prefix="Port {{port}} "),
+                targets=gateway_error_queries("lan_port", "5m", legend_prefix="Port {{port}} "),
                 title="LAN port errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=26),
@@ -204,7 +209,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=13,
-                targets=gateway_error_queries("wan", "$__rate_interval"),
+                targets=gateway_error_queries("wan", "5m"),
                 title="WAN errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=26),
