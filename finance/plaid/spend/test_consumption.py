@@ -69,6 +69,33 @@ def policy() -> AllowancePolicy:
     )
 
 
+def policy_with_reversal(description: str) -> AllowancePolicy:
+    return policy().model_copy(
+        update={
+            "reversal_pairs": [
+                ReversalPair(
+                    id="synthetic-return",
+                    description=description,
+                    original=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
+                            NamePrefix(field="name", prefix="SHOP original"),
+                            AmountExact(value="10.00"),
+                        ]
+                    ),
+                    reversal=AllOf(
+                        conditions=[
+                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
+                            NamePrefix(field="name", prefix="SHOP return"),
+                            AmountExact(value="-10.00"),
+                        ]
+                    ),
+                )
+            ]
+        }
+    )
+
+
 @pytest.mark.parametrize("mode", list(ConsumptionMode))
 def test_scope_purchase_day_supersession_and_coverage(mode: ConsumptionMode) -> None:
     result = prepare_consumption(
@@ -107,30 +134,7 @@ def test_scope_purchase_day_supersession_and_coverage(mode: ConsumptionMode) -> 
 
 @pytest.mark.parametrize("mode", list(ConsumptionMode))
 def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> None:
-    allowance = policy().model_copy(
-        update={
-            "reversal_pairs": [
-                ReversalPair(
-                    id="synthetic-return",
-                    description="Synthetic confirmed full reversal.",
-                    original=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
-                            NamePrefix(field="name", prefix="SHOP original"),
-                            AmountExact(value="10.00"),
-                        ]
-                    ),
-                    reversal=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
-                            NamePrefix(field="name", prefix="SHOP return"),
-                            AmountExact(value="-10.00"),
-                        ]
-                    ),
-                )
-            ]
-        }
-    )
+    allowance = policy_with_reversal("Synthetic confirmed full reversal.")
     result = prepare_consumption(
         allowance,
         [
@@ -154,30 +158,7 @@ def test_full_history_reversals_and_isolated_credits(mode: ConsumptionMode) -> N
 
 
 def test_ambiguous_reversal_reports_issue_and_keeps_purchase() -> None:
-    allowance = policy().model_copy(
-        update={
-            "reversal_pairs": [
-                ReversalPair(
-                    id="synthetic-return",
-                    description="Synthetic incomplete full reversal.",
-                    original=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 1, 1), end=date(2026, 1, 1)),
-                            NamePrefix(field="name", prefix="SHOP original"),
-                            AmountExact(value="10.00"),
-                        ]
-                    ),
-                    reversal=AllOf(
-                        conditions=[
-                            DateRange(start=date(2026, 3, 10), end=date(2026, 3, 10)),
-                            NamePrefix(field="name", prefix="SHOP return"),
-                            AmountExact(value="-10.00"),
-                        ]
-                    ),
-                )
-            ]
-        }
-    )
+    allowance = policy_with_reversal("Synthetic incomplete full reversal.")
     result = prepare_consumption(
         allowance,
         [transaction("SHOP original", date=date(2026, 1, 1))],
