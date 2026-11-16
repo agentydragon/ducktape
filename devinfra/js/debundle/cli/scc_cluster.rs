@@ -106,7 +106,7 @@ pub struct SccEntry {
     pub modules: Vec<String>,
     pub labels: Vec<String>,
     pub is_cycle: bool,
-    pub realizable: bool,
+    pub constraining_module_edge_ids: Vec<String>,
 }
 
 /// A module-quotient node as both its interned `logical:N` id and its
@@ -198,7 +198,7 @@ pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
             modules: scc.modules.iter().map(|k| k.as_str().to_string()).collect(),
             labels,
             is_cycle,
-            realizable: scc.realizable,
+            constraining_module_edge_ids: scc.constraining_module_edge_ids.clone(),
         });
     }
     let report = SccReport { sccs: entries };
@@ -216,9 +216,9 @@ pub fn run_scc(args: SccArgs, output: &mut dyn std::io::Write) -> Result<()> {
 fn render_scc_text(report: &SccReport, out: &mut String) {
     out.push_str(&format!("{} scc(s)\n", report.sccs.len()));
     for scc in &report.sccs {
-        let flags = match (scc.is_cycle, scc.realizable) {
-            (true, true) => "[cycle,realizable]",
-            (true, false) => "[cycle,UNREALIZABLE]",
+        let flags = match (scc.is_cycle, scc.constraining_module_edge_ids.is_empty()) {
+            (true, true) => "[cycle]",
+            (true, false) => "[cycle,initialization_constraints]",
             (false, _) => "",
         };
         out.push_str(&format!(

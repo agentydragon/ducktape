@@ -633,7 +633,6 @@ fn build_quotient_scc_reports(
             id: format!("scc:{}", sccs.len()),
             modules,
             is_cycle,
-            realizable: constraining_module_edge_ids.is_empty(),
             module_edge_ids,
             constraining_module_edge_ids,
         });
@@ -650,7 +649,6 @@ fn build_quotient_scc_reports(
                 id: format!("scc:{}", sccs.len()),
                 modules: vec![module.key.clone()],
                 is_cycle: false,
-                realizable: true,
                 module_edge_ids: Vec::new(),
                 constraining_module_edge_ids: Vec::new(),
             });

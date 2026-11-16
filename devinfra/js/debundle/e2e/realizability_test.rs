@@ -1,8 +1,8 @@
 //! Realizability gate (`I ∪ S` per <docs/design.md>): the
 //! materializer accepts a spec and emits a behaviour-preserving
 //! bundle iff every imports plus side-effect-ordering SCC is
-//! realizable. Lazy-only import cycles are allowed; cycles with
-//! at-init or side-effect-order edges are rejected. Each test feeds
+//! realizable. Lazy-only import cycles are allowed; initialization and
+//! side-effect constraints must admit a valid ESM evaluation. Each test feeds
 //! a fixture spec and asserts either acceptance + entry-stdout
 //! match, or rejection with cycle evidence naming the implicated
 //! modules.
@@ -369,8 +369,8 @@ export { A, B, readA, readB };
             .quotient
             .sccs
             .iter()
-            .any(|scc| scc.is_cycle && scc.realizable),
-        "lazy-only quotient SCC should be reported as realizable: {graph:#?}",
+            .any(|scc| scc.is_cycle && scc.constraining_module_edge_ids.is_empty()),
+        "lazy-only quotient SCC should have no initialization constraints: {graph:#?}",
     );
     assert!(
         graph.atomic_graph.nodes.iter().any(|atomic_group| {
@@ -810,9 +810,11 @@ export { a1, a2, b1 };
         );
     }
     assert!(
-        graph.quotient.sccs.iter().any(|scc| {
-            scc.is_cycle && !scc.realizable && !scc.constraining_module_edge_ids.is_empty()
-        }),
+        graph
+            .quotient
+            .sccs
+            .iter()
+            .any(|scc| { scc.is_cycle && !scc.constraining_module_edge_ids.is_empty() }),
         "unrealizable quotient SCC should be reported with constraining edge ids: {graph:#?}",
     );
 }

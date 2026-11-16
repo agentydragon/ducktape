@@ -1220,9 +1220,10 @@ pub struct QuotientEdgeReport {
 
 /// Wire-format projection of the shared [`super::SccCore`] shape
 /// ("modules in the SCC + edges in the SCC"). Deviation from that
-/// in-memory core: this shape covers **every** SCC the dep graph turns
-/// up (single-module non-self-loops are filtered out at the builder),
-/// with `realizable` distinguishing the offending ones, and uses
+/// in-memory core: this shape covers every quotient SCC, including isolated
+/// modules. It records graph structure, not a realizability verdict: a cycle
+/// containing initialization constraints can still have a valid ESM schedule.
+/// It uses
 /// wire-stable string ids (`module_key`, `quotient_edge:N`) instead of
 /// typed `ModuleId` / `DependencyEdgeId`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1233,7 +1234,6 @@ pub struct QuotientSccReport {
     /// (the same modules spelled as paths) is gone.
     pub modules: Vec<ModuleKey>,
     pub is_cycle: bool,
-    pub realizable: bool,
     pub module_edge_ids: Vec<String>,
     pub constraining_module_edge_ids: Vec<String>,
 }

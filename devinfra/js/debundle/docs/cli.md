@@ -1445,10 +1445,17 @@ module/member names, or a `source_match` preview, and source position.
 
 The `gate` namespace names what is rejecting: the realizability gate. It
 complements `scc` (which lists every quotient SCC, including singletons and
-realizable multi-node ones); `gate` lists **only** the SCCs the gate
+accepted multi-node ones); `gate` lists **only** the SCCs the gate
 rejected. The unit is the blocking SCC, not a cycle — a single SCC can
 contain exponentially many simple cycles, so the CLI exposes the cut (a
 primitive on the SCC) but deliberately not a `cycle list`.
+
+`scc` and `module_graph.sccs` describe graph structure; they do not decide
+realizability. Their `constraining_module_edge_ids` lists initialization
+constraints inside each SCC. An eager read in an import cycle can be safe
+when its target has finished before the read. Use the shared gate's result
+for acceptance or rejection, rather than treating a nonempty constraint list
+as a rejection.
 
 The SCC query commands (`gate list`, `gate describe`, and `gate cut`) accept
 `--cycles <path>` to override the default `cycles.json` location (sibling of
