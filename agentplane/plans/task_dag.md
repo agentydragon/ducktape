@@ -185,12 +185,13 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 07:30 UTC.
 
-| Track                      | Operator release (UTC) | Node                         | State                                                                                                                                                              |
-| -------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
-| Keyed Dispatcher delivery  | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                          |
-| Versioned dispatch watch   | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                              |
-| Leftover settings keys     | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
+| Track                                  | Operator release (UTC) | Node                         | State                                                                                                                                                              |
+| -------------------------------------- | ---------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | App Runtime diagnostics moved behind EnvironmentService and the App raw-proxy grant is gone (#16819, #16825, #16878). The other dispositions await operator review |
+| Keyed Dispatcher delivery              | 2026-11-16 06:40       | `DISPATCHER_KEYED_DELIVERY`  | In flight                                                                                                                                                          |
+| Versioned dispatch watch               | 2026-11-16 06:40       | `DISPATCHER_WATCH_VERSIONS`  | In flight; staged: versions and tombstones first, chunked notifications removed later                                                                              |
+| Leftover settings keys                 | 2026-11-16 06:40       | none (`CLEANUP` tombstones)  | In flight; manifests stop setting each key before the code stops accepting it                                                                                      |
+| Dispatcher Session watch and App lists | 2026-11-16 07:17       | `DISPATCHER_SESSION_WATCH`   | In flight; the App moves onto the watch after the Sessions image with it is pinned                                                                                 |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
 routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
@@ -208,6 +209,7 @@ flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     DISPATCHER_KEYED_DELIVERY[In flight: keyed Dispatcher delivery, section 16]
     DISPATCHER_WATCH_VERSIONS[In flight: versioned dispatch watch, section 16]
+    DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists, section 13]
 ```
 
 ### Sandbox-free central Sessions
@@ -2449,7 +2451,8 @@ beyond the transport track nodes the operator dispatched.
 flowchart LR
     DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: immediate-or-fail send]
     SESSION_DATA_OWNERSHIP_DESIGN[Later decision: Session data and service boundaries]
-    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Candidate: Session existence and status ownership]
+    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN[Decided owner; open: current-status record]
+    DISPATCHER_SESSION_WATCH[In flight: Dispatcher Session watch and App lists]
     KUBERNETES_UID_CHECK_AUDIT[Unscheduled: audit Kubernetes name and UID checks]
     SESSION_IDENTITY_CONTRACT[Decision: Session identity and shared-Environment admission]
     ENVIRONMENT_IDENTITY_BINDING_DESIGN[Decision: Environment Identity binding and Session creation order]
@@ -2557,9 +2560,14 @@ attachment observations, and a Dispatcher view must distinguish stale or unavail
 a confirmed stopped host or Session. **Question for review:** should the Dispatcher persist that
 current view or route a fresh read to Runtime, and which state belongs only to History?
 
-**Operator direction, 2026-11-16 07:12 UTC (tentative; no release):** the Session Dispatcher should
-probably be the authority on which Sessions exist and what state they are in (running, not running);
-archived state stays in the App for now as the conservative choice, and its long-term home is open.
+**Owner decided (operator, 2026-11-16 07:12 to 07:17 UTC):** the Session Dispatcher is the authority
+on which Sessions exist and what state they are in (running, not running): "yeah, session watch plus
+migrating app sounds good to me". Archived state and Session/Thread titles stay in the App for now
+as the conservative choice; their long-term home is open. The build is
+[`DISPATCHER_SESSION_WATCH`](#dispatcher_session_watch--watch-sessions-and-move-app-lists). Still
+open here: the shape of the Dispatcher's current-status record. A watch needs stored state, so the
+Dispatcher persists it rather than routing reads to the Runtime; the open part is how Runtime
+observations reach it with no call from Environments to Sessions, and their fencing and staleness.
 Where these facts live on devel today:
 
 - **Existence:** the Dispatcher holds the Session records (`CreateSession`, `GetSession`,
@@ -2572,7 +2580,7 @@ Where these facts live on devel today:
   the App's busy-Thread archive guard reads.
 - **Archived:** the App's `thread` table (`archived`), keyed by Session ID, with the Thread name.
 
-Following the direction moves App Session lists onto the Dispatcher, which needs a Session watch for
+Following the decision moves App Session lists onto the Dispatcher, which needs a Session watch for
 event-driven lists (it has only paged `ListSessions`). The Dispatcher gains the current-status view
 recommended above, for central sampler Sessions too, and the archive guard reads it.
 
@@ -2588,6 +2596,26 @@ move. The App's busy-Thread archive guard is a concrete consumer of this contrac
 ([proxy audit](runtime_proxy_callers.md#app-live-diagnostics-and-archive-safety)); its replacement
 must distinguish confirmed idle from unknown/stale activity and handle zero or multiple environment
 attachments without requiring a Sandbox on every Session.
+
+### `DISPATCHER_SESSION_WATCH` — watch Sessions and move App lists
+
+**In flight; operator release 2026-11-16 07:17 UTC ("we can dispatch the migration").** Ordered PRs:
+
+1. **Sessions:** a `WatchSessions` server stream (and its JSON facade route) on the Dispatcher with
+   the same callers as `ListSessions`. A version bumped on every Session write, payload-free keyed
+   notifications through `postgres/wakeups.Hub`, and the resume-token shape of
+   `DISPATCHER_WATCH_VERSIONS`. Additive migration; no client yet. The Dispatcher never deletes
+   Session rows, so the watch needs no Session tombstones.
+2. **Grants, if any:** a caller setting the image accepts, applied after that image is pinned.
+3. **App:** list membership and Dispatcher-known state (materialization, required Environment) from
+   `ListSessions` plus `WatchSessions`, after the step 1 image is pinned on staging. Titles and
+   archived state stay in the App's `thread` table, conversation content in History, and running
+   marks keep their current sources. A Session History has not recorded yet appears with its
+   materialization state.
+4. **Cleanup:** the App's History-derived list membership goes once the step 3 App image rolls.
+
+Running status moves onto the watch only after the current-status record in
+`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` is reviewed.
 
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
