@@ -154,7 +154,7 @@ py_library(
     srcs = ["ingest.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":claude_titles",
+        ":claude_title_refresh",
         ":codex_metadata",
         ":database",
         ":file_staging",
@@ -873,4 +873,19 @@ py_library(
     name = "source_paths",
     srcs = ["source_paths.py"],
     deps = [":models"],
+)
+
+py_library(
+    name = "claude_title_refresh",
+    srcs = ["claude_title_refresh.py"],
+    deps = [
+        ":claude_titles",
+        ":database",
+        ":models",
+        ":record_json",
+        ":session_projection",
+        ":statuses",
+        ":version_lineage",
+        "@pypi//sqlalchemy",
+    ],
 )

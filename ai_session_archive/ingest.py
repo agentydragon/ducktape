@@ -14,7 +14,7 @@ from sqlalchemy import and_, case, delete, exists, insert, literal, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session as DbSession, aliased
 
-from ai_session_archive.claude_titles import ClaudeTitle, select_claude_title
+from ai_session_archive.claude_title_refresh import refresh_claude_titles
 from ai_session_archive.codex_metadata import read_codex_titles
 from ai_session_archive.database import (
     CodexTitleCandidateRow,
@@ -36,7 +36,7 @@ from ai_session_archive.record_interpretation import extract_session_metadata, s
 from ai_session_archive.record_json import ParsedRecordJson, parse_record_json
 from ai_session_archive.record_payloads import PARSER_VERSION, ParsedRecord
 from ai_session_archive.restic import ResticRepository, ResticSnapshot
-from ai_session_archive.session_projection import CLAUDE_TITLE_PROJECTION_VERSION, update_session_metadata
+from ai_session_archive.session_projection import update_session_metadata
 from ai_session_archive.snapshot_inventory import (
     KNOWN_DIFF_MODIFIERS,
     SnapshotInventory,
@@ -51,7 +51,7 @@ from ai_session_archive.statuses import (
     SnapshotProcessingStatus,
 )
 from ai_session_archive.usage_observations import usage_observations_for_record
-from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, effective_payload_ids, version_lineage_ranks
+from ai_session_archive.version_lineage import CHECKPOINT_INTERVAL, version_lineage_ranks
 
 RECORD_BATCH_MAX_BYTES = 4 * 1024 * 1024
 
@@ -143,7 +143,7 @@ class SnapshotIngestor:
                 self._process_snapshot(snapshot)
         all_inventoried = self._inventory.all_inventoried_and_processed(available_snapshot_ids)
         self._project_codex_titles(allow_index_only=all_inventoried)
-        self._project_claude_titles()
+        refresh_claude_titles(self._session_factory, self._source.machine_id)
         return self._report(available_snapshot_ids)
 
     def _ensure_source(self) -> None:
@@ -842,62 +842,6 @@ class SnapshotIngestor:
         ):
             return None
         return db.get(FileVersionRow, prior.file_version_id)
-
-    def _project_claude_titles(self) -> None:
-        """Refresh stale Claude title projections from already stored record payloads."""
-        latest_version_id = (
-            select(SnapshotFileRow.file_version_id)
-            .join(
-                ResticSnapshotRow,
-                and_(
-                    ResticSnapshotRow.machine_id == SnapshotFileRow.machine_id,
-                    ResticSnapshotRow.snapshot_id == SnapshotFileRow.snapshot_id,
-                ),
-            )
-            .where(
-                SnapshotFileRow.session_id == SessionRow.id,
-                SnapshotFileRow.status.in_((SnapshotFileStatus.COMPLETE, SnapshotFileStatus.PARTIAL)),
-                SnapshotFileRow.file_version_id.is_not(None),
-            )
-            .order_by(ResticSnapshotRow.captured_at.desc(), ResticSnapshotRow.snapshot_id.desc())
-            .limit(1)
-            .scalar_subquery()
-        )
-        with self._session_factory() as db, db.begin():
-            rows = db.execute(
-                select(SessionRow, FileVersionRow)
-                .join(FileVersionRow, FileVersionRow.id == latest_version_id)
-                .where(
-                    SessionRow.machine_id == self._source.machine_id,
-                    SessionRow.harness == Harness.CLAUDE.value,
-                    (SessionRow.claude_title_projection_version.is_(None))
-                    | (SessionRow.claude_title_projection_version != CLAUDE_TITLE_PROJECTION_VERSION),
-                )
-                .order_by(SessionRow.id)
-            )
-            for session_row, version_row in rows.yield_per(8):
-                title: ClaudeTitle | None = None
-                ranks = version_lineage_ranks(db, version_row)
-                for start in range(0, version_row.record_count, 500):
-                    batch_ids = effective_payload_ids(
-                        db, version_row, ranks, start, min(start + 500, version_row.record_count)
-                    )
-                    raw_by_id: dict[UUID, bytes] = dict(
-                        db.execute(
-                            select(RecordPayloadRow.id, RecordPayloadRow.raw_bytes).where(
-                                RecordPayloadRow.id.in_(batch_ids)
-                            )
-                        )
-                        .tuples()
-                        .all()
-                    )
-                    for payload_id in batch_ids:
-                        raw_bytes = raw_by_id[payload_id]
-                        parsed = parse_record_json(raw_bytes)
-                        if isinstance(parsed, ParsedRecordJson) and isinstance(parsed.parsed, Mapping):
-                            title = select_claude_title(title, parsed.parsed)
-                session_row.title = title.text if title is not None else None
-                session_row.claude_title_projection_version = CLAUDE_TITLE_PROJECTION_VERSION
 
     def _mark_file_failed(self, snapshot_id: str, path: str, exc: Exception) -> None:
         with self._session_factory() as db, db.begin():
