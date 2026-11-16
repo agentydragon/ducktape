@@ -15,8 +15,8 @@ go_library(
         "//agentplane/env/runtime:__subpackages__",
     ],
     deps = [
-        "//agentplane/env/cosi",
         "//agentplane/env/oneoff",
+        "//agentplane/env/runtime/internal/cosi",
         "//agentplane/env/runtime/internal/cosistate",
         "//agentplane/env/runtime/internal/cosistate:persistent_go_proto",
         "//agentplane/env/runtime/internal/lifecycle",

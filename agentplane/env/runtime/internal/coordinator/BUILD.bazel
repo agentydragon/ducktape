@@ -35,7 +35,6 @@ go_library(
     visibility = ["//agentplane/env/runtime/cmd:__pkg__"],
     deps = [
         "//agentplane/env/configuration",
-        "//agentplane/env/cosi",
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/control",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
@@ -45,6 +44,7 @@ go_library(
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/ingress",
         "//agentplane/env/runtime/internal/bootstrap",
+        "//agentplane/env/runtime/internal/cosi",
         "//agentplane/env/runtime/internal/cosistate",
         "//agentplane/env/runtime/internal/lifecycle",
         "//agentplane/env/runtime/internal/retained",
@@ -97,7 +97,6 @@ pid1_go_test(
     race = "on",
     deps = [
         "//agentplane/env/configuration",
-        "//agentplane/env/cosi",
         "//agentplane/env/runtime/codexappserver",
         "//agentplane/env/runtime/control",
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
@@ -106,6 +105,7 @@ pid1_go_test(
         "//agentplane/env/runtime/execution/codexexecserver",
         "//agentplane/env/runtime/harness",
         "//agentplane/env/runtime/internal/bootstrap",
+        "//agentplane/env/runtime/internal/cosi",
         "//agentplane/env/runtime/internal/cosistate",
         "//agentplane/env/runtime/internal/lifecycle",
         "//agentplane/env/runtime/internal/retained",

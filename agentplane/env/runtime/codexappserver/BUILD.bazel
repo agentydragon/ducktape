@@ -47,9 +47,9 @@ pid1_go_test(
     embed = [":codexappserver"],
     race = "on",
     deps = [
-        "//agentplane/env/cosi",
         "//agentplane/env/oneoff",
         "//agentplane/env/runtime/harness",
+        "//agentplane/env/runtime/internal/cosi",
         "//agentplane/env/runtime/internal/lifecycle",
         "//agentplane/env/runtime/supervision",
         "@com_github_cosi_project_runtime//pkg/controller",
