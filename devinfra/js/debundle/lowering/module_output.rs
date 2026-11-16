@@ -26,7 +26,7 @@ use crate::rename_ledger::{RenameLedger, RenameScope, ScopeOccupancy, SealValida
 use crate::rewrite_runtime::rewrite_runtime_sources_for_target;
 use crate::visitors::{IdentifierRenamer, RenameCaptureProbe};
 use analysis::{BindingId, ImportedSourceTarget, ModuleId, ModuleRole, top_level_id};
-use anyhow::{Result, bail};
+use anyhow::{Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{FileMetadata, FileRole, JsFile, JsFileBody};
@@ -95,6 +95,44 @@ pub(super) struct PreparedModuleEmission<'a> {
     explicit_renames: BTreeMap<String, String>,
     output_context: ModuleOutputContext<'a>,
     vendor_reference_rewrites: BTreeMap<(ChunkId, String), usize>,
+}
+
+fn imported_local_binding(body: &[ModuleItem], local: &str) -> Result<Option<(String, String)>> {
+    let mut binding = None;
+    for item in body {
+        let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
+            continue;
+        };
+        let source = str_value(&import.src);
+        for specifier in &import.specifiers {
+            let (specifier_local, imported_name) = match specifier {
+                ImportSpecifier::Named(named) => (
+                    named.local.sym.to_string(),
+                    match &named.imported {
+                        Some(ModuleExportName::Ident(name)) => name.sym.to_string(),
+                        Some(ModuleExportName::Str(name)) => {
+                            name.value.to_string_lossy().into_owned()
+                        }
+                        None => named.local.sym.to_string(),
+                    },
+                ),
+                ImportSpecifier::Default(default) => {
+                    (default.local.sym.to_string(), "default".to_owned())
+                }
+                ImportSpecifier::Namespace(namespace) => {
+                    (namespace.local.sym.to_string(), "*".to_owned())
+                }
+            };
+            if specifier_local == local {
+                ensure!(
+                    binding.is_none(),
+                    "module imports local {local} more than once"
+                );
+                binding = Some((source.clone(), imported_name));
+            }
+        }
+    }
+    Ok(binding)
 }
 
 impl PreparedModuleEmission<'_> {
@@ -467,12 +505,27 @@ pub(super) fn prepare_module_emission<'output>(
                 ImportedSourceTarget::OutputPath(path) => relative_source(&dest_abs, path),
                 ImportedSourceTarget::ExternalSpecifier(specifier) => specifier.clone(),
             };
-            let specifier = imported_binding_named_specifier(
-                &reexport.local,
-                &reexport.imported_name,
-                chunk_top_level_mark,
-            );
-            pairs.push((src, specifier));
+            if let Some((existing_src, existing_imported_name)) =
+                imported_local_binding(&body, &reexport.local)?
+            {
+                ensure!(
+                    existing_src == src && existing_imported_name == reexport.imported_name,
+                    "imported member {} in module {} is already bound by a different import: {}::{}, expected {}::{}",
+                    reexport.local,
+                    plan.id,
+                    existing_src,
+                    existing_imported_name,
+                    src,
+                    reexport.imported_name,
+                );
+            } else {
+                let specifier = imported_binding_named_specifier(
+                    &reexport.local,
+                    &reexport.imported_name,
+                    chunk_top_level_mark,
+                );
+                pairs.push((src, specifier));
+            }
             import_member_exports.insert(reexport.local.clone(), reexport.public_name.clone());
         }
         let reexport_imports = group_specifiers_into_import_decls(pairs);
