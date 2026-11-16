@@ -1608,8 +1608,10 @@ PostgreSQL-first sequencing or a custom parallel import/unpack scheduler to the 
 
 ### `EGRESS_RELAY_RENAME` — rename the egress sidecar to relay
 
-**TODO; operator request, 2026-10-16.** Rename the egress sidecar to "relay" across code,
-configuration, image names and docs. Update all consumers atomically.
+**TODO; operator request, 2026-10-16.** The separately acceptable
+[relay migration section](deployed_service_names.md#egress_relay_rename--separate-approval) owns
+its inventory, proposed names and image/reader/template rollout gates. No dependency on the
+Sessions/Environments deployed-name decision; deployed configuration stays unchanged until review.
 
 ### `RUNNER_HARNESS_DELIVERY_DESIGN` — choose how runners obtain harness binaries
 
@@ -3690,13 +3692,14 @@ which would settle the name instead; check that before dispatch.
 
 #### `RUNNER_GATEWAY_RENAME` — deployed names for the Sessions and Environments binaries
 
-**Unscheduled; target changed 2026-11-14.** The two-binary direction
-([section 17](#17-two-binaries-and-the-go-layout)) removes the Runner Gateway, so the 2026-10-31
-"Environment Gateway" name is dropped. Source directories are decided (operator, 2026-11-14 05:49
-UTC, card "session_dispatcher + environments"); deployed names stay until this migration: the
-`runner-gateway` and `sandbox-controller` Deployments, Services, images, labels, settings and
-projected-token paths, token audiences, SPIFFE identities and certificates, image automation and
-Flux pins, docs and tests. Section 17's directory moves it waited for have landed (#16785).
+**Plan released by the operator, 2026-11-16 20:06 UTC; implementation awaits review.**
+[Deployed service names](deployed_service_names.md) owns the verified inventory, proposed
+`sessions` / `environments` names, operator decisions and ordered rollout/rollback gates.
+The two-binary decision ([section 17](#17-two-binaries-and-the-go-layout)) and source directories
+are settled: `agentplane/session_dispatcher/` and `agentplane/environments/`. Deployed names,
+settings and security identities remain unchanged until the corresponding migration gate lands;
+the 2026-10-31 "Environment Gateway" proposal is superseded. The relay rename has a separately
+acceptable section in the same plan and is not a prerequisite.
 
 ### Blocked
 
