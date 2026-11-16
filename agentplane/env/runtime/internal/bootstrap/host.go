@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/agentydragon/ducktape/agentplane/env/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/oneoff"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/scripts"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/controller"
