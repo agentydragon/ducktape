@@ -120,6 +120,7 @@ ts_library(
         ":history_recorder",
         ":import_progress",
         ":schema",
+        ":session_viewer_url",
         ":transcript",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
@@ -130,6 +131,14 @@ ts_library(
         "//util/frontend:resize_handle",
         "//util/frontend/transcript:history_recorder_tools",
     ],
+)
+
+ts_library(
+    name = "session_viewer_url",
+    srcs = ["session-viewer-url.ts"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [":schema"],
 )
 
 ts_library(
@@ -220,6 +229,18 @@ vitest_test(
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//util/frontend:deferred_test_utils",
+    ],
+)
+
+vitest_test(
+    name = "session_viewer_url_test",
+    srcs = ["session-viewer-url.test.ts"],
+    config = ":vitest_config",
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":session_viewer_url",
+        "//:node_modules/vitest",
     ],
 )
 

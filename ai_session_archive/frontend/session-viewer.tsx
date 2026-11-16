@@ -27,7 +27,16 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { harnessLabel, httpApi, type SessionBrowserApi } from "./api";
 import { ArchiveTranscript } from "./transcript";
 import { MachineImportProgressSummary, useMachineImportProgress } from "./import-progress";
-import type { EventRecord, Harness, SessionKind, SessionSummary } from "./schema";
+import type { EventRecord, Harness, SessionSummary } from "./schema";
+import {
+  readSessionViewerSearch,
+  SESSION_KINDS,
+  sessionFilterPath,
+  sessionKindsFromScope,
+  sessionKindsPath,
+  sessionPath as buildSessionPath,
+  sessionVersionPath,
+} from "./session-viewer-url";
 import { ResizeHandle, usePaneSize, type PaneSize } from "../../util/frontend/resize_handle";
 import { HistoryRecorderTools } from "../../util/frontend/transcript/history_recorder_tools";
 import { historyRecorder } from "./history-recorder";
@@ -38,12 +47,6 @@ const SESSION_SIDEBAR_MAX_WIDTH = 520;
 const SESSION_SIDEBAR_DEFAULT_WIDTH = 320;
 const SESSION_TRANSCRIPT_MIN_WIDTH = 360;
 const SESSION_RESIZE_HANDLE_WIDTH = 8;
-const SESSION_KINDS: { value: SessionKind; label: string }[] = [
-  { value: "main", label: "Main sessions" },
-  { value: "subagent", label: "Subagents" },
-  { value: "guardian", label: "Guardian" },
-  { value: "unknown", label: "Unknown" },
-];
 
 function maxSessionSidebarWidth(layoutWidth: number): number {
   return Math.max(
@@ -130,15 +133,13 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   const { sessionId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const search = new URLSearchParams(location.search);
-  const selectedMachineId = search.get("machine") ?? "";
-  const selectedHarness = search.get("harness") ?? "";
-  const kindSelection = search.has("kind") ? search.getAll("kind") : ["main", "unknown"];
-  const kindScope = SESSION_KINDS.filter(({ value }) => kindSelection.includes(value))
-    .map(({ value }) => value)
-    .join(",");
-  const selectedKinds = useMemo(() => (kindScope === "" ? [] : (kindScope.split(",") as SessionKind[])), [kindScope]);
-  const requestedVersionId = search.get("version");
+  const {
+    machineId: selectedMachineId,
+    harness: selectedHarness,
+    kindScope,
+    versionId: requestedVersionId,
+  } = readSessionViewerSearch(location.search);
+  const selectedKinds = useMemo(() => sessionKindsFromScope(kindScope), [kindScope]);
   const queryClient = useQueryClient();
   const layoutRef = useRef<HTMLDivElement>(null);
   const mobileSessionListRef = useRef<HTMLElement>(null);
@@ -431,33 +432,19 @@ export function SessionViewer({ api = httpApi }: { api?: SessionBrowserApi }): J
   };
 
   const sessionPath = (targetId: string): string => {
-    const params = new URLSearchParams(location.search);
-    params.delete("version");
-    const query = params.toString();
-    return `/sessions/${encodeURIComponent(targetId)}${query ? `?${query}` : ""}`;
+    return buildSessionPath(targetId, location.search);
   };
 
   const changeFilter = (name: "machine" | "harness", value: string): void => {
-    if (value) search.set(name, value);
-    else search.delete(name);
-    search.delete("version");
-    navigate(`/?${search.toString()}`);
+    navigate(sessionFilterPath(location.search, name, value));
   };
 
   const changeKinds = (values: string[]): void => {
-    search.delete("kind");
-    for (const { value } of SESSION_KINDS) {
-      if (values.includes(value)) search.append("kind", value);
-    }
-    if (values.length === 0) search.set("kind", "");
-    navigate(`${location.pathname}?${search.toString()}`);
+    navigate(sessionKindsPath(location.pathname, location.search, values));
   };
 
   const changeVersion = (versionId: string): void => {
-    if (versionId) search.set("version", versionId);
-    else search.delete("version");
-    const query = search.toString();
-    const nextPath = `${location.pathname}${query ? `?${query}` : ""}`;
+    const nextPath = sessionVersionPath(location.pathname, location.search, versionId);
     if (nextPath !== `${location.pathname}${location.search}`) navigate(nextPath);
   };
 
