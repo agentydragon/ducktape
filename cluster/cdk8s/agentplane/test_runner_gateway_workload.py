@@ -181,23 +181,18 @@ def test_gateway_preserves_services_and_fences_listener_ingress(scratch_app: App
     assert resources >= {
         "serviceaccounts",
         "sandboxes",
-        "leases",
         "workloadcredentials",
         "identities",
         "policysets",
         "policybindings",
     }
+    assert "leases" not in resources
     assert not {"pods", "virtualmachines", "virtualmachineinstances"} & resources
     assert not any(
         doc["kind"] in {"ClusterRole", "ClusterRoleBinding"} and "token-reviewer" in doc["metadata"]["name"]
         for doc in docs
     )
     assert "endpointslices" not in resources
-    assert one(rule for rule in role["rules"] if rule["resources"] == ["leases"])["verbs"] == [
-        "get",
-        "create",
-        "update",
-    ]
     assert "patch" in one(rule for rule in role["rules"] if rule["resources"] == ["sandboxes"])["verbs"]
 
 
