@@ -37,7 +37,6 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
-        "//agentplane/app/frontend/transport:typed_lint_srcs",
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
@@ -55,6 +54,7 @@ filegroup(
         "//agentplane/app/frontend/testing:typed_lint_srcs",
         "//agentplane/app/frontend/threads:typed_lint_srcs",
         "//agentplane/app/frontend/threads/testing:typed_lint_srcs",
+        "//agentplane/app/frontend/transport:typed_lint_srcs",
     ],
 )
 
@@ -220,9 +220,9 @@ ts_library(
     srcs = ["app_config_client.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/transport:app_service_client",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app:app_service_pb",
+        "//agentplane/app/frontend/transport:app_service_client",
         "//agentplane/proto:session_pb",
     ],
 )
@@ -342,12 +342,12 @@ ts_library(
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/transport:client",
         ":format_time",
         ":schema",
         ":status_mark",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/sandboxes:client",
+        "//agentplane/app/frontend/transport:client",
         "//agentplane/environments/v1:environment_service_pb",
     ],
 )
@@ -356,13 +356,13 @@ agentplane_vitest_test(
     name = "sandbox_status_test",
     srcs = ["sandbox_status.test.ts"],
     deps = [
-        "//agentplane/app/frontend/transport:client",
         ":sandbox_status",
         ":schema",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/testing:sandbox",
+        "//agentplane/app/frontend/transport:client",
         "//agentplane/environments/v1:environment_service_pb",
     ],
 )
@@ -410,14 +410,14 @@ ts_library(
     srcs = ["settings/push.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/transport:client",
-        "//agentplane/app/frontend/transport:stream_reader",
-        "//agentplane/app/frontend/transport:watch_stream",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//agentplane/action_service/api/web_push:web_push_service_pb",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:stream_reader",
+        "//agentplane/app/frontend/transport:watch_stream",
     ],
 )
 
@@ -426,7 +426,6 @@ ts_library(
     srcs = ["main.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/transport:operator_login",
         ":tracing",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -435,6 +434,7 @@ ts_library(
         "//:node_modules/react-dom",
         "//agentplane/app/frontend/shell:app",
         "//agentplane/app/frontend/shell:theme",
+        "//agentplane/app/frontend/transport:operator_login",
     ],
 )
 
@@ -495,12 +495,9 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/transport:client",
         ":harness_network",
-        "//agentplane/app/frontend/transport:live",
         ":schema",
         ":shell_command_view",
-        "//agentplane/app/frontend/transport:stream_status",
         ":text_block",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
@@ -528,6 +525,9 @@ ts_library(
         "//agentplane/app/frontend/threads:live",
         "//agentplane/app/frontend/threads:local_commands",
         "//agentplane/app/frontend/threads/testing:electric_entity",
+        "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/transport:live",
+        "//agentplane/app/frontend/transport:stream_status",
         "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
