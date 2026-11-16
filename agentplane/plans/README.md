@@ -43,7 +43,8 @@ improvements alongside. Component TODOs and research plans do not set a competin
   where AGENTS.md comes from, what it would enable and cost, and why Claude stays put; the custom central sampler shipped, central upstream Codex and Claude remain open
 - [Native harness interfaces](native_harness_interfaces.md) — what the Runtime translates between
   Claude/Codex and the neutral Commands and Events, who reads each form, and native pass-through
-  versus Runtime translation with where a shared commands layer would live; no direction chosen
+  versus Runtime translation with where a shared commands layer would live; Runtime translation
+  stays by default, no migration planned
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;

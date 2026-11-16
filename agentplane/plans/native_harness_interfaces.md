@@ -2,7 +2,9 @@
 
 Status: **proposal for review**, tracked as
 [`NATIVE_HARNESS_INTERFACES_DESIGN`](task_dag.md#native_harness_interfaces_design--expose-native-harness-interfaces-past-the-runtime).
-Nothing here is decided or built.
+Nothing here is decided or built. The operator, 2026-11-16 06:58 UTC: the Runtime's translation is
+the status quo "so it would stay by default", and no migration is planned "within next say week or
+so".
 
 The operator, 2026-11-14 20:34 UTC, is considering whether the Environment Runtime should "expose
 codex and Claude's interfaces (both input and output) more directly rather than having it doing
@@ -12,9 +14,14 @@ operator named two coherent shapes, with no point in between: "(a) env runtime j
 harness's own protocol and does not to basically any massaging, or (b) env runtime does all the
 massaging like it does today"; a harness-neutral shared commands layer, if there is one, raises
 "whether it should live in env runtime or in e.g. environment service or session dispatcher".
-History's half is
+At 06:58 UTC the operator added that the abstraction "is leaky and would get more so if we want to
+allow more fancy features ever", and that "as long as i want agentplane to provide one webui that
+works across harnesses, i will need to make something that takes neutral commands and talks to
+codex/claude, question would just be where is would go". History's half is
 [`JOURNAL_REPRESENTATION_DESIGN`](task_dag.md#journal_representation_design--history-as-stored-journals);
-this note is the Runtime and command half. Vocabulary follows the
+this note is the Runtime and command half, which the operator calls "the input side of the same
+thing" as a user-facing Thread that is a managed object rather than a projection of the harness log.
+Vocabulary follows the
 [Journal and Thread ADR](../docs/adr_journal_and_thread.md); a **kind** is Claude, Codex or the
 central sampler.
 
@@ -96,6 +103,10 @@ order with the Runtime's own writes. The per-kind packages are about 2,800 lines
 
 The Dispatcher reads no Events and records nothing past `RUNNER_ADMITTED`; its unused confirmation
 states were deleted rather than given a writer.
+
+The neutral operations already differ in meaning per kind: Claude applies a model change on its
+control response, Codex at the next `turn/start`, and "input confirmed" is Claude's model response
+naming the input but Codex's `turn/start` response.
 
 Harness knowledge already lives past the Runtime. History's delta
 [settlement](../history_service/internal/storage/settlement.go) matches Claude and Codex native
@@ -218,6 +229,32 @@ What (b) still needs:
 Against (b): an adapter fix reaches a Session only when its Sandbox restarts, and every harness
 feature needs a Runtime image.
 
+## A feature that leaks further: Agentplane-hosted tools
+
+The operator's example of a feature worth wiring in is Agentplane-hosted tools offered to the model
+directly, not only through the `agentplane` CLI. Each harness has two routes
+([driver tools](../docs/driver_tools.md)):
+
+- **An MCP server the harness connects to itself.** No translator is involved; the harness speaks
+  MCP to the server.
+- **Tools the driver hosts.** Claude declares them in `initialize` and sends each MCP message as an
+  `mcp_message` control request; Codex takes `dynamicTools` on `thread/start` and sends each call as
+  an `item/tool/call` server request. The Runtime declares neither today and refuses both requests.
+  Whoever answers sits inside the turn: Claude times a call out when the driver sets a per-server
+  timeout, but Codex has no deadline, so an unanswered call wedges the turn. The two also differ on
+  naming, failure reporting and whether the tool set can change mid-session, so a common
+  declaration covers only the call round trip.
+
+Under (b) the Runtime answers next to the process and can impose its own deadline. Under (a) the
+Dispatcher answers, so a Dispatcher outage wedges Codex turns that are mid-call.
+
+## Which harnesses run in a Sandbox
+
+The operator, 2026-11-16 06:58 UTC: Codex in a Sandbox "is not super important", since OpenAI lets
+our own code call Codex's backend API and the central sampler can do that; Claude officially
+expects its CLI for subscription quotas. So the in-Sandbox translator that has to last is Claude's,
+while the central sampler already takes the neutral operations as its own interface.
+
 ## Recommendation
 
 (b), with the shared layer in the Runtime and in the central sampler for central Sessions.
@@ -229,7 +266,9 @@ those duties do not go away; they move to `session_dispatcher`, which would have
 answer harness requests and keep Sandboxes awake, so each Dispatcher roll would stall running turns.
 (a)'s gain, adapter fixes without a Sandbox restart, does not outweigh that. Harness-specific
 features enter (b) as Runtime-framed operations typed per kind, so the common set holds only what
-every kind shares.
+the cross-harness web UI needs. Driver-hosted tools are the first feature likely to force the
+question, because their answers sit inside a running turn; revisit when one is wanted.
 
-**Question for review:** keep all translation in the Runtime (b), or forward the native protocol (a)
-with the shared commands layer in `session_dispatcher`?
+**Open question:** where the translator from neutral commands to each harness lives long-term: the
+Runtime (b, today) or `session_dispatcher` (a). Nothing is needed before the next feature that
+crosses the common set.
