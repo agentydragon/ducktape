@@ -5,6 +5,7 @@
   python314Packages,
   claudeApi,
   networkMonitor,
+  ducktapeUtil,
 }:
 let
   wheel = artifacts.aiquota;
@@ -15,7 +16,7 @@ python314Packages.buildPythonApplication {
   version = "latest";
   format = "wheel";
   src = wheel;
-  # SYNC: Match `ducktape-claude-api` in //aiquota:aiquota_wheel's `requires`.
+  # SYNC: Match local distributions in //aiquota:aiquota_wheel's `requires`.
   propagatedBuildInputs =
     with python314Packages;
     [
@@ -30,6 +31,7 @@ python314Packages.buildPythonApplication {
     ++ [
       claudeApi
       networkMonitor
+      ducktapeUtil
     ];
   pythonImportsCheck = [ "aiquota.cli" ];
   doCheck = false;

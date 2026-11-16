@@ -1,0 +1,62 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "instants": [
+    {
+      "name": "nearby instant crosses into a different local year",
+      "now": "2026-12-31T23:30:00Z",
+      "value": "2027-01-01T10:00:00Z",
+      "expected": "Jan 1, 2027, 02:00"
+    },
+    {
+      "name": "exactly fourteen elapsed days keeps the local time",
+      "now": "2026-02-22T09:00:00Z",
+      "value": "2026-03-08T09:00:00Z",
+      "expected": "Mar 8, 01:00"
+    },
+    {
+      "name": "one second beyond fourteen elapsed days omits the time",
+      "now": "2026-02-22T09:00:00Z",
+      "value": "2026-03-08T09:00:01Z",
+      "expected": "Mar 8"
+    },
+    {
+      "name": "instant before the daylight-saving jump",
+      "now": "2026-03-08T08:00:00Z",
+      "value": "2026-03-08T09:30:00Z",
+      "expected": "Mar 8, 01:30"
+    },
+    {
+      "name": "instant after the daylight-saving jump",
+      "now": "2026-03-08T08:00:00Z",
+      "value": "2026-03-08T10:30:00Z",
+      "expected": "Mar 8, 03:30"
+    }
+  ],
+  "calendarDates": [
+    {
+      "name": "calendar date remains on its written day and includes a different year",
+      "now": "2026-12-31T23:30:00Z",
+      "value": "2027-01-01",
+      "expected": "Jan 1, 2027"
+    },
+    {
+      "name": "current-year date omits the year",
+      "now": "2026-07-01T12:00:00Z",
+      "value": "2026-06-30",
+      "expected": "Jun 30"
+    },
+    {
+      "name": "leap-day date keeps its calendar value and old year",
+      "now": "2026-07-01T12:00:00Z",
+      "value": "2024-02-29",
+      "expected": "Feb 29, 2024"
+    }
+  ],
+  "peakIntervals": [
+    {
+      "start": "2026-03-08T09:30:00Z",
+      "end": "2026-03-08T10:30:00Z",
+      "expected": "Sun 01:30-03:30"
+    }
+  ]
+}

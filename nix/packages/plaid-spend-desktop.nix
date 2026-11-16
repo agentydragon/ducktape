@@ -4,6 +4,7 @@
   pkgs,
   python314Packages,
   networkMonitor,
+  ducktapeUtil,
 }:
 let
   extensionUuid = "plaid-spend@allegedly.works";
@@ -38,6 +39,7 @@ python314Packages.buildPythonApplication {
     pyyaml
     networkMonitor
     sparklineLibrary
+    ducktapeUtil
   ];
   pythonImportsCheck = [
     "finance.plaid.spend.desktop.cli"

@@ -822,11 +822,11 @@ async def test_sustainability_shared_history_tooltip_dates(
     bounds = await canvas.bounding_box()
     assert bounds is not None
     await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
-    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    tooltip = page.get_by_role("tooltip", name="History ending Oct 14")
     await expect(tooltip).to_be_visible()
-    await expect(tooltip).to_contain_text("30-day window · Sep 15, 2026 \N{EN DASH} Oct 14, 2026")
-    await expect(tooltip).to_contain_text("90-day window · Jul 17, 2026 \N{EN DASH} Oct 14, 2026")
-    await expect(tooltip).to_contain_text("365-day window · Oct 15, 2025 \N{EN DASH} Oct 14, 2026")
+    await expect(tooltip).to_contain_text("30-day window · Sep 15 \N{EN DASH} Oct 14")
+    await expect(tooltip).to_contain_text("90-day window · Jul 17 \N{EN DASH} Oct 14")
+    await expect(tooltip).to_contain_text("365-day window · Oct 15, 2025 \N{EN DASH} Oct 14")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     await view.capture(
         f"sustainability-shared-history-tooltip-{width}",
@@ -964,28 +964,24 @@ async def test_sustainability_account_history_coverage_render(
     await expect(coverage.get_by_role("alert")).to_contain_text("Example card (29 days unavailable)")
     await expect(coverage.get_by_text("Coverage evidence for 2 accounts", exact=True)).to_be_visible()
 
-    await expect(coverage.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)).to_be_hidden()
+    await expect(coverage.get_by_text("Approximate opening range: Jul 20 to Jul 27", exact=True)).to_be_hidden()
     await coverage.locator("details").first.locator(":scope > summary").click()
     account_rows = coverage.locator("details details")
     checking = account_rows.filter(has_text="Example checking")
     await checking.locator("summary").click()
+    await expect(checking.get_by_text("Approximate opening range: Jul 20 to Jul 27", exact=True)).to_be_visible()
     await expect(
-        checking.get_by_text("Approximate opening range: 2026-07-20 to 2026-07-27", exact=True)
+        checking.get_by_text("Evidence: Synthetic account archive · as of Oct 14.", exact=False)
     ).to_be_visible()
     await expect(
-        checking.get_by_text("Evidence: Synthetic account archive · as of 2026-10-14.", exact=False)
-    ).to_be_visible()
-    await expect(
-        checking.get_by_text("Inferred history boundary from first recorded transaction: 2026-09-01", exact=True)
+        checking.get_by_text("Inferred history boundary from first recorded transaction: Sep 1", exact=True)
     ).to_be_visible()
 
     card = account_rows.filter(has_text="Example card")
     await card.locator("summary").click()
-    await expect(card.get_by_text("Documented complete history from 2026-08-15", exact=True)).to_be_visible()
-    await expect(
-        card.get_by_text("Evidence: Synthetic statement archive · as of 2026-10-14.", exact=False)
-    ).to_be_visible()
-    await expect(card.get_by_text("First recorded transaction: 2026-08-15.", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Documented complete history from Aug 15", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Evidence: Synthetic statement archive · as of Oct 14.", exact=False)).to_be_visible()
+    await expect(card.get_by_text("First recorded transaction: Aug 15.", exact=True)).to_be_visible()
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     view.errors.assert_none(context="Sustainability account history coverage")
     await view.capture(
@@ -1010,7 +1006,7 @@ async def test_sustainability_history_survives_current_coverage_gap(
     await page.goto(dashboard_url, wait_until="domcontentloaded")
     await _select_spend_page(page, "Sustainability")
     await expect(page.get_by_role("alert").get_by_text("Estimate unavailable", exact=False)).to_be_visible()
-    await expect(page.get_by_text("0 of 90 days covered · 2026-07-17 through 2026-10-14", exact=False)).to_be_visible()
+    await expect(page.get_by_text("0 of 90 days covered · Jul 17 through Oct 14", exact=False)).to_be_visible()
     await expect(page.get_by_text("Valuation available", exact=True)).to_be_visible()
     await expect(page.get_by_text("Withdrawal taxes: 12% modeled", exact=True)).to_be_visible()
     coverage = page.get_by_role("region", name="Account history coverage")
@@ -1151,7 +1147,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     bounds = await canvas.bounding_box()
     assert bounds is not None
     await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
-    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    tooltip = page.get_by_role("tooltip", name="History ending Oct 14")
     await expect(tooltip).to_be_visible()
     await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
 
@@ -1197,7 +1193,7 @@ async def test_sustainability_provisional_reversal_keeps_estimate_and_marks_hist
     bounds = await canvas.bounding_box()
     assert bounds is not None
     await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
-    tooltip = page.get_by_role("tooltip", name="History ending October 14, 2026")
+    tooltip = page.get_by_role("tooltip", name="History ending Oct 14")
     await expect(tooltip).to_contain_text("Provisional point: a reversal is unverified")
     assert await page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     view.errors.assert_none(context="Provisional sustainability estimate")
@@ -1233,7 +1229,7 @@ async def test_sustainability_stale_and_unavailable_render(
         bounds = await canvas.bounding_box()
         assert bounds is not None
         await canvas.hover(position={"x": bounds["width"] / 2, "y": bounds["height"] / 2})
-        tooltip = page.get_by_role("tooltip", name="History ending October 13, 2026")
+        tooltip = page.get_by_role("tooltip", name="History ending Oct 13")
         await expect(tooltip).to_contain_text("Annual spending excluding taxes: $48,500")
         await expect(tooltip).to_contain_text("Annual funding including taxes: $55,114")
         await expect(tooltip).to_contain_text("Required withdrawal rate including taxes: unavailable")

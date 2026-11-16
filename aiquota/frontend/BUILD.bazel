@@ -192,6 +192,7 @@ aiquota_vitest_test(
         ":fixtures",
         "//:node_modules/vitest",
         "//aiquota/shared:presentation",
+        "//util/presentation_vectors:date_policy_vectors",
     ],
 )
 

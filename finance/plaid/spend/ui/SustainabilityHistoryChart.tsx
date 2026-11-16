@@ -5,7 +5,7 @@ import Decimal from "decimal.js";
 
 import type { SustainabilityView } from "./schema";
 import { annualFundingMinorUnits, fundingFromSpendingMinorUnits } from "./decimal_math";
-import { money } from "./spend_display";
+import { calendarDate, money } from "./spend_display";
 import type { SustainabilityHistory } from "./types";
 
 const REFERENCE_SCENARIO_COLOR = "#868E96";
@@ -41,28 +41,18 @@ function percent(value: string | number): string {
 }
 
 function shortDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" }).format(
-    new Date(`${value}T00:00:00Z`)
-  );
+  return calendarDate(value);
 }
 
-function fullDate(value: string): string {
-  return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }).format(
-    new Date(`${value}T00:00:00Z`)
-  );
+function dateLabel(value: string): string {
+  return calendarDate(value);
 }
 
 function inclusiveWindowRange(endDate: string, windowDays: number): string {
   const end = new Date(`${endDate}T00:00:00Z`);
   const start = new Date(end);
   start.setUTCDate(start.getUTCDate() - (windowDays - 1));
-  const formatter = new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-  return `${formatter.format(start)} – ${formatter.format(end)}`;
+  return `${calendarDate(start.toISOString().slice(0, 10))} – ${calendarDate(endDate)}`;
 }
 
 function missingWindowMessage(view: SustainabilityView, hasRates: boolean): string | null {
@@ -461,7 +451,7 @@ export function SustainabilityHistoryChart({
             {tooltip && (
               <div
                 role="tooltip"
-                aria-label={`History ending ${fullDate(tooltip.endpoint)}`}
+                aria-label={`History ending ${dateLabel(tooltip.endpoint)}`}
                 style={{
                   position: "absolute",
                   left: tooltip.left,
@@ -478,7 +468,7 @@ export function SustainabilityHistoryChart({
                 }}
               >
                 <Text size="xs" fw={700} mb={6}>
-                  {fullDate(tooltip.endpoint)}
+                  {dateLabel(tooltip.endpoint)}
                 </Text>
                 <Stack gap="xs">
                   {tooltip.windows.map((window) => (
