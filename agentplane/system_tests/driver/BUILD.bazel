@@ -502,6 +502,7 @@ py_library(
         ":app_sandbox",
         ":cleanup",
         ":cluster",
+        ":dispatcher_transport",
         ":native_artifacts",
         ":sandbox",
         "//agentplane/app/testing:client",
@@ -521,6 +522,7 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/system_tests:conftest",
         "@pypi//opentelemetry_api",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces

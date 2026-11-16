@@ -88,12 +88,12 @@ bbr test //agentplane/app/...
 
 ### While the History Service is down or rolling
 
-Thread lists, Thread views, and retained-event reads fail with the History Service error.
+Session membership and App metadata stay available. History summaries, Thread views, and retained-event
+reads report the History Service error.
 The generated Dispatcher command facade remains available: it validates the Session and current Sandbox
 UID independently of History. The browser retains submitted commands until History can reconcile
 their admission. Resume still reads the History feed state. Sandbox lifecycle and Action review
-keep working. The app’s History watch reconnects on its own, and Sessions recorded meanwhile
-get their Threads once it does.
+keep working. Browser History watches reconnect and refresh summaries when the service recovers.
 
 ## Implementation and testing
 
@@ -240,8 +240,7 @@ History Service's ingress, and the History Service folds them under per-Session 
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
 App metadata rows are created on first title or archive write, independently of History recording.
-The legacy History Session-recording worker remains until the separate post-rollout cleanup; its
-idempotent opens preserve titles and archived state. Opening a Thread does not restart its harness.
+Opening a Thread does not restart its harness.
 A composer may submit
 input to an eligible dormant Session; the Dispatcher wakes and admits the Session as needed. A
 suspended Sandbox still follows its `wake_on_send` policy. Exact-turn interruption remains available
@@ -391,8 +390,10 @@ and pagination apply to Dispatcher members; the open Session stays pinned outsid
 A missing History summary yields a row showing Dispatcher materialization, with no invented
 running/idle state. History summary and App metadata watches invalidate their joins; inventory
 upserts refresh them directly. There is no list polling loop. History content continues through
-its existing Electric shapes. Legacy History membership ingestion and filtering remain for the
-separate post-rollout cleanup.
+its existing Electric shapes. The App metadata list and watch expose only App-held titles and
+archived state, keyed by Session ID; metadata creation time orders metadata pages. They do not read
+History, filter by Environment, synthesize membership, or relay History notifications. Browsers get
+summary updates directly from `/upstream/history/v1/session-summaries:watch`.
 
 The shell shares its EnvironmentService inventory watch across its Sandbox views. Thread connection
 health combines the inventory, History and App metadata watches and PostgreSQL listener state.
@@ -460,8 +461,7 @@ The Deployment keeps its 60-second termination grace period for this sequence; n
 consumes that budget.
 
 An unexpected background worker failure starts the same drain, then exits with that error so
-Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying. The
-restarted History Session-recording worker replays recorded Sessions; creating an existing Thread is idempotent.
+Kubernetes restarts the replica. Failures handled by a worker's retry loop keep retrying.
 
 ## Shape
 

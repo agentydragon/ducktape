@@ -6,10 +6,12 @@ import asyncio
 from http import HTTPStatus
 from uuid import UUID
 
+import grpc
 import httpx
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.testing.client import RECONNECT_PAUSE_SECONDS, RECONNECT_SECONDS, Client, _no_app_answered
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.session_events import SessionEventPages
 from agentplane.proto import event_log_pb2
@@ -82,16 +84,22 @@ class SessionEventReader(SessionEventPages):
                 if self._has_read:
                     raise
                 try:
-                    await self.client.thread_metadata(self.thread_id)
-                except httpx.HTTPStatusError as metadata_error:
-                    if metadata_error.response.status_code == HTTPStatus.NOT_FOUND:
+                    await self.client.session(self.thread_id)
+                except httpx.HTTPStatusError as session_error:
+                    if session_error.response.status_code == HTTPStatus.NOT_FOUND:
                         raise error
-                    if not _no_app_answered(metadata_error.response):
+                    if not _no_app_answered(session_error.response):
                         raise
-                    raise _RetryableHistoryReadError(metadata_error) from metadata_error
-                except _TRANSPORT_FAILURES as metadata_error:
-                    raise _RetryableHistoryReadError(metadata_error) from metadata_error
-                # The app owns this Thread, but History has not attached its Session yet.
+                    raise _RetryableHistoryReadError(session_error) from session_error
+                except _TRANSPORT_FAILURES as session_error:
+                    raise _RetryableHistoryReadError(session_error) from session_error
+                except ServiceError as session_error:
+                    if session_error.code == grpc.StatusCode.NOT_FOUND:
+                        raise error
+                    if session_error.code != grpc.StatusCode.UNAVAILABLE:
+                        raise
+                    raise _RetryableHistoryReadError(session_error) from session_error
+                # Dispatcher knows the Session, but History has not attached it yet.
                 self.pending_attachment = True
                 return None
             if not _no_app_answered(error.response):

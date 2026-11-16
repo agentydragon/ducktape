@@ -10,6 +10,7 @@ from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import native_artifacts, scenario
 from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cluster import Cluster
@@ -35,9 +36,13 @@ def pytest_runtest_makereport(
 
 @pytest.fixture
 async def client(
-    base_url: str, token: str, request: pytest.FixtureRequest, phase_tracer: trace.Tracer
+    base_url: str,
+    token: str,
+    request: pytest.FixtureRequest,
+    phase_tracer: trace.Tracer,
+    dispatcher: SessionDispatcherClient,
 ) -> AsyncIterator[Client]:
-    async with Client.connect(base_url=base_url, token=token) as opened:
+    async with Client.connect(base_url=base_url, token=token, dispatcher=dispatcher) as opened:
         try:
             yield opened
         finally:

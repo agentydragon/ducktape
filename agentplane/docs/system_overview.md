@@ -618,7 +618,7 @@ flowchart LR
 
     browser -->|HTML, assets and service worker| frontend
     browser -->|operator OIDC cookie: API + shape requests, same origin| app
-    browser -->|generated ProtoJSON History reads| app
+    browser -->|generated ProtoJSON History reads and summary watch| app
     browser -->|Dispatcher Session inventory JSON facade: protobuf-es| app
     app -->|App SVID mTLS: WatchSessions per browser stream| dispatcher
     app -->|gRPC reads and watch| history
@@ -641,7 +641,9 @@ observations. No browser connects directly to Dispatcher; there is no ListSessio
 
 The app initiates each Electric HTTP request and streams the shape response through to the browser.
 Generated History HTTP routes at the app's `/upstream/history/v1/` prefix let the browser call
-annotated unary History reads; the app forwards them over gRPC with its service SVID over mTLS.
+annotated History reads and summary watches; the app forwards them over gRPC with its service SVID
+over mTLS. The browser joins these with Dispatcher inventory and App-owned titles/archived state;
+there is no App History relay or membership cache.
 The separate `History PostgreSQL → Electric → app → browser` arrows show replicated and returned data.
 The HTTPS Gateway routes static files directly to the frontend Service and all API, login and stream
 requests to the app Service. The frontend has no backend credentials and makes no outbound service

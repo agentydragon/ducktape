@@ -13,23 +13,12 @@ import (
 )
 
 type fakeHistoryReader struct {
-	findSessions *historypb.FindSessionsRequest
-	summary      *historypb.SessionSummary
-	summaryErr   error
-	batch        *historypb.BatchGetSessionSummariesResponse
+	summary    *historypb.SessionSummary
+	summaryErr error
 }
 
 func (f *fakeHistoryReader) GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error) {
 	return f.summary, f.summaryErr
-}
-
-func (f *fakeHistoryReader) BatchGetSessionSummaries(context.Context, *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error) {
-	return f.batch, nil
-}
-
-func (f *fakeHistoryReader) FindSessions(_ context.Context, request *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error) {
-	f.findSessions = request
-	return &historypb.FindSessionsResponse{}, nil
 }
 
 func TestGetSummaryReturnsGeneratedMessage(t *testing.T) {
@@ -64,37 +53,5 @@ func TestGetSummaryRejectsUnknownAttachedFeedStatus(t *testing.T) {
 	}
 	if _, err := store.GetSummary(t.Context(), uuid.New()); !errors.Is(err, ErrInvalidPage) {
 		t.Fatalf("GetSummary(unknown feed status) = %v, want ErrInvalidPage", err)
-	}
-}
-
-func TestBatchGetSummariesOmitsMissingSessions(t *testing.T) {
-	id, missing := uuid.New(), uuid.New()
-	want := &historypb.SessionSummary{SessionId: id.String()}
-	store, err := New(&fakeHistoryReader{batch: &historypb.BatchGetSessionSummariesResponse{Summaries: []*historypb.SessionSummary{want}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := store.BatchGetSummaries(t.Context(), []uuid.UUID{id, missing})
-	if err != nil || got[id] != want || got[missing] != nil {
-		t.Fatalf("BatchGetSummaries() = %v, %v, want only the existing summary", got, err)
-	}
-}
-
-func TestFindSessionsUsesSandboxUIDFilter(t *testing.T) {
-	uid := uuid.NewString()
-	reader := &fakeHistoryReader{}
-	store, err := New(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.FindSessions(t.Context(), nil, nil, &uid); err != nil {
-		t.Fatal(err)
-	}
-	if reader.findSessions == nil {
-		t.Fatal("FindSessions did not call the History reader")
-	}
-	filter, ok := reader.findSessions.GetSandbox().(*historypb.FindSessionsRequest_SandboxUid)
-	if !ok || filter.SandboxUid != uid {
-		t.Fatalf("FindSessions Sandbox filter = %T (%v), want UID %q", reader.findSessions.GetSandbox(), reader.findSessions.GetSandbox(), uid)
 	}
 }

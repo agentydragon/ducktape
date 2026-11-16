@@ -218,7 +218,7 @@ async def _followed_body(
                 base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}, timeout=35
             ) as browser,
         ):
-            await ThreadHTTP(browser).wait(thread)
+            await ThreadHTTP(browser).wait_for_history(thread)
             proxy = _Shape(
                 browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": summary.projection_epoch}
             )

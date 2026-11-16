@@ -5,6 +5,7 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import grpc
 import httpx
@@ -144,7 +145,34 @@ async def test_the_streams_need_a_caller(app: AppProcess) -> None:
             assert (await unauthenticated.get(route)).status_code == 401
 
 
-async def test_environment_thread_rpc_reports_history_unavailable(
+async def test_history_summary_watch_does_not_create_app_thread_metadata(
+    http: httpx.AsyncClient, event_logs: SessionHistory
+) -> None:
+    async with (
+        asyncio.timeout(10),
+        http.stream(
+            "GET", "/upstream/history/v1/session-summaries:watch", headers={"Accept": "application/x-ndjson"}
+        ) as response,
+    ):
+        stream = _watch_results(response)
+        assert await anext(stream) == {"changed": {}}
+        thread_id = uuid4()
+        await event_logs.seed("runner-1", str(thread_id))
+        assert await anext(stream) == {"changed": {}}
+
+        summary = await http.get(f"/upstream/history/v1/sessions/{thread_id}/summary")
+        assert summary.status_code == 200, summary.text
+        metadata = await http.get(f"/upstream/app/v1/threads/{thread_id}")
+        assert metadata.status_code == 404
+        page = (await http.get("/upstream/app/v1/threads")).json()
+        assert page["threads"] == []
+
+        await ThreadHTTP(http).rename(thread_id, "Explicit App metadata")
+        page = (await http.get("/upstream/app/v1/threads")).json()
+        assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
+
+
+async def test_thread_metadata_list_does_not_depend_on_history(
     db_url: str,
     history_service: GoHistoryService,
     namespace: SandboxNamespace,
@@ -164,13 +192,11 @@ async def test_environment_thread_rpc_reports_history_unavailable(
         httpx.AsyncClient(base_url=app.url, cookies=app.cookies, headers={"Origin": app.url}) as http,
         asyncio.timeout(10),
     ):
-        environments = await http.get("/upstream/environments/v1/environments", params={"limit": 100})
-        assert environments.status_code == 200, environments.text
-        uid = next(
-            item["target"]["uid"] for item in environments.json()["items"] if item["target"]["name"] == "runner-1"
-        )
-        response = await http.get("/upstream/app/v1/threads", params={"sandbox_uid": uid})
-        assert response.status_code == 503, response.text
+        thread_id = uuid4()
+        await ThreadHTTP(http).rename(thread_id, "Metadata without History")
+        response = await http.get("/upstream/app/v1/threads")
+        assert response.status_code == 200, response.text
+        assert [thread["threadId"] for thread in response.json()["threads"]] == [str(thread_id)]
 
 
 async def test_thread_metadata_watch_follows_replica_commits(
@@ -206,10 +232,12 @@ async def test_thread_metadata_watch_follows_replica_commits(
             assert initial["updatesConnected"] is True
             # A Thread of a Sandbox without a Pod archives without asking a runner.
             thread_id = await event_logs.seed("shelved", "test-global-thread")
-            assert (await anext(stream))["changed"] == {}
-            await store.wait(thread_id)
             page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
-            assert [thread["threadId"] for thread in page["threads"]] == [str(thread_id)]
+            assert page["threads"] == []
+            await store.rename(thread_id, "Added in another app replica")
+            assert (await anext(stream))["changed"] == {}
+            page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
+            assert page["threads"][0]["threadId"] == str(thread_id)
             await store.rename(thread_id, "Renamed in another app replica")
             assert (await anext(stream))["changed"] == {}
             page = (await http.get("/upstream/app/v1/threads", params={"include_archived": "true"})).json()
@@ -222,11 +250,13 @@ async def test_thread_metadata_watch_follows_replica_commits(
 
 
 async def test_thread_metadata_list_returns_newest_page_and_archived_count(
-    http: httpx.AsyncClient, event_logs: SessionHistory, store: ThreadHTTP
+    http: httpx.AsyncClient, store: ThreadHTTP
 ) -> None:
-    oldest, middle, newest = [await event_logs.seed("runner-1", f"test-window-thread-{n}") for n in range(3)]
-    for thread_id in (oldest, middle, newest):
-        await store.wait(thread_id)
+    oldest, middle, newest = uuid4(), uuid4(), uuid4()
+    for thread_id, name in zip(
+        (oldest, middle, newest), ("Oldest metadata", "Middle metadata", "Newest metadata"), strict=True
+    ):
+        await store.rename(thread_id, name)
     page = (await http.get("/upstream/app/v1/threads", params={"limit": 1})).json()
     assert ([thread["threadId"] for thread in page["threads"]], bool(page["nextPageToken"])) == ([str(newest)], True)
     assert page.get("archivedCount", 0) == 0
@@ -237,7 +267,6 @@ async def test_thread_metadata_list_returns_newest_page_and_archived_count(
 
 
 async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
-    event_logs: SessionHistory,
     engine: AsyncEngine,
     database_reconnect_gate: tuple[str, asyncio.Event],
     history_service: GoHistoryService,
@@ -274,7 +303,8 @@ async def test_thread_metadata_watch_reports_listener_loss_and_reconnect(
         # A healthy metadata invalidation may already be buffered before the listener loss.
         # The watch reports current state on each wakeup, not only connection transitions.
         await _wait_updates_connected(stream, connected=False)
-        thread_id = await event_logs.seed("runner-1", "test-during-listener-gap")
+        thread_id = uuid4()
+        await ThreadHTTP(http).rename(thread_id, "Metadata during listener gap")
         reconnect.set()
         recovered = await _wait_updates_connected(stream, connected=True)
         assert recovered["updatesConnected"] is True

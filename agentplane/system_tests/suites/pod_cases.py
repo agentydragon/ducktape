@@ -156,7 +156,7 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
 
 
 async def an_unknown_history_session_is_not_found(worker: Worker) -> None:
-    async with Client.connect(base_url=worker.base_url, token=worker.token) as client:
+    async with Client.connect(base_url=worker.base_url, token=worker.token, dispatcher=worker.dispatcher) as client:
         await thread_history.an_unknown_history_session_is_not_found(client)
 
 

@@ -12,17 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var (
-	ErrInvalidPage      = errors.New("History Service returned an invalid page")
-	ErrInvalidSessionID = errors.New("History Service returned an invalid Session ID")
-)
+var ErrInvalidPage = errors.New("History Service returned an invalid page")
 
 // Reader is the generated History Service read boundary. The concrete client is
 // historyclient.Client; tests can provide the same generated-message contract.
 type Reader interface {
 	GetSessionSummary(context.Context, *historypb.GetSessionSummaryRequest) (*historypb.SessionSummary, error)
-	BatchGetSessionSummaries(context.Context, *historypb.BatchGetSessionSummariesRequest) (*historypb.BatchGetSessionSummariesResponse, error)
-	FindSessions(context.Context, *historypb.FindSessionsRequest) (*historypb.FindSessionsResponse, error)
 }
 
 type Store struct{ reader Reader }
@@ -47,70 +42,6 @@ func (s *Store) GetSummary(ctx context.Context, id uuid.UUID) (*historypb.Sessio
 		return nil, err
 	}
 	return message, nil
-}
-
-func (s *Store) BatchGetSummaries(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*historypb.SessionSummary, error) {
-	result := make(map[uuid.UUID]*historypb.SessionSummary, len(ids))
-	for start := 0; start < len(ids); start += 200 {
-		end := min(start+200, len(ids))
-		batch := make([]string, 0, end-start)
-		for _, id := range ids[start:end] {
-			batch = append(batch, id.String())
-		}
-		response, err := s.reader.BatchGetSessionSummaries(ctx, &historypb.BatchGetSessionSummariesRequest{SessionIds: batch})
-		if err != nil {
-			return nil, err
-		}
-		for _, message := range response.GetSummaries() {
-			id, err := canonicalUUID(message.GetSessionId())
-			if err != nil {
-				return nil, err
-			}
-			if err := validateSummary(message); err != nil {
-				return nil, err
-			}
-			result[id] = message
-		}
-	}
-	return result, nil
-}
-
-func (s *Store) FindSessions(ctx context.Context, sandboxName, sandboxNameContains, sandboxUID *string) (map[uuid.UUID]string, error) {
-	request := &historypb.FindSessionsRequest{}
-	switch {
-	case sandboxName != nil:
-		request.Sandbox = &historypb.FindSessionsRequest_SandboxName{SandboxName: *sandboxName}
-	case sandboxNameContains != nil:
-		request.Sandbox = &historypb.FindSessionsRequest_SandboxNameContains{SandboxNameContains: *sandboxNameContains}
-	case sandboxUID != nil:
-		request.Sandbox = &historypb.FindSessionsRequest_SandboxUid{SandboxUid: *sandboxUID}
-	default:
-		return nil, errors.New("History Session lookup requires one Sandbox filter")
-	}
-	response, err := s.reader.FindSessions(ctx, request)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[uuid.UUID]string, len(response.GetSessions()))
-	for _, item := range response.GetSessions() {
-		id, err := canonicalUUID(item.GetSessionId())
-		if err != nil {
-			return nil, err
-		}
-		if item.GetSandbox() == nil || item.GetSandbox().GetName() == "" {
-			return nil, fmt.Errorf("%w: Session %s has no Sandbox identity", ErrInvalidPage, id)
-		}
-		result[id] = item.GetSandbox().GetName()
-	}
-	return result, nil
-}
-
-func canonicalUUID(value string) (uuid.UUID, error) {
-	id, err := uuid.Parse(value)
-	if err != nil || id.String() != value {
-		return uuid.Nil, fmt.Errorf("%w: %q", ErrInvalidSessionID, value)
-	}
-	return id, nil
 }
 
 func validateSummary(message *historypb.SessionSummary) error {

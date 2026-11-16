@@ -23,7 +23,6 @@ go_library(
         "//agentplane/app/internal/federation",
         "//agentplane/app/internal/historyclient",
         "//agentplane/app/internal/historydata",
-        "//agentplane/app/internal/historywatch",
         "//agentplane/app/internal/httpapi",
         "//agentplane/app/internal/httpapi/operator",
         "//agentplane/app/internal/httpapi/sessions",
