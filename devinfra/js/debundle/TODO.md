@@ -214,6 +214,15 @@ shared import order, explicit saved DTOs, and validated writer boundary.
   YAML files. Keep this separate from the explicit-order delivery: preserve
   chunk identity, source/spec provenance and semantic analysis cache keys.
 
+- **AR10 — Reconcile generated atomic-unit modules with explicit import order.**
+  Requiring authors to enumerate generated owner names and their priority makes
+  `per_atomic_group` routing less automatic. Decide whether module generation
+  should become an explicit, reviewable authoring step that persists owners and
+  an order witness together, or provide another workflow with clear guarantees.
+  Cover owner-name stability and changes to the generated owner set; do not hide
+  arbitrary scheduling search or silently repair an invalid order. Close with
+  documented CLI behavior and tests for first generation and later spec edits.
+
 ### Automation product flows over the solver
 
 Design and milestones: <plans/automated_spec_workflows.md> — single-input
