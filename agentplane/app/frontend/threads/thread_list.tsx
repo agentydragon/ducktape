@@ -19,7 +19,7 @@ import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
-import { type ThreadNotices, useThreadNotices } from "./thread_notices";
+import { type ThreadNotices, useThreadNotices } from "../notifications/thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { TimeAgo } from "../time_ago";
 import { archiveBlockReason, snapshotFresh, threadStatusFromSnapshot } from "./thread_status";

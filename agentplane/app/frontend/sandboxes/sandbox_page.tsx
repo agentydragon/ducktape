@@ -1,7 +1,7 @@
 import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { clone, create } from "@bufbuild/protobuf";
 
-import { NotificationStatus } from "../notification_status";
+import { NotificationStatus } from "../notifications/notification_status";
 import {
   ActionIcon,
   Alert,

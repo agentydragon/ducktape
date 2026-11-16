@@ -3,7 +3,7 @@ import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Te
 import { fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 import { TimestampSchema, type Timestamp } from "@bufbuild/protobuf/wkt";
 import { useEffect, useState, type JSX } from "react";
-import { ActionState } from "../../action_service/api/contracts/action_service_pb";
+import { ActionState } from "../../../action_service/api/contracts/action_service_pb";
 import {
   GitHubEventName,
   NoticeWaitReason,
@@ -19,10 +19,10 @@ import {
   type InboxEntrySummary,
   type Source,
   type Subscription,
-} from "../../notification_service/api/notifications/notifications_pb";
-import { clockTime, isoTime, timeAgo } from "./format_time";
-import { followWatch } from "./watch_stream";
-import { inboxWatchUrl } from "./threads/thread_notices";
+} from "../../../notification_service/api/notifications/notifications_pb";
+import { clockTime, isoTime, timeAgo } from "../format_time";
+import { followWatch } from "../watch_stream";
+import { inboxWatchUrl } from "./thread_notices";
 
 type SubscriptionFilter = "not-cancelled" | "active" | "expired" | "cancelled" | "all";
 
