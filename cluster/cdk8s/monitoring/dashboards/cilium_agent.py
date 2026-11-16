@@ -2,12 +2,12 @@
 
 from grafana_foundation_sdk.builders import timeseries
 from grafana_foundation_sdk.builders.common import VizLegendOptions
-from grafana_foundation_sdk.builders.dashboard import Dashboard
+from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable
 from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
 
-_JOB = 'job="cilium-agent"'
+_JOB = 'job="cilium-agent", pod=~"$pod"'
 
 
 def _query(metric: str, labels: str = "") -> str:
@@ -55,13 +55,25 @@ def build_dashboard() -> dashboard.Dashboard:
             "This is a focused dashboard for the metrics currently present in Mimir, not a port of every panel from the imported Cilium v1.12 dashboard. "
             "The upstream BPF syscall-duration, KVStore, detailed L7-policy, policy-trigger, service-event, and IPv6 conntrack panels had no matching series in the observed Cilium 1.19.8 scrape. "
             "Missing series are omitted rather than shown as zero; in particular, absent IPv6 conntrack series do not imply no IPv6 traffic. "
-            "Rate panels use 5-minute windows to span multiple 60-second scrapes."
+            "Rate panels use 5-minute windows to span multiple 60-second scrapes. The Pod selector filters every panel and defaults to All."
         )
         .tooltip(dashboard.DashboardCursorSync.CROSSHAIR)
         .tags(["cilium", "network", "kubernetes"])
         .refresh("1m")
         .time("now-3h", "now")
         .version(1)
+        .with_variable(
+            QueryVariable("pod")
+            .label("Pod")
+            .datasource(mimir())
+            .definition('label_values(cilium_process_cpu_seconds_total{job="cilium-agent"}, pod)')
+            .query('label_values(cilium_process_cpu_seconds_total{job="cilium-agent"}, pod)')
+            .include_all(True)
+            .multi(True)
+            .all_value(".*")
+            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
+            .current(dashboard.VariableOption(text="All", value=["$__all"]))
+        )
         .with_panel(
             _panel(
                 1,
@@ -94,7 +106,13 @@ def build_dashboard() -> dashboard.Dashboard:
             )
         )
         .with_panel(
-            _panel(5, "BPF map pressure per pod", _query("cilium_bpf_map_pressure"), "{{pod}}", unit="percentunit")
+            _panel(
+                5,
+                "Maximum BPF map pressure per pod",
+                f"max by (pod) ({_query('cilium_bpf_map_pressure')})",
+                "{{pod}}",
+                unit="percentunit",
+            )
         )
         .with_panel(
             _panel(
@@ -126,10 +144,10 @@ def build_dashboard() -> dashboard.Dashboard:
         .with_panel(
             _panel(
                 9,
-                "IPv4 TCP conntrack entries",
-                f"max({_CONNTRACK}) by (family, status)",
-                "{{status}}",
-                description="Live IPv4 TCP conntrack entries. The currently scraped metric set has no IPv6 conntrack series.",
+                "IPv4 TCP conntrack GC entries per pod and state",
+                f"max by (pod, status) ({_CONNTRACK})",
+                "{{pod}} / {{status}}",
+                description="Per-agent IPv4 TCP entries observed by Cilium conntrack garbage collection, split into alive and deleted states. The currently scraped metric set has no IPv6 conntrack series; absence does not imply no IPv6 traffic.",
             )
         )
         .with_panel(
@@ -162,12 +180,13 @@ def build_dashboard() -> dashboard.Dashboard:
             _panel(
                 13,
                 "Endpoint regeneration duration p90 and p99",
-                f"avg(histogram_quantile(0.90, rate({_REGEN_BUCKETS}[5m]))) by (scope)",
+                f"histogram_quantile(0.90, sum by (scope, le) (rate({_REGEN_BUCKETS}[5m])))",
                 "p90 {{scope}}",
                 unit="s",
+                description="Histogram buckets are pooled across selected agents before calculating quantiles. With Pod set to All, these are cluster-wide endpoint regeneration percentiles.",
             ).with_target(
                 mimir_query(
-                    f"avg(histogram_quantile(0.99, rate({_REGEN_BUCKETS}[5m]))) by (scope)", "p99 {{scope}}", "B"
+                    f"histogram_quantile(0.99, sum by (scope, le) (rate({_REGEN_BUCKETS}[5m])))", "p99 {{scope}}", "B"
                 )
             )
         )
