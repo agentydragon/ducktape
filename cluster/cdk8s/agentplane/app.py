@@ -144,7 +144,8 @@ class App(Construct):
             self,
             "config",
             metadata=ApiObjectMetadata(name="app-config", namespace=env.namespace),
-            content=yaml_config(settings),
+            # CLEANUP: Remove the projection when Settings drops the retired field after rollout.
+            content=yaml_config(settings.model_dump(mode="json", exclude={"runner_gateway_control_target"})),
             path="/etc/agentplane/config.yaml",
         )
         workload = self._add_workload(config)

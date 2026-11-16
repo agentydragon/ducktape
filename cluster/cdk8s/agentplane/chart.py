@@ -129,7 +129,6 @@ def environment_chart(
         env,
         database_url=egress_database_url,
         runners=environment_sandbox.pods(env.namespace),
-        admin_grpc_callers=[app_account],
         placement=node_scheduling.HIL_OVH,
         registry_secret_name=REGISTRY_SECRET_NAME,
         tls_passthrough_services=[

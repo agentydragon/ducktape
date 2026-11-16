@@ -23,7 +23,6 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
-from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import (
     binding_delegation,
@@ -41,7 +40,6 @@ from cluster.cdk8s.agentplane import (
     staging_grants,
 )
 from cluster.cdk8s.agentplane.egress import (
-    ADMIN_GRPC_AUDIENCE,
     BASIC_POLICY,
     DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -104,12 +102,7 @@ def test_egress_uses_embedded_migrations_and_startup_probe(catalog_manifests: li
     assert sorted(config["allowed_service_account_namespaces"]) == sorted(
         [staging.ENV.namespace, *staging.ENV.egress.external_workload_namespaces]
     )
-    assert config["admin_grpc_audience"] == ADMIN_GRPC_AUDIENCE
-    assert config["admin_grpc_callers"] == [f"{staging.ENV.namespace}/app"]
     assert config["admin_grpc_service_callers"] == [APP_URI]
-    # The next image accepts key omission; manifests retain both legacy fields until it is pinned.
-    reduced = {key: value for key, value in config.items() if key not in {"admin_grpc_audience", "admin_grpc_callers"}}
-    assert EgressSettings.model_validate(reduced).admin_grpc_service_callers == frozenset({APP_URI})
 
 
 @pytest.fixture(scope="module")
@@ -125,7 +118,6 @@ def svid_egress_manifests(scratch_app_factory: Callable[[], App]) -> list[dict[s
         .key("uri")
         .env_value(chart, "test-database-url"),
         runners=environment_sandbox.pods(env.namespace),
-        admin_grpc_callers=[ServiceAccountRef(namespace=env.namespace, name="app")],
         placement=None,
         registry_secret_name=None,
     ).add_platform_resources()

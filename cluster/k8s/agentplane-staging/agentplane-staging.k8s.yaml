@@ -1549,9 +1549,6 @@ data:
         - mode: spiffe
           ca_file: /etc/agentplane-egress/svid-ca/ca-certificates.crt
     admin_listen_address: 0.0.0.0:8081
-    admin_grpc_audience: agentplane-egress-admin
-    admin_grpc_callers:
-      - agentplane-staging/app
     admin_grpc_service_callers:
       - spiffe://agentplane/app
     ca_cert: /etc/agentplane-egress/ca/tls.crt
@@ -4228,7 +4225,6 @@ data:
         key_file: /run/agentplane/workload-tls/tls.key
         client_uri: spiffe://agentplane/app
     policy_service_target: policy-controller.agentplane-staging.svc.cluster.local:8083
-    runner_gateway_control_target: sandbox-controller.{namespace}.svc:8082
     history_service_target: history-service.agentplane-staging.svc.cluster.local:8080
     notifications_url: http://notifications.agentplane-staging.svc:8080/
     notifications_request_timeout_s: 5
