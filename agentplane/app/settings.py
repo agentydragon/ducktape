@@ -159,7 +159,7 @@ class Settings(BaseModel):
     )
     policy_service_target: str = Field(min_length=1)
     policy_service_token_file: Path | None = Path("/var/run/secrets/agentplane-policy/token")
-    # CLEANUP(added 2026-11-16): Remove after manifest omission and App config rollout.
+    # CLEANUP(added 2026-11-16): Remove after the relaxed App image is pinned on staging and Flux applies the omission.
     runner_gateway_control_target: str = Field(
         min_length=1,
         description="Environments Runtime proxy target, typically `sandbox-controller.{namespace}.svc:8082`; "
