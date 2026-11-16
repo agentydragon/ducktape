@@ -25,6 +25,65 @@ fn parse_and_build(source: &str) -> DependencyGraph {
         .0
 }
 
+#[test]
+fn supplied_priority_verification_does_not_repair_a_failed_witness() {
+    let graph = parse_and_build(
+        "const hub = () => [a, b];\n\
+         const a = { dependency: hub, lazy: () => b };\n\
+         const b = { dependency: hub };",
+    );
+    let mut assignment = ModuleAssignment::new(
+        &graph,
+        analysis::EntryDestination::from_module_id(ModuleId(0)),
+    );
+    for unit in 0..3 {
+        assignment.set(SourceUnitId(unit), ModuleId(unit + 1));
+    }
+    let nodes = (0..4).map(ModuleId).collect();
+    let path = |module: ModuleId| spec::ModulePath::parse(&format!("m{}", module.0), "").unwrap();
+    let priority = |ids: &[usize]| ids.iter().map(|&id| path(ModuleId(id))).collect::<Vec<_>>();
+    let (accepted, _) = crate::validation::validate_assignment_with_priority(
+        &graph,
+        &assignment,
+        &path,
+        &nodes,
+        &priority(&[2, 3, 1]),
+    )
+    .unwrap();
+    assert!(accepted.verdict.is_realizable());
+    let (rejected, schedule) = crate::validation::validate_assignment_with_priority(
+        &graph,
+        &assignment,
+        &path,
+        &nodes,
+        &priority(&[3, 2, 1]),
+    )
+    .unwrap();
+    assert!(!rejected.verdict.is_realizable());
+    assert_eq!(
+        schedule.imports(ModuleId(0)),
+        &[ModuleId(3), ModuleId(2), ModuleId(1)]
+    );
+    for malformed in [
+        vec![],
+        vec![2, 3],
+        vec![2, 3, 3],
+        vec![0, 2, 3],
+        vec![2, 3, 9],
+    ] {
+        assert!(matches!(
+            crate::validation::validate_assignment_with_priority(
+                &graph,
+                &assignment,
+                &path,
+                &nodes,
+                &priority(&malformed),
+            ),
+            Err(ImportScheduleError::PriorityPaths { .. })
+        ));
+    }
+}
+
 /// The hypothetical full gate must reproduce the pure canonical projection
 /// and complete verdict, including diagnoses in I-SCCs remote from the moved
 /// source units. Every graph here is a typed dependency-graph report fixture; no source

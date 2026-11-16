@@ -24,6 +24,20 @@ pub struct EsmImportSchedule {
 pub enum ImportScheduleError {
     #[error("import schedule does not contain exactly the emitted modules")]
     ModuleUniverse,
+    #[error(
+        "import priority must contain every nonentry module exactly once; expected {expected:?}, received {actual:?}"
+    )]
+    PriorityUniverse {
+        expected: Vec<ModuleId>,
+        actual: Vec<ModuleId>,
+    },
+    #[error(
+        "import priority must contain every emitted nonentry module exactly once; expected {expected:?}, received {actual:?}"
+    )]
+    PriorityPaths {
+        expected: Vec<spec::ModulePath>,
+        actual: Vec<spec::ModulePath>,
+    },
     #[error("import schedule for {module:?} expects {expected:?}, received {actual:?}")]
     ImportTargets {
         module: ModuleId,
@@ -33,6 +47,68 @@ pub enum ImportScheduleError {
 }
 
 impl EsmImportSchedule {
+    /// Construct exactly the supplied global priority. No alternative ordering
+    /// is tried. Entry is implicit and never appears in `priority`.
+    pub fn from_priority(
+        entry: ModuleId,
+        successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        nodes: &BTreeSet<ModuleId>,
+        priority: &[ModuleId],
+    ) -> Result<Self, ImportScheduleError> {
+        if !nodes.contains(&entry)
+            || successors
+                .iter()
+                .any(|(from, targets)| !nodes.contains(from) || !targets.is_subset(nodes))
+        {
+            return Err(ImportScheduleError::ModuleUniverse);
+        }
+        let expected: BTreeSet<_> = nodes.iter().copied().filter(|&id| id != entry).collect();
+        if priority.len() != expected.len()
+            || priority.iter().copied().collect::<BTreeSet<_>>() != expected
+        {
+            return Err(ImportScheduleError::PriorityUniverse {
+                expected: expected.into_iter().collect(),
+                actual: priority.to_vec(),
+            });
+        }
+        let positions: BTreeMap<_, _> = std::iter::once((entry, 0))
+            .chain(priority.iter().enumerate().map(|(i, &id)| (id, i + 1)))
+            .collect();
+        let imports = nodes
+            .iter()
+            .map(|&module| {
+                let mut targets: Vec<_> = required_targets(entry, module, successors, nodes)
+                    .into_iter()
+                    .collect();
+                targets.sort_unstable_by_key(|target| positions[target]);
+                (module, targets)
+            })
+            .collect();
+        Self::from_imports(entry, successors, nodes, imports)
+    }
+
+    /// Capture the traversal's DFS discovery order, excluding implicit entry.
+    /// Sorting every import list by this order reproduces the same DFS: when a
+    /// module's imports are visited, its next white target is the next child
+    /// discovered in the original walk.
+    pub fn discovery_order(&self) -> Vec<ModuleId> {
+        let mut seen = BTreeSet::from([self.entry]);
+        let mut frames = vec![(self.entry, 0)];
+        let mut order = Vec::with_capacity(self.imports.len().saturating_sub(1));
+        while let Some((module, next)) = frames.last_mut() {
+            if let Some(&target) = self.imports(*module).get(*next) {
+                *next += 1;
+                if seen.insert(target) {
+                    order.push(target);
+                    frames.push((target, 0));
+                }
+            } else {
+                frames.pop();
+            }
+        }
+        order
+    }
+
     /// Reify the existing policy without changing its target order. `nodes`
     /// includes all emitted modules, empty owners, and the true entry.
     pub fn from_policy(
@@ -240,6 +316,49 @@ mod tests {
         finished.push(module);
     }
 
+    fn oracle_trace(
+        module: ModuleId,
+        imports: &BTreeMap<ModuleId, Vec<ModuleId>>,
+        seen: &mut BTreeSet<ModuleId>,
+        events: &mut Vec<(ModuleId, bool)>,
+    ) {
+        if !seen.insert(module) {
+            return;
+        }
+        events.push((module, true));
+        for &target in &imports[&module] {
+            oracle_trace(target, imports, seen, events);
+        }
+        events.push((module, false));
+    }
+
+    #[test]
+    fn supplied_priority_requires_exactly_the_nonentry_universe() {
+        let entry = ModuleId(2);
+        let nodes = BTreeSet::from([ModuleId(0), ModuleId(1), entry]);
+        for priority in [
+            vec![],
+            vec![ModuleId(0)],
+            vec![ModuleId(0), ModuleId(0)],
+            vec![ModuleId(0), entry],
+            vec![ModuleId(0), ModuleId(99)],
+        ] {
+            assert!(matches!(
+                EsmImportSchedule::from_priority(entry, &BTreeMap::new(), &nodes, &priority),
+                Err(ImportScheduleError::PriorityUniverse { .. })
+            ));
+        }
+        let all_entry = EsmImportSchedule::from_priority(
+            entry,
+            &BTreeMap::new(),
+            &BTreeSet::from([entry]),
+            &[],
+        )
+        .unwrap();
+        assert_eq!(all_entry.post_order(), &BTreeMap::from([(entry, 0)]));
+        assert!(all_entry.discovery_order().is_empty());
+    }
+
     #[test]
     fn every_three_module_import_graph_and_import_permutation_matches_raw_dfs() {
         let entry = ModuleId(2);
@@ -292,6 +411,28 @@ mod tests {
                         let schedule =
                             EsmImportSchedule::from_imports(entry, &successors, &nodes, imports)
                                 .unwrap();
+                        let mut original_trace = Vec::new();
+                        oracle_trace(
+                            entry,
+                            &schedule.imports,
+                            &mut BTreeSet::new(),
+                            &mut original_trace,
+                        );
+                        let replay = EsmImportSchedule::from_priority(
+                            entry,
+                            &successors,
+                            &nodes,
+                            &schedule.discovery_order(),
+                        )
+                        .unwrap();
+                        let mut replay_trace = Vec::new();
+                        oracle_trace(
+                            entry,
+                            &replay.imports,
+                            &mut BTreeSet::new(),
+                            &mut replay_trace,
+                        );
+                        assert_eq!(replay_trace, original_trace, "graph mask {mask}");
                         let expected: BTreeMap<_, _> = finished
                             .iter()
                             .enumerate()
