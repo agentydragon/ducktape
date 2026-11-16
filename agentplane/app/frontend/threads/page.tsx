@@ -14,7 +14,7 @@ import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspensionReason } from "../sandbox_status";
-import { useThreadNotices } from "./thread_notices";
+import { useThreadNotices } from "../notifications/thread_notices";
 import { TopbarTitle } from "../topbar";
 import { finishSessionCreate, withinSessionCreate } from "../tracing";
 import { useFrontendConfig } from "../frontend_config";

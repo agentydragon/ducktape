@@ -2,8 +2,9 @@
 
 `home.tsx` owns the Threads landing page, and `thread_list.tsx` owns the grouped
 Thread list used there and in the sidebar. `sandbox_threads.tsx` and `new_thread_form.tsx`
-own the Thread list and creation form on a Sandbox. `thread_groups.ts`, `thread_notices.tsx`,
-the status indicator, and the Thread tab favicon belong with that navigation.
+own the Thread list and creation form on a Sandbox. `thread_groups.ts`, the status indicator,
+and the Thread tab favicon belong with that navigation.
+Notification Service inbox watches and their Thread-facing badge and hook live in `../notifications`.
 
 `page.tsx` resolves the selected Thread and its live availability. `conversation.tsx`
 connects synchronization with command delivery; `composer.tsx` owns the draft, keyboard handling,

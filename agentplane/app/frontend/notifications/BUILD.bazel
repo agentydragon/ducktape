@@ -1,0 +1,48 @@
+load("//devinfra/js:ts_library.bzl", "ts_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+filegroup(
+    name = "typed_lint_srcs",
+    srcs = glob(
+        [
+            "*.ts",
+            "*.tsx",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//agentplane/app/frontend:__pkg__"],
+)
+
+ts_library(
+    name = "notification_status",
+    srcs = ["notification_status.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":thread_notices",
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/action_service/api/contracts:action_service_pb",
+        "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/history_service/api/history:history_service_pb",
+        "//agentplane/notification_service/api/notifications:notifications_pb",
+    ],
+)
+
+ts_library(
+    name = "thread_notices",
+    srcs = ["thread_notices.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@bufbuild/protobuf",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+        "//agentplane/app/frontend:format_time",
+        "//agentplane/app/frontend:watch_stream",
+        "//agentplane/notification_service/api/notifications:notifications_pb",
+    ],
+)
