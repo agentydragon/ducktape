@@ -54,24 +54,3 @@ resource "authentik_policy_binding" "cli_proxy_api_admin_owner_only" {
   user   = tonumber(authentik_user.agentydragon.id)
   order  = 0
 }
-
-resource "kubernetes_secret" "cli_proxy_api_admin_oidc" {
-  metadata {
-    name      = "cli-proxy-api-admin-oidc"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "cli-proxy-api"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "cli-proxy-api"
-    }
-  }
-
-  data = {
-    MANAGEMENT_OIDC_ISSUER           = "https://auth.allegedly.works/application/o/cli-proxy-api-admin/"
-    MANAGEMENT_OIDC_CLIENT_ID        = authentik_provider_oauth2.cli_proxy_api_admin.client_id
-    MANAGEMENT_OIDC_CLIENT_SECRET    = authentik_provider_oauth2.cli_proxy_api_admin.client_secret
-    MANAGEMENT_OIDC_REDIRECT_URL     = "https://cli-proxy-api-admin.allegedly.works/v8/management/auth/oidc/callback"
-    MANAGEMENT_OIDC_ALLOWED_SUBJECTS = tostring(authentik_user.agentydragon.id)
-  }
-}

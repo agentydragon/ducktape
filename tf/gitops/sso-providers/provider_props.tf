@@ -28,22 +28,3 @@ resource "random_password" "props_session_secret" {
   length  = 64
   special = false
 }
-
-resource "kubernetes_secret" "props_oidc" {
-  metadata {
-    name      = "props-oidc-config"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "props"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "props"
-    }
-  }
-
-  data = {
-    client-id      = authentik_provider_oauth2.confidential["props"].client_id
-    client-secret  = authentik_provider_oauth2.confidential["props"].client_secret
-    session-secret = random_password.props_session_secret.result
-  }
-}

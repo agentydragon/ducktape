@@ -24,21 +24,3 @@ resource "authentik_policy_binding" "langfuse_admins" {
   group  = data.authentik_group.admins.id
   order  = 0
 }
-
-resource "kubernetes_secret" "langfuse_oidc" {
-  metadata {
-    name      = "langfuse-oidc-config"
-    namespace = "authentik"
-    annotations = {
-      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "langfuse"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "langfuse"
-    }
-  }
-
-  data = {
-    client-id     = authentik_provider_oauth2.confidential["langfuse"].client_id
-    client-secret = authentik_provider_oauth2.confidential["langfuse"].client_secret
-  }
-}
