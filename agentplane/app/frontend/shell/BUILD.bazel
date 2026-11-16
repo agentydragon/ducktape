@@ -65,10 +65,10 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:thread_list",
         "//agentplane/app/frontend/threads:thread_view_recorder",
+        "//agentplane/app/frontend/ui:icons",
         "//util/frontend:resize_handle",
         "//util/frontend/transcript:history_recorder_tools",
     ],
@@ -134,7 +134,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/react-router",
-        "//agentplane/app/frontend/ui:icons",
         "//agentplane/app/frontend:settings",
         "//agentplane/app/frontend/actions:detail",
         "//agentplane/app/frontend/actions:history",
@@ -154,6 +153,7 @@ ts_library(
         "//agentplane/app/frontend/threads:thread_sync",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:stream_status",
+        "//agentplane/app/frontend/ui:icons",
     ],
 )
 

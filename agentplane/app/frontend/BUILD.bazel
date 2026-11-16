@@ -37,7 +37,6 @@ filegroup(
         ],
         allow_empty = True,
     ) + [
-        "//agentplane/app/frontend/ui:typed_lint_srcs",
         "//agentplane/app/frontend/actions:typed_lint_srcs",
         "//agentplane/app/frontend/actions/mcp:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
@@ -56,6 +55,7 @@ filegroup(
         "//agentplane/app/frontend/threads:typed_lint_srcs",
         "//agentplane/app/frontend/threads/testing:typed_lint_srcs",
         "//agentplane/app/frontend/transport:typed_lint_srcs",
+        "//agentplane/app/frontend/ui:typed_lint_srcs",
     ],
 )
 
@@ -211,12 +211,12 @@ ts_library(
     srcs = ["sandbox_status.ts"],
     tsconfig = TSCONFIG,
     deps = [
-        "//agentplane/app/frontend/ui:format_time",
         ":schema",
-        "//agentplane/app/frontend/ui:status_mark",
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/sandboxes:client",
         "//agentplane/app/frontend/transport:client",
+        "//agentplane/app/frontend/ui:format_time",
+        "//agentplane/app/frontend/ui:status_mark",
         "//agentplane/environments/v1:environment_service_pb",
     ],
 )
@@ -328,8 +328,6 @@ ts_library(
     deps = [
         ":harness_network",
         ":schema",
-        "//agentplane/app/frontend/ui:shell_command_view",
-        "//agentplane/app/frontend/ui:text_block",
         ":visual_rollouts",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",
@@ -359,6 +357,8 @@ ts_library(
         "//agentplane/app/frontend/transport:client",
         "//agentplane/app/frontend/transport:live",
         "//agentplane/app/frontend/transport:stream_status",
+        "//agentplane/app/frontend/ui:shell_command_view",
+        "//agentplane/app/frontend/ui:text_block",
         "//agentplane/egress/api/admin:egress_admin_pb",
         "//agentplane/environments/v1:environment_service_pb",
         "//agentplane/history_service/api/history:history_service_pb",
