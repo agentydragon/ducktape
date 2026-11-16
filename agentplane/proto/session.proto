@@ -8,6 +8,7 @@ syntax = "proto3";
 package agentplane.proto;
 
 import "google/protobuf/timestamp.proto";
+import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 
 enum InitializationStream {
@@ -305,5 +306,7 @@ message SessionStatus {
   SessionExecutionState execution_state = 4;
   optional string active_turn_id = 5;
   optional uint64 failure_cursor = 6;
+  // Aggregate busy state for older readers; blockers identify each current Session-owned reason.
   bool busy = 7;
+  repeated AutosuspendBlocker busy_blockers = 8;
 }

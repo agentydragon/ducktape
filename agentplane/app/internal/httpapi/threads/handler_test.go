@@ -8,6 +8,7 @@ import (
 	threadstore "github.com/agentydragon/ducktape/agentplane/app/internal/threads"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
+	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
@@ -98,6 +99,47 @@ func TestEnsureThreadArchivableRejectsBusyEnvironmentRuntime(t *testing.T) {
 	sandbox.ObservedState.OperatingMode = environmentpb.OperatingMode_OPERATING_MODE_SUSPENDED
 	if err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, environmentRuntime); !errors.Is(err, errThreadEnvironmentRuntimeUnready) {
 		t.Fatalf("unready Environment Runtime archive check = %v, want errThreadEnvironmentRuntimeUnready", err)
+	}
+}
+
+func TestEnsureThreadArchivableReportsLiveBusyReason(t *testing.T) {
+	id := uuid.New()
+	sandbox := &environmentpb.EnvironmentDescriptor{
+		Target: &identitypb.EnvironmentTarget{Namespace: "team", Name: "sandbox", Uid: "sandbox-uid"},
+		ObservedState: &environmentpb.EnvironmentObservedState{
+			OperatingMode: environmentpb.OperatingMode_OPERATING_MODE_RUNNING,
+			Readiness:     &environmentpb.Readiness{State: environmentpb.ReadinessState_READINESS_STATE_READY},
+		},
+		KubernetesDiagnostics: &environmentpb.KubernetesDiagnostics{Pod: &environmentpb.SandboxPod{Name: "environment-runtime-pod"}},
+	}
+	thread := threadstore.Thread{ID: id}
+	summary := &historypb.SessionSummary{Sandbox: &historypb.SandboxRef{Name: "sandbox", Uid: proto.String("sandbox-uid")}}
+
+	for _, test := range []struct {
+		name      string
+		blockers  []string
+		wantError string
+	}{
+		{name: "active turn", blockers: []string{"ActiveTurn"}, wantError: "An active turn is still running. Wait for the reported work to finish before archiving this Thread."},
+		{name: "pending command", blockers: []string{"PendingCommand"}, wantError: "A command is still pending. Wait for the reported work to finish before archiving this Thread."},
+		{name: "overlapping work", blockers: []string{"ActiveTurn", "PendingCommand"}, wantError: "An active turn is still running. A command is still pending. Wait for the reported work to finish before archiving this Thread."},
+		{name: "unknown busy reason", blockers: []string{"FutureReason"}, wantError: "Session work is still active. Wait for it to finish before archiving this Thread."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			blockers := make([]*environmentlifecyclepb.AutosuspendBlocker, 0, len(test.blockers))
+			for _, reason := range test.blockers {
+				sessionID := id.String()
+				blockers = append(blockers, &environmentlifecyclepb.AutosuspendBlocker{Reason: reason, SessionId: &sessionID})
+			}
+			inventory := &environmentReaderFake{sandbox: sandbox}
+			runtime := &runtimeStatusReaderFake{status: &sessionpb.EnvironmentRuntimeStatus{
+				Sessions: []*sessionpb.SessionStatus{{SessionId: id.String(), Busy: true, BusyBlockers: blockers}},
+			}}
+			err := ensureThreadArchivable(context.Background(), "tools", thread, summary, inventory, runtime)
+			if !errors.Is(err, errThreadBusy) || err.Error() != test.wantError {
+				t.Fatalf("archive error = %v, want %q and errThreadBusy", err, test.wantError)
+			}
+		})
 	}
 }
 

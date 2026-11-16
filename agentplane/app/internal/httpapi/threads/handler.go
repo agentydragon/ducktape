@@ -57,6 +57,19 @@ type RuntimeStatusReader interface {
 	EnvironmentRuntimeStatus(context.Context, *environmentpb.EnvironmentDescriptor) (*sessionpb.EnvironmentRuntimeStatus, error)
 }
 
+type threadArchiveBusyError struct {
+	reasons []string
+}
+
+func (e threadArchiveBusyError) Error() string {
+	if len(e.reasons) == 0 {
+		return "Session work is still active. Wait for it to finish before archiving this Thread."
+	}
+	return strings.Join(e.reasons, " ") + " Wait for the reported work to finish before archiving this Thread."
+}
+
+func (e threadArchiveBusyError) Is(target error) bool { return target == errThreadBusy }
+
 // EnvironmentReader resolves the exact Sandbox incarnation linked to a Thread.
 type EnvironmentReader interface {
 	GetEnvironment(context.Context, *environmentpb.GetEnvironmentRequest, ...grpc.CallOption) (*environmentpb.EnvironmentDescriptor, error)
@@ -376,15 +389,39 @@ func ensureThreadArchivable(ctx context.Context, namespace string, thread thread
 	}
 	for _, session := range status.GetSessions() {
 		if session.GetSessionId() == thread.ID.String() && session.GetBusy() {
-			return errThreadBusy
+			return threadArchiveBusyError{reasons: threadArchiveBusyReasons(session)}
 		}
 	}
 	return nil
 }
 
+func threadArchiveBusyReasons(session *sessionpb.SessionStatus) []string {
+	reasons := make([]string, 0, len(session.GetBusyBlockers()))
+	for _, blocker := range session.GetBusyBlockers() {
+		if blocker.GetSessionId() != session.GetSessionId() {
+			continue
+		}
+		var reason string
+		switch blocker.GetReason() {
+		case "ActiveTurn":
+			reason = "An active turn is still running."
+		case "PendingCommand":
+			reason = "A command is still pending."
+		case "Activation":
+			reason = "The Session is still preparing."
+		case "Setup":
+			reason = "Setup is still running."
+		}
+		if reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
+	return reasons
+}
+
 var (
 	errThreadEnvironmentRuntimeUnready = errors.New("cannot verify the Environment Runtime while a Pod exists; wait for its status to become ready or for it to be removed")
-	errThreadBusy                      = errors.New("finish or interrupt active work before archiving this thread")
+	errThreadBusy                      = errors.New("thread has unfinished work")
 )
 
 func threadSandboxReady(sandbox *environmentpb.EnvironmentDescriptor) bool {

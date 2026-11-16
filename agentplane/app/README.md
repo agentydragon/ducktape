@@ -6,9 +6,11 @@ The human-facing API is a Go service built from `//agentplane/app/cmd:agentplane
 the Session Dispatcher, and reads live Runtime diagnostics through
 `EnvironmentService.GetRuntimeDiagnostics`. The App enforces operator authority at its browser
 boundary and uses its App SVID on the backend connection. Diagnostic evidence includes exact
-Environment, incarnation and boot identity; unavailable evidence never means idle. The existing
-busy-Thread archive check retains its conservative behavior through that same diagnostics API. It reads archived Session
-conversation history from the History Service, Session membership and materialization from the Dispatcher, and synchronizes
+Environment, incarnation and boot identity; unavailable evidence never means idle. The busy-Thread
+archive check uses that same diagnostics API. It reports active turns, pending commands, setup or
+preparation when live Runtime evidence identifies the reason; otherwise it reports unfinished work
+without guessing which reason applies. It reads archived Session conversation history from the
+History Service, Session membership and materialization from the Dispatcher, and synchronizes
 selected rows and content to the browser through authenticated Electric endpoints. It also presents
 Actions, operator decisions and Connection consent. The staging instance lives in
 `cluster/k8s/agentplane-staging/`.
