@@ -18,33 +18,31 @@ keep contracts and proofs in maintained docs:
 
 ## Remaining landing sequence
 
-1. **Bound source-analysis memory before resuming large consumers.** A fresh
-   configured analysis was killed at 42.7 GiB resident memory with no completed
-   artifact. The CLI-to-Node memory regression covers a neutral input with
-   O(N + P) source constructs and N × P property facts. Profile completed
-   commands to locate the remaining peak after each improvement; reducing a
-   type's layout alone does not establish lower whole-command memory. Remove
-   demonstrated duplicate census records and eager local property projections
-   of the shared completed relation; measure retained interpreter state too.
-   Preserve the full conservative relation, typed proof dependencies, deferred
-   native-integrity census and invalidation behavior. Keep matched optimized
-   measurements and the existing proof-growth controls. Do not raise memory
-   limits or rerun identical unbounded jobs as a substitute for a repair.
-   For heap-escape consumers, derive the requested-root union with bitmap
-   operations and stop when its mask saturates; preserve an independent
-   small-set oracle and CLI behavior checks for overlapping reachability.
-   A synthetic improvement is not proof that the configured consumer completes.
-   The combined storage repairs still exceed a 4 GiB/no-swap cap. Plain-speed
-   pre-OOM stacks locate the remaining growth in program-wide value-flow fact
-   insertion and dependency subscriptions; the short allocation trace ends in
-   earlier provider preparation. Measure fact-row and subscription-edge counts
-   on a representative completed neutral case before changing their storage.
-   Preserve the full relation and dependency wakeups; prior watcher-vector and
-   fact-boxing experiments did not lower the completed matrix's peak RSS.
-   Resume one bounded real analysis after measured improvement; require a normal
-   completed artifact and report cold time and peak memory separately from
-   prepared placement queries. Publish independently validated improvements as
-   small PRs against `devel`.
+1. **Complete bounded source-analysis acceptance.** Keep large-consumer probes
+   at 4 GiB with swap disabled. Require a normal completed analysis artifact;
+   interrupted commands and synthetic improvements do not establish practical
+   consumer preparation. Profile the phase reached by an uninstrumented run:
+   allocation-profiler overhead can leave a short trace in an earlier phase.
+   Compare completed neutral fixtures whose command peak is the demonstrated
+   fact store and dependency subscriptions, alongside the existing CLI/Node
+   memory regression. Measure whole-command RSS and time against the current
+   landed engine, with source/projection identity and full analysis-payload
+   parity. A smaller type alone does not establish lower peak memory.
+   Finish compact fact-row and subscription storage while preserving the full
+   conservative relation, typed dependencies, absent-read subscriptions,
+   proof-growth wakeups and native-integrity census. Publish independently
+   validated improvements as small PRs; disclose regressions across controls.
+   If row changes still miss the cap, quantify unique present/absent keys and
+   subscription edges before replacing parallel key maps with canonical key
+   IDs and dense present-fact rows. Missing-read slots must remain compact;
+   retain stable IDs across `take_final`, fresh subscriptions at
+   `from_completed`, and the existing key/rule order at callback boundaries.
+   Compare the indexed representation against the existing solver on small
+   rule families before consumer measurements; interning can lose for small
+   keys and must earn its overhead. Do not raise limits, drop relations or
+   repeat identical unbounded runs. After measured improvement, resume one
+   bounded real analysis and report cold preparation separately from prepared
+   placement queries.
 2. **Finish downstream configuration and guidance.** Inventory every live
    authored configuration, diagnostic input, validation fixture, build target
    and CLI wrapper. Two full-source configurations still need accepted priorities.

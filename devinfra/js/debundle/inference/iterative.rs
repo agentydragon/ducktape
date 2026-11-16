@@ -310,11 +310,8 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                     value: contribution,
                     dependencies: (!self.dependencies.is_empty())
                         .then(|| Box::new(self.dependencies.clone())),
-                    premises: if RETAIN_PREMISES {
-                        self.reads.iter().cloned().collect()
-                    } else {
-                        BTreeSet::new()
-                    },
+                    premises: (RETAIN_PREMISES && !self.reads.is_empty())
+                        .then(|| Box::new(self.reads.iter().cloned().collect())),
                 });
                 true
             }
@@ -331,8 +328,10 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                         true
                     }
                 };
-                if RETAIN_PREMISES {
-                    fact.premises.extend(self.reads.iter().cloned());
+                if RETAIN_PREMISES && !self.reads.is_empty() {
+                    fact.premises
+                        .get_or_insert_with(Default::default)
+                        .extend(self.reads.iter().cloned());
                 }
                 changed || dependencies_grew
             }
@@ -397,6 +396,29 @@ impl<Key: Ord + Hash, Fact> IterativeFacts<Key, Fact> {
 mod tests {
     use super::*;
     use crate::analysis_inputs::ValueInputRef;
+
+    #[test]
+    fn premises_are_allocated_only_when_read_and_keep_growing_without_value_changes() {
+        let mut facts = FxHashMap::default();
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts);
+            for key in 1..=3 {
+                context.propose(key, BTreeSet::from([key]));
+            }
+        }
+        assert!(facts.values().all(|fact| fact.premises.is_none()));
+        {
+            let mut context = IterativeContext::<Rules>::new(&mut facts);
+            context.read(1);
+            assert!(!context.propose(3, BTreeSet::from([3])));
+            context.read(2);
+            assert!(!context.propose(3, BTreeSet::from([3])));
+        }
+        assert_eq!(
+            facts[&3].premises().copied().collect::<BTreeSet<_>>(),
+            BTreeSet::from([1, 2]),
+        );
+    }
 
     #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
     enum TransferKey {
@@ -478,7 +500,7 @@ mod tests {
             let result = facts.get(&output).unwrap();
             assert_eq!(*result.value(), "settled input");
             assert_eq!(result.dependencies(), &dependencies);
-            assert!(result.premises().is_empty());
+            assert!(result.premises().next().is_none());
         }
         assert!(facts.contains_key(&TransferKey::Input));
         let mut context = IterativeContext::<TransferRules>::new(&mut facts);
@@ -715,7 +737,15 @@ mod tests {
         assert!(waiting.get(&2).is_none());
         let complete = IterativeInference::new(Certificates).solve([0, 1]);
         assert_eq!(complete.get(&2).unwrap().value(), &BTreeSet::from([10]));
-        assert_eq!(complete.get(&2).unwrap().premises(), &BTreeSet::from([1]));
+        assert_eq!(
+            complete
+                .get(&2)
+                .unwrap()
+                .premises()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([1])
+        );
     }
 
     #[test]
@@ -730,7 +760,10 @@ mod tests {
                 input_index: 0
             }])
         );
-        assert_eq!(result.premises(), &BTreeSet::from([2]));
+        assert_eq!(
+            result.premises().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from([2])
+        );
         assert!(facts.evaluations() < 12);
         let reversed = IterativeInference::new(Rules).solve((0..4).rev());
         for key in [2, 3] {
@@ -738,7 +771,10 @@ mod tests {
             let second = reversed.get(&key).unwrap();
             assert_eq!(first.value(), second.value());
             assert_eq!(first.dependencies(), second.dependencies());
-            assert_eq!(first.premises(), second.premises());
+            assert_eq!(
+                first.premises().collect::<Vec<_>>(),
+                second.premises().collect::<Vec<_>>()
+            );
         }
         assert_eq!(facts.into_values(), reversed.into_values());
     }
@@ -800,6 +836,9 @@ mod tests {
                 input_index: 0,
             }])
         );
-        assert_eq!(result.premises(), &BTreeSet::from([2]));
+        assert_eq!(
+            result.premises().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from([2])
+        );
     }
 }

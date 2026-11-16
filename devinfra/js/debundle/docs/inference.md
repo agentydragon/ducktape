@@ -543,6 +543,12 @@ behavior is impossible.
 
 ## Storage and diagnostics
 
+Value-only closures retain typed dependencies and read subscriptions without
+an explanatory premise graph. Each judgment allocates its premise set only
+when it gains a direct premise; empty sets cost one optional pointer. The
+premise iterator still yields sorted, unique keys, including when a contribution
+adds premises without changing the fact's value.
+
 The store retains direct premise keys, not recursive proof-tree copies. Growing
 purity effects contain function keys rather than recursively nested `Arc<Purity>`
 causes. Final diagnostic projection constructs a finite acyclic cause graph after
