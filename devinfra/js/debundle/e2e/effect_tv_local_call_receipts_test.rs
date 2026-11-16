@@ -2,7 +2,7 @@
 //! calls, callbacks and their retained prefix dependencies.
 
 use debundle_e2e_graph_support::effect_validation::*;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 #[test]
@@ -46,15 +46,7 @@ fn local_cell_read_effects_compose_without_an_allocation_result() {
         2,
         "both source call-sites contribute to the root receipt: {execution:#}"
     );
-    let seed = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "seed")
-        })
-        .expect("seed source unit");
+    let seed = node_declaring(&graph, "seed");
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id
@@ -516,15 +508,7 @@ fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
     ));
     assert_preserved_entry_output(&fixture, "41\n");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("aliased local-call root");
+    let result = node_declaring(&graph, "result");
     let execution = serde_json::to_value(
         result
             .synchronous_execution
@@ -537,15 +521,7 @@ fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
         execution["binding_effect_authority"]["authority"], "ordered_root_initializer_uncovered",
         "the alias executes but has no selected direct-call receipt, so complete cannot skip fallback: {execution:#}"
     );
-    let later = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "later")
-        })
-        .expect("deferred closure's later binding source unit");
+    let later = node_declaring(&graph, "later");
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id
@@ -560,15 +536,7 @@ fn complete_aliased_local_calls_without_a_receipt_keep_fallback_authority() {
         }),
         "the dead deferred closure contributes a fallback-only later dependency; the caller role identifies unresolved-call closure promotion: {graph:#?}"
     );
-    let seed = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "seed")
-        })
-        .expect("seed source unit");
+    let seed = node_declaring(&graph, "seed");
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id
@@ -656,15 +624,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
     );
     assert_preserved_entry_output_with_bun(&fixture, "41 1 true 0\n");
     let graph = fixture.dependency_graph();
-    let gate = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "gate")
-        })
-        .expect("selected host initializer");
+    let gate = node_declaring(&graph, "gate");
     assert!(!gate.purity.is_pure(), "host timing does not grant purity");
     let execution = serde_json::to_value(
         gate.synchronous_execution
@@ -680,15 +640,7 @@ fn local_call_receipts_retain_consumed_host_prefix_prerequisites_when_reordered(
         host_uses[0]["operation"], "promise_resolve",
         "{execution:#}"
     );
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("local-call result");
+    let result = node_declaring(&graph, "result");
     assert!(
         result
             .synchronous_execution
@@ -842,15 +794,7 @@ fn local_call_effect_receipts_refuse_unmodeled_operations_and_prologues() {
             );
         }
         let graph = fixture.dependency_graph();
-        let result = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|binding| binding.binding == "result")
-            })
-            .expect("result owner for refused local-call receipt");
+        let result = node_declaring(&graph, "result");
         let execution = serde_json::to_value(
             result
                 .synchronous_execution
@@ -914,15 +858,7 @@ fn refused_call_receipts_preserve_actual_argument_evaluation() {
         );
     }
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("result owner");
+    let result = node_declaring(&graph, "result");
     let execution = serde_json::to_value(
         result
             .synchronous_execution
@@ -951,15 +887,7 @@ fn abrupt_local_call_receipt_cannot_complete_root_initialization() {
     ));
     assert_preserved_entry_error(&fixture, "41");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("result owner");
+    let result = node_declaring(&graph, "result");
     let execution = serde_json::to_value(
         result
             .synchronous_execution

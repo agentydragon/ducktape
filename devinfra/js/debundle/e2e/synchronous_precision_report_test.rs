@@ -1,19 +1,13 @@
 //! Report evidence comes from the same bounded execution used by the gate.
-use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, source_unit_for_binding};
+use debundle_e2e_graph_support::{
+    FixtureGraphExt, GraphFixture, node_declaring, source_unit_for_binding,
+};
 use debundle_e2e_support::*;
 use serde_json::Value;
 
 fn execution(fixture: &Fixture, binding: &str) -> Value {
     let graph = fixture.dependency_graph();
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == binding)
-        })
-        .expect("binding source unit");
+    let node = node_declaring(&graph, binding);
     serde_json::to_value(node).expect("serialize node")["synchronous_execution"].clone()
 }
 

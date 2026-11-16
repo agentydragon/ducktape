@@ -371,15 +371,7 @@ export { a, b, c, Registry };
         )],
     ));
     let graph = rejected.dependency_graph();
-    let constructed = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "b")
-        })
-        .expect("construction source unit");
+    let constructed = node_declaring(&graph, "b");
     let purity = serde_json::to_value(&constructed.purity).unwrap();
     assert_eq!(purity["kind"], "not_pure");
     assert!(

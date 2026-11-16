@@ -1,7 +1,7 @@
 //! A known impure callee should explain each call site once. Copying the
 //! callee's full reason list makes a branching call graph grow exponentially.
 
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
@@ -56,15 +56,7 @@ fn local_impure_call_reports_its_own_site_once() {
     ));
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("result source_unit");
+    let source_unit = node_declaring(&graph, "result");
     let purity = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let reasons = purity["reasons"].as_array().expect("impure call reasons");
     assert_eq!(
@@ -104,15 +96,7 @@ export { result };
     );
 
     let graph = fixture.dependency_graph();
-    let source_unit = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("result source_unit");
+    let source_unit = node_declaring(&graph, "result");
     let purity = serde_json::to_value(&source_unit.purity).expect("serialize purity");
     let reasons = purity["reasons"].as_array().expect("impure call reasons");
     assert_eq!(

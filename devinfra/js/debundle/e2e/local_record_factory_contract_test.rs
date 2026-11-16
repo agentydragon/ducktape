@@ -192,15 +192,7 @@ console.log(searches[0](), second.search());
     );
     assert_preserved_entry_output(&fixture, "1 2\n");
     let graph = fixture.dependency_graph();
-    let second = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "second")
-        })
-        .expect("second source unit");
+    let second = node_declaring(&graph, "second");
     let execution = second
         .synchronous_execution
         .as_ref()
@@ -211,15 +203,7 @@ console.log(searches[0](), second.search());
         1,
         "{execution:#?}"
     );
-    let searches = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "searches")
-        })
-        .expect("searches source unit");
+    let searches = node_declaring(&graph, "searches");
     assert!(
         !graph.edges.iter().any(|edge| {
             edge.edge_kind == analysis_model::DepKind::Sequenced
@@ -274,15 +258,7 @@ console.log(searches[0](), second.search());
         );
         assert_preserved_entry_output(&fixture, "1 2\n");
         let graph = fixture.dependency_graph();
-        let second = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|binding| binding.binding == "second")
-            })
-            .expect("second source unit");
+        let second = node_declaring(&graph, "second");
         let execution = second
             .synchronous_execution
             .as_ref()
@@ -321,15 +297,7 @@ console.log(searches[0](), second.search());
     ));
     assert_preserved_entry_output(&fixture, "1 2\n");
     let graph = fixture.dependency_graph();
-    let second = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "second")
-        })
-        .expect("second source unit");
+    let second = node_declaring(&graph, "second");
     let execution = second
         .synchronous_execution
         .as_ref()
@@ -377,15 +345,7 @@ console.log(searches[0]() === alias, globalThis.retained === alias);
     );
     assert_preserved_entry_output(&fixture, "true true\n");
     let graph = fixture.dependency_graph();
-    let second = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "second")
-        })
-        .expect("second source unit");
+    let second = node_declaring(&graph, "second");
     let execution = second
         .synchronous_execution
         .as_ref()
@@ -862,17 +822,7 @@ console.log(shared.join(','), first.items[0], second.items[0]);
     ));
     assert_preserved_entry_output(&fixture, "0,1 1 2\n");
     let graph = fixture.dependency_graph();
-    let node = |binding: &str| {
-        graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|declared| declared.binding == binding)
-            })
-            .expect("named source unit")
-    };
+    let node = |binding: &str| node_declaring(&graph, binding);
     let first_heap = node("first")
         .synchronous_execution
         .as_ref()
@@ -1084,15 +1034,7 @@ fn local_factory_result_rejection(
     let fixture = run_fixture_with_graphs(FixtureOpts::new(source, vec![all]));
     assert_preserved_entry_output(&fixture, "169 0\n");
     let graph = fixture.dependency_graph();
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("command source unit");
+    let command = node_declaring(&graph, "command");
     let execution = command
         .synchronous_execution
         .as_ref()
@@ -1235,15 +1177,7 @@ fn escaped_class_members_report_the_first_global_member_write() {
     assert_preserved_entry_output(&fixture, "function\n");
 
     let graph = fixture.dependency_graph();
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("command source unit");
+    let command = node_declaring(&graph, "command");
     let execution = command
         .synchronous_execution
         .as_ref()
@@ -1306,15 +1240,7 @@ fn terminal_forwarding_keeps_nested_factory_results_private() {
     let fixture = forwarding_fixture(FACTORY, before_command, &[]);
     let graph = fixture.dependency_graph();
     for binding in ["first", "second", "command"] {
-        let node = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|declared| declared.binding == binding)
-            })
-            .expect("declared source unit");
+        let node = node_declaring(&graph, binding);
         let execution = node
             .synchronous_execution
             .as_ref()
@@ -1413,15 +1339,7 @@ fn assert_forwarding_factory_refused(
     expected_publication_binding: Option<&str>,
 ) {
     let graph = fixture.dependency_graph();
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("command source unit");
+    let command = node_declaring(&graph, "command");
     let execution = command
         .synchronous_execution
         .as_ref()
@@ -1441,15 +1359,7 @@ fn assert_forwarding_factory_refused(
         "{execution:#?}"
     );
     if let Some(binding) = expected_publication_binding {
-        let first_publication = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|declared| declared.binding == binding)
-            })
-            .expect("publication source unit");
+        let first_publication = node_declaring(&graph, binding);
         assert_eq!(
             execution.local_record_factory_rejections[0].first_callback_publication_owner,
             Some(first_publication.statement_ordinal),
@@ -1471,15 +1381,7 @@ fn exported_factory_result_stays_deferred_until_acyclic_importer_use() {
             .report_root
             .join("static/provider/dependency_graph.json.gz"),
     );
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("provider command source unit");
+    let command = node_declaring(&graph, "command");
     let execution = command
         .synchronous_execution
         .as_ref()
@@ -1511,15 +1413,7 @@ fn exported_factory_result_rejects_a_rebound_factory() {
             })
     }));
     let graph = rejected.dependency_graph();
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "command")
-        })
-        .expect("provider command");
+    let command = node_declaring(&graph, "command");
     assert!(
         command
             .synchronous_execution
@@ -1683,27 +1577,9 @@ fn checked_factory_call_purity_is_site_specific_and_keeps_eager_reads() {
     let graph = fixture.dependency_graph();
     let command_nodes: Vec<_> = ["command", "commandAgain"]
         .into_iter()
-        .map(|binding| {
-            graph
-                .nodes
-                .iter()
-                .find(|node| {
-                    node.declared_bindings
-                        .iter()
-                        .any(|declared| declared.binding == binding)
-                })
-                .unwrap_or_else(|| panic!("missing source unit for {binding}"))
-        })
+        .map(|binding| node_declaring(&graph, binding))
         .collect();
-    let label = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "label")
-        })
-        .expect("label source unit");
+    let label = node_declaring(&graph, "label");
     for command in &command_nodes {
         assert!(command.purity.is_pure(), "{:?}", command.purity);
         let execution = command
@@ -2033,15 +1909,7 @@ fn assert_admitted(source: &str, callback_members: &[&'static str], expected_out
             .iter()
             .all(|report| report.local_record_factory_rejections.is_empty())
     );
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("command source unit");
+    let command = node_declaring(&graph, "command");
     assert!(command.purity.is_pure(), "{:?}", command.purity);
     let execution = command
         .synchronous_execution
@@ -2245,15 +2113,7 @@ fn logical_not_does_not_hide_an_effectful_constructor_operand() {
     assert_preserved_entry_output(&fixture, "true 1 169\n");
 
     let graph = fixture.dependency_graph();
-    let command = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|declared| declared.binding == "command")
-        })
-        .expect("command source unit");
+    let command = node_declaring(&graph, "command");
     let execution = command
         .synchronous_execution
         .as_ref()

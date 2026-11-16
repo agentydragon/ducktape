@@ -2,7 +2,7 @@
 
 use analysis::analysis_provenance::InferenceRule;
 use analysis::reports::schema::InferenceUseReport;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use std::collections::BTreeSet;
 
@@ -67,15 +67,7 @@ fn own_name_projection_reports_its_documented_inference_receipt() {
     assert_own_name_extraction(&fixture);
 
     let graph = fixture.dependency_graph();
-    let names = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "names")
-        })
-        .expect("own-name source unit");
+    let names = node_declaring(&graph, "names");
     let usage = names
         .synchronous_execution
         .as_ref()

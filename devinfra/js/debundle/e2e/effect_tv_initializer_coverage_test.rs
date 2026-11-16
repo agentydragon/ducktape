@@ -2,7 +2,7 @@
 //! coverage for split declarators and deferred callables.
 
 use debundle_e2e_graph_support::effect_validation::*;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 #[test]
@@ -155,15 +155,7 @@ console.log(result);\n";
     assert_preserved_entry_output(&fixture, "1\n");
 
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("compound initializer source unit");
+    let result = node_declaring(&graph, "result");
     let execution = serde_json::to_value(
         result
             .synchronous_execution

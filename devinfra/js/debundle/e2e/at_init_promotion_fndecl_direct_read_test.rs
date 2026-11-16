@@ -14,7 +14,7 @@
 //! Fixture: `f` lives in `mod_f`; residual reads it eagerly at top level.
 
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 #[test]
@@ -38,15 +38,7 @@ export { f };
 
     let graph = fixture.dependency_graph();
 
-    let fndecl_source_unit = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding_report| binding_report.binding == "f")
-        })
-        .expect("FnDecl source_unit for `f` should exist in dependency graph");
+    let fndecl_source_unit = node_declaring(&graph, "f");
 
     let offending_edges: Vec<_> = graph
         .edges
