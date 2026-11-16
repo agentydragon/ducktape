@@ -8,6 +8,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     loki_datasource,
     loki_query,
     mimir,
+    mimir_multi_variable,
     mimir_query,
     mimir_table_query,
     series_options,
@@ -229,18 +230,14 @@ def build_dashboard() -> dashboard.Dashboard:
         templating=dashboard.DashboardDashboardTemplating(
             list_val=[
                 storage_tier_variable(),
-                dashboard.VariableModel(
+                mimir_multi_variable(
                     name="node",
                     label="Cluster node",
                     query="label_values(kube_node_info, node)",
-                    datasource=mimir(),
+                    sort=None,
                     current=dashboard.VariableOption(text="All cluster nodes", value=["$__all"]),
-                    multi=True,
-                    refresh=dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
-                    include_all=True,
                     all_value="optiplex|ovh-.*",
                     regex="/^(optiplex|ovh-.*)$/",
-                    definition="label_values(kube_node_info, node)",
                 ),
                 dashboard.VariableModel(
                     type_val=dashboard.VariableType.CUSTOM,

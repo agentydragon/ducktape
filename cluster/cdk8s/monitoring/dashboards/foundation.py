@@ -152,6 +152,35 @@ def clickhouse_query(sql: str, format: int = 0, ref_id: str = "A") -> UnknownDat
     )
 
 
+def mimir_multi_variable(
+    *,
+    name: str,
+    label: str | None,
+    query: str,
+    current: dashboard.VariableOption | None = None,
+    refresh: dashboard.VariableRefresh = dashboard.VariableRefresh.ON_DASHBOARD_LOAD,
+    sort: dashboard.VariableSort | None = dashboard.VariableSort.ALPHABETICAL_ASC,
+    all_value: str | None = None,
+    regex: str | None = None,
+    hide: dashboard.VariableHide | None = None,
+) -> dashboard.VariableModel:
+    return dashboard.VariableModel(
+        name=name,
+        label=label,
+        query=query,
+        datasource=mimir(),
+        current=current if current is not None else dashboard.VariableOption(text="All", value=["$__all"]),
+        multi=True,
+        refresh=refresh,
+        sort=sort,
+        include_all=True,
+        all_value=all_value,
+        regex=regex,
+        hide=hide,
+        definition=query,
+    )
+
+
 def storage_tier_variable() -> dashboard.VariableModel:
     return dashboard.VariableModel(
         type_val=dashboard.VariableType.CUSTOM,
