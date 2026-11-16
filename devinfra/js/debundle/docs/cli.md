@@ -730,6 +730,39 @@ names, and out-of-range or repeated selector indices fail. The option selects
 ownership claims; ordinary source-unit placement and the gate still decide
 whether a partial selection is realizable.
 
+To add a fresh owner while retaining the same base tree, put ordinary selector
+claims in the view's `placements` map:
+
+```json
+{
+  "modules": [{ "chunk": "app", "module": "features/view" }],
+  "placements": {
+    "app": {
+      "features/parser": {
+        "source_matches": [
+          {
+            "match": "function parse(input) { return JSON.parse(input); }",
+            "bindings": [{ "local": "parse", "name": "parseInput" }]
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+This requires `inline_in_entry` and an explicit final priority containing the
+retained and fresh owners. Fresh paths cannot match an existing base path,
+including an omitted owner's path. Keep semantic premises in the full base;
+placement modules cannot add annotations or anonymous callback premises.
+Placement selectors may refer to exports of omitted base modules and claim
+code those omitted modules used to own. Retained selectors keep the full
+solve's binding decisions; removing competitors never reruns their identity
+choice. Retained whole-statement and destructuring companions remain occupied.
+The normal gate checks the resulting complete assignment and supplied order.
+Graph-backed editing of selected views remains a separate writer capability;
+manual placement materialization alone does not make a proposal executable.
+
 Build allowlists from the authored member names: the `readable_name` in
 `bindings list` or the member's effective `name:`/default export name. In
 `modules.json`, `final_module_contents[].member_names` shows emitted names and
@@ -744,8 +777,9 @@ debundle run <full tree args> --analysis analysis.dba \
   --ownership-subset retained.json
 ```
 
-The full joint selector solve and all analysis assertions remain unchanged;
-only resolved output ownership is reduced, before normal residual routing.
+The full joint selector solve and all analysis assertions remain unchanged.
+The retained ownership and any fresh placement claims are combined before
+normal residual routing.
 In `coarse_atomic_groups`, `complete_partial_atomic_groups_for` may list
 authored module paths that can adopt unclaimed members of atoms they solely
 own. The paths are validated against the full authored module roster; a listed

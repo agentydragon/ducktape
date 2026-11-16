@@ -9,35 +9,6 @@ fn subset(modules: &str) -> tempfile::NamedTempFile {
     file
 }
 
-fn subset_with_placement() -> tempfile::NamedTempFile {
-    let file = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(
-        file.path(),
-        r#"{"modules":[],"placements":{"static/app":{"features/fresh":{"members":[{"name":"Fresh","selector":{"binding":{"name":"raw"}}}]}}}}"#,
-    )
-    .unwrap();
-    file
-}
-
-#[test]
-fn nonempty_placement_is_rejected_until_materializer_wires_it() {
-    let selection = subset_with_placement();
-    let args = ["--ownership-subset", selection.path().to_str().unwrap()];
-    let fixture = FixtureOpts::new(
-        "const raw = 42;\nconsole.log(raw);\n",
-        vec![logical_module("features/base", &[Member::new("raw")])],
-    )
-    .with_import_order(&["features/base", "residual"]);
-    let rejected = run_rejection_fixture_with_args(fixture, &args, 1);
-    assert!(
-        rejected
-            .stderr
-            .contains("ownership subset placements are not yet supported by materialization"),
-        "{}",
-        rejected.stderr
-    );
-}
-
 #[test]
 fn omitted_owner_keeps_its_callable_purity_contract() {
     const RUNTIME: &str = "globalThis.opaque = value => value;\nexport {};\n";

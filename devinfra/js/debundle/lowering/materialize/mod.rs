@@ -163,6 +163,7 @@ pub(super) struct PreparedLogicalChunk<'a> {
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
     resolution: selector_resolve::Resolution,
+    placement_anchors: Option<selector_resolve::PlacementAnchors>,
     resolved_members: Vec<Vec<usize>>,
     member_claims: MemberClaimProjection,
     structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
@@ -222,6 +223,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         explicit_requests,
         structural_analysis,
         resolution,
+        placement_anchors,
         resolved_members,
         member_claims,
         source_only_initializer_bindings,
@@ -276,6 +278,7 @@ pub(super) fn prepare_logical_chunk<'a>(
         requests,
         explicit_requests,
         resolution,
+        placement_anchors,
         resolved_members,
         member_claims,
         structural_analysis: Some(structural_analysis),
@@ -391,6 +394,7 @@ pub(super) fn finish_logical_chunk(
         ast_analysis,
         requests,
         mut builder,
+        placement_anchors,
         ..
     } = prepared;
     let ChunkContext {
@@ -418,6 +422,24 @@ pub(super) fn finish_logical_chunk(
         import_order,
         ..
     } = spec;
+    let placement_modules = ownership_subset
+        .map(|view| view.placements_for_chunk(chunk_id))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(path, module)| (path.to_string(), module))
+        .collect::<BTreeMap<_, _>>();
+    ensure!(
+        placement_modules.is_empty()
+            || matches!(chunk_unassigned_mode, UnassignedMode::InlineInEntry),
+        "fresh selected placement modules require inline_in_entry residual routing"
+    );
+    // Keep the canonical census for the later placement-only solve. This is
+    // one bounded preparation copy for a chunk with placement claims, never a
+    // reparse, a second structural analysis, or work repeated per peel seed.
+    let placement_source = (!placement_modules.is_empty()).then(|| {
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
+    });
     let import_priority = import_order.get(chunk_id).with_context(|| {
         format!(
             "materialized chunk {chunk_id} requires import_order (use [] for an all-entry chunk)"
@@ -431,7 +453,7 @@ pub(super) fn finish_logical_chunk(
         pre_existing_public_export_names,
         source_public_export_identities_by_statement,
         ..
-    } = ast_analysis;
+    } = &ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
     let graph_inputs = graph_context
         .chunk_inputs
@@ -589,7 +611,77 @@ pub(super) fn finish_logical_chunk(
         builder.retain_modules(selected)?;
         // Recreate only the derived owners required by retained claims.
         builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
-        builder.adopt_bindings_of_claimed_anonymous_statements(&declarations);
+        builder.adopt_bindings_of_claimed_anonymous_statements(declarations);
+    }
+    if let Some(source) = placement_source {
+        let anchors = placement_anchors
+            .as_ref()
+            .context("selected placement is missing the full-base selector anchor snapshot")?;
+        let (module_offset, occupied) =
+            builder.begin_placement_layer(&precomputed, &source_unit_layout)?;
+        let mut placement_requests = spec_resolution::logical_requests_for_chunk(
+            Some(&placement_modules),
+            &UnassignedMode::InlineInEntry,
+            chunk_id,
+        )?;
+        let member_indices = frontend_elaboration::eligible_member_indices(
+            chunk_id,
+            &placement_requests,
+            &ast_analysis,
+            chunk_top_level_mark,
+            &runtime_ast.module.body,
+            !context.keep_going,
+        )?;
+        let modules =
+            spec_resolution::selector_modules_for_requests(&placement_requests, &member_indices)?;
+        let resolution = source.resolve_placement(&modules, anchors, &occupied)?;
+        let claims =
+            frontend_elaboration::project_member_claims(frontend_elaboration::MemberClaimInput {
+                chunk_id,
+                requests: &placement_requests,
+                resolution: &resolution,
+                resolved_members: &member_indices,
+                ast: &ast_analysis,
+                top_level_mark: chunk_top_level_mark,
+                body: &runtime_ast.module.body,
+                fail_fast: !context.keep_going,
+                diagnostics,
+            })?;
+        let explicit_context = ExplicitRequestContext {
+            body: &runtime_ast.module.body,
+            declaration_by_name,
+            chunk_top_level_mark,
+            target_dir,
+            chunk_id,
+            target_file: &target_file,
+            runtime_import_facts,
+        };
+        let mut imported_binding_resolver =
+            ArtifactSourceImportResolutionCache::new(artifact, artifact_indexes);
+        let mut imported_source_by_src = BTreeMap::new();
+        for (index, request) in placement_requests.iter_mut().enumerate() {
+            builder.add_explicit_request(
+                module_offset + index,
+                request,
+                &explicit_context,
+                &mut imported_binding_resolver,
+                &mut imported_source_by_src,
+            )?;
+        }
+        builder.drop_explicit_request_scratch();
+        builder.claim_resolution_at_offset(
+            module_offset,
+            &placement_requests,
+            resolution,
+            member_indices,
+            &claims,
+            chunk_top_level_mark,
+            chunk_id,
+            &runtime_ast.module.body,
+            declaration_by_name,
+        )?;
+        builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
+        builder.adopt_bindings_of_claimed_anonymous_statements(declarations);
     }
     let catchall_request = chunk_unassigned_mode
         .catchall_file_target()
@@ -600,7 +692,7 @@ pub(super) fn finish_logical_chunk(
                 .with_context(|| format!("missing catchall request for {chunk_id}::{target}"))
         })
         .transpose()?;
-    builder.add_residual_sweep(catchall_request, &declarations, target_dir)?;
+    builder.add_residual_sweep(catchall_request, declarations, target_dir)?;
     if matches!(&chunk_unassigned_mode, UnassignedMode::PerAtomicGroup) {
         builder.synthesize_per_atomic_group(&precomputed, &source_unit_layout, target_dir)?;
     }
@@ -614,7 +706,7 @@ pub(super) fn finish_logical_chunk(
         builder.synthesize_coarse_atomic_groups(
             &precomputed,
             &source_unit_layout,
-            &source_public_export_identities_by_statement,
+            source_public_export_identities_by_statement,
             target_dir,
         )?;
     }
@@ -694,7 +786,7 @@ pub(super) fn finish_logical_chunk(
                 &generated_residual_plans,
                 module_plans.len(),
                 &module_plans,
-                &source_public_export_identities_by_statement,
+                source_public_export_identities_by_statement,
                 chunk_top_level_mark,
             )
         } else {
@@ -849,8 +941,8 @@ pub(super) fn finish_logical_chunk(
         },
         ast: LowerChunkAst {
             runtime_ast,
-            declarations: &declarations,
-            declaration_by_name: &declaration_by_name,
+            declarations,
+            declaration_by_name,
             chunk_top_level_mark,
         },
         plan: LowerChunkPlan {
@@ -858,11 +950,11 @@ pub(super) fn finish_logical_chunk(
             placement: &placement,
         },
         spec_facts: LowerChunkSpecFacts {
-            runtime_import_facts: &runtime_import_facts,
+            runtime_import_facts,
             sealed_renames: &sealed_renames,
             chunk_renames: &chunk_renames_map,
-            pre_existing_entry_exports: &pre_existing_entry_exports,
-            pre_existing_public_export_names: &pre_existing_public_export_names,
+            pre_existing_entry_exports,
+            pre_existing_public_export_names,
         },
     })?;
     if let Some(rejection) = &gate_rejection {
