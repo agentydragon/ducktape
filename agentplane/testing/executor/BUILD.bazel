@@ -1,0 +1,13 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "executor",
+    testonly = True,
+    srcs = ["executor.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/executor",
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane/env/runtime/execution:executor_go_proto",
+        "@org_golang_google_grpc//:grpc",
+    ],
+)

@@ -11,12 +11,15 @@ import (
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
 	"github.com/google/uuid"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -45,9 +48,9 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 				if err := store.CellResult(t.Context(), owner, "central-js-cell", "live"); err != nil {
 					t.Fatal(err)
 				}
-				client := &fakeExecutionClient{}
+				client := &execfake.Client{}
 				opens, commands := 0, 0
-				client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+				client.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 					opens++
 					if opens == 1 {
 						return nil, changedIncarnationStatus(t, "sandbox-uid", "replacement").Err()
@@ -66,9 +69,9 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if bound.ExpectedIncarnationUid != "replacement" {
 						t.Fatal("fresh open preceded durable rebind")
 					}
-					return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "replacement-executor", Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"}}}, nil
+					return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: execfake.CompletedStatus(), ExecutionSessionId: "replacement-executor", Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"}}}, nil
 				}
-				client.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+				client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 					if r.Scope.ExpectedIncarnationUid != "replacement" || r.ExecutionSessionId != "replacement-executor" {
 						t.Fatalf("command used stale identity: %+v", r)
 					}
@@ -77,22 +80,16 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 							commands++
 						}
 					}
-					return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+					return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 				}
-				client.read = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+				client.OnReadProcess = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 					if r.ProcessId == "old-process" {
 						t.Fatal("old process reached replacement executor")
 					}
-					return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+					return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
 				}
-				executor := newFakeExecutor(t, store, owner, client)
-				executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+				executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 				executor.environment = map[string]string{}
-				executor.sessionID = ""
-				if retained {
-					executor.sessionID = "old-executor"
-					executor.reconnectRequired = true
-				}
 				if _, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo resumed"}`)); err != nil {
 					t.Fatal(err)
 				}
@@ -154,12 +151,11 @@ func TestExecutorDoesNotRebindWithoutMatchingSandboxEvidence(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-			client := &fakeExecutionClient{open: func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+			client := &execfake.Client{OnOpenSession: func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 				return nil, tc.err
 			}}
-			executor := newFakeExecutor(t, store, owner, client)
-			executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
-			if err := executor.openSession(t.Context(), nil); err == nil {
+			executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
+			if _, err := operationValue(executor.transport.EnsureSession(t.Context())); err == nil {
 				t.Fatal("invalid rebind evidence accepted")
 			}
 			stored, err := store.GetSession(t.Context(), request.SessionId, "fixture-account")
@@ -190,20 +186,19 @@ func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T)
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	var opened *executorpb.OpenSessionRequest
 	starts := 0
-	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		opened = proto.Clone(r).(*executorpb.OpenSessionRequest)
 		return nil, changedIncarnationStatus(t, "sandbox-uid", "current-incarnation").Err()
 	}
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus()}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus()}, nil
 	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
-	executor.workspacePrepared = false
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
+	executor.workspacePrepared.Store(false)
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run","expected_incarnation_uid":"stale-incarnation"}`))
 	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
@@ -219,8 +214,8 @@ func TestExecCommandExpectedIncarnationRejectsBeforeWorkspaceSetup(t *testing.T)
 	if opened == nil || opened.Scope.GetExpectedIncarnationUid() != "stale-incarnation" || opened.ResumeSessionId != nil {
 		t.Fatalf("explicit fence was not checked on a fresh authenticated OpenSession: %+v", opened)
 	}
-	if starts != 0 || executor.workspacePrepared {
-		t.Fatalf("stale fence caused workspace or command effects: starts=%d prepared=%v", starts, executor.workspacePrepared)
+	if starts != 0 || executor.workspacePrepared.Load() {
+		t.Fatalf("stale fence caused workspace or command effects: starts=%d prepared=%v", starts, executor.workspacePrepared.Load())
 	}
 	stored, err := store.GetSession(t.Context(), request.SessionId, "fixture-account")
 	if err != nil {
@@ -244,31 +239,30 @@ func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	starts, reads := 0, 0
 	var workspaceProcessID string
-	client.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		workspaceProcessID = r.ProcessId
 		return nil, changedIncarnationStatus(t, "sandbox-uid", "current-incarnation").Err()
 	}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus()}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus()}, nil
 	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
-	executor.workspacePrepared = false
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
+	executor.workspacePrepared.Store(false)
 	_, err := executor.execCommand(t.Context(), json.RawMessage(`{"cmd":"touch should-not-run","expected_incarnation_uid":"original"}`))
-	var fence *executorIncarnationFenceError
-	if !errors.As(err, &fence) || !fence.recorded {
+	var fence *transport.Failure
+	if !errors.As(err, &fence) || fence.Kind != transport.FailureIncarnationFence || !fence.Recorded {
 		t.Fatalf("exec error=%v, want recorded stale process/start rejection", err)
 	}
-	if fence.currentIncarnationUID != "current-incarnation" || fence.remoteOutcome != sessionstore.NestedNotDispatched || fence.method != executorMethodProcessStart {
+	if fence.CurrentIncarnationUID != "current-incarnation" || fence.RemoteOutcome != transport.NotDispatched || fence.Method != transport.MethodProcessStart {
 		t.Fatalf("unexpected stale fence facts: %+v", fence)
 	}
-	if starts != 1 || reads != 0 || executor.workspacePrepared {
-		t.Fatalf("fenced workspace start caused later effects: starts=%d reads=%d prepared=%v", starts, reads, executor.workspacePrepared)
+	if starts != 1 || reads != 0 || executor.workspacePrepared.Load() {
+		t.Fatalf("fenced workspace start caused later effects: starts=%d reads=%d prepared=%v", starts, reads, executor.workspacePrepared.Load())
 	}
 	process, err := store.Process(t.Context(), owner, workspaceProcessID)
 	if err != nil {
@@ -285,25 +279,35 @@ func TestExecCommandExpectedIncarnationKeepsMatchingRetainedSession(t *testing.T
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	opens, starts := 0, 0
-	client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	ready := false
+	client.OnOpenSession = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		if !ready {
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+				Status: execfake.CompletedStatus(), ExecutionSessionId: "retained-executor",
+				Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
+			}}, nil
+		}
 		opens++
 		return nil, errors.New("matching fence opened an unnecessary session")
 	}
-	client.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		if r.Scope.GetExpectedIncarnationUid() != "original" || r.ExecutionSessionId != "retained-executor" {
 			t.Fatalf("matching fence left the retained execution session: %+v", r)
 		}
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
 	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
+	if _, err := operationValue(executor.transport.EnsureSession(t.Context())); err != nil {
+		t.Fatal(err)
+	}
+	ready = true
 	if _, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo retained","expected_incarnation_uid":"original"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -325,25 +329,24 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	starts, reads := 0, 0
-	client.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
 		if reads == 1 {
 			return &executorpb.ReadProcessResponse{
-				Status:  completedExecutionStatus(),
+				Status:  execfake.CompletedStatus(),
 				Chunks:  []*executorpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout", Data: []byte("partial output")}},
 				NextSeq: 2,
 			}, nil
 		}
 		return nil, changedIncarnationStatus(t, "sandbox-uid", "current-incarnation").Err()
 	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo started once","yield_time_ms":250,"expected_incarnation_uid":"original"}`))
 	var outcome *ToolOutcomeError
@@ -415,18 +418,18 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	starts, reads := 0, 0
-	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		if r.Scope.GetExpectedIncarnationUid() != "current-incarnation" || r.ResumeSessionId != nil {
 			t.Fatalf("candidate OpenSession scope=%+v resume=%v", r.Scope, r.ResumeSessionId)
 		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{
-			Status: completedExecutionStatus(), ExecutionSessionId: "new-executor",
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "new-executor",
 			Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
 		}}, nil
 	}
-	client.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		if r.Scope.GetExpectedIncarnationUid() != "current-incarnation" || r.ExecutionSessionId != "new-executor" {
 			t.Fatalf("workspace/command used wrong execution scope: %+v", r)
@@ -445,17 +448,15 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 		if oldProcess.Status != executionstate.ProcessAbandoned {
 			t.Fatalf("workspace began before old handles were retired: %+v", oldProcess)
 		}
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
-	client.read = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
 	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	executor.environment = map[string]string{}
-	executor.shell = nil
-	executor.workspacePrepared = false
+	executor.workspacePrepared.Store(false)
 	if _, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo exactly-once","expected_incarnation_uid":"current-incarnation"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -534,24 +535,23 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 		}
 	})
 
-	firstClient := &fakeExecutionClient{}
+	firstClient := &execfake.Client{}
 	firstStarts, firstOpens := 0, 0
-	firstClient.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	firstClient.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		firstOpens++
 		if r.Scope.GetExpectedIncarnationUid() != "candidate" || r.ResumeSessionId != nil {
 			t.Fatalf("candidate open used wrong scope: %+v", r)
 		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{
-			Status: completedExecutionStatus(), ExecutionSessionId: "candidate-session",
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "candidate-session",
 		}}, nil
 	}
-	firstClient.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	firstClient.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		firstStarts++
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus()}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus()}, nil
 	}
-	firstExecutor := newFakeExecutor(t, store, owner, firstClient)
-	firstExecutor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
-	firstExecutor.workspacePrepared = false
+	firstExecutor := newFakeExecutor(t, store, owner, firstClient, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
+	firstExecutor.workspacePrepared.Store(false)
 	_, err := firstExecutor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo exactly once","expected_incarnation_uid":"candidate"}`))
 	if err == nil || !strings.Contains(err.Error(), "record verified execution Sandbox incarnation change") {
 		t.Fatalf("first fenced call error=%v, want failure between acknowledged empty open and durable rebind", err)
@@ -600,18 +600,18 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 
 	// Reconstruct only durable state, as a sampler restart would. The completed empty session
 	// from before the crash is evidence, never a binding; the fresh explicit call opens again.
-	secondClient := &fakeExecutionClient{}
+	secondClient := &execfake.Client{}
 	secondOpens, secondStarts, secondReads := 0, 0, 0
-	secondClient.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	secondClient.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		secondOpens++
 		if r.Scope.GetExpectedIncarnationUid() != "candidate" || r.ResumeSessionId != nil {
 			t.Fatalf("restart reused the orphaned session or old identity: %+v", r)
 		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{
-			Status: completedExecutionStatus(), ExecutionSessionId: "restarted-session",
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "restarted-session",
 		}}, nil
 	}
-	secondClient.start = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	secondClient.OnStartProcess = func(_ context.Context, r *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		secondStarts++
 		if r.Scope.GetExpectedIncarnationUid() != "candidate" || r.ExecutionSessionId != "restarted-session" {
 			t.Fatalf("post-restart workspace/command used wrong scope: %+v", r)
@@ -630,16 +630,15 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 		if oldProcess.Status != executionstate.ProcessAbandoned {
 			t.Fatalf("old process handle survived post-restart rebind: %+v", oldProcess)
 		}
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: r.ProcessId}, nil
 	}
-	secondClient.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	secondClient.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		secondReads++
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
 	}
-	secondExecutor := newFakeExecutor(t, store, owner, secondClient)
-	secondExecutor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+	secondExecutor := newFakeExecutor(t, store, owner, secondClient, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	secondExecutor.environment = map[string]string{}
-	secondExecutor.workspacePrepared = false
+	secondExecutor.workspacePrepared.Store(false)
 	if _, err := secondExecutor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo exactly once","expected_incarnation_uid":"candidate"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -657,11 +656,10 @@ func TestExecCommandExpectedIncarnationDoesNotRevealUIDOnAuthorizationFailure(t 
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{open: func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client := &execfake.Client{OnOpenSession: func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		return nil, status.Error(codes.PermissionDenied, "target authorization denied")
 	}}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
+	executor := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{scope: &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}})
 	_, err := executor.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run","expected_incarnation_uid":"candidate"}`))
 	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) || strings.Contains(outcome.Error(), "current_incarnation_uid") || strings.Contains(outcome.Error(), "candidate") {

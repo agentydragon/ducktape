@@ -3,12 +3,9 @@ package executor
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,11 +13,13 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -28,6 +27,22 @@ import (
 )
 
 func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
+	store, owner := claimedExecutorStore(t)
+	client := &execfake.Client{OnOpenSession: func(ctx context.Context, _ *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "fake-shell-session",
+			Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
+		}}, nil
+	}}
+	executor := newFakeExecutor(t, store, owner, client)
+	if operation, err := executor.transport.EnsureSession(t.Context()); err != nil || operation.Outcome != transport.Completed {
+		t.Fatalf("initialize fake shell=%+v error=%v", operation, err)
+	}
+	starts := 0
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		starts++
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus()}, nil
+	}
 	for _, tc := range []struct{ name, tool, args string }{
 		{"negative exec yield", "exec_command", `{"cmd":"touch /tmp/should-not-run","yield_time_ms":-1}`},
 		{"missing cmd", "exec_command", `{"workdir":"/tmp"}`},
@@ -39,146 +54,35 @@ func TestExecutorRejectsMalformedInputBeforeDispatch(t *testing.T) {
 		{"missing session_id", "write_stdin", `{"chars":"x"}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			executor := &Executor{shell: &execShell{Name: "bash", Path: "/bin/bash"}}
 			_, err := executor.Invoke(context.Background(), tc.tool, json.RawMessage(tc.args))
 			if !errors.As(err, new(*toolcontract.Rejection)) {
 				t.Fatalf("malformed input error=%v, want a tool error", err)
 			}
 		})
 	}
-}
-
-func TestExecutorInitializationWaitIsIndependentOfGeneralRPCTimeout(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	stream := &gatedExecutorStream{
-		started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{}),
-		response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"},
-	}
-	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		stream.ctx = ctx
-		return stream, nil
-	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.rpcTimeout = 5 * time.Millisecond
-	executor.initializeTimeout = time.Minute
-	result := make(chan error, 1)
-	go func() { result <- executor.openSession(t.Context(), nil) }()
-	<-stream.started
-	select {
-	case err := <-result:
-		t.Fatalf("executor initialization ended at the general RPC timeout: %v", err)
-	case <-stream.ctx.Done():
-		t.Fatalf("executor initialization stream ended at the general RPC timeout: %v", stream.ctx.Err())
-	case <-time.After(50 * time.Millisecond):
-	}
-	close(stream.release)
-	if err := <-result; err != nil {
-		t.Fatal(err)
-	}
-	<-stream.finished
-	if err := executor.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestExecutorInitializationTimeoutKeepsUnknownOutcome(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	stream := &gatedExecutorStream{started: make(chan struct{}), release: make(chan struct{}), finished: make(chan struct{})}
-	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		stream.ctx = ctx
-		return stream, nil
-	}
-	executor := newFakeExecutor(t, store, owner, client)
-	executor.rpcTimeout = time.Minute
-	executor.initializeTimeout = 5 * time.Millisecond
-	result := make(chan error, 1)
-	go func() { result <- executor.openSession(t.Context(), nil) }()
-	<-stream.started
-	var transport *executorTransportError
-	select {
-	case err := <-result:
-		if !errors.As(err, &transport) || transport.phase != "receive" {
-			t.Fatalf("executor initialization error=%v, want unknown receive outcome", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("executor initialization did not honor its configured timeout")
-	}
-	close(stream.release)
-	<-stream.finished
-	var raw []byte
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
-		t.Fatal(err)
-	}
-	var evidence map[string]any
-	if err := json.Unmarshal(raw, &evidence); err != nil {
-		t.Fatal(err)
-	}
-	if evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false || evidence["phase"] != "receive" {
-		t.Fatalf("initialization timeout evidence=%+v", evidence)
-	}
-	if err := executor.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestOpenSessionTransportFailurePreservesFailurePhase(t *testing.T) {
-	for _, test := range []struct {
-		name  string
-		phase string
-	}{
-		{name: "open", phase: "open"},
-		{name: "receive", phase: "receive"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			store, owner := claimedExecutorStore(t)
-			client := &fakeExecutionClient{}
-			failure := status.Error(codes.Unavailable, "executor connection lost")
-			client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-				if test.phase == "open" {
-					return nil, failure
-				}
-				return failedExecutionStream{err: failure}, nil
-			}
-			executor := newFakeExecutor(t, store, owner, client)
-			var transport *executorTransportError
-			if err := executor.openSession(t.Context(), nil); !errors.As(err, &transport) || transport.phase != test.phase {
-				t.Fatalf("OpenSession error=%v, want transport phase %q", err, test.phase)
-			}
-			var raw []byte
-			if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='initialize' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
-				t.Fatal(err)
-			}
-			var evidence map[string]any
-			if err := json.Unmarshal(raw, &evidence); err != nil {
-				t.Fatal(err)
-			}
-			if evidence["phase"] != test.phase || evidence["remote_outcome"] != "unknown" || evidence["automatic_replay"] != false {
-				t.Fatalf("OpenSession evidence=%+v, want unknown non-replayed %s failure", evidence, test.phase)
-			}
-			assertNoUnresolvedNestedIntents(t, store, owner)
-		})
+	if starts != 0 {
+		t.Fatalf("malformed input dispatched %d process starts", starts)
 	}
 }
 
 func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	opens, starts := 0, 0
-	client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		opens++
-		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
+		if opens == 1 {
+			return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
+		}
+		return &execfake.Stream{Ctx: t.Context(), Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "fake-recovered-session",
+		}}, nil
 	}
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus()}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus()}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
-	e.sessionID = ""
 	e.environment = map[string]string{}
 
 	result, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo must not run"}`))
@@ -205,22 +109,24 @@ func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) 
 	if processes != 0 {
 		t.Fatalf("environment refusal before workspace setup registered %d processes, want none", processes)
 	}
-	if e.sessionError != nil {
-		t.Fatalf("catchable environment failure poisoned the executor Session: %v", e.sessionError)
+	if _, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo recovered","yield_time_ms":0}`)); err != nil {
+		t.Fatalf("later operation after catchable environment failure: %v", err)
+	}
+	if opens != 2 || starts != 1 {
+		t.Fatalf("later operation after known refusal opens=%d starts=%d, want a fresh open and one start", opens, starts)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
 func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	starts := 0
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY)
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
 	e.environment = map[string]string{}
 
 	_, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"touch should-not-run"}`))
@@ -252,9 +158,9 @@ func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
 func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	registerRunningModelProcess(t, store, owner, "suspended-process", 1400, 8, "output before suspension\n")
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	reads := 0
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
 		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_SUSPENDED)
 	}
@@ -326,10 +232,10 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 	zero := uint64(0)
 	output := outputbuffer.New(16)
 	output.Append(nil)
-	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
-	err := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
-		method: executorMethodProcessStart, processID: "not-dispatched-start", retainedSession: "retained-executor",
-		afterSequence: &zero, output: output, cause: errors.New("executor session unavailable"),
+	executor := newFakeExecutor(t, store, owner, &execfake.Client{})
+	err := executor.outcomeToolError(t.Context(), &transport.Failure{
+		Kind: transport.FailureNotDispatched, Method: transport.MethodProcessStart, ProcessID: "not-dispatched-start", ExecutionSessionID: "retained-executor",
+		AfterSequence: &zero, Output: output, Cause: errors.New("executor session unavailable"),
 	})
 	var outcome *ToolOutcomeError
 	if !errors.As(err, &outcome) {
@@ -358,7 +264,7 @@ func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) 
 	output := outputbuffer.New(16)
 	output.Append(outputBytes)
 	evidence := executionFailureRecord{
-		method: executorMethodProcessRead, remoteOutcome: sessionstore.NestedUnknown,
+		method: transport.MethodProcessRead, remoteOutcome: sessionstore.NestedUnknown,
 		afterSequence: &largeCursor, output: output,
 	}.toolEvidence()
 	encoded, err := json.Marshal(evidence)
@@ -380,7 +286,7 @@ func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) 
 	zero := uint64(0)
 	empty := outputbuffer.New(16)
 	empty.Append([]byte{})
-	emptyEvidence := executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero, output: empty}.toolEvidence()
+	emptyEvidence := executionFailureRecord{method: transport.MethodProcessRead, afterSequence: &zero, output: empty}.toolEvidence()
 	emptyJSON, err := json.Marshal(emptyEvidence)
 	if err != nil {
 		t.Fatal(err)
@@ -394,7 +300,7 @@ func TestExecutionFailureEvidencePreservesCursorAndOutputPresence(t *testing.T) 
 		t.Fatalf("present empty output or zero cursor changed in JSON projection: %s", emptyJSON)
 	}
 
-	absentJSON, err := json.Marshal(executionFailureRecord{method: executorMethodProcessRead, afterSequence: &zero}.toolEvidence())
+	absentJSON, err := json.Marshal(executionFailureRecord{method: transport.MethodProcessRead, afterSequence: &zero}.toolEvidence())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -417,9 +323,9 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 	if err := store.ProcessResult(t.Context(), owner, "refused-write-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	writes := 0
-	client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+	client.OnWriteProcess = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
 		writes++
 		return nil, executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
 	}
@@ -450,8 +356,8 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 
 func TestApplyPatchStartRejectionIsReturnedAsNestedToolFailure(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client := &execfake.Client{}
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("patch rejected")}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
@@ -484,16 +390,16 @@ func TestRejectedProcessReadDuringToolAbandonsOnlyThatHandle(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	registerRunningModelProcess(t, store, owner, "expired-native-process", 1200, 7, "observed output")
 	registerRunningModelProcess(t, store, owner, "unrelated-live-process", 1201, 3, "other output")
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	reads := 0
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		if request.ProcessId != "expired-native-process" {
 			t.Fatalf("read process ID=%q", request.ProcessId)
 		}
 		reads++
 		if reads == 1 {
 			return &executorpb.ReadProcessResponse{
-				Status:  completedExecutionStatus(),
+				Status:  execfake.CompletedStatus(),
 				Chunks:  []*executorpb.ExecutionOutputChunk{{Seq: 8, Stream: "stdout", Data: []byte("new output")}},
 				NextSeq: 9,
 			}, nil
@@ -539,13 +445,13 @@ func TestReconcileRejectedProcessReadContinuesPastUnrelatedLiveProcess(t *testin
 	registerRunningModelProcess(t, store, owner, "expired-native-process", 1300, 9, "observed output")
 	registerRunningModelProcess(t, store, owner, "unrelated-live-process", 1301, 4, "other output")
 	reads := map[string]int{}
-	client := &fakeExecutionClient{}
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client := &execfake.Client{}
+	client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads[request.ProcessId]++
 		if request.ProcessId == "expired-native-process" {
 			return &executorpb.ReadProcessResponse{Status: rejectedExecutionStatus("process unavailable")}, nil
 		}
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 
@@ -581,8 +487,8 @@ func TestRejectedExecutorOperationRemainsOperationalWhenJournalFails(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		client := &fakeExecutionClient{}
-		client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		client := &execfake.Client{}
+		client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 			return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("patch rejected")}, nil
 		}
 		e := newFakeExecutor(t, store, owner, client)
@@ -604,13 +510,12 @@ func TestRejectedExecutorOperationRemainsOperationalWhenJournalFails(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		client := &fakeExecutionClient{}
-		client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+		client := &execfake.Client{}
+		client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 			return &executorpb.StartProcessResponse{Status: rejectedExecutionStatus("command rejected")}, nil
 		}
 		e := newFakeExecutor(t, store, owner, client)
 		e.environment = map[string]string{}
-		e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
 		_, err = e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"true"}`))
 		assertRejectedSettlementFailedOperationally(t, err)
 		state, stateErr := store.ExecutionState(t.Context(), owner)
@@ -629,7 +534,8 @@ func assertRejectedSettlementFailedOperationally(t *testing.T, err error) {
 	if err == nil {
 		t.Fatal("expected settlement failure")
 	}
-	if errors.As(err, new(*toolcontract.Rejection)) || errors.As(err, new(*executorRejectedError)) {
+	var rejected *transport.Failure
+	if errors.As(err, new(*toolcontract.Rejection)) || errors.As(err, &rejected) && rejected.Kind == transport.FailureRejected {
 		t.Fatalf("failed rejection settlement was exposed as a recoverable tool rejection: %v", err)
 	}
 }
@@ -666,83 +572,6 @@ func registerRunningModelProcess(t *testing.T, store *sessionstore.Store, owner 
 	}
 }
 
-func TestTypedReadResponseKeepsEmptyChunksAsAnArray(t *testing.T) {
-	response := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}
-	value, err := responseObject(executorMethodProcessRead, response)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result executorReadResult
-	if err := json.Unmarshal(encoded, &result); err != nil {
-		t.Fatal(err)
-	}
-	if result.Chunks == nil {
-		t.Fatalf("empty chunks decoded as nil: %s", encoded)
-	}
-}
-
-func TestTypedReadResponsesKeepEmptyBytesAsEmptyStrings(t *testing.T) {
-	readProcess, err := responseObject(executorMethodProcessRead, &executorpb.ReadProcessResponse{
-		Status: completedExecutionStatus(),
-		Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 1, Stream: "stdout"}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if chunks, ok := readProcess["chunks"].([]any); !ok || len(chunks) != 1 || chunks[0].(map[string]any)["chunk"] != "" {
-		t.Fatalf("empty process output chunk=%+v, want base64 empty string", readProcess["chunks"])
-	}
-
-	readFile, err := responseObject(executorMethodFSReadBlock, &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if readFile["chunk"] != "" {
-		t.Fatalf("empty file block=%+v, want base64 empty string", readFile)
-	}
-}
-
-func TestReadFileReturnsBytesWhileJournalingOnlyDigest(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	chunk := []byte("opaque image block")
-	client := &fakeExecutionClient{}
-	client.readFile = func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error) {
-		return &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Data: chunk, Eof: true}, nil
-	}
-	e := newFakeExecutor(t, store, owner, client)
-	result, err := executorRPCWithEvidence[executorFSBlock](t.Context(), e, executorMethodFSReadBlock, executorFSReadBlock{HandleID: "image", Len: len(chunk)}, blockEvidence)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(result.Chunk) != string(chunk) || !result.EOF {
-		t.Fatalf("RPC result=%+v, want original bytes and EOF", result)
-	}
-	var raw []byte
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='fs/readBlock' ORDER BY id LIMIT 1`, owner.ConversationID).Scan(&raw); err != nil {
-		t.Fatal(err)
-	}
-	var evidence map[string]any
-	if err := json.Unmarshal(raw, &evidence); err != nil {
-		t.Fatal(err)
-	}
-	encoded := base64.StdEncoding.EncodeToString(chunk)
-	if strings.Contains(string(raw), encoded) || evidence["response"] != nil {
-		t.Fatalf("intent leaked block bytes or wrapped the prior result shape: %s", raw)
-	}
-	chunkEvidence, ok := evidence["chunk"].(map[string]any)
-	if !ok || chunkEvidence["base64_bytes"] != float64(len(encoded)) {
-		t.Fatalf("intent chunk evidence=%+v", evidence["chunk"])
-	}
-	digest := sha256.Sum256([]byte(encoded))
-	if chunkEvidence["base64_sha256"] != hex.EncodeToString(digest[:]) || evidence["outcome"] != "completed" {
-		t.Fatalf("intent result evidence=%+v", evidence)
-	}
-}
-
 func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
@@ -774,12 +603,12 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 		t.Fatal(err)
 	}
 	sends := 0
-	client := &fakeExecutionClient{
-		write: func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+	client := &execfake.Client{
+		OnWriteProcess: func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
 			sends++
 			return nil, errors.New("abandoned process unexpectedly attempted a write")
 		},
-		read: func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+		OnReadProcess: func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 			t.Fatal("abandoned process unexpectedly attempted a read")
 			return nil, nil
 		},
@@ -800,9 +629,9 @@ func TestAbandonedWriteStdinIsARecoverableToolError(t *testing.T) {
 
 func TestNotDispatchedJournalEvidenceKeepsLegacyProjection(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
-	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
-	handled := executor.outcomeToolError(t.Context(), &executorNotDispatchedError{
-		method: executorMethodInitialize, cause: errors.New("connection refused"),
+	executor := newFakeExecutor(t, store, owner, &execfake.Client{})
+	handled := executor.outcomeToolError(t.Context(), &transport.Failure{
+		Kind: transport.FailureNotDispatched, Method: transport.MethodInitialize, Cause: errors.New("connection refused"),
 	})
 	var outcome *ToolOutcomeError
 	if !errors.As(handled, &outcome) {
@@ -812,7 +641,7 @@ func TestNotDispatchedJournalEvidenceKeepsLegacyProjection(t *testing.T) {
 	if !ok {
 		t.Fatalf("not-dispatched evidence has type %T, want executionFailureEvidence", outcome.Evidence())
 	}
-	if evidence.Method != executorMethodInitialize || evidence.RemoteOutcome != sessionstore.NestedNotDispatched ||
+	if evidence.Method != transport.MethodInitialize || evidence.RemoteOutcome != sessionstore.NestedNotDispatched ||
 		evidence.RequestOutcome == nil || *evidence.RequestOutcome != sessionstore.NestedNotDispatched ||
 		evidence.AutomaticReplay || evidence.TransportError != "connection refused" {
 		t.Fatalf("not-dispatched evidence lost legacy fields: %+v", evidence)
@@ -846,13 +675,13 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	output := outputbuffer.New(outputbuffer.MaxBytes)
 	output.Append([]byte("stdout before failure\n"))
 	cursor := uint64(8)
-	transport := &executorTransportError{
-		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
-		retainedSession: "retained-executor", afterSequence: &cursor, output: output,
-		cause: status.Error(codes.Unavailable, "read reply lost"),
+	failure := &transport.Failure{
+		Kind: transport.FailureTransport, Method: transport.MethodProcessRead, Phase: "grpc", IntentID: "read-intent", ProcessID: "observed-process",
+		ExecutionSessionID: "retained-executor", AfterSequence: &cursor, Output: output,
+		Cause: status.Error(codes.Unavailable, "read reply lost"),
 	}
-	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
-	err := executor.outcomeToolError(t.Context(), transport)
+	executor := newFakeExecutor(t, store, owner, &execfake.Client{})
+	err := executor.outcomeToolError(t.Context(), failure)
 	var rejected *ToolOutcomeError
 	if !errors.As(err, &rejected) {
 		t.Fatalf("observed read failure=%v, want nested promise rejection", err)
@@ -861,7 +690,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err := json.Unmarshal([]byte(rejected.Error()), &message); err != nil {
 		t.Fatalf("rejected promise is not parseable JSON: %v: %s", err, rejected.Error())
 	}
-	if message.RemoteOutcome != sessionstore.NestedUnknown || message.AutomaticReplay || message.Method != executorMethodProcessRead ||
+	if message.RemoteOutcome != sessionstore.NestedUnknown || message.AutomaticReplay || message.Method != transport.MethodProcessRead ||
 		message.IntentID != "read-intent" || message.ProcessID != "observed-process" || message.AfterSeq == nil || *message.AfterSeq != cursor ||
 		message.ObservedOutput == nil || message.ObservedOutput.Text != "stdout before failure\n" || message.ObservedOutput.Truncated ||
 		!strings.Contains(message.Message, "read reply lost") || !strings.Contains(message.Message, "mutation was not replayed") {
@@ -886,7 +715,7 @@ func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *tes
 	cursor := uint64(0)
 	requestOutcome := sessionstore.NestedNotDispatched
 	record := executionFailureRecord{
-		message: "stale read", method: executorMethodProcessRead, intentID: "read-intent",
+		message: "stale read", method: transport.MethodProcessRead, intentID: "read-intent",
 		processID: "process-1", executionSessionID: "session-1", afterSequence: &cursor,
 		remoteOutcome: sessionstore.NestedUnknown, requestOutcome: &requestOutcome, automaticReplay: false,
 		currentIncarnationUID: "current-incarnation", output: outputbuffer.New(64),
@@ -938,47 +767,20 @@ func TestExecutionFailureEvidencePreservesZeroCursorAndPresentEmptyOutput(t *tes
 	}
 }
 
-func TestExecutionFailureEvidencePreservesFullWidthCursorAtJSONBoundary(t *testing.T) {
-	cursor := ^uint64(0)
-	record := executionFailureRecord{
-		method: executorMethodProcessRead, afterSequence: &cursor, remoteOutcome: sessionstore.NestedUnknown,
-		automaticReplay: false,
-	}
-	wire, err := json.Marshal(record.intentEvidence())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var decoded executionFailureEvidence
-	if err := json.Unmarshal(wire, &decoded); err != nil {
-		t.Fatal(err)
-	}
-	if decoded.AfterSeq == nil || *decoded.AfterSeq != cursor {
-		t.Fatalf("full-width cursor did not survive JSON boundary: wire=%s decoded=%+v", wire, decoded)
-	}
-}
-
-func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner(t *testing.T) {
+func TestStoreBindingsJournalFencesStaleOwner(t *testing.T) {
 	store := newTestStore(t)
 	session := openSessionForStore(t, store, "")
 	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	frame := &executorpb.ExecutionNativeFrame{Direction: "notification", Payload: []byte("native notification")}
-	journal := func(owner sessionstore.Owner, operationID string) error {
-		t.Helper()
-		streamCtx := &cancelDuringJournalContext{Context: context.Background(), done: make(chan struct{})}
-		close(streamCtx.done)
-		stream := &fakeExecutionStream{ctx: streamCtx, initial: &executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{frame}}}
-		executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
-		executor.sessionGeneration = 1
-		done := make(chan struct{})
-		executor.watchSession(streamCtx, stream, operationID, "retained-executor", 1, func() {}, done)
-		<-done
-		return executor.sessionError
+	var workspacePrepared atomic.Bool
+	frame := transport.NativeFrame{
+		OperationID: "fake-active-notification", ExecutionSession: "fake-execution-session",
+		Direction: "notification", Payload: []byte("fake native notification"),
 	}
-	if err := journal(owner, "active-notification"); err != nil {
-		t.Fatalf("received notification lost to stream cancellation: %v", err)
+	if err := (&storeBindings{store: store, owner: owner, workspacePrepared: &workspacePrepared}).RecordExecutorNativeFrame(t.Context(), frame); err != nil {
+		t.Fatalf("active owner could not journal native notification: %v", err)
 	}
 	if err := store.Release(t.Context(), owner); err != nil {
 		t.Fatal(err)
@@ -987,8 +789,9 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 		t.Fatal(err)
 	}
 	var lost *sessionstore.LostOwnershipError
-	if err := journal(owner, "stale-notification"); !errors.As(err, &lost) {
-		t.Fatalf("stale watcher journal error=%v, want owner fence", err)
+	frame.OperationID = "fake-stale-notification"
+	if err := (&storeBindings{store: store, owner: owner, workspacePrepared: &workspacePrepared}).RecordExecutorNativeFrame(t.Context(), frame); !errors.As(err, &lost) {
+		t.Fatalf("stale journal error=%v, want owner fence", err)
 	}
 	events, err := store.Events(t.Context(), session.ID, 0, 4096)
 	if err != nil {
@@ -1001,9 +804,9 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 			continue
 		}
 		switch boundary.GetCorrelationId() {
-		case "active-notification":
+		case "fake-active-notification":
 			active++
-		case "stale-notification":
+		case "fake-stale-notification":
 			stale++
 		}
 	}
@@ -1012,30 +815,14 @@ func TestSessionNotificationJournalSurvivesStreamCancellationAndFencesStaleOwner
 	}
 }
 
-// The first Err check models a stream cancellation just after the caller checked
-// the context and before the evidence transaction begins.
-type cancelDuringJournalContext struct {
-	context.Context
-	checks atomic.Uint32
-	done   chan struct{}
-}
-
-func (c *cancelDuringJournalContext) Err() error {
-	if c.checks.Add(1) == 1 {
-		return nil
-	}
-	return context.Canceled
-}
-
-func (c *cancelDuringJournalContext) Done() <-chan struct{} { return c.done }
-
 func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 	output := outputbuffer.New(16 * 1024)
 	output.Append(bytes.Repeat([]byte("a"), 32*1024))
 	cursor := uint64(12)
-	message, err := observedProcessFailureMessage(&executorTransportError{
-		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
-		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
+	message, err := executionFailureMessage(executionFailureRecord{
+		message: "typed execution process/read grpc failed; remote effect outcome is unknown; mutation was not replayed: connection closed",
+		method:  transport.MethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		afterSequence: &cursor, output: output,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1053,11 +840,10 @@ func TestObservedProcessFailureMarksBothOutputTruncationLayers(t *testing.T) {
 		!strings.Contains(view.Text, "8192 retained bytes not shown; 16384 earlier bytes omitted") {
 		t.Fatalf("truncation metadata=%+v", view)
 	}
-	transport := &executorTransportError{
-		method: executorMethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
-		afterSequence: &cursor, output: output, cause: errors.New("connection closed"),
-	}
-	evidence := transport.evidence("")
+	evidence := executionFailureRecord{
+		method: transport.MethodProcessRead, phase: "grpc", intentID: "read-intent", processID: "observed-process",
+		afterSequence: &cursor, output: output,
+	}.intentEvidence()
 	if evidence.BufferedOutputBase64 == nil || *evidence.BufferedOutputBase64 == nil ||
 		!bytes.Equal(*evidence.BufferedOutputBase64, output.RetainedBytes()) || evidence.OmittedBytes == nil || *evidence.OmittedBytes != 16*1024 {
 		t.Fatalf("truncated output cannot be retrieved exactly from evidence: %+v", evidence)
@@ -1074,16 +860,16 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			store, owner := claimedExecutorStore(t)
 			reads := 0
-			client := &fakeExecutionClient{}
+			client := &execfake.Client{}
 			var e *Executor
-			client.start = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-				return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
+			client.OnStartProcess = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+				return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: request.ProcessId}, nil
 			}
-			client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+			client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 				if reads == 0 && request.AfterSeq != nil || reads > 0 && (request.AfterSeq == nil || *request.AfterSeq != uint64(reads)) {
 					t.Fatalf("read %d cursor=%v", reads, request.AfterSeq)
 				}
-				page := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
+				page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
 				switch reads {
 				case 0: // Exit arrived before stdout readers published their final bytes.
 					if operation != reconcileOperation {
@@ -1153,10 +939,14 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 
 	var late atomic.Bool
 	var reads, writes atomic.Int32
-	client := &fakeExecutionClient{}
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	responses := make(chan *executorpb.OpenSessionResponse, 1)
+	client := &execfake.Client{OnOpenSession: func(ctx context.Context, _ *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		responses <- &executorpb.OpenSessionResponse{Status: execfake.CompletedStatus(), ExecutionSessionId: "retained-executor", Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"}}
+		return &execfake.NotificationStream{Ctx: ctx, Responses: responses}, nil
+	}}
+	client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads.Add(1)
-		page := &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Exited: true, ExitCode: ptrInt32(0), NextSeq: 2}
+		page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, ExitCode: ptrInt32(0), NextSeq: 2}
 		if late.Load() {
 			page.Closed = true
 			page.NextSeq = 4
@@ -1166,9 +956,9 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 		}
 		return page, nil
 	}
-	client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
+	client.OnWriteProcess = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
 		writes.Add(1)
-		return &executorpb.WriteProcessResponse{Status: completedExecutionStatus(), WriteStatus: "accepted"}, nil
+		return &executorpb.WriteProcessResponse{Status: execfake.CompletedStatus(), WriteStatus: "accepted"}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 
@@ -1196,15 +986,9 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 		t.Fatal("sent input after the process exited")
 	}
 
-	streamCtx, cancel := context.WithCancel(t.Context())
-	stream := &notificationExecutorStream{ctx: streamCtx, responses: make(chan *executorpb.OpenSessionResponse, 1)}
-	e.sessionGeneration = 1
-	done := make(chan struct{})
-	go e.watchSession(streamCtx, stream, "notification", "retained-executor", 1, cancel, done)
-	defer func() { cancel(); <-done }()
 	changed := e.ProcessChanges()
 	late.Store(true)
-	stream.responses <- &executorpb.OpenSessionResponse{ExecutionSessionId: "retained-executor", NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte(`{"method":"process/output","params":{"processId":"exited-open","seq":2}}`)}}}
+	responses <- &executorpb.OpenSessionResponse{ExecutionSessionId: "retained-executor", NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: []byte(`{"method":"process/output","params":{"processId":"exited-open","seq":2}}`)}}}
 	select {
 	case <-changed:
 	case <-time.After(time.Second):
@@ -1226,16 +1010,17 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 func TestCompletedReadIsJournaledAfterCallerCancellation(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	ctx, cancel := context.WithCancel(t.Context())
-	client := &fakeExecutionClient{}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client := &execfake.Client{}
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		cancel()
 		return &executorpb.ReadProcessResponse{
-			Status:       completedExecutionStatus(),
+			Status:       execfake.CompletedStatus(),
 			NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "response", Payload: []byte(`{"result":{}}`)}},
 		}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	if _, err := executorRPC[executorReadResult](ctx, e, executorMethodProcessRead, executorRead{ProcessID: "known-result"}); err != nil {
+	operation, err := e.transport.Read(ctx, transport.ReadRequest{ProcessID: "known-result", MaxBytes: 65536})
+	if err != nil || operation.Outcome != transport.Completed {
 		t.Fatalf("completed read lost to caller cancellation: %v", err)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
@@ -1267,185 +1052,6 @@ func TestCompletedReadIsJournaledAfterCallerCancellation(t *testing.T) {
 	}
 }
 
-func TestExecutorRetriesOnlyCursorReadWithSameIdentity(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	var reads []*executorpb.ReadProcessRequest
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		reads = append(reads, proto.Clone(request).(*executorpb.ReadProcessRequest))
-		if len(reads) == 1 {
-			return nil, status.Error(codes.Unavailable, "reply lost after dispatch")
-		}
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, NextSeq: 8, Exited: true, ExitCode: ptrInt32(0), Closed: true}, nil
-	}
-	var resumed []*executorpb.OpenSessionRequest
-	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		resumed = append(resumed, proto.Clone(request).(*executorpb.OpenSessionRequest))
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
-	}
-	e := newFakeExecutor(t, store, owner, client)
-	e.reconnectRequired = false
-	cursor := uint64(7)
-	_, err := executorRPC[executorReadResult](t.Context(), e, executorMethodProcessRead, executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reads) != 2 || !proto.Equal(reads[0], reads[1]) {
-		t.Fatalf("cursor read changed on retry: %+v", reads)
-	}
-	if reads[0].RequestId == "" || resumed[0].GetResumeSessionId() != "retained-executor" {
-		t.Fatalf("retry ID/session not retained: reads=%+v resumed=%+v", reads, resumed)
-	}
-	if err := e.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestExecutorRetriesUnknownCursorReadAtMostOnce(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	var reads []*executorpb.ReadProcessRequest
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		reads = append(reads, proto.Clone(request).(*executorpb.ReadProcessRequest))
-		return &executorpb.ReadProcessResponse{
-			Status: &executorpb.ExecutionStatus{
-				Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN,
-				Message: "adapter could not recover the read outcome",
-			},
-		}, nil
-	}
-	opens := 0
-	client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		opens++
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
-	}
-	e := newFakeExecutor(t, store, owner, client)
-	cursor := uint64(5)
-	_, err := executorRPC[executorReadResult](t.Context(), e, executorMethodProcessRead, executorRead{ProcessID: "existing-process", AfterSeq: &cursor, MaxBytes: 65536})
-	if !errors.As(err, new(*executorTransportError)) {
-		t.Fatalf("read error=%v, want an explicit unknown result", err)
-	}
-	if len(reads) != 2 || opens != 1 || !proto.Equal(reads[0], reads[1]) {
-		t.Fatalf("read retry count=%d opens=%d requests=%+v", len(reads), opens, reads)
-	}
-	if err := e.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestExecutorDoesNotReplayMutationAfterLostReply(t *testing.T) {
-	for _, method := range []executionMethod{executorMethodProcessStart, executorMethodProcessWrite} {
-		t.Run(string(method), func(t *testing.T) {
-			store, owner := claimedExecutorStore(t)
-			client := &fakeExecutionClient{}
-			starts, writes := 0, 0
-			client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-				starts++
-				return nil, status.Error(codes.Unavailable, "lost mutation reply")
-			}
-			client.write = func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error) {
-				writes++
-				return nil, status.Error(codes.Unavailable, "lost mutation reply")
-			}
-			e := newFakeExecutor(t, store, owner, client)
-			var params any
-			if method == executorMethodProcessStart {
-				params = executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}
-			} else {
-				params = executorWrite{ProcessID: "existing", Chunk: []byte("x"), WriteID: "write-once"}
-			}
-			_, err := e.rpc(t.Context(), method, params, nil)
-			var transport *executorTransportError
-			if !errors.As(err, &transport) || !strings.Contains(transport.Error(), "remote effect outcome is unknown") {
-				t.Fatalf("mutation result=%v", err)
-			}
-			if starts != boolInt(method == executorMethodProcessStart) || writes != boolInt(method == executorMethodProcessWrite) {
-				t.Fatalf("mutation replayed: starts=%d writes=%d", starts, writes)
-			}
-			if transport.intentID == "" {
-				t.Fatal("lost call was not linked to its durable intent")
-			}
-			assertNoUnresolvedNestedIntents(t, store, owner)
-		})
-	}
-}
-
-func TestExecutorNeverSubstitutesMissingSessionOnRecovery(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		response *executorpb.OpenSessionResponse
-		openErr  error
-	}{
-		{name: "unknown outcome is not definitive", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_UNKNOWN, Message: "unknown session id retained-executor"}}},
-		{name: "rejection is not session loss", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "executor access denied", UpstreamCode: ptrInt32(-32600)}}},
-		{name: "different session ID", response: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, Message: "unknown session id another-executor", UpstreamCode: ptrInt32(-32600)}}},
-		{name: "different session", response: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "new-executor"}},
-		{name: "unavailable adapter", openErr: status.Error(codes.Unavailable, "adapter unavailable")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			store, owner := claimedExecutorStore(t)
-			client := &fakeExecutionClient{}
-			reads, opens := 0, 0
-			client.open = func(ctx context.Context, _ *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-				opens++
-				if tc.openErr != nil {
-					return nil, tc.openErr
-				}
-				return &fakeExecutionStream{ctx: ctx, initial: tc.response}, nil
-			}
-			client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-				reads++
-				return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
-			}
-			e := newFakeExecutor(t, store, owner, client)
-			e.reconnectRequired = true
-			if tc.openErr != nil {
-				e.reconnectTimeout = 150 * time.Millisecond
-			}
-			_, err := e.rpc(t.Context(), executorMethodProcessRead, executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
-			if err == nil || reads != 0 || tc.openErr == nil && opens != 1 || tc.openErr != nil && opens < 1 {
-				t.Fatalf("session substitution: err=%v reads=%d opens=%d", err, reads, opens)
-			}
-			conversation, readErr := store.Read(t.Context(), owner)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "retained-executor" {
-				t.Fatalf("retained session changed: %+v", conversation.ExecutorSession)
-			}
-		})
-	}
-}
-
-func TestExecutorOpenRejectionNeedsDurableNativeEvidenceForRecovery(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	intent, err := store.RecordNested(t.Context(), owner, sessionstore.IntentExecutor, map[string]any{"method": "initialize"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	executor := newFakeExecutor(t, store, owner, &fakeExecutionClient{})
-	response := &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
-		Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
-	}}
-	frameErr := errors.New("native response frame persistence failed")
-	err = executor.finishOpenFailure(t.Context(), intent, response, frameErr)
-	if isExecutorConnectionFailure(err) {
-		t.Fatalf("native evidence persistence failure became an ordinary connection failure: %v", err)
-	}
-	if !errors.Is(err, frameErr) {
-		t.Fatalf("native frame persistence error was discarded: %v", err)
-	}
-	result, err := intentResultForDB(t, store, intent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["outcome"] != "rejected" {
-		t.Fatalf("typed rejection was not durably settled: %+v", result)
-	}
-}
-
 func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	if err := store.RegisterProcess(t.Context(), owner, "old-process", false); err != nil {
@@ -1468,42 +1074,40 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 		t.Fatal(err)
 	}
 
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	var resumes []*executorpb.OpenSessionRequest
 	starts := 0
 	var startedWithSession string
-	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		resumes = append(resumes, proto.Clone(request).(*executorpb.OpenSessionRequest))
 		if len(resumes) == 1 {
-			return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
 				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
 			}}}, nil
 		}
 		if request.ResumeSessionId != nil {
 			t.Fatalf("fresh session request resumed %q", *request.ResumeSessionId)
 		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{
-			Status: completedExecutionStatus(), ExecutionSessionId: "fresh-executor",
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: "fresh-executor",
 			Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
 		}}, nil
 	}
-	client.start = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(_ context.Context, request *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts++
 		startedWithSession = request.ExecutionSessionId
-		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: request.ProcessId}, nil
+		return &executorpb.StartProcessResponse{Status: execfake.CompletedStatus(), ProcessId: request.ProcessId}, nil
 	}
 	reads := 0
-	client.read = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
 		if request.ProcessId == "old-process" || request.ProcessId == "drained-process" {
 			t.Fatalf("retired process %q reached the fresh executor", request.ProcessId)
 		}
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
-	e.shell = &execShell{Name: "bash", Path: "/bin/bash"}
 	e.environment = map[string]string{}
-	e.reconnectRequired = true
 	_, err := e.Invoke(t.Context(), "exec_command", json.RawMessage(`{"cmd":"echo must not run","yield_time_ms":0}`))
 	if err == nil || !strings.Contains(err.Error(), "fresh session was opened") || !strings.Contains(err.Error(), "not dispatched") {
 		t.Fatalf("first model-facing operation error=%v, want visible not-dispatched session-loss error", err)
@@ -1555,110 +1159,6 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
-func TestExecutorReconnectsBeforeNextOperationWithoutReplayingMutation(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	starts, reads, opens := 0, 0, 0
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-		starts++
-		return nil, status.Error(codes.Unavailable, "start reply lost")
-	}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
-		reads++
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
-	}
-	client.open = func(ctx context.Context, request *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		opens++
-		if request.GetResumeSessionId() != "retained-executor" {
-			t.Fatalf("resume=%q", request.GetResumeSessionId())
-		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
-	}
-	e := newFakeExecutor(t, store, owner, client)
-	_, err := e.rpc(t.Context(), executorMethodProcessStart, executorStart{ProcessID: "lost-start", Argv: []string{"touch", "once"}, Cwd: "file:///tmp"}, nil)
-	if !errors.As(err, new(*executorTransportError)) {
-		t.Fatalf("start error=%v, want explicit unknown result", err)
-	}
-	_, err = e.rpc(t.Context(), executorMethodProcessRead, executorRead{ProcessID: "existing", MaxBytes: 65536}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if starts != 1 || reads != 1 || opens != 1 {
-		t.Fatalf("starts=%d reads=%d opens=%d", starts, reads, opens)
-	}
-	if err := e.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestRetryableExecutorResumeFailure(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{
-			name: "generic unavailable while opening remains retryable",
-			err:  &executorTransportError{phase: "open", cause: status.Error(codes.Unavailable, "Gateway unavailable")},
-			want: true,
-		},
-		{
-			name: "generic deadline while receiving remains retryable",
-			err:  &executorTransportError{phase: "receive", cause: status.Error(codes.DeadlineExceeded, "resume deadline")},
-			want: true,
-		},
-		{
-			name: "generic refusal after response is terminal",
-			err:  &executorTransportError{phase: "response", cause: status.Error(codes.Unavailable, "resume refused")},
-			want: false,
-		},
-		{
-			name: "non-transient transport status is terminal",
-			err:  &executorTransportError{phase: "open", cause: status.Error(codes.PermissionDenied, "resume denied")},
-			want: false,
-		},
-		{
-			name: "control route unavailable before initialize dispatch",
-			err: &executorEnvironmentFailureError{
-				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
-				remoteOutcome: sessionstore.NestedNotDispatched,
-			},
-			want: true,
-		},
-		{
-			name: "control route unavailable for another method is terminal",
-			err: &executorEnvironmentFailureError{
-				method: executorMethodProcessRead, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
-				remoteOutcome: sessionstore.NestedNotDispatched,
-			},
-			want: false,
-		},
-		{
-			name: "other environment states remain terminal",
-			err: &executorEnvironmentFailureError{
-				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_NOT_READY,
-				remoteOutcome: sessionstore.NestedNotDispatched,
-			},
-			want: false,
-		},
-		{
-			name: "unknown outcome remains terminal",
-			err: &executorEnvironmentFailureError{
-				method: executorMethodInitialize, state: executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE,
-				remoteOutcome: sessionstore.NestedUnknown,
-			},
-			want: false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := retryableExecutorResumeFailure(tc.err); got != tc.want {
-				t.Fatalf("retryableExecutorResumeFailure(%T)=%t, want %t", tc.err, got, tc.want)
-			}
-		})
-	}
-}
-
 func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
 	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
@@ -1673,26 +1173,26 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	if err := store.RetainProcessOutput(t.Context(), owner, "running-process", 5, []byte("before "), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	var reads []*executorpb.ReadProcessRequest
-	client.read = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(_ context.Context, r *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads = append(reads, proto.Clone(r).(*executorpb.ReadProcessRequest))
 		if len(reads) == 1 {
 			return nil, status.Error(codes.Unavailable, "Gateway went away after read dispatch")
 		}
-		return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 6, Stream: "stdout", Data: []byte("after")}}, NextSeq: 7}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{{Seq: 6, Stream: "stdout", Data: []byte("after")}}, NextSeq: 7}, nil
 	}
 	gatewayUnavailable := make(chan struct{})
 	controlRouteUnavailable := make(chan struct{})
 	restored := make(chan struct{})
 	var resumes []*executorpb.OpenSessionRequest
 	var starts atomic.Int32
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
+	client.OnStartProcess = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
 		starts.Add(1)
 		return nil, errors.New("retained-session recovery must not start a process")
 	}
 	routeUnavailableError := executionEnvironmentStatusError(t, executorpb.ExecutionEnvironmentFailure_STATE_CONTROL_ROUTE_UNAVAILABLE)
-	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		resumes = append(resumes, proto.Clone(r).(*executorpb.OpenSessionRequest))
 		if len(resumes) == 1 {
 			close(gatewayUnavailable)
@@ -1704,15 +1204,17 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 		}
 		select {
 		case <-restored:
-			return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: execfake.CompletedStatus(), ExecutionSessionId: "retained-executor"}}, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
-	e := newFakeExecutor(t, store, owner, client)
-	e.scope = &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId}
-	e.rpcTimeout = 30 * time.Millisecond
-	e.reconnectTimeout = 2 * time.Second
+	reconnectTimeout := 2 * time.Second
+	e := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{
+		scope:      &executorpb.ExecutionScope{Destination: request.Executor, ExpectedIncarnationUid: "original", SessionId: request.SessionId},
+		rpcTimeout: 30 * time.Millisecond, reconnectTimeout: reconnectTimeout,
+	})
+	establishFakeExecutorSession(t, e, client)
 	result := make(chan error, 1)
 	go func() {
 		_, err := e.ReconcileProcesses(t.Context(), 30*time.Millisecond)
@@ -1721,7 +1223,7 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	<-gatewayUnavailable
 	select {
 	case <-controlRouteUnavailable:
-	case <-time.After(e.reconnectTimeout):
+	case <-time.After(reconnectTimeout):
 		t.Fatal("structured control-route refusal was not retried")
 	}
 	process, err := store.Process(t.Context(), owner, "running-process")
@@ -1786,16 +1288,15 @@ func TestProcessReadsKeepShortPerAttemptDeadlines(t *testing.T) {
 				t.Fatal(err)
 			}
 			reads := 0
-			client := &fakeExecutionClient{read: func(ctx context.Context, _ *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+			client := &execfake.Client{OnReadProcess: func(ctx context.Context, _ *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 				reads++
 				deadline, ok := ctx.Deadline()
 				if !ok || time.Until(deadline) > tc.attemptTimeout+time.Second {
 					t.Fatalf("read RPC lost its short page deadline: deadline=%v, expected within %s", deadline, tc.attemptTimeout)
 				}
-				return &executorpb.ReadProcessResponse{Status: completedExecutionStatus()}, nil
+				return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus()}, nil
 			}}
-			e := newFakeExecutor(t, store, owner, client)
-			e.rpcTimeout = 30 * time.Second
+			e := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{rpcTimeout: 30 * time.Second})
 			if err := tc.read(e); err != nil {
 				t.Fatal(err)
 			}
@@ -1818,13 +1319,13 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 	if err := store.RetainProcessOutput(t.Context(), owner, "old-process", 5, []byte("already observed"), false, nil); err != nil {
 		t.Fatal(err)
 	}
-	client := &fakeExecutionClient{}
+	client := &execfake.Client{}
 	reads, opens := 0, 0
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads++
 		return nil, status.Error(codes.Unavailable, "Gateway lost read reply")
 	}
-	client.open = func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(ctx context.Context, r *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		opens++
 		switch opens {
 		case 1:
@@ -1836,19 +1337,20 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 			if r.GetResumeSessionId() != "retained-executor" {
 				t.Fatalf("second resume changed native ID: %+v", r)
 			}
-			return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
 				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
 			}}}, nil
 		default:
 			if r.ResumeSessionId != nil {
 				t.Fatalf("fresh open tried the lost native ID: %+v", r)
 			}
-			return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "fresh-executor"}}, nil
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: execfake.CompletedStatus(), ExecutionSessionId: "fresh-executor"}}, nil
 		}
 	}
-	e := newFakeExecutor(t, store, owner, client)
-	e.rpcTimeout = 30 * time.Millisecond
-	e.reconnectTimeout = 2 * time.Second
+	e := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{
+		rpcTimeout: 30 * time.Millisecond, reconnectTimeout: 2 * time.Second,
+	})
+	establishFakeExecutorSession(t, e, client)
 	_, err := e.ReconcileProcesses(t.Context(), 30*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
@@ -1883,100 +1385,6 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 	assertNoUnresolvedNestedIntents(t, store, owner)
 }
 
-func TestReconnectBudgetExhaustionKeepsNativeBinding(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	client := &fakeExecutionClient{}
-	resumes, mutations := 0, 0
-	client.open = func(_ context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		resumes++
-		if r.GetResumeSessionId() != "retained-executor" {
-			t.Fatalf("outage caused a fresh session open: %+v", r)
-		}
-		return nil, status.Error(codes.Unavailable, "Gateway still unavailable")
-	}
-	client.start = func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error) {
-		mutations++
-		return nil, errors.New("mutation dispatched")
-	}
-	e := newFakeExecutor(t, store, owner, client)
-	e.reconnectRequired = true
-	e.reconnectTimeout = 150 * time.Millisecond
-	_, err := e.rpc(t.Context(), executorMethodProcessStart, executorStart{ProcessID: "new-process", Argv: []string{"touch", "new"}}, nil)
-	if !errors.As(err, new(*executorNotDispatchedError)) || resumes < 1 || mutations != 0 {
-		t.Fatalf("retry exhaustion dispatched mutation or lost its refusal: resumes=%d mutations=%d error=%v", resumes, mutations, err)
-	}
-	conversation, err := store.Read(t.Context(), owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "retained-executor" || e.sessionID != "retained-executor" {
-		t.Fatalf("transport outage replaced native binding: %+v, local=%q", conversation.ExecutorSession, e.sessionID)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestReconnectStopsOnCallerCancellation(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	resumes := 0
-	client := &fakeExecutionClient{open: func(_ context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		resumes++
-		if r.GetResumeSessionId() != "retained-executor" {
-			t.Fatalf("caller cancellation caused a fresh open: %+v", r)
-		}
-		cancel()
-		return nil, status.Error(codes.Unavailable, "Gateway unavailable")
-	}}
-	e := newFakeExecutor(t, store, owner, client)
-	e.reconnectRequired = true
-	if err := e.reconnectLocked(ctx, ""); !errors.Is(err, context.Canceled) || resumes != 1 {
-		t.Fatalf("reconnect ignored cancellation: attempts=%d error=%v", resumes, err)
-	}
-	conversation, err := store.Read(t.Context(), owner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if conversation.ExecutorSession == nil || *conversation.ExecutorSession != "retained-executor" {
-		t.Fatalf("cancellation replaced native binding: %+v", conversation.ExecutorSession)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
-func TestReconnectDiscardsLateFirstFrameBeforeAnotherResume(t *testing.T) {
-	store, owner := claimedExecutorStore(t)
-	firstDone := make(chan struct{})
-	opens := 0
-	client := &fakeExecutionClient{open: func(ctx context.Context, r *executorpb.OpenSessionRequest) (executorSessionStream, error) {
-		opens++
-		if r.GetResumeSessionId() != "retained-executor" {
-			t.Fatalf("resume changed native session: %+v", r)
-		}
-		if opens == 1 {
-			return &lateSuccessExecutorStream{ctx: ctx, done: firstDone}, nil
-		}
-		select {
-		case <-firstDone:
-		default:
-			t.Fatal("new resume overlapped the canceled stream")
-		}
-		return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}}, nil
-	}}
-	e := newFakeExecutor(t, store, owner, client)
-	e.reconnectRequired = true
-	e.reconnectTimeout = 2 * time.Second
-	if err := e.reconnectLocked(t.Context(), ""); err != nil {
-		t.Fatal(err)
-	}
-	if opens != 2 || e.sessionGeneration != 1 {
-		t.Fatalf("late first frame became a bound session: opens=%d generation=%d", opens, e.sessionGeneration)
-	}
-	if err := e.close(); err != nil {
-		t.Fatal(err)
-	}
-	assertNoUnresolvedNestedIntents(t, store, owner)
-}
-
 func TestReconcileAbandonsProcessesAfterTransportLoss(t *testing.T) {
 	store, owner := claimedExecutorStore(t)
 	for _, id := range []string{"live-process-1", "live-process-2"} {
@@ -1990,15 +1398,15 @@ func TestReconcileAbandonsProcessesAfterTransportLoss(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	client := &fakeExecutionClient{}
-	client.read = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
+	client := &execfake.Client{}
+	client.OnReadProcess = func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		return nil, status.Error(codes.Unavailable, "executor transport failed")
 	}
-	client.open = func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error) {
+	client.OnOpenSession = func(context.Context, *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
 		return nil, status.Error(codes.Unavailable, "session resume failed")
 	}
-	e := newFakeExecutor(t, store, owner, client)
-	e.reconnectTimeout = 150 * time.Millisecond
+	e := newFakeExecutor(t, store, owner, client, fakeExecutorConfig{reconnectTimeout: 150 * time.Millisecond})
+	establishFakeExecutorSession(t, e, client)
 	for range 2 {
 		progressed, err := e.ReconcileProcesses(t.Context(), time.Second)
 		if err != nil || !progressed {
@@ -2034,165 +1442,6 @@ func TestReconcileAbandonsProcessesAfterTransportLoss(t *testing.T) {
 	}
 }
 
-type fakeExecutionClient struct {
-	open      func(context.Context, *executorpb.OpenSessionRequest) (executorSessionStream, error)
-	start     func(context.Context, *executorpb.StartProcessRequest) (*executorpb.StartProcessResponse, error)
-	read      func(context.Context, *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error)
-	write     func(context.Context, *executorpb.WriteProcessRequest) (*executorpb.WriteProcessResponse, error)
-	signal    func(context.Context, *executorpb.SignalProcessRequest) (*executorpb.SignalProcessResponse, error)
-	terminate func(context.Context, *executorpb.TerminateProcessRequest) (*executorpb.TerminateProcessResponse, error)
-	metadata  func(context.Context, *executorpb.GetFileMetadataRequest) (*executorpb.GetFileMetadataResponse, error)
-	openFile  func(context.Context, *executorpb.OpenFileRequest) (*executorpb.OpenFileResponse, error)
-	readFile  func(context.Context, *executorpb.ReadFileRequest) (*executorpb.ReadFileResponse, error)
-	closeFile func(context.Context, *executorpb.CloseFileRequest) (*executorpb.CloseFileResponse, error)
-}
-
-func (c *fakeExecutionClient) OpenSession(ctx context.Context, r *executorpb.OpenSessionRequest, _ ...grpc.CallOption) (executorSessionStream, error) {
-	if c.open != nil {
-		return c.open(ctx, r)
-	}
-	sid := r.GetResumeSessionId()
-	return &fakeExecutionStream{ctx: ctx, initial: &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: sid}}, nil
-}
-
-func (c *fakeExecutionClient) StartProcess(ctx context.Context, r *executorpb.StartProcessRequest, _ ...grpc.CallOption) (*executorpb.StartProcessResponse, error) {
-	if c.start != nil {
-		return c.start(ctx, r)
-	}
-	return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
-}
-
-func (c *fakeExecutionClient) ReadProcess(ctx context.Context, r *executorpb.ReadProcessRequest, _ ...grpc.CallOption) (*executorpb.ReadProcessResponse, error) {
-	if c.read != nil {
-		return c.read(ctx, r)
-	}
-	return &executorpb.ReadProcessResponse{Status: completedExecutionStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}}, nil
-}
-
-func (c *fakeExecutionClient) WriteProcess(ctx context.Context, r *executorpb.WriteProcessRequest, _ ...grpc.CallOption) (*executorpb.WriteProcessResponse, error) {
-	if c.write != nil {
-		return c.write(ctx, r)
-	}
-	return &executorpb.WriteProcessResponse{Status: completedExecutionStatus(), WriteStatus: "accepted"}, nil
-}
-
-func (c *fakeExecutionClient) SignalProcess(ctx context.Context, r *executorpb.SignalProcessRequest, _ ...grpc.CallOption) (*executorpb.SignalProcessResponse, error) {
-	if c.signal != nil {
-		return c.signal(ctx, r)
-	}
-	return &executorpb.SignalProcessResponse{Status: completedExecutionStatus()}, nil
-}
-
-func (c *fakeExecutionClient) TerminateProcess(ctx context.Context, r *executorpb.TerminateProcessRequest, _ ...grpc.CallOption) (*executorpb.TerminateProcessResponse, error) {
-	if c.terminate != nil {
-		return c.terminate(ctx, r)
-	}
-	return &executorpb.TerminateProcessResponse{Status: completedExecutionStatus()}, nil
-}
-
-func (c *fakeExecutionClient) GetFileMetadata(ctx context.Context, r *executorpb.GetFileMetadataRequest, _ ...grpc.CallOption) (*executorpb.GetFileMetadataResponse, error) {
-	if c.metadata != nil {
-		return c.metadata(ctx, r)
-	}
-	return &executorpb.GetFileMetadataResponse{Status: completedExecutionStatus()}, nil
-}
-
-func (c *fakeExecutionClient) OpenFile(ctx context.Context, r *executorpb.OpenFileRequest, _ ...grpc.CallOption) (*executorpb.OpenFileResponse, error) {
-	if c.openFile != nil {
-		return c.openFile(ctx, r)
-	}
-	return &executorpb.OpenFileResponse{Status: completedExecutionStatus(), HandleId: r.HandleId}, nil
-}
-
-func (c *fakeExecutionClient) ReadFile(ctx context.Context, r *executorpb.ReadFileRequest, _ ...grpc.CallOption) (*executorpb.ReadFileResponse, error) {
-	if c.readFile != nil {
-		return c.readFile(ctx, r)
-	}
-	return &executorpb.ReadFileResponse{Status: completedExecutionStatus(), Eof: true}, nil
-}
-
-func (c *fakeExecutionClient) CloseFile(ctx context.Context, r *executorpb.CloseFileRequest, _ ...grpc.CallOption) (*executorpb.CloseFileResponse, error) {
-	if c.closeFile != nil {
-		return c.closeFile(ctx, r)
-	}
-	return &executorpb.CloseFileResponse{Status: completedExecutionStatus()}, nil
-}
-
-type fakeExecutionStream struct {
-	ctx     context.Context
-	initial *executorpb.OpenSessionResponse
-	once    sync.Once
-}
-
-type failedExecutionStream struct{ err error }
-
-func (s failedExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) { return nil, s.err }
-
-type notificationExecutorStream struct {
-	ctx       context.Context
-	responses chan *executorpb.OpenSessionResponse
-}
-
-func (s *notificationExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
-	select {
-	case response := <-s.responses:
-		return response, nil
-	case <-s.ctx.Done():
-		return nil, s.ctx.Err()
-	}
-}
-
-type lateSuccessExecutorStream struct {
-	ctx  context.Context
-	done chan struct{}
-}
-
-func (s *lateSuccessExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
-	<-s.ctx.Done()
-	close(s.done)
-	return &executorpb.OpenSessionResponse{Status: completedExecutionStatus(), ExecutionSessionId: "retained-executor"}, nil
-}
-
-type gatedExecutorStream struct {
-	ctx      context.Context
-	started  chan struct{}
-	release  chan struct{}
-	finished chan struct{}
-	response *executorpb.OpenSessionResponse
-	mu       sync.Mutex
-	first    bool
-}
-
-func (s *gatedExecutorStream) Recv() (*executorpb.OpenSessionResponse, error) {
-	s.mu.Lock()
-	if s.first {
-		s.mu.Unlock()
-		<-s.ctx.Done()
-		return nil, s.ctx.Err()
-	}
-	s.first = true
-	s.mu.Unlock()
-	close(s.started)
-	select {
-	case <-s.release:
-	case <-s.ctx.Done():
-		close(s.finished)
-		return nil, s.ctx.Err()
-	}
-	close(s.finished)
-	return s.response, nil
-}
-
-func (s *fakeExecutionStream) Recv() (*executorpb.OpenSessionResponse, error) {
-	var response *executorpb.OpenSessionResponse
-	s.once.Do(func() { response = s.initial })
-	if response != nil {
-		return response, nil
-	}
-	<-s.ctx.Done()
-	return nil, io.EOF
-}
-
 func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner) {
 	t.Helper()
 	store := newTestStore(t)
@@ -2207,13 +1456,90 @@ func claimedExecutorStore(t *testing.T) (*sessionstore.Store, sessionstore.Owner
 	return store, owner
 }
 
-func newFakeExecutor(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, client executorClient) *Executor {
-	t.Helper()
-	return &Executor{store: store, owner: owner, client: client, scope: &executorpb.ExecutionScope{SessionId: owner.ConversationID}, sessionID: "retained-executor", lifetime: t.Context(), cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, initializeTimeout: time.Minute, reconnectTimeout: 2 * time.Minute, workspacePrepared: true}
+type fakeExecutorConfig struct {
+	scope             *executorpb.ExecutionScope
+	rpcTimeout        time.Duration
+	initializeTimeout time.Duration
+	reconnectTimeout  time.Duration
 }
 
-func completedExecutionStatus() *executorpb.ExecutionStatus {
-	return &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}
+func newFakeExecutor(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner, client *execfake.Client, configs ...fakeExecutorConfig) *Executor {
+	t.Helper()
+	if client.OnOpenSession == nil {
+		client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+			sessionID := request.GetResumeSessionId()
+			if sessionID == "" {
+				sessionID = "retained-executor"
+			}
+			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+				Status: execfake.CompletedStatus(), ExecutionSessionId: sessionID,
+				Shell: &executorpb.ExecutionShell{Name: "bash", Path: "/bin/bash"},
+			}}, nil
+		}
+	}
+	var config fakeExecutorConfig
+	if len(configs) != 0 {
+		config = configs[0]
+	}
+	if config.scope == nil {
+		config.scope = &executorpb.ExecutionScope{SessionId: owner.ConversationID}
+	}
+	if config.initializeTimeout == 0 {
+		config.initializeTimeout = time.Minute
+	}
+	if config.reconnectTimeout == 0 {
+		config.reconnectTimeout = 2 * time.Minute
+	}
+	state, err := store.ExecutionState(t.Context(), owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	needsRemote := false
+	for _, process := range state.Processes {
+		if process.Status != executionstate.ProcessExited && process.Status != executionstate.ProcessExitedUnread && process.Status != executionstate.ProcessAbandoned {
+			needsRemote = true
+			break
+		}
+	}
+	initialSessionID := ""
+	if needsRemote {
+		conversation, err := store.Read(t.Context(), owner)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if conversation.ExecutorSession != nil {
+			initialSessionID = *conversation.ExecutorSession
+		}
+	}
+	processChanges := &processChangeBroadcaster{}
+	executor := &Executor{
+		store: store, owner: owner, cwd: "/tmp", processLocks: map[string]*sync.Mutex{}, processChanges: processChanges,
+	}
+	executor.workspacePrepared.Store(true)
+	bindings := &storeBindings{store: store, owner: owner, workspacePrepared: &executor.workspacePrepared}
+	executor.transport = transport.New(transport.Config{
+		Client: client, Journal: bindings, Bindings: bindings, ProcessChanges: processChanges,
+		Scope: config.scope, Lifetime: t.Context(), InitialSessionID: initialSessionID,
+		RPCTimeout: config.rpcTimeout, InitializeTimeout: config.initializeTimeout, ReconnectTimeout: config.reconnectTimeout,
+	})
+	t.Cleanup(func() { _ = executor.close() })
+	return executor
+}
+
+// Establish the live session before a test simulates losing its read reply.
+func establishFakeExecutorSession(t *testing.T, e *Executor, client *execfake.Client) {
+	t.Helper()
+	recoverSession := client.OnOpenSession
+	client.OnOpenSession = func(ctx context.Context, request *executorpb.OpenSessionRequest) (grpc.ServerStreamingClient[executorpb.OpenSessionResponse], error) {
+		return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{
+			Status: execfake.CompletedStatus(), ExecutionSessionId: request.GetResumeSessionId(),
+		}}, nil
+	}
+	_, err := operationValue(e.transport.EnsureSession(t.Context()))
+	client.OnOpenSession = recoverSession
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func intentResultForDB(t *testing.T, store *sessionstore.Store, id string) (map[string]any, error) {
@@ -2272,7 +1598,7 @@ func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
 	if err := store.ProcessResult(t.Context(), successor, "retained", nil, "running", nil, false); !errors.As(err, new(*sessionstore.LostOwnershipError)) {
 		t.Fatalf("successor changed old remote process state: %v", err)
 	}
-	executor := &Executor{store: store, owner: successor, processLocks: map[string]*sync.Mutex{}}
+	executor := &Executor{store: store, owner: successor, processLocks: map[string]*sync.Mutex{}, processChanges: &processChangeBroadcaster{}}
 	invoked, err := executor.Invoke(t.Context(), "write_stdin", json.RawMessage(`{"session_id":4242}`))
 	result, _ := invoked.(*unifiedExecResult)
 	if err != nil || result == nil || result.Output != "retained-output" || result.ExitCode == nil || *result.ExitCode != 0 || result.SessionID != nil {

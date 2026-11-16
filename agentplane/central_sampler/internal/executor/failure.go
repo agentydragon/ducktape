@@ -4,28 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor/transport"
+
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
-)
-
-type executionMethod string
-
-const (
-	executorMethodInitialize       executionMethod = "initialize"
-	executorMethodExecCommand      executionMethod = "exec_command"
-	executorMethodApplyPatch       executionMethod = "apply_patch"
-	executorMethodProcessStart     executionMethod = "process/start"
-	executorMethodProcessRead      executionMethod = "process/read"
-	executorMethodProcessWrite     executionMethod = "process/write"
-	executorMethodProcessSignal    executionMethod = "process/signal"
-	executorMethodProcessTerminate executionMethod = "process/terminate"
-	executorMethodFSGetMetadata    executionMethod = "fs/getMetadata"
-	executorMethodFSOpen           executionMethod = "fs/open"
-	executorMethodFSReadBlock      executionMethod = "fs/readBlock"
-	executorMethodFSClose          executionMethod = "fs/close"
-	executorMethodSessionNotice    executionMethod = "session_notification"
 )
 
 // executionFailureRecord keeps native observations typed until they reach a storage or
@@ -33,7 +17,7 @@ const (
 // RequestOutcome describes admission of this particular RPC and may differ for process/read.
 type executionFailureRecord struct {
 	message               string
-	method                executionMethod
+	method                transport.Method
 	phase                 string
 	intentID              string
 	processID             string
@@ -42,14 +26,10 @@ type executionFailureRecord struct {
 	remoteOutcome         sessionstore.NestedOutcome
 	requestOutcome        *sessionstore.NestedOutcome
 	automaticReplay       bool
-	environmentState      fmt.Stringer
+	environmentState      string
 	currentIncarnationUID string
 	transportError        string
 	output                *outputbuffer.Buffer
-}
-
-type executionFailureSource interface {
-	executionFailureRecord() executionFailureRecord
 }
 
 // executionFailureEvidence is a JSON boundary DTO. Its pointers retain the distinction
@@ -57,7 +37,7 @@ type executionFailureSource interface {
 type executionFailureEvidence struct {
 	Status                sessionstore.IntentResultStatus `json:"status"`
 	Message               string                          `json:"message,omitempty"`
-	Method                executionMethod                 `json:"method"`
+	Method                transport.Method                `json:"method"`
 	Phase                 string                          `json:"phase,omitempty"`
 	IntentID              string                          `json:"intent_id,omitempty"`
 	ProcessID             string                          `json:"process_id,omitempty"`
@@ -95,9 +75,7 @@ func (f executionFailureRecord) evidence(includeMessage bool) executionFailureEv
 	if includeMessage {
 		evidence.Message = f.message
 	}
-	if f.environmentState != nil {
-		evidence.EnvironmentState = f.environmentState.String()
-	}
+	evidence.EnvironmentState = f.environmentState
 	if f.output != nil {
 		buffered := f.output.RetainedBytes()
 		text := tooloutput.LossyUTF8(buffered)
@@ -108,7 +86,7 @@ func (f executionFailureRecord) evidence(includeMessage bool) executionFailureEv
 		evidence.BufferedOutputBase64 = &base64
 		evidence.BufferedBytes = &bufferedBytes
 		evidence.OmittedBytes = &omittedBytes
-		if includeMessage && f.method == executorMethodProcessRead && f.output.TotalBytes() > 0 {
+		if includeMessage && f.method == transport.MethodProcessRead && f.output.TotalBytes() > 0 {
 			observed := observedOutputEvidence(f.output)
 			evidence.ObservedOutput = &observed
 		}
@@ -131,7 +109,7 @@ type observedProcessOutput struct {
 
 type observedProcessFailure struct {
 	Message               string                      `json:"message"`
-	Method                executionMethod             `json:"method"`
+	Method                transport.Method            `json:"method"`
 	Phase                 string                      `json:"phase,omitempty"`
 	IntentID              string                      `json:"intent_id,omitempty"`
 	ProcessID             string                      `json:"process_id,omitempty"`
@@ -155,10 +133,8 @@ func executionFailureMessage(f executionFailureRecord) (string, error) {
 		RemoteOutcome: f.remoteOutcome, RequestOutcome: f.requestOutcome,
 		AutomaticReplay: f.automaticReplay, CurrentIncarnationUID: f.currentIncarnationUID,
 	}
-	if f.environmentState != nil {
-		failure.EnvironmentState = f.environmentState.String()
-	}
-	if f.method == executorMethodProcessRead && f.output != nil && f.output.TotalBytes() > 0 {
+	failure.EnvironmentState = f.environmentState
+	if f.method == transport.MethodProcessRead && f.output != nil && f.output.TotalBytes() > 0 {
 		observed := observedOutputEvidence(f.output)
 		failure.ObservedOutput = &observed
 	}
@@ -169,23 +145,52 @@ func executionFailureMessage(f executionFailureRecord) (string, error) {
 	return string(encoded), err
 }
 
-func observedProcessFailureMessage(transport *executorTransportError) (string, error) {
-	return executionFailureMessage(executionFailureRecord{
-		message: transport.Error(), method: transport.method, phase: transport.phase,
-		intentID: transport.intentID, processID: transport.processID,
-		executionSessionID: transport.retainedSession, afterSequence: transport.afterSequence,
-		remoteOutcome: sessionstore.NestedUnknown, automaticReplay: false, output: transport.output,
-	})
+// findTransportFailure retains error-tree matching across wrapped and joined failures.
+// Settlement searches for admission failures before the remote failure that caused them.
+func findTransportFailure(err error, kinds ...transport.FailureKind) *transport.Failure {
+	if failure, ok := err.(*transport.Failure); ok {
+		for _, kind := range kinds {
+			if failure.Kind == kind {
+				return failure
+			}
+		}
+	}
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		for _, cause := range wrapped.Unwrap() {
+			if failure := findTransportFailure(cause, kinds...); failure != nil {
+				return failure
+			}
+		}
+	case interface{ Unwrap() error }:
+		return findTransportFailure(wrapped.Unwrap(), kinds...)
+	}
+	return nil
 }
 
-func (e *executorNotDispatchedError) executionFailureRecord(remoteOutcome sessionstore.NestedOutcome) executionFailureRecord {
-	requestOutcome := sessionstore.NestedNotDispatched
-	return executionFailureRecord{
-		message: e.Error(), method: e.method, phase: "connection", processID: e.processID,
-		executionSessionID: e.retainedSession, afterSequence: e.afterSequence,
-		remoteOutcome: remoteOutcome, requestOutcome: &requestOutcome, automaticReplay: false,
-		transportError: e.cause.Error(), output: e.output,
+// executionFailureProjection belongs to the model-tool boundary. Raw intent evidence
+// stays in transport; this projection also carries the process settlement facts.
+func executionFailureProjection(failure *transport.Failure) executionFailureRecord {
+	record := executionFailureRecord{
+		message: failure.Error(), method: failure.Method, phase: failure.Phase,
+		intentID: failure.IntentID, processID: failure.ProcessID,
+		executionSessionID: failure.ExecutionSessionID, afterSequence: failure.AfterSequence,
+		remoteOutcome: nestedOutcome(failure.RemoteOutcome), requestOutcome: nestedOutcomePointer(failure.RequestOutcome),
+		automaticReplay: failure.AutomaticReplay, environmentState: failure.EnvironmentState,
+		currentIncarnationUID: failure.CurrentIncarnationUID, transportError: failure.TransportError,
+		output: failure.Output,
 	}
+	switch failure.Kind {
+	case transport.FailureTransport:
+		record.remoteOutcome = sessionstore.NestedUnknown
+		record.transportError = failure.Cause.Error()
+	case transport.FailureNotDispatched:
+		record.phase = "connection"
+		record.transportError = failure.Cause.Error()
+		requestOutcome := sessionstore.NestedNotDispatched
+		record.requestOutcome = &requestOutcome
+	}
+	return record
 }
 
 func observedOutputEvidence(output *outputbuffer.Buffer) observedProcessOutput {
