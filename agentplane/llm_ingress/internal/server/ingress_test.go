@@ -39,6 +39,10 @@ import (
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 )
@@ -981,6 +985,39 @@ func TestRealBinaryStartsWithSettingsFileAndExplicitSecret(t *testing.T) {
 			t.Fatalf("binary did not become healthy (exit %v); logs: %s", processErr, logs.String())
 		}
 		time.Sleep(25 * time.Millisecond)
+	}
+
+	// The deployed healthprobe verifies the server without presenting a certificate.
+	anonymousTLS := clientTLS.Clone()
+	anonymousTLS.Certificates = nil
+	anonymousTLS.GetClientCertificate = nil
+	anonymousConn, err := grpc.NewClient(address, grpc.WithTransportCredentials(credentials.NewTLS(anonymousTLS)), grpc.WithNoProxy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer anonymousConn.Close()
+	probeCtx, cancelProbe := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancelProbe()
+	healthResponse, err := healthpb.NewHealthClient(anonymousConn).Check(probeCtx, &healthpb.HealthCheckRequest{})
+	if err != nil || healthResponse.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+		t.Fatalf("certificate-free health probe: %v, %v", healthResponse, err)
+	}
+	_, err = modelconfigpb.NewModelConfigServiceClient(anonymousConn).GetModelConfig(probeCtx, &modelconfigpb.GetModelConfigRequest{Model: "configured/model"})
+	if status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("anonymous model config: %v, want Unauthenticated", err)
+	}
+
+	anonymousClient := &http.Client{Transport: &http.Transport{TLSClientConfig: anonymousTLS}}
+	defer anonymousClient.CloseIdleConnections()
+	healthHTTP, _ := request(t, anonymousClient, http.MethodGet, baseURL+"/healthz", "", http.Header{})
+	if healthHTTP.StatusCode != http.StatusOK {
+		t.Fatalf("anonymous HTTP health: status=%d", healthHTTP.StatusCode)
+	}
+	for _, headers := range []http.Header{{}, {"Authorization": {"Bearer retired-token"}}} {
+		response, _ := request(t, anonymousClient, http.MethodPost, baseURL+"/v1/messages", `{"messages":[]}`, headers)
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("anonymous inference: status=%d, want 401", response.StatusCode)
+		}
 	}
 
 	credentials, err := verified.ClientCredentials(peertls.LLMIngressURI)

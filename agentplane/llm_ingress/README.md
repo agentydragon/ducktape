@@ -76,7 +76,8 @@ served only while that live Identity is the incarnation the credential names. An
 credential's Pod when one is recorded. Only configured service actors with typed delegation may
 claim a central Session. TLS is required because inference HTTP and
 native gRPC share the listener. Kubernetes exec probes use `/healthprobe` against its verified TLS
-health service.
+health service without a client certificate. HTTP `GET /healthz` is also public.
+Protected HTTP and gRPC methods require verified client proof; a bearer never grants access.
 
 ## Per-model client configuration
 

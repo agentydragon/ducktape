@@ -240,6 +240,8 @@ func (c Config) ServerCredentialsWithServices(localURI string) (credentials.Tran
 }
 
 // TLSConfigWithServices is the HTTP equivalent of ServerCredentialsWithServices.
+// Missing certificates reach public health handlers; protected handlers require
+// authentication, and every presented client certificate is verified.
 func (c Config) TLSConfigWithServices(localURI string) (*tls.Config, error) {
-	return c.tlsConfig(localURI, false, true)
+	return c.tlsConfig(localURI, true, true)
 }
