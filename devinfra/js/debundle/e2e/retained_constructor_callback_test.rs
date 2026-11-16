@@ -1,6 +1,6 @@
 //! Constructor callback retention is independent of call timing and purity.
 
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export class Box { constructor(callback, compare, metadata) { this.callback = callback; this.compare = compare; this.metadata = metadata; } invoke() { return this.callback(); } }\n";
@@ -219,15 +219,7 @@ fn retention_does_not_assert_constructor_purity_or_remove_effect_order() {
         .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer").with_retained_callback_constructor("Box", 1, &[0]).build()]));
     assert_preserved_entry_output(&fixture, "before\nconstruct\nafter 42\n");
     let graph = fixture.dependency_graph();
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .expect("wrapped owner");
+    let wrapped = node_declaring(&graph, "wrapped");
     let purity = serde_json::to_value(&wrapped.purity).unwrap();
     assert_eq!(purity["kind"], "not_pure");
     assert!(

@@ -2,7 +2,7 @@ use analysis::{
     DependencyGraphReport, EffectCellReport, reports::schema::BindingEffectAuthorityReport,
 };
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 fn assert_property_frontier(
@@ -371,15 +371,7 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
     ));
     assert_preserved_entry_output(&fixture, "7 42\n");
     let graph = fixture.dependency_graph();
-    let result = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "result")
-        })
-        .expect("root member-call result source unit");
+    let result = node_declaring(&graph, "result");
     let execution = result
         .synchronous_execution
         .as_ref()
@@ -395,15 +387,7 @@ fn root_member_callee_is_selected_before_a_mutating_argument() {
         2,
         "both the mutating argument and saved member target are represented: {receipt:#?}"
     );
-    let early = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "early")
-        })
-        .expect("selected callback's observed binding source unit");
+    let early = node_declaring(&graph, "early");
     assert!(
         graph.edges.iter().any(|edge| {
             edge.source == result.id

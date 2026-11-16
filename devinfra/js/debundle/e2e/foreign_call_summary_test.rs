@@ -3,7 +3,7 @@
 //! importer; anything that can run other code stays conservative.
 
 use analysis::analysis_provenance::InferenceRule;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 const BOX: &str = "export class Box {\n  #callback;\n  #cache = new WeakMap();\n  constructor(callback, label) { this.#callback = callback; }\n  invoke() { return this.#callback(); }\n}\n";
@@ -42,15 +42,7 @@ fn derived_constructor_retains_its_callback_until_instance_use() {
         serde_json::json!(["weak_map"])
     );
     let graph = fixture.dependency_graph();
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .expect("wrapped owner");
+    let wrapped = node_declaring(&graph, "wrapped");
     let execution = wrapped
         .synchronous_execution
         .as_ref()
@@ -821,15 +813,7 @@ fn equal_retained_inputs_do_not_prove_result_identity_or_shape() {
     );
     assert_preserved_entry_output(&fixture, "false true\n");
     let graph = fixture.dependency_graph();
-    let selected = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "selected")
-        })
-        .expect("selected owner");
+    let selected = node_declaring(&graph, "selected");
     assert!(
         !selected
             .synchronous_execution

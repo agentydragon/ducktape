@@ -1,6 +1,6 @@
 //! Exposes the predicates behind export-reentry policy selection.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 use serde_json::Value;
 use std::path::PathBuf;
@@ -93,15 +93,7 @@ fn selected_builtin_leaves_are_reported_with_source_uses() {
         1
     );
     let graph = fixture.dependency_graph();
-    let value = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "value")
-        })
-        .expect("exported imported-call unit");
+    let value = node_declaring(&graph, "value");
     assert!(
         !value.purity.is_pure(),
         "builtin leaf must not grant call purity"

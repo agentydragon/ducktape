@@ -1,7 +1,7 @@
 //! A local array content mutation must stay ordered before a separate reader.
 use analysis::DependencyGraphReport;
 use analysis_model::DepKind;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_ordinal};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_ordinal};
 use debundle_e2e_support::*;
 use spec::{IntrinsicFamilies, IntrinsicFamily, IntrinsicsNeverWritten};
 
@@ -678,15 +678,7 @@ fn primitive_push_composes_with_callable_effects_and_tracks_later_lengths() {
     assert_preserved_entry_output(&fixture, "2 4 1,2,1,2 42\n");
     let graph = fixture.dependency_graph();
     for binding in ["first", "second"] {
-        let node = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|item| item.binding == binding)
-            })
-            .expect("push result owner");
+        let node = node_declaring(&graph, binding);
         let execution = node
             .synchronous_execution
             .as_ref()
@@ -719,15 +711,7 @@ fn pooled_array_allocations_do_not_restore_descriptor_proofs() {
         let fixture = run_fixture_with_graphs(FixtureOpts::new(&source, vec![]));
         assert_preserved_entry_output(&fixture, "1 1\n");
         let graph = fixture.dependency_graph();
-        let execution = graph
-            .nodes
-            .iter()
-            .find(|node| {
-                node.declared_bindings
-                    .iter()
-                    .any(|item| item.binding == "result")
-            })
-            .expect("push result owner")
+        let execution = node_declaring(&graph, "result")
             .synchronous_execution
             .as_ref()
             .expect("execution report");

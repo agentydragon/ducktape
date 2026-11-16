@@ -18,7 +18,7 @@
 //! write-after-write. Any feedback arc set that breaks the SCC cuts at
 //! least one arc of each shape.
 
-use debundle_e2e_graph_support::{FixtureGraphExt, assert_cycle_edge_source_units};
+use debundle_e2e_graph_support::{FixtureGraphExt, assert_cycle_edge_source_units, node_declaring};
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 
@@ -200,11 +200,7 @@ fn cut_names_the_opaque_barrier_and_its_unknown_call() {
     // its binding timelines and therefore which edges the feedback cut picks.
     let heap_rejected = run_rejection_fixture_with_graphs(heap_frontier_cycle_fixture());
     let heap_graph = heap_rejected.dependency_graph();
-    let probe_node = heap_graph
-        .nodes
-        .iter()
-        .find(|node| node.declared_bindings.iter().any(|b| b.binding == "probe"))
-        .expect("probe source unit");
+    let probe_node = node_declaring(&heap_graph, "probe");
     let execution = serde_json::to_value(&probe_node.synchronous_execution)
         .expect("synchronous execution serializes");
     let heap = &execution["heap_frontier"];

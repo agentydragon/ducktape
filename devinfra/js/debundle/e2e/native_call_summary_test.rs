@@ -1,7 +1,7 @@
 //! Guarded native summaries describe both call timing and returned values.
 
 use analysis::analysis_provenance::InferenceRule;
-use debundle_e2e_graph_support::{FixtureGraphExt, source_unit_for_binding};
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring, source_unit_for_binding};
 use debundle_e2e_support::*;
 
 fn split_opts<'a>(source: &'a str, members: &[Member], anonymous: &[&str]) -> FixtureOpts<'a> {
@@ -77,15 +77,7 @@ console.log(typeof values, typeof frozen.callback);
     assert_preserved_entry_output(&fixture, "object function\n");
 
     let graph = fixture.dependency_graph();
-    let values = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "values")
-        })
-        .expect("Map construction source unit");
+    let values = node_declaring(&graph, "values");
     let identity = values
         .synchronous_execution
         .as_ref()
@@ -118,15 +110,7 @@ console.log(normalized);
     assert_preserved_entry_output(&fixture, "7\n");
 
     let graph = fixture.dependency_graph();
-    let normalized = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "normalized")
-        })
-        .expect("Math call source unit");
+    let normalized = node_declaring(&graph, "normalized");
     assert!(
         !normalized
             .synchronous_execution

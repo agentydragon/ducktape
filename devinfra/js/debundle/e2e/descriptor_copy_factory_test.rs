@@ -1,7 +1,7 @@
 //! An audited descriptor-copy provider retains input methods and getters only
 //! through its returned ordinary wrapper.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 const PROVIDER: &str = "export function wrap(definition) { const create = definition.create; const extra = { create: (...args) => create.call(definition, ...args), call: () => create.call(definition) }; return Object.assign(Object.defineProperties({ enabled: () => true, userFacingName: () => definition.name }, Object.getOwnPropertyDescriptors(definition)), extra); }";
@@ -43,15 +43,7 @@ fn copied_getter_and_method_remain_deferred_until_returned_wrapper_use() {
     );
     assert_preserved_entry_output(&fixture, "42 42\n");
     let graph = fixture.dependency_graph();
-    let wrapped = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "wrapped")
-        })
-        .expect("wrapped source unit");
+    let wrapped = node_declaring(&graph, "wrapped");
     assert!(
         !wrapped.purity.is_pure(),
         "the provider call and its possible effects remain impure"

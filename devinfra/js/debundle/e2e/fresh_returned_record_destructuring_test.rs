@@ -1,7 +1,7 @@
 //! Immediate reads of known own data fields do not run getter code.
 //! The factory's eager effects and unsupported result shapes remain ordered.
 
-use debundle_e2e_graph_support::FixtureGraphExt;
+use debundle_e2e_graph_support::{FixtureGraphExt, node_declaring};
 use debundle_e2e_support::*;
 
 fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
@@ -11,15 +11,7 @@ fn first_reasons(source: &str) -> Vec<analysis::PurityRule> {
 fn first_reasons_of(opts: FixtureOpts<'_>) -> Vec<analysis::PurityRule> {
     let rejected = run_rejection_fixture_with_graphs(opts);
     let graph = rejected.dependency_graph();
-    let first = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|binding| binding.binding == "first")
-        })
-        .expect("first source unit");
+    let first = node_declaring(&graph, "first");
     let analysis::Purity::NotPure { reasons } = &first.purity else {
         panic!("first should retain an effect reason");
     };

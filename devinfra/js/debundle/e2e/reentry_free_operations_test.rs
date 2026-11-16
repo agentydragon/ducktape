@@ -4,7 +4,7 @@ use debundle_e2e_graph_support::reflective_provider::{
     REFLECT_CHUNKS, REFLECT_FILES, unknown_receiver_witness,
 };
 use debundle_e2e_graph_support::{
-    FixtureGraphExt, json_has_unknown_call_target, json_node_declaring,
+    FixtureGraphExt, json_has_unknown_call_target, json_node_declaring, node_declaring,
 };
 use debundle_e2e_support::*;
 
@@ -50,15 +50,7 @@ fn promise_reentry_split() -> FixtureOpts<'static> {
 
 fn assert_host_call_remains_impure(fixture: &Fixture, binding: &str) {
     let graph = fixture.dependency_graph();
-    let node = graph
-        .nodes
-        .iter()
-        .find(|node| {
-            node.declared_bindings
-                .iter()
-                .any(|entry| entry.binding == binding)
-        })
-        .expect("host call source unit");
+    let node = node_declaring(&graph, binding);
     assert!(!node.purity.is_pure(), "host timing must not grant purity");
 }
 
