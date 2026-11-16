@@ -10,13 +10,12 @@ import (
 	"sync"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
-
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
@@ -115,7 +114,7 @@ func New(ctx context.Context, store *sessionstore.Store, owner sessionstore.Owne
 	}
 	needsRemote := false
 	for _, process := range state.Processes {
-		if process.Status != protocol.ProcessExited && process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessAbandoned {
+		if process.Status != executionstate.ProcessExited && process.Status != executionstate.ProcessExitedUnread && process.Status != executionstate.ProcessAbandoned {
 			needsRemote = true
 		}
 	}
@@ -204,7 +203,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				return fmt.Errorf("inspect process %s after failed executor reconnect: %w", notDispatched.processID, processErr)
 			}
 			outcome = sessionstore.NestedUnknown
-			if process.Status == protocol.ProcessStarting {
+			if process.Status == executionstate.ProcessStarting {
 				outcome = sessionstore.NestedNotDispatched
 			}
 			afterSequence = notDispatched.afterSequence
@@ -212,7 +211,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 				afterSequence = process.AfterSequence
 			}
 			if outcome == sessionstore.NestedNotDispatched {
-				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, protocol.ProcessExited, nil, true); settleErr != nil {
+				if settleErr := e.store.ProcessResult(ctx, e.owner, notDispatched.processID, afterSequence, executionstate.ProcessExited, nil, true); settleErr != nil {
 					return fmt.Errorf("settle not-dispatched process %s after failed executor reconnect: %w", notDispatched.processID, settleErr)
 				}
 			} else if abandonErr := e.store.AbandonProcess(ctx, e.owner, notDispatched.processID, afterSequence, notDispatched.output, outcome, notDispatched.retainedSession); abandonErr != nil {
@@ -267,10 +266,10 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 			if processErr != nil {
 				return fmt.Errorf("inspect process %s after rejected process/read: %w", rejected.processID, processErr)
 			}
-			if process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
+			if process.Status == executionstate.ProcessExited || process.Status == executionstate.ProcessExitedUnread {
 				return &toolcontract.Rejection{Message: rejected.Error()}
 			}
-			if process.Status != protocol.ProcessAbandoned {
+			if process.Status != executionstate.ProcessAbandoned {
 				afterSequence := rejected.afterSequence
 				if afterSequence == nil {
 					afterSequence = process.AfterSequence
@@ -302,13 +301,13 @@ func (e *Executor) settleExecutionFailure(ctx context.Context, failure execution
 	if err != nil {
 		return fmt.Errorf("inspect process %s after structured execution failure: %w", failure.processID, err)
 	}
-	if failure.method == executorMethodProcessStart && failure.remoteOutcome == sessionstore.NestedNotDispatched && process.Status == protocol.ProcessStarting {
-		if err := e.store.ProcessResult(ctx, e.owner, failure.processID, failure.afterSequence, protocol.ProcessExited, nil, true); err != nil {
+	if failure.method == executorMethodProcessStart && failure.remoteOutcome == sessionstore.NestedNotDispatched && process.Status == executionstate.ProcessStarting {
+		if err := e.store.ProcessResult(ctx, e.owner, failure.processID, failure.afterSequence, executionstate.ProcessExited, nil, true); err != nil {
 			return fmt.Errorf("settle process %s after known not-dispatched start: %w", failure.processID, err)
 		}
 		return nil
 	}
-	if failure.remoteOutcome != sessionstore.NestedUnknown || process.Status == protocol.ProcessAbandoned || process.Status == protocol.ProcessExited || process.Status == protocol.ProcessExitedUnread {
+	if failure.remoteOutcome != sessionstore.NestedUnknown || process.Status == executionstate.ProcessAbandoned || process.Status == executionstate.ProcessExited || process.Status == executionstate.ProcessExitedUnread {
 		return nil
 	}
 	if err := e.store.AbandonProcess(ctx, e.owner, failure.processID, failure.afterSequence, failure.output, sessionstore.NestedUnknown, failure.executionSessionID); err != nil {

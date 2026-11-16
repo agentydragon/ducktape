@@ -1,33 +1,33 @@
-package sessionstore
+package environmentcontext
 
 import (
 	"strings"
 	"time"
 )
 
-// EnvironmentContext is the model-visible environment baseline that later updates diff against.
+// Context is the model-visible environment baseline that later updates diff against.
 // Codex rust-v0.162.1 core/src/context/world_state/environment.rs EnvironmentsSnapshot, for the
 // single configured environment a central Session binds, independently of its reachability.
 // Network, filesystem, permission
 // profile and subagents sections are omitted: Agentplane owns those boundaries.
 // TODO: Add `<timezone>` once the sampler has a configured or executor-reported timezone.
-type EnvironmentContext struct {
+type Context struct {
 	Cwd         string  `json:"cwd"`
 	Shell       *string `json:"shell,omitempty"`
 	CurrentDate string  `json:"current_date"`
 }
 
-// currentEnvironmentContext mirrors Codex's local date rendering (`chrono::Local`, `%Y-%m-%d`)
+// Current mirrors Codex's local date rendering (`chrono::Local`, `%Y-%m-%d`)
 // from core/src/session/world_state.rs Session::build_world_state_for_step.
-func currentEnvironmentContext(cwd string, shell *string, now time.Time) EnvironmentContext {
-	return EnvironmentContext{Cwd: cwd, Shell: shell, CurrentDate: now.Local().Format("2006-01-02")}
+func Current(cwd string, shell *string, now time.Time) Context {
+	return Context{Cwd: cwd, Shell: shell, CurrentDate: now.Local().Format("2006-01-02")}
 }
 
-// EnvironmentContextUpdate renders the `<environment_context>` fragment that advances previous to
+// Update renders the `<environment_context>` fragment that advances previous to
 // current, or "" when nothing model-visible changed. A nil previous renders the full context.
 // Codex rust-v0.162.1 core/src/context/world_state/environment.rs EnvironmentsState::render_diff
 // and RenderedEnvironments::body, single-environment ("legacy single") shape.
-func EnvironmentContextUpdate(previous *EnvironmentContext, current EnvironmentContext) string {
+func Update(previous *Context, current Context) string {
 	environmentChanged := previous == nil || previous.Cwd != current.Cwd || shellChanged(previous.Shell, current.Shell)
 	if !environmentChanged && previous.CurrentDate == current.CurrentDate {
 		return ""

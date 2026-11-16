@@ -11,7 +11,6 @@ go_library(
         "evidence.go",
         "instructions.go",
         "provider_hooks.go",
-        "status.go",
         "tool_definitions.go",
         "tool_invocation.go",
         "tool_surface.go",
@@ -23,6 +22,7 @@ go_library(
         "//agentplane/history_service/internal/ingress:__pkg__",  # real ingress exporter integration test
     ],
     deps = [
+        "//agentplane/central_sampler/internal/executionstate",
         "//agentplane/proto:event_go_proto",
     ],
 )

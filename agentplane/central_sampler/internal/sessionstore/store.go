@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
@@ -174,7 +175,7 @@ func scanConversation(row rowScanner) (*Conversation, error) {
 		conversation.ExecutorShell = &shell.String
 	}
 	if len(environment) != 0 {
-		conversation.EnvironmentContext = &EnvironmentContext{}
+		conversation.EnvironmentContext = &environmentcontext.Context{}
 		if err := json.Unmarshal(environment, conversation.EnvironmentContext); err != nil {
 			return nil, err
 		}

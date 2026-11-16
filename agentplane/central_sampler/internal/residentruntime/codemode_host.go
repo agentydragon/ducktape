@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -78,7 +78,7 @@ func (j codeJournal) ProtocolEvent(ctx context.Context, operationID string, phas
 }
 
 func (j codeJournal) CellStarted(ctx context.Context, cellID string) error {
-	return j.store.CellResult(ctx, j.owner, cellID, protocol.CellLive)
+	return j.store.CellResult(ctx, j.owner, cellID, executionstate.CellLive)
 }
 
 func (r *CodeMode) delegate(ctx context.Context, session *codemode.Session, request codemode.Delegate) (codemode.DelegateResult, codemode.DelegateResult, error) {

@@ -1,32 +1,18 @@
 package sessionstore
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"strings"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
-	"google.golang.org/protobuf/proto"
 )
 
-// ProviderRequestPreparation is the immutable input needed to prepare a native request after the
-// Store has acquired its transaction locks and checked the current owner, interrupt, and pending
-// intent state. The Store uses the locked Conversation for history and instructions.
-type ProviderRequestPreparation struct {
-	ModelConfig                samplersettings.ModelConfig
-	SessionEffort              string
-	SessionConfiguration       []byte
-	Attribution                protocol.SessionAttribution
-	Compaction                 bool
-	AnthropicCompactionRequest *anthropic.Request
-}
-
-func requestPreparationFor(preparation *ProviderRequestPreparation) requestPreparation {
+func requestPreparationFor(preparation *providerrequest.Preparation) requestPreparation {
 	if preparation == nil {
 		return nil
 	}
@@ -35,100 +21,82 @@ func requestPreparationFor(preparation *ProviderRequestPreparation) requestPrepa
 	}
 }
 
-func prepareProviderRequest(store *contentStore, conversation *Conversation, metadata ProviderRequest, preparation ProviderRequestPreparation) (ProviderRequest, []byte, error) {
+func prepareProviderRequest(store *contentStore, conversation *Conversation, metadata ProviderRequest, preparation providerrequest.Preparation) (ProviderRequest, []byte, error) {
 	if metadata.API != preparation.ModelConfig.API || metadata.API != conversation.API {
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
-	if preparation.Compaction && metadata.API == protocol.APIStyleAnthropicMessages {
-		if preparation.AnthropicCompactionRequest == nil {
-			return ProviderRequest{}, nil, protocol.ErrInvalid
-		}
-		previous, err := store.previousRequest(conversation.ID)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		body := *preparation.AnthropicCompactionRequest
-		if previous.ProfileID != "" {
-			body, err = anthropic.FreezeRequest(store, previous.ProfileID, body)
+	previous, err := store.previousRequest(conversation.ID)
+	if err != nil {
+		return ProviderRequest{}, nil, err
+	}
+	snapshot := providerrequest.Snapshot{API: conversation.API, PreviousProfileID: previous.ProfileID}
+	if conversation.Instructions != nil {
+		instructions := *conversation.Instructions
+		snapshot.Instructions = &instructions
+	}
+	if metadata.API == protocol.APIStyleResponses && previous.ProfileID != "" {
+		refs := previous.PrefixIDs
+		if len(refs) == 0 {
+			refs, err = store.loadContext(previous.ContextID)
 			if err != nil {
 				return ProviderRequest{}, nil, err
 			}
 		}
-		profile, ids, err := anthropic.StoreRequest(store, body)
-		if err != nil {
-			return ProviderRequest{}, nil, err
+		if len(refs) > 0 {
+			snapshot.PreviousFirstID = refs[0]
 		}
-		return finishStoredRequest(store, metadata, profile, ids)
 	}
-	switch metadata.API {
-	case protocol.APIStyleResponses:
-		tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		params := responses.RequestParams{
-			Model: preparation.ModelConfig.ProviderModel, Effort: preparation.SessionEffort,
-			Attribution: preparation.Attribution, Instructions: conversation.Instructions, Tools: tools,
-		}
-		var body responses.Request
-		if preparation.Compaction {
-			body, err = responses.BuildCompactionRequest(params, preparation.ModelConfig.Responses, preparation.ModelConfig.ExecEncoding)
-		} else {
-			body, err = responses.BuildRequest(params, preparation.ModelConfig.Responses, preparation.ModelConfig.ExecEncoding)
-		}
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		return prepareResponsesRequest(store, conversation, metadata, body, preparation.ModelConfig.Responses, preparation.ModelConfig.ExecEncoding, preparation.Compaction)
-
-	case protocol.APIStyleAnthropicMessages:
-		config := preparation.ModelConfig.AnthropicMessages
-		if config == nil {
+	if metadata.API == protocol.APIStyleAnthropicMessages {
+		source, ok := conversation.Context().(*anthropic.Context)
+		if !ok {
 			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
-		effort := preparation.SessionEffort
-		if config.PerMessageEffort {
-			launch := &samplerpb.CreateSessionRequest{}
-			if err := proto.Unmarshal(preparation.SessionConfiguration, launch); err != nil {
-				return ProviderRequest{}, nil, err
+		snapshot.PreviousMessageID = anthropic.PreviousMessageID(source)
+	}
+	recipe, err := providerrequest.Prepare(store, snapshot, preparation)
+	if err != nil {
+		return ProviderRequest{}, nil, err
+	}
+	metadata.ProfileID = recipe.ProfileID
+	metadata.PrefixIDs = append(metadata.PrefixIDs, recipe.PrefixIDs...)
+	if recipe.SuffixIDs != nil {
+		metadata.SuffixIDs = recipe.SuffixIDs
+	}
+	switch history := recipe.History.(type) {
+	case providerrequest.Complete:
+		return finishStoredRequest(store, metadata, recipe.ProfileID, history.IDs)
+	case providerrequest.Projection:
+		metadata.ProjectionKey = history.Key
+		var project func(int) ([]json.RawMessage, error)
+		switch metadata.API {
+		case protocol.APIStyleResponses:
+			source := conversation.Context().(*responses.Context)
+			project = func(start int) ([]json.RawMessage, error) {
+				return source.ProjectRecords(start, preparation.ModelConfig.Responses, preparation.ModelConfig.ExecEncoding)
 			}
-			effort = launch.GetSpec().GetReasoningEffort()
+		case protocol.APIStyleAnthropicMessages:
+			project = conversation.Context().(*anthropic.Context).ProjectRecords
+		default:
+			return ProviderRequest{}, nil, protocol.ErrInvalid
 		}
-		tools, err := toolcontract.ModelSurface(preparation.ModelConfig.ExecEncoding)
+		metadata.SourceContextID, metadata.ContextID, err = store.projectHistory(conversation, history.Key, project)
 		if err != nil {
 			return ProviderRequest{}, nil, err
 		}
-		context, ok := conversation.Context().(*anthropic.Context)
-		if !ok {
-			return ProviderRequest{}, nil, fmt.Errorf("Anthropic conversation context has type %T: %w", conversation.Context(), protocol.ErrInvalid)
-		}
-		params := anthropic.RequestParams{
-			Context: context, Model: preparation.ModelConfig.ProviderModel, Effort: effort,
-			Instructions: conversation.Instructions, Tools: tools,
-		}
-		params.Context = nil // Metadata only; the codec projects the stable history incrementally.
-		body, err := anthropic.BuildRequest(params, *config, anthropic.PreviousMessageID(context))
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		return prepareAnthropicRequest(store, conversation, metadata, body)
-
 	default:
 		return ProviderRequest{}, nil, protocol.ErrInvalid
 	}
-}
-
-func providerProjectionKey(config samplersettings.ModelConfig) requestProjectionKey {
-	if config.API == protocol.APIStyleResponses {
-		return requestProjectionKey(responsesProjectionVersion + string(config.Responses.Dialect) + "/" + string(config.ExecEncoding))
+	if err := store.save(); err != nil {
+		return ProviderRequest{}, nil, err
 	}
-	return anthropicProjectionKey
+	wire, err := renderProviderRequest(store, metadata)
+	return metadata, wire, err
 }
 
 // ProviderRequestProjectionMatches reports whether a retained provider request uses the current
-// route's history projection. The projection key remains owned by Store's durable model.
+// route's history projection. The builder owns the projection vocabulary; Store retains its committed key.
 func ProviderRequestProjectionMatches(config samplersettings.ModelConfig, request *ProviderRequest) bool {
-	return request != nil && providerProjectionKey(config) == request.ProjectionKey
+	return request != nil && providerrequest.ProjectionFor(config) == request.ProjectionKey
 }
 
 // ProviderRequestHeadersWithoutAuthentication returns provider request headers safe to expose
@@ -162,7 +130,7 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 		URL: strings.TrimRight(connection.BaseURL, "/") + path, Headers: headers,
 	}}
 	if kind == PendingIntentCompaction {
-		request.ProjectionKey = providerProjectionKey(config)
+		request.ProjectionKey = providerrequest.ProjectionFor(config)
 		if config.API == protocol.APIStyleAnthropicMessages && config.AnthropicMessages.Compaction != nil {
 			request.CompactionControl = &CompactionControl{
 				KeepRecentTurns:  config.AnthropicMessages.Compaction.KeepRecentTurns,

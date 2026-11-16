@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -37,18 +38,18 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 	})
 }
 
-func (s *Store) environmentContext(conversation *Conversation, session *Session) (EnvironmentContext, error) {
+func (s *Store) environmentContext(conversation *Conversation, session *Session) (environmentcontext.Context, error) {
 	return s.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
 }
 
 // CurrentEnvironmentContext renders the model-visible environment baseline for the stored
 // session launch configuration and executor shell.
-func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (EnvironmentContext, error) {
+func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (environmentcontext.Context, error) {
 	request := &samplerpb.CreateSessionRequest{}
 	if err := proto.Unmarshal(configuration, request); err != nil {
-		return EnvironmentContext{}, err
+		return environmentcontext.Context{}, err
 	}
-	return currentEnvironmentContext(request.GetSpec().GetCwd(), shell, s.now()), nil
+	return environmentcontext.Current(request.GetSpec().GetCwd(), shell, s.now()), nil
 }
 
 // recordEnvironmentContext appends the update from the conversation's baseline to the Session's
@@ -58,7 +59,7 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 	if err != nil {
 		return err
 	}
-	if update := EnvironmentContextUpdate(conversation.EnvironmentContext, current); update != "" {
+	if update := environmentcontext.Update(conversation.EnvironmentContext, current); update != "" {
 		if err := conversation.apply(func(state protocol.Context) error {
 			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
 		}); err != nil {

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
-
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 )
@@ -31,7 +31,7 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
 			}
 			request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}, config)
-			preparation := &sessionstore.ProviderRequestPreparation{
+			preparation := &providerrequest.Preparation{
 				ModelConfig: config, SessionEffort: session.Effort, SessionConfiguration: append([]byte(nil), session.Configuration...),
 			}
 			intentID, _, err := store.Begin(t.Context(), owner, request, preparation, providerAttemptTestPolicyPointer())

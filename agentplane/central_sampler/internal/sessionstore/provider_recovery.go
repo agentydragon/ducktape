@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -162,7 +163,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 }
 
 func (s *Store) BeginSamplingAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,
-	request IntentPayload, preparation *ProviderRequestPreparation, policy ProviderAttemptPolicy,
+	request IntentPayload, preparation *providerrequest.Preparation, policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
 	if request.Kind != PendingIntentSampling {
 		return "", nil, protocol.ErrInvalid
@@ -171,7 +172,7 @@ func (s *Store) BeginSamplingAfterHostLoss(ctx context.Context, owner Owner, ses
 }
 
 func (s *Store) BeginCompactionAfterHostLoss(ctx context.Context, owner Owner, sessionID, previousIntentID string,
-	request IntentPayload, original protocol.Context, preparation *ProviderRequestPreparation, policy ProviderAttemptPolicy,
+	request IntentPayload, original protocol.Context, preparation *providerrequest.Preparation, policy ProviderAttemptPolicy,
 ) (string, []byte, error) {
 	if request.Kind != PendingIntentCompaction {
 		return "", nil, protocol.ErrInvalid

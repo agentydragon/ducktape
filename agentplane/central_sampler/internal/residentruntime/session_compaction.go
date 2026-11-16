@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
@@ -52,7 +53,7 @@ func (r *Runtime) compact(ctx context.Context, owner sessionstore.Owner, model s
 	if err != nil {
 		return err
 	}
-	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, sessionstore.EnvironmentContextUpdate(nil, environment))
+	plan, err := adapter.PrepareCompaction(conversation, session, state, metadata, environmentcontext.Update(nil, environment))
 	if err != nil {
 		return err
 	}

@@ -11,21 +11,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
-
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -1155,7 +1153,7 @@ func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testi
 	if err := store.RegisterModelProcess(t.Context(), owner, "lost-process", 77, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "lost-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "lost-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.RetainProcessOutput(t.Context(), owner, "lost-process", 5, []byte("partial output"), false, nil); err != nil {
@@ -1172,7 +1170,7 @@ func TestStoreCodeHostLossAbandonsLiveProcessHandleWithRetainedEvidence(t *testi
 		t.Fatalf("host loss with a live handle did not settle: changed=%v err=%v", changed, err)
 	}
 	process, err := store.Process(t.Context(), successor, "lost-process")
-	if err != nil || process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "partial output" {
+	if err != nil || process.Status != executionstate.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "partial output" {
 		t.Fatalf("abandoned handle lost its evidence: %+v err=%v", process, err)
 	}
 	work, err := store.LiveWork(t.Context(), successor)

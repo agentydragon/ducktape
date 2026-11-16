@@ -7,16 +7,14 @@ import (
 	"errors"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
-
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
 // requestPreparation is private transaction-local plumbing. Public Store methods accept the
-// typed ProviderRequestPreparation recipe and build this operation inside the transaction.
+// typed providerrequest.Preparation recipe and build this operation inside the transaction.
 type requestPreparation func(*contentStore, *Conversation, ProviderRequest) (ProviderRequest, []byte, error)
 
 func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte, error) {
@@ -29,18 +27,7 @@ func renderProviderRequest(store *contentStore, request ProviderRequest) ([]byte
 	if err := store.prefetch(roots); err != nil {
 		return nil, err
 	}
-	records, err := store.restoreRecords(request.API, ids)
-	if err != nil {
-		return nil, err
-	}
-	switch request.API {
-	case protocol.APIStyleResponses:
-		return responses.RestoreRequest(store, request.ProfileID, records)
-	case protocol.APIStyleAnthropicMessages:
-		return anthropic.RestoreRequest(store, request.ProfileID, records)
-	default:
-		return nil, protocol.ErrInvalid
-	}
+	return providerrequest.Render(store, request.API, request.ProfileID, ids)
 }
 
 func finishStoredRequest(store *contentStore, request ProviderRequest, profile content.ContentID, ids []content.ContentID) (ProviderRequest, []byte, error) {

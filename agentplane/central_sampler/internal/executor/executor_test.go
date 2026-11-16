@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
@@ -243,7 +243,7 @@ func TestTypedStartEnvironmentFailureIsNotReplayed(t *testing.T) {
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT status FROM sampler_process WHERE conversation_id=$1 ORDER BY id DESC LIMIT 1`, owner.ConversationID).Scan(&processStatus); err != nil {
 		t.Fatal(err)
 	}
-	if processStatus != string(protocol.ProcessExited) {
+	if processStatus != string(executionstate.ProcessExited) {
 		t.Fatalf("known not-dispatched process status=%q, want exited", processStatus)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
@@ -298,7 +298,7 @@ func TestTypedReadEnvironmentFailurePreservesUnknownProcessEvidence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 8 ||
+	if process.Status != executionstate.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 8 ||
 		string(process.BufferedOutput) != "output before suspension\n" {
 		t.Fatalf("uncertain process state or output was lost: %+v", process)
 	}
@@ -346,7 +346,7 @@ func TestTypedNotDispatchedStartSettlesWithZeroCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessExited || process.AfterSequence == nil || *process.AfterSequence != 0 {
+	if process.Status != executionstate.ProcessExited || process.AfterSequence == nil || *process.AfterSequence != 0 {
 		t.Fatalf("known not-dispatched start was not settled with its zero cursor: %+v", process)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
@@ -414,7 +414,7 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 	if err := store.RegisterModelProcess(t.Context(), owner, "refused-write-process", 1401, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "refused-write-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "refused-write-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	client := &fakeExecutionClient{}
@@ -442,7 +442,7 @@ func TestTypedWriteEnvironmentFailureDoesNotReplayInput(t *testing.T) {
 		t.Fatalf("WriteProcess calls=%d, want exactly one", writes)
 	}
 	process, err := store.Process(t.Context(), owner, "refused-write-process")
-	if err != nil || process.Status != protocol.ProcessRunning {
+	if err != nil || process.Status != executionstate.ProcessRunning {
 		t.Fatalf("not-dispatched write changed process state: process=%+v err=%v", process, err)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
@@ -840,7 +840,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err := store.RegisterModelProcess(t.Context(), owner, "observed-process", 78, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "observed-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "observed-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	output := outputbuffer.New(outputbuffer.MaxBytes)
@@ -871,7 +871,7 @@ func TestTransportFailureExposesObservedProcessOutputAndCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != cursor ||
+	if process.Status != executionstate.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != cursor ||
 		string(process.BufferedOutput) != "stdout before failure\n" {
 		t.Fatalf("observed output/cursor were not retained: %+v", process)
 	}
@@ -1147,7 +1147,7 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 	if err := store.RegisterModelProcess(t.Context(), owner, processID, modelID, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, processID, nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, processID, nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1728,7 +1728,7 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessRunning || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "before " {
+	if process.Status != executionstate.ProcessRunning || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "before " {
 		t.Fatalf("transient outage abandoned or advanced the process: %+v", process)
 	}
 	close(restored)
@@ -1750,7 +1750,7 @@ func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessRunning || process.AfterSequence == nil || *process.AfterSequence != 6 || string(process.BufferedOutput) != "before after" {
+	if process.Status != executionstate.ProcessRunning || process.AfterSequence == nil || *process.AfterSequence != 6 || string(process.BufferedOutput) != "before after" {
 		t.Fatalf("reconnected read lost output or handle: %+v", process)
 	}
 	if starts.Load() != 0 {
@@ -1860,7 +1860,7 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "already observed" {
+	if process.Status != executionstate.ProcessAbandoned || process.AfterSequence == nil || *process.AfterSequence != 5 || string(process.BufferedOutput) != "already observed" {
 		t.Fatalf("loss recovery discarded process evidence: %+v", process)
 	}
 	conversation, err := store.Read(t.Context(), owner)
