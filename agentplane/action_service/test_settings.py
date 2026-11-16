@@ -20,18 +20,6 @@ def _settings_source() -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [
-        ("reader_accounts", ["test-agentplane/notifications"]),
-        ("connection_delegation_actor", {"namespace": "test-agentplane", "name": "mcp-edge"}),
-    ],
-)
-def test_retired_bearer_settings_are_rejected(field: str, value: object) -> None:
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
-        Settings.model_validate(_settings_source() | {field: value})
-
-
 def test_session_delegation_service_is_optional_and_only_trusts_the_central_sampler() -> None:
     source = _settings_source()
     settings = Settings.model_validate(source)

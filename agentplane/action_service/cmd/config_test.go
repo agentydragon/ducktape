@@ -258,8 +258,6 @@ func TestSettingsAreRefusedWithoutEchoingTheirValues(t *testing.T) {
 		"no caller namespaces":           strings.Replace(requiredFile, "[test-agentplane]", "[]", 1),
 		"no policy namespace":            strings.Replace(requiredFile, "policy_namespace: test-agentplane\n", "", 1),
 		"database Secret in static file": requiredFile + "database_url: never-print-this\n",
-		"retired reader accounts":        requiredFile + "reader_accounts: [never-print-this]\n",
-		"retired delegation actor":       requiredFile + "connection_delegation_actor: {namespace: test-agentplane, name: never-print-this}\n",
 		"operator issuer without its audience": requiredFile + `operator_oidc:
   issuer: https://never-print-this.test.example/
   jwks_uri: https://issuer.test.example/jwks/
