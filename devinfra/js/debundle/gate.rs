@@ -41,9 +41,9 @@ pub use realizability::{
     LadderDecision, LegacyEdgeComparisonCounts, ModuleAssignmentBatch, ModuleAssignmentDelta,
     RealizabilityIndex, RealizabilityVerdict, SccDiagnosis, SccRejection,
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
-    check_realizability, check_realizability_touching, check_realizability_with_priority,
-    check_realizability_with_schedule, project_assignment_constraints,
-    simulated_evaluation_post_order,
+    assignment_constraining_cycles, check_realizability, check_realizability_touching,
+    check_realizability_with_priority, check_realizability_with_schedule,
+    project_assignment_constraints, simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,

@@ -8,6 +8,7 @@ mod outcome_sink;
 mod plan_builder;
 mod residual_atomic_report;
 
+use analysis::assignment_assembly::assemble_assignment;
 use analysis::diagnostics::progress::{Phase, State};
 pub(super) use apply::{EmissionChunkOutputs, collect_materialized_logical_chunks};
 use frontend_elaboration::ResolvedMemberSite;
@@ -634,7 +635,7 @@ pub(super) fn finish_logical_chunk(
     let mut graph_for_assignment = Some(precomputed);
     let mut catalogue_for_assignment = Some(bindings_catalogue);
     let mut coarsening_rounds = 0usize;
-    // Each pass uses the real assignment/gate result for the current complete
+    // Each pass projects the canonical constraining graph for the current complete
     // layout. Only a whole typed Pass 1 SCC made entirely from plans created by
     // coarse synthesis can be contracted; cuts, rendered reports and the
     // diagnostic-only Pass 2 summary are not inputs here.
@@ -659,51 +660,49 @@ pub(super) fn finish_logical_chunk(
                 )
             })
             .collect();
-        let (precomputed_for_assignment, bindings_for_assignment) = if refine_coarse_residuals {
-            (
-                graph_for_assignment
-                    .as_ref()
-                    .expect("coarse assignment graph is retained for rebuilds")
-                    .clone(),
-                catalogue_for_assignment
-                    .as_ref()
-                    .expect("coarse binding catalogue is retained for rebuilds")
-                    .clone(),
+        // Settle generated layout using only the canonical constraining SCCs.
+        // Full scheduling and gate checks run once for the final assignment.
+        let residual_sccs = if refine_coarse_residuals {
+            let precomputed = graph_for_assignment
+                .as_ref()
+                .expect("coarse assignment graph is retained for contractions");
+            let bindings = catalogue_for_assignment
+                .as_ref()
+                .expect("coarse binding catalogue is retained for contractions");
+            let local = bindings.local_view(chunk_id_interned)?;
+            let assignment = assemble_assignment(
+                &precomputed.dependency_graph,
+                &precomputed.atomic_groups,
+                &local,
+                &planned_modules,
+                entry_destination,
+            )
+            .assignment;
+            generated_residual_mutual_sccs(
+                &gate::assignment_constraining_cycles(&precomputed.dependency_graph, &assignment),
+                &generated_residual_plans,
+                module_plans.len(),
+                &module_plans,
+                &source_public_export_identities_by_statement,
+                chunk_top_level_mark,
             )
         } else {
-            (
+            Vec::new()
+        };
+        if residual_sccs.is_empty() {
+            let assignment_analysis = AssignmentAnalysis::build_with(
+                chunk_id.to_string(),
+                chunk_id_interned,
                 graph_for_assignment
                     .take()
-                    .expect("non-coarse assignment graph is consumed once"),
+                    .expect("final graph is consumed once"),
                 catalogue_for_assignment
                     .take()
-                    .expect("non-coarse binding catalogue is consumed once"),
-            )
-        };
-        let assignment_analysis = AssignmentAnalysis::build_with(
-            chunk_id.to_string(),
-            chunk_id_interned,
-            precomputed_for_assignment,
-            bindings_for_assignment,
-            planned_modules,
-            assignment_chunk_renames,
-            entry_destination,
-        )?;
-        if !refine_coarse_residuals {
-            break (sealed_renames, chunk_renames_map, assignment_analysis);
-        }
-        let verdict = assignment_analysis.realizability_verdict();
-        let residual_sccs = generated_residual_mutual_sccs(
-            &verdict.unrealizable_sccs,
-            &generated_residual_plans,
-            module_plans.len(),
-            &module_plans,
-            &source_public_export_identities_by_statement,
-            chunk_top_level_mark,
-        );
-        if residual_sccs.is_empty() {
-            drop(graph_for_assignment.take());
-            drop(catalogue_for_assignment.take());
+                    .expect("final catalogue is consumed once"),
+                planned_modules,
+                assignment_chunk_renames,
+                entry_destination,
+            )?;
             break (sealed_renames, chunk_renames_map, assignment_analysis);
         }
 
