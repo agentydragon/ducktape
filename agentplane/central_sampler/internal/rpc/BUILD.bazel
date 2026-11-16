@@ -67,6 +67,7 @@ go_test(
     tags = ["requires_docker"],
     deps = [
         "//agentplane/central_sampler/api:sampler_go_proto",
+        "//agentplane/central_sampler/internal/providerrequest",
         "//agentplane/central_sampler/internal/sessionstore",
         "//agentplane/central_sampler/internal/settings",
         "//agentplane/central_sampler/internal/testsupport",

@@ -1,6 +1,10 @@
 package protocol
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+)
 
 type APIStyle string
 
@@ -42,11 +46,11 @@ type ExecutionState struct {
 type (
 	ActiveCell struct {
 		ID     string
-		Status CellStatus
+		Status executionstate.CellStatus
 	}
 	ActiveProcess struct {
 		ModelSessionID *int
-		Status         ProcessStatus
+		Status         executionstate.ProcessStatus
 		TTY            bool
 		ExitCode       *int
 	}

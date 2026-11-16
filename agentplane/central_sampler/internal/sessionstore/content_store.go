@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
-
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/lib/pq"
 )
 
@@ -330,41 +330,6 @@ func (s *contentStore) loadContext(id string) ([]content.ContentID, error) {
 	return ids, nil
 }
 
-func (s *contentStore) storeRecord(api protocol.APIStyle, record json.RawMessage) (content.ContentID, error) {
-	switch api {
-	case protocol.APIStyleResponses:
-		return responses.StoreRecord(s, record)
-	case protocol.APIStyleAnthropicMessages:
-		return anthropic.StoreRecord(s, record)
-	default:
-		return "", protocol.ErrInvalid
-	}
-}
-
-func (s *contentStore) restoreRecords(api protocol.APIStyle, ids []content.ContentID) ([]json.RawMessage, error) {
-	if err := s.prefetch(ids); err != nil {
-		return nil, err
-	}
-	records := make([]json.RawMessage, 0, len(ids))
-	for _, id := range ids {
-		var record json.RawMessage
-		var err error
-		switch api {
-		case protocol.APIStyleResponses:
-			record, err = responses.RestoreRecord(s, id)
-		case protocol.APIStyleAnthropicMessages:
-			record, err = anthropic.RestoreRecord(s, id)
-		default:
-			return nil, protocol.ErrInvalid
-		}
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-	}
-	return records, nil
-}
-
 type contextCheckpoint struct {
 	Head  string
 	Count int
@@ -381,7 +346,7 @@ func (s *contentStore) storeConversationContext(conversation *Conversation, nati
 	}
 	ids := make([]content.ContentID, 0, len(records))
 	for _, record := range records {
-		id, err := s.storeRecord(native.API(), record)
+		id, err := providerrequest.StoreRecord(s, native.API(), record)
 		if err != nil {
 			return "", err
 		}
@@ -413,7 +378,10 @@ func (s *contentStore) loadNativeContext(api protocol.APIStyle, id string, contr
 	if err != nil {
 		return nil, err
 	}
-	records, err := s.restoreRecords(api, ids)
+	if err := s.prefetch(ids); err != nil {
+		return nil, err
+	}
+	records, err := providerrequest.RestoreRecords(s, api, ids)
 	if err != nil {
 		return nil, err
 	}

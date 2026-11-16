@@ -5,9 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
 func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, interruptIDs []string, pending ...*sessionstore.PendingIntent) (sessionstore.TurnResult, error) {
@@ -49,7 +48,7 @@ func (r *Runtime) applyInterrupt(ctx context.Context, sessionID string, owner se
 	}
 	if stateErr == nil {
 		for _, process := range state.Processes {
-			if process.Status != protocol.ProcessExited && process.Status != protocol.ProcessExitedUnread {
+			if process.Status != executionstate.ProcessExited && process.Status != executionstate.ProcessExitedUnread {
 				complete = false
 			}
 		}

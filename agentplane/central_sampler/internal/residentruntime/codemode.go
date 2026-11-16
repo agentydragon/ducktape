@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/actions"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/promptimage"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -145,7 +145,7 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments toolcontr
 	}
 	known := false
 	for _, cell := range state.Cells {
-		if cell.ID == cellID && cell.Status == protocol.CellLive {
+		if cell.ID == cellID && cell.Status == executionstate.CellLive {
 			known = true
 			break
 		}
@@ -168,12 +168,12 @@ func (r *CodeMode) prepareWaitArguments(ctx context.Context, arguments toolcontr
 
 // observe records the observed cell's lifecycle status.
 func (r *CodeMode) observe(ctx context.Context, observation tooloutput.Observation) error {
-	status := protocol.CellCompleted
+	status := executionstate.CellCompleted
 	switch observation.Kind {
 	case tooloutput.ObservationYielded:
-		status = protocol.CellLive
+		status = executionstate.CellLive
 	case tooloutput.ObservationTerminated:
-		status = protocol.CellTerminated
+		status = executionstate.CellTerminated
 	case tooloutput.ObservationResult:
 	default:
 		return fmt.Errorf("unsupported cell observation %q", observation.Kind)
@@ -188,7 +188,7 @@ func (r *CodeMode) Interrupt(ctx context.Context) (map[string]any, error) {
 	}
 	outcomes := map[string]any{}
 	for _, cell := range state.Cells {
-		if !strings.HasPrefix(cell.ID, r.ID()+":") || cell.Status != protocol.CellLive {
+		if !strings.HasPrefix(cell.ID, r.ID()+":") || cell.Status != executionstate.CellLive {
 			continue
 		}
 		nativeID, err := r.NativeCell(cell.ID)

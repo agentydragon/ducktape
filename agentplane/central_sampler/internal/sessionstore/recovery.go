@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -707,7 +708,7 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, owner Own
 	}
 	for _, process := range processes {
 		outcome := NestedUnknown
-		if process.ID == notDispatchedProcessID && process.Status == protocol.ProcessStarting {
+		if process.ID == notDispatchedProcessID && process.Status == executionstate.ProcessStarting {
 			outcome = NestedNotDispatched
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET status='abandoned' WHERE id=$1 AND conversation_id=$2`, process.ID, conversation.ID); err != nil {

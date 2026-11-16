@@ -10,6 +10,8 @@ import (
 	"time"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -40,14 +42,7 @@ func providerAttemptTestRequest(kind PendingIntentKind) (IntentPayload, requestP
 		Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
 		ExecEncoding: protocol.ExecEncodingFreeform, Responses: responses.Config{Dialect: responses.DialectLite},
 	}
-	request := responses.Request{Model: model.ProviderModel, Stream: true}
-	compact := kind == PendingIntentCompaction
-	if compact {
-		request.Input = []responses.RequestInput{responses.Item{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque-summary"}}
-	}
-	prepare := func(store *contentStore, conversation *Conversation, metadata ProviderRequest) (ProviderRequest, []byte, error) {
-		return prepareResponsesRequest(store, conversation, metadata, request, model.Responses, model.ExecEncoding, compact)
-	}
+	prepare := requestPreparationFor(&providerrequest.Preparation{ModelConfig: model, Compaction: kind == PendingIntentCompaction})
 	return ProviderRequestIntent(kind, connection, model), prepare
 }
 
@@ -365,7 +360,7 @@ func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.CellResult(t.Context(), owner, "unrelated-live-cell", protocol.CellLive); err != nil {
+	if err := store.CellResult(t.Context(), owner, "unrelated-live-cell", executionstate.CellLive); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.FailProviderCommand(t.Context(), owner, session.ID, commandID, intentID, "provider route changed before retry"); err != nil {

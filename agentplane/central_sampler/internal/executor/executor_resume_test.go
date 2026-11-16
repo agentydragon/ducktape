@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -116,7 +115,7 @@ func TestExecutorContinuesAfterSameSandboxResumes(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if process.Status != protocol.ProcessAbandoned || string(process.BufferedOutput) != "previous output" || *process.AfterSequence != 5 {
+					if process.Status != executionstate.ProcessAbandoned || string(process.BufferedOutput) != "previous output" || *process.AfterSequence != 5 {
 						t.Fatalf("lost old evidence: %+v", process)
 					}
 					before := opens
@@ -275,7 +274,7 @@ func TestExecCommandExpectedIncarnationFencesWorkspaceStartAtDispatch(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessExited {
+	if process.Status != executionstate.ProcessExited {
 		t.Fatalf("unstarted workspace process was not settled locally: %+v", process)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
@@ -385,7 +384,7 @@ func TestExecCommandExpectedIncarnationReadFenceAbandonsWithoutReplay(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if process.Status != protocol.ProcessAbandoned {
+	if process.Status != executionstate.ProcessAbandoned {
 		t.Fatalf("uncertain process was not abandoned: %+v", process)
 	}
 	if string(process.BufferedOutput) != "partial output" || process.AfterSequence == nil || *process.AfterSequence != 1 {
@@ -413,7 +412,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	client := &fakeExecutionClient{}
@@ -443,7 +442,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 		if err != nil {
 			t.Fatal(err)
 		}
-		if oldProcess.Status != protocol.ProcessAbandoned {
+		if oldProcess.Status != executionstate.ProcessAbandoned {
 			t.Fatalf("workspace began before old handles were retired: %+v", oldProcess)
 		}
 		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil
@@ -482,7 +481,7 @@ func TestExecCommandExpectedIncarnationRebindsOnlyAfterAuthenticatedOpen(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if oldProcess.Status != protocol.ProcessAbandoned {
+	if oldProcess.Status != executionstate.ProcessAbandoned {
 		t.Fatalf("old execution handle survived rebind: %+v", oldProcess)
 	}
 	if err := executor.close(); err != nil {
@@ -499,7 +498,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 	if err := store.RegisterModelProcess(t.Context(), owner, "old-process", 1234, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, protocol.ProcessRunning, nil, false); err != nil {
+	if err := store.ProcessResult(t.Context(), owner, "old-process", nil, executionstate.ProcessRunning, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.DB().ExecContext(t.Context(), `CREATE FUNCTION reject_candidate_executor_session() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -628,7 +627,7 @@ func TestExecCommandExpectedIncarnationCrashBeforeRebindKeepsOldBinding(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		if oldProcess.Status != protocol.ProcessAbandoned {
+		if oldProcess.Status != executionstate.ProcessAbandoned {
 			t.Fatalf("old process handle survived post-restart rebind: %+v", oldProcess)
 		}
 		return &executorpb.StartProcessResponse{Status: completedExecutionStatus(), ProcessId: r.ProcessId}, nil

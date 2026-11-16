@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
+	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/migrations"
-
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -95,7 +95,7 @@ func TestReadProviderRequestStreamsAuthorizedContentAndHidesCrossOwnerRequests(t
 	}
 	connection := samplersettings.ConnectionConfig{BaseURL: "https://provider.example.test"}
 	intent := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
-	preparation := &sessionstore.ProviderRequestPreparation{
+	preparation := &providerrequest.Preparation{
 		ModelConfig: config, SessionEffort: session.Effort,
 		SessionConfiguration: append([]byte(nil), session.Configuration...),
 	}

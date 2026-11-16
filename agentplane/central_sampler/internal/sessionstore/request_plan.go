@@ -7,22 +7,11 @@ import (
 	"fmt"
 
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/anthropic"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/lib/pq"
 )
 
-// A request view shares its history independently of request-specific prefixes
-// and suffixes. The key versions the provider's native projection semantics.
-type requestProjectionKey string
-
-const (
-	anthropicProjectionKey     requestProjectionKey = "anthropic_messages/v1"
-	responsesProjectionVersion                      = "responses/v1/"
-)
-
-func (s *contentStore) projectHistory(conversation *Conversation, key requestProjectionKey, project func(int) ([]json.RawMessage, error)) (string, string, error) {
+func (s *contentStore) projectHistory(conversation *Conversation, key providerrequest.ProjectionKey, project func(int) ([]json.RawMessage, error)) (string, string, error) {
 	native := conversation.Context()
 	source := conversation.storedContexts[native]
 	if source.Count != native.RecordCount() {
@@ -64,7 +53,7 @@ func (s *contentStore) projectHistory(conversation *Conversation, key requestPro
 	}
 	ids := make([]content.ContentID, 0, len(records))
 	for _, record := range records {
-		id, err := s.storeRecord(native.API(), record)
+		id, err := providerrequest.StoreRecord(s, native.API(), record)
 		if err != nil {
 			return "", "", err
 		}
@@ -103,101 +92,4 @@ func (s *contentStore) previousRequest(conversationID string) (ProviderRequest, 
 	}
 	request.ContextID = context.String
 	return request, err
-}
-
-func prepareResponsesRequest(s *contentStore, conversation *Conversation, metadata ProviderRequest, body responses.Request, config responses.Config, encoding protocol.ExecEncoding, compact bool) (ProviderRequest, []byte, error) {
-	previous, err := s.previousRequest(conversation.ID)
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	if previous.ProfileID != "" {
-		body, err = responses.FreezeRequest(s, previous.ProfileID, body)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		refs := previous.PrefixIDs
-		if len(refs) == 0 {
-			refs, err = s.loadContext(previous.ContextID)
-			if err != nil {
-				return ProviderRequest{}, nil, err
-			}
-		}
-		if len(refs) > 0 {
-			body, err = responses.FreezeToolDeclaration(s, refs[0], body)
-			if err != nil {
-				return ProviderRequest{}, nil, err
-			}
-		}
-	}
-	if compact {
-		if len(body.Input) == 0 {
-			return ProviderRequest{}, nil, protocol.ErrInvalid
-		}
-		raw, err := json.Marshal(body.Input[len(body.Input)-1])
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		id, err := responses.StoreRecord(s, raw)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		metadata.SuffixIDs = []content.ContentID{id}
-		body.Input = body.Input[:len(body.Input)-1]
-	}
-	for _, input := range body.Input {
-		raw, err := json.Marshal(input)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		id, err := responses.StoreRecord(s, raw)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-		metadata.PrefixIDs = append(metadata.PrefixIDs, id)
-	}
-	body.Input = nil
-	metadata.ProfileID, _, err = responses.StoreRequest(s, body)
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	metadata.ProjectionKey = requestProjectionKey(responsesProjectionVersion + string(config.Dialect) + "/" + string(encoding))
-	source := conversation.Context().(*responses.Context)
-	metadata.SourceContextID, metadata.ContextID, err = s.projectHistory(conversation, metadata.ProjectionKey, func(start int) ([]json.RawMessage, error) { return source.ProjectRecords(start, config, encoding) })
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	if err := s.save(); err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	wire, err := renderProviderRequest(s, metadata)
-	return metadata, wire, err
-}
-
-func prepareAnthropicRequest(s *contentStore, conversation *Conversation, metadata ProviderRequest, body anthropic.Request) (ProviderRequest, []byte, error) {
-	previous, err := s.previousRequest(conversation.ID)
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	if previous.ProfileID != "" {
-		body, err = anthropic.FreezeRequest(s, previous.ProfileID, body)
-		if err != nil {
-			return ProviderRequest{}, nil, err
-		}
-	}
-	body.Messages = []json.RawMessage{}
-	metadata.ProfileID, _, err = anthropic.StoreRequest(s, body)
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	metadata.ProjectionKey = anthropicProjectionKey
-	source := conversation.Context().(*anthropic.Context)
-	metadata.SourceContextID, metadata.ContextID, err = s.projectHistory(conversation, metadata.ProjectionKey, source.ProjectRecords)
-	if err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	if err := s.save(); err != nil {
-		return ProviderRequest{}, nil, err
-	}
-	wire, err := renderProviderRequest(s, metadata)
-	return metadata, wire, err
 }

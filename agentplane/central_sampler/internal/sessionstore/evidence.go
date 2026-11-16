@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"github.com/google/uuid"
@@ -145,34 +146,34 @@ func (kind IntentKind) progressKind() eventpb.ExecutionProgress_Kind {
 	}
 }
 
-func processPhase(status protocol.ProcessStatus) eventpb.ExecutionProgress_Phase {
+func processPhase(status executionstate.ProcessStatus) eventpb.ExecutionProgress_Phase {
 	switch status {
-	case protocol.ProcessStarting:
+	case executionstate.ProcessStarting:
 		return eventpb.ExecutionProgress_PHASE_STARTING
-	case protocol.ProcessRunning:
+	case executionstate.ProcessRunning:
 		return eventpb.ExecutionProgress_PHASE_RUNNING
-	case protocol.ProcessExited:
+	case executionstate.ProcessExited:
 		return eventpb.ExecutionProgress_PHASE_EXITED
-	case protocol.ProcessExitedUnread:
+	case executionstate.ProcessExitedUnread:
 		return eventpb.ExecutionProgress_PHASE_EXITED_UNREAD
-	case protocol.ProcessAbandoned:
+	case executionstate.ProcessAbandoned:
 		return eventpb.ExecutionProgress_PHASE_ABANDONED
-	case protocol.ProcessUnknown:
+	case executionstate.ProcessUnknown:
 		return eventpb.ExecutionProgress_PHASE_UNKNOWN
 	default:
 		panic(fmt.Sprintf("unvalidated process status %q", string(status)))
 	}
 }
 
-func cellPhase(status protocol.CellStatus) eventpb.ExecutionProgress_Phase {
+func cellPhase(status executionstate.CellStatus) eventpb.ExecutionProgress_Phase {
 	switch status {
-	case protocol.CellLive:
+	case executionstate.CellLive:
 		return eventpb.ExecutionProgress_PHASE_LIVE
-	case protocol.CellCompleted:
+	case executionstate.CellCompleted:
 		return eventpb.ExecutionProgress_PHASE_COMPLETED
-	case protocol.CellTerminated:
+	case executionstate.CellTerminated:
 		return eventpb.ExecutionProgress_PHASE_TERMINATED
-	case protocol.CellAbandoned:
+	case executionstate.CellAbandoned:
 		return eventpb.ExecutionProgress_PHASE_ABANDONED
 	default:
 		panic(fmt.Sprintf("unvalidated cell status %q", string(status)))

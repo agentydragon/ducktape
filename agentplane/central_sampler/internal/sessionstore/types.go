@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/content"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/environmentcontext"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 )
@@ -38,7 +40,7 @@ type Conversation struct {
 	// ExecutorShell is the shell name the bound exec-server last reported.
 	ExecutorShell *string
 	// EnvironmentContext is the last model-visible environment context.
-	EnvironmentContext  *EnvironmentContext
+	EnvironmentContext  *environmentcontext.Context
 	transcriptContextID string
 	activeContextID     string
 	transcriptControl   json.RawMessage
@@ -220,10 +222,10 @@ type ProviderRequest struct {
 	SourceNativeContextID string `json:"source_native_context_id,omitempty"`
 	// SourceControl pins model-visible control state (execution handles and, for Anthropic,
 	// pending effort) alongside the native record head for a durable provider retry.
-	SourceControl json.RawMessage      `json:"source_control,omitempty"`
-	ProjectionKey requestProjectionKey `json:"projection_key,omitempty"`
-	PrefixIDs     []content.ContentID  `json:"prefix_ids,omitempty"`
-	SuffixIDs     []content.ContentID  `json:"suffix_ids,omitempty"`
+	SourceControl json.RawMessage               `json:"source_control,omitempty"`
+	ProjectionKey providerrequest.ProjectionKey `json:"projection_key,omitempty"`
+	PrefixIDs     []content.ContentID           `json:"prefix_ids,omitempty"`
+	SuffixIDs     []content.ContentID           `json:"suffix_ids,omitempty"`
 	// CompactionControl pins the local policy used to apply a frozen Anthropic summary.
 	CompactionControl *CompactionControl `json:"compaction_control,omitempty"`
 }
@@ -384,7 +386,7 @@ type RemoteProcess struct {
 	ConversationID string
 	Generation     int
 	AfterSequence  *uint64
-	Status         protocol.ProcessStatus
+	Status         executionstate.ProcessStatus
 	TTY            bool
 	ExitCode       *int
 	// BufferedOutput is the retained head and tail of unread output; OmittedBytes were dropped
@@ -400,7 +402,7 @@ type LiveCell struct {
 	ID             string
 	ConversationID string
 	Generation     int
-	Status         protocol.CellStatus
+	Status         executionstate.CellStatus
 }
 
 // ExecutionState is the set of remote handles whose effects may still be live.

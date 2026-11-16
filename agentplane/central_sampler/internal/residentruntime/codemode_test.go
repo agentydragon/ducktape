@@ -16,14 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
-
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
@@ -1315,7 +1314,7 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 				t.Fatal(err)
 			}
 			if phase == "wait_observation" {
-				if err := store.CellResult(t.Context(), owner, code.CellHandle("cell-fixture"), protocol.CellLive); err != nil {
+				if err := store.CellResult(t.Context(), owner, code.CellHandle("cell-fixture"), executionstate.CellLive); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1374,7 +1373,7 @@ func TestCodeModeObservationBudgetsBoundWedgedHostWithoutExpiringCaller(t *testi
 				if err != nil {
 					t.Fatal(err)
 				}
-				if len(state.Cells) != 1 || state.Cells[0].ID != code.CellHandle("cell-fixture") || state.Cells[0].Status != protocol.CellLive {
+				if len(state.Cells) != 1 || state.Cells[0].ID != code.CellHandle("cell-fixture") || state.Cells[0].Status != executionstate.CellLive {
 					t.Fatalf("observation timeout changed live cell: %+v", state.Cells)
 				}
 			}

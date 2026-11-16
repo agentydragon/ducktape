@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -86,7 +87,7 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	var exitCode sql.NullInt64
 	var modelSessionID sql.NullInt64
 	var output []byte
-	err := row.Scan(&process.ID, &process.ConversationID, &process.Generation, &afterSequence, &process.Status,
+	err := row.Scan(&process.ID, &process.ConversationID, &process.Generation, &afterSequence, (*processStatus)(&process.Status),
 		&process.TTY, &exitCode, &output, &modelSessionID, &process.OmittedBytes)
 	if err != nil {
 		return nil, err
@@ -107,7 +108,7 @@ func scanProcess(row rowScanner) (*RemoteProcess, error) {
 	return &process, nil
 }
 
-func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status protocol.ProcessStatus, exitCode *int, consumeOutput bool) error {
+func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string, afterSequence *uint64, status executionstate.ProcessStatus, exitCode *int, consumeOutput bool) error {
 	if !status.Valid() {
 		return protocol.ErrInvalid
 	}
@@ -125,7 +126,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			return err
 		}
 		// Consuming an observed terminal result is local; it remains readable after takeover.
-		if process.Generation != owner.Generation && !(consumeOutput && process.Status == protocol.ProcessExitedUnread && status == protocol.ProcessExited) {
+		if process.Generation != owner.Generation && !(consumeOutput && process.Status == executionstate.ProcessExitedUnread && status == executionstate.ProcessExited) {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
 		var sequence any
@@ -141,7 +142,7 @@ func (s *Store) ProcessResult(ctx context.Context, owner Owner, processID string
 			output, omitted = []byte{}, 0
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, sequence, status, code, output, omitted); err != nil {
+			processID, owner.ConversationID, sequence, processStatus(status), code, output, omitted); err != nil {
 			return err
 		}
 		process.AfterSequence, process.Status, process.ExitCode = afterSequence, status, exitCode
@@ -179,7 +180,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 		if process.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "process belongs to another owner generation"}
 		}
-		if process.Status == protocol.ProcessAbandoned {
+		if process.Status == executionstate.ProcessAbandoned {
 			// Session retirement can abandon this handle while its caller still holds newer
 			// observed output. Retain that snapshot without reviving the handle or regressing
 			// a cursor already recorded by another settlement.
@@ -187,7 +188,7 @@ func (s *Store) AbandonProcess(ctx context.Context, owner Owner, processID strin
 				return nil
 			}
 		}
-		if process.Status == protocol.ProcessExited {
+		if process.Status == executionstate.ProcessExited {
 			return protocol.ErrPrecondition
 		}
 		if afterSequence == nil {
@@ -247,10 +248,10 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 			code = *exitCode
 		}
 		if exited {
-			status = protocol.ProcessExitedUnread
+			status = executionstate.ProcessExitedUnread
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE sampler_process SET after_seq=$3,status=$4,exit_code=$5,buffered_output=$6,omitted_bytes=$7 WHERE id=$1 AND conversation_id=$2`,
-			processID, owner.ConversationID, afterSequence, status, code, buffered, buffer.OmittedBytes()); err != nil {
+			processID, owner.ConversationID, afterSequence, processStatus(status), code, buffered, buffer.OmittedBytes()); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -262,7 +263,7 @@ func (s *Store) RetainProcessOutput(ctx context.Context, owner Owner, processID 
 	})
 }
 
-func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, status protocol.CellStatus) error {
+func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, status executionstate.CellStatus) error {
 	if cellID == "" || !status.Valid() {
 		return protocol.ErrInvalid
 	}
@@ -272,7 +273,7 @@ func (s *Store) CellResult(ctx context.Context, owner Owner, cellID string, stat
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_cell(id,conversation_id,generation,status) VALUES($1,$2,$3,$4)
-			ON CONFLICT(id,conversation_id,generation) DO UPDATE SET status=EXCLUDED.status`, cellID, owner.ConversationID, owner.Generation, status)
+			ON CONFLICT(id,conversation_id,generation) DO UPDATE SET status=EXCLUDED.status`, cellID, owner.ConversationID, owner.Generation, cellStatus(status))
 		if err != nil {
 			return err
 		}
@@ -316,7 +317,7 @@ func (s *Store) ExecutionState(ctx context.Context, owner Owner) (*ExecutionStat
 		defer cellRows.Close()
 		for cellRows.Next() {
 			var cell LiveCell
-			if err := cellRows.Scan(&cell.ID, &cell.ConversationID, &cell.Generation, &cell.Status); err != nil {
+			if err := cellRows.Scan(&cell.ID, &cell.ConversationID, &cell.Generation, (*cellStatus)(&cell.Status)); err != nil {
 				return err
 			}
 			state.Cells = append(state.Cells, cell)

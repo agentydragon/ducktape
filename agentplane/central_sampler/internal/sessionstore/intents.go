@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -19,7 +19,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Begin(ctx context.Context, owner Owner, request IntentPayload, preparation *ProviderRequestPreparation, policy *ProviderAttemptPolicy) (string, []byte, error) {
+func (s *Store) Begin(ctx context.Context, owner Owner, request IntentPayload, preparation *providerrequest.Preparation, policy *ProviderAttemptPolicy) (string, []byte, error) {
 	return s.begin(ctx, owner, request, requestPreparationFor(preparation), policy)
 }
 
@@ -246,7 +246,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 	})
 }
 
-func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentPayload, original protocol.Context, preparation *ProviderRequestPreparation, policy ProviderAttemptPolicy) (string, []byte, error) {
+func (s *Store) BeginCompaction(ctx context.Context, owner Owner, request IntentPayload, original protocol.Context, preparation *providerrequest.Preparation, policy ProviderAttemptPolicy) (string, []byte, error) {
 	return s.beginCompaction(ctx, owner, request, original, requestPreparationFor(preparation), policy)
 }
 

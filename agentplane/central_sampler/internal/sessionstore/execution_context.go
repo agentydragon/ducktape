@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 )
 
@@ -16,14 +17,14 @@ type modelExecutionSnapshot struct {
 }
 type (
 	modelCell struct {
-		CellID string              `json:"cell_id"`
-		Status protocol.CellStatus `json:"status"`
+		CellID string                    `json:"cell_id"`
+		Status executionstate.CellStatus `json:"status"`
 	}
 	modelProcess struct {
-		SessionID int                    `json:"session_id"`
-		Status    protocol.ProcessStatus `json:"status"`
-		TTY       bool                   `json:"tty"`
-		ExitCode  *int                   `json:"exit_code"`
+		SessionID int                          `json:"session_id"`
+		Status    executionstate.ProcessStatus `json:"status"`
+		TTY       bool                         `json:"tty"`
+		ExitCode  *int                         `json:"exit_code"`
 	}
 )
 

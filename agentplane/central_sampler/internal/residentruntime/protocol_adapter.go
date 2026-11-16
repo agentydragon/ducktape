@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
@@ -72,7 +73,7 @@ type sampleResult struct {
 }
 
 type compactionPlan struct {
-	Preparation *sessionstore.ProviderRequestPreparation
+	Preparation *providerrequest.Preparation
 	Apply       func(*sampleResult) (protocol.Context, error)
 }
 
@@ -80,7 +81,7 @@ type compactionPlan struct {
 // Native packages consume snapshots and an evidence sink, never a Store or Runtime.
 type protocolAdapter interface {
 	API() protocol.APIStyle
-	Prepare(*sessionstore.Session, protocol.SessionAttribution) *sessionstore.ProviderRequestPreparation
+	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
 	AutoCompactTokens(*int) *int
 	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, *sessionstore.ExecutionState, protocol.SessionAttribution, string) (*compactionPlan, error)
@@ -104,15 +105,15 @@ func adapterFor(config samplersettings.ModelConfig) (protocolAdapter, error) {
 func (a responsesAdapter) API() protocol.APIStyle { return protocol.APIStyleResponses }
 func (a anthropicAdapter) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessages }
 
-func (a responsesAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *sessionstore.ProviderRequestPreparation {
-	return &sessionstore.ProviderRequestPreparation{
+func (a responsesAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
+	return &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: session.Effort,
 		SessionConfiguration: append([]byte(nil), session.Configuration...), Attribution: attribution,
 	}
 }
 
-func (a anthropicAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *sessionstore.ProviderRequestPreparation {
-	return &sessionstore.ProviderRequestPreparation{
+func (a anthropicAdapter) Prepare(session *sessionstore.Session, attribution protocol.SessionAttribution) *providerrequest.Preparation {
+	return &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: session.Effort,
 		SessionConfiguration: append([]byte(nil), session.Configuration...), Attribution: attribution,
 	}
@@ -167,7 +168,7 @@ func (a anthropicAdapter) AutoCompactTokens(_ *int) *int {
 }
 
 func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, state *sessionstore.ExecutionState, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
-	return &compactionPlan{Preparation: &sessionstore.ProviderRequestPreparation{
+	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Attribution: attribution, Compaction: true,
 	}, Apply: func(result *sampleResult) (protocol.Context, error) {
@@ -196,7 +197,7 @@ func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *ses
 	if err != nil {
 		return nil, err
 	}
-	return &compactionPlan{Preparation: &sessionstore.ProviderRequestPreparation{
+	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Compaction: true,
 		AnthropicCompactionRequest: &plan.Body,

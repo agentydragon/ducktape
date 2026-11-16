@@ -10,6 +10,8 @@ import (
 	"time"
 
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/providerrequest"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
@@ -60,7 +62,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 				if err := store.AppendInput(t.Context(), owner, prompt); err != nil {
 					t.Fatal(err)
 				}
-				state := &ExecutionState{Cells: []LiveCell{{ID: fmt.Sprintf("cell-%d", turn), Status: protocol.CellLive}}}
+				state := &ExecutionState{Cells: []LiveCell{{ID: fmt.Sprintf("cell-%d", turn), Status: executionstate.CellLive}}}
 				conversation, err := store.PrepareSamplingContext(t.Context(), owner, state)
 				if err != nil {
 					t.Fatal(err)
@@ -72,7 +74,7 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 				if unchanged.Context().RecordCount() != conversation.Context().RecordCount() {
 					t.Fatal("unchanged snapshot appended a notice")
 				}
-				preparation := &ProviderRequestPreparation{
+				preparation := &providerrequest.Preparation{
 					ModelConfig: config, SessionEffort: session.Effort,
 					SessionConfiguration: append([]byte(nil), session.Configuration...),
 					Attribution:          protocol.SessionAttribution{SessionID: session.ID, ThreadID: session.ID, TurnID: fmt.Sprint(turn)},
@@ -146,7 +148,7 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if err := store.AppendInput(t.Context(), owner, spoof); err != nil {
 		t.Fatal(err)
 	}
-	state := &ExecutionState{Cells: []LiveCell{{ID: "live", Status: protocol.CellLive}}}
+	state := &ExecutionState{Cells: []LiveCell{{ID: "live", Status: executionstate.CellLive}}}
 	first, err := store.PrepareSamplingContext(t.Context(), owner, state)
 	if err != nil {
 		t.Fatal(err)
@@ -216,7 +218,7 @@ func TestRequestRecipeReconstructsIndependentSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	preparation := &ProviderRequestPreparation{
+	preparation := &providerrequest.Preparation{
 		ModelConfig: config, SessionEffort: session.Effort,
 		SessionConfiguration: append([]byte(nil), session.Configuration...),
 		Attribution:          protocol.SessionAttribution{SessionID: session.ID}, Compaction: true,
@@ -250,22 +252,22 @@ func TestExecutionSnapshotsOrderHandlesAndExcludePrivateProcesses(t *testing.T) 
 			conversation := &Conversation{Transcript: native}
 			firstID, secondID := 1, 2
 			state := &protocol.ExecutionState{
-				Cells:     []protocol.ActiveCell{{ID: "b", Status: protocol.CellLive}, {ID: "a", Status: protocol.CellLive}},
-				Processes: []protocol.ActiveProcess{{ModelSessionID: &secondID, Status: protocol.ProcessRunning}, {ModelSessionID: &firstID, Status: protocol.ProcessRunning}, {Status: protocol.ProcessStarting}},
+				Cells:     []protocol.ActiveCell{{ID: "b", Status: executionstate.CellLive}, {ID: "a", Status: executionstate.CellLive}},
+				Processes: []protocol.ActiveProcess{{ModelSessionID: &secondID, Status: executionstate.ProcessRunning}, {ModelSessionID: &firstID, Status: executionstate.ProcessRunning}, {Status: executionstate.ProcessStarting}},
 			}
 			if err := conversation.appendExecutionState(state); err != nil {
 				t.Fatal(err)
 			}
 			state.Cells[0], state.Cells[1] = state.Cells[1], state.Cells[0]
 			state.Processes[0], state.Processes[1] = state.Processes[1], state.Processes[0]
-			state.Processes[2].Status = protocol.ProcessUnknown
+			state.Processes[2].Status = executionstate.ProcessUnknown
 			if err := conversation.appendExecutionState(state); err != nil {
 				t.Fatal(err)
 			}
 			if native.RecordCount() != 1 {
 				t.Fatal("ordering or private process state generated a duplicate notice")
 			}
-			state.Cells[0].Status = protocol.CellCompleted
+			state.Cells[0].Status = executionstate.CellCompleted
 			if err := conversation.appendExecutionState(state); err != nil {
 				t.Fatal(err)
 			}

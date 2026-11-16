@@ -8,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
-
 	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
+	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"google.golang.org/protobuf/proto"
@@ -319,7 +319,7 @@ func (r *Runtime) execute(ctx context.Context, sessionID string, owner sessionst
 			}
 			runningProcess := false
 			for _, process := range state.Processes {
-				if process.Status != protocol.ProcessExitedUnread && process.Status != protocol.ProcessExited {
+				if process.Status != executionstate.ProcessExitedUnread && process.Status != executionstate.ProcessExited {
 					runningProcess = true
 					break
 				}
