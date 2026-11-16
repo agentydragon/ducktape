@@ -62,7 +62,7 @@ def test_codex_titles_from_fresh_imports(tmp_path: Path, postgres_engine: Engine
         assert observation is not None
         observation.title = "retained title"
         observation.session_kind = None
-    ingestor._process_codex_metadata(second_snapshot, refresh_completed=True)
+    ingestor._codex_metadata.process_snapshot(second_snapshot, refresh_completed=True)
     with factory() as db:
         observation = db.get(CodexTitleObservationRow, ("host", second_snapshot.id, "thread-one"))
         assert observation is not None

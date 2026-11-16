@@ -90,7 +90,7 @@ def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: En
             "host", "Host", ResticRepository(binary="unused", environment={}), (HarnessRoot(Harness.CODEX, "/.codex"),)
         ),
     )
-    ingestor._project_codex_titles(allow_index_only=False)
+    ingestor._codex_metadata.project_titles(allow_index_only=False)
     with factory() as db:
         first, duplicate, indexed = (db.get(SessionRow, key) for key in (*session_ids, index_session))
         assert first is not None
@@ -100,7 +100,7 @@ def test_projection_preserves_paths_and_index_only_ambiguity(postgres_engine: En
         assert indexed is not None
         assert indexed.title == "Previous captured name"
 
-    ingestor._project_codex_titles(allow_index_only=True)
+    ingestor._codex_metadata.project_titles(allow_index_only=True)
     with factory() as db:
         first, duplicate, indexed = (db.get(SessionRow, key) for key in (*session_ids, index_session))
         # A newer index-only observation cannot disambiguate two physical files.

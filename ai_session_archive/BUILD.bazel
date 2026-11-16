@@ -150,12 +150,26 @@ py_library(
 )
 
 py_library(
+    name = "codex_metadata_projection",
+    srcs = ["codex_metadata_projection.py"],
+    deps = [
+        ":codex_metadata",
+        ":database",
+        ":models",
+        ":restic",
+        ":snapshot_inventory",
+        ":statuses",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
     name = "ingest",
     srcs = ["ingest.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_title_refresh",
-        ":codex_metadata",
+        ":codex_metadata_projection",
         ":database",
         ":file_capture",
         ":file_publication",
