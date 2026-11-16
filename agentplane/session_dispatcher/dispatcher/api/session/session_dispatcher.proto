@@ -11,6 +11,7 @@ import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/session.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 // One RPC per command, mirroring the runner's. Each stores the command durably and answers with its
 // `Dispatch` in `DELIVERY_STATE_QUEUED_IN_DISPATCHER`, or fail `NOT_FOUND` for a Sandbox that does not exist;
@@ -47,6 +48,10 @@ service SessionDispatcher {
   // Uses retained owner authority and does not contact the environment or History.
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse) {
     option (google.api.http) = {get: "/v1/sessions"};
+  }
+  // Current Sessions, then changed current records; the scope is ListSessions' retained owner scope.
+  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse) {
+    option (google.api.http) = {get: "/v1/sessions:watch"};
   }
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse) {
     option (google.api.http) = {get: "/v1/dispatches/{command_id}"};
@@ -277,7 +282,25 @@ message ListSessionsRequest {
 
 message ListSessionsResponse {
   // Ascending Session ID order. Pages read current records, not a frozen snapshot;
-  // concurrent changes can add/remove entries, but cannot reorder existing IDs.
+  // concurrent creation can add entries, but cannot reorder existing IDs.
   repeated Session sessions = 1;
   string next_page_token = 2;
+}
+
+message WatchSessionsRequest {
+  // Opaque versioned cursor bound to the effective read scope; carries no authority.
+  // Empty starts a full snapshot. Reuse with another scope is INVALID_ARGUMENT.
+  string resume_token = 1;
+}
+
+message WatchSessionsResponse {
+  oneof frame {
+    Session session = 1;
+    CaughtUp caught_up = 2;
+    // Idle lease expiry asks the client to reconnect with fresh authorization.
+    google.protobuf.Empty reconnect_required = 4;
+  }
+  // Checkpoint after this frame. Intermediate writes may coalesce into the latest record.
+  // Listener reconnect replays a full snapshot, including records before this cursor.
+  string resume_token = 3;
 }

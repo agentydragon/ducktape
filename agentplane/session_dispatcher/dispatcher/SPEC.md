@@ -126,7 +126,7 @@ an old receiver must precede caller enablement or explicitly assess pending serv
 - Normal Session commands and CancelDispatch require the caller to match
   the opening's execution account and Sandbox UID. Normal calls also compare the authenticated UID with the
   current controller-owned account UID. A changed or missing managed account cannot authorize a write.
-- GetSession, ListSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
+- GetSession, ListSessions, WatchSessions, GetDispatch and ListDispatches filter retained rows by the recorded target account and UID.
   These reads do not require a live Sandbox or ServiceAccount. Old rows without a trustworthy owner are hidden
   from normal account callers but remain visible through existing privileged backend behavior.
 - WatchDispatches applies the same filter to durable snapshots and deletion terminal events. The terminal
@@ -355,3 +355,35 @@ serializes with cleanup. The no-op conflict update keeps an existing holder and 
 while locking it. Cleanup invalidates those leases in its transaction. A marker committed first
 remains possible forwarding evidence; cleanup committed first prevents a marker or settlement
 from reviving work.
+
+## Session watch
+
+`WatchSessions` and its generated `GET /v1/sessions:watch` JSON facade use exactly
+`ListSessions`' retained-owner read scope, including waiting and failed materialization without
+History or a live Environment. Configured component services read all Sessions; Identity callers
+read only their exact retained execution Identity. Typed delegation remains method-scoped.
+The existing service caller/delegation settings accept this RPC; no new caller setting is required.
+
+An empty `resume_token` streams current Session records in version order, then `CaughtUp`.
+Every frame includes an opaque, versioned resume token containing the last version and a digest
+of the resource and effective read filter. A nonempty token resumes current records with
+`version > last`; intermediate writes to one Session can coalesce. Tokens carry no authority.
+Malformed, unsupported, future-version or different-filter tokens return `INVALID_ARGUMENT`.
+The read filter is the authenticated caller's retained owner scope, not a client-supplied Identity.
+There is no token expiry or retention floor: Session rows are never deleted, and every changed
+record remains available at its latest version. This is a state watch, not an audit log.
+
+Every Session insert/update advances a transactional database counter, including old binaries'
+writes during a roll. The counter lock serializes version allocation through commit, so a reader
+cannot advance past a smaller uncommitted version. The additive migration backfills retained rows.
+Notifications contain only routing keys for all-Sessions and exact-Identity subscribers; streams
+re-read committed rows through `postgres/wakeups.Hub` and keep no per-Session deduplication map.
+Reads are bounded batches. Listener loss/reconnect changes its generation; active watches replay
+a full current snapshot followed by `CaughtUp`, even if unchanged rows precede their prior token.
+Clients upsert by Session ID and retain the newest frame's token, including after that replay.
+A disconnected listener is not marked caught up. Streams end at the configured Dispatcher
+watch lease for renewed authorization (`reconnect_required` when idle); slow writes have the same
+bound as Dispatch watches.
+
+The watch reports materialization and the required Environment only. Running, idle and active-turn
+observations keep their existing owners and sources.

@@ -17,6 +17,7 @@ proto_library(
         "//agentplane/proto:identity_proto",
         "//agentplane/proto:session_proto",
         "@googleapis//google/api:annotations_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )

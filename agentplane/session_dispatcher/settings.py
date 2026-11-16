@@ -99,7 +99,7 @@ class Settings(BaseModel):
         description="Exact Dispatcher service SVIDs allowed to request automatic Sandbox wake, subject to wakeOnSend.",
     )
     max_queued_per_session: int = Field(default=1000, ge=1, description="Queued commands per Session.")
-    dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="WatchDispatches stream lease.")
+    dispatcher_watch_lease_seconds: int = Field(default=300, ge=1, description="Dispatcher watch stream lease.")
     runner_request_timeout_seconds: int = Field(default=10, ge=1, description="Per-Sandbox Runner call timeout.")
 
     central_sampler: CentralSamplerTarget | None = Field(
@@ -124,6 +124,7 @@ class Settings(BaseModel):
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CreateSession",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetSession",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessions",
+                "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchSessions",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",

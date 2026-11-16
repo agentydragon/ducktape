@@ -1,0 +1,14 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "resumetoken",
+    srcs = ["token.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/internal/resumetoken",
+    visibility = ["//agentplane/session_dispatcher/dispatcher:__pkg__"],
+)
+
+go_test(
+    name = "token_test",
+    srcs = ["token_test.go"],
+    embed = [":resumetoken"],
+)
