@@ -133,12 +133,15 @@ reconciliation but cannot be resent to a newly resolved Sandbox.
 
 The browser follows the Dispatcher's later state of the commands it still holds as queued or delivering
 with `GET /upstream/dispatcher/v1/dispatches:watch?filter.sessionId=…&filter.commandIds=…`. The app's
-authenticated BFF opens the Dispatcher's generated gRPC `WatchDispatches` stream, then sends each frame
-to the browser as ProtoJSON newline-delimited JSON: those commands' Dispatches, a `CaughtUp` frame, then
-a Dispatch whenever one changes. A command with no Dispatch by `CaughtUp` is shown as unknown, since the
-Dispatcher deletes a Sandbox's rows with it. A connection that ends is replaced by a new one, which sends
-the current Dispatches again. Queued and delivering are distinct from
-runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
+plain `/upstream/dispatcher/{path...}` proxy forwards to the Dispatcher's gRPC-Gateway facade,
+which emits `WatchDispatches` frames as ProtoJSON newline-delimited JSON: current Dispatches and retained deletion receipts,
+then `CaughtUp`, followed by changed receipts and recurring checkpoints. The browser persists the opaque `resumeToken` after completing a fresh snapshot, then after applying
+each incremental frame, and sends it on reconnects with the same effective filter.
+Only the first `CaughtUp` of a fresh snapshot reconciles missing commands; incremental checkpoints leave
+unchanged commands alone. Deletion receipts may have no Sandbox address. If retention coverage expired
+(`OUT_OF_RANGE`), the browser clears its cursor and takes a fresh snapshot, retaining a visible warning
+that some delivery updates may be missing. A fresh snapshot cannot recover pruned deletion receipts.
+Queued and delivering are distinct from runner admission; a Dispatcher admission proves only that the Runner journaled the command, not an effect.
 History remains the authority for command outcomes. The browser retains the command locally until History
 projects its admission or command row; the app adds no command queue. Deploy the Session Dispatcher
 and authorize the app ServiceAccount before rolling out an app image that requires this setting.

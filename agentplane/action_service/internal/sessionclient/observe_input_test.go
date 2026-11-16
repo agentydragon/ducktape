@@ -3,6 +3,7 @@ package sessionclient
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"testing"
 
@@ -27,17 +28,32 @@ const (
 
 type dispatcherStub struct {
 	dispatcherpb.SessionDispatcherClient
-	dispatch *dispatcherpb.Dispatch
-	watch    dispatcherpb.SessionDispatcher_WatchDispatchesClient
-	watchReq *dispatcherpb.WatchDispatchesRequest
+	dispatch      *dispatcherpb.Dispatch
+	watch         dispatcherpb.SessionDispatcher_WatchDispatchesClient
+	watchReq      *dispatcherpb.WatchDispatchesRequest
+	watchRequests []*dispatcherpb.WatchDispatchesRequest
+	streams       []dispatcherpb.SessionDispatcher_WatchDispatchesClient
+	watchErrors   []error
+	getError      error
 }
 
 func (s dispatcherStub) GetDispatch(_ context.Context, _ *dispatcherpb.GetDispatchRequest, _ ...grpc.CallOption) (*dispatcherpb.GetDispatchResponse, error) {
+	if s.getError != nil {
+		return nil, s.getError
+	}
 	return &dispatcherpb.GetDispatchResponse{Dispatch: s.dispatch}, nil
 }
 
 func (s *dispatcherStub) WatchDispatches(_ context.Context, request *dispatcherpb.WatchDispatchesRequest, _ ...grpc.CallOption) (dispatcherpb.SessionDispatcher_WatchDispatchesClient, error) {
 	s.watchReq = request
+	s.watchRequests = append(s.watchRequests, request)
+	index := len(s.watchRequests) - 1
+	if index < len(s.watchErrors) && s.watchErrors[index] != nil {
+		return nil, s.watchErrors[index]
+	}
+	if index < len(s.streams) {
+		return s.streams[index], nil
+	}
 	return s.watch, nil
 }
 
@@ -58,10 +74,14 @@ type dispatchStreamStub struct {
 	dispatcherpb.SessionDispatcher_WatchDispatchesClient
 	frames []*dispatcherpb.WatchDispatchesResponse
 	index  int
+	err    error
 }
 
 func (s *dispatchStreamStub) Recv() (*dispatcherpb.WatchDispatchesResponse, error) {
 	if s.index >= len(s.frames) {
+		if s.err != nil {
+			return nil, s.err
+		}
 		return nil, io.EOF
 	}
 	frame := s.frames[s.index]
@@ -364,4 +384,174 @@ func entriesFrame(through uint64, entries ...*eventlogpb.EventEntry) *historypb.
 
 func entry(cursor uint64, event *eventpb.Event) *eventlogpb.EventEntry {
 	return &eventlogpb.EventEntry{Cursor: cursor, Event: event}
+}
+
+func queuedDispatch() *dispatcherpb.Dispatch {
+	return &dispatcherpb.Dispatch{
+		CommandId: testCommandID, SessionId: testSessionID,
+		Operation: commandpb.Operation_OPERATION_SUBMIT_INPUT,
+		State:     dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+	}
+}
+
+func cancelledDispatchFrame(token string) *dispatcherpb.WatchDispatchesResponse {
+	dispatch := queuedDispatch()
+	dispatch.State = dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER
+	return &dispatcherpb.WatchDispatchesResponse{
+		ResumeToken: token, Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: dispatch},
+	}
+}
+
+func TestObserveInputResumesAfterDisconnectAndReadsDeletedReceipt(t *testing.T) {
+	client := &dispatcherStub{dispatch: queuedDispatch(), watch: &dispatchStreamStub{
+		frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-dispatch-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}},
+	}}
+	request := ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 1}
+	first, err := ObserveInput(context.Background(), client, &historyStub{}, request)
+	if err != nil || first.Dispatch.Kind != SourcePartial {
+		t.Fatalf("disconnected watch = %+v, %v", first, err)
+	}
+	position, err := decodeResumeToken(first.Observation.ResumeToken, testSessionID, testCommandID)
+	if err != nil || position.DispatchToken != "test-dispatch-position" {
+		t.Fatalf("lost checkpoint: %+v, %v", position, err)
+	}
+	// The live row disappeared during the disconnect; GetDispatch cannot retrieve a tombstone.
+	client = &dispatcherStub{getError: status.Error(codes.NotFound, "test deleted dispatch"), watch: &dispatchStreamStub{
+		frames: []*dispatcherpb.WatchDispatchesResponse{cancelledDispatchFrame("test-deletion-position")},
+	}}
+	request.ResumeToken = first.Observation.ResumeToken
+	got, err := ObserveInput(context.Background(), client, &historyStub{}, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.watchReq.GetResumeToken() != "test-dispatch-position" || got.Dispatch.Value.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER || got.Dispatch.Value.GetSandbox() != "" || got.Dispatch.Value.GetSandboxUid() != "" {
+		t.Fatalf("deletion replay: request=%+v result=%+v", client.watchReq, got)
+	}
+	position, err = decodeResumeToken(got.Observation.ResumeToken, testSessionID, testCommandID)
+	if err != nil || position.DispatchToken != "test-deletion-position" {
+		t.Fatalf("terminal checkpoint = %+v, %v", position, err)
+	}
+}
+
+func TestObserveInputReportsExpiredCoverageAndResyncs(t *testing.T) {
+	for _, atOpen := range []bool{false, true} {
+		for _, deleted := range []bool{false, true} {
+			t.Run(fmt.Sprintf("open=%v/deleted=%v", atOpen, deleted), func(t *testing.T) {
+				client := &dispatcherStub{dispatch: queuedDispatch(), streams: []dispatcherpb.SessionDispatcher_WatchDispatchesClient{
+					&dispatchStreamStub{err: status.Error(codes.OutOfRange, "test expired deletion coverage")},
+					&dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{cancelledDispatchFrame("test-fresh-position")}},
+				}}
+				if atOpen {
+					client.watchErrors = []error{status.Error(codes.OutOfRange, "test expired deletion coverage")}
+				}
+				if deleted {
+					client.getError = status.Error(codes.NotFound, "test deleted dispatch")
+					client.streams[1] = &dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-fresh-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}}}
+				}
+				got, err := ObserveInput(context.Background(), client, &historyStub{}, ObserveInputRequest{
+					SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 1,
+					ResumeToken: encodeResumeToken(resumeToken{Version: 1, SessionID: testSessionID, CommandID: testCommandID, DispatchToken: "test-expired-position"}),
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(client.watchRequests) != 2 || client.watchRequests[0].GetResumeToken() != "test-expired-position" || client.watchRequests[1].GetResumeToken() != "" {
+					t.Fatalf("snapshot requests: %+v", client.watchRequests)
+				}
+				if got.Dispatch.Kind != SourcePartial || got.Dispatch.Error == nil || got.Dispatch.Error.Code != codes.OutOfRange.String() {
+					t.Fatalf("coverage loss hidden by resync: %+v", got.Dispatch)
+				}
+				if !deleted && got.Dispatch.Value.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER {
+					t.Fatalf("fresh receipt lost: %+v", got.Dispatch)
+				}
+				position, err := decodeResumeToken(got.Observation.ResumeToken, testSessionID, testCommandID)
+				if err != nil || position.DispatchToken != "test-fresh-position" {
+					t.Fatalf("reset position: %+v, %v", position, err)
+				}
+			})
+		}
+	}
+}
+
+func TestObserveInputRestoresAlreadyCoveredDeletedReceiptFromSnapshot(t *testing.T) {
+	client := &dispatcherStub{getError: status.Error(codes.NotFound, "test deleted dispatch"), streams: []dispatcherpb.SessionDispatcher_WatchDispatchesClient{
+		&dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-covered-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}}},
+		&dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{cancelledDispatchFrame("test-snapshot-position")}},
+	}}
+	got, err := ObserveInput(context.Background(), client, &historyStub{}, ObserveInputRequest{
+		SessionID: testSessionID, CommandID: testCommandID,
+		ResumeToken: encodeResumeToken(resumeToken{Version: 1, SessionID: testSessionID, CommandID: testCommandID, DispatchToken: "test-prior-position"}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(client.watchRequests) != 2 || client.watchRequests[1].GetResumeToken() != "" || got.Dispatch.Value.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_CANCELLED_IN_DISPATCHER {
+		t.Fatalf("restore: requests=%+v result=%+v", client.watchRequests, got)
+	}
+}
+
+func TestObserveInputKeepsDispatchCheckpointWhileRebuildingHistory(t *testing.T) {
+	client := &dispatcherStub{dispatch: queuedDispatch(), watch: &dispatchStreamStub{
+		frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-admitted-position", Frame: &dispatcherpb.WatchDispatchesResponse_Dispatch{Dispatch: admittedDispatch(18)}}},
+	}}
+	history := &historyStub{stream: &historyStreamStub{frames: []*historypb.FollowSessionResponse{
+		entriesFrame(20, entry(20, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{CommandFailed: &eventpb.CommandFailed{CommandId: testCommandID, Reason: "test failure"}}})),
+	}}}
+	got, err := ObserveInput(context.Background(), client, history, ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, err := decodeResumeToken(got.Observation.ResumeToken, testSessionID, testCommandID)
+	if err != nil || position.DispatchToken != "test-admitted-position" || position.StartCursor != 17 || position.Through != 20 {
+		t.Fatalf("combined cursor = %+v, %v", position, err)
+	}
+	// A token supplies a Dispatch position, never a shortcut around rebuilding command/turn correlation.
+	client.dispatch = admittedDispatch(18)
+	history.stream = &historyStreamStub{frames: []*historypb.FollowSessionResponse{{ThroughCursor: 20, Frame: &historypb.FollowSessionResponse_CaughtUp{CaughtUp: &emptypb.Empty{}}}}}
+	_, err = ObserveInput(context.Background(), client, history, ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID, ResumeToken: got.Observation.ResumeToken})
+	if err != nil || history.request.GetAfterCursor() != 17 {
+		t.Fatalf("History replay = %+v, %v", history.request, err)
+	}
+}
+
+func TestObserveInputResyncsWhenAnActiveFreshWatchLosesCoverage(t *testing.T) {
+	client := &dispatcherStub{dispatch: queuedDispatch(), streams: []dispatcherpb.SessionDispatcher_WatchDispatchesClient{
+		&dispatchStreamStub{
+			frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-active-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}},
+			err:    status.Error(codes.OutOfRange, "test active coverage expired"),
+		},
+		&dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{cancelledDispatchFrame("test-resynced-position")}},
+	}}
+	got, err := ObserveInput(context.Background(), client, &historyStub{}, ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 1})
+	if err != nil || len(client.watchRequests) != 2 || client.watchRequests[1].GetResumeToken() != "" || got.Dispatch.Error == nil || got.Dispatch.Error.Code != codes.OutOfRange.String() {
+		t.Fatalf("active stream coverage loss = %+v, %v", got, err)
+	}
+}
+
+func TestObserveInputDoesNotKeepStaleReceiptAfterExpiredCoverageAndEmptySnapshot(t *testing.T) {
+	client := &dispatcherStub{dispatch: queuedDispatch(), streams: []dispatcherpb.SessionDispatcher_WatchDispatchesClient{
+		&dispatchStreamStub{err: status.Error(codes.OutOfRange, "test expired coverage")},
+		&dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{{ResumeToken: "test-empty-snapshot-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}}}}},
+	}}
+	got, err := ObserveInput(context.Background(), client, &historyStub{}, ObserveInputRequest{
+		SessionID: testSessionID, CommandID: testCommandID, WaitSeconds: 1,
+		ResumeToken: encodeResumeToken(resumeToken{Version: 1, SessionID: testSessionID, CommandID: testCommandID, DispatchToken: "test-expired-position"}),
+	})
+	if err != nil || got.Dispatch.Value != nil || got.Dispatch.Error == nil || got.Dispatch.Error.Code != codes.OutOfRange.String() {
+		t.Fatalf("stale receipt survived resync: %+v, %v", got, err)
+	}
+}
+
+func TestObserveInputReadOncePersistsDispatcherCheckpoint(t *testing.T) {
+	client := &dispatcherStub{dispatch: queuedDispatch(), watch: &dispatchStreamStub{frames: []*dispatcherpb.WatchDispatchesResponse{{
+		ResumeToken: "test-read-once-position", Frame: &dispatcherpb.WatchDispatchesResponse_CaughtUp{CaughtUp: &dispatcherpb.CaughtUp{}},
+	}}}}
+	got, err := ObserveInput(context.Background(), client, &historyStub{}, ObserveInputRequest{SessionID: testSessionID, CommandID: testCommandID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	position, err := decodeResumeToken(got.Observation.ResumeToken, testSessionID, testCommandID)
+	if err != nil || position.DispatchToken != "test-read-once-position" || got.Dispatch.Kind != SourceObserved {
+		t.Fatalf("read-once checkpoint = %+v result=%+v, %v", position, got, err)
+	}
 }

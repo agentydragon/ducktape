@@ -366,6 +366,12 @@ function ConversationBody({
               : `Rejected event ${operational.feedError.cursor}: ${operational.feedError.message}. Showing verified history through event ${operational.lastVerifiedCursor}.`}
           </Text>
         )}
+        {commands.local.dispatchWatchCoverageLost && (
+          <Text role="alert" c="red">
+            Some earlier delivery updates or deletions may be missing because deletion records expired. Check thread
+            history for command outcomes.
+          </Text>
+        )}
         {modelError && (
           <Text role="alert" c="red">
             {modelError}

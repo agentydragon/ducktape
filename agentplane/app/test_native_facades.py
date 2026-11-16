@@ -36,7 +36,7 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.requests: list[session_dispatcher_pb2.ListDispatchesRequest] = []
         self.watches: list[session_dispatcher_pb2.WatchDispatchesRequest] = []
         self.cancelled = asyncio.Event()
-        self.reject_watch = False
+        self.reject_watch: grpc.StatusCode | None = None
         self.clean_eof = False
         self.inventory_requests: list[session_dispatcher_pb2.WatchSessionsRequest] = []
         self.inventory_updates: asyncio.Queue[session_dispatcher_pb2.Session] = asyncio.Queue()
@@ -76,8 +76,8 @@ class Dispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def WatchDispatches(self, request, context):
         self.record_authorization(context)
         self.watches.append(request)
-        if self.reject_watch:
-            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "test refusal")
+        if self.reject_watch is not None:
+            await context.abort(self.reject_watch, "test refusal")
         await context.send_initial_metadata((("x-backend-private", "must-not-reach-browser"),))
         try:
             yield session_dispatcher_pb2.WatchDispatchesResponse(caught_up={}, resume_token="test-dispatch-cursor")
@@ -135,7 +135,7 @@ async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_hea
     assert peer.service.requests[0].filter.session_id == "session-1"
     assert list(peer.service.requests[0].filter.command_ids) == ["one", "two"]
     peer.token.write_text("rotated-dispatcher-token\n")
-    async with http.stream("GET", WATCH, params=params) as response:
+    async with http.stream("GET", WATCH, params=params.add("resumeToken", "test-request-cursor")) as response:
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store"
         assert response.headers["x-accel-buffering"] == "no"
@@ -146,7 +146,7 @@ async def test_dispatcher_preserves_filters_reads_rotating_token_and_filters_hea
         await peer.service.cancelled.wait()
     assert peer.service.authorization == ["Bearer test-dispatcher-token", "Bearer rotated-dispatcher-token"]
     assert peer.service.watches[0].filter == peer.service.requests[0].filter
-    assert not peer.service.watches[0].resume_token
+    assert peer.service.watches[0].resume_token == "test-request-cursor"
 
 
 @pytest.mark.parametrize("ending", ["logout", "expiry", "disconnect", "sigterm"])
@@ -186,10 +186,16 @@ async def test_dispatcher_stream_cancels_upstream_and_closes_cleanly(
             )
 
 
-async def test_dispatcher_watch_refusal_precedes_response_headers(http: httpx.AsyncClient, peer: Peer) -> None:
-    peer.service.reject_watch = True
+@pytest.mark.parametrize(
+    ("code", "http_status"), [(grpc.StatusCode.UNAUTHENTICATED, 401), (grpc.StatusCode.OUT_OF_RANGE, 400)]
+)
+async def test_dispatcher_watch_refusal_precedes_response_headers(
+    http: httpx.AsyncClient, peer: Peer, code: grpc.StatusCode, http_status: int
+) -> None:
+    peer.service.reject_watch = code
     response = await http.get(WATCH)
-    assert response.status_code == 401, response.text
+    assert response.status_code == http_status, response.text
+    assert response.json()["error"]["code"] == code.value[0]
 
 
 async def test_clean_grpc_eof_ends_browser_watch(http: httpx.AsyncClient, peer: Peer) -> None:

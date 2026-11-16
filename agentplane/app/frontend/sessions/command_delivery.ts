@@ -15,7 +15,12 @@ import { DeliveryState } from "../../../session_dispatcher/dispatcher/api/sessio
 import { LocalCommands, type LocalCommand, type LocalCommandSnapshot, type PendingCommand } from "./local_commands";
 import type { ThreadEntity } from "../../../history_service/api/history/history_service_pb";
 
-const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
+const EMPTY_LOCAL: LocalCommandSnapshot = {
+  commands: [],
+  inputEchoes: [],
+  error: null,
+  dispatchWatchCoverageLost: false,
+};
 
 export interface CommandIssue {
   kind: "refused" | "unconfirmed";

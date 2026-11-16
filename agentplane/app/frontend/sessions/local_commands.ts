@@ -47,9 +47,15 @@ export interface LocalCommandSnapshot {
   /** Inputs whose admission is projected but whose referenced echo body has not arrived yet. */
   inputEchoes: Array<{ commandId: string; text: string }>;
   error: string | null;
+  /** Sticky warning that the Dispatcher could no longer prove deletion coverage for this Session. */
+  dispatchWatchCoverageLost: boolean;
 }
 
 export const MAX_RETAINED_COMMANDS = 128;
+
+export function canonicalDispatchCommandIds(commandIds: readonly string[]): string[] {
+  return [...new Set(commandIds)].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
 
 function decode(text: string): LocalCommand {
   const value = JSON.parse(text) as Record<string, unknown>;
@@ -149,7 +155,14 @@ export function checkAdmission(command: PendingCommand, admission: EventEntry): 
 export class LocalCommands {
   private readonly prefix: string;
   private readonly echoPrefix: string;
-  private snapshot: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
+  private readonly dispatchWatchPrefix: string;
+  private readonly coverageLostKey: string;
+  private snapshot: LocalCommandSnapshot = {
+    commands: [],
+    inputEchoes: [],
+    error: null,
+    dispatchWatchCoverageLost: false,
+  };
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -158,6 +171,8 @@ export class LocalCommands {
   ) {
     this.prefix = `agentplane.pending:${encodeURIComponent(threadId)}:`;
     this.echoPrefix = `agentplane.input-echo:${encodeURIComponent(threadId)}:`;
+    this.dispatchWatchPrefix = `agentplane.dispatch-watch:${encodeURIComponent(threadId)}:`;
+    this.coverageLostKey = `agentplane.dispatch-watch-coverage-lost:${encodeURIComponent(threadId)}`;
     this.reload();
   }
 
@@ -255,6 +270,7 @@ export class LocalCommands {
       localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission }));
     } catch (error) {
       this.snapshot = {
+        ...this.snapshot,
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission } : value
         ),
@@ -267,7 +283,7 @@ export class LocalCommands {
     this.reload();
   }
 
-  acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): void {
+  acknowledgeDispatch(command: PendingCommand, dispatch: Dispatch): boolean {
     if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
     const normalizedDispatch = { ...dispatch, state: normalizeDeliveryState(dispatch.state) };
     if (dispatch.admission) {
@@ -276,13 +292,16 @@ export class LocalCommands {
     }
     const stored = localStorage.getItem(this.key(command.commandId));
     // A replayed server row may already own the command while an HTTP status read is in flight.
-    if (stored === null) return;
+    if (stored === null) return true;
     const existing = decode(stored);
     if (!sameCommand(existing.command, command)) throw new Error("Local command payload changed");
+    const hasSandbox = normalizedDispatch.sandbox !== "";
+    const hasSandboxUid = normalizedDispatch.sandboxUid !== "";
     if (
       normalizedDispatch.sessionId !== this.threadId ||
+      hasSandbox !== hasSandboxUid ||
       (existing.target &&
-        normalizedDispatch.state !== DeliveryState.UNKNOWN &&
+        hasSandbox &&
         (normalizedDispatch.sandbox !== existing.target.sandbox ||
           normalizedDispatch.sandboxUid !== existing.target.sandboxUid))
     ) {
@@ -296,7 +315,7 @@ export class LocalCommands {
       (nextUpdate.seconds < previousUpdate.seconds ||
         (nextUpdate.seconds === previousUpdate.seconds && nextUpdate.nanos < previousUpdate.nanos))
     ) {
-      return;
+      return true;
     }
     const admission = normalizedDispatch.admission ?? existing.admission;
     try {
@@ -306,6 +325,7 @@ export class LocalCommands {
       );
     } catch (error) {
       this.snapshot = {
+        ...this.snapshot,
         commands: this.snapshot.commands.map((value) =>
           value.command.commandId === command.commandId ? { ...value, admission, dispatch: normalizedDispatch } : value
         ),
@@ -313,15 +333,64 @@ export class LocalCommands {
         error: String(error),
       };
       for (const listener of this.listeners) listener();
-      return;
+      return false;
     }
     this.reload();
+    return true;
   }
 
-  updateDispatch(commandId: string, dispatch: Dispatch): void {
+  updateDispatch(commandId: string, dispatch: Dispatch): boolean {
     const stored = localStorage.getItem(this.key(commandId));
-    if (stored === null) return;
-    this.acknowledgeDispatch(decode(stored).command, dispatch);
+    if (stored === null) return true;
+    return this.acknowledgeDispatch(decode(stored).command, dispatch);
+  }
+
+  /** A cursor is stored per effective Session and canonical command filter. */
+  dispatchWatchResumeToken(sessionId: string, commandIds: readonly string[]): string | null {
+    const key = this.dispatchWatchCursorKey(sessionId);
+    try {
+      const saved = this.readDispatchWatchCursor(key);
+      return saved && this.sameDispatchWatchFilter(saved.commandIds, commandIds) ? saved.token : null;
+    } catch (error) {
+      this.reportStorageFailure(error);
+      return null;
+    }
+  }
+
+  /** Call only after every change in the frame has reached durable LocalCommands state. */
+  saveDispatchWatchResumeToken(sessionId: string, commandIds: readonly string[], token: string): boolean {
+    if (token === "") throw new Error("Dispatcher watch frame omitted its resume token");
+    const key = this.dispatchWatchCursorKey(sessionId);
+    try {
+      localStorage.setItem(key, JSON.stringify({ commandIds: canonicalDispatchCommandIds(commandIds), token }));
+      return true;
+    } catch (error) {
+      this.reportStorageFailure(error);
+      return false;
+    }
+  }
+
+  clearDispatchWatchResumeToken(sessionId: string, commandIds: readonly string[]): boolean {
+    const key = this.dispatchWatchCursorKey(sessionId);
+    try {
+      const saved = this.readDispatchWatchCursor(key);
+      if (saved && this.sameDispatchWatchFilter(saved.commandIds, commandIds)) localStorage.removeItem(key);
+      return true;
+    } catch (error) {
+      this.reportStorageFailure(error);
+      return false;
+    }
+  }
+
+  /** Deletion coverage cannot be recovered after its retention window; keep the warning across reloads. */
+  recordDispatchWatchCoverageLoss(): void {
+    this.snapshot = { ...this.snapshot, dispatchWatchCoverageLost: true };
+    for (const listener of this.listeners) listener();
+    try {
+      localStorage.setItem(this.coverageLostKey, "true");
+    } catch (error) {
+      this.reportStorageFailure(error);
+    }
   }
 
   /** A matching admission transfers command ownership to the Event fold; input text stays until echoed. */
@@ -385,6 +454,43 @@ export class LocalCommands {
     return `${this.echoPrefix}${encodeURIComponent(id)}`;
   }
 
+  private dispatchWatchCursorKey(sessionId: string): string {
+    if (sessionId !== this.threadId) throw new Error("Dispatcher watch belongs to a different Session");
+    return `${this.dispatchWatchPrefix}cursor`;
+  }
+
+  private readDispatchWatchCursor(key: string): { commandIds: string[]; token: string } | null {
+    const text = localStorage.getItem(key);
+    if (text === null) return null;
+    const value = JSON.parse(text) as Record<string, unknown>;
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !Array.isArray(value.commandIds) ||
+      value.commandIds.some((id) => typeof id !== "string") ||
+      typeof value.token !== "string" ||
+      value.token === ""
+    ) {
+      throw new Error("Invalid locally retained Dispatcher watch cursor");
+    }
+    const commandIds = value.commandIds as string[];
+    const canonicalIds = canonicalDispatchCommandIds(commandIds);
+    if (canonicalIds.length !== commandIds.length || canonicalIds.some((id, index) => id !== commandIds[index])) {
+      throw new Error("Invalid locally retained Dispatcher watch filter");
+    }
+    return { commandIds: canonicalIds, token: value.token };
+  }
+
+  private sameDispatchWatchFilter(left: readonly string[], right: readonly string[]): boolean {
+    const canonicalRight = canonicalDispatchCommandIds(right);
+    return left.length === canonicalRight.length && left.every((id, index) => id === canonicalRight[index]);
+  }
+
+  private reportStorageFailure(error: unknown): void {
+    this.snapshot = { ...this.snapshot, error: String(error) };
+    for (const listener of this.listeners) listener();
+  }
+
   /** Preserve a locally sent input when its command record transfers to the server timeline. */
   private retainInputEcho(value: LocalCommand): boolean {
     const operation = value.command.operation;
@@ -416,13 +522,22 @@ export class LocalCommands {
   }
 
   private onStorage = (event: StorageEvent): void => {
-    if (event.key === null || event.key.startsWith(this.prefix) || event.key.startsWith(this.echoPrefix)) this.reload();
+    if (
+      event.key === null ||
+      event.key.startsWith(this.prefix) ||
+      event.key.startsWith(this.echoPrefix) ||
+      event.key.startsWith(this.dispatchWatchPrefix) ||
+      event.key === this.coverageLostKey
+    )
+      this.reload();
   };
 
   private reload(): void {
     try {
       const commands: LocalCommand[] = [];
       const inputEchoes: Array<{ commandId: string; text: string }> = [];
+      const dispatchWatchCoverageLost =
+        this.snapshot.dispatchWatchCoverageLost || localStorage.getItem(this.coverageLostKey) !== null;
       const known = new Map(this.snapshot.commands.map((value) => [value.command.commandId, value]));
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index);
@@ -458,7 +573,7 @@ export class LocalCommands {
           left.submittedAt - right.submittedAt || left.command.commandId.localeCompare(right.command.commandId)
       );
       inputEchoes.sort((left, right) => left.commandId.localeCompare(right.commandId));
-      this.snapshot = { commands, inputEchoes, error: null };
+      this.snapshot = { commands, inputEchoes, error: null, dispatchWatchCoverageLost };
     } catch (error) {
       // Leave both the stored bytes and the last readable view intact; do not silently discard
       // input because storage is unavailable or a local record cannot be decoded.

@@ -309,6 +309,15 @@ require a fresh snapshot even when the filtered scope had no deleted rows in the
 than once. Its token carries the read frontier even when changes at that frontier did not match the filter.
 This lets unrelated writes advance a watch without causing repeated reads of the same range.
 
+The App retains the cursor with its locally applied command receipts and effective filter. Reconnects
+resume from that cursor; recurring or resumed `CaughtUp` frames do not imply any unchanged command is
+missing. Only a fresh snapshot reconciles missing receipts. `OUT_OF_RANGE` clears the cursor and starts
+a fresh snapshot, while a visible coverage warning remains: pruned deletion receipts cannot be recovered.
+`session_client.ObserveInput` carries the Dispatch cursor inside its existing observation token. It
+replays retained tombstones when `GetDispatch` no longer has a live row, and preserves an `OUT_OF_RANGE`
+Dispatch source error after resync. Both clients advance only after applying a response frame; the App waits for the first `CaughtUp`
+before checkpointing a fresh snapshot, so an interrupted snapshot repeats missing-row reconciliation.
+
 **Sequence allocation is not commit order.** Before establishing a checkpoint, the reader takes brief
 PostgreSQL `SHARE` locks on `dispatch` and `dispatch_tombstone`, so a writer that already allocated a lower
 version commits before the cursor advances. That transaction reads only the indexed version maxima and

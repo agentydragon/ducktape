@@ -1414,8 +1414,8 @@ async function openedWatch(): Promise<ServedWatch> {
 async function sendDispatches(rows: object[]): Promise<void> {
   const watch = await openedWatch();
   await act(async () => {
-    for (const dispatch of rows) watch.send({ dispatch });
-    watch.send({ caughtUp: {} });
+    for (const [index, dispatch] of rows.entries()) watch.send({ dispatch, resumeToken: `page-dispatch-${index}` });
+    watch.send({ caughtUp: {}, resumeToken: "page-dispatch-checkpoint" });
   });
 }
 

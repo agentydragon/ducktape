@@ -25,6 +25,7 @@ afterEach(() => {
   stop();
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function queued(store: LocalCommands, commandId: string): Command {
@@ -49,74 +50,195 @@ function stateOf(store: LocalCommands, commandId: string): Dispatch["state"] | u
   return store.getSnapshot().commands.find((value) => value.command.commandId === commandId)?.dispatch?.state;
 }
 
-// A Dispatch as gRPC-Gateway writes it: proto-JSON that leaves out the unset `reason` and `admission`.
-function dispatchFrame(commandId: string, state: string) {
-  return { dispatch: { commandId, sessionId: SESSION, ...COMMAND_TARGET, state, updatedAt: "2026-10-19T12:00:00Z" } };
+// Dispatch frames are ProtoJSON as emitted by the gRPC-Gateway, with an opaque per-frame cursor.
+function dispatchFrame(commandId: string, state: string, resumeToken: string, updatedAt = "2026-10-19T12:00:00Z") {
+  return {
+    dispatch: { commandId, sessionId: SESSION, ...COMMAND_TARGET, state, updatedAt },
+    resumeToken,
+  };
+}
+
+function caughtUp(resumeToken: string) {
+  return { caughtUp: {}, resumeToken };
 }
 
 async function settle(): Promise<void> {
   await vi.advanceTimersByTimeAsync(0);
 }
 
-it("asks for the Session's named commands and applies the rows it is sent", async () => {
+it("sorts and deduplicates the filter, applies its snapshot, and reuses the cursor after recreation", async () => {
   const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   queued(store, "b");
-  stop = watchDispatches(store, SESSION, ["a", "b"]);
+  stop = watchDispatches(store, SESSION, ["b", "a", "a"]);
   await settle();
   const [watch] = fetchMock.served;
-  watch.send(dispatchFrame("a", "DELIVERY_STATE_RUNNER_ADMITTED"));
-  watch.send({ caughtUp: {} });
+  watch.send(dispatchFrame("a", "DELIVERY_STATE_RUNNER_ADMITTED", "snapshot-row-a"));
+  watch.send(dispatchFrame("b", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "snapshot-row-b"));
+  watch.send(caughtUp("snapshot-checkpoint"));
   await settle();
 
   expect(watch.url.pathname).toBe("/upstream/dispatcher/v1/dispatches:watch");
   expect(watch.url.searchParams.get("filter.sessionId")).toBe(SESSION);
   expect(watch.url.searchParams.getAll("filter.commandIds")).toEqual(["a", "b"]);
+  expect(watch.url.searchParams.has("resumeToken")).toBe(false);
   expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
+
+  stop();
+  stop = watchDispatches(store, SESSION, ["a", "b", "a"]);
+  await settle();
+  expect(fetchMock.served[1].url.searchParams.get("resumeToken")).toBe("snapshot-checkpoint");
+  fetchMock.served[1].send(caughtUp("next-checkpoint"));
+  await settle();
+  expect(stateOf(store, "b")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
 });
 
-it("calls a command it holds no row for unknown once the watch has caught up, as after Sandbox deletion", async () => {
+it("marks an absent command unknown only after a complete fresh snapshot", async () => {
   const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "kept");
   queued(store, "deleted");
   stop = watchDispatches(store, SESSION, ["kept", "deleted"]);
   await settle();
   const [watch] = fetchMock.served;
-  watch.send(dispatchFrame("kept", "DELIVERY_STATE_QUEUED_IN_DISPATCHER"));
+  watch.send(dispatchFrame("kept", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "row-kept"));
   await settle();
   expect(stateOf(store, "deleted")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
-  watch.send({ caughtUp: {} });
+  watch.send(caughtUp("fresh-checkpoint"));
   await settle();
 
   expect(stateOf(store, "deleted")).toBe(DeliveryState.UNKNOWN);
   expect(stateOf(store, "kept")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
 });
 
-it("judges what is missing by the rows of the current connection, not an earlier one", async () => {
+it("does not infer deletion from a resumed or recurring CaughtUp checkpoint", async () => {
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  queued(store, "unchanged");
+  store.saveDispatchWatchResumeToken(SESSION, ["unchanged"], "previous-checkpoint");
+  stop = watchDispatches(store, SESSION, ["unchanged"]);
+  await settle();
+  const [watch] = fetchMock.served;
+  watch.send(caughtUp("resumed-checkpoint"));
+  watch.send(caughtUp("recurring-checkpoint"));
+  await settle();
+
+  expect(stateOf(store, "unchanged")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  expect(watch.url.searchParams.get("resumeToken")).toBe("previous-checkpoint");
+});
+
+it.each(["DELIVERY_STATE_FAILED", "DELIVERY_STATE_CANCELLED_IN_DISPATCHER"])(
+  "applies a changed terminal receipt without its Sandbox address (%s)",
+  async (state) => {
+    const store = new LocalCommands(SESSION, COMMAND_TARGET);
+    queued(store, "deleted");
+    store.saveDispatchWatchResumeToken(SESSION, ["deleted"], "previous-checkpoint");
+    stop = watchDispatches(store, SESSION, ["deleted"]);
+    await settle();
+    fetchMock.served[0].send({
+      dispatch: {
+        commandId: "deleted",
+        sessionId: SESSION,
+        state,
+        reason: "sandbox_deleted",
+        updatedAt: "2026-10-19T12:00:01Z",
+      },
+      resumeToken: "terminal-checkpoint",
+    });
+    await settle();
+
+    expect(stateOf(store, "deleted")).toBe(
+      state === "DELIVERY_STATE_FAILED" ? DeliveryState.FAILED : DeliveryState.CANCELLED_IN_DISPATCHER
+    );
+    expect(new LocalCommands(SESSION, COMMAND_TARGET).getSnapshot().commands[0]?.target).toEqual(COMMAND_TARGET);
+    expect(fetchMock.served[0].url.searchParams.get("resumeToken")).toBe("previous-checkpoint");
+  }
+);
+
+it("restarts a partial fresh snapshot from the beginning instead of resuming before CaughtUp", async () => {
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  queued(store, "a");
+  queued(store, "b");
+  stop = watchDispatches(store, SESSION, ["a", "b"]);
+  await settle();
+  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_RUNNER_ADMITTED", "partial-snapshot-cursor"));
+  fetchMock.served[0].end();
+  await settle();
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  expect(fetchMock.served[1].url.searchParams.has("resumeToken")).toBe(false);
+  expect(stateOf(store, "a")).toBe(DeliveryState.RUNNER_ADMITTED);
+});
+
+it("surfaces active-stream OUT_OF_RANGE, clears its cursor, and keeps the warning after resnapshot", async () => {
   const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();
-  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_QUEUED_IN_DISPATCHER"));
-  fetchMock.served[0].send({ caughtUp: {} });
-  fetchMock.served[0].end();
+  const first = fetchMock.served[0];
+  first.send(dispatchFrame("a", "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "snapshot-row"));
+  first.send(caughtUp("initial-checkpoint"));
+  first.send(dispatchFrame("a", "DELIVERY_STATE_DELIVERING_TO_RUNNER", "advanced-checkpoint"));
+  first.send(caughtUp("caught-up-checkpoint"));
+  first.write('{"error":{"code":11,"message":"dispatch deletion coverage expired"}}\n');
+  await settle();
   await vi.advanceTimersByTimeAsync(1_000);
-  // The Sandbox was deleted while the page was disconnected.
-  fetchMock.served[1].send({ caughtUp: {} });
+
+  const fresh = fetchMock.served[1];
+  expect(first.url.searchParams.has("resumeToken")).toBe(false);
+  expect(fresh.url.searchParams.has("resumeToken")).toBe(false);
+  expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  fresh.send(dispatchFrame("a", "DELIVERY_STATE_FAILED", "fresh-row", "2026-10-19T12:00:02Z"));
+  fresh.send(caughtUp("fresh-checkpoint"));
   await settle();
 
-  expect(stateOf(store, "a")).toBe(DeliveryState.UNKNOWN);
+  expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
+  expect(new LocalCommands(SESSION, COMMAND_TARGET).getSnapshot().dispatchWatchCoverageLost).toBe(true);
+  expect(store.dispatchWatchResumeToken(SESSION, ["a"])).toBe("fresh-checkpoint");
 });
 
-it("keeps applying frames after one it cannot read", async () => {
+it("treats HTTP 400 with gRPC OUT_OF_RANGE code as lost coverage", async () => {
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  queued(store, "a");
+  store.saveDispatchWatchResumeToken(SESSION, ["a"], "expired-checkpoint");
+  fetchMock.fetch.mockImplementationOnce(() =>
+    Promise.resolve(
+      Response.json({ error: { code: 11, message: "dispatch deletion coverage expired" } }, { status: 400 })
+    )
+  );
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  expect(fetchMock.served[0].url.searchParams.has("resumeToken")).toBe(false);
+  expect(store.getSnapshot().dispatchWatchCoverageLost).toBe(true);
+});
+
+it("does not advance a saved cursor when persisting a changed receipt fails", async () => {
+  const store = new LocalCommands(SESSION, COMMAND_TARGET);
+  queued(store, "a");
+  store.saveDispatchWatchResumeToken(SESSION, ["a"], "durable-checkpoint");
+  stop = watchDispatches(store, SESSION, ["a"]);
+  await settle();
+  vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+    throw new DOMException("storage full", "QuotaExceededError");
+  });
+  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FAILED", "must-not-advance"));
+  await settle();
+  await vi.advanceTimersByTimeAsync(1_000);
+
+  expect(fetchMock.served[1].url.searchParams.get("resumeToken")).toBe("durable-checkpoint");
+});
+
+it("reconnects before a malformed receipt can advance the cursor", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const store = new LocalCommands(SESSION, COMMAND_TARGET);
   queued(store, "a");
   stop = watchDispatches(store, SESSION, ["a"]);
   await settle();
-  fetchMock.served[0].send({ dispatch: { commandId: "a" } });
-  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FAILED"));
+  fetchMock.served[0].send({ dispatch: { commandId: "a" }, resumeToken: "malformed-row-cursor" });
+  fetchMock.served[0].send(dispatchFrame("a", "DELIVERY_STATE_FAILED", "later-row-cursor"));
   await settle();
+  await vi.advanceTimersByTimeAsync(1_000);
 
-  expect(stateOf(store, "a")).toBe(DeliveryState.FAILED);
+  expect(stateOf(store, "a")).toBe(DeliveryState.QUEUED_IN_DISPATCHER);
+  expect(fetchMock.served[1].url.searchParams.has("resumeToken")).toBe(false);
 });
