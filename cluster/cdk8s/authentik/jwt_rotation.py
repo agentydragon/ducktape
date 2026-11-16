@@ -38,6 +38,7 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.rotator_cron_job import GITHUB_PAT_SECRET_NAME, RotatorCronJob, secret_mount
 from cluster.rotators.authentik_jwt_rotation.config import Config, K8sSecretOutput, Probe, Rotation
 
 NAME = "authentik-jwt-rotation"
@@ -45,10 +46,8 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/agents/authentik-jwt-rotation"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/authentik-jwt-rotation-image-pins"
 NAMESPACE = "agents-infra"
 _IMAGE = "git.allegedly.works/ducktape-ci/authentik-jwt-rotation:unset"
-_GITHUB_PAT = "github-secrets-sync-pat"
 _PUBLISHED_SECRETS_READER = "authentik-jwt-rotation-published-secrets-reader"
 _FLUX_SYSTEM = "flux-system"
-_CONFIG_DIR = "/config"
 _CONFIG_FILE = "rotations.yaml"
 
 
@@ -173,14 +172,6 @@ CONFIG_MAP = ConfigMapArgs(
 )
 
 
-def _secret_volume(name: str, secret: str) -> k8s.Volume:
-    return k8s.Volume(name=name, secret=k8s.SecretVolumeSource(secret_name=secret))
-
-
-def _mount(name: str, path: str) -> k8s.VolumeMount:
-    return k8s.VolumeMount(name=name, mount_path=path, read_only=True)
-
-
 def _rotation_client_credentials() -> tuple[_ClientCredentials, ...]:
     """Return the distinct credential Secrets used by ROTATIONS, in roster order."""
     credentials: dict[Path, _ClientCredentials] = {}
@@ -194,7 +185,7 @@ def _rotation_client_credentials() -> tuple[_ClientCredentials, ...]:
 
 def _cronjob(chart: Chart) -> None:
     client_credentials = _rotation_client_credentials()
-    k8s.KubeCronJob(
+    RotatorCronJob(
         chart,
         "cronjob",
         metadata=k8s.ObjectMeta(
@@ -212,78 +203,16 @@ def _cronjob(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.CronJobSpec(
-            schedule="15 * * * *",
-            successful_jobs_history_limit=3,
-            failed_jobs_history_limit=3,
-            job_template=k8s.JobTemplateSpec(
-                spec=k8s.JobSpec(
-                    # A Job whose pod can never start (e.g. it pins a kustomize-hashed
-                    # ConfigMap that a newer generation pruned) stays active forever --
-                    # history limits and TTL apply only to finished Jobs. The deadline
-                    # fails it; the TTL then garbage-collects it.
-                    active_deadline_seconds=1800,
-                    ttl_seconds_after_finished=86400,
-                    backoff_limit=2,
-                    template=k8s.PodTemplateSpec(
-                        spec=k8s.PodSpec(
-                            # The SA token is used only to read back the published Secrets for
-                            # probes (the published-secrets-reader Roles, get on the
-                            # rotator-published Secret names -- nothing else).
-                            service_account_name=NAME,
-                            automount_service_account_token=True,
-                            restart_policy="OnFailure",
-                            volumes=[
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
-                                k8s.Volume(
-                                    name="rotations-config", config_map=k8s.ConfigMapVolumeSource(name=CONFIG_MAP.name)
-                                ),
-                                _secret_volume("github-pat", _GITHUB_PAT),
-                                *(_secret_volume(c.volume, c.secret) for c in client_credentials),
-                            ],
-                            security_context=k8s.PodSecurityContext(
-                                run_as_non_root=True,
-                                run_as_user=65534,
-                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
-                            ),
-                            containers=[
-                                k8s.Container(
-                                    name="rotate",
-                                    image=_IMAGE,
-                                    args=["--config", f"{_CONFIG_DIR}/{_CONFIG_FILE}"],
-                                    env=[
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                        k8s.EnvVar(
-                                            name="GIT_SSL_CAINFO", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                    ],
-                                    security_context=k8s.SecurityContext(
-                                        allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
-                                    ),
-                                    volume_mounts=[
-                                        _mount("public-web-pki", "/var/run/public-web-pki"),
-                                        _mount("rotations-config", _CONFIG_DIR),
-                                        _mount("github-pat", "/var/run/secrets/github-pat"),
-                                        *(_mount(c.volume, str(c.directory)) for c in client_credentials),
-                                    ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("128Mi"),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string("256Mi")},
-                                    ),
-                                )
-                            ],
-                        )
-                    ),
-                )
-            ),
-        ),
+        schedule="15 * * * *",
+        image=_IMAGE,
+        config_map_name=CONFIG_MAP.name,
+        config_file=_CONFIG_FILE,
+        # The SA token is used only to read back the published Secrets for probes
+        # (the published-secrets-reader Roles, get on the rotator-published names).
+        service_account_name=NAME,
+        automount_service_account_token=True,
+        image_pull_secrets=None,
+        credential_mounts=tuple(secret_mount(c.volume, c.secret, str(c.directory)) for c in client_credentials),
     )
 
 
@@ -335,7 +264,7 @@ def chart(app: App) -> Chart:
     ExternalSecret(
         chart,
         "github-pat",
-        metadata=ApiObjectMetadata(name=_GITHUB_PAT, namespace=NAMESPACE),
+        metadata=ApiObjectMetadata(name=GITHUB_PAT_SECRET_NAME, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=external_creds.STORE,
         data=[remote_data("github-agentydragon-2", "token")],
@@ -381,7 +310,10 @@ def authentik_jwt_rotation(
         ],
         health_checks=[
             KustomizationSpecHealthChecks(
-                api_version="external-secrets.io/v1", kind="ExternalSecret", name=_GITHUB_PAT, namespace=NAMESPACE
+                api_version="external-secrets.io/v1",
+                kind="ExternalSecret",
+                name=GITHUB_PAT_SECRET_NAME,
+                namespace=NAMESPACE,
             )
         ],
         timeout="2m",

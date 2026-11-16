@@ -212,6 +212,17 @@ py_test(
 )
 
 py_library(
+    name = "rotator_cron_job",
+    srcs = ["rotator_cron_job.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "secret_ref",
     srcs = ["secret_ref.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
