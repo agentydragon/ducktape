@@ -51,6 +51,22 @@ func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 			if projection, ok := first.History.(Projection); !ok || projection.Key != ProjectionFor(config) {
 				t.Fatalf("history = %#v", first.History)
 			}
+			if config.API == protocol.APIStyleResponses {
+				// Emulate a retained profile authored by an earlier template version.
+				wire, err := Render(memory, config.API, first.ProfileID, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var retained responses.Request
+				if err := json.Unmarshal(wire, &retained); err != nil {
+					t.Fatal(err)
+				}
+				retained.Instructions = firstInstructions
+				first.ProfileID, _, err = responses.StoreRequest(memory, retained)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
 			changed := "fixture changed authored prefix"
 			snapshot.Instructions, snapshot.PreviousProfileID = &changed, first.ProfileID
 			if len(first.PrefixIDs) > 0 {
@@ -64,8 +80,22 @@ func TestPreparationFreezesAuthoredPrefixAcrossRequests(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(string(wire), firstInstructions) || strings.Contains(string(wire), changed) {
-				t.Fatalf("prefix changed: %s", wire)
+			if config.API == protocol.APIStyleResponses {
+				var restored struct {
+					Instructions string `json:"instructions"`
+				}
+				if err := json.Unmarshal(wire, &restored); err != nil {
+					t.Fatal(err)
+				}
+				if restored.Instructions != firstInstructions {
+					t.Fatal("retained template instructions changed")
+				}
+				// Session instructions remain a per-request developer message.
+				if !strings.Contains(string(wire), changed) {
+					t.Fatal("current Session instructions missing from input")
+				}
+			} else if !strings.Contains(string(wire), firstInstructions) || strings.Contains(string(wire), changed) {
+				t.Fatal("retained system instructions changed")
 			}
 			if first.ProfileID != next.ProfileID {
 				t.Fatal("unchanged profile received another content hash")
