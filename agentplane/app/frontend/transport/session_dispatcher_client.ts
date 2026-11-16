@@ -5,7 +5,7 @@ import {
   type WatchSessionsResponse,
 } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { fetchWithLogin, HttpError } from "./client";
-import { followWatch, WatchRpcError, type WatchHandlers } from "./watch_stream";
+import { followWatch, WatchStreamError, type WatchHandlers } from "./watch_stream";
 
 /** One browser client for the generated SessionDispatcher facade, through the App proxy. */
 export const sessionDispatcherClient = {
@@ -37,7 +37,7 @@ export const sessionDispatcherClient = {
         token = frame.resumeToken;
       },
       onError: (reason) => {
-        if ((reason instanceof WatchRpcError || reason instanceof HttpError) && reason.code === 3) token = "";
+        if ((reason instanceof WatchStreamError || reason instanceof HttpError) && reason.code === 3) token = "";
       },
     });
   },

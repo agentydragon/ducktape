@@ -356,6 +356,7 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "//agentplane/session_dispatcher:client",
+        "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/testing:gateway_process",
         "//agentplane/testing:kubernetes_apiserver",

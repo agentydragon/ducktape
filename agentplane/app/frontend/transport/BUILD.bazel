@@ -66,10 +66,7 @@ ts_library(
     name = "stream_reader",
     srcs = ["stream_reader.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",
-    deps = [
-        ":client",
-        ":parsed_json",
-    ],
+    deps = [":client"],
 )
 
 agentplane_vitest_test(
