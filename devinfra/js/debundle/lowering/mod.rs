@@ -18,7 +18,10 @@ use artifact::{
     ArtifactIndexes, ChunkBundle, export_policies, normalized_chunk_ids,
     prune_artifact_to_chunk_ids,
 };
-use gate::{CandidateRelocationAssessmentReport, ChunkGateRejection, UnmatchedSpecClaim};
+use gate::{
+    AssignmentReport, CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
+    StructuralPlacementAssessment, StructuralPlacementStatus, UnmatchedSpecClaim,
+};
 
 use output_layout::MODULES_REPORT;
 
@@ -60,7 +63,7 @@ use io::{ProgramGraphOutput, prepare_output_dir, write_chunk_report_json};
 use materialize::{
     ChunkContext, ChunkSpec, EmissionChunkOutputs, FinishedLogicalChunk, GraphConstructionContext,
     MaterializeLogicalChunkInputs, claim_prepared_chunk, collect_materialized_logical_chunks,
-    finish_logical_chunk, prepare_logical_chunk,
+    finalize_claimed_selected_assignment, finish_logical_chunk, prepare_logical_chunk,
 };
 use staged_analysis::{
     ExportReentryReport, export_reentry_reports, load_analysis, loader_surface, program_summary,
@@ -291,6 +294,277 @@ pub struct MaterializeSpecInputs<'a> {
     pub import_order: &'a BTreeMap<String, Vec<spec::ModulePath>>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
+}
+
+/// Inputs for checking one selected ownership view through the materializer's
+/// ordinary frontend and assignment construction. The supplied graph is
+/// source-bound by the caller; this function restores its hygienic declaration
+/// identities from the source-only frontend census before assigning it.
+pub struct SelectedOwnershipPreflightInput<'a> {
+    pub artifact: &'a ChunkBundle,
+    pub spec_inputs: MaterializeSpecInputs<'a>,
+    pub materialize_config: &'a spec::MaterializeLogicalModulesConfig,
+    pub materialized_chunk_ids: &'a [String],
+    pub chunk_id: &'a str,
+    pub ownership_subset: &'a OwnershipSubset,
+    pub graph: analysis::DependencyGraphInput,
+    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
+    pub graph_provenance: Option<&'a graph_provenance::GraphProvenance>,
+}
+
+/// The exact placement and gate result for a selected ownership assignment.
+/// Binding export names are keyed by saved graph report ID, so a writer can
+/// compare every retained source-unit binding with its baseline witness.
+pub struct SelectedOwnershipPreflight {
+    pub source_unit_modules: BTreeMap<String, Option<spec::ModulePath>>,
+    pub emitted_owner_paths: BTreeSet<spec::ModulePath>,
+    pub source_unit_binding_exports: BTreeMap<String, Vec<SelectedBindingExport>>,
+    pub gate_report: AssignmentReport,
+    pub gate_accepts: bool,
+    pub structural_placement: StructuralPlacementAssessment,
+    pub structural_accepts: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedBindingExport {
+    pub binding: String,
+    pub export_name: String,
+}
+
+impl SelectedOwnershipPreflight {
+    pub fn ensure_accepted(&self) -> Result<()> {
+        ensure!(
+            self.gate_accepts,
+            "selected ownership assignment was rejected by the realizability gate"
+        );
+        ensure!(
+            self.structural_accepts,
+            "selected ownership assignment has unresolved structural placement: {:?}",
+            self.structural_placement
+        );
+        Ok(())
+    }
+}
+
+/// Prepare one selected ownership view through the same full-base selector
+/// resolution, claim application, residual routing, assignment assembly,
+/// supplied-priority gate, and structural placement projection used by normal
+/// materialization. This intentionally does not run semantic value-flow
+/// analysis: the saved dependency topology is the input, with only source
+/// declaration identities rehydrated from the shared structural census.
+pub fn preflight_selected_ownership(
+    input: SelectedOwnershipPreflightInput<'_>,
+) -> Result<SelectedOwnershipPreflight> {
+    let SelectedOwnershipPreflightInput {
+        artifact: source_artifact,
+        spec_inputs,
+        materialize_config,
+        materialized_chunk_ids,
+        chunk_id,
+        ownership_subset,
+        graph,
+        diagnostics,
+        graph_provenance,
+    } = input;
+    let MaterializeSpecInputs {
+        host_behavior,
+        program_premises,
+        embedded_loaders: _,
+        logical_modules,
+        chunk_renames,
+        unassigned_mode,
+        import_order,
+        chunk_analysis_options,
+        chunk_export_purity,
+    } = spec_inputs;
+    let selected_chunk_ids = normalized_chunk_ids(materialized_chunk_ids)?;
+    ensure!(
+        selected_chunk_ids
+            .iter()
+            .any(|selected| selected == chunk_id),
+        "selected ownership preflight chunk {chunk_id:?} is not in the materialized chunk set"
+    );
+    ensure!(
+        graph.report().chunk_id == chunk_id,
+        "selected ownership preflight graph names chunk {:?}, expected {chunk_id:?}",
+        graph.report().chunk_id
+    );
+    ownership_subset.validate(logical_modules, &selected_chunk_ids)?;
+
+    let target_dir = normalize_optional_relative_dir(&materialize_config.target_dir)?;
+    let pruned_artifact = if materialize_config.prune_other_chunks {
+        let mut artifact = source_artifact.clone();
+        prune_artifact_to_chunk_ids(&mut artifact, &selected_chunk_ids);
+        Some(artifact)
+    } else {
+        None
+    };
+    let artifact = pruned_artifact.as_ref().unwrap_or(source_artifact);
+    let artifact_indexes = ArtifactIndexes::build(artifact)?;
+    let resolved_export_purity =
+        export_policies::resolve_source_export_policies(artifact, chunk_export_purity)?;
+    let placement_chunks = ownership_subset
+        .placements
+        .iter()
+        .filter(|(chunk, modules)| selected_chunk_ids.contains(chunk) && !modules.is_empty())
+        .map(|(chunk, _)| chunk.clone())
+        .collect::<BTreeSet<_>>();
+    let report_emission = ReportEmission::None;
+    let no_effect_conflict_chunks = BTreeSet::new();
+    let no_full_reports = BTreeSet::new();
+    let no_full_report_chunks = BTreeSet::new();
+    let no_export_reentry_policies = BTreeMap::new();
+    let no_export_reentry_reports = BTreeMap::new();
+    let frontend = frontend_elaboration::elaborate(
+        selected_chunk_ids
+            .iter()
+            .map(
+                |selected_chunk_id| frontend_elaboration::FrontendChunkInput {
+                    artifact,
+                    chunk_id: selected_chunk_id,
+                    file: materialize_config.file.as_deref(),
+                },
+            )
+            .collect(),
+        frontend_elaboration::FrontendSpecInputs {
+            logical_modules,
+            placement_chunks,
+            chunk_renames,
+            unassigned_mode,
+            chunk_analysis_options,
+            graph_provenance,
+            chunk_export_purity: &resolved_export_purity,
+            host_behavior,
+            intrinsics_never_written: program_premises.intrinsics_never_written.as_ref(),
+            fail_fast: true,
+            diagnostics,
+        },
+    )?;
+    let frontend_elaboration::FrontendElaboration {
+        chunks, projection, ..
+    } = frontend;
+    let frontend_chunk = chunks
+        .into_iter()
+        .find(|chunk| chunk.chunk_id == chunk_id)
+        .with_context(|| format!("frontend elaboration omitted preflight chunk {chunk_id:?}"))?;
+    let prepared = prepare_logical_chunk(
+        MaterializeLogicalChunkInputs {
+            context: ChunkContext {
+                diagnostics,
+                ownership_subset: Some(ownership_subset),
+                artifact,
+                artifact_indexes: &artifact_indexes,
+                chunk_id,
+                target_dir: &target_dir,
+                keep_going: false,
+                list_template_identifiers: false,
+                report_emission: &report_emission,
+                graph_reports: GraphReportSelection::None,
+                effect_conflicts_jsonl: false,
+                effect_conflicts_chunks: &no_effect_conflict_chunks,
+                full_reports: &no_full_reports,
+                full_report_chunks: &no_full_report_chunks,
+                gate_rejection: GateRejectionPolicy::Refuse,
+                assessment_only: false,
+                export_reentry_policies: &no_export_reentry_policies,
+                export_reentry_reports: &no_export_reentry_reports,
+                vendor_import_oracle: None,
+            },
+            spec: ChunkSpec {
+                chunk_renames,
+                unassigned_mode,
+                import_order,
+            },
+        },
+        frontend_chunk,
+    )?;
+    let claimed = claim_prepared_chunk(prepared)?;
+    let graph_report_ids = graph
+        .report()
+        .nodes
+        .iter()
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    let finalized = finalize_claimed_selected_assignment(claimed, graph, &projection)?;
+    let assignment_analysis = &finalized.assignment_analysis;
+    let graph_ir = assignment_analysis.inputs().dependency_graph();
+    let local_bindings = assignment_analysis
+        .inputs()
+        .local_bindings(finalized.chunk_id_interned)?;
+    let placement_projection = analysis::project_placement(analysis::PlacementProjectionInput {
+        graph: graph_ir,
+        assignment: assignment_analysis.assignment(),
+        local_bindings,
+        body: &finalized.runtime_ast.module.body,
+        layout: &finalized.source_unit_layout,
+        whole_statements: &finalized.whole_statement_assignment,
+        module_count: finalized.module_count,
+        destructuring_groups: &finalized.ast_analysis.destructuring_groups,
+        nested_var_statements: &finalized.ast_analysis.nested_var_statements,
+    });
+    let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
+    let gate_accepts = !candidate.is_rejected();
+    let gate_report = candidate.report().clone();
+    let structural_placement = candidate.placement_assessment().clone();
+    let structural_accepts = structural_placement.status
+        == StructuralPlacementStatus::NoKnownBlocker
+        && structural_placement.coverage.is_complete()
+        && structural_placement.emission_mappable;
+
+    let assignment = assignment_analysis.assignment();
+    let entry_destination = assignment.entry_destination().module_id();
+    let mut source_unit_modules = BTreeMap::new();
+    let mut source_unit_binding_exports = BTreeMap::new();
+    for node in graph_ir.iter_nodes() {
+        let report_id = graph_report_ids
+            .get(node.id.0)
+            .with_context(|| format!("assignment contains unknown source unit {}", node.id.0))?
+            .clone();
+        let owner = assignment.of(node.id);
+        let owner_path =
+            (owner != entry_destination).then(|| assignment_analysis.module_path(owner));
+        ensure!(
+            source_unit_modules
+                .insert(report_id.clone(), owner_path)
+                .is_none(),
+            "saved dependency graph repeats report node ID {report_id:?}"
+        );
+        let exports = node
+            .declared
+            .iter()
+            .map(|binding| {
+                let export_name =
+                    assignment_analysis
+                        .inputs()
+                        .export_name_for(&analysis::BindingId::new(
+                            finalized.chunk_id_interned,
+                            binding.clone(),
+                        ))?;
+                Ok(SelectedBindingExport {
+                    binding: binding.0.to_string(),
+                    export_name: export_name.to_string(),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        source_unit_binding_exports.insert(report_id, exports);
+    }
+    ensure!(
+        source_unit_modules.len() == graph_report_ids.len()
+            && source_unit_binding_exports.len() == graph_report_ids.len(),
+        "selected assignment did not project every saved dependency graph source unit"
+    );
+    let emitted_owner_paths = (0..assignment_analysis.inputs().planned_modules().len())
+        .map(|index| assignment_analysis.module_path(analysis::ModuleId(index)))
+        .collect();
+    Ok(SelectedOwnershipPreflight {
+        source_unit_modules,
+        emitted_owner_paths,
+        source_unit_binding_exports,
+        gate_report,
+        gate_accepts,
+        structural_placement,
+        structural_accepts,
+    })
 }
 
 pub fn materialize_logical_modules(

@@ -74,6 +74,7 @@ use swc_ecma_ast::*;
 
 /// Per-chunk inputs that identify the chunk and where its outputs
 /// should land. Bundled into `MaterializeLogicalChunkInputs::context`.
+#[derive(Clone, Copy)]
 pub(super) struct ChunkContext<'a> {
     pub(super) diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
     pub(super) ownership_subset: Option<&'a OwnershipSubset>,
@@ -103,6 +104,7 @@ pub(super) struct ChunkContext<'a> {
 /// renames and unassigned-mode. Analysis reads the spec through
 /// `AnalysisProjection` instead. Bundled into
 /// `MaterializeLogicalChunkInputs::spec`.
+#[derive(Clone, Copy)]
 pub(super) struct ChunkSpec<'a> {
     pub(super) chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub(super) unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
@@ -116,8 +118,8 @@ pub(super) struct MaterializeLogicalChunkInputs<'a> {
 
 pub(super) struct MaterializedLogicalChunk {
     pub(super) chunk_id: ChunkId,
-    pub(super) target_file: String,
-    pub(super) source_path: String,
+    target_file: String,
+    source_path: String,
     pub(super) files: Vec<JsFile>,
     pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
@@ -151,14 +153,14 @@ pub(super) enum FinishedLogicalChunk {
 /// Lowering state prepared before the shared spec-resolution service projects
 /// and solves selector entities.
 pub(super) struct PreparedLogicalChunk<'a> {
-    context: ChunkContext<'a>,
-    spec: ChunkSpec<'a>,
+    pub(super) context: ChunkContext<'a>,
+    pub(super) spec: ChunkSpec<'a>,
     chunk_unassigned_mode: UnassignedMode,
     chunk_id_interned: ChunkId,
-    target_file: String,
+    pub(super) target_file: String,
     runtime_ast: &'a ParsedJsModule,
     header_lines: Vec<String>,
-    source_path: String,
+    pub(super) source_path: String,
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
@@ -366,23 +368,50 @@ pub(super) struct GraphConstructionContext<'a> {
     pub(super) resolved_member_sites: &'a BTreeMap<(String, String), Vec<ResolvedMemberSite>>,
 }
 
-/// Analyze, plan and lower a chunk whose selector claims are already resolved.
-pub(super) fn finish_logical_chunk(
-    claimed: ClaimedLogicalChunk<'_>,
-    projection: &AnalysisProjection<'_>,
-    program_summary: &super::program_summary::ProgramSummary,
-    loaded_facts: Option<ChunkFactAnalysis>,
-    program_graph: &ProgramGraphOutput<'_>,
-    graph_context: GraphConstructionContext<'_>,
-) -> Result<FinishedLogicalChunk> {
-    let ClaimedLogicalChunk {
-        prepared,
-        structural_analysis,
-        source_only_initializer_bindings,
-        external_initializer_contracts,
-        ..
-    } = claimed;
-    let PreparedLogicalChunk {
+pub(super) struct SelectedAssignmentBuildInput<'a, 'p, 's> {
+    context: ChunkContext<'a>,
+    spec: ChunkSpec<'a>,
+    chunk_unassigned_mode: UnassignedMode,
+    chunk_id_interned: ChunkId,
+    target_file: String,
+    runtime_ast: &'a ParsedJsModule,
+    header_lines: Vec<String>,
+    source_path: String,
+    ast_analysis: ChunkAstAnalysis,
+    requests: Vec<LogicalRequest>,
+    builder: ChunkPlanBuilder,
+    placement_anchors: Option<selector_resolve::PlacementAnchors>,
+    placement_source: Option<selector_resolve::Chunk<'a>>,
+    placement_modules: BTreeMap<String, spec::LogicalModule>,
+    precomputed: analysis::DependencyGraphAndAtomicGroups,
+    projection: &'p AnalysisProjection<'s>,
+}
+
+pub(super) struct FinalizedLogicalAssignment<'a> {
+    chunk_unassigned_mode: UnassignedMode,
+    pub(super) chunk_id_interned: ChunkId,
+    target_file: String,
+    pub(super) runtime_ast: &'a ParsedJsModule,
+    header_lines: Vec<String>,
+    source_path: String,
+    pub(super) ast_analysis: ChunkAstAnalysis,
+    requests: Vec<LogicalRequest>,
+    selected_ownership: Option<BTreeSet<SelectedModule>>,
+    pub(super) source_unit_layout: SourceUnitLayout,
+    module_plans: Vec<ModulePlan>,
+    pub(super) module_count: usize,
+    pub(super) whole_statement_assignment: BTreeMap<StatementId, usize>,
+    atomic_group_owner_completions: Vec<plan_builder::AtomicGroupOwnerCompletion>,
+    unmatched_spec_claims: Vec<crate::UnmatchedSpecClaim>,
+    pub(super) assignment_analysis: AssignmentAnalysis,
+    sealed_renames: crate::rename_ledger::SealedRenames,
+    chunk_renames_map: HashMap<String, String>,
+}
+
+fn finalize_selected_assignment<'a, 'p, 's>(
+    input: SelectedAssignmentBuildInput<'a, 'p, 's>,
+) -> Result<FinalizedLogicalAssignment<'a>> {
+    let SelectedAssignmentBuildInput {
         context,
         spec,
         chunk_unassigned_mode,
@@ -395,26 +424,19 @@ pub(super) fn finish_logical_chunk(
         requests,
         mut builder,
         placement_anchors,
-        ..
-    } = prepared;
+        placement_source,
+        placement_modules,
+        precomputed,
+        projection,
+    } = input;
     let ChunkContext {
         artifact,
         artifact_indexes,
         chunk_id,
         diagnostics,
         target_dir,
-        ownership_subset,
+        ownership_subset: ownership_subset_view,
         report_emission,
-        graph_reports,
-        effect_conflicts_jsonl,
-        effect_conflicts_chunks,
-        full_reports,
-        full_report_chunks,
-        gate_rejection: gate_rejection_policy,
-        assessment_only,
-        vendor_import_oracle,
-        export_reentry_policies,
-        export_reentry_reports,
         ..
     } = context;
     let ChunkSpec {
@@ -422,24 +444,11 @@ pub(super) fn finish_logical_chunk(
         import_order,
         ..
     } = spec;
-    let placement_modules = ownership_subset
-        .map(|view| view.placements_for_chunk(chunk_id))
-        .transpose()?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(path, module)| (path.to_string(), module))
-        .collect::<BTreeMap<_, _>>();
     ensure!(
         placement_modules.is_empty()
             || matches!(chunk_unassigned_mode, UnassignedMode::InlineInEntry),
         "fresh selected placement modules require inline_in_entry residual routing"
     );
-    // Keep the canonical census for the later placement-only solve. This is
-    // one bounded preparation copy for a chunk with placement claims, never a
-    // reparse, a second structural analysis, or work repeated per peel seed.
-    let placement_source = (!placement_modules.is_empty()).then(|| {
-        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
-    });
     let import_priority = import_order.get(chunk_id).with_context(|| {
         format!(
             "materialized chunk {chunk_id} requires import_order (use [] for an all-entry chunk)"
@@ -449,148 +458,10 @@ pub(super) fn finish_logical_chunk(
         runtime_import_facts,
         declarations,
         declaration_by_name,
-        pre_existing_entry_exports,
-        pre_existing_public_export_names,
         source_public_export_identities_by_statement,
         ..
     } = &ast_analysis;
     let chunk_top_level_mark = runtime_ast.top_level_mark;
-    let graph_inputs = graph_context
-        .chunk_inputs
-        .get(chunk_id)
-        .cloned()
-        .unwrap_or_default();
-    let graph_options = graph_inputs.options;
-    let commuting_statements = resolve_chunk_commuting_statements(
-        chunk_id,
-        &runtime_ast.module.body,
-        &graph_inputs.commuting_statements,
-        graph_context.graph_provenance,
-        graph_context.resolved_member_sites,
-    )?;
-    // Chunk analysis: hint-sensitive facts, then the dependency graph and
-    // structural atomic groups. See `chunk_analysis/mod.rs`.
-    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
-    let LogicalChunkFacts {
-        facts: mut analysis,
-        imported_callables,
-        redundant_admission_overrides,
-    } = compute_logical_chunk_facts(
-        ChunkFactsContext {
-            artifact,
-            artifact_indexes,
-            chunk_id,
-            chunk_id_interned,
-            target_file: &target_file,
-            runtime_ast,
-            source_path: &source_path,
-            diagnostics: context.diagnostics,
-            export_reentry_policy: export_reentry_policies
-                .get(&chunk_id_interned)
-                .unwrap_or(&ExportReentryPolicy::Conservative),
-        },
-        match loaded_facts {
-            Some(facts) => ChunkFacts::Loaded(facts),
-            None => ChunkFacts::Compute(structural_analysis),
-        },
-        projection,
-        program_summary,
-    )?;
-    analysis.apply_initializer_binding_effects(&source_only_initializer_bindings);
-    analysis
-        .validate_initializer_binding_effects(&source_only_initializer_bindings)
-        .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
-    analysis
-        .apply_initializer_external_effects(&external_initializer_contracts)
-        .with_context(|| format!("validating initializer heap effects in chunk `{chunk_id}`"))?;
-    let precomputed =
-        match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
-            Ok(precomputed) => precomputed,
-            Err(error) => {
-                // A contradicted `commuting_statements` entry is an
-                // author-premise diagnostic, not a pipeline fault: record it,
-                // with the selector outcomes gathered so far, where `spec
-                // validate` collects the chunk's reports; the chunk still fails.
-                if let Some(contradiction) = error
-                    .downcast_ref::<analysis::DependencyGraphBuildError>()
-                    .and_then(
-                        analysis::DependencyGraphBuildError::commuting_statements_contradiction,
-                    )
-                    && let Some(report_out_dir) = report_emission.rejection_dir()
-                {
-                    write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
-                    write_chunk_report_json(
-                        report_out_dir,
-                        chunk_id,
-                        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-                        &[CommutingStatementsDiagnostic::Contradicted(
-                            contradiction.clone(),
-                        )],
-                    )?;
-                }
-                return Err(error);
-            }
-        };
-    // An unused entry is a warning: the graph is exactly the graph without it.
-    for unused in &precomputed.unused_commuting_statements {
-        context.diagnostics.record_chunk(
-            chunk_id,
-            analysis::diagnostics::ChunkDiagnostic::UnusedCommutingStatements(Box::new(
-                unused.clone(),
-            )),
-        );
-    }
-    if !precomputed.unused_commuting_statements.is_empty()
-        && let Some(report_out_dir) = report_emission.rejection_dir()
-    {
-        write_chunk_report_json(
-            report_out_dir,
-            chunk_id,
-            COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
-            &precomputed
-                .unused_commuting_statements
-                .iter()
-                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
-                .collect::<Vec<_>>(),
-        )?;
-    }
-    if let Some(report_out_dir) = report_emission.rejection_dir() {
-        write_chunk_report_json(
-            report_out_dir,
-            chunk_id,
-            SPEC_LINT_REPORT,
-            &ChunkSpecLint {
-                findings: spec_lint_findings(
-                    chunk_id,
-                    &precomputed.unused_commuting_statements,
-                    &redundant_admission_overrides,
-                    &analysis.redundant_purity_hints,
-                    &analysis.unconsulted_purity_hints,
-                    graph_context.resolved_member_sites,
-                )
-                .into_iter()
-                .chain(
-                    projection
-                        .chunk_analysis_inputs
-                        .get(chunk_id)
-                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
-                        .then(|| {
-                            LintFinding::trusted_dataflow_summaries(
-                                chunk_id,
-                                analysis.consumed_trusted_dataflow_summaries(),
-                            )
-                        }),
-                )
-                .collect(),
-                consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
-                loader_key_uses: export_reentry_reports
-                    .values()
-                    .map(|report| loader_key_uses(&report.loader))
-                    .fold(LoaderKeyUses::default(), LoaderKeyUses::join),
-            },
-        )?;
-    }
-    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::End);
     let source_unit_layout = SourceUnitLayout::checked(
         &precomputed.dependency_graph,
         &ast_analysis.source_unit_syntax_locations,
@@ -606,7 +477,7 @@ pub(super) fn finish_logical_chunk(
     };
     // Selector outcomes, resolved-member anchors, and analysis assumptions
     // have already been collected from the complete authored ownership.
-    let ownership_subset = ownership_subset.map(|subset| subset.modules_for_chunk(chunk_id));
+    let ownership_subset = ownership_subset_view.map(|subset| subset.modules_for_chunk(chunk_id));
     if let Some(selected) = &ownership_subset {
         builder.retain_modules(selected)?;
         // Recreate only the derived owners required by retained claims.
@@ -841,6 +712,342 @@ pub(super) fn finish_logical_chunk(
             .unwrap_or_default(),
         assignment_analysis.splits_or_reorders() || sealed_renames.renames_any(),
     )?;
+    let module_count = module_plans.len();
+    Ok(FinalizedLogicalAssignment {
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        selected_ownership: ownership_subset,
+        source_unit_layout,
+        module_plans,
+        module_count,
+        whole_statement_assignment,
+        atomic_group_owner_completions,
+        unmatched_spec_claims,
+        assignment_analysis,
+        sealed_renames,
+        chunk_renames_map,
+    })
+}
+
+/// Reuse the same plan finalization for a selected view whose dependency
+/// topology comes from a source-bound saved graph rather than semantic facts.
+pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
+    claimed: ClaimedLogicalChunk<'a>,
+    graph: analysis::DependencyGraphInput,
+    projection: &'p AnalysisProjection<'s>,
+) -> Result<FinalizedLogicalAssignment<'a>> {
+    let ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+        ..
+    } = claimed;
+    let PreparedLogicalChunk {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        builder,
+        placement_anchors,
+        ..
+    } = prepared;
+    let chunk_id = context.chunk_id;
+    let placement_modules = context
+        .ownership_subset
+        .map(|subset| subset.placements_for_chunk(chunk_id))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(path, module)| (path.to_string(), module))
+        .collect::<BTreeMap<_, _>>();
+    let placement_source = (!placement_modules.is_empty()).then(|| {
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
+    });
+    let graph = graph.with_source_declarations(&structural_analysis.per_statement)?;
+    let dependency_graph = graph.graph().clone();
+    let precomputed = analysis::DependencyGraphAndAtomicGroups {
+        atomic_groups: analysis::compute_atomic_groups(&dependency_graph),
+        dependency_graph,
+        unused_commuting_statements: Vec::new(),
+    };
+    finalize_selected_assignment(SelectedAssignmentBuildInput {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        builder,
+        placement_anchors,
+        placement_source,
+        placement_modules,
+        precomputed,
+        projection,
+    })
+}
+
+/// Analyze, plan and lower a chunk whose selector claims are already resolved.
+pub(super) fn finish_logical_chunk(
+    claimed: ClaimedLogicalChunk<'_>,
+    projection: &AnalysisProjection<'_>,
+    program_summary: &super::program_summary::ProgramSummary,
+    loaded_facts: Option<ChunkFactAnalysis>,
+    program_graph: &ProgramGraphOutput<'_>,
+    graph_context: GraphConstructionContext<'_>,
+) -> Result<FinishedLogicalChunk> {
+    let ClaimedLogicalChunk {
+        prepared,
+        structural_analysis,
+        source_only_initializer_bindings,
+        external_initializer_contracts,
+        ..
+    } = claimed;
+    let PreparedLogicalChunk {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        builder,
+        placement_anchors,
+        ..
+    } = prepared;
+    let ChunkContext {
+        artifact,
+        artifact_indexes,
+        chunk_id,
+        diagnostics,
+        target_dir,
+        ownership_subset,
+        report_emission,
+        graph_reports,
+        effect_conflicts_jsonl,
+        effect_conflicts_chunks,
+        full_reports,
+        full_report_chunks,
+        gate_rejection: gate_rejection_policy,
+        assessment_only,
+        vendor_import_oracle,
+        export_reentry_policies,
+        export_reentry_reports,
+        ..
+    } = context;
+    let placement_modules = ownership_subset
+        .map(|view| view.placements_for_chunk(chunk_id))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(path, module)| (path.to_string(), module))
+        .collect::<BTreeMap<_, _>>();
+    // Keep the canonical census for the later placement-only solve. This is
+    // one bounded preparation copy for a chunk with placement claims, never a
+    // reparse, a second structural analysis, or work repeated per peel seed.
+    let placement_source = (!placement_modules.is_empty()).then(|| {
+        selector_resolve::Chunk::new(chunk_id, &runtime_ast.module, structural_analysis.clone())
+    });
+    let graph_inputs = graph_context
+        .chunk_inputs
+        .get(chunk_id)
+        .cloned()
+        .unwrap_or_default();
+    let graph_options = graph_inputs.options;
+    let commuting_statements = resolve_chunk_commuting_statements(
+        chunk_id,
+        &runtime_ast.module.body,
+        &graph_inputs.commuting_statements,
+        graph_context.graph_provenance,
+        graph_context.resolved_member_sites,
+    )?;
+    // Chunk analysis: hint-sensitive facts, then the dependency graph and
+    // structural atomic groups. See `chunk_analysis/mod.rs`.
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::Start);
+    let LogicalChunkFacts {
+        facts: mut analysis,
+        imported_callables,
+        redundant_admission_overrides,
+    } = compute_logical_chunk_facts(
+        ChunkFactsContext {
+            artifact,
+            artifact_indexes,
+            chunk_id,
+            chunk_id_interned,
+            target_file: &target_file,
+            runtime_ast,
+            source_path: &source_path,
+            diagnostics: context.diagnostics,
+            export_reentry_policy: export_reentry_policies
+                .get(&chunk_id_interned)
+                .unwrap_or(&ExportReentryPolicy::Conservative),
+        },
+        match loaded_facts {
+            Some(facts) => ChunkFacts::Loaded(facts),
+            None => ChunkFacts::Compute(structural_analysis),
+        },
+        projection,
+        program_summary,
+    )?;
+    analysis.apply_initializer_binding_effects(&source_only_initializer_bindings);
+    analysis
+        .validate_initializer_binding_effects(&source_only_initializer_bindings)
+        .with_context(|| format!("validating initializer binding effects in chunk `{chunk_id}`"))?;
+    analysis
+        .apply_initializer_external_effects(&external_initializer_contracts)
+        .with_context(|| format!("validating initializer heap effects in chunk `{chunk_id}`"))?;
+    let precomputed =
+        match build_chunk_graph(chunk_id, &analysis, graph_options, &commuting_statements) {
+            Ok(precomputed) => precomputed,
+            Err(error) => {
+                // A contradicted `commuting_statements` entry is an
+                // author-premise diagnostic, not a pipeline fault: record it,
+                // with the selector outcomes gathered so far, where `spec
+                // validate` collects the chunk's reports; the chunk still fails.
+                if let Some(contradiction) = error
+                    .downcast_ref::<analysis::DependencyGraphBuildError>()
+                    .and_then(
+                        analysis::DependencyGraphBuildError::commuting_statements_contradiction,
+                    )
+                    && let Some(report_out_dir) = report_emission.rejection_dir()
+                {
+                    write_selector_diagnostics(&builder, report_out_dir, chunk_id)?;
+                    write_chunk_report_json(
+                        report_out_dir,
+                        chunk_id,
+                        COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+                        &[CommutingStatementsDiagnostic::Contradicted(
+                            contradiction.clone(),
+                        )],
+                    )?;
+                }
+                return Err(error);
+            }
+        };
+    // An unused entry is a warning: the graph is exactly the graph without it.
+    for unused in &precomputed.unused_commuting_statements {
+        context.diagnostics.record_chunk(
+            chunk_id,
+            analysis::diagnostics::ChunkDiagnostic::UnusedCommutingStatements(Box::new(
+                unused.clone(),
+            )),
+        );
+    }
+    if !precomputed.unused_commuting_statements.is_empty()
+        && let Some(report_out_dir) = report_emission.rejection_dir()
+    {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            COMMUTING_STATEMENTS_DIAGNOSTICS_REPORT,
+            &precomputed
+                .unused_commuting_statements
+                .iter()
+                .map(|unused| CommutingStatementsDiagnostic::Unused(Box::new(unused.clone())))
+                .collect::<Vec<_>>(),
+        )?;
+    }
+    if let Some(report_out_dir) = report_emission.rejection_dir() {
+        write_chunk_report_json(
+            report_out_dir,
+            chunk_id,
+            SPEC_LINT_REPORT,
+            &ChunkSpecLint {
+                findings: spec_lint_findings(
+                    chunk_id,
+                    &precomputed.unused_commuting_statements,
+                    &redundant_admission_overrides,
+                    &analysis.redundant_purity_hints,
+                    &analysis.unconsulted_purity_hints,
+                    graph_context.resolved_member_sites,
+                )
+                .into_iter()
+                .chain(
+                    projection
+                        .chunk_analysis_inputs
+                        .get(chunk_id)
+                        .is_some_and(|inputs| inputs.trusted_dataflow_summaries)
+                        .then(|| {
+                            LintFinding::trusted_dataflow_summaries(
+                                chunk_id,
+                                analysis.consumed_trusted_dataflow_summaries(),
+                            )
+                        }),
+                )
+                .collect(),
+                consumed_reentry_free_operations: analysis.consumed_reentry_free_operations(),
+                loader_key_uses: export_reentry_reports
+                    .values()
+                    .map(|report| loader_key_uses(&report.loader))
+                    .fold(LoaderKeyUses::default(), LoaderKeyUses::join),
+            },
+        )?;
+    }
+    diagnostics.progress(chunk_id, Phase::ComputeChunkAnalysis, State::End);
+    let finalized = finalize_selected_assignment(SelectedAssignmentBuildInput {
+        context,
+        spec,
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        builder,
+        placement_anchors,
+        placement_source,
+        placement_modules,
+        precomputed,
+        projection,
+    })?;
+    let FinalizedLogicalAssignment {
+        chunk_unassigned_mode,
+        chunk_id_interned,
+        target_file,
+        runtime_ast,
+        header_lines,
+        source_path,
+        ast_analysis,
+        requests,
+        selected_ownership: ownership_subset,
+        source_unit_layout,
+        module_plans,
+        whole_statement_assignment,
+        atomic_group_owner_completions,
+        unmatched_spec_claims,
+        assignment_analysis,
+        sealed_renames,
+        chunk_renames_map,
+        ..
+    } = finalized;
+    let ChunkAstAnalysis {
+        runtime_import_facts,
+        declarations,
+        declaration_by_name,
+        pre_existing_entry_exports,
+        pre_existing_public_export_names,
+        ..
+    } = &ast_analysis;
+    let chunk_top_level_mark = runtime_ast.top_level_mark;
     let redundant_purity_hints = analysis.redundant_purity_hints;
     let assignment = assignment_analysis.assignment();
     let graph = assignment_analysis.inputs().dependency_graph();
