@@ -396,6 +396,29 @@ fn keep_going_reports_multiple_intrinsic_alias_no_matches() {
     }
 }
 
+fn define_property_alias_modules(alias_name: &str) -> Vec<LogicalModuleEntry> {
+    vec![
+        logical_module(
+            "model",
+            &[Member::source_alpha(
+                "DecoratedClass",
+                r#"class C {
+  greet() {
+    STMT_LIST;
+  }
+}"#,
+            )],
+        ),
+        logical_module(
+            "decorate_runtime",
+            &[
+                Member::makes_decorate_call("decorateClassMember", "DecoratedClass", None, None),
+                Member::intrinsic_alias(alias_name, "defineProperty", "decorateClassMember"),
+            ],
+        ),
+    ]
+}
+
 /// **Fail-closed: ambiguous referencer.** When one helper reads two *distinct*
 /// `defineProperty` aliases (a contrived shape that does not occur in real esbuild
 /// output), the relation picks out two source_units — ambiguous, so the spec is rejected.
@@ -422,41 +445,9 @@ d0([tag0], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };
 "#;
+    // Two distinct `defineProperty` aliases referenced by the one helper — ambiguous, fail-closed.
     expect_intrinsic_alias_outcome(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "model",
-                    &[Member::source_alpha(
-                        "DecoratedClass",
-                        r#"class C {
-  greet() {
-    STMT_LIST;
-  }
-}"#,
-                    )],
-                ),
-                logical_module(
-                    "decorate_runtime",
-                    &[
-                        Member::makes_decorate_call(
-                            "decorateClassMember",
-                            "DecoratedClass",
-                            None,
-                            None,
-                        ),
-                        // Two distinct `defineProperty` aliases referenced by the one
-                        // helper — ambiguous, fail-closed.
-                        Member::intrinsic_alias(
-                            "ambiguous",
-                            "defineProperty",
-                            "decorateClassMember",
-                        ),
-                    ],
-                ),
-            ],
-        ),
+        FixtureOpts::new(source, define_property_alias_modules("ambiguous")),
         "ambiguous",
         "ambiguous",
     );
@@ -492,38 +483,7 @@ console.log(new C().greet());
 export { C };
 "#;
     expect_intrinsic_alias_outcome(
-        FixtureOpts::new(
-            source,
-            vec![
-                logical_module(
-                    "model",
-                    &[Member::source_alpha(
-                        "DecoratedClass",
-                        r#"class C {
-  greet() {
-    STMT_LIST;
-  }
-}"#,
-                    )],
-                ),
-                logical_module(
-                    "decorate_runtime",
-                    &[
-                        Member::makes_decorate_call(
-                            "decorateClassMember",
-                            "DecoratedClass",
-                            None,
-                            None,
-                        ),
-                        Member::intrinsic_alias(
-                            "defineProp",
-                            "defineProperty",
-                            "decorateClassMember",
-                        ),
-                    ],
-                ),
-            ],
-        ),
+        FixtureOpts::new(source, define_property_alias_modules("defineProp")),
         "unsatisfiable",
         "defineProp",
     );
