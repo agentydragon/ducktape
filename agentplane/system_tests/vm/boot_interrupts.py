@@ -31,7 +31,6 @@ EVENTS = (
     "ioapic_clear_remote_irr",
     "ioapic_eoi_broadcast",
     "ioapic_eoi_delayed_reassert",
-    "ioapic_set_irq",
 )
 TRACE_ROOT = Path("/sys/kernel/tracing")
 TRACE_BUFFER_KIB = 128
@@ -220,28 +219,55 @@ def _write_trace(path: Path, value: str) -> None:
         stream.write(value + "\n")
 
 
-def _drain_trace(instance: Path, destination: Path, stop: threading.Event, record: dict[str, Any]) -> None:
+def _drain_trace(
+    instance: Path, destination: Path, stop: threading.Event, record: dict[str, Any], process: Path
+) -> None:
     with (
         os.fdopen(os.open(instance / "trace_pipe", os.O_RDONLY | os.O_NONBLOCK), "rb", buffering=0) as pipe,
         destination.open("wb") as output,
     ):
         retained = 0
+        pending = b""
+        threads: dict[bytes, bool] = {}
         while True:
             ready, _, _ = select.select([pipe], [], [], 0.1)
             if ready:
                 try:
-                    data = os.read(pipe.fileno(), min(65536, MAX_BYTES - retained))
+                    data = os.read(pipe.fileno(), 65536)
                 except BlockingIOError:
                     data = b""
-                output.write(data)
+                lines = (pending + data).splitlines(keepends=True)
+                pending = b""
+                for line in lines:
+                    if not line.endswith(b"\n"):
+                        pending = line
+                        continue
+                    match = re.search(rb"-(\d+)\s+\[\d+\]", line)
+                    if match is None:
+                        record["unrecognized_trace_lines"] = record.get("unrecognized_trace_lines", 0) + 1
+                        continue
+                    tid = match[1]
+                    if tid not in threads:
+                        threads[tid] = (process / "task" / tid.decode()).exists()
+                        record["retained_tids"] = sorted(int(tid) for tid, owned in threads.items() if owned)
+                    # Uprobes attach to the executable inode, shared by launchers.
+                    # Do not trust the kernel's set_event_pid filter alone: verify
+                    # membership here, including vCPU threads created after attach.
+                    if not threads[tid]:
+                        record["other_process_trace_lines"] = record.get("other_process_trace_lines", 0) + 1
+                        continue
+                    kept = line[: MAX_BYTES - retained]
+                    output.write(kept)
+                    retained += len(kept)
+                    record["bytes_retained"] = retained
+                    if retained == MAX_BYTES:
+                        _write_trace(instance / "tracing_on", "0")
+                        _write_trace(instance / "events" / "enable", "0")
+                        record["logging_stopped_at_byte_limit"] = _now()
+                        return
                 output.flush()
-                retained += len(data)
-                record["bytes_retained"] = retained
-                if retained == MAX_BYTES:
-                    _write_trace(instance / "tracing_on", "0")
-                    _write_trace(instance / "events" / "enable", "0")
-                    record["logging_stopped_at_byte_limit"] = _now()
-                    return
+                if len(pending) > 65536:
+                    raise RuntimeError("APIC trace line exceeds capture parsing budget")
                 if data:
                     continue
             if stop.is_set():
@@ -310,7 +336,7 @@ def _capture_apic(
             executor = resources.enter_context(ThreadPoolExecutor(max_workers=1))
             _write_trace(instance / "tracing_on", "1")
             record["logging_started_at"] = _now()
-            draining = executor.submit(_drain_trace, instance, output / "interrupts.log", stop, record)
+            draining = executor.submit(_drain_trace, instance, output / "interrupts.log", stop, record, process)
 
             def finish() -> None:
                 try:

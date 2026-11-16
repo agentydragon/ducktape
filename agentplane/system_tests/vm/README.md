@@ -73,8 +73,12 @@ routing and level-triggered EOI transitions. `summary.json` maps each numbered
 site to its name, arguments and file offset. Trace lines include monotonic host
 time, thread name and TID; the host snapshot maps TIDs to vCPUs.
 
-Each launcher owns a private tracefs instance, filtered to its current QEMU
-threads and their descendants. Its ring uses 128 KiB per host CPU and is drained
+Each launcher owns a private tracefs instance and requests the kernel PID/fork
+filter. Because uprobes attach to an executable inode shared by launchers, the
+reader also verifies each TID against that QEMU's task directory, including new
+vCPU threads. Other processes' events are counted and excluded from the output
+budget. The noisy raw `ioapic_set_irq` site is omitted; delivery, register writes
+and EOI sites remain enabled. The ring uses 128 KiB per host CPU and is drained
 continuously into `interrupts.log`, capped at 16 MiB. Logging stops at that cap;
 `summary.json` retains the cut-off time, actual enabled sites, setup/cleanup
 errors and per-CPU overrun/drop counters. Only this collector's events and

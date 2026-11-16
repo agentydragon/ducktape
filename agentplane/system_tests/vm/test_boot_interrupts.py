@@ -91,21 +91,52 @@ def test_trace_pipe_retention_stops_at_byte_limit(tmp_path: Path, monkeypatch: p
     (instance / "events").mkdir()
     (instance / "events" / "enable").touch()
     os.mkfifo(instance / "trace_pipe")
+    process = tmp_path / "proc" / "42"
+    (process / "task" / "43").mkdir(parents=True)
     record: dict[str, Any] = {}
 
     def produce() -> None:
         with (instance / "trace_pipe").open("wb", buffering=0) as stream:
-            stream.write(b"test APIC delivery and EOI\n" * 4)
+            stream.write(b"CPU 0/TCG-43 [000] ..... 1.0: apic_get_interrupt_0: vector=236\n" * 4)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         producing = executor.submit(produce)
-        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", threading.Event(), record)
+        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", threading.Event(), record, process)
         producing.result()
     assert (tmp_path / "interrupts.log").stat().st_size == 40
     assert (instance / "tracing_on").read_text().strip() == "0"
     assert (instance / "events" / "enable").read_text().strip() == "0"
     assert record["bytes_retained"] == 40
     assert "logging_stopped_at_byte_limit" in record
+
+
+def test_trace_reader_excludes_other_launchers_and_accepts_new_threads(tmp_path: Path) -> None:
+    instance = tmp_path / "instance"
+    instance.mkdir()
+    os.mkfifo(instance / "trace_pipe")
+    process = tmp_path / "proc" / "42"
+    (process / "task" / "42").mkdir(parents=True)
+    record: dict[str, Any] = {}
+    stop = threading.Event()
+    first = b"qemu-kvm-42 [000] ..... 1.0: apic_register_write_0: arg1=11 arg2=0\n"
+    foreign = b"CPU 0/TCG-99 [000] ..... 1.1: apic_get_interrupt_1: vector=236\n"
+    new_thread = b"CPU 1/TCG-43 [000] ..... 1.2: apic_get_interrupt_1: vector=236\n"
+
+    def produce() -> None:
+        with (instance / "trace_pipe").open("wb", buffering=0) as stream:
+            stream.write(first + foreign + b"unrecognized trace record\n")
+            (process / "task" / "43").mkdir()
+            stream.write(new_thread)
+        stop.set()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        producing = executor.submit(produce)
+        boot_interrupts._drain_trace(instance, tmp_path / "interrupts.log", stop, record, process)
+        producing.result()
+    assert (tmp_path / "interrupts.log").read_bytes() == first + new_thread
+    assert record["retained_tids"] == [42, 43]
+    assert record["other_process_trace_lines"] == 1
+    assert record["unrecognized_trace_lines"] == 1
 
 
 def test_tracefs_control_write_neither_appends_nor_truncates(tmp_path: Path) -> None:
