@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/env/runtime/supervision:__pkg__"])
+
+go_library(
+    name = "pid1",
+    srcs = ["pid1.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/pid1",
+    deps = ["@org_golang_x_sys//unix"],
+)
+
+go_test(
+    name = "pid1_test",
+    srcs = ["procfs_test.go"],
+    embed = [":pid1"],
+    race = "on",
+    deps = ["@org_golang_x_sys//unix"],
+)

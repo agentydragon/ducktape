@@ -1,4 +1,4 @@
-package supervision
+package pid1
 
 import (
 	"errors"
@@ -56,8 +56,8 @@ func TestNamespaceWorkloadPIDsHandlesExitedProcessWithoutWeakeningCredentialFenc
 	}
 }
 
-func TestPID1BackendRejectsNonPID1(t *testing.T) {
-	if _, err := NewPID1Supervisor(); err == nil {
-		t.Fatalf("PID1 backend accepted a non-PID1 process: %v", err)
+func TestNamespaceRejectsNonPID1(t *testing.T) {
+	if _, err := Namespace(); err == nil {
+		t.Fatal("PID1 namespace accepted a non-PID1 process")
 	}
 }

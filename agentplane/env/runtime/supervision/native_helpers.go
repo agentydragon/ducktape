@@ -2,9 +2,6 @@ package supervision
 
 import (
 	"sort"
-	"syscall"
-
-	"golang.org/x/sys/unix"
 )
 
 func environment(values map[string]string) []string {
@@ -18,12 +15,4 @@ func environment(values map[string]string) []string {
 		result = append(result, key+"="+values[key])
 	}
 	return result
-}
-
-func signalProcessGroup(leader int, signal syscall.Signal) error {
-	err := unix.Kill(-leader, unix.Signal(signal))
-	if err == unix.ESRCH {
-		return nil
-	}
-	return err
 }
