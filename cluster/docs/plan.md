@@ -91,8 +91,7 @@ editing a route.
       static `nebula-mesh.json`, so a node rename stops requiring edits to a fixed
       list of files.
 - [ ] **Test CNPG full self-recovery from node failure** in a controlled setup.
-      During the 2026-06-02 OVH node renames (see
-      `debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md`) we deleted
+      During the 2026-06-02 OVH node renames we deleted
       hostname-pinned replica PVCs after node drains. Mixed observations:
       the now-retired `airlock-db` self-recovered to 2/2 in ~70min; `atuin-db`, `plaid-mcp-db`,
       `props-db`, `forgejo-db` got stuck for 2+ hours in

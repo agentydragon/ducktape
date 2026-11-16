@@ -252,15 +252,34 @@ There is no overlay default route, and an explicitly `wwan0`-bound probe does
 not traverse Nebula or Cilium. Thus the overlay cannot explain the direct
 GitHub DNS64 selection or its Fi-bound SSH timeout.
 
-It **can** explain large-packet failures to the cluster on cellular. The
-confirmed incident in
-<../../../cluster/debug/2026-06-02-tofu-apply-hangs-from-rugged-mtu.md> showed
-large Cilium-over-Nebula packets silently dropping on the Fi underlay and
-causing Terraform state-write timeouts. The cluster's authoritative MTU model
-is <../../../cluster/docs/network.md>. Treat that as a separate roaming-node
-problem: validate a host-specific MSS/PMTU mitigation before changing the
-global Cilium MTU, because a global reduction penalizes every fixed-underlay
-node and still does not prove anything about native Fi IPv6.
+It **can** explain large-packet failures to the cluster on cellular. On
+2026-06-02, `tofu apply` from Rugged completed its resource changes but stalled
+while writing a roughly 1.3 MB state to the in-cluster PostgreSQL pod; after
+10–20 minutes TCP timed out and left the workspace lock row behind. During the
+stall, `ss -tnpie` showed 64% retransmissions, an 84.7-second retransmit
+timeout, 13 KiB unsent, and nearly 10 minutes waiting for ACKs. Linux's default
+`tcp_retries2` can keep that socket alive for roughly 13–30 minutes.
+Because state persistence also clears the lock row, a failed final write leaves
+the workspace appearing locked. A `refresh-only` run that says "No changes" is
+not proof of persisted state if the backend write failed.
+
+The incident-era DF-ping ladder from Rugged to PostgreSQL pod `10.244.7.89`
+used `ping -M do -s <payload-bytes>` while the pod route traversed Cilium VXLAN
+and Nebula. The `-s` value is ICMP payload, excluding the 28-byte IPv4/ICMP
+headers; VXLAN and Nebula add further encapsulation:
+
+| Underlay and path                                  | ICMP payload           | Result           |
+| -------------------------------------------------- | ---------------------- | ---------------- |
+| Google Fi; Cilium-over-Nebula to pod `10.244.7.89` | 1200 bytes             | Passed           |
+| Google Fi; same path                               | 1300 bytes             | 100% silent drop |
+| Google Fi; same path                               | 1350, 1400, 1450 bytes | 100% silent drop |
+| Home Wi-Fi; same pod path                          | 1300 bytes             | Passed           |
+
+The apply completed after switching to Wi-Fi. These June observations cover
+only the Cilium-over-Nebula path to that pod over the tested Fi connection;
+they are not a direct-Fi PMTU or native-IPv6 measurement. The later Fi-only
+Nebula remeasurement below is separate. The cluster's authoritative MTU model
+is <../../../cluster/docs/network.md>.
 
 #### Fi-only Nebula remeasurement and mitigation (2026-07-13)
 
