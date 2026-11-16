@@ -26,6 +26,7 @@ use debundle_e2e_support::*;
 /// `globalThis.record` is a callable the analysis cannot see into, so every
 /// call to it is an opaque effect ordered only conservatively.
 const OPAQUE_SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.slice().sort().join(\",\"));\nexport { alpha, beta, gamma };\n";
+const ORDER_OBSERVABLE_SOURCE: &str = "const trace = [];\nglobalThis.record = (key) => { trace.push(key); };\nconst alpha = (globalThis.record(\"alpha\"), \"A\");\nconst beta = (globalThis.record(\"beta\"), \"B\");\nconst gamma = (globalThis.record(\"gamma\"), \"C\");\nconsole.log(alpha, beta, gamma, trace.join(\",\"));\nexport { alpha, beta, gamma };\n";
 const RECORD_INSTALL: &str = "globalThis.record = (key) => { trace.push(key); };";
 const OPAQUE_OUTPUT: &str = "A B C alpha,beta,gamma\n";
 const ENTRY: &str = "commuting_statements[0]";
@@ -35,8 +36,15 @@ const CONTRADICTION: &str = "contradicts a source fact";
 /// `beta -> alpha` and `gamma -> beta` form a `sequenced`-only cycle between
 /// the two modules.
 fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static> {
+    opaque_split_with_source(OPAQUE_SOURCE, pairs)
+}
+
+fn opaque_split_with_source(
+    source: &'static str,
+    pairs: Vec<CommutingStatementsContract>,
+) -> FixtureOpts<'static> {
     FixtureOpts::new(
-        OPAQUE_SOURCE,
+        source,
         vec![
             logical_module_with_anon(
                 "probes/outer",
@@ -52,6 +60,26 @@ fn opaque_split(pairs: Vec<CommutingStatementsContract>) -> FixtureOpts<'static>
     )
     .with_unassigned_mode(unassigned_mode_inline())
     .with_commuting_statements("static/app", pairs)
+}
+
+/// A commutation entry is an author promise, not a claim the gate can infer.
+/// This source makes the asserted pair observably order-dependent.
+#[test]
+fn false_commuting_premise_can_change_the_emitted_trace() {
+    expect_cycle_rejection(
+        opaque_split_with_source(ORDER_OBSERVABLE_SOURCE, vec![]),
+        &["probes/outer", "probes/inner"],
+    );
+
+    let outcome = run_fixture_to_gate_outcome(opaque_split_with_source(
+        ORDER_OBSERVABLE_SOURCE,
+        vec![beta_gamma_pair()],
+    ));
+    assert!(outcome.accepted, "the false premise was not applied");
+    assert!(outcome.source.status.success());
+    assert!(outcome.emitted.status.success());
+    assert_eq!(outcome.source.stdout, "A B C alpha,beta,gamma\n");
+    assert_eq!(outcome.emitted.stdout, "A B C alpha,gamma,beta\n");
 }
 
 fn beta_gamma_pair() -> CommutingStatementsContract {
