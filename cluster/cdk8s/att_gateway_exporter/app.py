@@ -19,10 +19,8 @@ from grafana_grafanadashboard_crds.org.integreatly.grafana import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
-    ServiceMonitorSpecSelector,
 )
 from pydantic_settings import BaseSettings
 from python.runfiles import Runfiles
@@ -188,18 +186,15 @@ def chart(app: App) -> Chart:
         chart,
         "monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port=_HTTP.name,
-                    path="/metrics",
-                    scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                    # The exporter refreshes each page once a minute.
-                    interval="60s",
-                    scrape_timeout="10s",
-                )
-            ],
+        spec=_SERVICE.service_monitor_spec(
+            ServiceMonitorSpecEndpoints(
+                port=_HTTP.name,
+                path="/metrics",
+                scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
+                # The exporter refreshes each page once a minute.
+                interval="60s",
+                scrape_timeout="10s",
+            )
         ),
     )
     GrafanaDashboard(

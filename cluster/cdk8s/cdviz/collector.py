@@ -3,11 +3,7 @@
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import Cpu, k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import cilium, node_scheduling, pod_policy
@@ -15,7 +11,6 @@ from cluster.cdk8s.cdviz import config, timescale
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
 OUTPUT_DIR = f"{config.OUTPUT_DIR}/app"
 IMAGE = (
@@ -180,10 +175,7 @@ def chart(app: App) -> Chart:
         chart,
         "monitor",
         metadata=ApiObjectMetadata(name="collector", namespace=config.NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=config.COLLECTOR.labels),
-            endpoints=[Endpoint.plain(port=config.COLLECTOR.port.name)],
-        ),
+        spec=config.COLLECTOR.service_monitor_spec(),
     )
     https_route(
         chart,

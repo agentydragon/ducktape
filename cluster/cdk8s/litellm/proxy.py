@@ -44,11 +44,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy, KustomizationSpecHealthChecks
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import node_scheduling, pod_policy
@@ -424,16 +420,13 @@ class LiteLLMServiceMonitor(Construct):
             self,
             "servicemonitor",
             metadata=ApiObjectMetadata(name=service.name, namespace=service.pods.namespace),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=service.labels),
-                endpoints=[
-                    Endpoint.bearer_token_secret(
-                        port=service.port.name,
-                        secret_name=_MASTER_KEY.secret.name,
-                        key=_MASTER_KEY.key,
-                        scrape_timeout="10s",
-                    )
-                ],
+            spec=service.service_monitor_spec(
+                Endpoint.bearer_token_secret(
+                    port=service.port.name,
+                    secret_name=_MASTER_KEY.secret.name,
+                    key=_MASTER_KEY.key,
+                    scrape_timeout="10s",
+                )
             ),
         )
 

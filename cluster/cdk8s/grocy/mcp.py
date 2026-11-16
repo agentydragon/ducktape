@@ -18,11 +18,7 @@ from pathlib import Path
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
@@ -218,10 +214,7 @@ def _server(scope: Construct, household: str) -> None:
         scope,
         "servicemonitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=namespace),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=http.labels),
-            endpoints=[Endpoint.plain(port=metrics.port.name, scrape_timeout="10s")],
-        ),
+        spec=http.service_monitor_spec(Endpoint.plain(port=metrics.port.name, scrape_timeout="10s")),
     )
 
 

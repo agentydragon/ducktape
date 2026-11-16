@@ -17,11 +17,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from pydantic import BaseModel
 from python.runfiles import Runfiles
@@ -475,16 +471,13 @@ def _monitoring(scope: Construct) -> None:
         scope,
         "service-monitor",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=SERVICE.labels),
-            endpoints=[
-                Endpoint.bearer_authorization(
-                    port=SERVICE.port.name,
-                    path="/api/prometheus",
-                    secret_name=_METRICS_TOKEN.secret.name,
-                    key=_METRICS_TOKEN.key,
-                )
-            ],
+        spec=SERVICE.service_monitor_spec(
+            Endpoint.bearer_authorization(
+                port=SERVICE.port.name,
+                path="/api/prometheus",
+                secret_name=_METRICS_TOKEN.secret.name,
+                key=_METRICS_TOKEN.key,
+            )
         ),
     )
     PrometheusRule(

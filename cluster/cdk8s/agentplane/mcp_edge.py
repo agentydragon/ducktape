@@ -21,11 +21,7 @@ from cdk8s_plus_34 import (
     Volume,
 )
 from constructs import Construct
-from prometheus_operator_crds.com.coreos.monitoring import (
-    ServiceMonitor,
-    ServiceMonitorSpec,
-    ServiceMonitorSpecSelector,
-)
+from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP
@@ -41,7 +37,6 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
-from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
 
@@ -234,8 +229,5 @@ class McpEdge(Construct):
             self,
             "service-monitor",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            spec=ServiceMonitorSpec(
-                selector=ServiceMonitorSpecSelector(match_labels=self.http.labels),
-                endpoints=[Endpoint.plain(port=self.http.port.name)],
-            ),
+            spec=self.http.service_monitor_spec(),
         )

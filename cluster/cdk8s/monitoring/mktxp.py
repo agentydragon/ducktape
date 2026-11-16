@@ -20,10 +20,8 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
-    ServiceMonitorSpec,
     ServiceMonitorSpecEndpoints,
     ServiceMonitorSpecEndpointsScheme,
-    ServiceMonitorSpecSelector,
 )
 from python.runfiles import Runfiles
 
@@ -247,18 +245,15 @@ def chart(app: App) -> Chart:
         chart,
         "monitor",
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
-        spec=ServiceMonitorSpec(
-            selector=ServiceMonitorSpecSelector(match_labels=_SERVICE.labels),
-            endpoints=[
-                ServiceMonitorSpecEndpoints(
-                    port=_HTTP.name,
-                    path="/metrics",
-                    scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
-                    interval="30s",
-                    # mktxp queries the switch during the scrape.
-                    scrape_timeout="30s",
-                )
-            ],
+        spec=_SERVICE.service_monitor_spec(
+            ServiceMonitorSpecEndpoints(
+                port=_HTTP.name,
+                path="/metrics",
+                scheme=ServiceMonitorSpecEndpointsScheme.HTTP,
+                interval="30s",
+                # mktxp queries the switch during the scrape.
+                scrape_timeout="30s",
+            )
         ),
     )
     return chart
