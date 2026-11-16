@@ -5,7 +5,7 @@ import { create } from "@bufbuild/protobuf";
 
 import { listModels, listSandboxPresets } from "../app_config_client";
 import type { ListModelsResponse, SessionDefaults } from "../../app_service_pb";
-import { harnessOptions, modelsForHarness } from "../model_catalog";
+import { harnessOptions, modelsForHarness } from "./model_catalog";
 import { displayableError } from "../transport/client";
 import { Disclosure, DisclosureBody } from "../../../../util/frontend/disclosure";
 import { Harness, SessionSpecSchema, type SessionSpec } from "../../../proto/session_pb";

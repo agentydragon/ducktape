@@ -1,5 +1,5 @@
-import type { ListModelsResponse, ModelOption } from "../app_service_pb";
-import { Harness } from "../../proto/session_pb";
+import type { ListModelsResponse, ModelOption } from "../../app_service_pb";
+import { Harness } from "../../../proto/session_pb";
 
 /** An empty model list disables new-session selection, not the native harness. */
 export function harnessOptions(

@@ -10,8 +10,8 @@ import { type JSX, useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { displayableError } from "../transport/client";
-import { attachedHarness, harnessBehavior } from "../harness_behavior";
-import { harnessLabel, modelsForHarness } from "../model_catalog";
+import { attachedHarness, harnessBehavior } from "./harness_behavior";
+import { harnessLabel, modelsForHarness } from "./model_catalog";
 import { listModels } from "../app_config_client";
 import { langfuseSandboxTraceUrl, langfuseSessionTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";

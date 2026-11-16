@@ -1,4 +1,4 @@
-import { Harness, type Attached } from "../../proto/session_pb";
+import { Harness, type Attached } from "../../../proto/session_pb";
 
 /** Read-only harness projection; the SessionSpec placement remains the live backend authority. */
 export function attachedHarness(attached: Attached | undefined): Harness | undefined {

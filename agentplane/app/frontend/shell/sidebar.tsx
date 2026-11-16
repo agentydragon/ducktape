@@ -8,8 +8,8 @@ import { ActionsSidebarSection } from "../actions/sidebar";
 import { HistoryRecorderTools } from "../../../../util/frontend/transcript/history_recorder_tools";
 import { ResizeHandle, usePaneSize } from "../../../../util/frontend/resize_handle";
 import "./sidebar.css";
-import { ThreadList } from "../threads/thread_list";
-import { threadViewRecorder } from "../threads/thread_view_recorder";
+import { ThreadList } from "../sessions/thread_list";
+import { threadViewRecorder } from "../sessions/thread_view_recorder";
 
 // Matches sidebar.css's own phone breakpoint.
 const PHONE_QUERY = "(max-width: 560px)";

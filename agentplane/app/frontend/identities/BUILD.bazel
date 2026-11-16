@@ -92,7 +92,6 @@ ts_library(
         "//:node_modules/@bufbuild/protobuf",
         "//agentplane/app/frontend/transport:client",
         "//agentplane/policy/v1:policy_service_pb",
-        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 
@@ -104,7 +103,6 @@ agentplane_vitest_test(
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
         "//agentplane/policy/v1:policy_service_pb",
-        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb",
     ],
 )
 

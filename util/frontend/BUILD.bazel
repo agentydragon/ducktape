@@ -205,7 +205,7 @@ ts_library(
     tsconfig = ":tsconfig",
     visibility = [
         "//agentplane/app/frontend/actions:__pkg__",
-        "//agentplane/app/frontend/threads:__pkg__",
+        "//agentplane/app/frontend/sessions:__pkg__",
         "//ai_session_archive/frontend:__pkg__",
         "//finance/augur/frontend:__pkg__",
         "//finance/plaid/spend/ui:__pkg__",

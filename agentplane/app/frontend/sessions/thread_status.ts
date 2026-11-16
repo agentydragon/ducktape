@@ -6,7 +6,7 @@ import { HarnessState, SetupState } from "../../../proto/session_pb";
 import type { Live } from "../transport/live";
 import type { ThreadTabStatus } from "../shell/tab_metadata";
 import { sandboxReady, sandboxSummary, suspensionReason } from "../sandbox_status";
-import { attachedHarness, harnessBehavior } from "../harness_behavior";
+import { attachedHarness, harnessBehavior } from "./harness_behavior";
 import { turnErrorLabel } from "./history_rows";
 
 /** Whether the stream is current and its Thread updates are being heard, so a snapshot's Thread states are live. */

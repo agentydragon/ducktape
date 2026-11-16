@@ -79,7 +79,7 @@ import {
   type EnvironmentDescriptor,
 } from "../../../environments/v1/environment_service_pb";
 
-import { TEST_REASONING_EFFORTS } from "../testing/model_catalog";
+import { TEST_REASONING_EFFORTS } from "../sessions/testing/model_catalog";
 import { testSandbox } from "../testing/sandbox";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import "@mantine/core/styles.css";
@@ -108,7 +108,7 @@ import {
 } from "../actions/testing/proto_fixtures";
 import { sampleConnection } from "../connections/testing/fixture";
 
-import { type ThreadView, dispatchFromJson } from "../threads/client";
+import { type ThreadView, dispatchFromJson } from "../sessions/client";
 import { ThreadMetadataSchema } from "../../app_service_pb";
 import { ACTION_RENDERERS } from "../actions/rendering/index";
 import {
@@ -155,8 +155,8 @@ import {
 } from "../../../history_service/api/history/history_service_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { OperationPresentationVisual } from "./operation_presentation_visual";
-import { LocalCommands } from "../threads/local_commands";
-import { electricEntityVariant } from "../threads/testing/electric_entity";
+import { LocalCommands } from "../sessions/local_commands";
+import { electricEntityVariant } from "../sessions/testing/electric_entity";
 import { rememberRowHeight } from "../../../../util/frontend/transcript/history_sizes";
 import { streamRegistry } from "../transport/stream_status";
 import { ThemeProvider } from "../shell/theme";

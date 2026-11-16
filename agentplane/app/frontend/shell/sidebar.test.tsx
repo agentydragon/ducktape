@@ -1,4 +1,4 @@
-import type * as ThreadClientModule from "../threads/client";
+import type * as ThreadClientModule from "../sessions/client";
 // @vitest-environment happy-dom
 import { toJson } from "@bufbuild/protobuf";
 import {
@@ -19,20 +19,20 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { listThreadWindow } from "../threads/client";
+import { listThreadWindow } from "../sessions/client";
 import { FeedStatus } from "../../../history_service/api/history/history_service_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
-import { RoutedThreadsLiveProvider } from "../threads/live";
+import { RoutedThreadsLiveProvider } from "../sessions/live";
 import { SandboxesLiveProvider } from "../sandboxes/live";
 import { Sidebar } from "./sidebar";
-import { threadViewRecorder } from "../threads/thread_view_recorder";
+import { threadViewRecorder } from "../sessions/thread_view_recorder";
 import { ConnectionIndicator, DEGRADED_AFTER_MS } from "../transport/stream_status";
 import { latestOn, reconnected, ServedWatch, serveEventStreams } from "../testing/watch";
-import { threadView, type ThreadViewInit } from "../threads/testing/state";
+import { threadView, type ThreadViewInit } from "../sessions/testing/state";
 
 type ThreadView = ThreadClientModule.ThreadView;
 
-vi.mock("../threads/client", async (importOriginal) => ({
+vi.mock("../sessions/client", async (importOriginal) => ({
   ...(await importOriginal<typeof ThreadClientModule>()),
   listThreadWindow: vi.fn(),
 }));

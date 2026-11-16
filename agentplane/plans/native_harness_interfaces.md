@@ -111,7 +111,7 @@ naming the input but Codex's `turn/start` response.
 Harness knowledge already lives past the Runtime. History's delta
 [settlement](../history_service/internal/storage/settlement.go) matches Claude and Codex native
 delta frames. The app parses Claude `Bash` and Codex `commandExecution` arguments separately
-([`shell_calls.ts`](../app/frontend/threads/shell_calls.ts)). Codex `imageView` completes without a
+([`shell_calls.ts`](../app/frontend/sessions/shell_calls.ts)). Codex `imageView` completes without a
 status, so the generic projection cannot mark it successful
 ([`CODEX_IMAGE_VIEW_ITEM`](task_freezer.md#codex_image_view_item--project-workspace-image-view-lifecycle)).
 Content is also stored three times: one 1.6 MB tool output occupies a native completion, a semantic

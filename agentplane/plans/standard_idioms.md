@@ -35,7 +35,7 @@ reconnect, rescan from the current durable cursor to cover writes during the gap
 The server step does not wait for a staging image pin: the storage migration runs through the normal
 serving-binary startup lifecycle, and this step adds no migration. The client cutover remains blocked
 until the operator confirms that the serving image is pinned on staging. Only then enable the App
-browser watch (`app/frontend/threads/dispatch_watch.ts`, through the generated facade) and
+browser watch (`app/frontend/sessions/dispatch_watch.ts`, through the generated facade) and
 `session_client/observe_input.go` with resume tokens. Clients must surface coverage loss before taking a
 fresh snapshot. Update `session_dispatcher/dispatcher/testing_client.py`,
 `session_dispatcher/dispatcher/store_integration_test.go`, facade/auth mocks, and

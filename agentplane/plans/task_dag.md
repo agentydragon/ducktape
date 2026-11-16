@@ -2390,7 +2390,7 @@ a feature such as driver-hosted tools crosses the common set.
 
 Electric replicates two History tables, `thread_entity` and `thread_payload_chunk`, per Thread and
 projection epoch, through the app's authorizing [proxy](../app/internal/proxy/electric.go), for
-the thread view alone ([`electric_sync.tsx`](../app/frontend/threads/electric_sync.tsx)). Every
+the thread view alone ([`electric_sync.tsx`](../app/frontend/sessions/electric_sync.tsx)). Every
 other live browser view already follows gRPC watches through the app facade
 ([`watch_stream.ts`](../app/frontend/transport/watch_stream.ts)). Its costs are:
 
@@ -3715,7 +3715,7 @@ a specific stopping condition.
 - **`RUNNER_STORE_SESSION_IDENTITY`:** `RUNNER_IDENTITY_LEGACY_CLEANUP` (section 13) retires the old
   per-Session-process assumptions, stale docs and protos after the private mapping rolls out.
 - **`DELIVERY_DESTINATION_CONTRACT` (in progress):** the browser's legacy command-destination records
-  (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/threads/local_commands.ts`)
+  (`LocalCommand` with `target` null or `sessionAddressed` false, `app/frontend/sessions/local_commands.ts`)
   are retired once every retained record is Session-addressed; preserve unconfirmed saved input and
   its Sandbox UID fence, and never replay an uncertain command. Source: [app TODO](../app/TODO.md).
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format

@@ -21,15 +21,9 @@ import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "
 import { useSearchParams } from "react-router";
 
 import { displayableError } from "../transport/client";
-import { archiveThread, findThread, getThread, type ThreadView } from "../threads/client";
-import {
-  getSession,
-  createSession,
-  resumeSandbox,
-  sessionCreateRejected,
-  sessionNotVisible,
-  suspendEnvironment,
-} from "./client";
+import { archiveThread, findThread, getThread, type ThreadView } from "../sessions/client";
+import { createSession, getSession, sessionCreateRejected, sessionNotVisible } from "../sessions/session_client";
+import { resumeSandbox, suspendEnvironment } from "./client";
 import { ActionPolicyWatch } from "../actions/policy";
 import { EgressLog } from "../egress/egress";
 import { EnvironmentIdentity } from "./identity";
@@ -42,10 +36,10 @@ import { SandboxConsole } from "./sandbox_console";
 import { StatusView } from "./sandbox_status_view";
 import { hasVmConsole, sandboxReady, sandboxStatusDetail, sandboxSummary, sandboxSuspended } from "../sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
-import { snapshotFresh } from "../threads/thread_status";
-import { NewThreadForm } from "../threads/new_thread_form";
-import { SandboxThreadsTable } from "../threads/sandbox_threads";
-import { useThreadsLive } from "../threads/live";
+import { snapshotFresh } from "../sessions/thread_status";
+import { NewThreadForm } from "../sessions/new_thread_form";
+import { SandboxThreadsTable } from "../sessions/sandbox_threads";
+import { useThreadsLive } from "../sessions/live";
 import { beginSessionCreate, finishSessionCreate, withinSessionCreate } from "../tracing";
 import { langfuseSandboxTraceUrl } from "../langfuse_search";
 import { traceSearchUrl } from "../trace_search";
