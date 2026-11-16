@@ -125,20 +125,23 @@ node or pass its timing fields and predecessors.
   derives `sourceRef`, `path`, `decryption` from the directory and applies our defaults
   (listed in its docstring); pass only differing `KustomizationSpec` fields as same-named
   keywords. A retained component function takes its directory and predecessors as
-  parameters, writes no file, and returns that object. The entry point builds the artifact
-  (`artifact_generators.artifact(name, directory, *shared_bases)`) just before the call
-  and passes `generation.write_directory(root, artifact, *chart_builders, siblings=[...])`
-  as the node's argument, which synthesizes the directory's one generated file
+  parameters, writes no file, and returns that object. The entry point builds the two
+  source-watcher `ArtifactGenerator` resources early. Each active consumer adds its typed
+  artifact to the matching resource with `add_artifact(name, directory, *shared_bases)` just
+  before the Kustomization call, then passes that returned value to
+  `generation.write_directory(root, artifact, *chart_builders, siblings=[...])` as the
+  node's argument. The writer synthesizes the directory's one generated file
   (<../docs/cdk8s.md> § Shapes of a directory) plus a `kustomization.yaml` listing it and
-  hand-written siblings. Every artifact goes to `write_artifact_generators` last; parked
-  nodes' artifacts are left out. A directory with a hand-written `kustomization.yaml` is
-  written by its module's `write_manifests` at the top of `generate_manifests()`, and its
-  node takes the artifact instead of a directory (as do nodes not yet on
-  `write_directory`). A node sourcing a `GitRepository` directly passes that `sourceRef`
-  and a `path`. `dependsOn` is `flux_kustomization_depends_on_many(predecessor, ...)`,
-  reading name/namespace off the constructs (so the entry carries an explicit
-  `namespace`). Predecessors are already-built values — never strings, module-level
-  lookups, or late resolution.
+  hand-written siblings. `add_artifact` also appends the typed artifact spec to the real
+  resource using `JsonPatch`; the resource app is synthesized after the Flux graph is built.
+  Parked nodes keep using `artifact()` directly and are left out of both resources. A
+  directory with a hand-written `kustomization.yaml` is written by its module's
+  `write_manifests` at the top of `generate_manifests()`, and its node takes the artifact
+  instead of a directory (as do nodes not yet on `write_directory`). A node sourcing a
+  `GitRepository` directly passes that `sourceRef` and a `path`. `dependsOn` is
+  `flux_kustomization_depends_on_many(predecessor, ...)`, reading name/namespace off the
+  constructs (so the entry carries an explicit `namespace`). Predecessors are already-built
+  values — never strings, module-level lookups, or late resolution.
 - **The entry point constructs nodes in dependency order**, passing results as locals; a wrong
   order is a `NameError`, a cycle unwritable. Never add a registry, sorter, lazy
   reference, node-describing class/record, or a module that builds nodes on import.
@@ -150,9 +153,10 @@ node or pass its timing fields and predecessors.
   importing workload modules. A second crossing fact is a second parameter (the review
   signal). A Kustomization never builds the chart it describes.
 - **Build each object from what it reads at runtime, never from what reads it**:
-  Kustomization from artifact, path, predecessors; artifact from directory;
-  `ArtifactGenerator` from all artifacts, last. Never derive Kustomizations from the
-  artifact inventory or vice versa.
+  Kustomization from artifact, path, predecessors; artifact from directory. Append each
+  active artifact to its `ArtifactGenerator` as the consumer declares it, and synthesize
+  those resources after graph construction. Never derive Kustomizations from the artifact
+  resources or vice versa.
 - **A `flux_kustomization` default is policy, not the common value**: only where nearly
   every node agrees as a stance; per-app choices (`timeout`, `decryption`,
   `health_checks`) stay on the node. `None` leaves the field unset (Flux's default, which
@@ -187,9 +191,12 @@ def monitoring_crds(chart: Chart) -> Kustomization:
 
 
 # generate_manifests.py
+artifact_app = App()
+artifact_chart = Chart(artifact_app, "artifact-generators", disable_resource_name_hashes=True)
+ducktape, flux_system = artifact_generator_resources(artifact_chart)
 monitoring_crds_kustomization = monitoring_flux_kustomizations.monitoring_crds(flux_chart)
 ...
-cpap_sync_artifact = artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
+cpap_sync_artifact = ducktape.add_artifact("cpap-sync", cpap_sync.OUTPUT_DIR)
 flux.flux_kustomization(
     flux_chart,
     cpap_sync.NAME,
@@ -210,7 +217,8 @@ flux.flux_kustomization(
     ),
 )
 ...
-write_artifact_generators(root, ducktape=[..., cpap_sync_artifact, ...], flux_system=[...])
+flux_app.synth()
+write_artifact_generators(root, artifact_app)
 ```
 
 The only string edge is `artifact-generators -> flux-system` (`artifact_generators.py`):

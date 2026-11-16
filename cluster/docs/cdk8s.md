@@ -75,15 +75,16 @@ Every directory's Flux Kustomization object is created in topo order by
 `flux.flux_kustomization` directly with native typed fields and explicit dependencies on
 already-built objects; component functions remain where they bind readiness, lifecycle or
 source policy. Neither shape infers graph edges or artifact membership. `artifact-generators`
-imports the deployed source-watcher CRD; `generate_manifests.py` builds each consumer's
-artifact before its Kustomization node, writes the directory with
-`generation.write_directory` as the node's `RenderedDirectory` argument, and hands every
-artifact to `artifact_generators.write_artifact_generators` last. A tofu-controller
-`Terraform` CR is built through `terraform.tofu_state_terraform` (a `tf/gitops` module's
-through `terraform.gitops_terraform`, from the module's own artifact, which the entry point
-builds with `terraform.gitops_module` and hands to the chart and to the ArtifactGenerator),
-and a Namespace in the directory of the
-Kustomization that owns it through `generation.namespace_chart`.
+imports the deployed source-watcher CRD; `generate_manifests.py` constructs both real
+`ArtifactGenerator` resources early, then each active consumer calls its resource's
+`add_artifact` before its Kustomization node. That method returns the typed artifact for
+`generation.write_directory` and appends it to the resource with a typed `JsonPatch`; the
+resource app is synthesized after the Flux graph is built. Parked artifacts remain standalone
+values and are not added to either resource. A tofu-controller `Terraform` CR is built through
+`terraform.tofu_state_terraform`; `tf/gitops` CRs use `terraform.gitops_terraform` and receive
+module artifacts that the entry point adds to `ducktape` and passes to their charts. A
+Namespace in the directory of the Kustomization that owns it is built through
+`generation.namespace_chart`.
 
 ### What stays hand-written
 
