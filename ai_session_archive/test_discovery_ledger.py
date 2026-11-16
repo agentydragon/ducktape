@@ -153,7 +153,9 @@ def test_repeated_ingest_skips_completed_snapshot_work(postgres_engine: Engine) 
 
     with (
         patch.object(ingestor._inventory, "prepare", wraps=ingestor._inventory.prepare) as prepare_snapshot,
-        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(
+            ingestor._codex_metadata, "process_snapshot", wraps=ingestor._codex_metadata.process_snapshot
+        ) as process_metadata,
         patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
     ):
         second_report = ingestor.ingest()
@@ -184,7 +186,9 @@ def test_metadata_retry_and_partial_status_are_independent_of_transcript_complet
         row.codex_metadata_status = "failed"
 
     with (
-        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(
+            ingestor._codex_metadata, "process_snapshot", wraps=ingestor._codex_metadata.process_snapshot
+        ) as process_metadata,
         patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
     ):
         retry_report = ingestor.ingest()
@@ -206,7 +210,9 @@ def test_metadata_retry_and_partial_status_are_independent_of_transcript_complet
         row.codex_metadata_status = "partial"
 
     with (
-        patch.object(ingestor, "_process_codex_metadata", wraps=ingestor._process_codex_metadata) as process_metadata,
+        patch.object(
+            ingestor._codex_metadata, "process_snapshot", wraps=ingestor._codex_metadata.process_snapshot
+        ) as process_metadata,
         patch.object(ingestor, "_process_snapshot", wraps=ingestor._process_snapshot) as process_snapshot,
     ):
         partial_report = ingestor.ingest()
