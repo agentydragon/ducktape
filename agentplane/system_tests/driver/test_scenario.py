@@ -15,6 +15,7 @@ from opentelemetry import trace
 from agentplane.app.testing.client import Client
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.proto import identity_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver import app_sandbox, native_artifacts, scenario
 from agentplane.system_tests.driver.cluster import Cluster
 
@@ -31,8 +32,13 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[LifecycleEvent]:
     views: dict[str, environment_service_pb2.EnvironmentDescriptor] = {}
 
     @asynccontextmanager
-    async def new_client(*, base_url: str, token: str) -> AsyncIterator[Client]:
+    async def new_dispatcher(_cluster: Cluster) -> AsyncIterator[SessionDispatcherClient]:
+        yield cast(SessionDispatcherClient, create_autospec(SessionDispatcherClient, instance=True))
+
+    @asynccontextmanager
+    async def new_client(*, base_url: str, token: str, dispatcher: SessionDispatcherClient) -> AsyncIterator[Client]:
         del base_url, token
+        assert isinstance(dispatcher, SessionDispatcherClient)
         client = create_autospec(Client, instance=True)
         client.opened_sandbox_uids = set()
 
@@ -84,6 +90,7 @@ def lifecycle(monkeypatch: pytest.MonkeyPatch) -> list[LifecycleEvent]:
         events.append(LifecycleEvent("delete", name))
 
     monkeypatch.setattr(Client, "connect", staticmethod(new_client))
+    monkeypatch.setattr(scenario, "native_client", new_dispatcher)
     monkeypatch.setattr(app_sandbox, "wait_until_running", ready)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
     monkeypatch.setattr(native_artifacts, "capture", capture)

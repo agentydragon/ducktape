@@ -56,19 +56,24 @@ def _no_app_answered(response: httpx.Response) -> bool:
 
 def _thread_not_found(error: BaseException) -> bool:
     """The Dispatcher Session or History summary is not available yet."""
-    return isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND
+    return (isinstance(error, httpx.HTTPStatusError) and error.response.status_code == HTTPStatus.NOT_FOUND) or (
+        isinstance(error, ServiceError) and error.code == grpc.StatusCode.NOT_FOUND
+    )
 
 
 class Client:
     """App API methods over an existing authenticated HTTP client."""
 
-    def __init__(self, http: httpx.AsyncClient) -> None:
+    def __init__(self, http: httpx.AsyncClient, *, dispatcher: SessionDispatcherClient | None = None) -> None:
         self.opened_sandbox_uids: set[str] = set()
         self._http = http
+        self._dispatcher = dispatcher
 
     @classmethod
     @asynccontextmanager
-    async def connect(cls, *, base_url: str, token: str) -> AsyncIterator[Self]:
+    async def connect(
+        cls, *, base_url: str, token: str, dispatcher: SessionDispatcherClient | None = None
+    ) -> AsyncIterator[Self]:
         """Own a bearer-authenticated transport for the lifetime of the context."""
         async with httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
@@ -77,7 +82,7 @@ class Client:
             follow_redirects=False,
             event_hooks={"request": [cls._inject_trace_context]},
         ) as http:
-            yield cls(http)
+            yield cls(http, dispatcher=dispatcher)
 
     @staticmethod
     async def _inject_trace_context(request: httpx.Request) -> None:
@@ -344,10 +349,16 @@ class Client:
         """Enumerate Dispatcher Sessions for artifact capture, including those without App metadata."""
         params = {"limit": "100"}
         while True:
-            page = ParseDict(
-                await self._json("GET", "/upstream/dispatcher/v1/sessions", params=params),
-                session_dispatcher_pb2.ListSessionsResponse(),
-            )
+            if self._dispatcher is not None:
+                page = await self._dispatcher.unary(
+                    self._dispatcher.stub.ListSessions,
+                    session_dispatcher_pb2.ListSessionsRequest(limit=100, page_token=params.get("page_token", "")),
+                )
+            else:
+                page = ParseDict(
+                    await self._json("GET", "/upstream/dispatcher/v1/sessions", params=params),
+                    session_dispatcher_pb2.ListSessionsResponse(),
+                )
             for session in page.sessions:
                 placement = session.placement
                 environment = (
@@ -368,7 +379,9 @@ class Client:
             params["page_token"] = page.next_page_token
 
     async def session(self, session_id: UUID) -> session_dispatcher_pb2.Session:
-        """Read membership through the Dispatcher's generated HTTP facade."""
+        """Use an injected native test transport or an operator's generated HTTP facade."""
+        if self._dispatcher is not None:
+            return await self._dispatcher.get_session(str(session_id))
         response = ParseDict(
             await self._json("GET", f"/upstream/dispatcher/v1/sessions/{session_id}"),
             session_dispatcher_pb2.GetSessionResponse(),

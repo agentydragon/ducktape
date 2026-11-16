@@ -11,6 +11,7 @@ from unittest.mock import create_autospec
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
+import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -25,9 +26,12 @@ from agentplane.app.testing.history_reads import SessionEventReader
 from agentplane.app.testing.models import thread_view_from_proto_json
 from agentplane.env.runtime.harness import Harness as NamedHarness
 from agentplane.environments.v1 import environment_service_pb2
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
 from agentplane.history_service.testing.session_events import covered_cursor
 from agentplane.proto import event_log_pb2, identity_pb2, session_pb2
+from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
+from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 
 # A server answers one connection per call: `(after_cursor, writer)`. Raw sockets let the tests
 # observe the exact generated-facade request and response.
@@ -162,6 +166,39 @@ async def test_artifact_inventory_pages_dispatcher_sessions_without_app_metadata
         views = [view async for view in Client(http).threads(sandbox_uid="test-uid")]
     assert [str(view.id) for view in views] == [first, second]
     assert not any(request.url.path == "/upstream/app/v1/threads" for request in observed)
+
+
+async def test_native_dispatcher_transport_avoids_operator_only_http_facade() -> None:
+    session_id = uuid4()
+    session = session_dispatcher_pb2.Session(
+        session_id=str(session_id),
+        placement=session_pb2.SessionPlacement(
+            environment_hosted=session_pb2.EnvironmentHostedPlacement(
+                environment=session_pb2.ExactEnvironment(name="test-box", uid="test-uid")
+            )
+        ),
+    )
+    session.created_at.FromJsonString("2026-11-01T00:00:00Z")
+    dispatcher = create_autospec(SessionDispatcherClient, instance=True)
+    dispatcher.stub = SimpleNamespace(ListSessions=object())
+    dispatcher.get_session.return_value = session
+    dispatcher.unary.return_value = session_dispatcher_pb2.ListSessionsResponse(sessions=[session])
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path == f"/upstream/history/v1/sessions/{session_id}/summary":
+            return httpx.Response(200, json={})
+        if request.url.path == f"/upstream/app/v1/threads/{session_id}":
+            return httpx.Response(404, json={})
+        raise AssertionError(f"native client must not use the operator HTTP facade: {request.url}")
+
+    async with httpx.AsyncClient(base_url="https://app.test", transport=httpx.MockTransport(respond)) as http:
+        client = Client(http, dispatcher=dispatcher)
+        assert (await client.thread(session_id)).id == session_id
+        assert [view.id async for view in client.threads(sandbox_uid="test-uid")] == [session_id]
+    dispatcher.get_session.assert_awaited_once_with(str(session_id))
+    dispatcher.unary.assert_awaited_once_with(
+        dispatcher.stub.ListSessions, session_dispatcher_pb2.ListSessionsRequest(limit=100)
+    )
 
 
 async def _respond(
@@ -660,6 +697,20 @@ async def test_history_reader_propagates_unknown_initial_session() -> None:
         await SessionEventReader(client, uuid4()).read_page()
 
     assert caught.value is missing
+
+
+@pytest.mark.parametrize("code", [grpc.StatusCode.NOT_FOUND, grpc.StatusCode.PERMISSION_DENIED])
+async def test_history_reader_preserves_native_dispatcher_refusals(code: grpc.StatusCode) -> None:
+    client = create_autospec(Client, instance=True)
+    request = httpx.Request("GET", "https://app.test.invalid/history")
+    missing = httpx.HTTPStatusError("missing", request=request, response=httpx.Response(404, request=request))
+    refusal = ServiceError(code, "test refusal")
+    client.read_session_events.side_effect = missing
+    client.session.side_effect = refusal
+
+    with pytest.raises((httpx.HTTPStatusError, ServiceError)) as caught:
+        await SessionEventReader(client, uuid4()).read_page()
+    assert caught.value is (missing if code == grpc.StatusCode.NOT_FOUND else refusal)
 
 
 async def test_sandbox_subscription_assembles_proto_snapshot_chunks() -> None:

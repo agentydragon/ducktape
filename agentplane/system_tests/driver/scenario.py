@@ -10,6 +10,7 @@ from agentplane.system_tests.driver import native_artifacts
 from agentplane.system_tests.driver.app_sandbox import sandbox_scope
 from agentplane.system_tests.driver.cleanup import finish_cleanup
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import native_client
 from agentplane.system_tests.driver.sandbox import Sandboxes
 
 type ScenarioResources = Callable[[], AbstractAsyncContextManager[tuple[Client, Sandboxes]]]
@@ -20,7 +21,10 @@ async def open_resources(
     cluster: Cluster, base_url: str, token: str, phase_tracer: trace.Tracer, *, native_diagnostics: bool = True
 ) -> AsyncIterator[tuple[Client, Sandboxes]]:
     async with AsyncExitStack() as resources:
-        client = await resources.enter_async_context(Client.connect(base_url=base_url, token=token))
+        dispatcher = await resources.enter_async_context(native_client(cluster))
+        client = await resources.enter_async_context(
+            Client.connect(base_url=base_url, token=token, dispatcher=dispatcher)
+        )
         sandbox = await resources.enter_async_context(sandbox_scope(cluster, client, phase_tracer))
 
         if native_diagnostics:
