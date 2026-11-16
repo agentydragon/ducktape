@@ -15,10 +15,9 @@ original command ID and never forward caller credentials. Environments does not 
 
 Dispatcher automatic wake preserves the effective caller and applies `wakeOnSend`, configured wake
 grants and the shared budget. Its Kubernetes Role still reads workload and policy state, patches
-existing Sandboxes for automatic wake. Delivery uses per-Session PostgreSQL leases; the unused
-Kubernetes Lease grant remains until this image is pinned and running. It cannot create or delete
-Sandboxes or read SandboxTemplates. The Controller owns `Sandbox.status`; its leader election and
-Runtime observation are independent of Dispatcher scheduling ownership. See the
+existing Sandboxes for automatic wake. Delivery uses per-Session PostgreSQL leases. The Role cannot
+create or delete Sandboxes or read SandboxTemplates. The Controller owns `Sandbox.status`; its
+leader election and Runtime observation are independent of Dispatcher scheduling ownership. See the
 [Dispatcher contract](dispatcher/SPEC.md) and [Runtime proxy contract](../environments/runtimeproxy/SPEC.md).
 
 The required `rpc` block configures TLS and SPIFFE trust. `gateway_tls` and

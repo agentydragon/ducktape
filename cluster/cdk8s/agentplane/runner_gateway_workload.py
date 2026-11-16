@@ -328,10 +328,6 @@ class RunnerGateway(Construct):
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
-                # Dispatcher delivery ownership uses these Leases for atomic get/create/update operations.
-                RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
-                ),
             ],
         )
         RoleBinding(
