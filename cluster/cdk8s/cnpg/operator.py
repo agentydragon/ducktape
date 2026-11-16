@@ -17,7 +17,6 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 
 from cluster.cdk8s import namespaces, node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -76,14 +75,3 @@ def chart(app: App) -> Chart:
         description="CloudNativePG Barman Cloud plugin for physical backups and WAL archiving.",
     )
     return chart
-
-
-def cnpg(chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="10m",
-        # The plugin-barman-cloud chart renders a cert-manager Issuer and Certificates.
-        depends_on=[flux_kustomization_depends_on(cert_manager)],
-    )

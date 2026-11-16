@@ -657,11 +657,7 @@ py_library(
 py_library(
     name = "platform_monitoring",
     srcs = ["platform_monitoring.py"],
-    deps = [
-        ":flux",
-        ":manifest_roots",
-        "@pypi//cdk8s",
-    ],
+    deps = [":manifest_roots"],
 )
 
 py_library(
@@ -716,7 +712,6 @@ py_library(
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":cilium",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":pod_policy",
@@ -760,8 +755,6 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
-        ":artifact_generators",
-        ":flux",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
@@ -804,8 +797,6 @@ py_library(
     name = "roaming_node_controller",
     srcs = ["roaming_node_controller.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
@@ -821,9 +812,7 @@ py_library(
     name = "loki_read_proxy",
     srcs = ["loki_read_proxy.py"],
     deps = [
-        ":artifact_generators",
         ":cilium",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
@@ -841,7 +830,6 @@ py_library(
         ":config_format",
         ":flux",
         ":gateway",
-        ":generation",
         ":manifest_roots",
         ":namespaces",
         ":secret_ref",
@@ -864,9 +852,7 @@ py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
     deps = [
-        ":artifact_generators",
         ":cilium",
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         ":pod_policy",
@@ -877,7 +863,6 @@ py_library(
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -1150,7 +1135,6 @@ py_library(
     srcs = ["agent_sandbox.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":flux",
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",
@@ -1173,7 +1157,6 @@ py_library(
     srcs = ["ntfy.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":flux",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
@@ -1385,8 +1368,6 @@ py_library(
     name = "goldilocks",
     srcs = ["goldilocks.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1420,7 +1401,6 @@ py_library(
     data = ["proxmox-proxy.conf"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
-        ":artifact_generators",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -1617,9 +1597,7 @@ py_library(
         "//cluster/cdk8s/agentplane:binding_delegation",
         "//cluster/cdk8s/agentplane:db_backups",
         "//cluster/cdk8s/agentplane:generation",
-        "//cluster/cdk8s/agentplane:runner_gateway_workload",
         "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/agentplane:staging_grants",
         "//cluster/cdk8s/agents:flux_kustomizations",
         "//cluster/cdk8s/att_gateway_exporter:access_code",
         "//cluster/cdk8s/att_gateway_exporter:app",

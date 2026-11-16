@@ -34,7 +34,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import terraform
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy
@@ -135,21 +134,3 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         ],
     )
     return chart
-
-
-def home_switch(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    cert_manager: Kustomization,
-    external_secrets_operator: Kustomization,
-    tofu_controller: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "monitoring-home-switch",
-        directory,
-        # Health-checks the Terraform too, so a plan awaiting approval also shows as this
-        # Kustomization not Ready.
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(cert_manager, external_secrets_operator, tofu_controller),
-    )

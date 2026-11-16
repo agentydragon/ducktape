@@ -49,15 +49,9 @@ from aiquota.providers.zai import ZaiSettings
 from aiquota.settings import Settings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.agentplane.egress_credentials import STAGING_CREDENTIALS_NAMESPACE
-from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app  # aiquota()'s parameter is its Kustomization
+from cluster.cdk8s.cli_proxy_api import cli_proxy_api as cli_proxy_api_app
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
@@ -321,22 +315,3 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Aiquota(chart, NAME)
     return chart
-
-
-def aiquota(
-    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kyverno: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        description="aiquota API with Claude and Codex quota through the CLIProxyAPI integration.",
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            # Materializes the narrow mirrored copies of the API bearer for its
-            # consumers; the source Secret stays SOPS-managed here.
-            external_secrets_operator,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
-            kyverno,
-        ),
-    )

@@ -42,7 +42,6 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
@@ -56,7 +55,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_NAME = "ha-mcp"
+NAME = "ha-mcp"
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app-image-pins"
@@ -312,27 +311,6 @@ class HaMcp(Construct):
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    HaMcp(chart, _NAME)
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    HaMcp(chart, NAME)
     return chart
-
-
-def ha_mcp(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    monitoring_crds: Kustomization,
-    cert_manager_environment: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        _NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            external_secrets_operator,
-            # the ServiceMonitor CRD
-            monitoring_crds,
-            cert_manager_environment,
-        ),
-    )

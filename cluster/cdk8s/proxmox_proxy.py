@@ -8,13 +8,7 @@ from cdk8s_plus_34 import k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -108,15 +102,3 @@ def chart(app: App) -> Chart:
         spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()]),
     )
     return chart
-
-
-def proxmox_proxy(chart: Chart, directory: RenderedDirectory, kyverno: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        suspend=False,
-        timeout="5m",
-        # Kyverno's failurePolicy: Fail webhooks admit the Deployment.
-        depends_on=[flux_kustomization_depends_on(kyverno)],
-    )

@@ -28,13 +28,7 @@ from python.runfiles import Runfiles
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring.home_switch import MONITORING_PASSWORD
@@ -257,27 +251,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def mktxp(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    external_secrets_operator: Kustomization,
-    monitoring_crds: Kustomization,
-    home_switch: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        f"{NAMESPACE}-{NAME}",
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            # ExternalSecret, ClusterSecretStore
-            external_secrets_operator,
-            # ServiceMonitor
-            monitoring_crds,
-            # The `monitoring` user's password
-            home_switch,
-        ),
-        description="Home MikroTik switch metrics: per-port traffic, errors, link state, health.",
-    )

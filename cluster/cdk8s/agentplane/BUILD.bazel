@@ -24,7 +24,6 @@ py_library(
     deps = [
         ":database",
         ":staging",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/cnpg:backup",
         "@pypi//cdk8s",

@@ -12,7 +12,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":config",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
@@ -90,7 +89,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":app",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",

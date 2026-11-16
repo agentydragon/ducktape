@@ -31,13 +31,7 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
@@ -251,14 +245,3 @@ def chart(app: App, mesh: Mesh) -> Chart:
         spec=PrometheusRuleSpec(groups=[group(_NAME, _rules(nodes))]),
     )
     return chart
-
-
-def gateway_probe(flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "monitoring-gateway-probe",
-        directory,
-        timeout="5m",
-        # the PodMonitor and PrometheusRule CRDs
-        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-    )

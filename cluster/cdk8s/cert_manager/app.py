@@ -11,7 +11,6 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -126,16 +125,3 @@ def chart(app: App) -> Chart:
     _service_monitor(chart, NAME, _CONTROLLER_METRICS)
     _service_monitor(chart, "webhook", _WEBHOOK_METRICS)
     return chart
-
-
-def cert_manager(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            # the ServiceMonitor/PodMonitor CRD
-            monitoring_crds
-        ),
-    )

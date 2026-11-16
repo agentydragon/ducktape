@@ -4,9 +4,6 @@ the directory's Flux Kustomization."""
 
 from __future__ import annotations
 
-from cdk8s import Chart
-
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
@@ -14,16 +11,3 @@ NAME = "att-gateway-exporter-secrets"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # The Secret `access-code.sops.yaml` defines.
 ACCESS_CODE = SecretRef(namespace="monitoring", name="att-gateway-exporter-access-code").key("access-code")
-
-
-def att_gateway_exporter_secrets(
-    flux_chart: Chart, directory: RenderedDirectory, monitoring_namespace: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=[flux_kustomization_depends_on(monitoring_namespace)],
-        description="AT&T gateway device access code, for the exporter's login-only pages.",
-    )

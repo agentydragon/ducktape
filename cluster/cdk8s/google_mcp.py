@@ -47,7 +47,6 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 
 from cluster.cdk8s import cilium, namespaces, pod_policy
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
     forgejo_images_creds_secret_ref,
@@ -59,18 +58,18 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRul
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
-_NAME = "google-mcp"
-OUTPUT_DIR = f"{GENERATED_ROOT}/{_NAME}"
+NAME = "google-mcp"
+OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
 _PLACEHOLDER_TAG = "unset"
 SERVICE = ServiceRef(
-    name=_NAME,
+    name=NAME,
     port=Port(name="http", number=8080),
-    pods=Pods(namespace=_NAME, labels=(("app.kubernetes.io/name", _NAME),)),
+    pods=Pods(namespace=NAME, labels=(("app.kubernetes.io/name", NAME),)),
 )
 # The caller-facing bearer this chart mints.
-BEARER = SecretRef(namespace=_NAME, name="google-mcp-bearer").key("bearer-token")
+BEARER = SecretRef(namespace=NAME, name="google-mcp-bearer").key("bearer-token")
 # Populated by a ClusterExternalSecret in Airlock's own Kustomization
 # (cluster/k8s/agents/airlock/), scoped to this namespace only -- see the module docstring.
 GOOGLE_TOKEN_SECRET_NAME = "google-write-access-token"
@@ -96,7 +95,7 @@ class GoogleMcpApp(Construct):
             key=BEARER.key,
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         )
-        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=_NAME)
+        forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAME)
         deployment = self._add_deployment()
         self._add_service(deployment)
         self._add_network_policy()
@@ -105,7 +104,7 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME, labels=SERVICE.pods.selector),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -156,7 +155,7 @@ class GoogleMcpApp(Construct):
         Service(
             self,
             "service",
-            metadata=ApiObjectMetadata(name=SERVICE.name, namespace=_NAME),
+            metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAME),
             selector=deployment,
             ports=[SERVICE.port.service_port()],
         )
@@ -165,7 +164,7 @@ class GoogleMcpApp(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=_NAME, namespace=_NAME),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
             endpoint_selector=SERVICE.pods.selector,
             ingress=[
                 IngressRule.from_endpoints(
@@ -187,28 +186,15 @@ class GoogleMcp(Construct):
         namespaces.namespace(
             self,
             "namespace",
-            name=_NAME,
+            name=NAME,
             vpa=Vpa.DISABLED,
-            labels={"name": _NAME},
+            labels={"name": NAME},
             annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )
         GoogleMcpApp(self, "app")
 
 
 def chart(app: App) -> Chart:
-    chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    GoogleMcp(chart, _NAME)
+    chart = Chart(app, NAME, disable_resource_name_hashes=True)
+    GoogleMcp(chart, NAME)
     return chart
-
-
-def google_mcp(
-    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        _NAME,
-        directory,
-        description="Gmail/Calendar MCP backend for Agentplane staging.",
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-    )
