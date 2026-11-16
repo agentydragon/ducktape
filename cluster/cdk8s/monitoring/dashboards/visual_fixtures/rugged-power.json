@@ -145,6 +145,38 @@
           ]
         }
       },
+      "6": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "$recorded_ref": "value_001"
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_007"
+                  },
+                  [12.0, 39.0, 59.0, 79.0, 80.0, 80.0, 80.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_008"
+              },
+              "data": {
+                "values": [
+                  {
+                    "$recorded_ref": "value_007"
+                  },
+                  [2.0, 2.0, 2.0, 2.0, 32.0, 54.0, 74.0]
+                ]
+              }
+            }
+          ]
+        }
+      },
       "2": {
         "A": {
           "frames": [
@@ -603,6 +635,7 @@
       "instance": ["instance-1"]
     },
     "capture_notes": {
+      "6/A": "Same historical charge samples as panel 1.",
       "1/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
       "2/A": "Captured from a historical Mimir query with All selected; labels anonymized.",
       "4/A": "Captured from a historical Mimir query with All selected; labels anonymized.",

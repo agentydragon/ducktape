@@ -8,6 +8,9 @@ from grafana_foundation_sdk.models import common, dashboard
 from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query, mimir_table_query
 
 _INSTANCE_QUERY = 'label_values(node_uname_info{nodename="rugged"}, instance)'
+_CHARGE_QUERY = (
+    'max by (instance, power_supply) (node_power_supply_capacity{instance=~"$instance",power_supply=~"BAT.*"})'
+)
 
 
 def _power_panel(id: int, title: str, x: int, y: int, w: int, calcs: list[str]) -> timeseries.Panel:
@@ -64,11 +67,7 @@ def build_dashboard() -> dashboard.Dashboard:
             .display_mode(common.BarGaugeDisplayMode.LCD)
             .orientation(common.VizOrientation.HORIZONTAL)
             .reduce_options(ReduceDataOptions().calcs(["lastNotNull"]).fields("").values(False))
-            .with_target(
-                mimir_query(
-                    'node_power_supply_capacity{instance=~"$instance",power_supply=~"BAT.*"}', "{{power_supply}}"
-                )
-            )
+            .with_target(mimir_query(_CHARGE_QUERY, "{{power_supply}}").instant())
         )
         .with_panel(
             table.Panel()
@@ -83,20 +82,20 @@ def build_dashboard() -> dashboard.Dashboard:
             _power_panel(3, "RAPL power draw", 0, 8, 24, ["lastNotNull", "mean", "max"])
             .with_target(
                 mimir_query(
-                    'rate(node_rapl_package_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+$"}[$__rate_interval])',
+                    'max by (instance, index, path) (rate(node_rapl_package_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+$"}[5m]))',
                     "package",
                 )
             )
             .with_target(
                 mimir_query(
-                    'rate(node_rapl_dram_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+:[^/]+$"}[$__rate_interval])',
+                    'max by (instance, index, path) (rate(node_rapl_dram_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+:[^/]+$"}[5m]))',
                     "DRAM",
                     "B",
                 )
             )
             .with_target(
                 mimir_query(
-                    'rate(node_rapl_psys_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+$"}[$__rate_interval])',
+                    'max by (instance, index, path) (rate(node_rapl_psys_joules_total{instance=~"$instance",path=~".*/intel-rapl:[^/]+$"}[5m]))',
                     "platform",
                     "C",
                 )
@@ -107,7 +106,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 4, "Battery electrical power (sign follows kernel current)", 0, 16, 12, ["lastNotNull"]
             ).with_target(
                 mimir_query(
-                    'node_power_supply_current_ampere{instance=~"$instance",power_supply=~"BAT.*"} * on (power_supply) node_power_supply_voltage_volt{instance=~"$instance",power_supply=~"BAT.*"}',
+                    'max by (instance, power_supply) (node_power_supply_current_ampere{instance=~"$instance",power_supply=~"BAT.*"} * node_power_supply_voltage_volt{instance=~"$instance",power_supply=~"BAT.*"})',
                     "{{power_supply}}",
                 )
             )
@@ -117,9 +116,23 @@ def build_dashboard() -> dashboard.Dashboard:
             .unit("celsius")
             .with_target(
                 mimir_query(
-                    'node_power_supply_temp_celsius{instance=~"$instance",power_supply=~"BAT.*"}', "{{power_supply}}"
+                    'max by (instance, power_supply) (node_power_supply_temp_celsius{instance=~"$instance",power_supply=~"BAT.*"})',
+                    "{{power_supply}}",
                 )
             )
+        )
+        .with_panel(
+            line_panel()
+            .id(6)
+            .title("Battery charge over time")
+            .grid_pos(dashboard.GridPos(h=8, w=24, x=0, y=24))
+            .unit("percent")
+            .min(0)
+            .max(100)
+            .legend(
+                VizLegendOptions().display_mode(common.LegendDisplayMode.TABLE).show_legend(True).calcs(["lastNotNull"])
+            )
+            .with_target(mimir_query(_CHARGE_QUERY, "{{power_supply}}"))
         )
         .build()
     )
