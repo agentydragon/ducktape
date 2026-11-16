@@ -1,24 +1,45 @@
 {
   "schema_version": 3,
   "artifact_kind": "source-grounded organization proposal and file ledger",
-  "source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
-  "observed_at_utc": "2026-11-16T11:25:00Z",
+  "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+  "observed_at_utc": "2026-11-16T21:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "freshness": {
-    "checked_origin_devel": "e23347d340c2db6102c3ac0b991790a75d36faa7",
-    "checked_at_utc": "2026-11-16T11:25:00+00:00",
-    "previous_pin": "7dba44674e2617d7e11fe9f0a4dba5752dcc7976",
-    "go_or_proto_delta": "Since 7dba44674e, ee5a12e8c0 moved `agentplane/session_client` to `action_service/internal/sessionclient` and split the CLI's `sessions` family into `cli/internal/session_dispatcher` and `cli/internal/history`; #16983, #16985 and #16990 moved `env/cosi`, `env/oneoff` and `env/scripts` under `env/runtime/internal/`; #16987 deleted `app/internal/historywatch`. Other Go changes (#16966, #16976 and direct commits) edited code only.",
-    "landed": [],
-    "interpretation": "No track landed. The `session_client` component is gone (its package is now Action Service internal); moved packages keep their decisions at their new paths."
+    "checked_origin_devel": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+    "checked_at_utc": "2026-11-16T21:40:00+00:00",
+    "previous_pin": "e23347d340c2db6102c3ac0b991790a75d36faa7",
+    "go_or_proto_delta": "Since e23347d340, #17050 added `central_sampler/internal/{executionstate,providerrequest}`, moved `sessionstore/environment_context.go` to `internal/environmentcontext/context.go`, added `sessionstore/status.go` (the Store's SQL status adapters) and deleted `protocol/status.go`. #17053 moved the MCP edge's root files to `mcp_edge/cmd` and `mcp_edge/internal/actionclient`, and `rpc/{gate,attribution}.go` to `action_service/internal/admission/grpcgate`. #17054 added `env/runtime/supervision/internal/pid1/pid1.go` and moved `supervision/pid1_test.go` there as `procfs_test.go`. Other Go changes (#16945, #17030, #17046, #17047) edited code only.",
+    "landed": [
+      {
+        "track": "sampler-execution-state",
+        "pr": 17050,
+        "result": "Process and cell lifecycle values live in `executionstate`; SQL scan/value validation stays private to Store; stored spellings are unchanged."
+      },
+      {
+        "track": "sampler-request-preparation",
+        "pr": 17050,
+        "result": "`providerrequest.Prepare` assembles native requests inside Store's transaction; Store keeps locks, fences, content writes and commit, and dispatch still follows commit."
+      },
+      {
+        "track": "mcp-edge-command-action-client",
+        "pr": 17053,
+        "result": "The edge's composition is in `mcp_edge/cmd` and its Actions adapter in `internal/actionclient`; grant provenance, projected tokens and stream revocation rechecks are unchanged."
+      },
+      {
+        "track": "action-service-grpcgate",
+        "pr": 17053,
+        "result": "`internal/admission/grpcgate` owns method admission, stream revalidation and drain behind `New(Options)`; handler tests stay in `rpc`."
+      }
+    ],
+    "interpretation": "Landed work items are removed, not listed as done. The operator released the remaining stage-4 extractions except the Dispatcher Store design on 2026-11-16 at 20:05 UTC. #17054 landed the PID1 half of env-supervision-backends; the track keeps the systemd half."
   },
   "inventory": {
-    "source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
+    "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
     "counts": {
-      "files": 1356,
-      "directories": 250,
-      "production": 748,
-      "tests": 608
+      "files": 1367,
+      "directories": 256,
+      "production": 752,
+      "tests": 615
     },
     "all_tracked_go_files_included": true,
     "manifest_path": "agentplane-organization/go-files.json"

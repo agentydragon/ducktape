@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "e23347d340c2db6102c3ac0b991790a75d36faa7",
-  "observed_at_utc": "2026-11-16T11:25:00Z",
+  "source_sha": "a97cc4a49f64c62e5625ba41683d7066eb24b68b",
+  "observed_at_utc": "2026-11-16T21:40:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1356,
-    "directories": 250,
-    "production": 748,
-    "tests": 608
+    "files": 1367,
+    "directories": 256,
+    "production": 752,
+    "tests": 615
   },
   "directories": [
     {
@@ -58,6 +58,18 @@
         "agentplane/action_service/internal/admission/catalog/golden_test.go",
         "agentplane/action_service/internal/admission/catalog/input.go",
         "agentplane/action_service/internal/admission/catalog/input_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate",
+      "production": 2,
+      "tests": 3,
+      "files": [
+        "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+        "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+        "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+        "agentplane/action_service/internal/admission/grpcgate/gate.go",
+        "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go"
       ]
     },
     {
@@ -146,10 +158,9 @@
     },
     {
       "path": "agentplane/action_service/internal/rpc",
-      "production": 12,
+      "production": 10,
       "tests": 16,
       "files": [
-        "agentplane/action_service/internal/rpc/attribution.go",
         "agentplane/action_service/internal/rpc/attribution_test.go",
         "agentplane/action_service/internal/rpc/catalog.go",
         "agentplane/action_service/internal/rpc/catalog_golden_test.go",
@@ -157,7 +168,6 @@
         "agentplane/action_service/internal/rpc/catalog_test.go",
         "agentplane/action_service/internal/rpc/errors.go",
         "agentplane/action_service/internal/rpc/fixture_test.go",
-        "agentplane/action_service/internal/rpc/gate.go",
         "agentplane/action_service/internal/rpc/gate_policy_test.go",
         "agentplane/action_service/internal/rpc/gate_test.go",
         "agentplane/action_service/internal/rpc/integration_testmain_test.go",
@@ -612,11 +622,29 @@
       ]
     },
     {
+      "path": "agentplane/central_sampler/internal/environmentcontext",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/central_sampler/internal/environmentcontext/context.go",
+        "agentplane/central_sampler/internal/environmentcontext/context_test.go"
+      ]
+    },
+    {
       "path": "agentplane/central_sampler/internal/eventcodec",
       "production": 1,
       "tests": 0,
       "files": [
         "agentplane/central_sampler/internal/eventcodec/event_storage.go"
+      ]
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executionstate",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/central_sampler/internal/executionstate/status.go",
+        "agentplane/central_sampler/internal/executionstate/status_test.go"
       ]
     },
     {
@@ -687,6 +715,16 @@
       ]
     },
     {
+      "path": "agentplane/central_sampler/internal/providerrequest",
+      "production": 2,
+      "tests": 1,
+      "files": [
+        "agentplane/central_sampler/internal/providerrequest/content.go",
+        "agentplane/central_sampler/internal/providerrequest/preparation.go",
+        "agentplane/central_sampler/internal/providerrequest/preparation_test.go"
+      ]
+    },
+    {
       "path": "agentplane/central_sampler/internal/residentruntime",
       "production": 14,
       "tests": 13,
@@ -735,7 +773,7 @@
     {
       "path": "agentplane/central_sampler/internal/sessionstore",
       "production": 27,
-      "tests": 10,
+      "tests": 11,
       "files": [
         "agentplane/central_sampler/internal/sessionstore/admission.go",
         "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
@@ -744,7 +782,6 @@
         "agentplane/central_sampler/internal/sessionstore/content_store.go",
         "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
         "agentplane/central_sampler/internal/sessionstore/conversations.go",
-        "agentplane/central_sampler/internal/sessionstore/environment_context.go",
         "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
         "agentplane/central_sampler/internal/sessionstore/evidence.go",
         "agentplane/central_sampler/internal/sessionstore/execution.go",
@@ -772,6 +809,8 @@
         "agentplane/central_sampler/internal/sessionstore/request_plan_test.go",
         "agentplane/central_sampler/internal/sessionstore/sampling_recovery.go",
         "agentplane/central_sampler/internal/sessionstore/sessions.go",
+        "agentplane/central_sampler/internal/sessionstore/status.go",
+        "agentplane/central_sampler/internal/sessionstore/status_test.go",
         "agentplane/central_sampler/internal/sessionstore/store.go",
         "agentplane/central_sampler/internal/sessionstore/types.go"
       ]
@@ -829,7 +868,7 @@
     },
     {
       "path": "agentplane/central_sampler/protocol",
-      "production": 10,
+      "production": 9,
       "tests": 1,
       "files": [
         "agentplane/central_sampler/protocol/content.go",
@@ -839,7 +878,6 @@
         "agentplane/central_sampler/protocol/evidence.go",
         "agentplane/central_sampler/protocol/instructions.go",
         "agentplane/central_sampler/protocol/provider_hooks.go",
-        "agentplane/central_sampler/protocol/status.go",
         "agentplane/central_sampler/protocol/tool_definitions.go",
         "agentplane/central_sampler/protocol/tool_invocation.go",
         "agentplane/central_sampler/protocol/tool_surface.go"
@@ -1547,7 +1585,7 @@
     {
       "path": "agentplane/env/runtime/supervision",
       "production": 14,
-      "tests": 12,
+      "tests": 11,
       "files": [
         "agentplane/env/runtime/supervision/backend.go",
         "agentplane/env/runtime/supervision/controller.go",
@@ -1559,7 +1597,6 @@
         "agentplane/env/runtime/supervision/pid1.go",
         "agentplane/env/runtime/supervision/pid1_kernel_test.go",
         "agentplane/env/runtime/supervision/pid1_process_test.go",
-        "agentplane/env/runtime/supervision/pid1_test.go",
         "agentplane/env/runtime/supervision/process.go",
         "agentplane/env/runtime/supervision/process_resources.go",
         "agentplane/env/runtime/supervision/process_test.go",
@@ -1575,6 +1612,15 @@
         "agentplane/env/runtime/supervision/systemd_unit_reference_test.go",
         "agentplane/env/runtime/supervision/systemd_units.go",
         "agentplane/env/runtime/supervision/systemd_units_test.go"
+      ]
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1",
+      "production": 1,
+      "tests": 1,
+      "files": [
+        "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+        "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go"
       ]
     },
     {
@@ -2175,22 +2221,29 @@
       ]
     },
     {
-      "path": "agentplane/mcp_edge",
-      "production": 7,
-      "tests": 5,
+      "path": "agentplane/mcp_edge/cmd",
+      "production": 5,
+      "tests": 3,
       "files": [
-        "agentplane/mcp_edge/action_metadata.go",
-        "agentplane/mcp_edge/action_metadata_test.go",
-        "agentplane/mcp_edge/callers.go",
-        "agentplane/mcp_edge/config.go",
-        "agentplane/mcp_edge/config_test.go",
-        "agentplane/mcp_edge/core_client.go",
-        "agentplane/mcp_edge/core_client_test.go",
-        "agentplane/mcp_edge/http_facade.go",
-        "agentplane/mcp_edge/http_facade_test.go",
-        "agentplane/mcp_edge/http_health.go",
-        "agentplane/mcp_edge/http_health_test.go",
-        "agentplane/mcp_edge/main.go"
+        "agentplane/mcp_edge/cmd/callers.go",
+        "agentplane/mcp_edge/cmd/config.go",
+        "agentplane/mcp_edge/cmd/config_test.go",
+        "agentplane/mcp_edge/cmd/http_facade.go",
+        "agentplane/mcp_edge/cmd/http_facade_test.go",
+        "agentplane/mcp_edge/cmd/http_health.go",
+        "agentplane/mcp_edge/cmd/http_health_test.go",
+        "agentplane/mcp_edge/cmd/main.go"
+      ]
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient",
+      "production": 2,
+      "tests": 2,
+      "files": [
+        "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+        "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+        "agentplane/mcp_edge/internal/actionclient/core_client.go",
+        "agentplane/mcp_edge/internal/actionclient/core_client_test.go"
       ]
     },
     {
@@ -3082,10 +3135,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "orchestration-v1-retirement",
-        "action-service-grpcgate"
-      ],
+      "pending_tracks": ["orchestration-v1-retirement"],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3101,7 +3151,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3117,7 +3167,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3133,7 +3183,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3142,17 +3192,14 @@
       "package": "main",
       "test": false,
       "generated": false,
-      "lines": 704,
-      "sha256": "05a5ad13464cc46994329cd736b5331f687562b3c3c8ad045c7f8b6552561538",
+      "lines": 705,
+      "sha256": "fc464cef1a68824a59d600703502e2de829e41e6b638d3c68f660bdad7b1d300",
       "planned_path": "agentplane/action_service/cmd/main.go",
       "planned_parts": [],
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": [
-        "orchestration-v1-retirement",
-        "action-service-grpcgate"
-      ],
+      "pending_tracks": ["orchestration-v1-retirement"],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3168,7 +3215,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3184,7 +3231,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3200,7 +3247,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3216,7 +3263,7 @@
       "planned_package": "main",
       "goal_path_status": "retain owner",
       "candidate_owners": [],
-      "pending_tracks": ["action-service-grpcgate"],
+      "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/cmd"
     },
@@ -3331,6 +3378,86 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/admission/catalog"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+      "package": "grpcgate",
+      "test": false,
+      "generated": false,
+      "lines": 44,
+      "sha256": "8e95626a594c9f042d3ac6cad5b026e0447bdaf4e5fddf7e057ac63a425ce327",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/attribution.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 28,
+      "sha256": "40b402670869cb56c916ff8d039f3cbc3080c3a3d99e06c87859ee6b684a422f",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/attribution_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 80,
+      "sha256": "8db84a14ab3d8fd1fd2853bfb7e42e54c52b6ac69cdc6ce8ef53243637a6cdea",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/boundary_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/gate.go",
+      "package": "grpcgate",
+      "test": false,
+      "generated": false,
+      "lines": 508,
+      "sha256": "897cebedf10b27f72d1d9c20dae0481643d04de9cc19a8c314a3d5fe0310a9a2",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/gate.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
+    },
+    {
+      "path": "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go",
+      "package": "grpcgate",
+      "test": true,
+      "generated": false,
+      "lines": 104,
+      "sha256": "17fa0bae70434324f03e1bf6b453872ded2a96eb62ca55ed0228c556fb5688da",
+      "planned_path": "agentplane/action_service/internal/admission/grpcgate/gate_policy_test.go",
+      "planned_parts": [],
+      "planned_package": "grpcgate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/action_service/internal/admission/grpcgate"
     },
     {
       "path": "agentplane/action_service/internal/admission/informer/fixture_test.go",
@@ -4005,28 +4132,12 @@
       "package_decision": "agentplane/action_service/internal/push"
     },
     {
-      "path": "agentplane/action_service/internal/rpc/attribution.go",
-      "package": "rpc",
-      "test": false,
-      "generated": false,
-      "lines": 44,
-      "sha256": "da4b38e9679b89ee04eda767c30860e0c5f32545dc8e66ccc593fb84a98a8b8a",
-      "planned_path": "agentplane/action_service/internal/rpc/attribution.go",
-      "planned_parts": [],
-      "planned_package": "rpc",
-      "goal_path_status": "retain owner",
-      "candidate_owners": [],
-      "pending_tracks": [],
-      "disposition": "retain owner",
-      "package_decision": "agentplane/action_service/internal/rpc"
-    },
-    {
       "path": "agentplane/action_service/internal/rpc/attribution_test.go",
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 52,
-      "sha256": "edddb43ab5fab32d15f42be050604259645e807d42028c5bbbfe8bc354c0e8d3",
+      "lines": 42,
+      "sha256": "502a354331bd950d623dd790cd221f6f303393dd6eebc0258e3b2b476a6fd42e",
       "planned_path": "agentplane/action_service/internal/rpc/attribution_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -4041,18 +4152,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 184,
-      "sha256": "e2c4b678d8d97d654adfc26779fb791a95d8950da5d82f1c36facdd885ab67e6",
-      "planned_path": null,
+      "lines": 185,
+      "sha256": "71add4bb27561706559a621f3aada81d7c37e9cfcd8c04ead354213f79274887",
+      "planned_path": "agentplane/action_service/internal/rpc/catalog.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4062,16 +4170,13 @@
       "generated": false,
       "lines": 116,
       "sha256": "7a703394c522fa748e68b5f23d6bb46b74e59392cfe9d58e746dd8a4fbd062a1",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_golden_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4081,16 +4186,13 @@
       "generated": false,
       "lines": 29,
       "sha256": "31c1670301ab5e19cd802453bdf22a9a23878b2f9982dbd250b9fbd9266d223e",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_settings_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4100,16 +4202,13 @@
       "generated": false,
       "lines": 323,
       "sha256": "ba1670472bd6d941b01b91f244fcb031c92090f2d7e358655a5e37c85314b7b9",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/catalog_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4117,18 +4216,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 92,
-      "sha256": "b17117cb209e5941b374ebffa1f227a82fde3fd1a82cbaf1c88440fa7d7046b2",
-      "planned_path": null,
+      "lines": 93,
+      "sha256": "dfc601245eff3659f64cb089ec5358b48d3f09fb51d295cea9e9a492305ca97b",
+      "planned_path": "agentplane/action_service/internal/rpc/errors.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4136,37 +4232,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 446,
-      "sha256": "1d30d170d977b6fd4bc9a3893fe878b791e6a55e90cd3d034c6acc4ff5da3123",
-      "planned_path": null,
+      "lines": 465,
+      "sha256": "23ecaafeca3def5ff6fac4e53529a656d0ea69e215eb918dfcb2c676279043db",
+      "planned_path": "agentplane/action_service/internal/rpc/fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/action_service/internal/rpc"
-    },
-    {
-      "path": "agentplane/action_service/internal/rpc/gate.go",
-      "package": "rpc",
-      "test": false,
-      "generated": false,
-      "lines": 505,
-      "sha256": "44dbe296b1c13cc92925dd9b1b7c83105eb4d67fbe35bdf6fb96a096fa91e09c",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4174,18 +4248,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 110,
-      "sha256": "501d735e9bfbbd27d2646095de0b461de8f2c5f13312ed367e3e183826552d32",
-      "planned_path": null,
+      "lines": 24,
+      "sha256": "f724f68984900c3613300480567a87cb1685fa55eaa4e7c1c2bd114ca4d35d87",
+      "planned_path": "agentplane/action_service/internal/rpc/gate_policy_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4193,18 +4264,15 @@
       "package": "rpc",
       "test": true,
       "generated": false,
-      "lines": 413,
-      "sha256": "235341312a20135c9ce58921d12c3d570b8a866c352f85eee8012167b0e2d8f3",
-      "planned_path": null,
+      "lines": 430,
+      "sha256": "1ff8d62676752e7172425cc06c103b983858f87248202a8bb12665a8c52c7d21",
+      "planned_path": "agentplane/action_service/internal/rpc/gate_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4214,16 +4282,13 @@
       "generated": false,
       "lines": 23,
       "sha256": "fd4e8248d157f2e191e9c65b436550ae01d25a8f8dd46d4b3e7211f6202bb4ae",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/integration_testmain_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4231,18 +4296,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 106,
-      "sha256": "a045e9bc3298673bfa38ecc21d6cef7d528d1894b060fc26f4674a0d6214efbb",
-      "planned_path": null,
+      "lines": 107,
+      "sha256": "24cec812018c1a0b10db3cb20f0619948e28a19c1dafe8891be194a690254095",
+      "planned_path": "agentplane/action_service/internal/rpc/mcp_servers.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4252,16 +4314,13 @@
       "generated": false,
       "lines": 175,
       "sha256": "fa19e862ef0672ce5d9f44b676abcdb454b8102410ea1e34ae229af7fb905ce2",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/mcp_servers_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4269,18 +4328,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 52,
-      "sha256": "f22903137477b6548be08039d4163940b6db654378d01a4a39f6848f6eba62f6",
-      "planned_path": null,
+      "lines": 53,
+      "sha256": "21ad42bd0cfb639ca80c4efe1a44c6654766460c93fbd3e76a1848b649537bb7",
+      "planned_path": "agentplane/action_service/internal/rpc/operator_service.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4290,16 +4346,13 @@
       "generated": false,
       "lines": 263,
       "sha256": "3459d44a9c9c6e7d520e23eaa719b9a6943386394505ee6d4ec1281c4715eff1",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/operator_service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4307,18 +4360,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 75,
-      "sha256": "8016694c41f140614813f8867c57ac382686fb3c68926ba5ef10d8b692d767d8",
-      "planned_path": null,
+      "lines": 76,
+      "sha256": "aba09aee18eca4a618a8c6e3e86ca85668ddd161f4cbf5f4262c75171f9538cd",
+      "planned_path": "agentplane/action_service/internal/rpc/policy.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4328,16 +4378,13 @@
       "generated": false,
       "lines": 463,
       "sha256": "d7f7c37fd0a20da59ffc16fe31d1c428fab85c4e9057a8f62886472de6bf5218",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/policy_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4345,18 +4392,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 203,
-      "sha256": "bf8485bcb0acfe0b3bccb8ceb5f9f645fa90c1620b49b5eb35ef940eaad650d3",
-      "planned_path": null,
+      "lines": 204,
+      "sha256": "c2a46d91c645133a3eaee2fdcc4b5aa231877f510ec469cc4b9029147d416ae4",
+      "planned_path": "agentplane/action_service/internal/rpc/push.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4366,16 +4410,13 @@
       "generated": false,
       "lines": 344,
       "sha256": "00baded535e07edd1930b1065076810fdfbb0c3613e97c95656922090f9a40db",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/push_service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4383,18 +4424,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 193,
-      "sha256": "b6a50a42127658e928f7fc01932c601aced565e08d4b1390b94469f5587510fb",
-      "planned_path": null,
+      "lines": 194,
+      "sha256": "b546b2dbf443ef5192158d2f698ffaa3089ee2ea9c3e65fc2ec7f6d03dec5b4e",
+      "planned_path": "agentplane/action_service/internal/rpc/service.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4404,16 +4442,13 @@
       "generated": false,
       "lines": 422,
       "sha256": "9360a9141e2412878a3810ef9f8d1160b0f73755ea2db7934dd7dfea8e8ca6a2",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/service_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4421,18 +4456,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 146,
-      "sha256": "98992ef43df913c72ad3b412d5dd9f5ee98fa6d1ba1b8a14cc02ae0b205349cc",
-      "planned_path": null,
+      "lines": 147,
+      "sha256": "e3f29e70062e0f1f42daa43c8a6c0f17920cd032567507702fca39cc1e5c28c4",
+      "planned_path": "agentplane/action_service/internal/rpc/submit.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4442,16 +4474,13 @@
       "generated": false,
       "lines": 401,
       "sha256": "554ba07becbaabdf5f6985b172196685715d844317b908698006c4157b7a76a0",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/submit_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4461,16 +4490,13 @@
       "generated": false,
       "lines": 209,
       "sha256": "0899ce279280e3526c56a3de17163bb149e11e8c430d37bd515f0dd4ed1c0e5d",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/svid_fixture_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4480,16 +4506,13 @@
       "generated": false,
       "lines": 243,
       "sha256": "02367f46654c22d1a28ebd518f72647853e9d1dee0e86d3246633345dd8e8b81",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/views.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4497,18 +4520,15 @@
       "package": "rpc",
       "test": false,
       "generated": false,
-      "lines": 302,
-      "sha256": "4ffbb5adb9d1a137e9b4ab1562ddd2f49864184b8fd90ce261048377b88d79b2",
-      "planned_path": null,
+      "lines": 303,
+      "sha256": "b1e226cc9da98918404e060e90b6fc12888ed973b080ab036d55d26d504d2e80",
+      "planned_path": "agentplane/action_service/internal/rpc/watch.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -4518,16 +4538,13 @@
       "generated": false,
       "lines": 347,
       "sha256": "cb4dffe21bfd7edd6f85468c4017360720b1c0e7c3543bd96ce513fbcc07d858",
-      "planned_path": null,
+      "planned_path": "agentplane/action_service/internal/rpc/watch_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/action_service/internal/rpc",
-        "agentplane/action_service/internal/admission/grpcgate"
-      ],
-      "pending_tracks": ["action-service-grpcgate"],
-      "disposition": "candidate boundary",
+      "planned_package": "rpc",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/action_service/internal/rpc"
     },
     {
@@ -6183,8 +6200,8 @@
       "package": "threads",
       "test": false,
       "generated": false,
-      "lines": 418,
-      "sha256": "7d0ccf0325dd0c61643ff4dfe83564e9d429bf9d8f774f0e7903213391950337",
+      "lines": 455,
+      "sha256": "44ea709fc59bafc196859410244856e840858582217e7b10347168222010451e",
       "planned_path": "agentplane/app/internal/httpapi/threads/handler.go",
       "planned_parts": [],
       "planned_package": "threads",
@@ -6199,8 +6216,8 @@
       "package": "threads",
       "test": true,
       "generated": false,
-      "lines": 117,
-      "sha256": "f3a3eda84e4b37ab27c0c5a32f72a9ec5be2bb4e4e3236f2afe1020c34ad94d8",
+      "lines": 159,
+      "sha256": "bebfead09e671a0593706ade9a0f0c4df370b778b05b89a2b51268c8c115dbbe",
       "planned_path": "agentplane/app/internal/httpapi/threads/handler_test.go",
       "planned_parts": [],
       "planned_package": "threads",
@@ -6775,8 +6792,8 @@
       "package": "settings",
       "test": false,
       "generated": false,
-      "lines": 683,
-      "sha256": "0119393b4e961852ee18748b1e5474964169b58c38d9ebb5fffee992dd4a3538",
+      "lines": 681,
+      "sha256": "e8a914eaf00a7e31a7174a9b724af565ed88fb7e51efee59285b4296990369dc",
       "planned_path": "agentplane/app/internal/settings/config.go",
       "planned_parts": [],
       "planned_package": "settings",
@@ -6791,8 +6808,8 @@
       "package": "settings",
       "test": true,
       "generated": false,
-      "lines": 534,
-      "sha256": "20ad4efc19b64adc358fbc7b43ee09f61599624d13b01a66685bf6186de0465e",
+      "lines": 532,
+      "sha256": "a1bd19986e391185851daa841c67b309b8abaceb3fdc1531ad3a3dbca50327ec",
       "planned_path": "agentplane/app/internal/settings/config_test.go",
       "planned_parts": [],
       "planned_package": "settings",
@@ -7195,6 +7212,42 @@
       "package_decision": "agentplane/central_sampler/internal/content"
     },
     {
+      "path": "agentplane/central_sampler/internal/environmentcontext/context.go",
+      "package": "environmentcontext",
+      "test": false,
+      "generated": false,
+      "lines": 68,
+      "sha256": "91cc626dc5714442c48f5e6879a5e38a885830f22d3004a29e80fe9eb2588b3c",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/central_sampler/internal/sessionstore",
+        "agentplane/central_sampler/internal/providerrequest",
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
+      ],
+      "pending_tracks": ["sampler-content-persistence"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/central_sampler/internal/environmentcontext"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/environmentcontext/context_test.go",
+      "package": "environmentcontext",
+      "test": true,
+      "generated": false,
+      "lines": 53,
+      "sha256": "227b541cfc7264e3756885bad452903cf8e3aa5071694a6df9bdc9f9e2b6424d",
+      "planned_path": "agentplane/central_sampler/internal/environmentcontext/context_test.go",
+      "planned_parts": [],
+      "planned_package": "environmentcontext",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/environmentcontext"
+    },
+    {
       "path": "agentplane/central_sampler/internal/eventcodec/event_storage.go",
       "package": "eventcodec",
       "test": false,
@@ -7211,12 +7264,44 @@
       "package_decision": "agentplane/central_sampler/internal/eventcodec"
     },
     {
+      "path": "agentplane/central_sampler/internal/executionstate/status.go",
+      "package": "executionstate",
+      "test": false,
+      "generated": false,
+      "lines": 67,
+      "sha256": "34631a91551479eb6ed5155d7776119857c4c9060439338993080ab736312009",
+      "planned_path": "agentplane/central_sampler/internal/executionstate/status.go",
+      "planned_parts": [],
+      "planned_package": "executionstate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/executionstate"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/executionstate/status_test.go",
+      "package": "executionstate",
+      "test": true,
+      "generated": false,
+      "lines": 33,
+      "sha256": "08069411c0e3f9589a6f7c4134963e1677117ddb6bbb51a133657ebf67ddfc38",
+      "planned_path": "agentplane/central_sampler/internal/executionstate/status_test.go",
+      "planned_parts": [],
+      "planned_package": "executionstate",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/executionstate"
+    },
+    {
       "path": "agentplane/central_sampler/internal/executor/executor.go",
       "package": "executor",
       "test": false,
       "generated": false,
-      "lines": 396,
-      "sha256": "a1e0d32f8ec33f04047ead198e10d85ddb6a2bec7e16d2e2ecac385895a30f27",
+      "lines": 395,
+      "sha256": "88b79440938e1dd658b7c38a7abf141d875098c204ba2a313a0bc080f74549ba",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7226,10 +7311,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7249,10 +7331,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7261,8 +7340,8 @@
       "package": "executor",
       "test": true,
       "generated": false,
-      "lines": 730,
-      "sha256": "a72ccaf313444d1d57d47add565a9529bbeb488fdd10673afe6df61f2e5b0146",
+      "lines": 729,
+      "sha256": "7e5a123b08132e1f86429b7d8e732fca4434fa2b93a5faca564e1d8d3fbc7a3e",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7272,10 +7351,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7285,7 +7361,7 @@
       "test": true,
       "generated": false,
       "lines": 2285,
-      "sha256": "36e7b8c3d11ed7b8b4b35e40d0d9d0ce50b935ee5c6ef96f819c42baee78634c",
+      "sha256": "0b7a1ee6d87551f9714cb713409f86e200a446b4fd4036d07cad6e316df68dfe",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7295,10 +7371,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7318,10 +7391,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7341,10 +7411,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7364,10 +7431,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7387,10 +7451,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7400,7 +7461,7 @@
       "test": false,
       "generated": false,
       "lines": 569,
-      "sha256": "7860fd95fffd3f58fda4a0030e6f625f8cb0c01117678f45fc166d22e931c682",
+      "sha256": "cb0004c2416ed3af691c1ab86bdf38590740c94a521798275dcd595f2d17902a",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7410,10 +7471,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7433,10 +7491,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7456,10 +7511,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7479,10 +7531,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7502,10 +7551,7 @@
         "agentplane/central_sampler/internal/executor/transport",
         "agentplane/central_sampler/internal/executor/tools"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-executor-boundary"
-      ],
+      "pending_tracks": ["sampler-executor-boundary"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/executor"
     },
@@ -7516,17 +7562,13 @@
       "generated": false,
       "lines": 52,
       "sha256": "0776f5c1c9db6befb386cdedd222573dba3f110354a11fa2bc572ab63a2f96ec",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/internal/jsonwire/json.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "jsonwire",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/jsonwire"
     },
     {
@@ -7706,6 +7748,54 @@
       "package_decision": "agentplane/central_sampler/internal/providerio"
     },
     {
+      "path": "agentplane/central_sampler/internal/providerrequest/content.go",
+      "package": "providerrequest",
+      "test": false,
+      "generated": false,
+      "lines": 57,
+      "sha256": "654b633fd1d5ffeb8051342d59111a3c7d8610a50e8e22423af463004ea02ab4",
+      "planned_path": "agentplane/central_sampler/internal/providerrequest/content.go",
+      "planned_parts": [],
+      "planned_package": "providerrequest",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerrequest"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/providerrequest/preparation.go",
+      "package": "providerrequest",
+      "test": false,
+      "generated": false,
+      "lines": 217,
+      "sha256": "a68e6e31033cbb5e3c2b2cfa9f45d61d58161a23c0dfd0e3d091a56f9cd2f186",
+      "planned_path": "agentplane/central_sampler/internal/providerrequest/preparation.go",
+      "planned_parts": [],
+      "planned_package": "providerrequest",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerrequest"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/providerrequest/preparation_test.go",
+      "package": "providerrequest",
+      "test": true,
+      "generated": false,
+      "lines": 135,
+      "sha256": "3795edb0c0daefccbed4d9984454d3b65a91da634db399ee398f05d4e26abe66",
+      "planned_path": "agentplane/central_sampler/internal/providerrequest/preparation_test.go",
+      "planned_parts": [],
+      "planned_package": "providerrequest",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/providerrequest"
+    },
+    {
       "path": "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
       "package": "residentruntime",
       "test": true,
@@ -7730,7 +7820,7 @@
       "test": false,
       "generated": false,
       "lines": 218,
-      "sha256": "4050f7918a0e9e5316b59fc8e91514eb21135d370d519c1b04b61d1d40686baa",
+      "sha256": "f077668af2302ce41e092c6838ca88e80e3a994a4b755dc14dd621a9c76fbf04",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7787,7 +7877,7 @@
       "test": false,
       "generated": false,
       "lines": 163,
-      "sha256": "628d48781c275406573a7f00c146c543962cecf522dee6d81d464ab335390abf",
+      "sha256": "2026985a5c42466ec2ba810bc707f65a0cae07f1f4a8c49e89d81ddde0300c7e",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7805,8 +7895,8 @@
       "package": "residentruntime",
       "test": true,
       "generated": false,
-      "lines": 1407,
-      "sha256": "2af76282bb9c9c7627df0538e6fb3d904aa87b493227f4928e278b588da23bad",
+      "lines": 1406,
+      "sha256": "fe5e43b7f0ebc312e7b288b33b4d8ea89d164e8fac2503294936c26eb98c151c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7862,8 +7952,8 @@
       "package": "residentruntime",
       "test": false,
       "generated": false,
-      "lines": 206,
-      "sha256": "6ce44a610be2d2be3e27ab981636b2e68e098cb51d08d3415e1bb7190f774b27",
+      "lines": 207,
+      "sha256": "61e8daabf92c28c540e735d05305db5c0b1d48c0f1ae7709f6d0349865274c2b",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -7939,7 +8029,7 @@
       "test": true,
       "generated": false,
       "lines": 149,
-      "sha256": "f1a1a68c6a3c9a505ab10e9ca912fe8f14e8d5ae2353466f858154e57967438e",
+      "sha256": "3e55384d703b5a8557d0464dc9fffc13af8aa74a33d3a2f702fb5be17515fa31",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8071,8 +8161,8 @@
       "package": "residentruntime",
       "test": false,
       "generated": false,
-      "lines": 89,
-      "sha256": "e7ae831c8110ccde82913a0c534755686eafa82af490f05e0a2a0ca33ccfbd96",
+      "lines": 90,
+      "sha256": "188a270efa4c087ef5e2483690596fc1b4fa06f386dbbf126257486e5c746073",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8091,7 +8181,7 @@
       "test": false,
       "generated": false,
       "lines": 619,
-      "sha256": "47a0d633f07eadf41e731ca1ea63b9c524e74d0103f23aa542bef57bd9a830b5",
+      "sha256": "52ddf1f0941a0157d90c489b24ea1129c4284b98e1116315ca783b30cc16ce08",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8128,8 +8218,8 @@
       "package": "residentruntime",
       "test": false,
       "generated": false,
-      "lines": 81,
-      "sha256": "df45fc6578b7885b1c0b2b4218660c0f5a7266c6a49093e1465363817ebe4368",
+      "lines": 80,
+      "sha256": "7580efffbe2e4ae14134692149f0281ee7f8226f1755591758b2fe2391476511",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8240,7 +8330,7 @@
       "test": true,
       "generated": false,
       "lines": 198,
-      "sha256": "df8a70ad22a0dd77a4966d6addc89d84457bdc32124bab7b11f694397057c246",
+      "sha256": "a5267549512f04ab42146170fdc9781864d03030d1d96aabb162764433afa68a",
       "planned_path": "agentplane/central_sampler/internal/rpc/request_read_service_test.go",
       "planned_parts": [],
       "planned_package": "rpc",
@@ -8312,14 +8402,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8337,14 +8422,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8362,14 +8442,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8378,8 +8453,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 114,
-      "sha256": "cf788f501621384e9e66d4ed6928055532830233cfd0313e3441afd0c363f42a",
+      "lines": 101,
+      "sha256": "b89cc6894d92e81f571b6afd75b53a0194ba57c44ce7f73ba9f6d6724f11c8cc",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8387,14 +8462,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8403,8 +8473,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 444,
-      "sha256": "181c4d5962cbb77085f545895809637e93da0ad7f0fa014bf15b93d876d72826",
+      "lines": 412,
+      "sha256": "5509b5121fdaffb171337c6bd62a369603150f54d8f220df5f09f63b78e416b3",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8412,14 +8482,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8437,14 +8502,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8462,39 +8522,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/central_sampler/internal/sessionstore"
-    },
-    {
-      "path": "agentplane/central_sampler/internal/sessionstore/environment_context.go",
-      "package": "sessionstore",
-      "test": false,
-      "generated": false,
-      "lines": 68,
-      "sha256": "c19dbb53cd57060cffb0f072f7da83d4dd3e8265678bd93d6e32a93484d49a1e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/internal/sessionstore",
-        "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
-      ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8503,8 +8533,8 @@
       "package": "sessionstore",
       "test": true,
       "generated": false,
-      "lines": 195,
-      "sha256": "65cf725fe0fd973059ba9521158e20e9368ed71441b811b19c2025a83a2c4187",
+      "lines": 145,
+      "sha256": "333382f905e8a5f2a3b0828628d605a971ebee5de7f033ccae02a64375e508da",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8512,14 +8542,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8528,8 +8553,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 180,
-      "sha256": "b422ca36c9bc1a9873aba0809c5735f19ba204d411a5d03fe224cd15b7fc8c92",
+      "lines": 181,
+      "sha256": "d0ee3019c2c8874fa00c58cc855d2ef3a66df153ff3ba068bae2479af4b429a0",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8537,14 +8562,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8553,8 +8573,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 211,
-      "sha256": "a2e3a53856fcaa1a13e4275cdf3ac0c4ef9ea0a3ea1fbcd31af52d4a4e1bb8c0",
+      "lines": 212,
+      "sha256": "b000945112f883d72fc5b047972340efd48c92229091619df2ed895ea702dd8c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8562,14 +8582,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8578,8 +8593,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 64,
-      "sha256": "bd48cdec8c95d7a9da6bc627b87548b4b3becea5f15a1a4044e4997d091dfd4b",
+      "lines": 65,
+      "sha256": "48c8535295864925d93975bb0f29e2d4ef26c7d676c7347047959376d5ed41a2",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8587,14 +8602,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8612,14 +8622,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8637,14 +8642,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8653,8 +8653,8 @@
       "package": "sessionstore",
       "test": true,
       "generated": false,
-      "lines": 2424,
-      "sha256": "afc2ff498f9b40fee0814af503622d8373a7f9bc68d575c27c62c61488341705",
+      "lines": 2422,
+      "sha256": "79754e4c3799e9aa7ab424e6c46fd08c99344772c82272db69127c5e20d01b72",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8662,14 +8662,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8687,14 +8682,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8704,7 +8694,7 @@
       "test": false,
       "generated": false,
       "lines": 595,
-      "sha256": "ec680a36e09600f6076456d39e6817ce5a3338a4355b32a1ca74ff32601d91a7",
+      "sha256": "721f08abdcd19150b87569dd5b558b9980df518418ae26d798e872a87e5dfee5",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8712,14 +8702,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8737,14 +8722,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8762,14 +8742,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8787,14 +8762,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8812,14 +8782,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8837,14 +8802,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8862,14 +8822,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8878,8 +8833,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 607,
-      "sha256": "83b9dad310bc1f00ab38995ef6280ec4756deb6d7573904ad4ba3e9e06df6539",
+      "lines": 608,
+      "sha256": "006eafa8e8ecc348c07e49417074326ef80f2438939376cdd1c5a6181236647b",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8887,14 +8842,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8912,14 +8862,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8928,8 +8873,8 @@
       "package": "sessionstore",
       "test": true,
       "generated": false,
-      "lines": 831,
-      "sha256": "90375ac7de73568cca92bcd454cd4b9f992748606942327a875a7b0b23bea1ac",
+      "lines": 826,
+      "sha256": "7c81c3484ce4698e0d35fb00dc0d9618ec8f8a2b544dcf714aaddf97e3758a3d",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -8937,14 +8882,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8962,14 +8902,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -8987,14 +8922,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9003,8 +8933,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 180,
-      "sha256": "eb1bda350ff6b17b1e14ec3e025dcbad16dc337eacfe05d92c07fc629fe59de4",
+      "lines": 181,
+      "sha256": "d0ebc70daf6834ffa63291bef49167677d92daf5b23f9912542e85f9a07a3c61",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9012,14 +8942,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9028,8 +8953,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 174,
-      "sha256": "d4f37eddcd69acb256d4d9e8ad3775ce8daca8ed39ac665a0ff6b98a72f1ab09",
+      "lines": 142,
+      "sha256": "a6b56e993d38e796769715847415ef05f84904f5f96d262346c0f3cb83c1114c",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9037,14 +8962,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9053,8 +8973,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 771,
-      "sha256": "6de115558c4a664ca39543a8776da96b14fe32da8dd9d9496f56670a960da29e",
+      "lines": 772,
+      "sha256": "f561cf5535a634fbf0cbe7e111cd275cf41a969daf1f1a5b3f1b5957432def88",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9062,14 +8982,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9078,8 +8993,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 203,
-      "sha256": "e5f9e4557dd38dc6fb65b7b6b29b9d1acfc93d58273e090d0ac7cdca00555678",
+      "lines": 95,
+      "sha256": "30461906c47a09c5023b20cda3e2727fc199874b617e92b0990462ebb4c6b8b2",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9087,14 +9002,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9103,8 +9013,8 @@
       "package": "sessionstore",
       "test": true,
       "generated": false,
-      "lines": 280,
-      "sha256": "5a0c7d3754b1ea8fdc64b2fa508ef2683a5aa521dc03dfe36e9fe96771976373",
+      "lines": 282,
+      "sha256": "2e11b5caf38c7de8388aebcdb9c1d55b791274bf887d4b209d0f8ce53938a314",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9112,14 +9022,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9137,14 +9042,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9162,15 +9062,42 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
+      "package_decision": "agentplane/central_sampler/internal/sessionstore"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/status.go",
+      "package": "sessionstore",
+      "test": false,
+      "generated": false,
+      "lines": 64,
+      "sha256": "c5db3c0b7e4f3a5e825f6bec0973699ca59966c2381794aec5b13b23805a04ff",
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/status.go",
+      "planned_parts": [],
+      "planned_package": "sessionstore",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/central_sampler/internal/sessionstore"
+    },
+    {
+      "path": "agentplane/central_sampler/internal/sessionstore/status_test.go",
+      "package": "sessionstore",
+      "test": true,
+      "generated": false,
+      "lines": 46,
+      "sha256": "0541d2517712af7041226f83d7fd2c70f9920408e1141002b16041b380351a6f",
+      "planned_path": "agentplane/central_sampler/internal/sessionstore/status_test.go",
+      "planned_parts": [],
+      "planned_package": "sessionstore",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
     {
@@ -9178,8 +9105,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 341,
-      "sha256": "6cb4fb64fc27ca697691821183ecea41c5b4809dc55fa87223933da384851bc0",
+      "lines": 342,
+      "sha256": "a7e87ebd2d3369ff47d22aa9e82aa283157e31645a6201e2c7d2a57fac12b2d3",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9187,14 +9114,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9203,8 +9125,8 @@
       "package": "sessionstore",
       "test": false,
       "generated": false,
-      "lines": 453,
-      "sha256": "349f87baa75f01fd924fa4a0549125355c1478081ad7c19ab4c67a2edc584fab",
+      "lines": 455,
+      "sha256": "ab1aa86a3bcf5b61f4bee1e51dcdee70946e285ef2ba5d875f26ade908062c32",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
@@ -9212,14 +9134,9 @@
       "candidate_owners": [
         "agentplane/central_sampler/internal/sessionstore",
         "agentplane/central_sampler/internal/providerrequest",
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/environmentcontext"
+        "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
       ],
-      "pending_tracks": [
-        "sampler-execution-state",
-        "sampler-request-preparation",
-        "sampler-content-persistence"
-      ],
+      "pending_tracks": ["sampler-content-persistence"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/central_sampler/internal/sessionstore"
     },
@@ -9518,17 +9435,13 @@
       "generated": false,
       "lines": 37,
       "sha256": "013c0ce7a6b512b2069507040daf6f98c70feda68e60d1aa95b192a8d2195ec0",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/content.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9536,19 +9449,15 @@
       "package": "protocol",
       "test": false,
       "generated": false,
-      "lines": 59,
-      "sha256": "502e7be96426730b4449feaf1bda93ccefbd6f6f4ee467774491f2d51fcfcd5e",
-      "planned_path": null,
+      "lines": 63,
+      "sha256": "bdcf6c48fae22caf05e1c2e55926a42080349f4c31de5c305f72255e16d6a1da",
+      "planned_path": "agentplane/central_sampler/protocol/context.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9558,17 +9467,13 @@
       "generated": false,
       "lines": 91,
       "sha256": "77d4f43c945baa3bd2ac44341b006767b035d0835fd39e3902c92a2329bd135c",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/errors.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9578,17 +9483,13 @@
       "generated": false,
       "lines": 22,
       "sha256": "e60c044c6b0f032772a11b17843e9ae8fceae7c49c453618140f86c4b41d9327",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/errors_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9598,17 +9499,13 @@
       "generated": false,
       "lines": 85,
       "sha256": "8a3755326df4fa7c88e4f2bee82d1347bab6c92b362660acaae7ad6b058d5c76",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/evidence.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9618,17 +9515,13 @@
       "generated": false,
       "lines": 8,
       "sha256": "6850445f444e71de50a01f7b830063576e099942a5815f96867bfd7aac8f3e8f",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/instructions.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9638,37 +9531,13 @@
       "generated": false,
       "lines": 14,
       "sha256": "44bc2cd942189c35c78fbbbb497fb0bd5336001136b87ebc163e75f9e02315ef",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/provider_hooks.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/central_sampler/protocol"
-    },
-    {
-      "path": "agentplane/central_sampler/protocol/status.go",
-      "package": "protocol",
-      "test": false,
-      "generated": false,
-      "lines": 104,
-      "sha256": "7042ba0e61357e12390e83b0db973cdb2310c01888242b081eaedf110b7e9ca5",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9678,17 +9547,13 @@
       "generated": false,
       "lines": 28,
       "sha256": "fc29251f8bf918401662b8431a6291753cf2cc2daff6ca5fed85e39ffa19c6a6",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/tool_definitions.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9698,17 +9563,13 @@
       "generated": false,
       "lines": 35,
       "sha256": "89af86e559cde998abdb31dc275e7e3eb9010d86889dc160cc272a1c4be61eee",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/tool_invocation.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -9718,17 +9579,13 @@
       "generated": false,
       "lines": 12,
       "sha256": "0ad544b8d6af379683e7c6318928c67e10fc83f7ffb3352c04ab709df13df677",
-      "planned_path": null,
+      "planned_path": "agentplane/central_sampler/protocol/tool_surface.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/central_sampler/protocol",
-        "agentplane/central_sampler/internal/executionstate",
-        "agentplane/central_sampler/internal/jsonwire"
-      ],
-      "pending_tracks": ["sampler-execution-state"],
-      "disposition": "candidate boundary",
+      "planned_package": "protocol",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
       "package_decision": "agentplane/central_sampler/protocol"
     },
     {
@@ -12568,8 +12425,8 @@
       "package": "harness",
       "test": false,
       "generated": false,
-      "lines": 148,
-      "sha256": "7b7bb71810114358037f115e95fe67c31e44a7862a9a49dfe760d90e1f3b88af",
+      "lines": 155,
+      "sha256": "92b43c1fb485c8699f6b6c6a1c0deae69e5d2db3c5eae5f91dfbe03c4fb0be7c",
       "planned_path": "agentplane/env/runtime/harness/adapter.go",
       "planned_parts": [],
       "planned_package": "harness",
@@ -14108,8 +13965,8 @@
       "package": "codex",
       "test": false,
       "generated": false,
-      "lines": 851,
-      "sha256": "74065248a83ac6cb31fe6c5d7b5a740e15ca0baed05aa6fecb10d3b932526a6e",
+      "lines": 969,
+      "sha256": "285b42b240410af012b82c6843af6ce80b5152fe98fb28d615dac9162a8232ce",
       "planned_path": "agentplane/env/runtime/internal/harnesses/codex/adapter.go",
       "planned_parts": [],
       "planned_package": "codex",
@@ -14124,8 +13981,8 @@
       "package": "codex",
       "test": true,
       "generated": false,
-      "lines": 416,
-      "sha256": "9a6ca93c8ae53b0230f0cb92e7b46bbb763ac8387c987beb93bd5df10b555354",
+      "lines": 559,
+      "sha256": "92a73a8259c8d21ea558abc41c6a20e52817f265960a5537db0c6e34333be538",
       "planned_path": "agentplane/env/runtime/internal/harnesses/codex/adapter_test.go",
       "planned_parts": [],
       "planned_package": "codex",
@@ -14140,8 +13997,8 @@
       "package": "codex",
       "test": false,
       "generated": false,
-      "lines": 195,
-      "sha256": "3049c825c39616d8f4fe93a50f4ecac2956db5d2d09d9ba8eb42eaf933178cea",
+      "lines": 304,
+      "sha256": "f7e5646fa9258ac29c8999eed7b325a9ca854b4394b3907dbdf3793452863652",
       "planned_path": "agentplane/env/runtime/internal/harnesses/codex/history.go",
       "planned_parts": [],
       "planned_package": "codex",
@@ -14428,8 +14285,8 @@
       "package": "journal",
       "test": false,
       "generated": false,
-      "lines": 1275,
-      "sha256": "e066f738fe4157fdbaadf9d56438c81fade9d4d96cb81b7fc5474c7668a5d965",
+      "lines": 1293,
+      "sha256": "5dbab27d0b49223b21e9fd4fd5d5a2e4bad2f071ff74a31dadf981f8f109773b",
       "planned_path": "agentplane/env/runtime/journal/journal.go",
       "planned_parts": [],
       "planned_package": "journal",
@@ -14444,8 +14301,8 @@
       "package": "journal",
       "test": true,
       "generated": false,
-      "lines": 750,
-      "sha256": "f914c75a7fe9693e294398efc06691c80a6df3e813926a2493476363f82cf61f",
+      "lines": 782,
+      "sha256": "3f682dab1d431ed70b54b11c25096e2185ce7159f93319f71e82672f145a2e27",
       "planned_path": "agentplane/env/runtime/journal/journal_test.go",
       "planned_parts": [],
       "planned_package": "journal",
@@ -14652,8 +14509,8 @@
       "package": "session",
       "test": false,
       "generated": false,
-      "lines": 446,
-      "sha256": "5718d3e41c83b8a8ea2799138d8ac160128817e38359b8daa4c83e6dca8f2c48",
+      "lines": 457,
+      "sha256": "e13b8004e40029ee4ee382f63a1fa1f7c9f4d9e3fd13a6b9bb36a789516d303e",
       "planned_path": "agentplane/env/runtime/session/controller.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -14684,8 +14541,8 @@
       "package": "session",
       "test": false,
       "generated": false,
-      "lines": 298,
-      "sha256": "72dee0a55915341f4cfa15cc65e7f3388fb5d342bfee6a606a2e5c592946eb53",
+      "lines": 308,
+      "sha256": "a006d1d7f23f35a7f8d8a34d94ccbae0331cd4b5f5ddfc9985bc39ed344f5df5",
       "planned_path": "agentplane/env/runtime/session/events.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -14780,8 +14637,8 @@
       "package": "session",
       "test": false,
       "generated": false,
-      "lines": 467,
-      "sha256": "c9f5af5df2a6c851ab13b217094b3a6c21a254cb6fed6462f0600d67696e1e96",
+      "lines": 474,
+      "sha256": "2b15a319da6756f22e61d9735b4fef78104845adb98a6f2cd7809038c3f79c9d",
       "planned_path": "agentplane/env/runtime/session/native.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -14796,8 +14653,8 @@
       "package": "session",
       "test": true,
       "generated": false,
-      "lines": 946,
-      "sha256": "9bf5e5b5942eced777790b8852ceac79de3993b07051458a566424c05f5bf5cb",
+      "lines": 992,
+      "sha256": "d0a90653cc1ba110e626b6ea5435be40325e7418c77377c01691ee5926368d2f",
       "planned_path": "agentplane/env/runtime/session/native_test.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -14924,8 +14781,8 @@
       "package": "session",
       "test": false,
       "generated": false,
-      "lines": 168,
-      "sha256": "14f75475b75cc9b4c08e3baf94bd1beab153631a6695d5594744ed1ba5c40603",
+      "lines": 172,
+      "sha256": "daea2a40c5bcd0319b4309777974ed5cfe8f5ef4f381b6d41cd0571e8f9ce49c",
       "planned_path": "agentplane/env/runtime/session/status.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -14940,8 +14797,8 @@
       "package": "session",
       "test": true,
       "generated": false,
-      "lines": 97,
-      "sha256": "f3c6c2a36d35a52571a08223a759ddff824fd3556dd3d18e17a6d9a54356bda1",
+      "lines": 113,
+      "sha256": "e6df4babc293a70c6fbcfeecfe5331026dcb53e5f834b688b2a91d6c725ee4ec",
       "planned_path": "agentplane/env/runtime/session/status_test.go",
       "planned_parts": [],
       "planned_package": "session",
@@ -15044,8 +14901,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15064,8 +14920,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15084,8 +14939,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15104,12 +14958,46 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
       "package_decision": "agentplane/env/runtime/supervision"
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+      "package": "pid1",
+      "test": false,
+      "generated": false,
+      "lines": 397,
+      "sha256": "8c51521dff4c358288f191b4d1290d96c8fc8bb8a9fd03dd9f6bdd4cc87b967d",
+      "planned_path": "agentplane/env/runtime/supervision/internal/pid1/pid1.go",
+      "planned_parts": [],
+      "planned_package": "pid1",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/env/runtime/supervision/internal/pid1"
+    },
+    {
+      "path": "agentplane/env/runtime/supervision/internal/pid1/procfs_test.go",
+      "package": "pid1",
+      "test": true,
+      "generated": false,
+      "lines": 63,
+      "sha256": "88ccfb787ae2c306b0e3a0422cfd31449d4154c63640d2e8a527867aa9a1825d",
+      "planned_path": null,
+      "planned_parts": [],
+      "planned_package": null,
+      "goal_path_status": "candidate boundary",
+      "candidate_owners": [
+        "agentplane/env/runtime/supervision",
+        "agentplane/env/runtime/supervision/internal/systemd"
+      ],
+      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
+      "disposition": "candidate boundary",
+      "package_decision": "agentplane/env/runtime/supervision/internal/pid1"
     },
     {
       "path": "agentplane/env/runtime/supervision/managed_process.go",
@@ -15124,8 +15012,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15144,8 +15031,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15156,16 +15042,15 @@
       "package": "supervision",
       "test": false,
       "generated": false,
-      "lines": 29,
-      "sha256": "53360834e4dca0ae9a01584ea2b81def019a8f760905fa67f545fc11626f102b",
+      "lines": 18,
+      "sha256": "83994361d20d6acdefe74be5cd07bf19e544507593e53de37360d01c5455a6f7",
       "planned_path": null,
       "planned_parts": [],
       "planned_package": null,
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15176,19 +15061,15 @@
       "package": "supervision",
       "test": false,
       "generated": false,
-      "lines": 347,
-      "sha256": "e1266ced3c55d786046525705b28dd5dec3ed984f525ad7e85a914cc45635dbe",
-      "planned_path": null,
+      "lines": 108,
+      "sha256": "6acee95578327604cdd29729b6e884877facfbfdc9e15ca27b6ac867ddbec0bc",
+      "planned_path": "agentplane/env/runtime/supervision/pid1.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15198,17 +15079,13 @@
       "generated": false,
       "lines": 317,
       "sha256": "8797d5d0b06627e62ed898c57813cc6420e605c41a07950b94b6885abf88733a",
-      "planned_path": null,
+      "planned_path": "agentplane/env/runtime/supervision/pid1_kernel_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15216,39 +15093,15 @@
       "package": "supervision",
       "test": true,
       "generated": false,
-      "lines": 130,
-      "sha256": "f33bd0f529afe84626c9239cfddf616d5ed4087921344eb06e74ddcaeda3e8cd",
-      "planned_path": null,
+      "lines": 291,
+      "sha256": "9a090ca3e7dee25add0667e5a031ac6d8f50041b1730c473215b9ec4c4d70704",
+      "planned_path": "agentplane/env/runtime/supervision/pid1_process_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/env/runtime/supervision"
-    },
-    {
-      "path": "agentplane/env/runtime/supervision/pid1_test.go",
-      "package": "supervision",
-      "test": true,
-      "generated": false,
-      "lines": 63,
-      "sha256": "e63ec7a957faa240520b5098e68b41168d0bc53b097e94471e9f701019d7849e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
-      ],
-      "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
-      "disposition": "candidate boundary",
+      "planned_package": "supervision",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": ["env-runtime-coordinator"],
+      "disposition": "retain owner",
       "package_decision": "agentplane/env/runtime/supervision"
     },
     {
@@ -15264,8 +15117,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15284,8 +15136,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15304,8 +15155,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15324,8 +15174,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15344,8 +15193,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15364,8 +15212,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15384,8 +15231,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15404,8 +15250,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15424,8 +15269,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15444,8 +15288,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15464,8 +15307,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15484,8 +15326,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15504,8 +15345,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15524,8 +15364,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -15544,8 +15383,7 @@
       "goal_path_status": "candidate boundary",
       "candidate_owners": [
         "agentplane/env/runtime/supervision",
-        "agentplane/env/runtime/supervision/internal/systemd",
-        "agentplane/env/runtime/supervision/internal/pid1"
+        "agentplane/env/runtime/supervision/internal/systemd"
       ],
       "pending_tracks": ["env-supervision-backends", "env-runtime-coordinator"],
       "disposition": "candidate boundary",
@@ -19692,224 +19530,196 @@
       "package_decision": "agentplane/llm_ingress/internal/server"
     },
     {
-      "path": "agentplane/mcp_edge/action_metadata.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 34,
-      "sha256": "7835e0038898e5877119f8049b5ef0b112ebd4ce3adddcc71da0fec3a9afa697",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/action_metadata_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 49,
-      "sha256": "dbb9e3b4ce5715aab7266c0f67b32ae83a5b84276d274f70b4c48700907e5e4b",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/callers.go",
+      "path": "agentplane/mcp_edge/cmd/callers.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 108,
       "sha256": "6a0c5317578b1fa7f4805b618dfae713bb4f1b4f458ad4d7c3689813a14451b6",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/callers.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/config.go",
+      "path": "agentplane/mcp_edge/cmd/config.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 176,
       "sha256": "67c0b31e0ee7af406ca37e366768381c74e586dde2e7261475b07d99d809aa4d",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/config.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/config_test.go",
+      "path": "agentplane/mcp_edge/cmd/config_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 350,
       "sha256": "9eafb8181262f5848252c30cbd9d41752eeec2e2cdc4a9c6542903974e6cd965",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/config_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/core_client.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 194,
-      "sha256": "a8e8d76be6ebae4e8fa1c2633b4d554f9346ad5c8d4d041e4354732df491db6e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/core_client_test.go",
-      "package": "main",
-      "test": true,
-      "generated": false,
-      "lines": 230,
-      "sha256": "0f007012199c44e0f9d77291e2577ace975f1909724002c9ad6f418c5eecf06f",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
-    },
-    {
-      "path": "agentplane/mcp_edge/http_facade.go",
+      "path": "agentplane/mcp_edge/cmd/http_facade.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 94,
       "sha256": "46b7db210cdc326352825408f4d3ebeb0924cc38fba7c0d3ba0975d6a24994ec",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_facade.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_facade_test.go",
+      "path": "agentplane/mcp_edge/cmd/http_facade_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 40,
       "sha256": "275e6f6e0810588491bf99b842f8e88f439e077a1c6842661942db5ab0e3b6ca",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_facade_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_health.go",
+      "path": "agentplane/mcp_edge/cmd/http_health.go",
       "package": "main",
       "test": false,
       "generated": false,
       "lines": 23,
       "sha256": "2600d01291587442df1d01b9640b6c9940c66b9d672a7015bbbefd8a9db0a3f3",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_health.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
     },
     {
-      "path": "agentplane/mcp_edge/http_health_test.go",
+      "path": "agentplane/mcp_edge/cmd/http_health_test.go",
       "package": "main",
       "test": true,
       "generated": false,
       "lines": 60,
       "sha256": "b21e5cf2c7c2c84864df26475a4b6bcdddc5b5a3abf8aa9a3339526aef71c97e",
-      "planned_path": null,
+      "planned_path": "agentplane/mcp_edge/cmd/http_health_test.go",
       "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
+    },
+    {
+      "path": "agentplane/mcp_edge/cmd/main.go",
+      "package": "main",
+      "test": false,
+      "generated": false,
+      "lines": 256,
+      "sha256": "92d2f95f16a0cedecd5e2fd1f71f872e2ff96d62163983c7555cd572b5cea8d9",
+      "planned_path": "agentplane/mcp_edge/cmd/main.go",
+      "planned_parts": [],
+      "planned_package": "main",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/cmd"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+      "package": "actionclient",
+      "test": false,
+      "generated": false,
+      "lines": 34,
+      "sha256": "8f7fb4261af88939138b177b1fd771af47deaa2be756d6a405d567d71bbdb368",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/action_metadata.go",
+      "planned_parts": [],
+      "planned_package": "actionclient",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+      "package": "actionclient_test",
+      "test": true,
+      "generated": false,
+      "lines": 50,
+      "sha256": "4d5b04e94e6f647c46f6263e97579a00afca0faf22718130b550a55cb8739d34",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/action_metadata_test.go",
+      "planned_parts": [],
+      "planned_package": "actionclient_test",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/core_client.go",
+      "package": "actionclient",
+      "test": false,
+      "generated": false,
+      "lines": 223,
+      "sha256": "64b9c2d27d027b757d103e0c962eb7538888968e32fd1a18ec04379180ca6d33",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/core_client.go",
+      "planned_parts": [],
+      "planned_package": "actionclient",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
+    },
+    {
+      "path": "agentplane/mcp_edge/internal/actionclient/core_client_test.go",
+      "package": "actionclient_test",
+      "test": true,
+      "generated": false,
+      "lines": 238,
+      "sha256": "953eb3c707ef45fa50488f7394a6b6b01d861546de5ce115c93afda035f079af",
+      "planned_path": "agentplane/mcp_edge/internal/actionclient/core_client_test.go",
+      "planned_parts": [],
+      "planned_package": "actionclient_test",
+      "goal_path_status": "retain owner",
+      "candidate_owners": [],
+      "pending_tracks": [],
+      "disposition": "retain owner",
+      "package_decision": "agentplane/mcp_edge/internal/actionclient"
     },
     {
       "path": "agentplane/mcp_edge/internal/admission/gate.go",
@@ -20502,26 +20312,6 @@
       "pending_tracks": [],
       "disposition": "retain owner",
       "package_decision": "agentplane/mcp_edge/internal/mcpserver"
-    },
-    {
-      "path": "agentplane/mcp_edge/main.go",
-      "package": "main",
-      "test": false,
-      "generated": false,
-      "lines": 251,
-      "sha256": "54bf592685545a46364df2e18cb73a2ff186deac81277a3beb30c7177f89f89e",
-      "planned_path": null,
-      "planned_parts": [],
-      "planned_package": null,
-      "goal_path_status": "candidate boundary",
-      "candidate_owners": [
-        "agentplane/mcp_edge",
-        "agentplane/mcp_edge/cmd",
-        "agentplane/mcp_edge/internal/actionclient"
-      ],
-      "pending_tracks": ["mcp-edge-command-action-client"],
-      "disposition": "candidate boundary",
-      "package_decision": "agentplane/mcp_edge"
     },
     {
       "path": "agentplane/mcp_edge/migrations/migrations.go",
