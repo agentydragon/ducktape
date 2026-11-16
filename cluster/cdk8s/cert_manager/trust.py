@@ -9,7 +9,6 @@ from cdk8s import App, Chart
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.app import JETSTACK_SOURCE_REF
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -40,19 +39,3 @@ def chart(app: App) -> Chart:
         },
     )
     return chart
-
-
-def cert_manager_trust(
-    chart: Chart, directory: RenderedDirectory, cert_manager: Kustomization, kyverno: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "cert-manager-trust",
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            cert_manager,
-            # Kyverno VWC must be operational before creating resources
-            kyverno,
-        ),
-    )

@@ -62,7 +62,6 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.probes import tls_grpc_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -371,9 +370,3 @@ def serving_chart(
         wake_callers=env.wake_caller_accounts | orchestration.keys(),
     ).add_platform_resources()
     return chart
-
-
-def serving(chart: Chart, directory: RenderedDirectory, root: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart, directory.artifact.name, directory, timeout="10m", depends_on=flux_kustomization_depends_on_many(root)
-    )

@@ -32,7 +32,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import external_creds
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -301,28 +300,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def github_exporter(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    monitoring_namespace: Kustomization,
-    monitoring_crds: Kustomization,
-    external_secrets_operator: Kustomization,
-    grafana_operator: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "github-exporter",
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            monitoring_namespace,
-            # ServiceMonitor
-            monitoring_crds,
-            external_secrets_operator,
-            # GrafanaDashboard
-            grafana_operator,
-        ),
-        description="GitHub API rate-limit metrics for the human and agent accounts.",
-    )

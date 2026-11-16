@@ -37,7 +37,6 @@ from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 from cluster.cdk8s import namespaces, pod_policy
 from cluster.cdk8s.cnpg import backup, cluster
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -257,29 +256,3 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Ntfy(chart, NAME)
     return chart
-
-
-def ntfy(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    cnpg: Kustomization,
-    external_secrets_operator: Kustomization,
-    monitoring_crds: Kustomization,
-    kyverno: Kustomization,
-    seaweedfs_operator: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        description="Self-hosted ntfy for Android and cluster alert notifications.",
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(
-            cnpg,
-            external_secrets_operator,
-            monitoring_crds,
-            # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
-            kyverno,
-            seaweedfs_operator,
-        ),
-    )

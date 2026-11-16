@@ -12,7 +12,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import cilium, namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -233,20 +232,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def loki_read_proxy(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        description=(
-            "Read-only namespace-filtering Loki query proxy so Haku can read logs "
-            "for allowlisted namespaces without touching Loki "
-            "(auth_enabled:false) directly."
-        ),
-    )

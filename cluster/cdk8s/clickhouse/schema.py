@@ -17,13 +17,7 @@ from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -84,14 +78,3 @@ def chart(app: App) -> Chart:
     )
     pod_policy.harden(job)
     return chart
-
-
-def clickhouse_schema(flux_chart: Chart, directory: RenderedDirectory, clickhouse: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="20m",
-        # bootstrap-never-converges: the Job's 20m deadline runs from apply and Flux never recreates it.
-        depends_on=[flux_kustomization_depends_on(clickhouse)],
-    )

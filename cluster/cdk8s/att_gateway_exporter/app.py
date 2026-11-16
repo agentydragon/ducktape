@@ -28,7 +28,6 @@ from python.runfiles import Runfiles
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -216,28 +215,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def att_gateway_exporter(
-    flux_chart: Chart,
-    directory: RenderedDirectory,
-    monitoring_namespace: Kustomization,
-    access_code_secret: Kustomization,
-    monitoring_crds: Kustomization,
-    grafana_operator: Kustomization,
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(
-            monitoring_namespace,
-            access_code_secret,
-            # ServiceMonitor
-            monitoring_crds,
-            # GrafanaDashboard
-            grafana_operator,
-        ),
-        description="AT&T gateway metrics: WAN, fiber optics, LAN ports, NAT sessions, speed tests.",
-    )

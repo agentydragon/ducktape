@@ -163,11 +163,7 @@ py_library(
     name = "forgejo_tea",
     srcs = ["forgejo_tea.py"],
     deps = [
-        "//cluster/cdk8s:flux",
-        "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/flux:kustomization",
-        "@pypi//cdk8s",
     ],
 )
 

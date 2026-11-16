@@ -23,7 +23,6 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.node_scheduling import Placement
@@ -199,15 +198,3 @@ def chart(app: App, mesh: Mesh) -> Chart:
         ),
     )
     return chart
-
-
-def smokeping(flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        f"{NAMESPACE}-{NAME}",
-        directory,
-        timeout="5m",
-        # the PodMonitor and PrometheusRule CRDs
-        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        description="ICMP loss and RTT from optiplex and wyrm2 to home LAN and OVH targets.",
-    )

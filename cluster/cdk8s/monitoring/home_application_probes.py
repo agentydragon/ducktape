@@ -14,13 +14,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 )
 
 from cluster.cdk8s import pod_policy
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import blackbox_exporter
 from cluster.cdk8s.node_scheduling import Placement
@@ -163,17 +157,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def home_application_probes(
-    flux_chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        f"{NAMESPACE}-{NAME}",
-        directory,
-        timeout="5m",
-        # The PodMonitor CRD is owned by monitoring-crds.
-        depends_on=[flux_kustomization_depends_on(monitoring_crds)],
-        description="Direct TCP and HTTPS connectivity probes from optiplex and wyrm2.",
-    )

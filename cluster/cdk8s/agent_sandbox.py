@@ -6,13 +6,12 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
 CONTROLLER_DIR = f"{GENERATED_ROOT}/agents/agent-sandbox/controller"
-_VERSION = "v0.5.5"
-RELEASE = f"https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{_VERSION}/sandbox-with-extensions.yaml"
+VERSION = "v0.5.5"
+RELEASE = f"https://github.com/kubernetes-sigs/agent-sandbox/releases/download/{VERSION}/sandbox-with-extensions.yaml"
 # Names the release manifest gives its namespace and controller.
 _NAMESPACE = "agent-sandbox-system"
 _CONTROLLER = "agent-sandbox-controller"
@@ -43,7 +42,7 @@ def controller_patches(app: App) -> Chart:
                     containers=[
                         k8s.Container(
                             name=_CONTROLLER,
-                            image=f"registry.k8s.io/agent-sandbox/agent-sandbox-controller:{_VERSION}",
+                            image=f"registry.k8s.io/agent-sandbox/agent-sandbox-controller:{VERSION}",
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
@@ -64,16 +63,3 @@ def controller_patches(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def agent_sandbox_controller(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        "agent-sandbox-controller",
-        directory,
-        timeout="5m",
-        description=(
-            f"kubernetes-sigs/agent-sandbox {_VERSION} combined release asset "
-            "(Sandbox, SandboxTemplate, SandboxClaim, SandboxWarmPool CRDs)."
-        ),
-    )

@@ -251,7 +251,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_instance",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
@@ -379,7 +378,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":alloy",
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:secret_ref",
@@ -493,7 +491,6 @@ py_library(
     srcs = ["smokeping.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        "//cluster/cdk8s:flux",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",

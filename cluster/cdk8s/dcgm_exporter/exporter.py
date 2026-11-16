@@ -16,13 +16,7 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.dcgm_exporter import counters
-from cluster.cdk8s.flux import (
-    ConfigMapArgs,
-    Kustomization,
-    RenderedDirectory,
-    flux_kustomization,
-    flux_kustomization_depends_on_many,
-)
+from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
@@ -124,14 +118,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def dcgm_exporter(chart: Chart, directory: RenderedDirectory, monitoring_crds: Kustomization) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="2m",
-        # the PodMonitor CRD
-        depends_on=flux_kustomization_depends_on_many(monitoring_crds),
-    )

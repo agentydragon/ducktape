@@ -20,7 +20,6 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.monitoring import grafana_instance
 
@@ -80,16 +79,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def clickhouse_grafana(
-    flux_chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        "clickhouse-grafana",
-        directory,
-        timeout="5m",
-        # The GrafanaDashboard and GrafanaDatasource CRDs.
-        depends_on=flux_kustomization_depends_on_many(grafana_operator),
-    )

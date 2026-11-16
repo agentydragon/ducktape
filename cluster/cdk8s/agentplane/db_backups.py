@@ -8,7 +8,6 @@ from cdk8s import App, Chart
 from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.staging import ENV
 from cluster.cdk8s.cnpg import backup
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agentplane-staging-db-backups"
@@ -21,16 +20,3 @@ def chart(app: App) -> Chart:
     # recovery points is enough history for a staging environment.
     backup.CnpgBackup(chart, "backup", ref=database.postgres(ENV), retention="7d")
     return chart
-
-
-def agentplane_staging_db_backups(
-    chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="15m",
-        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
-        description="Creates the agentplane staging CNPG backup schedule and its SeaweedFS storage.",
-    )

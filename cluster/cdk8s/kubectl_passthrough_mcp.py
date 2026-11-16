@@ -10,7 +10,6 @@ from cdk8s_plus_34 import ConfigMap, k8s
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -164,7 +163,3 @@ def chart(app: App) -> Chart:
         role_ref=k8s.RoleRef(kind="ClusterRole", name="cluster-admin", api_group="rbac.authorization.k8s.io"),
     )
     return chart
-
-
-def kubectl_passthrough_mcp(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, suspend=False, timeout="5m")

@@ -12,7 +12,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces, node_scheduling, pod_policy
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -150,19 +149,3 @@ def chart(app: App) -> Chart:
         egress=[EgressRule.to_entities(Entity.KUBE_APISERVER, ports=[443, 6443])],
     )
     return chart
-
-
-def roaming_node_controller(
-    flux_chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        flux_chart,
-        NAME,
-        directory,
-        timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator),
-        description=(
-            "Marks roaming laptop nodes out of service while their kubelet is silent, so offline "
-            "laptops stop blocking DaemonSet rollouts, Helm waits and pod alerts."
-        ),
-    )

@@ -27,7 +27,6 @@ from pydantic import BaseModel, ConfigDict
 
 from cluster.cdk8s import namespaces, opentofu, terraform
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.flux_image_automation_ghcr import AUTOMATION_NAME
 from cluster.cdk8s.flux_webhook import WEBHOOK_HOST
 from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
@@ -141,21 +140,3 @@ def chart(app: App) -> Chart:
         ),
     )
     return chart
-
-
-def forgejo_images(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, tofu_controller: Kustomization
-) -> Kustomization:
-    return flux_kustomization(
-        chart,
-        NAME,
-        directory,
-        timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, tofu_controller),
-        description=(
-            "ducktape-ci Forgejo registry tenant — shared credential (read by "
-            "consumers, including flux-system, via per-namespace ExternalSecrets "
-            "against kubernetes-forgejo-images-secret-store) + Crossplane Workspace that "
-            "provisions the Forgejo user."
-        ),
-    )
