@@ -13,11 +13,13 @@ delivery calls Environments under the Sessions SVID (`spiffe://agentplane/sessio
 Sandbox Controller server identity. Central delivery calls the sampler. These calls retain the
 original command ID and never forward caller credentials. Environments does not call Sessions.
 
-Dispatcher automatic wake preserves the effective caller and applies `wakeOnSend`, configured wake
-grants and the shared budget. Its Kubernetes Role still reads workload and policy state, patches
-existing Sandboxes for automatic wake. Delivery uses per-Session PostgreSQL leases. The Role cannot
-create or delete Sandboxes or read SandboxTemplates. The Controller owns `Sandbox.status`; its
-leader election and Runtime observation are independent of Dispatcher scheduling ownership. See the
+Dispatcher automatic wake retains each row's attribution and applies `wakeOnSend`, caller policy or
+configured service-broker grants, and the shared budget. Action-attributed rows use the Actions
+service's Dispatcher broker grant while keeping the effective Identity in attribution. Its
+Kubernetes Role reads workload and policy state and patches existing Sandboxes for automatic wake.
+Delivery uses per-Session PostgreSQL leases. The Role cannot create or delete Sandboxes or read
+SandboxTemplates. The Controller owns `Sandbox.status`; its leader election and Runtime observation
+are independent of Dispatcher scheduling ownership. See the
 [Dispatcher contract](dispatcher/SPEC.md) and [Runtime proxy contract](../environments/runtimeproxy/SPEC.md).
 
 The required `rpc` block configures TLS and SPIFFE trust. `gateway_tls` and

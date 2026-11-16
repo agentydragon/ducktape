@@ -135,11 +135,12 @@ The manual queue, replica and wake probes are documented in the
   Native Session materialization uses the separate outcome contract above; an arbitrary error is not
   proof of rejection.
 - **Automatic wake**: `wakeOnSend` opts a Sandbox into wake attempts; it is not a permission grant.
-  Before each automatic attempt, the shared lifecycle service checks the live target UID, current
-  execution ServiceAccount UID and `resumePolicy`, or the separately configured trusted wake broker
-  grant against the row's retained effective sender. Dispatcher actor identity and admission-time
-  eligibility do not grant wake authority. A `SuspendedBy=Requested` stop stays sticky for ordinary
-  sends and automatic wakes. Interrupts follow the same wake rules as other queued commands.
+  Before each automatic attempt, the shared lifecycle service checks the live target UID and the
+  row's retained caller or configured service broker. Action-attributed rows use their Actions
+  service actor's Dispatcher broker grant; the effective Identity remains stored for Session
+  authority. Admission-time eligibility does not grant wake authority. A `SuspendedBy=Requested`
+  stop stays sticky for ordinary sends and automatic wakes. Interrupts follow the same wake rules as
+  other queued commands.
 
   Each queued Dispatch and pending Session creation stores a typed `delivery_blocker` and `wake_assessment`.
   The receipt remains `QUEUED_IN_DISPATCHER` through disabled, denied, rate-limited, failed and
@@ -148,8 +149,9 @@ The manual queue, replica and wake probes are documented in the
   rate-limited result is retried at its shared-budget `retry_at`. An uncertain patch response is not
   repeated for the same observed generation; the worker reassesses after that generation changes.
   The lifecycle service and PostgreSQL budget adapter share a limit of 10 distinct guarded wake
-  generations per effective ServiceAccount UID in a rolling 60-second window, scoped by target
-  Sandbox UID and generation. Retries of a generation reuse its reservation. After a successful wake
+  generations per caller principal in a rolling 60-second window. ServiceAccounts use their exact
+  UID, Identities use their namespace/name/UID, and services use their SPIFFE ID; every reservation
+  is scoped by target Sandbox UID and generation. Retries of a generation reuse its reservation. After a successful wake
   request, delivery waits for the Sandbox to become `Ready`; if it remains unready for ten minutes,
   the existing queue deadline fails the work with the current Ready condition details. A central
   sampler Session bypasses execution-Sandbox readiness and wake so its input remains deliverable

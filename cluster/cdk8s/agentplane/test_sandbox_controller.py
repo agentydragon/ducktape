@@ -22,7 +22,6 @@ from agentplane.net.peertls.config import (
     SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
-from agentplane.session_dispatcher.settings import Settings as GatewaySettings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import (
     actions,
@@ -138,18 +137,12 @@ def test_environment_receiver_owns_authority_and_uses_controller_certificate(
             _resource(staging_manifests, "ConfigMap", f"{sandbox_controller.NAME}-settings")["data"]["config.yaml"]
         )
     )
-    gateway = GatewaySettings.model_validate(
-        yaml.safe_load(
-            _resource(staging_manifests, "ConfigMap", f"{runner_gateway.NAME}-settings")["data"]["settings.yaml"]
-        )
-    )
     receiver = controller.environment_service
     assert receiver is not None
     assert set(receiver.service_readers) == {APP_URI}
     assert set(receiver.service_managers) == {APP_URI}
     assert set(receiver.service_launchers) == {ACTIONS_URI}
     assert set(receiver.service_operators) == {APP_URI}
-    assert set(receiver.wake_service_callers) == set(gateway.wake_service_callers)
     assert receiver.service_delegation is not None
     assert [actor.spiffe_id for actor in receiver.service_delegation.actors] == [ACTIONS_URI]
     assert set(receiver.service_delegation.methods) == {
