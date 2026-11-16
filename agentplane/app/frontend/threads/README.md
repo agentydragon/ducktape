@@ -21,7 +21,7 @@ outcomes. `thread_sync.ts`
 defines the view-facing contract, and `electric_sync.tsx` implements it with
 Electric. `thread_cards.tsx` renders bodies and cards, while `thread_evidence.tsx`
 owns their lazy evidence paging. History rows, local commands, Thread
-status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The application shell lives in `../shell/`; HTTP transport and the Sandbox status model stay in the parent frontend package. Generic transcript rendering lives in `util/frontend/transcript`.
+status, title, chronological debug, Thread API calls, and the shell's shared Thread listing stream belong to this feature. The application shell lives in `../shell/`; the Sandbox status model stays in the parent frontend package. Shared HTTP and watch transport live in `../transport/`. Generic transcript rendering lives in `util/frontend/transcript`.
 
 The Bazel targets live in `BUILD.bazel`. The ambient CSS and per-icon TypeScript
 declarations are local copies of the parent package declarations: each TypeScript
