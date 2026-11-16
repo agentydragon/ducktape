@@ -187,15 +187,6 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 		CAFile: proxy.ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
 		CertFile: sessionsCertificate.CertFile, KeyFile: sessionsCertificate.KeyFile, ClientURI: peertls.SessionsURI,
 	}
-	hub := dispatcher.NewWatchHub(integrationDatabase.URL)
-	hubDone := make(chan error, 1)
-	go func() { hubDone <- hub.Run(ctx) }()
-	for !hub.Connected() {
-		if err := ctx.Err(); err != nil {
-			t.Fatalf("PostgreSQL listener unavailable: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
 	deliveryHub, err := wakeups.Listen(ctx, integrationDatabase.URL, dispatcher.NotifyChannel)
 	if err != nil {
 		t.Fatal(err)
@@ -258,11 +249,6 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	case <-workerDone:
 	case <-time.After(time.Second):
 		t.Fatal("worker did not stop")
-	}
-	select {
-	case <-hubDone:
-	case <-time.After(time.Second):
-		t.Fatal("PostgreSQL listener did not stop")
 	}
 }
 
