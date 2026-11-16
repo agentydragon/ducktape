@@ -10,7 +10,6 @@ import (
 func TestEnvironmentServiceDelegationAllowsReadsAndResumeWithoutConnectionProvenance(t *testing.T) {
 	base := `environment_service:
   policy_namespace: agentplane
-  audience: session-dispatcher
   rpc:
     listen_address: ":8082"
     tls: {cert_file: /tmp/server-cert, key_file: /tmp/server-key}

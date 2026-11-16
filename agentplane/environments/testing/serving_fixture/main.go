@@ -68,7 +68,6 @@ func run() error {
 	}
 	server, err := serving.New(serving.Config{
 		PolicyNamespace: namespace,
-		Audience:        "test-environments",
 		RPC: listener.Config{
 			ListenAddress: os.Getenv("ENVIRONMENTS_TEST_LISTEN_ADDRESS"),
 			TLS:           &listener.TLS{CertFile: os.Getenv("ENVIRONMENTS_TEST_CERT"), KeyFile: os.Getenv("ENVIRONMENTS_TEST_KEY")},
