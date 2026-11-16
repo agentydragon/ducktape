@@ -8457,7 +8457,7 @@
             "agentplane/session_dispatcher/dispatcher",
             "agentplane/session_dispatcher/dispatcher/internal/store"
           ],
-          "reason": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. Keep the package intact until its ownership/design gate is met; no new destination is selected. Moved unchanged by #16785; its owner fence is the per-Session lease since #16858.",
+          "reason": "Durable Session dispatch API, Store, caller/ownership leases, delivery, watch, wake, and terminal settlement. Ownership is settled: the per-Session lease fences delivery since #16858. Keep the package intact until the Store owner design (runner-gateway-dispatcher-store) assigns files; no new destination is selected. Moved unchanged by #16785.",
           "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage.",
           "evidence_paths": [
             "agentplane/session_dispatcher/dispatcher/api.go",
@@ -9889,6 +9889,54 @@
       "proposed_file_targets": []
     },
     {
+      "id": "runner-gateway-dispatcher-store",
+      "title": "Keep dispatcher settlement cohesive pending a concrete Store owner design",
+      "status": "DESIGN REQUIRED",
+      "components": ["session_dispatcher"],
+      "source_paths": ["agentplane/session_dispatcher/dispatcher"],
+      "target_paths": [
+        "agentplane/session_dispatcher/dispatcher",
+        "agentplane/session_dispatcher/dispatcher/internal/store"
+      ],
+      "summary": "Keep the 12-file/4,821-line dispatcher package intact. Its 3,191-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
+      "how": [
+        "Before any future internal/store package, specify transaction, terminal-state, wake and storage API ownership.",
+        "Keep integration tests spanning caller-visible outcomes.",
+        "Do not move shared receiver methods wholesale."
+      ],
+      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858). Design after the released `DISPATCHER_KEYED_DELIVERY` and `DISPATCHER_WATCH_VERSIONS` (released 2026-11-16 06:40 UTC) land, since both change this package. Not released.",
+      "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
+      "validation": [
+        "//agentplane/session_dispatcher/dispatcher:methods_test",
+        "//agentplane/session_dispatcher/dispatcher:store_integration_test",
+        "//agentplane/session_dispatcher/dispatcher:watch_test",
+        "//agentplane/session_dispatcher/dispatcher:central_runner_test",
+        "//agentplane/session_dispatcher/dispatcher:svid_auth_test"
+      ],
+      "evidence_paths": [
+        "agentplane/session_dispatcher/dispatcher/store.go",
+        "agentplane/session_dispatcher/dispatcher/terminal.go",
+        "agentplane/session_dispatcher/dispatcher/wake.go",
+        "agentplane/session_dispatcher/dispatcher/session_lease.go",
+        "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
+        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
+      ],
+      "dependencies": [],
+      "priority": 14,
+      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
+      "candidate_owner_paths": [
+        "agentplane/session_dispatcher/dispatcher/internal/store"
+      ],
+      "path_moves": [],
+      "package_renames": [],
+      "kind": "responsibility extraction",
+      "source_owner": "agentplane/session_dispatcher/dispatcher",
+      "file_splits": [],
+      "deleted_paths": [],
+      "stage": 4,
+      "proposed_file_targets": []
+    },
+    {
       "id": "sandbox-controller-lifecycle",
       "title": "Separate Sandbox credential and VM child lifetimes from reconciliation policy",
       "status": "DESIGN REQUIRED",
@@ -9923,7 +9971,7 @@
         "agentplane/environments/internal/controller/state_volume.go"
       ],
       "dependencies": [],
-      "priority": 14,
+      "priority": 15,
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/environments/internal/controller",
@@ -10368,54 +10416,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "runner-gateway-dispatcher-store",
-      "title": "Keep dispatcher settlement cohesive pending a concrete Store owner design",
-      "status": "DESIGN REQUIRED",
-      "components": ["session_dispatcher"],
-      "source_paths": ["agentplane/session_dispatcher/dispatcher"],
-      "target_paths": [
-        "agentplane/session_dispatcher/dispatcher",
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
-      "summary": "Keep the 12-file/5,033-line dispatcher package intact. Its 3,276-line store integration test crosses transactions, API, watch, workers, wakeups and uncertain outcomes. Current package role is explicit; no cosmetic relocation. Candidate `dispatcher/internal/store` is only viable if transaction state and settlement can be owned without moving shared receiver files or hiding caller-visible uncertain outcomes.",
-      "how": [
-        "Before any future internal/store package, specify transaction, terminal-state, wake and storage API ownership.",
-        "Keep integration tests spanning caller-visible outcomes.",
-        "Do not move shared receiver methods wholesale."
-      ],
-      "gate": "Require exact unsettled/terminal semantics, no replay after uncertain writes, generation/owner fences, and integration coverage. The candidate store path is provisional; design the transaction/terminal/wake API before assigning any file. Its owner fence is the per-Session `postgres/lease` (`dispatcher/session_lease.go`, #16858).",
-      "preserve": "Journal admission/no replay and exact terminal settlement; Generation/ownership fencing; Delivery/ACK/wakeup behavior",
-      "validation": [
-        "//agentplane/session_dispatcher/dispatcher:methods_test",
-        "//agentplane/session_dispatcher/dispatcher:store_integration_test",
-        "//agentplane/session_dispatcher/dispatcher:watch_test",
-        "//agentplane/session_dispatcher/dispatcher:central_runner_test",
-        "//agentplane/session_dispatcher/dispatcher:svid_auth_test"
-      ],
-      "evidence_paths": [
-        "agentplane/session_dispatcher/dispatcher/store.go",
-        "agentplane/session_dispatcher/dispatcher/terminal.go",
-        "agentplane/session_dispatcher/dispatcher/wake.go",
-        "agentplane/session_dispatcher/dispatcher/session_lease.go",
-        "agentplane/session_dispatcher/dispatcher/store_integration_test.go",
-        "agentplane/session_dispatcher/dispatcher/api/session/session_dispatcher.proto"
-      ],
-      "dependencies": [],
-      "priority": 10,
-      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
-      "candidate_owner_paths": [
-        "agentplane/session_dispatcher/dispatcher/internal/store"
-      ],
-      "path_moves": [],
-      "package_renames": [],
-      "kind": "responsibility extraction",
-      "source_owner": "agentplane/session_dispatcher/dispatcher",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 5,
-      "proposed_file_targets": []
-    },
-    {
       "source_paths": [],
       "target_paths": ["agentplane/journal_service"],
       "dependencies": [],
@@ -10633,9 +10633,10 @@
         "env-runtime-coordinator",
         "sampler-resident-session",
         "sampler-codehost-ownership",
+        "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. The rest are not released."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. The rest are not released."
     },
     {
       "stage": 5,
@@ -10648,7 +10649,6 @@
         "notification-github-inbox-fanout",
         "notification-github-observation-projection",
         "notification-inbox-owner",
-        "runner-gateway-dispatcher-store",
         "history-journals",
         "settings-single-source"
       ],
