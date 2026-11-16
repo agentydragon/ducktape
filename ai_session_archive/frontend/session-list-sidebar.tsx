@@ -20,6 +20,7 @@ import { Link } from "react-router";
 import { harnessLabel } from "./api";
 import type { Machine, SessionKind, SessionSummary } from "./schema";
 import { SESSION_KINDS } from "./session-viewer-url";
+import { formatDateTime } from "./session-viewer-formatting";
 import { ResizeHandle, type PaneSize } from "../../util/frontend/resize_handle";
 
 export type SessionListSidebarModel = {
@@ -215,13 +216,6 @@ export function TranscriptStatusBadge({
       {status.label}
     </Badge>
   );
-}
-
-export function formatDateTime(value: string | null): string {
-  if (value === null) return "Unknown time";
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return value;
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
 function SessionRow({
