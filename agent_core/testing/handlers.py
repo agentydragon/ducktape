@@ -1,23 +1,22 @@
-"""Handlers used by agent_core tests and test fixtures."""
+"""Test helpers for driving agent steps until the model produces text."""
 
-from __future__ import annotations
-
+from agent_core.agent import Agent
 from agent_core.events import AssistantText
 from agent_core.handler import BaseHandler
-from agent_core.loop_control import Abort, LoopDecision, NoAction
 
 
-class FinishOnTextMessageHandler(BaseHandler):
-    """Abort the agent loop when assistant sends a text message."""
-
+class TextCaptureHandler(BaseHandler):
     def __init__(self) -> None:
-        self._text_detected = False
+        self.text: list[str] = []
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        self._text_detected = True
+        self.text.append(evt.text)
 
-    def on_before_sample(self) -> LoopDecision:
-        if self._text_detected:
-            self._text_detected = False
-            return Abort()
-        return NoAction()
+
+async def run_until_text(agent: Agent, capture: TextCaptureHandler) -> str:
+    """Step until text is emitted; bound test work if the model never responds."""
+    for _ in range(20):
+        await agent.step()
+        if capture.text:
+            return "\n".join(capture.text)
+    raise AssertionError("Agent did not produce text within 20 steps")

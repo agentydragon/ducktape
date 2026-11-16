@@ -71,14 +71,14 @@ def tool_call_with_error_text(text_matcher):
 def assert_function_call_output_structured(
     records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
 ) -> None:
-    """Assert that a RecordingHandler-style records list contains a function_call_output
+    """Assert that a records list contains a function_call_output
     whose structured_content matches the provided matcher.
 
     Expects Pydantic models (ToolCallOutput), not dicts.
 
     Example:
         assert_function_call_output_structured(
-            recording_handler.records,
+            records,
             has_entries(echo="hello")
         )
     """

@@ -75,10 +75,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
-    deps = [
-        "//agent_core/testing:fixtures",
-        "//openai_utils/testing:fixtures",
-    ],
+    deps = ["//openai_utils/testing:fixtures"],
 )
 
 py_test(

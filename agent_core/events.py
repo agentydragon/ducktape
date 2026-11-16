@@ -1,37 +1,10 @@
 """Agent event types."""
 
-from __future__ import annotations
+from typing import Literal
 
-from datetime import datetime
-from typing import Annotated, Literal
-from uuid import UUID
-
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from agent_core.tool_provider import ToolResult
-from openai_utils.api_shape import LLMApiShape
-from openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, WireRequest
-
-
-# ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
-class GroundTruthUsage(BaseModel):
-    model: str
-    input_tokens: int | None = None
-    input_tokens_details: InputTokensDetails | None = None
-    output_tokens: int | None = None
-    output_tokens_details: OutputTokensDetails | None = None
-    total_tokens: int | None = None
-
-
-# ---- Typed events (discriminated by "type" field) ----
-class SystemText(BaseModel):
-    type: Literal["system_text"] = "system_text"
-    text: str
-
-
-class UserText(BaseModel):
-    type: Literal["user_text"] = "user_text"
-    text: str
 
 
 class AssistantText(BaseModel):
@@ -50,50 +23,3 @@ class ToolCallOutput(BaseModel):
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
     result: ToolResult
-
-
-class ApiRequest(BaseModel):
-    """Full OpenAI API request payload (before sending).
-
-    Captures the complete request including fully-evaluated instructions.
-    """
-
-    type: Literal["api_request"] = "api_request"
-
-    api_shape: LLMApiShape = LLMApiShape.RESPONSES
-    request: WireRequest
-
-    # TODO: Consider moving model into ResponsesRequest and removing the "model handle" layer
-    # Currently model lives on client, not in request object
-    model: str
-
-    # Correlation metadata
-    request_id: UUID  # Correlate with Response event
-    phase_number: int  # Count of Response events so far (which sampling phase)
-
-
-class Response(BaseModel):
-    """One model result (non-streaming) with usage.
-
-    Emitted once per model call to avoid duplicating usage across assistant/tool events.
-    """
-
-    type: Literal["response"] = "response"
-    response_id: str
-    request_id: UUID | None = None  # Correlate with ApiRequest
-    usage: GroundTruthUsage
-    model: str
-    created_at: datetime | None = None
-    idempotency_key: str | None = None
-
-
-# Union of all current event types (discriminated by "type" field)
-EventType = Annotated[
-    SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem,
-    Field(discriminator="type"),
-]
-
-# All event types that can appear in an agent transcript or be logged.
-TranscriptEvent = (
-    SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
-)

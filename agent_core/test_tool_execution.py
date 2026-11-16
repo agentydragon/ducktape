@@ -1,8 +1,7 @@
-"""Tests for tool execution: errors, parallel calls, malformed input, sanitization, and schema generation."""
+"""Tests for tool execution: errors, malformed input, sanitization, and schema generation."""
 
 from __future__ import annotations
 
-import asyncio
 import re
 from typing import Any, Literal
 
@@ -11,15 +10,14 @@ import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from hamcrest import anything, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
+from hamcrest import anything, assert_that, contains_string, has_entries
 from more_itertools import one
-from pydantic import BaseModel
 
 from agent_core.agent import Agent, _make_strict_function_tool, _sanitize_tool_result
-from agent_core.events import ToolCall, ToolCallOutput
+from agent_core.events import ToolCallOutput
 from agent_core.loop_control import RequireAnyTool
 from agent_core.mcp_provider import MCPToolProvider
-from agent_core.testing.handlers import FinishOnTextMessageHandler
+from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from agent_core.testing.matchers import assert_function_call_output_structured, tool_call_with_error_text
 from agent_core.testing.mcp.echo_server import ECHO_TOOL_NAME
 from agent_core.tool_provider import ImageContent, TextContent, ToolResult
@@ -46,38 +44,9 @@ def test_agent_tool_boundary_validates_nested_union() -> None:
 # ---- Local fixtures (only used by this module) ----
 
 
-class _EmptyInput(BaseModel):
-    """Payload helper for mocked no-argument rendezvous calls."""
-
-
-class _RendezvousOutput(BaseModel):
-    """Output for rendezvous tools."""
-
-    ok: bool
-    tool: str
-    args: dict[str, Any]
-
-
 class SendMessageInput(OpenAIStrictModeBaseModel):
     mime: Literal["text/markdown", "text/plain"]
     content: str
-
-
-@pytest.fixture
-def rendezvous_server() -> FastMCP:
-    """FastMCP server whose tool returns only once a second call of it is running too."""
-    mcp = FastMCP("dummy")
-    both_running = asyncio.Barrier(2)
-
-    @mcp.tool(output_schema=None)
-    async def rendezvous() -> _RendezvousOutput:
-        """Waits for another call of this tool to be in flight."""
-        # Serial execution never brings the second call; the timeout turns that deadlock into a failure.
-        async with asyncio.timeout(5):
-            await both_running.wait()
-        return _RendezvousOutput(ok=True, tool="rendezvous", args={})
-
-    return mcp
 
 
 class ValidationServer(FastMCP):
@@ -104,7 +73,7 @@ def validation_server() -> ValidationServer:
 # --- Tool error continuation tests ---
 
 
-async def test_tool_error_continues_turn(validation_server, recording_handler) -> None:
+async def test_tool_error_continues_turn(validation_server) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
     The agent should:
@@ -125,18 +94,16 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
         yield m.assistant_text("Successfully sent message")
 
     async with Client(validation_server) as client:
+        capture = TextCaptureHandler()
         agent = Agent(
-            tool_provider=MCPToolProvider(client),
-            client=mock,
-            handlers=[FinishOnTextMessageHandler(), recording_handler],
-            tool_policy=RequireAnyTool(),
+            tool_provider=MCPToolProvider(client), client=mock, handlers=[capture], tool_policy=RequireAnyTool()
         )
         agent.process_message(UserMessage.text("send message"))
-        result = await agent.run()
+        result = await run_until_text(agent, capture)
 
     # Verify the sequence of events
-    tool_calls = [evt for evt in recording_handler.records if evt.type == "tool_call"]
-    outputs = [evt for evt in recording_handler.records if evt.type == "function_call_output"]
+    tool_calls = [evt for evt in agent._transcript if isinstance(evt, FunctionCallItem)]
+    outputs = [evt for evt in agent._transcript if isinstance(evt, ToolCallOutput)]
 
     assert len(tool_calls) == 2, f"Expected 2 tool calls, got {len(tool_calls)}"
 
@@ -156,44 +123,10 @@ async def test_tool_error_continues_turn(validation_server, recording_handler) -
     assert_that(result, contains_string("Successfully sent message"))
 
 
-# --- Parallel tool call tests ---
-
-
-async def test_parallel_tool_calls_run_concurrently(
-    rendezvous_server, recording_handler, responses_factory: ResponsesFactory
-):
-    tc1 = responses_factory.tool_call("rendezvous", {}, call_id="call_1")
-    tc2 = responses_factory.tool_call("rendezvous", {}, call_id="call_2")
-
-    async def handle_request(req: ResponsesRequest) -> ResponsesResult:
-        if len(req.input) == 1:
-            return responses_factory.make(tc1, tc2)
-        return responses_factory.make_assistant_message("done")
-
-    async with Client(rendezvous_server) as client:
-        agent = Agent(
-            tool_provider=MCPToolProvider(client),
-            client=make_mock(handle_request),
-            parallel_tool_calls=True,
-            handlers=[FinishOnTextMessageHandler(), recording_handler],
-            tool_policy=RequireAnyTool(),
-        )
-        agent.process_message(UserMessage.text("go"))
-        await agent.run()
-
-    tool_calls = [e for e in recording_handler.records if isinstance(e, ToolCall)]
-    tool_outputs = [e for e in recording_handler.records if isinstance(e, ToolCallOutput)]
-    assert_that(tool_calls, has_length(greater_than_or_equal_to(2)))
-    assert_that(tool_outputs, has_length(greater_than_or_equal_to(2)))
-    assert not any(output.result.is_error for output in tool_outputs)
-
-
 # --- Malformed JSON tests ---
 
 
-async def _run_malformed_json_test(
-    mcp_tool_provider_echo, recording_handler, *first_turn_calls: FunctionCallItem, parallel: bool = False
-) -> tuple[str, list]:
+async def _run_malformed_json_test(mcp_tool_provider_echo, *first_turn_calls: FunctionCallItem) -> tuple[str, list]:
     """Run tool calls and capture the agent's response and events."""
     factory = ResponsesFactory()
 
@@ -203,26 +136,21 @@ async def _run_malformed_json_test(
         return factory.make_assistant_message("I received an error")
 
     client = make_mock(handle_request)
-    agent = Agent(
-        tool_provider=mcp_tool_provider_echo,
-        client=client,
-        handlers=[FinishOnTextMessageHandler(), recording_handler],
-        parallel_tool_calls=parallel,
-        tool_policy=RequireAnyTool(),
-    )
+    capture = TextCaptureHandler()
+    agent = Agent(tool_provider=mcp_tool_provider_echo, client=client, handlers=[capture], tool_policy=RequireAnyTool())
     agent.process_message(UserMessage.text("use echo"))
 
-    res = await agent.run()
-    events = recording_handler.records
+    res = await run_until_text(agent, capture)
+    events = agent._transcript
     return res, events
 
 
 @pytest.mark.parametrize(
     "arguments", ['{"text": "unterminated string', '["not", "an", "object"]'], ids=["malformed-json", "non-object-json"]
 )
-async def test_invalid_tool_argument_json(mcp_tool_provider_echo, recording_handler, arguments) -> None:
+async def test_invalid_tool_argument_json(mcp_tool_provider_echo, arguments) -> None:
     call = FunctionCallItem(type="function_call", name=ECHO_TOOL_NAME, arguments=arguments, call_id="test:1")
-    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, call)
+    text, events = await _run_malformed_json_test(mcp_tool_provider_echo, call)
 
     assert text == "I received an error"
 
@@ -233,16 +161,14 @@ async def test_invalid_tool_argument_json(mcp_tool_provider_echo, recording_hand
     assert_that(tool_result, tool_call_with_error_text(anything()))
 
 
-async def test_malformed_json_parallel_tool_calls(mcp_tool_provider_echo, recording_handler) -> None:
-    """Test malformed JSON handling with parallel tool calls enabled."""
+async def test_malformed_json_multiple_tool_calls(mcp_tool_provider_echo) -> None:
+    """A malformed call does not prevent another call in the same response."""
     text, events = await _run_malformed_json_test(
         mcp_tool_provider_echo,
-        recording_handler,
         FunctionCallItem(
             type="function_call", name=ECHO_TOOL_NAME, arguments='{"text": "good call"}', call_id="test:1"
         ),
         FunctionCallItem(type="function_call", name=ECHO_TOOL_NAME, arguments='{"text": "bad', call_id="test:2"),
-        parallel=True,
     )
 
     # Agent should complete successfully

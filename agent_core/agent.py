@@ -2,26 +2,14 @@ from __future__ import annotations
 
 import contextlib
 import json
-import logging
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
-from uuid import uuid4
 
-import anyio
 import pydantic_core
 
-from agent_core.events import (
-    ApiRequest,
-    AssistantText,
-    GroundTruthUsage,
-    Response,
-    SystemText,
-    ToolCall,
-    ToolCallOutput,
-    UserText,
-)
+from agent_core.events import AssistantText, ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler
-from agent_core.loop_control import Abort, AllowAnyToolOrTextMessage, LoopDecision, NoAction, RequireAnyTool, ToolPolicy
+from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool, ToolPolicy
 from agent_core.tool_provider import ImageContent, ResultContent, TextContent, ToolOutputData, ToolProvider, ToolResult
 from openai_utils.model import (
     AssistantMessage,
@@ -38,9 +26,6 @@ from openai_utils.model import (
     UserMessage,
 )
 from openai_utils.pydantic_strict_mode import validate_openai_strict_mode_schema
-from openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
-
-logger = logging.getLogger(__name__)
 
 
 def _make_strict_function_tool(tool_name: str, description: str, input_schema: dict[str, Any]) -> FunctionToolParam:
@@ -128,8 +113,8 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
     raise TypeError(f"Unknown ToolPolicy: {type(policy).__name__}")
 
 
-type Message = UserMessage | AssistantMessage | SystemMessage
-type TranscriptItem = Message | FunctionCallItem | ReasoningItem | ToolCallOutput
+type Message = UserMessage | SystemMessage
+type TranscriptItem = Message | AssistantMessage | FunctionCallItem | ReasoningItem | ToolCallOutput
 
 
 def _sanitize_tool_result(result: ToolResult) -> ToolResult:
@@ -174,128 +159,34 @@ def _sanitize_tool_result(result: ToolResult) -> ToolResult:
 
 class Agent:
     def __init__(
-        self,
-        *,
-        tool_provider: ToolProvider,
-        client: Model,
-        reasoning_effort: ReasoningEffort | None = None,
-        reasoning_summary: ReasoningSummary | None = None,
-        parallel_tool_calls: bool = True,
-        handlers: Iterable[BaseHandler],
-        tool_policy: ToolPolicy,
-        dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
+        self, *, tool_provider: ToolProvider, client: Model, handlers: Iterable[BaseHandler], tool_policy: ToolPolicy
     ) -> None:
-        """Keep `tool_policy` fixed for the agent's lifetime.
-
-        Use transcript system messages for static context; `dynamic_instructions` fills the separate API field per request.
-        """
+        """Keep `tool_policy` fixed for the agent's lifetime."""
         self._tool_provider = tool_provider
         self._client = client
-        self._parallel_tool_calls = parallel_tool_calls
         self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
-        self._response_count = 0
-        self._reasoning_effort = reasoning_effort
-        self._reasoning_summary = reasoning_summary
-        self._dynamic_instructions = dynamic_instructions
-        self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[FunctionCallItem] = []
-        self.finished: bool = False
         self._handlers = list(handlers)
-        if not self._handlers:
-            raise ValueError(
-                "At least one handler required to control the agent loop. "
-                "Without handlers, the agent will loop indefinitely. "
-                "Pass a BaseHandler implementation that controls the loop, such as one that "
-                "processes tool calls or terminates after a response."
-            )
 
-    @property
-    def model(self) -> str:
-        return self._client.model
-
-    def _extract_text_from_message(self, msg: UserMessage | AssistantMessage) -> str:
+    def _extract_text_from_message(self, msg: AssistantMessage) -> str:
         # TODO: Preserve content-part boundaries in handler events; joining loses them and adds newlines.
         content = msg.content or []
         return "\n".join(part.text for part in content)
-
-    def _notify_user_text(self, text: str) -> None:
-        evt = UserText(text=text)
-        for h in self._handlers:
-            h.on_user_text_event(evt)
 
     def _notify_assistant_text(self, text: str) -> None:
         evt = AssistantText(text=text)
         for h in self._handlers:
             h.on_assistant_text_event(evt)
 
-    def _notify_handlers_for_transcript_item(self, item: TranscriptItem) -> None:
-        if isinstance(item, UserMessage):
-            text = self._extract_text_from_message(item)
-            self._notify_user_text(text)
-
-        elif isinstance(item, AssistantMessage):
-            text = self._extract_text_from_message(item)
-            self._notify_assistant_text(text)
-
-        elif isinstance(item, FunctionCallItem):
-            for h in self._handlers:
-                h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id))
-
-        elif isinstance(item, ToolCallOutput):
-            for h in self._handlers:
-                h.on_tool_result_event(item)
-
-        elif isinstance(item, ReasoningItem):
-            for h in self._handlers:
-                h.on_reasoning(item)
-
-        elif isinstance(item, SystemMessage):
-            text = "\n".join(part.text for part in item.content) if item.content else ""
-            evt = SystemText(text=text)
-            for h in self._handlers:
-                h.on_system_text_event(evt)
-
-        else:
-            raise TypeError(f"Unhandled transcript item type: {type(item).__name__}")
-
     def process_message(self, message: Message) -> None:
         self._transcript.append(message)
-        self._notify_handlers_for_transcript_item(message)
 
-    async def _build_effective_instructions(self) -> str | None:
-        """Return dynamic instructions separately from transcript system messages."""
-        if self._dynamic_instructions is not None:
-            return await self._dynamic_instructions()
-        return None
-
-    async def step(self) -> bool:
-        """Run one step and resolve pending calls.
-
-        Return whether a handler finished. Preserve accumulated text and reset `finished` before
-        returning; output is emitted to handlers.
-        """
+    async def step(self) -> None:
+        """Sample once and resolve pending tool calls."""
         await self._run_one_phase()
         if self.pending_function_calls:
             await self._handle_pending_tool_calls()
-        done = self.finished
-        self.finished = False  # Reset so step() can be called again
-        return done
-
-    async def run(self) -> str:
-        """Clear state, then step until a handler finishes and return the assembled text."""
-        self.assistant_text_chunks.clear()
-        self.pending_function_calls.clear()
-        self.finished = False
-        try:
-            while True:
-                if await self.step():
-                    break
-            return "\n".join(self.assistant_text_chunks)
-        except Exception as exc:
-            for h in self._handlers:
-                h.on_error(exc)
-            raise
 
     async def _handle_pending_tool_calls(self) -> None:
         function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
@@ -326,35 +217,9 @@ class Agent:
             # Providers map expected failures to ToolResult.error(); unexpected exceptions propagate.
             return await self._tool_provider.call_tool(function_call.name, args)
 
-        if self._parallel_tool_calls:
-            await self._run_tool_calls_parallel(calls, function_calls, _invoke)
-        else:
-            await self._run_tool_calls_sequential(calls, _invoke)
-        self.pending_function_calls.clear()
-
-    async def _run_tool_calls_parallel(
-        self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
-    ) -> None:
-        results: dict[str, ToolResult] = {}
-
-        async with anyio.create_task_group() as tg:
-
-            async def runner(fc: FunctionCallItem, aj: str | None) -> None:
-                call_id = _require_call_id(fc)
-                results[call_id] = await invoker(fc, aj)
-
-            for function_call, args_json in calls:
-                tg.start_soon(runner, function_call, args_json)
-
-        for function_call in function_calls:
-            call_id = _require_call_id(function_call)
-            if call_id not in results:
-                raise RuntimeError(f"Missing tool output for call_id={call_id!r}")
-            self._emit_tool_result(function_call, results[call_id])
-
-    async def _run_tool_calls_sequential(self, calls: list[tuple[FunctionCallItem, str | None]], invoker) -> None:
         for function_call, args_json in calls:
-            self._emit_tool_result(function_call, await invoker(function_call, args_json))
+            self._emit_tool_result(function_call, await _invoke(function_call, args_json))
+        self.pending_function_calls.clear()
 
     def to_openai_messages(self) -> list[InputItem]:
         """Serialize the complete transcript on each stateless Responses request.
@@ -381,81 +246,23 @@ class Agent:
         return items
 
     async def _run_one_phase(self):
-        # Poll handlers in order; the first non-NoAction decision wins.
-        decision: LoopDecision = NoAction()
+        tool_choice = _tool_choice_from_policy(self._tool_policy)
+        tool_schemas = await self._tool_provider.list_tools()
+
+        req = ResponsesRequest(
+            input=self.to_openai_messages(),
+            stream=False,
+            tool_choice=tool_choice,
+            store=True,
+            parallel_tool_calls=False,
+            tools=[_make_strict_function_tool(t.name, t.description, t.input_schema) for t in tool_schemas],
+        )
+
+        resp = await self._client.sample(self._client.prepare(req))
+        if resp.output is not None:
+            self._process_resp_output(resp.output)
         for h in self._handlers:
-            d = h.on_before_sample()
-            if not isinstance(d, NoAction):
-                decision = d
-                break
-
-        if isinstance(decision, Abort):
-            self.finished = True
-            return
-        resp_output: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] | None = None
-
-        should_sample_llm = False
-
-        if isinstance(decision, NoAction):
-            should_sample_llm = True
-        else:
-            raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
-
-        if should_sample_llm:
-            tool_choice = _tool_choice_from_policy(self._tool_policy)
-            reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
-            tool_schemas = await self._tool_provider.list_tools()
-
-            req = ResponsesRequest(
-                input=self.to_openai_messages(),
-                instructions=await self._build_effective_instructions(),
-                stream=False,
-                tool_choice=tool_choice,
-                store=True,
-                parallel_tool_calls=self._parallel_tool_calls,
-                tools=[_make_strict_function_tool(t.name, t.description, t.input_schema) for t in tool_schemas],
-                reasoning=reasoning_param,
-            )
-
-            # TODO: Avoid O(N²) full-transcript snapshots; store non-derivable request data and reconstruct
-            # each request from the transcript and metadata.
-            request_id = uuid4()
-            phase_number = self._response_count
-            prepared_request = self._client.prepare(req)
-            for h in self._handlers:
-                h.on_api_request_event(
-                    ApiRequest(
-                        api_shape=self._client.api_shape,
-                        request=prepared_request,
-                        model=self._client.model,
-                        request_id=request_id,
-                        phase_number=phase_number,
-                    )
-                )
-
-            resp = await self._client.sample(prepared_request)
-            sdk_usage = resp.usage
-            usage = (
-                GroundTruthUsage(
-                    model=self._client.model,
-                    input_tokens=sdk_usage.input_tokens,
-                    input_tokens_details=sdk_usage.input_tokens_details,
-                    output_tokens=sdk_usage.output_tokens,
-                    output_tokens_details=sdk_usage.output_tokens_details,
-                    total_tokens=sdk_usage.total_tokens,
-                )
-                if sdk_usage is not None
-                else GroundTruthUsage(model=self._client.model)
-            )
-            resp_output = resp.output
-            if resp_output is not None:
-                self._process_resp_output(resp_output)
-            for h in self._handlers:
-                h.on_response(
-                    Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
-                )
-            self._response_count += 1
-        # Handlers end the loop; tool policies can prevent text-only responses.
+            h.on_response(self._client.model)
 
     def _process_resp_output(
         self, resp_output: Sequence[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut]
@@ -475,13 +282,11 @@ class Agent:
                 continue
             if isinstance(item, ReasoningItem):
                 self._transcript.append(item)
-                self._notify_handlers_for_transcript_item(item)
 
             elif isinstance(item, AssistantMessageOut):
-                self.assistant_text_chunks.append(item.text)
                 assistant_msg = item.to_input_item()
                 self._transcript.append(assistant_msg)
-                self._notify_handlers_for_transcript_item(assistant_msg)
+                self._notify_assistant_text(self._extract_text_from_message(assistant_msg))
 
             elif isinstance(item, FunctionCallOutputItem):
                 if item.output is None:
@@ -493,7 +298,6 @@ class Agent:
                 tool_output = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_call_ids.add(original_call_id)
                 self._transcript.append(tool_output)
-                self._notify_handlers_for_transcript_item(tool_output)
                 if self.pending_function_calls:
                     self.pending_function_calls = [
                         fc for fc in self.pending_function_calls if fc.call_id != original_call_id
@@ -502,7 +306,8 @@ class Agent:
             elif isinstance(item, FunctionCallItem):
                 call_id = _require_call_id(item)
                 self._transcript.append(item)
-                self._notify_handlers_for_transcript_item(item)
+                for h in self._handlers:
+                    h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=call_id))
                 if call_id in handled_call_ids:
                     continue
                 self.pending_function_calls.append(item)
@@ -514,5 +319,3 @@ class Agent:
         sanitized = _sanitize_tool_result(result)
         event = ToolCallOutput(call_id=call_id, result=sanitized)
         self._transcript.append(event)
-        for h in self._handlers:
-            h.on_tool_result_event(event)

@@ -19,12 +19,12 @@ import pytest_bazel
 
 from agent_core.agent import Agent
 from agent_core.loop_control import AllowAnyToolOrTextMessage
-from agent_core.testing.handlers import FinishOnTextMessageHandler
+from agent_core.testing.handlers import TextCaptureHandler, run_until_text
 from agent_core.testing.mcp.responses import EchoMock
 from openai_utils.model import ReasoningItem, UserMessage
 
 
-async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recording_handler) -> None:
+async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo) -> None:
     """Agent handles reasoning items from a thinking model without error."""
 
     @mock_or_live(EchoMock)
@@ -32,11 +32,9 @@ async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recordin
         yield
         yield [m.make_item_reasoning(), m.assistant_text("$1,504")]
 
+    capture = TextCaptureHandler()
     agent = Agent(
-        tool_provider=mcp_tool_provider_echo,
-        client=client,
-        handlers=[FinishOnTextMessageHandler(), recording_handler],
-        tool_policy=AllowAnyToolOrTextMessage(),
+        tool_provider=mcp_tool_provider_echo, client=client, handlers=[capture], tool_policy=AllowAnyToolOrTextMessage()
     )
     agent.process_message(
         UserMessage.text(
@@ -47,7 +45,7 @@ async def test_reasoning_elicited(mock_or_live, mcp_tool_provider_echo, recordin
         )
     )
 
-    res = await agent.run()
+    res = await run_until_text(agent, capture)
 
     assert res, "Agent produced no text response"
     reasoning = [item for item in agent.to_openai_messages() if isinstance(item, ReasoningItem)]
