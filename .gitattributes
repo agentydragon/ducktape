@@ -12,7 +12,6 @@
 x/py_detectors/rules/**/bad/** rules-lint-ignored=true
 x/py_detectors/rules/**/ok/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
-x/sysrw/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
 att_gateway/testdata/** rules-lint-ignored=true
 

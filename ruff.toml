@@ -20,7 +20,6 @@ exclude = [  # keep-sorted start
     "tana/testdata",
     "x/py_detectors/rules/**/bad/**",
     "x/py_detectors/rules/**/ok/**",
-    "x/sysrw/testdata",
 ]  # keep-sorted end
 
 [format]
@@ -163,7 +162,6 @@ known-first-party = [
     "mcp_infra",
     "openai_utils",
     "ssh_mcp_server",
-    "sysrw",
     "tana",
     "tests",  # test packages (until colocated under main packages)
     # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
