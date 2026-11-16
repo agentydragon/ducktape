@@ -33,19 +33,31 @@ def build_dashboard() -> dashboard.Dashboard:
                             SELECT
                               provider,
                               {_WINDOW_NAME} AS window,
-                              formatReadableTimeDelta(toUInt64(argMax(window_seconds, observed_at))) AS duration,
-                              round(argMax(remaining_percent, observed_at), 1) AS remaining_percent,
-                              round(argMax(used_percent, observed_at), 1) AS used_percent,
-                              formatReadableTimeDelta(toUInt64(argMax(reset_seconds, observed_at))) AS resets_in,
-                              formatDateTime(max(observed_at), '%Y-%m-%d %H:%i:%S') AS last_observed_at
-                            FROM aiquota.aiquota_windows
-                            WHERE $__timeFilter(observed_at)
-                            GROUP BY provider, window_name, window_seconds
+                              formatReadableTimeDelta(toUInt64(window_seconds)) AS duration,
+                              round(latest.1, 1) AS remaining_percent,
+                              round(latest.2, 1) AS used_percent,
+                              if(dateDiff('second', latest.5, now64(3)) > 900, 'stale (>15m)', 'fresh') AS freshness,
+                              multiIf(
+                                isNull(reset_deadline), 'unknown',
+                                reset_deadline <= now64(3), 'awaiting update',
+                                formatReadableTimeDelta(toUInt64(greatest(0, dateDiff('second', now64(3), reset_deadline))))
+                              ) AS resets_in,
+                              formatDateTime(latest.5, '%Y-%m-%d %H:%i:%S') AS last_observed_at
+                            FROM (
+                              SELECT
+                                provider, window_name, window_seconds,
+                                argMax(tuple(remaining_percent, used_percent, reset_at, reset_seconds, observed_at), observed_at) AS latest,
+                                coalesce(latest.3, if(latest.4 > 0, latest.5 + toIntervalSecond(toInt64(latest.4)), NULL)) AS reset_deadline
+                              FROM aiquota.aiquota_windows
+                              WHERE $__timeFilter(observed_at)
+                              GROUP BY provider, window_name, window_seconds
+                            )
                             ORDER BY provider, window_seconds, window_name
                             """).strip()
                     )
                 ],
-                title="Current quota by provider and window",
+                title="Latest quota observation by provider and window",
+                description="Latest observation in the selected range. Freshness is relative to now; the collector polls every five minutes. After 15 minutes without an observation it is marked stale. A passed reset deadline means awaiting an updated quota, not that usage has reset.",
                 datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24),
             ),
