@@ -14,9 +14,9 @@ import {
   ReadinessSchema,
   ReadinessState,
   type EnvironmentDescriptor,
-} from "../../environments/v1/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
-import { testSandbox } from "./testing/sandbox";
+import { testSandbox } from "../testing/sandbox";
 import {
   hasVmConsole,
   podIp,

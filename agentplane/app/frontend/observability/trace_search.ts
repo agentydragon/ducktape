@@ -1,4 +1,4 @@
-import type { TraceSearchSettings } from "../app_service_pb";
+import type { TraceSearchSettings } from "../../app_service_pb";
 
 type TraceTarget = { kind: "sandbox" | "session"; id: string };
 

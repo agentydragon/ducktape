@@ -13,11 +13,17 @@ import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
-import { sandboxReady, sandboxStarting, sandboxSummary, sandboxSuspended, suspensionReason } from "../sandbox_status";
+import {
+  sandboxReady,
+  sandboxStarting,
+  sandboxSummary,
+  sandboxSuspended,
+  suspensionReason,
+} from "../sandboxes/sandbox_status";
 import { useThreadNotices } from "../notifications/thread_notices";
 import { TopbarTitle } from "../shell/topbar";
-import { finishSessionCreate, withinSessionCreate } from "../tracing";
-import { useFrontendConfig } from "../shell/frontend_config";
+import { finishSessionCreate, withinSessionCreate } from "../observability/tracing";
+import { useFrontendConfig } from "../app_config/frontend_config";
 import { appDocumentTitle, CONNECTING_TAB_STATUS, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
 import { ThreadConversation } from "./conversation";

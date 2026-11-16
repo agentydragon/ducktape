@@ -41,8 +41,8 @@ import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import { HarnessState, LaunchOutcome, SetupState } from "../../../proto/session_pb";
 import type * as SandboxClientModule from "../sandboxes/client";
-import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
-import * as appConfigClient from "../app_config_client";
+import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
+import * as appConfigClient from "../app_config/client";
 import {
   type CommandSubmission,
   type CommandTarget,

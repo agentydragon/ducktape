@@ -15,7 +15,7 @@ import { attachedHarness } from "./harness_behavior";
 import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { sandboxInventoryFresh, useRequiredSandboxesLive } from "../sandboxes/live";
 import { MarkGlyph } from "../ui/mark_glyph";
-import { sandboxStatusDetail, sandboxSummary } from "../sandbox_status";
+import { sandboxStatusDetail, sandboxSummary } from "../sandboxes/sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "../ui/status_mark";
 import "./thread_list.css";
 import { groupThreads, type ThreadGroup } from "./thread_groups";

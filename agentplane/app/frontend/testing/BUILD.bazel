@@ -31,16 +31,6 @@ py_library(
 TSCONFIG = "//agentplane/app/frontend:tsconfig"
 
 ts_library(
-    name = "langfuse_search",
-    srcs = ["langfuse_search.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/app:app_service_pb",
-    ],
-)
-
-ts_library(
     name = "watch",
     srcs = ["watch.ts"],
     tsconfig = TSCONFIG,
@@ -76,7 +66,6 @@ py_library(
 filegroup(
     name = "typed_lint_srcs",
     srcs = [
-        "langfuse_search.ts",
         "runner_status.ts",
         "sandbox.ts",
         "watch.ts",

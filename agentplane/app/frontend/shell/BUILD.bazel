@@ -15,18 +15,6 @@ filegroup(
 )
 
 ts_library(
-    name = "frontend_config",
-    srcs = ["frontend_config.ts"],
-    tsconfig = "//agentplane/app/frontend:tsconfig",
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-        "//agentplane/app:app_service_pb",
-        "//agentplane/app/frontend:app_config_client",
-    ],
-)
-
-ts_library(
     name = "tab_metadata",
     srcs = ["tab_metadata.ts"],
     tsconfig = "//agentplane/app/frontend:tsconfig",

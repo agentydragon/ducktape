@@ -38,7 +38,7 @@ import {
   sandboxSummary,
   type ContainerStatus,
   type RawCondition,
-} from "../sandbox_status";
+} from "./sandbox_status";
 import { TimeAgo } from "../ui/time_ago";
 import { WakeOnSendCheckbox } from "./wake_on_send";
 

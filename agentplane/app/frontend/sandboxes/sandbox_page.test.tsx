@@ -30,7 +30,7 @@ import { Link, MemoryRouter, Route, Routes } from "react-router";
 import { afterAll, afterEach, expect, it, vi, type Mock } from "vitest";
 
 import * as sandboxClient from "./client";
-import { LANGFUSE_SEARCH_SETTINGS } from "../testing/langfuse_search";
+import { LANGFUSE_SEARCH_SETTINGS } from "../observability/langfuse_search_fixture";
 import { acknowledgedQuiescingLifecycleFixture, runnerStatusFixture } from "../testing/runner_status";
 import type { Live } from "../transport/live";
 import { SandboxRoute } from "../shell/app";

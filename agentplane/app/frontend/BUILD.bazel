@@ -43,11 +43,13 @@ filegroup(
         "//agentplane/app/frontend/actions/push/service_worker:typed_lint_srcs",
         "//agentplane/app/frontend/actions/rendering:typed_lint_srcs",
         "//agentplane/app/frontend/actions/testing:typed_lint_srcs",
+        "//agentplane/app/frontend/app_config:typed_lint_srcs",
         "//agentplane/app/frontend/connections:typed_lint_srcs",
         "//agentplane/app/frontend/connections/testing:typed_lint_srcs",
         "//agentplane/app/frontend/egress:typed_lint_srcs",
         "//agentplane/app/frontend/identities:typed_lint_srcs",
         "//agentplane/app/frontend/notifications:typed_lint_srcs",
+        "//agentplane/app/frontend/observability:typed_lint_srcs",
         "//agentplane/app/frontend/policy:typed_lint_srcs",
         "//agentplane/app/frontend/sandboxes:typed_lint_srcs",
         "//agentplane/app/frontend/sessions:typed_lint_srcs",
@@ -136,64 +138,6 @@ openapi_js_library(
 )
 
 ts_library(
-    name = "trace_search",
-    srcs = ["trace_search.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//agentplane/app:app_service_pb"],
-)
-
-agentplane_vitest_test(
-    name = "trace_search_test",
-    srcs = ["trace_search.test.ts"],
-    deps = [
-        ":trace_search",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/app:app_service_pb",
-    ],
-)
-
-ts_library(
-    name = "langfuse_search",
-    srcs = ["langfuse_search.ts"],
-    tsconfig = TSCONFIG,
-    deps = ["//agentplane/app:app_service_pb"],
-)
-
-agentplane_vitest_test(
-    name = "langfuse_search_test",
-    srcs = ["langfuse_search.test.ts"],
-    deps = [
-        ":langfuse_search",
-        "//:node_modules/vitest",
-        "//agentplane/app:app_service_pb",
-        "//agentplane/app/frontend/testing:langfuse_search",
-    ],
-)
-
-ts_library(
-    name = "app_config_client",
-    srcs = ["app_config_client.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/app:app_service_pb",
-        "//agentplane/app/frontend/transport:app_service_client",
-        "//agentplane/proto:session_pb",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "app_config_client_test",
-    srcs = ["app_config_client.test.ts"],
-    deps = [
-        ":app_config_client",
-        "//:node_modules/vitest",
-        "//agentplane/proto:session_pb",
-    ],
-)
-
-ts_library(
     name = "settings",
     srcs = ["settings/dialog.tsx"],
     tsconfig = TSCONFIG,
@@ -208,65 +152,19 @@ ts_library(
 )
 
 ts_library(
-    name = "sandbox_status",
-    srcs = ["sandbox_status.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        ":schema",
-        "//:node_modules/@bufbuild/protobuf",
-        "//agentplane/app/frontend/sandboxes:client",
-        "//agentplane/app/frontend/transport:client",
-        "//agentplane/app/frontend/ui:format_time",
-        "//agentplane/app/frontend/ui:status_mark",
-        "//agentplane/environments/v1:environment_service_pb",
-    ],
-)
-
-agentplane_vitest_test(
-    name = "sandbox_status_test",
-    srcs = ["sandbox_status.test.ts"],
-    deps = [
-        ":sandbox_status",
-        ":schema",
-        "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/vitest",
-        "//agentplane/app/frontend/sandboxes:client",
-        "//agentplane/app/frontend/testing:sandbox",
-        "//agentplane/app/frontend/transport:client",
-        "//agentplane/environments/v1:environment_service_pb",
-    ],
-)
-
-ts_library(
     name = "main_lib",
     srcs = ["main.tsx"],
     tsconfig = TSCONFIG,
     deps = [
-        ":tracing",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/@types/react-dom",
         "//:node_modules/react",
         "//:node_modules/react-dom",
+        "//agentplane/app/frontend/observability:tracing",
         "//agentplane/app/frontend/shell:app",
         "//agentplane/app/frontend/shell:theme",
         "//agentplane/app/frontend/transport:operator_login",
-    ],
-)
-
-ts_library(
-    name = "tracing",
-    srcs = ["tracing.ts"],
-    tsconfig = TSCONFIG,
-    deps = [
-        "//:node_modules/@opentelemetry/api",
-        "//:node_modules/@opentelemetry/context-zone",
-        "//:node_modules/@opentelemetry/core",
-        "//:node_modules/@opentelemetry/exporter-trace-otlp-proto",
-        "//:node_modules/@opentelemetry/instrumentation",
-        "//:node_modules/@opentelemetry/instrumentation-fetch",
-        "//:node_modules/@opentelemetry/resources",
-        "//:node_modules/@opentelemetry/sdk-trace-web",
     ],
 )
 

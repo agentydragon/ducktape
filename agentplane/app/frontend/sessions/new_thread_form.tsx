@@ -3,7 +3,7 @@ import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import { create } from "@bufbuild/protobuf";
 
-import { listModels, listSandboxPresets } from "../app_config_client";
+import { listModels, listSandboxPresets } from "../app_config/client";
 import type { ListModelsResponse, SessionDefaults } from "../../app_service_pb";
 import { harnessOptions, modelsForHarness } from "./model_catalog";
 import { displayableError } from "../transport/client";

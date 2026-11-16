@@ -5,10 +5,10 @@ import {
   OperatingMode,
   ReadinessState,
   type EnvironmentDescriptor,
-} from "../../environments/v1/environment_service_pb";
+} from "../../../environments/v1/environment_service_pb";
 
-import { durationLabel } from "./ui/format_time";
-import type { SandboxStatusKind } from "./ui/status_mark";
+import { durationLabel } from "../ui/format_time";
+import type { SandboxStatusKind } from "../ui/status_mark";
 
 type RawObject = Record<string, unknown>;
 
