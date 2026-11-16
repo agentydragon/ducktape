@@ -1,16 +1,16 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { StreamConnection } from "./stream_reader";
+import type { StreamConnection } from "../../stream_reader";
 import { disconnectMcpLinkage, followMcpLinkages, startMcpLinkage } from "./mcp_linkage_client";
-import { type ServedWatch, stubWatchFetch } from "./testing/watch";
+import { type ServedWatch, stubWatchFetch } from "../../testing/watch";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
   WatchMcpServersResponseSchema,
   type WatchMcpServersResponse,
-} from "../../action_service/api/contracts/operator_action_service_pb";
+} from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { create, toJson } from "@bufbuild/protobuf";
 
 let fetchMock: ReturnType<typeof stubWatchFetch>;

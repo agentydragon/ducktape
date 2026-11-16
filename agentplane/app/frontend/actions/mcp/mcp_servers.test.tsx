@@ -3,20 +3,20 @@ import { act } from "react";
 import { expect, it, vi } from "vitest";
 import { create } from "@bufbuild/protobuf";
 
-import { answerApi, mount, send, sendUpserts } from "../actions/testing/harness";
+import { answerApi, mount, send, sendUpserts } from "../testing/harness";
 import {
   ActionGroupSchema,
   ExecutorKind,
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
-} from "../../../action_service/api/contracts/action_service_pb";
+} from "../../../../action_service/api/contracts/action_service_pb";
 import {
   McpLinkageStatus,
   McpRefreshAction,
   McpServerLinkageSchema,
   type McpServerLinkage,
-} from "../../../action_service/api/contracts/operator_action_service_pb";
+} from "../../../../action_service/api/contracts/operator_action_service_pb";
 import { McpServers } from "./mcp_servers";
 
 const LINKAGES = "/upstream/actions/v1/operator/mcp-servers:watch";

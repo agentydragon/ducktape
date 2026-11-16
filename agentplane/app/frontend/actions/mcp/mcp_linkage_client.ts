@@ -1,7 +1,7 @@
 import { create, fromJson, fromJsonString, toJson } from "@bufbuild/protobuf";
-import { fetchText, fetchWithLogin, type Fetcher } from "./client";
-import type { StreamConnection } from "./stream_reader";
-import { followWatch } from "./watch_stream";
+import { fetchText, fetchWithLogin, type Fetcher } from "../../client";
+import type { StreamConnection } from "../../stream_reader";
+import { followWatch } from "../../watch_stream";
 import {
   DisconnectMcpServerResponseSchema,
   StartMcpServerLinkageRequestSchema,
@@ -9,7 +9,7 @@ import {
   WatchMcpServersResponseSchema,
   type McpServerLinkage,
   type WatchMcpServersResponse,
-} from "../../action_service/api/contracts/operator_action_service_pb";
+} from "../../../../action_service/api/contracts/operator_action_service_pb";
 
 const ACTION_FACADE = "/upstream/actions";
 
