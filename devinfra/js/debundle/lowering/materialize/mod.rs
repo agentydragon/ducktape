@@ -1485,7 +1485,13 @@ fn graph_export_guidance(
     ownership_subset: bool,
 ) -> String {
     if ownership_subset {
-        return " Bounded reports describe this ownership subset; full graph export for subsets is unsupported.".to_string();
+        if selection.enabled() {
+            return format!(
+                " Selected-ownership dependency graph at {}; graph-backed edits remain unavailable until selected-view overlay authoring is supported.",
+                chunk_report_path(dir, chunk_id, DEPENDENCY_GRAPH_REPORT).display(),
+            );
+        }
+        return " Bounded reports describe this ownership subset; rerun with `--graphs` to export its provenance-bound selected-ownership graph. Graph-backed edits remain unavailable until selected-view overlay authoring is supported.".to_string();
     }
     if selection.enabled() {
         format!(
@@ -1566,14 +1572,25 @@ fn emit_reports_and_resolve_gate<'a>(
             &candidate_assessment.report(),
         )?;
         if graph_reports.enabled() {
+            let mut dependency_graph_report = assignment_analysis.dependency_graph_report(
+                program_graph.reference_for(report_out_dir, chunk_id)?,
+                program_graph.author_inputs(),
+            );
+            dependency_graph_report.ownership_subset = ownership_subset.map(|selected| {
+                selected
+                    .iter()
+                    .map(|module| graph_provenance::SelectedOwnershipModule {
+                        module: module.module.to_string(),
+                        bindings: module.bindings.clone(),
+                        anonymous_statements: module.anonymous_statements.clone(),
+                    })
+                    .collect()
+            });
             write_chunk_report_json(
                 report_out_dir,
                 chunk_id,
                 DEPENDENCY_GRAPH_REPORT,
-                &assignment_analysis.dependency_graph_report(
-                    program_graph.reference_for(report_out_dir, chunk_id)?,
-                    program_graph.author_inputs(),
-                ),
+                &dependency_graph_report,
             )?;
         }
         if full_export_reentry {

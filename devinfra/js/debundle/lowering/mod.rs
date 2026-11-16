@@ -321,10 +321,6 @@ pub fn materialize_logical_modules(
     let target_dir = normalize_optional_relative_dir(&options.config.target_dir)?;
     let selected_chunk_ids = normalized_chunk_ids(&options.chunk_ids)?;
     if let Some(subset) = &options.ownership_subset {
-        ensure!(
-            !options.graph_reports.enabled(),
-            "full graph export for ownership subsets is unsupported"
-        );
         subset.validate(logical_modules, &selected_chunk_ids)?;
         diagnostics.record_invocation(analysis::diagnostics::InvocationDiagnostic::OwnershipSubset);
     }

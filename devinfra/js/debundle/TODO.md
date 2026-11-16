@@ -13,8 +13,8 @@ plans and evidence live here:
 - <plans/relational_selectors.md> — the remaining selector-language work.
 - <plans/automated_spec_workflows.md> — single-input selector authoring and
   diagnostic workflows.
-- <plans/explicit_import_order.md> — active explicit-order delivery contract and
-  complete, polynomial residual family; remaining acceptance is W9 below.
+- <plans/explicit_import_order.md> — explicit-order delivery contract, residual
+  proof and the remaining downstream and selected-view work in W9 below.
 - <plans/purity_analysis.md> — purity annotation and redundant-hint follow-ups.
 - <plans/native_receiver_identity.md> — native receiver identity and its
   descriptor, alias, method-receiver and initialization proof obligations.
@@ -629,22 +629,18 @@ paths and source-unit IDs belong in the consuming repo.
   treat a failed coarse heuristic as evidence that the authored owner boundary
   is intrinsically impossible or hide it with purity assertions.
 
-- **W9 — Deliver explicit-order residual construction.** Follow
-  <plans/explicit_import_order.md> and the proof in
-  <docs/placement_algorithm.md>. Require each materialized chunk to supply one
-  shared priority; verify it without arbitrary scheduling or implicit repair.
-  Carry the final priority with owner changes through check, preview and apply.
-  Replace general placement search with the proved append-one-owner,
-  baseline-preserving residual family and report that exact completeness scope.
-  Derive all-seed feasibility once on the closure SCC DAG, materialize one
-  selected group and certify it once. Keep selector realization distinct from
-  graph feasibility. Retire proposal-ID, factorizer, decompose and refine paths and
-  update the supported CLI, docs, AGENTS, skills and executable recipes.
-  Close with independent tiny subset/import oracles, real CLI/apply/Node tests,
-  passing public/private controls and a fresh unseeded useful peel followed by
-  checked application. Prepared graph-query cost must be measured separately
-  from source/selector analysis. Historical broad-placement timeouts are
-  inconclusive and do not establish the new guarantee; the useful algorithmic lessons are in the design docs.
+- **W9 — Complete downstream explicit-order adoption and selected-view
+  construction.** Follow <plans/explicit_import_order.md>. Migrate and validate
+  every configured downstream consumer with its reviewed complete priority;
+  preserve diagnostic and passing controls as distinct inputs. Update maintained
+  downstream guidance and land the production pin only after the final engine
+  passes fresh configured validation and emitted-runtime checks. Complete the
+  selected-ownership placement overlay described in the plan before claiming a
+  partial-spec extraction loop: semantic premises and selector anchors remain
+  grounded in the full authored tree, while only the selected placement view is
+  edited. Keep the completed graph-export foundation inspection-only until that
+  writer is available; do not substitute a rejected canonical graph or weaken
+  full-context selector constraints.
 
 - **W10 — Prove additional useful residual families.** The first complete
   constructor only moves true-entry atoms to one fresh owner while retaining the

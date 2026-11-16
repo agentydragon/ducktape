@@ -25,14 +25,10 @@ pub(super) struct BindingsNs {
 }
 
 impl BindingsNs {
-    pub(super) fn writes_with_graph(&self) -> bool {
+    pub(super) fn edits_with_graph(&self) -> bool {
         match &self.command {
-            BindingsNsCommand::Assign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
-            BindingsNsCommand::Unassign(args) => {
-                args.edit.dependency_graph_path.is_some() && !args.edit.dry_run
-            }
+            BindingsNsCommand::Assign(args) => args.edit.dependency_graph_path.is_some(),
+            BindingsNsCommand::Unassign(args) => args.edit.dependency_graph_path.is_some(),
             _ => false,
         }
     }

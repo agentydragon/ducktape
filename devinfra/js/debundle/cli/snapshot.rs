@@ -75,6 +75,7 @@ struct SnapshotRun {
     vendor_marks: PathBuf,
     package_roots: BTreeMap<String, PathBuf>,
     packages_root: Option<PathBuf>,
+    ownership_subset: Option<PathBuf>,
     fail_fast: bool,
 }
 
@@ -85,6 +86,7 @@ struct SnapshotOutcome {
     engine: PathBuf,
     spec_root: PathBuf,
     graph_source_root: PathBuf,
+    graph_ownership_subset_root: Option<PathBuf>,
     graph_package_roots: BTreeMap<String, PathBuf>,
     source_root: PathBuf,
     tree_config: PathBuf,
@@ -163,6 +165,12 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     let roots = ProvenanceRoots {
         spec: placement(&provenance.roots.spec)?,
         source: placement(&provenance.roots.source)?,
+        ownership_subset: provenance
+            .roots
+            .ownership_subset
+            .as_deref()
+            .map(placement)
+            .transpose()?,
         packages: provenance
             .roots
             .packages
@@ -172,6 +180,7 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     };
     for root in [&roots.spec, &roots.source]
         .into_iter()
+        .chain(roots.ownership_subset.iter())
         .chain(roots.packages.values())
     {
         fs::create_dir_all(staging.path().join(root))?;
@@ -295,6 +304,7 @@ fn snapshot_run(provenance: &GraphProvenance) -> Result<SnapshotRun> {
     let args = DebundleArgs::try_parse_from(&provenance.generation_command)?;
     let DebundleCommand::Run(RunArgs {
         transform: mut args,
+        ownership_subset,
         ..
     }) = args.command
     else {
@@ -319,6 +329,7 @@ fn snapshot_run(provenance: &GraphProvenance) -> Result<SnapshotRun> {
             .map(|(name, root)| Ok((name.clone(), locate(root)?)))
             .collect::<Result<_>>()?,
         packages_root: cli.packages_root.as_deref().map(locate).transpose()?,
+        ownership_subset: ownership_subset.as_deref().map(locate).transpose()?,
         fail_fast,
     })
 }
@@ -493,6 +504,12 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
     let current = CurrentRoots {
         spec: Some(contained(&directory, &manifest.roots.spec)?),
         source: Some(contained(&directory, &manifest.roots.source)?),
+        ownership_subset: manifest
+            .roots
+            .ownership_subset
+            .as_deref()
+            .map(|root| contained(&directory, root))
+            .transpose()?,
         packages: manifest
             .roots
             .packages
@@ -626,6 +643,9 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
     if let Some(root) = &manifest.run.packages_root {
         argv.extend(["--packages-root".to_owned(), path(root)]);
     }
+    if let Some(subset) = &manifest.run.ownership_subset {
+        argv.extend(["--ownership-subset".to_owned(), path(subset)]);
+    }
     argv.push("--graphs".to_string());
     if manifest.run.fail_fast {
         argv.push("--fail-fast".to_owned());
@@ -636,6 +656,11 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
         engine: directory.join(&manifest.engine),
         spec_root: directory.join(&manifest.roots.spec),
         graph_source_root: directory.join(&manifest.roots.source),
+        graph_ownership_subset_root: manifest
+            .roots
+            .ownership_subset
+            .as_ref()
+            .map(|root| directory.join(root)),
         graph_package_roots: manifest
             .roots
             .packages

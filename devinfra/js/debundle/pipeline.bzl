@@ -27,8 +27,6 @@ DebundleAnalysisInfo = provider(
 )
 
 def _debundle_apply_impl(ctx):
-    if ctx.file.ownership_subset and ctx.attr.split_dependency_graphs:
-        fail("ownership_subset does not support split_dependency_graphs")
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
     plan = _spec_plan(ctx, out_dir.short_path)
 
@@ -75,7 +73,7 @@ def _debundle_apply_impl(ctx):
         graph_plan = _spec_plan(ctx, graphs_dir.short_path)
         _run_debundler(
             ctx,
-            inputs = depset([analysis], transitive = [graph_plan.inputs]),
+            inputs = depset([analysis] + ctx.files.ownership_subset, transitive = [graph_plan.inputs]),
             outputs = [graphs_dir],
             command = _apply_command(ctx, graph_plan, analysis, [
                 "--graphs",
@@ -423,7 +421,7 @@ debundle_apply = rule(
         ),
         "ownership_subset": attr.label(
             allow_single_file = [".json"],
-            doc = "Optional retained chunk/module list for normal emission with full spec context. Only the Pipeline action reads it; requires inline_in_entry, per_atomic_group, or coarse_atomic_groups and conflicts with split_dependency_graphs.",
+            doc = "Optional retained chunk/module list for normal emission and provenance-bound graph export with full spec context. Requires inline_in_entry, per_atomic_group, or coarse_atomic_groups.",
         ),
         "emit_on_rejection": attr.bool(
             default = False,

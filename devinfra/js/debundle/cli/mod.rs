@@ -317,6 +317,9 @@ pub struct DebundleArgs {
     /// Distinct from the authoring commands' --source-root selector path.
     #[arg(long, global = true, env = "DEBUNDLE_GRAPH_SOURCE_ROOT")]
     graph_source_root: Option<std::path::PathBuf>,
+    /// Relocated root containing the saved graph's captured ownership subset.
+    #[arg(long, global = true, env = "DEBUNDLE_GRAPH_OWNERSHIP_SUBSET_ROOT")]
+    graph_ownership_subset_root: Option<std::path::PathBuf>,
     /// Relocated package root used by graph compatibility; repeat for each package.
     #[arg(long = "graph-package-root", global = true, value_name = "NAME=DIR", value_parser = package_args::parse_package_root_kv)]
     graph_package_roots: Vec<(String, std::path::PathBuf)>,
@@ -355,7 +358,7 @@ pub(crate) struct RunArgs {
     /// materialized chunk.
     /// Omitted members keep their source names in entry or generated residual
     /// modules; normal gates and emission still run.
-    #[arg(long, conflicts_with = "graphs", value_name = "JSON")]
+    #[arg(long, value_name = "JSON")]
     pub(crate) ownership_subset: Option<std::path::PathBuf>,
     /// Take the cross-module summaries and per-chunk facts from this analysis
     /// artifact (`debundle analyze`) instead of recomputing them. The run
@@ -557,6 +560,7 @@ fn run_debundle_cli(
     let roots = CurrentRoots {
         spec: args.spec_root,
         source: args.graph_source_root,
+        ownership_subset: args.graph_ownership_subset_root,
         packages: package_args::collect_package_roots(args.graph_package_roots)?,
     };
     let describe_query = match &args.command {
@@ -579,11 +583,20 @@ fn run_debundle_cli(
     // Every other graph-backed command consumes exactly one graph. Modules
     // receives the full collection and selects each corpus chunk by identity.
     let source_context = source_contexts.values().next();
-    let writes_with_graph = match &args.command {
-        DebundleCommand::Bindings(args) => args.writes_with_graph(),
-        DebundleCommand::Modules(args) => args.writes_with_graph(),
+    let edits_with_graph = match &args.command {
+        DebundleCommand::Bindings(args) => args.edits_with_graph(),
+        DebundleCommand::Modules(args) => args.edits_with_graph(),
         _ => false,
     };
+    if edits_with_graph
+        && source_contexts
+            .values()
+            .any(|context| context.selected_ownership().is_some())
+    {
+        anyhow::bail!(
+            "selected-ownership graphs are inspection-only; source-backed edits require selected-view overlay authoring"
+        );
+    }
     let result = match args.command {
         DebundleCommand::Run(RunArgs {
             transform: mut args,
@@ -613,14 +626,25 @@ fn run_debundle_cli(
             let run_output = args.run_output()?;
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
+            let (ownership_subset, ownership_subset_input) = if let Some(path) = &ownership_subset {
+                let (subset, bytes) =
+                    lowering::ownership_subset::OwnershipSubset::read_with_bytes(path)?;
+                (
+                    Some(subset),
+                    Some(pipeline::OwnershipSubsetInput {
+                        path: path.clone(),
+                        bytes,
+                    }),
+                )
+            } else {
+                (None, None)
+            };
             command_diagnostics::run(stderr, |diagnostics| {
                 run_transform_with_projection(
                     &cli,
                     TransformRunOptions {
-                        ownership_subset: ownership_subset
-                            .as_deref()
-                            .map(lowering::ownership_subset::OwnershipSubset::read)
-                            .transpose()?,
+                        ownership_subset,
+                        ownership_subset_input,
                         output: run_output,
                         artifacts,
                         graph_reports: if graphs {
@@ -704,7 +728,7 @@ fn run_debundle_cli(
                     .downcast_ref::<command_output::FailedOperationOutput>()
                     .is_none()
         });
-    if operation_completed && writes_with_graph {
+    if operation_completed && edits_with_graph {
         return command_diagnostics::finish(
             result,
             command_diagnostics::write_diagnostic(

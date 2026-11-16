@@ -271,6 +271,7 @@ pub fn graph_of(
             .filter(|module| module.kind != ModuleDestinationKind::Entry)
             .map(|module| module.path.clone())
             .collect(),
+        ownership_subset: None,
         program_graph: "../program_graph.json.gz".into(),
         nodes,
         purity_causes: Vec::new(),
