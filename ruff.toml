@@ -15,11 +15,11 @@ target-version = "py314"
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [  # keep-sorted start
     "cluster/docs/inference/model_comparison",
+    "devinfra/lint/x/py_detectors/rules/**/bad/**",
+    "devinfra/lint/x/py_detectors/rules/**/ok/**",
     "props/specimens/*/*/code",
     "props/testing/fixtures/testdata",
     "tana/testdata",
-    "x/py_detectors/rules/**/bad/**",
-    "x/py_detectors/rules/**/ok/**",
 ]  # keep-sorted end
 
 [format]

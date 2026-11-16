@@ -9,11 +9,11 @@
 *.zsh rules-lint-ignored=true
 
 # Test data files - inputs to tests, not source code
-x/py_detectors/rules/**/bad/** rules-lint-ignored=true
-x/py_detectors/rules/**/ok/** rules-lint-ignored=true
 props/testing/fixtures/testdata/** rules-lint-ignored=true
 tana/testdata/** rules-lint-ignored=true
 att_gateway/testdata/** rules-lint-ignored=true
+devinfra/lint/x/py_detectors/rules/**/bad/** rules-lint-ignored=true
+devinfra/lint/x/py_detectors/rules/**/ok/** rules-lint-ignored=true
 
 # Generated lockfiles - large, not useful to diff
 Cargo.Bazel.lock linguist-generated=true
