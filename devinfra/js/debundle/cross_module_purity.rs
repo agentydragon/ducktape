@@ -599,12 +599,12 @@ impl<'a> ModulePurityFacts<'a> {
         let set_iterable_proof = structural.set_iterable_shapes;
         let local_class_construction_proof = structural.local_class_shapes;
         let prepared_sync_index =
-            crate::facts::sync_effects::interpreter::prepare_synchronous_call_index_with_source_facts(
+            crate::facts::sync_effects::interpreter::synchronous_calls::prepare_synchronous_call_index_with_source_facts(
                 &views,
                 &value_flow,
                 inputs,
                 &plain_array_bindings,
-                crate::facts::sync_effects::interpreter::PreparedSyncShapeInputs {
+                crate::facts::sync_effects::interpreter::synchronous_calls::PreparedSyncShapeInputs {
                     local_class_construction: &local_class_construction_proof,
                     set_iterable_shapes: set_iterable_proof,
                     stable_array_spread_shapes,

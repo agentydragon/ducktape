@@ -14,8 +14,9 @@ use crate::facts::abstract_domain::value::{Kind, Value};
 pub(crate) struct HeapContentProofs<'a> {
     pub local_class: &'a LocalClassHeapProof,
     pub set_iterable: &'a SetIterableProof,
-    pub fresh_freeze: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
-    pub native_reads: &'a sync_effects::interpreter::PreparedSynchronousCallIndex,
+    pub fresh_freeze: &'a sync_effects::interpreter::synchronous_calls::FreshRecordFreezeHeapProof,
+    pub native_reads:
+        &'a sync_effects::interpreter::synchronous_calls::PreparedSynchronousCallIndex,
     pub native_facts: &'a ValidatedNativeOperationFacts,
     pub shadowed: &'a BTreeSet<&'static str>,
 }
@@ -223,8 +224,10 @@ struct ArrayContentCollector<'a> {
     statement_owner: source_identity::SourceUnitOrdinal,
     local_class_heap_proof: &'a LocalClassHeapProof,
     set_iterable_proof: &'a SetIterableProof,
-    fresh_freeze_proof: &'a sync_effects::interpreter::FreshRecordFreezeHeapProof,
-    native_reads: &'a super::sync_effects::interpreter::PreparedSynchronousCallIndex,
+    fresh_freeze_proof:
+        &'a sync_effects::interpreter::synchronous_calls::FreshRecordFreezeHeapProof,
+    native_reads:
+        &'a super::sync_effects::interpreter::synchronous_calls::PreparedSynchronousCallIndex,
     native_facts: &'a ValidatedNativeOperationFacts,
     shadowed: &'a BTreeSet<&'static str>,
     array_reachability: &'a CandidateObjectIndex<'a>,
