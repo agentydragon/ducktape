@@ -1351,33 +1351,16 @@ pub fn resolve_imported_callable_summaries(
         prepare(&BundleGlobalNames::default())?;
     let mut bundle_globals = BundleGlobalNames::default();
     if predefined_globals != spec::PredefinedGlobals::Unknown {
-        bundle_globals.fresh_collections = true;
-        for module in prepared.values() {
-            let candidates = module.bundle_global_candidates();
-            bundle_globals.names.extend(candidates.names);
-            bundle_globals.registered_symbols |= candidates.registered_symbols;
-        }
-        loop {
-            let mut next = bundle_globals.clone();
-            next.no_accessor_install_callables.clear();
-            for (module, facts) in &prepared {
-                let survivors = facts.bundle_global_survivors(
-                    &bundle_globals,
+        bundle_globals = crate::facts::sync_effects::execution_index::bundle_globals::resolve(
+            prepared.iter().map(|(module, facts)| {
+                (
+                    facts,
                     no_accessor_install_callables
                         .get(*module)
-                        .map_or(&[], Vec::as_slice),
-                );
-                next.names.retain(|name| survivors.names.contains(name));
-                next.registered_symbols &= survivors.registered_symbols;
-                next.fresh_collections &= survivors.fresh_collections;
-                next.no_accessor_install_callables
-                    .extend(survivors.no_accessor_install_callables);
-            }
-            if next == bundle_globals {
-                break;
-            }
-            bundle_globals = next;
-        }
+                        .map_or(&[][..], Vec::as_slice),
+                )
+            }),
+        );
         if bundle_globals != BundleGlobalNames::default() {
             (
                 prepared,
