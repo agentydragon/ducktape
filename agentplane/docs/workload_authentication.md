@@ -250,8 +250,8 @@ they do not authenticate calls to Agentplane receivers.
 The proxy's `forward` and services' `rpc` settings use the shared
 [authentication allowlist](../identity/auth/README.md); `forward` names `spiffe` alone. Each
 first-party service configures its own TLS admission for workload and exact service SVIDs.
-Kubernetes bearers grant no receiver access. Some settings decoders retain ignored legacy keys
-until their manifest omission rolls out. Protected SVID calls reject Authorization metadata;
+Kubernetes bearers grant no receiver access. Shared listeners accept only SPIFFE authentication,
+and receiver TokenReview RBAC is absent. Protected SVID calls reject Authorization metadata;
 operator OIDC and MCP OAuth remain their separate edge authority. Authentication supplies no
 backend-only, operator or delegation grant; those remain explicit per-method decisions.
 
@@ -266,6 +266,11 @@ SVID and typed Identity delegation, while the ingress holds the separate LiteLLM
 Notification's signed external webhook endpoint remains a separate HTTP protocol.
 
 ## Service authorization and attribution
+
+The operator selected one first-party service authentication mode on 2026-11-14. Per-target
+bearer/TLS modes would preserve the TokenReview dependency and allow different credential contracts
+on otherwise identical service hops. Role service SVIDs remove that dependency without moving
+operator OIDC, external MCP OAuth or Kubernetes API authority into the service certificate.
 
 Workload SVID authentication yields the record's Identity and, when proven, Pod provenance.
 Service SVID authentication yields a service principal with no Identity or Pod proof. Kubernetes

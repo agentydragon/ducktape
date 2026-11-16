@@ -185,13 +185,13 @@ its old ordering does not give it precedence over the selected tracks.
 The operator released these tracks; Codex workers build them. Each node owns its gates; the Go
 reorganization is [section 17](#17-two-binaries-and-the-go-layout). States as of 2026-11-16 00:35 UTC.
 
-| Track                                  | Operator release (UTC) | Node                             | State                                                                                                                                                                                                                                                                                                                   |
-| -------------------------------------- | ---------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Retire bearer admission (auth stage 5) | 2026-11-15             | `PRIVILEGED_BACKEND_AUTH_DESIGN` | Receiver code merged for every receiver; retired keys and decoders removed for Policy, Gateway, the sampler and History (#16757, #16766); receiver TokenReview RBAC grants removed (#16784). LLM ingress and Notifications still decode their ignored legacy keys, and the shared TokenReview code keeps test consumers |
-| Runtime proxy caller audit             | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT`     | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released                                                                                                                                                                                                       |
+| Track                      | Operator release (UTC) | Node                         | State                                                                                                             |
+| -------------------------- | ---------------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Runtime proxy caller audit | 2026-11-15             | `RUNTIME_PROXY_CALLER_AUDIT` | Proposal merged (#16643); its dispositions await operator review, and the migrations it proposes are not released |
 
 Finished and deleted since the 2026-11-14 ledger: the pre-cutover leftovers, any-replica Gateway
-routing and its cleanup (section 12), auth stages 1 to 4, one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
+routing and its cleanup (section 12), the service-SVID cutover including bearer admission and TokenReview RBAC retirement
+([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)), one TLS listener per service (#16631, #16632, #16661), the Runtime proxy and Executor move into Environments (#16723, #16760, #16768, #16775), the Sessions binary directory (#16785), the stage 2 Go layout fixes and runner-era Go names, the coherence sweep, the app and CLI local extractions (#16717, #16720, #16725),
 EnvironmentService on every Environments replica (contract in the
 [Environments specification](../environments/SPEC.md)), central code-mode tools as Actions
 (#16418, #16422, #16423) and the dead Dispatcher command states (#16438, then the proto values
@@ -202,7 +202,6 @@ removed). Not released:
 
 ```mermaid
 flowchart LR
-    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, bearer admission retires]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
 ```
 
@@ -259,7 +258,7 @@ The workload Identity source cutover and Sandbox live acceptance are complete; s
 live in the owning SPECs and deployed Sandbox evidence is in the
 [rollout record](../docs/sandbox_identity_cutover_2026_11_12/README.md). Session execution and
 inbox ownership use recorded Identity, MCP Connections delegate their exact live Identity, and
-component ServiceAccounts retain their authentication and provenance roles. Remove the completed
+components authenticate with role service SVIDs and retain separate historical account provenance. Remove the completed
 cutover nodes from the dispatch map. Remaining independent work is limited to the explicitly named
 gates below; the standing-workload proxy decision-log observation remains open as deployment evidence,
 not as a claim that rollout is currently blocked.
@@ -1666,8 +1665,8 @@ store ([D4](architecture_overview.md#four-directions), O4).
 environments off Kubernetes are wanted as a product capability, O4 only on measured remaining test
 cost. **Question for review:** is the payoff lighter tests (O1 and O2), or environments off
 Kubernetes as a product capability (O3), which changes the
-[principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer;
-`PRIVILEGED_BACKEND_AUTH_DESIGN` remains independently decidable. The selected Gateway replica
+[principles](../docs/principles.md)' Kubernetes baseline? Implementation waits on the answer.
+The service-SVID authentication cutover is complete and does not decide this direction. The selected Gateway replica
 contract is the [replica ownership decision](../session_dispatcher/README.md#replica-ownership-decision); it does not decide the broader Kubernetes direction.
 
 ### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
@@ -3317,8 +3316,8 @@ Sandbox deployment is recorded in the [live evidence](../docs/sandbox_identity_c
 The target is one identity source with three credential forms (operator decision, 2026-11-10;
 [plan](identity_and_kubernetes_accounts.md#target-one-identity-three-credential-forms)):
 SVIDs over mTLS, the MCP edge's OAuth tokens, and Kubernetes' own authentication toward the Kubernetes
-API alone. The app rejects Kubernetes bearers; component TokenReview is being replaced by service SVIDs under
-`PRIVILEGED_BACKEND_AUTH_DESIGN` (operator, 2026-11-14).
+API alone. Agentplane receivers reject Kubernetes bearers; components authenticate with service SVIDs
+([authentication contract](../docs/workload_authentication.md#service-authorization-and-attribution)).
 
 **Remaining work.** The standing-workload proxy decision-log observation remains open.
 Cross-Identity inbox target semantics and Identity `CreateSession` remain separate items. Identity inventory reads work, and explicit `resume`
@@ -3584,15 +3583,11 @@ design nodes stay in their sections. Not cleanups: fakes kept to inject faults t
 cannot produce (named at the fake); the delta settlement flag (operator, 2026-10-13 PDT);
 upstream-gated tombstones with a verifiable condition in code (`keepingOffset` in `electric_sync.tsx`
 against `@electric-sql/client` 1.5.28, the jsdom pragma in `markdown.test.tsx`). Doing one still
-needs the gate observed on devel and every reader found. The authentication surface left from the
-projected-ServiceAccount-token era is one burn-down split across the three subsections' "Authentication"
-headings: what each piece serves today, what it collapses into once an Identity SVID is the only
-workload credential, and the gate. Platform component TokenReview retires under `PRIVILEGED_BACKEND_AUTH_DESIGN` (operator,
-2026-11-14), preserving method-specific component authority with exact service SVID admission.
+needs the gate observed on devel and every reader found. The service-SVID authentication cutover is complete. Method-specific component authority uses exact
+service SVID admission; Kubernetes API credentials and historical account attribution remain separate.
 
 ```mermaid
 flowchart LR
-    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: one service authentication mode]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names follow the two-binary split]
     PROTO_PACKAGE_ALIGNMENT[Future: align protobuf packages with their directories]
@@ -3640,48 +3635,6 @@ Dispatchable now. "Unscheduled" is the operator's priority statement, not a gate
   and asserting the provider accepts the continuation and keeps its reasoning (empty
   `input_transformations` on both APIs). Covers the Responses and Anthropic Messages paths.
 
-#### `PRIVILEGED_BACKEND_AUTH_DESIGN` — one service authentication mode
-
-**Decided (operator, 2026-11-14: "One auth mode can fire off"), option 2; dispatched
-2026-11-14.** Every first-party service-to-service call authenticates its caller by a service SVID
-over mTLS, with verified server TLS on every hop. The `kubernetes_bearer` listener mode and
-Agentplane's TokenReview code go; Kubernetes authentication stays only toward the Kubernetes API.
-Operators keep app OIDC and MCP clients the edge's OAuth tokens. A component acting for an Identity
-is proven by its own certificate plus the typed delegation envelope
-([delegated authorization](../docs/delegated_authorization.md)); the actor's identity never becomes
-the effective caller's grant. Service SVIDs use a SPIFFE path that resolvers never map to an agent
-`Identity`. Services read certificate and trust-bundle files, so a caller needs no Kubernetes API to
-authenticate; in the cluster, cert-manager issues them from the workload CA. This supersedes the
-2026-11-10 decision to keep backend ServiceAccount tokens, option 1 (TokenReview plus pinned server
-TLS) and option 3 (per-target modes).
-
-Stages, each a separate set of PRs that is safe to roll and states its rollback:
-
-1. Inventory every component → receiver/method path (token source, audience, admitted accounts,
-   transport, direct or delegated), and reconcile [gRPC services](../docs/grpc_services.md) and
-   [workload authentication](../docs/workload_authentication.md) with this decision.
-2. Issue service SVIDs with client and server usage and mount them with the trust bundle, before any
-   code relies on them.
-3. Receivers also admit their component callers by exact service SPIFFE ID in the existing component
-   allowlists, while bearers still work.
-4. Callers present service SVIDs once their receivers' images are pinned; settings land in code
-   before manifests set them.
-5. Bearer admission, TokenReview, projected token audiences and the `tokenreviews` RBAC go after
-   every caller's image is pinned; RBAC removals last.
-
-**Roll gates:** certificates exist before code relies on them; receiver images admitting SVIDs are
-pinned before callers switch; code accepting settings is pinned before manifests set them. No
-fallback from a failed or absent certificate to a bearer.
-
-**Exit:** no Agentplane receiver admits a Kubernetes bearer; tests cover peer and actor
-verification, rotation, caller denial and delegation without a bearer fallback.
-
-**State, 2026-11-15 11:30 UTC.** Stages 1 to 4 are complete: every first-party caller presents its
-service SVID, verified on staging (#16620, #16624). Stage 5 was released for implementation on
-2026-11-15 and is in flight; the [cutover readiness plan](service_svid_stage5_readiness.md) holds
-the per-receiver sequence and progress. App OIDC, MCP OAuth and Kubernetes API credentials keep
-their own contracts.
-
 #### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
 
 **Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
@@ -3725,26 +3678,6 @@ a specific stopping condition.
 - **The Session-opening facade's rollback window:** the legacy Huma status fallback and wire-format
   workarounds in the browser's Session-opening path go once old app replicas, cached browser bundles
   and the supported rollback window are gone. Source: [generated HTTP facades § Open](grpc_http_facade.md#open).
-
-#### Authentication: collapses with a named gate
-
-What each piece serves today, and which behavior still needs a specific gate. No first-party
-caller presents a Kubernetes bearer any more, and no service-token projection remains (#16650).
-Receiver bearer admission and the listener audiences retire one receiver at a time under stage 5
-of `PRIVILEGED_BACKEND_AUTH_DESIGN`, sequenced in the
-[cutover readiness plan](service_svid_stage5_readiness.md).
-
-- **EnvironmentService:** workload SVIDs resolve through `AnySubject` for exact Identity self-read
-  and Identity resume; component roles and typed service delegation have separate service-SVID
-  grants. Automatic Identity wake uses the current target `resumePolicy.allowOwnServiceAccount`
-  and is not an environment-rule operation.
-- **Workload and component boundaries:** issued workload credentials name Identities, and retained
-  ServiceAccount-subject records fail closed. Replace direct component TokenReview; keep component
-  reader/management/writer/waker allowlists with service SVIDs, Kubernetes-account impersonation and historical
-  actor/writer/sender attribution.
-- **Audience naming:** `agentplane-egress` (`WORKLOAD_TOKEN_AUDIENCE`) has no presenting caller;
-  it leaves with the Actions and LLM ingress listener settings in stage 5 rather than being renamed
-  (`WORKLOAD_AUDIENCE_RENAME` stays frozen).
 
 #### `K3S_TEST_GUEST_RETIRE` — delete the k3s test guest
 
@@ -3871,7 +3804,7 @@ evidence and line-level steps for every track below; its stages are ordered by c
 | 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                                                            |
 | 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                           |
 | 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `DISPATCHER_PERSISTENCE_MODEL_DESIGN`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
-| 6. Deferred                     | `PRIVILEGED_BACKEND_AUTH_DESIGN` (moves no files), `PROTO_PACKAGE_ALIGNMENT`                                                     |
+| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                        |
 
 EnvironmentService serves from every Environments replica
 ([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
@@ -3881,7 +3814,6 @@ the live Identity landed in #16373.
 
 ```mermaid
 flowchart LR
-    PRIVILEGED_BACKEND_AUTH_DESIGN[In flight: stage 5, section 15]
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
     GATEWAY_ERA_NAMES[Unscheduled: Gateway-era Go names, Go plan stage 2]

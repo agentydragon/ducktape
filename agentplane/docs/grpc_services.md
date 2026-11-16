@@ -56,8 +56,7 @@ follows it; code that differs converges on it.
 - First-party backend calls present a service SVID over mutual TLS, verifying the receiver's
   workload-CA chain, exact service URI and `serverAuth` usage. Role-specific service identities
   authenticate the component; exact method grants authorize it. App OIDC and external MCP OAuth
-  retain their separate edge authority. Receivers reject Kubernetes bearers; some still decode
-  ignored legacy settings until manifest omission rolls out. Invalid configured TLS fails without
+  retain their separate edge authority. Receivers reject Kubernetes bearers. Invalid configured TLS fails without
   downgrading.
 - Sandbox workload listeners authenticate the Runtime SVID with the shared
   `peertls` server credentials. `identity/auth.SVIDResolver` resolves

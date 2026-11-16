@@ -45,10 +45,6 @@ improvements alongside. Component TODOs and research plans do not set a competin
 - [Identities, workload authentication and Kubernetes accounts](identity_and_kubernetes_accounts.md) —
   the target (one `Identity`, three credential forms), identity-lifetime rules and open questions;
   the Sandbox switch is accepted on staging, and question 11 is settled
-- [Service SVID authentication inventory](service_svid_authentication.md) — the stage 1
-  caller-to-receiver baseline and the target service authentication contract
-- [Service SVID cutover readiness](service_svid_stage5_readiness.md) — stage 5's per-receiver bearer
-  retirement sequence and progress
 - [The `environment` rule type](environment_rules.md) — proposed schema, evaluation points and
   worked examples for explicit environment lifecycle grants to Identities, with the operator's
   remaining questions
