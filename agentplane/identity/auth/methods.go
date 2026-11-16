@@ -36,7 +36,6 @@ type Rule struct {
 	resolver          *Resolver
 	subjectResolver   SubjectResolver
 	accounts          sets.Set[Account]
-	delegation        *delegationPolicy
 	serviceCallers    map[string]struct{}
 	serviceDelegation *serviceDelegationPolicy
 }
@@ -52,8 +51,7 @@ func Accounts(resolver *Resolver, accounts []Account) Rule {
 
 // AnySubject admits any workload this resolver authenticates, a ServiceAccount or an Identity
 // subject. A ServiceAccount caller is admitted with a Principal; an Identity caller only as an
-// IdentityAdmission, so the handler must read Admitted. Only a TokenReview Resolver also supports
-// delegated calls.
+// IdentityAdmission, so the handler must read Admitted.
 func AnySubject(subjectResolver SubjectResolver) Rule {
 	resolver, isTokenReview := subjectResolver.(*Resolver)
 	if isTokenReview && resolver == nil {
@@ -90,35 +88,6 @@ func ReviewedServiceAccountOrIdentity(resolver *Resolver) Rule {
 // admitting its callers. A method it does not list is refused before its bearer is read, so a new RPC is closed
 // until its Rule is written.
 type Methods map[string]Rule
-
-// WithDelegation returns a copy of m that admits delegation only for the named full RPC methods.
-// Every method must already have an authenticated direct Rule; delegations preserve that direct mode.
-// identities is nil for a receiver that resolves no Identity (see AllowDelegationFrom).
-func (m Methods) WithDelegation(
-	methodNames []string,
-	delegators []Delegator,
-	identities IdentityUIDReader,
-) (Methods, error) {
-	methods := make(Methods, len(m))
-	maps.Copy(methods, m)
-	seen := make(map[string]struct{}, len(methodNames))
-	for _, method := range methodNames {
-		if _, duplicate := seen[method]; duplicate {
-			return nil, fmt.Errorf("delegated method %q is repeated", method)
-		}
-		seen[method] = struct{}{}
-		rule, ok := methods[method]
-		if !ok {
-			return nil, fmt.Errorf("delegated method %q is not served", method)
-		}
-		rule, err := rule.AllowDelegationFrom(delegators, identities)
-		if err != nil {
-			return nil, fmt.Errorf("delegated method %q: %w", method, err)
-		}
-		methods[method] = rule
-	}
-	return methods, nil
-}
 
 // WithServiceCallers adds exact direct service peers to named methods only.
 func (m Methods) WithServiceCallers(methodNames []string, callers []string) (Methods, error) {
@@ -207,10 +176,6 @@ func sameAdmission(a, b Admission) bool {
 			return false
 		}
 		return first.Pod == nil || *first.Pod == *second.Pod
-	case DelegatedIdentityAdmission:
-		second, ok := b.(DelegatedIdentityAdmission)
-		return ok && first.Actor == second.Actor && first.EffectiveCaller == second.EffectiveCaller &&
-			proto.Equal(first.Provenance, second.Provenance)
 	case ServiceAdmission:
 		second, ok := b.(ServiceAdmission)
 		return ok && first == second
@@ -328,13 +293,7 @@ func (m Methods) admit(ctx context.Context, method string, admissionTimeout time
 	authorization := md.Get("authorization")
 	delegations := md.Get(DelegationMetadataKey)
 	if len(delegations) > 0 || delegatedAttempt(authorization) {
-		if rule.delegation == nil {
-			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-		}
-		if rule.resolver.usesSVID(resolveContext) {
-			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-		}
-		return rule.delegation.admit(ctx, resolveContext, authorization, delegations)
+		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
 	}
 	var principal Principal
 	var err error

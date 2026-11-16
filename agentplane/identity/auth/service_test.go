@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"google.golang.org/grpc"
@@ -22,6 +24,10 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type unusedSubjectResolver struct{ calls atomic.Int32 }
@@ -294,9 +300,6 @@ func TestServicesDelegationKeepsItsOwnGrantsAndLiveIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rule.AllowDelegationFrom([]auth.Delegator{{Account: auth.Account{Namespace: "ns", Name: "actor"}, IdentityCallers: true}}, identities); err == nil {
-		t.Fatal("service rule acquired legacy bearer delegation")
-	}
 	rule, err = rule.AllowServiceDelegationFrom([]auth.ServiceDelegator{{SPIFFEID: peertls.MCPEdgeURI, ConnectionProvenance: true}}, identities)
 	if err != nil {
 		t.Fatal(err)
@@ -338,5 +341,126 @@ func TestServicesDelegationKeepsItsOwnGrantsAndLiveIdentity(t *testing.T) {
 	liveUID = "replacement-uid"
 	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("replaced delegated Identity: %v", err)
+	}
+}
+
+func TestServiceDelegationRequiresExplicitServedMethodsAndIdentityReader(t *testing.T) {
+	rule, err := auth.Services(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	method := healthpb.Health_Check_FullMethodName
+	methods := auth.Methods{method: rule}
+	actors := []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}
+	reader := identityUIDReaderFunc(func(context.Context, string) (string, bool, error) { return "test-uid", true, nil })
+	for _, tc := range []struct {
+		name   string
+		names  []string
+		actors []auth.ServiceDelegator
+		reader auth.IdentityUIDReader
+	}{
+		{"duplicate method", []string{method, method}, actors, reader},
+		{"unserved method", []string{healthpb.Health_Watch_FullMethodName}, actors, reader},
+		{"missing actors", []string{method}, nil, reader},
+		{"missing Identity reader", []string{method}, actors, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := methods.WithServiceDelegation(tc.names, tc.actors, tc.reader); err == nil {
+				t.Fatal("invalid service delegation grant accepted")
+			}
+		})
+	}
+}
+
+func TestServiceDelegationTracksTheLiveIdentityWithoutAnEnvironment(t *testing.T) {
+	scheme := runtime.NewScheme()
+	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme} {
+		if err := add(scheme); err != nil {
+			t.Fatal(err)
+		}
+	}
+	objects, err := client.New(api.Config, client.Options{Scheme: scheme})
+	if err != nil {
+		t.Fatal(err)
+	}
+	namespace := "test-service-delegation-policies"
+	if err := objects.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}); err != nil {
+		t.Fatal(err)
+	}
+	identity := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "test-delegated-identity"}, Spec: policyapi.IdentitySpec{Description: "test delegated identity"}}
+	if err := objects.Create(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	identities, err := auth.KubernetesIdentityUIDs(objects, namespace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rule, err := auth.Services(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actors := []auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}}
+	rule, err = rule.AllowServiceDelegationFrom(actors, identities)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := &delegationpb.Delegation{
+		EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}},
+		Provenance:      &delegationpb.Delegation_Session{Session: &delegationpb.SessionProvenance{SessionId: "a57a540c-ed82-4b85-b914-73746dba4bad"}},
+	}
+	contextFor := func(actor string, envelope *delegationpb.Delegation) context.Context {
+		encoded, err := auth.MarshalDelegation(envelope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return metadata.NewIncomingContext(servicePeerContext(t, actor), metadata.Pairs(auth.DelegationMetadataKey, string(encoded)))
+	}
+	method := healthpb.Health_Watch_FullMethodName
+	methods := auth.Methods{method: rule}
+	ctx := contextFor(peertls.ActionsURI, envelope)
+	admitted, err := methods.AdmitContext(ctx, method, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := auth.Admitted(admitted)
+	delegated, ok := proof.(auth.DelegatedServiceIdentityAdmission)
+	if err != nil || !ok || delegated.Actor.SPIFFEID != peertls.ActionsURI || delegated.EffectiveCaller != (auth.Identity{Name: identity.Name, UID: string(identity.UID)}) {
+		t.Fatalf("service delegation admission = %#v, %v", proof, err)
+	}
+	if _, err := auth.EffectiveCaller(admitted); status.Code(err) != codes.Unauthenticated {
+		t.Fatalf("delegated Identity became a ServiceAccount: %v", err)
+	}
+	if _, err := methods.AdmitContext(contextFor(peertls.NotificationsURI, envelope), method, time.Second); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("untrusted actor = %v", err)
+	}
+	missing := &delegationpb.Delegation{EffectiveCaller: &delegationpb.Delegation_Identity{Identity: &identitypb.Identity{Name: "test-missing-identity", Uid: "test-absent-uid"}}, Provenance: envelope.Provenance}
+	if _, err := methods.AdmitContext(contextFor(peertls.ActionsURI, missing), method, time.Second); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("missing Identity = %v", err)
+	}
+	if err := objects.Delete(t.Context(), identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("deleted Identity revalidation = %v", err)
+	}
+	successor := &policyapi.Identity{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: identity.Name}, Spec: identity.Spec}
+	if err := objects.Create(t.Context(), successor); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.RevalidateStream(admitted); status.Code(err) != codes.PermissionDenied {
+		t.Fatalf("same-named successor admitted with old UID = %v", err)
+	}
+	envelope.GetIdentity().Uid = string(successor.UID)
+	if _, err := methods.AdmitContext(contextFor(peertls.ActionsURI, envelope), method, time.Second); err != nil {
+		t.Fatalf("successor Identity = %v", err)
+	}
+	unavailable, err := rule.AllowServiceDelegationFrom(actors, identityUIDReaderFunc(func(context.Context, string) (string, bool, error) {
+		return "", false, errors.New("test Identity reader unavailable")
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unavailable.AdmitContext(ctx, time.Second); status.Code(err) != codes.Unavailable {
+		t.Fatalf("unreadable Identity = %v", err)
 	}
 }

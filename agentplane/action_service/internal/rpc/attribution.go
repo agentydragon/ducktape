@@ -5,7 +5,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
-	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	"github.com/google/uuid"
 )
 
@@ -17,15 +16,6 @@ func recordedDelegation(proof auth.Admission) (*store.DelegationAttribution, err
 	switch proof := proof.(type) {
 	case auth.DelegatedServiceIdentityAdmission:
 		attribution.Actor = action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: proof.Actor.SPIFFEID}}
-		envelope = proof.Provenance
-	case auth.DelegatedIdentityAdmission:
-		attribution.Actor = action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceAccount{ServiceAccount: &action_servicepb.DelegatingServiceAccount{
-			Identity: &identitypb.ServiceAccountIdentity{
-				Account: &identitypb.ServiceAccount{Namespace: proof.Actor.Account.Namespace, Name: proof.Actor.Account.Name},
-				Uid:     proof.Actor.ServiceAccountUID,
-			},
-			PodName: proof.Actor.PodName, PodUid: proof.Actor.PodUID,
-		}}}
 		envelope = proof.Provenance
 	default:
 		return nil, unauthenticated

@@ -145,20 +145,6 @@ func (r *Resolver) usesSVID(ctx context.Context) bool {
 	return len(info.State.PeerCertificates) > 0
 }
 
-// requireBearerSelection applies configured listener policy to a bearer that is
-// verified outside Resolve, such as a delegated actor token. An unconfigured
-// resolver retains its existing TokenReview contract.
-func (r *Resolver) requireBearerSelection(ctx context.Context) error {
-	if r.listenerAuth == nil {
-		return nil
-	}
-	mode, err := r.listenerAuth.Select(r.usesSVID(ctx), true)
-	if err != nil || mode != listener.KubernetesBearer {
-		return status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	return nil
-}
-
 // resolveSVID is the ServiceAccount-only path for Rules that still admit TokenReview principals.
 // An SVID subject is an Identity and requires an Identity-admitting Rule.
 func (r *Resolver) resolveSVID(ctx context.Context) (Principal, bool, error) {

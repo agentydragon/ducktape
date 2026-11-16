@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -28,11 +27,10 @@ const (
 	DelegationMetadataKey = "agentplane-delegation-bin"
 	// DelegatedScheme is the authorization scheme of a delegated call: the actor's own
 	// destination-audience token, with the effective caller in the envelope.
-	DelegatedScheme       = "Agentplane-Delegated"
-	delegatedScheme       = DelegatedScheme + " "
-	maxDelegationBytes    = 4096
-	maxDelegatedTokenSize = 16384
-	maxIdentityUID        = 256
+	DelegatedScheme    = "Agentplane-Delegated"
+	delegatedScheme    = DelegatedScheme + " "
+	maxDelegationBytes = 4096
+	maxIdentityUID     = 256
 )
 
 var ErrInvalidDelegation = errors.New("invalid delegation envelope")
@@ -69,70 +67,6 @@ func (r kubernetesIdentityUIDs) GetIdentityUID(ctx context.Context, name string)
 		return "", false, nil
 	}
 	return string(identity.UID), true, nil
-}
-
-// Delegator grants one actor permission to assert Identities for the method whose Rule it is
-// attached to. It does not grant direct caller or privileged backend authority.
-type Delegator struct {
-	Account Account
-	// IdentityCallers lets the actor assert any Identity in the receiver's policy namespace. It is a
-	// grant of its own: trust to assert ServiceAccounts never implies it.
-	IdentityCallers bool
-	// ConnectionProvenance admits the MCP edge's typed durable Connection/grant attribution on this method.
-	// It is deliberately opt-in; Action and Session profiles do not imply Connection authority.
-	ConnectionProvenance bool
-}
-
-type delegatorGrant struct {
-	connectionProvenance bool
-}
-
-type delegationPolicy struct {
-	resolver   *Resolver
-	delegators map[Account]delegatorGrant
-	// identities is nil on a method that admits no direct Identity caller, or a receiver that
-	// resolves none.
-	identities IdentityUIDReader
-}
-
-// AllowDelegationFrom adds a separately authenticated delegated mode while preserving this Rule's
-// direct mode. The Rule must still be placed in Methods under each full RPC method that permits it.
-// identities, nil when the receiver resolves no Identity, reads the Identities a delegator granted
-// IdentityCallers may assert. A Rule admitting no direct Identity caller never admits a delegated one.
-func (r Rule) AllowDelegationFrom(delegators []Delegator, identities IdentityUIDReader) (Rule, error) {
-	if r.kind == ruleRefuse || r.kind == rulePublic || r.resolver == nil {
-		return Rule{}, fmt.Errorf("delegation requires an authenticated direct rule")
-	}
-	if len(delegators) == 0 {
-		return Rule{}, fmt.Errorf("delegators are required")
-	}
-	configured := make(map[Account]delegatorGrant, len(delegators))
-	for _, delegator := range delegators {
-		if !validAccount(delegator.Account) {
-			return Rule{}, fmt.Errorf("delegator must be a valid ServiceAccount")
-		}
-		if _, ok := r.resolver.namespaces[delegator.Account.Namespace]; !ok {
-			return Rule{}, fmt.Errorf("delegator namespace is outside the TokenReview resolver policy")
-		}
-		if _, duplicate := configured[delegator.Account]; duplicate {
-			return Rule{}, fmt.Errorf("delegator ServiceAccount is repeated")
-		}
-		if !delegator.IdentityCallers {
-			return Rule{}, fmt.Errorf("delegator is not granted Identity callers")
-		}
-		if identities == nil {
-			return Rule{}, fmt.Errorf("delegator may assert Identities, but the receiver resolves none")
-		}
-		configured[delegator.Account] = delegatorGrant{
-			connectionProvenance: delegator.ConnectionProvenance,
-		}
-	}
-	policy := &delegationPolicy{resolver: r.resolver, delegators: configured}
-	if r.admitsIdentityCallers() {
-		policy.identities = identities
-	}
-	r.delegation = policy
-	return r, nil
 }
 
 // admitsIdentityCallers is whether the Rule's direct mode admits a workload credential naming an
@@ -228,11 +162,6 @@ func decodeDelegationHeader(value string) string {
 	return string(decoded)
 }
 
-func validAccount(account Account) bool {
-	return len(validation.IsDNS1123Label(account.Namespace)) == 0 &&
-		len(validation.IsDNS1123Subdomain(account.Name)) == 0
-}
-
 type admissionKey struct{}
 
 // Admission is the typed result of a method's direct or delegated authentication mode.
@@ -246,18 +175,6 @@ type DirectAdmission struct {
 }
 
 func (DirectAdmission) isAdmission() {}
-
-// DelegatedIdentityAdmission is a trusted actor's call on behalf of an Identity. The actor keeps
-// its Pod-bound proof; the Identity is the exact live incarnation the actor named. Only a method
-// whose direct mode admits Identity callers admits one, and EffectiveCaller refuses it, so the
-// handler must read Admitted and authorize the Identity as it would a direct Identity caller.
-type DelegatedIdentityAdmission struct {
-	Actor           Principal
-	EffectiveCaller Identity
-	Provenance      *delegationpb.Delegation
-}
-
-func (DelegatedIdentityAdmission) isAdmission() {}
 
 // IdentityAdmission is a direct caller whose workload credential names an Identity. Only an
 // AnySubject method admits one, and it is never inserted into the legacy Caller context.
@@ -300,64 +217,6 @@ func delegatedAttempt(authorization []string) bool {
 	return slices.ContainsFunc(authorization, func(value string) bool {
 		return strings.HasPrefix(value, delegatedScheme)
 	})
-}
-
-func (p *delegationPolicy) admit(ctx, reviewContext context.Context, authorization, envelopes []string) (context.Context, error) {
-	if len(authorization) != 1 || !strings.HasPrefix(authorization[0], delegatedScheme) || len(envelopes) != 1 {
-		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	value := authorization[0][len(delegatedScheme):]
-	if value == "" || strings.TrimSpace(value) != value || strings.ContainsAny(value, " \t\r\n") || len(value) > maxDelegatedTokenSize {
-		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	encoded := []byte(envelopes[0])
-	if len(encoded) == 0 || len(encoded) > maxDelegationBytes {
-		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	envelope := new(delegationpb.Delegation)
-	if err := proto.Unmarshal(encoded, envelope); err != nil || !validDelegation(envelope) {
-		return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-	}
-	if err := p.resolver.requireBearerSelection(reviewContext); err != nil {
-		return nil, err
-	}
-
-	actor, err := p.resolver.ResolveToken(reviewContext, value)
-	if err != nil {
-		switch {
-		case errors.Is(err, ErrInvalidBearer):
-			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-		case reviewContext.Err() != nil:
-			return nil, status.FromContextError(reviewContext.Err()).Err()
-		case errors.Is(err, ErrUnavailable):
-			return nil, status.Error(codes.Unavailable, ErrUnavailable.Error())
-		default:
-			return nil, status.Error(codes.Unauthenticated, ErrInvalidBearer.Error())
-		}
-	}
-	grant, trusted := p.delegators[actor.Account]
-	if !trusted {
-		return nil, status.Error(codes.PermissionDenied, "delegator is not trusted for this method")
-	}
-	if _, isConnection := envelope.GetProvenance().(*delegationpb.Delegation_Connection); isConnection && !grant.connectionProvenance {
-		return nil, status.Error(codes.PermissionDenied, "Connection provenance is not admitted on this method")
-	}
-	return p.admitIdentity(ctx, reviewContext, actor, envelope.GetIdentity(), envelope)
-}
-
-func (p *delegationPolicy) admitIdentity(
-	ctx, reviewContext context.Context, actor Principal, identity *identitypb.Identity,
-	envelope *delegationpb.Delegation,
-) (context.Context, error) {
-	resolved, err := resolveDelegatedIdentity(reviewContext, p.identities, identity)
-	if err != nil {
-		return nil, err
-	}
-	return withAdmission(ctx, DelegatedIdentityAdmission{
-		Actor:           actor,
-		EffectiveCaller: resolved,
-		Provenance:      proto.Clone(envelope).(*delegationpb.Delegation),
-	}), nil
 }
 
 func resolveDelegatedIdentity(ctx context.Context, identities IdentityUIDReader, identity *identitypb.Identity) (Identity, error) {
