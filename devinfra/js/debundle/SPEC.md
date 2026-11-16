@@ -127,13 +127,13 @@ semantic intent and do not change the spec unless an author explicitly applies
 an edit. A new upstream snapshot needs its own reviewed spec and exact validation
 against that snapshot.
 
-The `modules refine` and `modules merge` authoring edits may combine source-match
+The `modules apply` and `modules merge` authoring edits may combine source-match
 records with byte-identical templates and matching metadata into one ordered
 capture list. Conflicting notes or overlapping local captures remain separate.
 The combined document passes the same production selector resolution and edit
 gate before writing; regrouping does not bypass source-unit identity checks.
 
-`modules refine --dry-run --analysis` may additionally report statement-order
+`modules apply --dry-run --analysis` may additionally report statement-order
 commutation for its exact complete post-edit module map, after drained modules
 are removed. This opt-in assessment requires a verified staged artifact and
 the full-tree transform context for one graph chunk; its source and output
@@ -161,6 +161,14 @@ The JSON is `{"modules":[{"chunk":"app","module":"features/view"}]}`;
 `{"modules":[]}` selects no named modules. Chunk IDs and chunk-local module
 paths must name existing materialized chunks and explicit modules. Duplicate
 entries and unknown JSON fields are errors.
+
+The configured `import_order` describes the final materialized assignment,
+including ownership-subset filtering and residual synthesis. It must contain
+each final nonentry owner exactly once; the subset operation does not drop
+priority entries, invent generated-owner priorities, or reorder imports.
+Canonical and partial targets with different owner universes need distinct
+configurations with their own explicit witnesses. Those configurations may
+reuse the same source analysis when the canonical semantic projection matches.
 
 Each module entry may include `"bindings":["parseView"]`, an include list of
 the module's authored readable member names (the final `name:` or default
@@ -598,6 +606,16 @@ accepted-dry-run, typed gate rejection and final-program checks remain intact.
 Bazel `full_reports` and `full_report_chunks` attrs forward the same selection
 only to the final Pipeline action; analysis artifacts/projections are unchanged.
 
+Residual placement uses `modules propose` for its documented append-one-owner
+closure family and `modules check --batch` for exact caller-authored source-unit
+assignments and final import priorities. `modules apply` writes only a checked
+plan or batch. These commands validate complete assignments; proposal search
+does not enumerate arbitrary partitions or existing-owner moves. The
+`residual_atomic_groups` report remains an inventory of the actual assignment,
+and `atoms`, `describe`, and `inspect-source` provide current-assignment and
+source inspection without validating hypothetical moves. See
+[`docs/module_proposals.md`](docs/module_proposals.md).
+
 Every final candidate is assessed against its exact emitted order and structural
 placement, including runs that suppress reports. Report selection controls the
 serialization and full-detail sinks, not which assessment is computed. The
@@ -727,7 +745,8 @@ match the other opt-in edit assessments. Omitting `--analysis` preserves the
 ordinary deletion and gate behavior.
 
 `modules apply --analysis <artifact>` assesses the exact typed module
-documents after the requested source-unit assignments are applied in memory. It uses the existing `--modules` and `--tree-config` arguments as the
+documents after selected residual proposals and their selectors are applied in
+memory. It uses the existing `--modules` and `--tree-config` arguments as the
 transform root and config, then runs after the expected-member and realizability
 gates pass but before YAML writes. The assessment requires a verified staged
 artifact, full-tree context for exactly one materialized graph chunk, and
@@ -1097,16 +1116,16 @@ section.
 
 `describe` and `inspect-source --id` reject an unsupported identifier-like
 prefix before graph compatibility checks or graph loading. Accepted typed
-prefixes are `unit:`, `logical:`, and `atomic:`. Existing module paths are
-checked before rejecting an unknown colon prefix because colons are legal in
-module filenames.
+prefixes are `unit:`, `logical:` and `atomic:`. Existing module paths are checked
+before rejecting an unknown colon prefix because colons are legal in module
+filenames.
 
 `describe --tree-config <file>` may query with `--modules` set to the full
 app-level modules tree. It checks the graph's captured config and resolves
 module paths and binding homes only from the configured YAML roots for that
 graph chunk. Claims from those roots are resolved together with the ordinary
-selector resolver. Without `--tree-config`, the existing single-root
-`--modules` query remains in effect.
+selector resolver. Without
+`--tree-config`, the existing single-root `--modules` query remains in effect.
 
 `describe --batch` accepts a nonempty JSON array of identifiers and returns the
 same per-selection reports as separate `describe` calls, in request order with
@@ -1119,23 +1138,23 @@ The invocation record retains the batch-file path, not its contents.
 
 ## Explicit destination checks
 
-`modules propose` decides by default whether a positive-gain residual
-placement exists with authored source-unit ownership fixed, over the whole
-reported permitted move scope. It returns one snapshot-bound plan accepted by
-the full canonical graph gate, `exhausted_no_peel` after every compatible
-constraint-contraction branch in that scope has been exhausted, or `incomplete`
-after an explicit work/time budget. Errors and interruption never establish no
-peel. Complete mode has no implicit size/check/time budget. Placement is
-constructed from graph constraints and exact import scheduling; search does
-not enumerate the Cartesian product of atom-to-destination choices. Its
-necessary contraction clauses can branch, so the worst case can be exponential.
-The status is relative to the captured graph, assumptions, owner policy and
-destination scope. Selector realization and emitted runtime behavior remain
-separate checks. See [exact residual placement](docs/module_search.md) for the
-CLI workflow. The [schedule-existence proof](docs/polynomial_esm_scheduling.md)
-explains the complexity boundary; the
-[explicit-order model](docs/placement_algorithm.md) specifies the scoped target
-constructor, which does not establish the current CLI already implements it.
+Every materialized chunk supplies `import_order`, a priority listing every
+emitted nonentry owner exactly once, including empty owners. Entry is implicit;
+an all-entry chunk supplies `[]`. Each module's actual canonical import targets
+are sorted by the same priority. Normal verification and emission check that
+witness and never seek an alternative when it fails.
+
+`modules propose` derives a peel from whole atoms in the entry residual, keeping
+existing ownership fixed and appending one fresh owner to the supplied priority.
+It preserves the old modules' projected DFS traversal. SCC closure and event
+bounds provide soundness and completeness for that stated family in polynomial
+time; arbitrary order changes, existing-owner extensions and generated/catchall
+residual moves are outside the initial policy. A completed negative covers that
+family only. Errors, interruption and unsupported chunks never establish no
+peel. Graph-feasibility inventory is distinct from an executable plan: the
+latter also passes selector-writer preflight. Runtime evidence remains a
+separate check. See [residual proposals](docs/module_proposals.md) and
+[algorithm and proof](docs/placement_algorithm.md).
 
 `modules check` overlays a JSON batch of source-unit destination changes on the
 accepted graph assignment, retaining the destination of every omitted unit.
@@ -1146,25 +1165,27 @@ generated residual destinations remain distinct from the entry destination.
 
 The command writes no spec files. An accepted candidate reports `accepted: true`
 and exits 0; a graph rejection reports `accepted: false` with validation evidence
-and exits 1. Invalid inputs or a rejected baseline fail before acceptance.
-This graph check does not establish selector realization, emitted behavior,
+and exits 1. Invalid inputs and stale graph identities fail before acceptance. A rejected
+starting assignment may be repaired only when the complete requested result
+passes the same gate. This graph check does not establish selector realization, emitted behavior,
 search completeness or the validity of concatenating independently checked
 batches. The exact combined assignment requires its own check.
 
 `modules apply --assignments` realizes that explicit batch, including new
-residual declarations and anonymous units, while moving existing selectors and
-binding/statement metadata intact. After synthesis the complete authored-claim
+residual declarations, anonymous units and existing selector claims, while
+preserving binding/statement metadata. After synthesis the complete authored-claim
 map must equal the graph-baseline claim map overlaid with the requested logical
 destination changes; entry and unassigned source units have no authored claim.
 Unclaimed units still follow the configured residual policy, so generated
 physical paths need not retain their previous labels. The result then passes the
 common graph check. Dry-run and write use the same validation, and a failed check
 writes no spec edits. Empty authored owners remain in this mode. Selector
-synthesis can fail for a graph-accepted placement; this is a separate realization
-failure.
+synthesis can fail for a graph-accepted placement; reviewed selector overrides
+can supply a source-backed anchor. This is a separate realization failure.
 
-The shared saved-plan shape binds dependency/program graph digests and explicit
-logical destination changes. `modules check --plan` and `modules apply --plan`
+The shared saved-plan shape binds dependency/program graph digests, explicit
+logical destination changes and the complete final import priority.
+`modules check --plan` and `modules apply --plan`
 verify that identity in addition to current-input graph preflight. A refreshed
 graph with reused unit IDs cannot silently retarget a saved plan. After synthesis
 the complete authored-claim map must equal the starting claim map overlaid with
@@ -1210,8 +1231,28 @@ module-quotient edges. Reason values are the serialized `DepKind` names:
 `deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, and
 `local_effect`; repeated
 values are combined with OR. Rows have stable ID ordering, with the selected
-binding, source unit, or atomic group kept first in its matching section
-before truncation.
+binding, source unit or atomic group kept first in its matching section before
+truncation.
+
+## Import priorities
+
+Every materialized chunk requires an `import_order` entry containing each
+emitted nonentry owner exactly once, including retained empty authored modules
+and generated residual modules. Paths are logical module paths relative to the
+chunk's configured module roots. Entry is implicit and must not appear in the
+list. An all-entry chunk declares `[]`; omission does not select a default.
+
+The supplied priority orders each module's canonical intra-chunk import targets,
+including entry's universal fanout. Imports of entry target the already active
+root. Ordinary ESM DFS determines completion order; the priority is not a promise
+that module bodies finish in that list order. Missing, duplicate, unknown or
+entry owners are errors. A rejected priority is never repaired by trying another
+ordering and does not prove that every ordering would fail.
+
+Assignment reports and plans retain the exact supplied priority. A plan binds
+its complete ownership changes and final priority to the same source/spec graph
+identity. Preview and apply use the same full-assignment verifier and selector
+writer preflight; combining plans or changing inputs requires rechecking.
 
 ## Unassigned source
 
@@ -1656,7 +1697,7 @@ the importer, without an importer backedge or ambiguous/nonordinary request.
 The `resolved_member` key names logical ownership, not a stable claim ID.
 Module/member renames, moves, merges, and deletions must update or remove
 referring inputs in the same authoring change. The `bindings rename`,
-`bindings assign`, `bindings unassign`, `modules merge`, `modules refine`, and
+`bindings assign`, `bindings unassign`, `modules apply`, `modules merge`, and
 `modules delete --force` commands edit logical-module YAML only; they do not
 rewrite `chunk_analysis_options`. If one of those edits changes or removes a
 referenced owner path or readable name, source analysis rejects the stale
@@ -4745,44 +4786,36 @@ empty.
 
 ## Realizability cut explanations
 
-When the full intra-chunk import graph is acyclic, the preferred policy orders
-entry imports by each module's earliest source unit. In cyclic graphs, the
-preferred policy keeps its rescue order, with source-order interleaving only for
-entry-only leaves: modules imported only by entry with no imports of their own.
-These leaves can move without changing connected modules' relative order. The
-exact scheduler preserves that preference when it is valid; otherwise it
-constructs another concrete schedule if one exists. The candidate's exact
-emitted order still requires the ordinary relocation assessment.
-
 Assignment validation retains a concrete ordered import schedule for entry and
-all emitted modules. Its target sets must exactly cover canonical intra-chunk
+all emitted modules, derived from the supplied chunk priority. Its target sets must exactly cover canonical intra-chunk
 imports, including phantom imports and entry's universal fanout. Gate validation,
 candidate translation/effect sweeps and accepted emission consume that same
 schedule. Canonical targets with no direct binding reference receive phantom
 side-effect imports, including deferred closure dependencies. Accepted output
 checks exact target equality. `--emit-on-rejection` can instead lower a marked
-reading-only tree under preferred diagnostic ordering; that rejected tree is
+reading-only tree under that same rejected priority; that rejected tree is
 not a certified schedule or an accepted program.
 
-The preferred policy supplies ordering choices; it is not an exhaustive
-acceptance rule. The exact constructor checks the full graph, and the
-[exact trial argument](docs/polynomial_esm_scheduling.md#exact-trial-completeness) describes its completeness.
+The verifier checks the full concrete witness without solving schedule
+existence. The [construction proof](docs/placement_algorithm.md) separately
+states the complete family supported by residual proposals.
 
 Each `cycles.json` entry names its `rejection`. `mutual_constraining_cycle`
 is a Pass-1 cycle of constraining edges. A Pass-2 `esm_evaluation_tdz` rejection
-means the exact constructor found no valid schedule; the emitted-order TDZ is
-one diagnostic witness from the preferred schedule, not proof that one policy
-is exhaustive. Pass-2 cycle diagnoses are reported only when Pass 1 has no
+identifies an at-init/order obligation violated by the supplied witness; it does
+not prove that no other priority works. Pass-2 cycle diagnoses are reported only when Pass 1 has no
 blocking cycle. A rejection with Pass-1 cycles instead adds
 `tdz_after_collapsing_pass_one` entries: Pass 2 on the assignment with each
 Pass-1 SCC collapsed into one module, listing the original modules. They show
-what would still block once the Pass-1 SCCs are co-located; they are conditional
+what blocks under the contracted supplied priority once the Pass-1 SCCs are co-located; they are conditional
 and do not change the verdict. The bail summary opens with the Pass-1 root cause
 and labels each cycle's pass; `gate list` and `gate describe` show the same
 label.
 
-Every blocking SCC in `cycles.json` carries a `cut`: the constraining edges
-whose removal (co-locating each binding pair) makes the SCC realizable. Each
+Every blocking SCC in `cycles.json` carries a `cut` naming constraining
+obligations implicated by the rejection. Co-locating their endpoints changes
+the assignment and requires rechecking the complete ownership and priority;
+the diagnostic does not promise that those edits repair all other obligations. Each
 cut edge names both module endpoints (`from`, `to`), both actual source-unit
 endpoints (`from_source_unit_id`, `to_source_unit_id`, matching graph node IDs
 and the dependency edge's source and target), the binding labels

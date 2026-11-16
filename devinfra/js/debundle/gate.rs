@@ -15,6 +15,7 @@ use serde::Serialize;
 
 mod assignment_analysis;
 mod assignment_inputs;
+#[cfg(test)]
 mod counted_digraph;
 mod esm_import_order;
 mod esm_schedule;
@@ -24,7 +25,7 @@ mod validation;
 
 pub use assignment_analysis::{
     AssignmentAnalysis, AssignmentAnalysisBuildError, AtomicGroupPlacementClass,
-    AtomicGroupPlacementObligation, AtomicMoveProbe, CandidateEvaluation, CandidatePreflight,
+    AtomicGroupPlacementObligation, CandidateEvaluation, CandidatePreflight,
     CandidateRelocationAssessment, CandidateRelocationAssessmentReport, CandidateRelocationStatus,
     CrossDestinationRebindObligation, RejectedAssignment, SemanticOrderSccObligation,
     StructuralPlacementAssessment, StructuralPlacementCoverage, StructuralPlacementStatus,
@@ -32,25 +33,34 @@ pub use assignment_analysis::{
 };
 pub use assignment_inputs::AssignmentInputs;
 pub use esm_import_order::EsmImportOrder;
-pub use esm_schedule::{EsmImportSchedule, ImportScheduleError, ScheduleObstruction};
+#[cfg(test)]
+pub use esm_schedule::ScheduleObstruction;
+pub use esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use realizability::{
     AssignmentConstraints, CrossRebindEdge, EffectConflictCell, EffectConflictDiagnosticRow,
     EffectConflictDisposition, EffectConflictRow, EffectCoverageReport, EffectOpacity,
     EffectRelocationAcceptanceScope, EffectRelocationAssessment, EffectRelocationConflict,
     EffectRelocationDecision, EffectTranslationValidationReport, EffectTranslationValidationResult,
-    LadderDecision, LegacyEdgeComparisonCounts, ModuleAssignmentBatch, ModuleAssignmentDelta,
-    RealizabilityIndex, RealizabilityVerdict, SccDiagnosis, SccRejection,
+    LegacyEdgeComparisonCounts, RealizabilityVerdict, SccDiagnosis, SccRejection,
     TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
-    assignment_constraining_cycles, check_realizability, check_realizability_touching,
-    check_realizability_with_priority, check_realizability_with_schedule,
-    project_assignment_constraints, simulated_evaluation_post_order,
+    assignment_constraining_cycles, check_realizability_with_priority,
+    check_realizability_with_schedule, project_assignment_constraints,
+};
+#[cfg(test)]
+pub use realizability::{
+    LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta, QuotientConstraints,
+    QuotientTopologyDelta, RealizabilityIndex, check_realizability, check_realizability_touching,
+    simulated_evaluation_post_order,
 };
 pub use validation::{
     AssignmentReport, AssignmentValidation, AtInitReadPosition, BlockingRejection,
     BlockingSccEntry, CutEdgeExplanation, CycleEdge, CycleReport,
     render_atomic_group_conflict_summary, render_cycle_summary, render_explanations,
-    validate_assignment, validate_assignment_with_priority, validate_assignment_with_schedule,
-    validate_assignment_with_verdict,
+    validate_assignment_with_priority, validate_assignment_with_schedule,
+};
+#[cfg(test)]
+pub use validation::{
+    validate_assignment, validate_assignment_retaining_schedule, validate_assignment_with_verdict,
 };
 
 /// A `define_logical_module` member whose `binding.name` did not

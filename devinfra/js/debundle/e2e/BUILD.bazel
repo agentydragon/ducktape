@@ -4,17 +4,7 @@ load(":defs.bzl", "debundle_e2e_test")
 package(default_testonly = True)
 
 debundle_e2e_test(
-    name = "modules_complete_proptest",
-    timeout = "long",
-    deps = [
-        ":graph_support",
-        "@crates//:proptest",
-        "@crates//:serde_json",
-    ],
-)
-
-debundle_e2e_test(
-    name = "modules_complete_cli_test",
+    name = "modules_propose_cli_test",
     deps = [
         ":graph_support",
         "@crates//:serde_json",
@@ -35,6 +25,24 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_baseline_insertion_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+    ],
+)
+
+debundle_e2e_test(
+    name = "modules_propose_graphs_test",
+    deps = [
+        ":graph_support",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
     ],
 )
 
@@ -52,6 +60,7 @@ debundle_e2e_test(
     deps = [
         ":graph_support",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
     ],
 )
 
@@ -575,7 +584,10 @@ rust_library(
         ":support",
         "//devinfra/js/debundle:analysis",
         "//devinfra/js/debundle:graph_provenance",
+        "//devinfra/js/debundle:peel",
+        "//devinfra/js/debundle:spec",
         "@crates//:serde_json",
+        "@crates//:serde_yaml",
         "@crates//:tempfile",
     ],
 )
@@ -1110,6 +1122,18 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
+    name = "explicit_import_order_test",
+    deps = [
+        ":graph_support",
+        "//devinfra/js/debundle:analysis",
+        "//devinfra/js/debundle:report_io",
+        "@crates//:serde_json",
+        "@crates//:serde_yaml",
+        "@crates//:tempfile",
+    ],
+)
+
+debundle_e2e_test(
     name = "gate_rejection_scopes_to_bad_scc_test",
     deps = ["@crates//:serde_json"],
 )
@@ -1401,7 +1425,7 @@ debundle_e2e_test(
 )
 
 debundle_e2e_test(
-    name = "modules_refine_cli_test",
+    name = "modules_source_unit_apply_cli_test",
     deps = [
         ":graph_support",
         "@crates//:serde_json",

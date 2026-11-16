@@ -1,36 +1,19 @@
-//! Single source of truth for the validity predicate
-//! (docs/design.md "Valid peels and atomic modules"). The validator and any
-//! hypothetical-move planner checks reach the verdict through this module —
-//! see "Realizability primitive" in `docs/design.md`.
+//! Canonical assignment constraints and verification of supplied ESM schedules.
 //!
-//! Scope: clauses 2 (no cross-destination rebinding writes) and 3 (the
-//! two-pass gate: Pass 1, no multi-module SCC in the constraining-edge
-//! subgraph of the quotient; Pass 2, no TDZ proved by the ESM evaluation
-//! simulator in any I-graph SCC that carries a constraining edge). Clause 1
-//! (importability) is policy that lives in
-//! `materialize_logical_modules` per "Emit-side responsibilities":
-//! entry bindings are importable by construction via the
-//! auto-grown export pass. Callers that need a private-read blocker
-//! (the proposer's `BlockedResidualDependency`) layer it on top of the
-//! verdict; it is not part of the realizability primitive.
+//! Production callers project an exact owner map once, then verify its declared
+//! priority or inspect those constraints for the proved residual constructor.
+//! The gate checks constraining finish order and cross-owner rebindings. Atom
+//! integrity and selector realization remain separate obligations at the shared
+//! assignment/writer boundary.
 //!
-//! Two access shapes:
-//!
-//! - `check_realizability(dependency_graph, assignment) -> Verdict`: pure
-//!   function, from-scratch. The correctness reference and the cold-
-//!   start path. `O(N + M)` per call.
-//! - `RealizabilityIndex`: a stateful index that owns a working
-//!   `ModuleAssignment`; `apply` commits a `ModuleAssignmentDelta` to it and
-//!   `verdict()` reads the current state. A non-mutating overlay query
-//!   answers hypothetical source unit moves for planner checks without
-//!   applying them.
-//!
-//! SourceUnit-graph edges are fixed, so `apply` only updates quotient
-//! edge buckets incident to moved source units. Full verdicts run SCC over
-//! the maintained quotient; candidate verdicts use localized
-//! reachability around the hypothetical destination.
+//! The former general scheduler and mutable hypothetical-move index are compiled
+//! only for bounded test oracles. They cannot be used by an ordinary build, and
+//! their schedule-existence work has no polynomial complexity guarantee.
 
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+#[cfg(test)]
 use std::sync::OnceLock;
 
 use petgraph::algo::tarjan_scc;
@@ -43,16 +26,21 @@ use analysis::graph::{
 use analysis::ids::ModuleId;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::reports::SccCore;
+#[cfg(test)]
 use source_identity::SourceUnitId;
 
-mod condensation_order;
+#[cfg(test)]
+pub mod condensation_order;
 #[cfg(test)]
 mod condensation_order_proptest;
 mod effect_translation_validation;
+#[cfg(test)]
 mod esm_simulator;
+#[cfg(test)]
 mod incremental_quotient;
 mod translation_validation;
 
+#[cfg(test)]
 use crate::esm_import_order::EsmImportOrder;
 use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 pub use effect_translation_validation::{
@@ -67,7 +55,9 @@ pub(crate) use effect_translation_validation::{
 };
 #[cfg(test)]
 use esm_simulator::EsmEvaluationSimulator;
+#[cfg(test)]
 use incremental_quotient::{IncrementalQuotient, QuotientOverlay};
+#[cfg(test)]
 pub use incremental_quotient::{LadderDecision, ModuleAssignmentBatch, ModuleAssignmentDelta};
 pub(crate) use translation_validation::CandidateEmittedOrder;
 pub use translation_validation::{
@@ -152,27 +142,57 @@ impl RealizabilityVerdict {
     }
 }
 
-/// Canonical assignment constraints shared by the gate and placement callers.
-/// The import graph includes lazy imports; `canonical.edges` contains only
-/// imports that constrain initialization order. Cross-destination rebinds stay
-/// separate because they are a distinct gate clause and never become imports.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct AssignmentConstraints {
-    pub canonical: ChunkConstrainingEdgeSet,
-    pub cross_rebinds: Vec<CrossRebindEdge>,
+/// Final adjacency changes after one simultaneous batch. Evidence and parallel
+/// counts do not invalidate ordering certificates unless a pair crosses zero.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[cfg(test)]
+pub struct QuotientTopologyDelta {
+    pub imports: BTreeMap<(ModuleId, ModuleId), bool>,
+    pub constraining: BTreeMap<(ModuleId, ModuleId), bool>,
 }
 
-/// Project one exact source-unit assignment into the canonical gate graph and
-/// cross-destination rebind constraints. This does not choose an import order.
-pub fn project_assignment_constraints(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-) -> AssignmentConstraints {
-    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
-    AssignmentConstraints {
-        canonical,
-        cross_rebinds,
+#[cfg(test)]
+impl QuotientTopologyDelta {
+    /// Accumulate final changes until a consumer needs its maintained view.
+    /// Inverse zero crossings cancel, including speculative rollback.
+    pub fn compose(&mut self, next: &Self) {
+        compose_topology(&mut self.imports, &next.imports);
+        compose_topology(&mut self.constraining, &next.constraining);
     }
+}
+
+#[cfg(test)]
+fn compose_topology(
+    pending: &mut BTreeMap<(ModuleId, ModuleId), bool>,
+    delta: &BTreeMap<(ModuleId, ModuleId), bool>,
+) {
+    for (&pair, &present) in delta {
+        if let Some(previous) = pending.remove(&pair) {
+            assert_ne!(previous, present, "successive zero crossings alternate");
+        } else {
+            pending.insert(pair, present);
+        }
+    }
+}
+
+/// Current nontrivial C components and topology work performed to refresh them.
+#[derive(Debug, Default)]
+#[cfg(test)]
+pub struct ConstrainingComponents {
+    pub components: Vec<BTreeSet<ModuleId>>,
+    pub rows_visited: usize,
+    pub edges_visited: usize,
+}
+
+/// Allocation-free access to the canonical Gate constraints maintained by an
+/// assignment index. Diagnostic evidence is materialized only when requested.
+#[cfg(test)]
+pub struct QuotientConstraints<'a> {
+    pub imports: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    pub import_predecessors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    pub constraining_pairs: &'a BTreeSet<(ModuleId, ModuleId)>,
+    pub constraining_successors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    pub constraining_predecessors: &'a BTreeMap<ModuleId, BTreeSet<ModuleId>>,
 }
 
 /// Entry imports every emitted module and evaluates last. A constraining edge
@@ -206,12 +226,17 @@ fn reject_entry_dependency(
 /// runs Tarjan, surfaces multi-module SCCs and cross-rebinds. The
 /// correctness reference for the `RealizabilityIndex`'s incremental
 /// backing.
+#[cfg(test)]
 pub fn check_realizability(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
 ) -> RealizabilityVerdict {
-    check_realizability_using_schedule(dependency_graph, assignment, None)
-        .expect("the canonical policy has exactly the canonical import targets")
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    verdict_from_canonical(
+        canonical,
+        cross_rebinds,
+        assignment.entry_destination().module_id(),
+    )
 }
 
 /// Validate the exact schedule retained for this assignment. Malformed target
@@ -221,7 +246,25 @@ pub fn check_realizability_with_schedule(
     assignment: &ModuleAssignment,
     schedule: &EsmImportSchedule,
 ) -> Result<RealizabilityVerdict, ImportScheduleError> {
-    check_realizability_using_schedule(dependency_graph, assignment, Some(schedule))
+    let AssignmentConstraints {
+        canonical,
+        cross_rebinds,
+    } = project_assignment_constraints(dependency_graph, assignment);
+    let entry = assignment.entry_destination().module_id();
+    let nodes = schedule.modules();
+    if assignment
+        .iter()
+        .any(|(_, module)| !nodes.contains(&module))
+    {
+        return Err(ImportScheduleError::ModuleUniverse);
+    }
+    schedule.check_targets(entry, &canonical.i_successors, &nodes)?;
+    Ok(verdict_from_canonical_scheduled(
+        canonical,
+        cross_rebinds,
+        entry,
+        schedule,
+    ))
 }
 
 /// Verify the supplied shared priority with one canonical source projection.
@@ -239,45 +282,59 @@ pub fn check_realizability_with_priority(
     {
         return Err(ImportScheduleError::ModuleUniverse);
     }
+    let entry = assignment.entry_destination().module_id();
     let AssignmentConstraints {
         canonical,
         cross_rebinds,
     } = project_assignment_constraints(dependency_graph, assignment);
-    let entry = assignment.entry_destination().module_id();
     let schedule =
         EsmImportSchedule::from_priority(entry, &canonical.i_successors, nodes, priority)?;
     let verdict = verdict_from_canonical_scheduled(canonical, cross_rebinds, entry, &schedule);
     Ok((verdict, schedule))
 }
 
-fn check_realizability_using_schedule(
+/// Retain the accepted schedule from the same canonical projection and search.
+/// The explicit universe includes empty emitted owners, which have no edges.
+#[cfg(test)]
+pub fn check_realizability_retaining_schedule(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
-    schedule: Option<&EsmImportSchedule>,
-) -> Result<RealizabilityVerdict, ImportScheduleError> {
-    let constraints = project_assignment_constraints(dependency_graph, assignment);
-    let AssignmentConstraints {
-        canonical,
-        cross_rebinds,
-    } = constraints;
+    nodes: &BTreeSet<ModuleId>,
+) -> Result<(RealizabilityVerdict, EsmImportSchedule), ImportScheduleError> {
     let entry = assignment.entry_destination().module_id();
-    if let Some(schedule) = schedule {
-        let nodes = schedule.modules();
-        if assignment
+    if !nodes.contains(&entry)
+        || assignment
             .iter()
             .any(|(_, module)| !nodes.contains(&module))
-        {
-            return Err(ImportScheduleError::ModuleUniverse);
-        }
-        schedule.check_targets(entry, &canonical.i_successors, &nodes)?;
-        Ok(verdict_from_canonical_scheduled(
-            canonical,
-            cross_rebinds,
-            entry,
-            schedule,
-        ))
-    } else {
-        Ok(verdict_from_canonical(canonical, cross_rebinds, entry))
+    {
+        return Err(ImportScheduleError::ModuleUniverse);
+    }
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    let schedule = schedule_from_canonical(&canonical, entry, nodes);
+    let verdict = verdict_from_canonical_scheduled(canonical, cross_rebinds, entry, &schedule);
+    Ok((verdict, schedule))
+}
+
+/// Canonical assignment constraints shared by the gate and placement callers.
+/// The import graph includes lazy imports; `canonical.edges` contains only
+/// imports that constrain initialization order. Cross-destination rebinds stay
+/// separate because they are a distinct gate clause and never become imports.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct AssignmentConstraints {
+    pub canonical: ChunkConstrainingEdgeSet,
+    pub cross_rebinds: Vec<CrossRebindEdge>,
+}
+
+/// Project one exact source-unit assignment into the canonical gate graph and
+/// cross-destination rebind constraints. This does not choose an import order.
+pub fn project_assignment_constraints(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+) -> AssignmentConstraints {
+    let (canonical, cross_rebinds) = canonical_assignment_constraints(dependency_graph, assignment);
+    AssignmentConstraints {
+        canonical,
+        cross_rebinds,
     }
 }
 
@@ -321,6 +378,7 @@ fn canonical_assignment_constraints(
 /// Run the complete gate over the canonical module projection. The pure
 /// dependency graph path and the incremental hypothetical-move path both use this
 /// body, so they cannot drift on remote SCCs or ESM evaluation order.
+#[cfg(test)]
 fn verdict_from_canonical(
     canonical: ChunkConstrainingEdgeSet,
     cross_rebinds: Vec<CrossRebindEdge>,
@@ -337,19 +395,28 @@ fn verdict_from_canonical(
         nodes.insert(from);
         nodes.extend(targets);
     }
+    let schedule = schedule_from_canonical(&canonical, entry_module_id, &nodes);
+    verdict_from_canonical_scheduled(canonical, cross_rebinds, entry_module_id, &schedule)
+}
+
+#[cfg(test)]
+fn schedule_from_canonical(
+    canonical: &ChunkConstrainingEdgeSet,
+    entry_module_id: ModuleId,
+    nodes: &BTreeSet<ModuleId>,
+) -> EsmImportSchedule {
     let pairs = canonical.pairs().collect();
-    let policy = EsmImportOrder::build(&pairs, &canonical.i_successors, &nodes);
-    let schedule = EsmImportSchedule::construct(
+    let policy = EsmImportOrder::build(&pairs, &canonical.i_successors, nodes);
+    EsmImportSchedule::construct(
         entry_module_id,
         &pairs,
         &canonical.i_successors,
-        &nodes,
+        nodes,
         &policy,
     )
     .unwrap_or_else(|_| {
-        EsmImportSchedule::from_policy(entry_module_id, &canonical.i_successors, &nodes, &policy)
-    });
-    verdict_from_canonical_scheduled(canonical, cross_rebinds, entry_module_id, &schedule)
+        EsmImportSchedule::from_policy(entry_module_id, &canonical.i_successors, nodes, &policy)
+    })
 }
 
 fn verdict_from_canonical_scheduled(
@@ -535,6 +602,7 @@ fn constraining_cycles(canonical: &ChunkConstrainingEdgeSet) -> Vec<SccDiagnosis
 ///
 /// Differential-harness / oracle use only — `O(N + M)` per call, far
 /// too slow for the proposer's per-pop gate.
+#[cfg(test)]
 pub fn check_realizability_touching(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
@@ -565,6 +633,7 @@ pub fn check_realizability_touching(
 /// Node-differential pins (`e2e/simulator_node_differential_sweep_test`)
 /// that compare this prediction against the evaluation order Node
 /// actually produces for the emitted tree.
+#[cfg(test)]
 pub fn simulated_evaluation_post_order(
     canonical: &ChunkConstrainingEdgeSet,
     dependency_graph: &DependencyGraph,
@@ -611,11 +680,13 @@ pub fn simulated_evaluation_post_order(
 /// `*_after_moving_source_units*` verdict query take the graph as a
 /// parameter. Passing it per call keeps the caller's ownership flat.
 #[derive(Debug, Clone)]
+#[cfg(test)]
 pub struct RealizabilityIndex {
     assignment: ModuleAssignment,
     quotient: IncrementalQuotient,
 }
 
+#[cfg(test)]
 impl RealizabilityIndex {
     pub fn from_assignment(
         dependency_graph: &DependencyGraph,
@@ -633,6 +704,48 @@ impl RealizabilityIndex {
     /// quotient stays consistent.
     pub fn assignment(&self) -> &ModuleAssignment {
         &self.assignment
+    }
+
+    pub fn constraints(&self) -> QuotientConstraints<'_> {
+        QuotientConstraints {
+            imports: self.quotient.base_i_successors(),
+            import_predecessors: self.quotient.i_graph.reverse_adjacency(),
+            constraining_pairs: self.quotient.base_constraining_pairs(),
+            constraining_successors: self.quotient.constraining_graph.adjacency(),
+            constraining_predecessors: self.quotient.constraining_graph.reverse_adjacency(),
+        }
+    }
+
+    /// Register the fixed token arena on first use, then refresh only pending
+    /// final topology changes. Query cost excludes singleton component scans.
+    pub fn constraining_components_with_poll<E>(
+        &self,
+        nodes: &BTreeSet<ModuleId>,
+        poll: impl FnMut() -> Result<(), E>,
+    ) -> Result<ConstrainingComponents, E> {
+        self.quotient.constraining_components_with_poll(nodes, poll)
+    }
+
+    /// Read the canonical Gate C/I projection of the current assignment without
+    /// scheduling it or revisiting source edges. Constructive placement consumes
+    /// these constraints directly; it does not use verdicts as a candidate oracle.
+    pub fn canonical_projection(&self) -> ChunkConstrainingEdgeSet {
+        self.quotient
+            .canonical_with_overlay(&QuotientOverlay::default())
+    }
+
+    /// Canonical cross-owner rebindings, in source-edge order. They are equality
+    /// constraints for placement and are maintained with the same batch updates.
+    pub fn cross_rebinds(&self) -> Vec<CrossRebindEdge> {
+        self.quotient
+            .cross_rebinds_with_overlay(&QuotientOverlay::default())
+    }
+
+    pub fn first_cross_rebind(&self) -> Option<&CrossRebindEdge> {
+        self.quotient
+            .cross_rebinds
+            .first_key_value()
+            .map(|(_, edge)| edge)
     }
 
     /// Commit `delta` to the working assignment and quotient; it cannot
@@ -656,9 +769,9 @@ impl RealizabilityIndex {
         &mut self,
         dependency_graph: &DependencyGraph,
         batch: &ModuleAssignmentBatch,
-    ) {
+    ) -> QuotientTopologyDelta {
         self.quotient
-            .apply_batch(dependency_graph, &mut self.assignment, batch);
+            .apply_batch(dependency_graph, &mut self.assignment, batch)
     }
 
     /// Verdict against the current working assignment. Reads the
@@ -821,9 +934,10 @@ impl RealizabilityIndex {
 }
 
 /// One-time cached `DEBUNDLE_GATE_ORACLE` probe: when set, every
-/// ladder query cross-checks against the reference predicate and
-/// panics on divergence. Off by default — the reference is
-/// `O(V + E)` per query.
+/// legacy test query cross-checks against the schedule-existence reference and
+/// panics on divergence. This oracle may perform exponential work; it is absent
+/// from production builds.
+#[cfg(test)]
 fn gate_oracle_enabled() -> bool {
     static ORACLE_ENABLED: OnceLock<bool> = OnceLock::new();
     *ORACLE_ENABLED.get_or_init(|| std::env::var_os("DEBUNDLE_GATE_ORACLE").is_some())
@@ -836,6 +950,7 @@ fn gate_oracle_enabled() -> bool {
 /// I-graph DFS or constraining-edge SCC). Used by
 /// `IncrementalQuotient::build_simulator`'s fast path to reuse the
 /// cached base simulator.
+#[cfg(test)]
 fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
     let Some(overlay) = overlay else {
         return true;
@@ -848,6 +963,7 @@ fn overlay_is_simulator_noop(overlay: Option<&QuotientOverlay>) -> bool {
 /// Edges whose gate-view contribution can change when `source units` move:
 /// those incident to a moved source unit. The gate view reads only the
 /// endpoints' modules and the entry, never a promoted edge's callee.
+#[cfg(test)]
 fn impacted_dependency_edges(
     dependency_graph: &DependencyGraph,
     source_units: &[SourceUnitId],

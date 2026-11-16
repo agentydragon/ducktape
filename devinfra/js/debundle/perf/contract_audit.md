@@ -70,7 +70,7 @@ for chunk in range(8):
 PYGEN
 ```
 
-Generate the analysis/lowering fixture with the existing proposer generator:
+Generate the analysis/lowering fixture with the shared synthetic corpus generator:
 
 ```sh
 python3 -m devinfra.js.debundle.perf.gen_synth_corpus \

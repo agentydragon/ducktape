@@ -404,52 +404,6 @@ impl TreeStaged {
         StagedInvocation::tree_command(&args, outputs)
     }
 
-    pub fn refine(
-        &self,
-        batch: &Path,
-        analysis: Option<&Path>,
-        dry_run: bool,
-        partial_context_without_analysis: bool,
-    ) -> StagedInvocation {
-        let root = self.root();
-        let outputs = self.run.workspace().child();
-        let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "modules".to_string(),
-            "refine".to_string(),
-            "--batch".to_string(),
-            path(batch).to_string(),
-            "--modules".to_string(),
-            path(&self.modules).to_string(),
-            "--graph".to_string(),
-            path(&self.graph).to_string(),
-            "--source-root".to_string(),
-            path(&root.join("snapshot")).to_string(),
-            "--tree-config".to_string(),
-            path(&self.config).to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
-        if dry_run {
-            args.push("--dry-run".to_string());
-        }
-        if let Some(analysis) = analysis {
-            args.extend([
-                "--tree-vendor-marks".to_string(),
-                path(&self.vendor_marks).to_string(),
-                "--tree-source-root".to_string(),
-                path(root).to_string(),
-                "--out-root".to_string(),
-                path(&output_root).to_string(),
-                "--analysis".to_string(),
-                path(analysis).to_string(),
-            ]);
-        } else if partial_context_without_analysis {
-            args.extend(["--tree-source-root".to_string(), path(root).to_string()]);
-        }
-        StagedInvocation::tree_command(&args, outputs)
-    }
-
     pub fn run_with_analysis(&self, analysis: &Path, emit_on_rejection: bool) -> StagedInvocation {
         let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");

@@ -23,7 +23,9 @@ notes plus worker-ready proposals, and route pure symbol naming to the
 for seam and layer criteria and the [shared workflow](references/skills/shared/workflow.md)
 when coordinating a round.
 
-Use planning's atomic-group inventory and `modules check` to understand which
-authored seams the current gate accepts. Small generated
-fragments need not be good modules; large atomic or coarsened groups may reflect
-conservative analysis. Ground semantic homes in source behavior and callers.
+Use planning's [checked placements](references/docs/module_proposals.md) and
+`atoms` inventory to distinguish required co-location from proposed semantic
+ownership. An atom is not necessarily independently extractable. Small generated
+fragments need not be good modules; large groups may reflect conservative
+analysis. Ground semantic homes in source behavior and callers. A changed
+destination or combined plan requires another complete assignment check.

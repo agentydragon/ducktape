@@ -30,6 +30,10 @@ fn split_modules() -> Vec<LogicalModuleEntry> {
     ]
 }
 
+fn audit_fixture_opts(source: &str) -> FixtureOpts<'_> {
+    FixtureOpts::new(source, split_modules()).with_import_order(&["values/later", "callbacks/slot"])
+}
+
 fn audit_with_format(spec: &std::path::Path, format: &str, extra: &[&str]) -> std::process::Output {
     let mut args = vec![
         "spec",
@@ -91,7 +95,7 @@ fn baseline_failure_stops_before_any_removal_verdict() {
         .with_pure_exports(&["spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );
@@ -120,7 +124,7 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
         .with_pure_exports(&["makeSlot", "spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );
@@ -188,7 +192,7 @@ fn one_removal_rechecks_full_acceptance_and_keeps_other_hints() {
         .with_pure_exports(&["spare"])
         .build()];
     let emitted = run_fixture(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&after_first_removal),
     );
@@ -202,7 +206,7 @@ fn bounded_audit_reports_ordered_progress_and_preserves_report_formats() {
         .with_pure_exports(&["makeSlot", "spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );
@@ -272,7 +276,7 @@ fn source_marker_policy_is_reported_as_label() {
         .with_pure_exports(&["spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );
@@ -316,7 +320,7 @@ fn targeted_member_removal_does_not_remove_neighbor() {
         .with_namespace_independent_members("api", &["makeSlot"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(source, split_modules())
+        audit_fixture_opts(source)
             .with_extra_chunks(&peer)
             .with_chunk_export_purity(&policy),
     );
@@ -417,7 +421,7 @@ fn checkpoint_fixture() -> ValidateFixture {
         .with_pure_exports(&["makeSlot", "spare"])
         .build()];
     write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     )
@@ -702,6 +706,8 @@ fn audit_checkpoint_rechecks_tree_membership_source_and_effective_package_roots(
     fs::write(&source, original).unwrap();
     let extra_module = modules.join("main/empty.yaml");
     write_text_file(&extra_module, "members: []\n");
+    yaml["import_order"]["main"] = serde_yaml::to_value(["empty"]).unwrap();
+    write_text_file(&config, &serde_yaml::to_string(&yaml).unwrap());
     let changed_membership = run("--resume-from", &[]);
     assert!(!changed_membership.status.success());
     assert!(changed_membership.stdout.is_empty());
@@ -713,6 +719,8 @@ fn audit_checkpoint_rechecks_tree_membership_source_and_effective_package_roots(
     );
     assert_eq!(fs::read(&checkpoint).unwrap(), before);
     fs::remove_file(extra_module).unwrap();
+    yaml["import_order"]["main"] = serde_yaml::to_value(Vec::<String>::new()).unwrap();
+    write_text_file(&config, &serde_yaml::to_string(&yaml).unwrap());
     let package_root = root.join("unused-package");
     fs::create_dir(&package_root).unwrap();
     let mapping = format!("example={}", package_root.display());
@@ -738,7 +746,7 @@ fn prepared_probes_match_independent_fresh_pipeline_runs() {
         .with_pure_exports(&["makeSlot", "spare"])
         .build()];
     let fixture = write_validate_fixture_spec(
-        FixtureOpts::new(SOURCE, split_modules())
+        audit_fixture_opts(SOURCE)
             .with_extra_chunks(PEER)
             .with_chunk_export_purity(&policy),
     );

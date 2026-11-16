@@ -302,12 +302,13 @@ fn cluster_and_shared_queries_reject_unknown_typed_prefixes_before_graph_work() 
     assert_eq!(typed.status.code(), Some(1));
     let typed: Value = serde_json::from_slice(&typed.stdout).unwrap();
     assert_eq!(typed["reason"], "io");
-    for id in ["logical:7", "atomic:3", "alpha"] {
+    for id in ["logical:7", "atomic:3", "auto_partition_0007", "alpha"] {
         let out = fixture.command(&["describe", id, "--graph", missing_graph, "--format", "json"]);
         assert_eq!(out.status.code(), Some(1), "{id}");
         let failure: Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(failure["reason"], "io", "{id}: {failure:#}");
     }
+    // Retired proposal identifiers are rejected before attempting graph I/O.
     for id in ["diagnostic:example", "extend:example"] {
         let out = fixture.command(&["describe", id, "--graph", missing_graph, "--format", "json"]);
         assert_eq!(out.status.code(), Some(1), "{id}");
@@ -316,6 +317,7 @@ fn cluster_and_shared_queries_reject_unknown_typed_prefixes_before_graph_work() 
             failure["reason"], "unsupported_identifier_prefix",
             "{id}: {failure:#}"
         );
+        assert_eq!(failure["identifier"], id);
     }
 
     let ordinary_name = GraphFixture::new("const auto_partition_0007 = 1;\n", &[]);

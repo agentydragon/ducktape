@@ -1,5 +1,5 @@
-//! `debundle modules apply`/`merge`/`delete`/`refine` candidate assessments
-//! over a saved analysis match the emitted run and refuse stale inputs
+//! `debundle modules apply`/`merge`/`delete` candidate assessments
+//! over saved analyses match emitted runs and refuse stale inputs
 //! before writes.
 
 use std::fs;
@@ -8,12 +8,55 @@ use std::process::Command;
 use debundle_e2e_support::saved_analysis::*;
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
 
-fn residual_apply_assignment(staged: &TreeStaged, binding: &str, destination: &str) -> Value {
+fn residual_apply_request(
+    staged: &TreeStaged,
+    binding: &str,
+    destination: &str,
+    _readable: &str,
+) -> Value {
     json!({
         "unit_id": source_unit_for_binding(staged, binding),
         "module": destination,
     })
+}
+
+fn write_import_order(staged: &TreeStaged, name: &str, appended: &[&str]) -> PathBuf {
+    let report: Value = read_gzip_json(&staged.graph);
+    let mut order: Vec<String> = report["import_order"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|path| path.as_str().unwrap().to_owned())
+        .collect();
+    order.extend(appended.iter().map(|path| (*path).to_owned()));
+    let path = staged.root().join(name);
+    fs::write(&path, serde_json::to_vec(&order).unwrap()).unwrap();
+    path
+}
+
+fn apply_with_import_order(
+    staged: &TreeStaged,
+    batch: &Path,
+    import_order: &Path,
+    analysis: Option<&Path>,
+    dry_run: bool,
+    complete_context: bool,
+    partial_context_without_analysis: bool,
+) -> StagedInvocation {
+    let outputs = staged.run.workspace().child();
+    let output_root = outputs.path().join("out");
+    let mut args = staged.apply_args(
+        batch,
+        analysis,
+        dry_run,
+        complete_context,
+        partial_context_without_analysis,
+        &output_root,
+    );
+    args.extend(["--import-order".to_string(), path(import_order).to_string()]);
+    StagedInvocation::tree_command(&args, outputs)
 }
 
 #[test]
@@ -35,12 +78,25 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
-    let request = residual_apply_assignment(&staged, "second", "a_earlier");
+    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
+    assert_eq!(
+        request["unit_id"],
+        source_unit_for_binding(&staged, "second")
+    );
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let import_order = write_import_order(&staged, "apply-import-order.json", &["a_earlier"]);
 
     let before = module_snapshot(&staged.modules);
-    let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
+    let result = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        true,
+        true,
+        false,
+    );
     assert_ok(&result.result, "modules apply --dry-run --analysis");
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
@@ -58,7 +114,15 @@ fn modules_apply_assessment_matches_the_selected_residual_candidate() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.apply(&batch, Some(&staged.artifact), false, true, false);
+    let applied = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        false,
+        true,
+        false,
+    );
     assert_ok(&applied.result, "modules apply --analysis");
     let applied: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert_eq!(
@@ -84,11 +148,20 @@ fn modules_apply_assessment_accepts_a_closed_no_swap_candidate() {
         )],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_assignment(&staged, "only", "new_module");
+    let request = residual_apply_request(&staged, "only", "new_module", "only");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let import_order = write_import_order(&staged, "apply-import-order.json", &["new_module"]);
 
-    let result = staged.apply(&batch, Some(&staged.artifact), true, true, false);
+    let result = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        true,
+        true,
+        false,
+    );
     assert_ok(
         &result.result,
         "modules apply --dry-run --analysis with no swap",
@@ -129,13 +202,22 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let request = residual_apply_assignment(&staged, "second", "a_earlier");
+    let request = residual_apply_request(&staged, "second", "a_earlier", "second");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let import_order = write_import_order(&staged, "apply-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
 
     let foreign = staged_tree(&[("main", "function other() { return \"other\"; }\n")], &[]);
-    let stale = staged.apply(&batch, Some(&foreign.artifact), true, true, false);
+    let stale = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&foreign.artifact),
+        true,
+        true,
+        false,
+    );
     assert_eq!(
         stale.result.status.code(),
         Some(1),
@@ -149,7 +231,15 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let partial = staged.apply(&batch, Some(&staged.artifact), true, false, false);
+    let partial = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        true,
+        false,
+        false,
+    );
     assert_eq!(
         partial.result.status.code(),
         Some(1),
@@ -158,7 +248,15 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let not_dry = staged.apply(&batch, Some(&foreign.artifact), false, true, false);
+    let not_dry = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&foreign.artifact),
+        false,
+        true,
+        false,
+    );
     assert_eq!(
         not_dry.result.status.code(),
         Some(1),
@@ -180,20 +278,39 @@ fn modules_apply_assessment_refuses_stale_and_partial_inputs_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let scoped_request = residual_apply_assignment(&scoped, "second", "chunks/main/a_earlier");
+    let scoped_request =
+        residual_apply_request(&scoped, "second", "chunks/main/a_earlier", "second");
     let scoped_batch = scoped.root().join("apply.json");
     fs::write(
         &scoped_batch,
         serde_json::to_vec(&json!([scoped_request])).unwrap(),
     )
     .unwrap();
+    let scoped_import_order =
+        write_import_order(&scoped, "scoped-import-order.json", &["a_earlier"]);
     let scoped_before = module_snapshot(&scoped.modules);
-    let scoped_preview = scoped.apply(&scoped_batch, None, true, false, false);
+    let scoped_preview = apply_with_import_order(
+        &scoped,
+        &scoped_batch,
+        &scoped_import_order,
+        None,
+        true,
+        false,
+        false,
+    );
     assert_ok(
         &scoped_preview.result,
         "ordinary scoped modules apply --dry-run",
     );
-    let scoped_refused = scoped.apply(&scoped_batch, Some(&scoped.artifact), true, true, false);
+    let scoped_refused = apply_with_import_order(
+        &scoped,
+        &scoped_batch,
+        &scoped_import_order,
+        Some(&scoped.artifact),
+        true,
+        true,
+        false,
+    );
     assert_eq!(
         scoped_refused.result.status.code(),
         Some(1),
@@ -217,14 +334,19 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
         &[("main", "function value() { return \"value\"; }\n")],
         &[("empty.yaml", "members: []\n")],
     );
-    let request = residual_apply_assignment(&staged, "value", "new_module");
+    let request = residual_apply_request(&staged, "value", "new_module", "value");
     let batch = staged.root().join("apply.json");
     fs::write(&batch, serde_json::to_vec(&json!([request])).unwrap()).unwrap();
+    let import_order = write_import_order(&staged, "apply-import-order.json", &["new_module"]);
     let before = module_snapshot(&staged.modules);
     let root = staged.root();
     let out = root.join("ambient-out");
 
-    let ambient_args = staged.apply_args(&batch, None, true, false, false, &out);
+    let mut ambient_args = staged.apply_args(&batch, None, true, false, false, &out);
+    ambient_args.extend([
+        "--import-order".to_string(),
+        path(&import_order).to_string(),
+    ]);
     let ambient = process::debundle_output(
         std::process::Command::new(debundler_path())
             .args(ambient_args.iter().map(String::as_str))
@@ -241,6 +363,8 @@ fn modules_apply_assessment_inputs_are_explicit_but_ambient_defaults_are_ignored
 
     let mut explicit_args = staged.apply_args(&batch, None, true, false, false, &out);
     explicit_args.extend([
+        "--import-order".to_string(),
+        path(&import_order).to_string(),
         "--tree-source-root".to_string(),
         path(root).to_string(),
         "--out-root".to_string(),
@@ -494,7 +618,7 @@ expected staged projection/artifact mismatch",
 }
 
 #[test]
-fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
+fn modules_apply_assessment_matches_staged_run_for_existing_unit_move() {
     let staged = staged_tree(
         &[(
             "main",
@@ -512,7 +636,7 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     let baseline_report = read_effect_report(&baseline.output_root());
     assert_eq!(baseline_report["swapped_pairs"], 0, "{baseline_report:#}");
 
-    let batch = staged.root().join("refine.json");
+    let batch = staged.root().join("assignments.json");
     fs::write(
         &batch,
         serde_json::to_vec(&json!([{
@@ -522,9 +646,21 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
         .unwrap(),
     )
     .unwrap();
+    let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
-    let result = staged.refine(&batch, Some(&staged.artifact), true, false);
-    assert_ok(&result.result, "modules refine --dry-run --analysis");
+    let result = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        true,
+        true,
+        false,
+    );
+    assert_ok(
+        &result.result,
+        "modules apply --assignments --dry-run --analysis",
+    );
     let outcome: Value = serde_json::from_str(&result.result.stdout).unwrap();
     let assessment = &outcome["effect_relocation_assessment"];
     assert_eq!(
@@ -541,8 +677,9 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let applied = staged.refine(&batch, None, false, false);
-    assert_ok(&applied.result, "ordinary graph-backed modules refine");
+    let applied =
+        apply_with_import_order(&staged, &batch, &import_order, None, false, false, false);
+    assert_ok(&applied.result, "ordinary graph-backed modules apply");
     let applied_outcome: Value = serde_json::from_str(&applied.result.stdout).unwrap();
     assert!(
         applied_outcome
@@ -560,7 +697,7 @@ fn modules_refine_assessment_matches_staged_run_for_its_candidate_plan() {
 }
 
 #[test]
-fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
+fn modules_apply_assessment_refuses_stale_or_partial_context_before_writes() {
     let staged = staged_tree(
         &[("main", "function first() { return \"first\"; }\n")],
         &[(
@@ -575,7 +712,7 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
             "members: [{selector: {binding: {name: other}}}]\n",
         )],
     );
-    let batch = staged.root().join("refine.json");
+    let batch = staged.root().join("assignments.json");
     fs::write(
         &batch,
         serde_json::to_vec(&json!([{
@@ -585,9 +722,18 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
         .unwrap(),
     )
     .unwrap();
+    let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
 
-    let stale = staged.refine(&batch, Some(&foreign.artifact), true, false);
+    let stale = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&foreign.artifact),
+        true,
+        true,
+        false,
+    );
     assert_eq!(
         stale.result.status.code(),
         Some(1),
@@ -603,7 +749,7 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
-    let partial = staged.refine(&batch, None, true, true);
+    let partial = apply_with_import_order(&staged, &batch, &import_order, None, true, false, true);
     assert_eq!(
         partial.result.status.code(),
         Some(1),
@@ -622,8 +768,8 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
             Command::new(debundler_path())
                 .args([
                     "modules",
-                    "refine",
-                    "--batch",
+                    "apply",
+                    "--assignments",
                     path(&batch),
                     "--modules",
                     path(&staged.modules),
@@ -633,6 +779,8 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
                     path(&staged.root().join("snapshot")),
                     "--tree-config",
                     path(&staged.config),
+                    "--import-order",
+                    path(&import_order),
                     "--dry-run",
                     "--format",
                     "json",
@@ -649,7 +797,7 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
     };
     assert_ok(
         &env_defaults,
-        "ordinary modules refine with transform environment defaults",
+        "ordinary modules apply with transform environment defaults",
     );
     assert_eq!(module_snapshot(&staged.modules), before);
 
@@ -660,8 +808,8 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
             Command::new(debundler_path())
                 .args([
                     "modules",
-                    "refine",
-                    "--batch",
+                    "apply",
+                    "--assignments",
                     path(&batch),
                     "--modules",
                     path(&staged.modules),
@@ -671,6 +819,8 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
                     path(&source_root.join("snapshot")),
                     "--tree-config",
                     path(&staged.config),
+                    "--import-order",
+                    path(&import_order),
                     "--tree-source-root",
                     path(&source_root),
                     "--out-root",
@@ -706,7 +856,7 @@ fn modules_refine_assessment_refuses_stale_or_partial_context_before_writes() {
 }
 
 #[test]
-fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
+fn modules_apply_assessment_refuses_scoped_tree_before_writes() {
     let staged = staged_tree_with_module_roots(
         &[("main", "function first() { return \"first\"; }\n")],
         &[("chunks/main", "main")],
@@ -715,7 +865,7 @@ fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
             "members: [{selector: {binding: {name: first}}}]\n",
         )],
     );
-    let batch = staged.root().join("refine.json");
+    let batch = staged.root().join("assignments.json");
     fs::write(
         &batch,
         serde_json::to_vec(&json!([{
@@ -725,8 +875,17 @@ fn modules_refine_assessment_refuses_scoped_tree_before_writes() {
         .unwrap(),
     )
     .unwrap();
+    let import_order = write_import_order(&staged, "assignment-import-order.json", &["a_earlier"]);
     let before = module_snapshot(&staged.modules);
-    let result = staged.refine(&batch, Some(&staged.artifact), true, false);
+    let result = apply_with_import_order(
+        &staged,
+        &batch,
+        &import_order,
+        Some(&staged.artifact),
+        true,
+        true,
+        false,
+    );
     assert_eq!(
         result.result.status.code(),
         Some(1),

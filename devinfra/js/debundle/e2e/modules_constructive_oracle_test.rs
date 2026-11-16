@@ -1,333 +1,160 @@
-//! Compare complete peeling with raw source-unit placements accepted by the
-//! normal transform pipeline and Node, across real eager, lazy and mutation
-//! shapes.
+//! Exhaust the tiny declared append-one-owner family with exact CLI checks.
+//!
+//! The oracle enumerates source-unit subsets directly and asks the independent
+//! complete assignment checker under the explicit old-priority-plus-new-owner
+//! order. It does not use proposal closures, SCC summaries, or scheduling code.
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{parse_stdout_json, read_tree};
-use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet};
+use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::fs;
-use std::path::PathBuf;
 
-const DESTINATIONS: [&str; 4] = ["stay", "middle", "a_before", "z_after"];
-
-#[derive(Clone, Copy)]
-enum Selector {
-    Binding(&'static str),
-    Anonymous(&'static str),
-}
-
-struct Family {
-    name: &'static str,
-    source: &'static str,
-    expected: &'static str,
-    units: [Selector; 3],
-}
-
-#[derive(Default)]
-struct ModuleDoc<'a> {
-    members: Vec<&'a str>,
-    anonymous_statements: Vec<&'a str>,
-}
-
-#[derive(Debug)]
-struct AcceptedModel {
-    destinations: [u8; 3],
-    moved_units: u8,
-    fresh_owners: usize,
-}
-
-fn families() -> [Family; 4] {
-    [
-        Family {
-            name: "eager chain",
-            source: "const anchor = 'eager';\nconst first = 2;\nconst second = first + 11;\nconst third = second + 100;\nconsole.log(anchor, first, second, third);\n",
-            expected: "eager 2 13 113\n",
-            units: [
-                Selector::Binding("first"),
-                Selector::Binding("second"),
-                Selector::Binding("third"),
-            ],
-        },
-        Family {
-            name: "lazy call chain",
-            source: "const anchor = 'lazy';\nfunction first() { return second() + 2; }\nfunction second() { return 5; }\nconst third = first() + second();\nconsole.log(anchor, first(), second(), third);\n",
-            expected: "lazy 7 5 12\n",
-            units: [
-                Selector::Binding("first"),
-                Selector::Binding("second"),
-                Selector::Binding("third"),
-            ],
-        },
-        Family {
-            name: "anonymous rebind",
-            source: "const anchor = 'mutation';\nlet counter = 3;\ncounter += 4;\nfunction read() { return counter * 10; }\nconsole.log(anchor, counter, read());\n",
-            expected: "mutation 7 70\n",
-            units: [
-                Selector::Binding("counter"),
-                Selector::Anonymous("counter += 4;"),
-                Selector::Binding("read"),
-            ],
-        },
-        Family {
-            name: "at-init callback propagation",
-            source: "const anchor = 'callback';\nconst seed = 17;\nfunction read() { return seed + 1; }\nconst value = [read].map((fn) => fn())[0];\nconsole.log(anchor, seed, value);\n",
-            expected: "callback 17 18\n",
-            units: [
-                Selector::Binding("seed"),
-                Selector::Binding("read"),
-                Selector::Binding("value"),
-            ],
-        },
-    ]
+fn write_json(fixture: &GraphFixture, name: &str, value: &Value) -> String {
+    let path = fixture.root().join(name);
+    fs::write(&path, serde_json::to_vec(value).unwrap()).unwrap();
+    path.to_str().unwrap().to_owned()
 }
 
 #[test]
-fn complete_matches_raw_runtime_accepted_placements_for_required_subsets_and_owner_caps() {
-    for family in families() {
-        check_family(family);
-    }
-}
-
-fn check_family(family: Family) {
+fn seed_feasibility_matches_every_raw_subset_under_the_append_last_priority() {
+    let source = "const anchor = 99;\nconst first = 1;\nconst second = first + 10;\nconst third = second + 100;\nconsole.log(anchor, first, second, third);\n";
     let fixture = GraphFixture::new(
-        family.source,
+        source,
         &[(
             "middle.yaml",
             "members: [{selector: {binding: {name: anchor}}}]\n",
         )],
     );
+    fixture.set_import_order(&["middle"]);
+    fixture.refresh_graph();
     let baseline = read_tree(&fixture.modules);
-    let units: Vec<_> = family
-        .units
+    let units: Vec<_> = ["first", "second", "third"]
         .iter()
-        .map(|selector| match selector {
-            Selector::Binding(binding) => fixture.source_unit_for_binding(binding),
-            Selector::Anonymous(_) => fixture.source_unit_for_line(3),
-        })
+        .map(|binding| fixture.source_unit_for_binding(binding))
         .collect();
-    assert_eq!(units.len(), 3);
-    assert_eq!(
-        units.iter().collect::<BTreeSet<_>>().len(),
-        3,
-        "{} must expose three independent raw source units: {units:?}",
-        family.name
-    );
+    let only = write_json(&fixture, "only.json", &json!(units));
+    let old_order = write_json(&fixture, "old-order.json", &json!(["middle"]));
+    let appended_order = write_json(&fixture, "appended-order.json", &json!(["middle", "fresh"]));
+    let tree_config = fixture.root().join("spec_config.yaml");
 
-    // Enumerate the four raw choices per statement directly. The only
-    // acceptance oracle is current_spec_runs: normal selector resolution,
-    // the complete transform, and Node execution. Planner atoms, closures,
-    // checker results and search pruning do not shape this candidate set.
-    let mut accepted = Vec::new();
-    for encoded in 0u8..64 {
-        let mut cursor = encoded;
-        let mut destinations = [0u8; 3];
-        for destination in &mut destinations {
-            *destination = cursor % DESTINATIONS.len() as u8;
-            cursor /= DESTINATIONS.len() as u8;
-        }
-
-        restore_modules(&fixture, &baseline);
-        write_assignment(&fixture, &family.units, &destinations);
-        if fixture.current_spec_runs(family.expected) {
-            let moved_units = destinations
-                .iter()
-                .enumerate()
-                .fold(0u8, |mask, (index, destination)| {
-                    mask | if *destination == 0 { 0 } else { 1 << index }
-                });
-            let fresh_owners = [2u8, 3u8]
-                .iter()
-                .filter(|owner| destinations.contains(owner))
-                .count();
-            accepted.push(AcceptedModel {
-                destinations,
-                moved_units,
-                fresh_owners,
-            });
-        }
-    }
-    restore_modules(&fixture, &baseline);
-    assert!(
-        accepted.iter().any(|model| model.moved_units == 0),
-        "{} baseline should be runtime accepted",
-        family.name
-    );
-
-    let only_path = fixture.root().join("only-units.json");
-    fs::write(&only_path, serde_json::to_vec(&units).unwrap()).unwrap();
-    let mut validated_witness = false;
-
-    for required_mask in 1u8..8 {
-        for owner_cap in 0usize..=2 {
-            let expected_found = accepted.iter().any(|model| {
-                model.moved_units & required_mask == required_mask
-                    && model.fresh_owners <= owner_cap
-            });
-            let mut args = vec![
-                "modules".to_string(),
-                "propose".to_string(),
-                "--only-units".to_string(),
-                only_path.to_string_lossy().into_owned(),
-            ];
-            for (index, unit) in units.iter().enumerate() {
-                if required_mask & (1 << index) != 0 {
-                    args.extend(["--require".to_string(), unit.clone()]);
-                }
-            }
-            if owner_cap == 0 {
-                // The CLI requires an explicit destination policy when a
-                // zero fresh-owner cap is combined with --into.
-                args.extend([
-                    "--destinations".to_string(),
-                    "existing".to_string(),
-                    "--into".to_string(),
-                    "middle".to_string(),
-                ]);
-            } else {
-                for destination in ["middle", "a_before", "z_after"] {
-                    args.extend(["--into".to_string(), destination.to_string()]);
-                }
-            }
-            args.extend([
-                "--max-new-modules".to_string(),
-                owner_cap.to_string(),
-                "--format".to_string(),
-                "json".to_string(),
-            ]);
-            let arg_refs: Vec<_> = args.iter().map(String::as_str).collect();
-            let output = fixture.command(&arg_refs);
-            assert!(
-                output.status.success(),
-                "{} required={required_mask:03b} cap={owner_cap}: {}",
-                family.name,
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let report = parse_stdout_json(&output);
-            assert_eq!(
-                report["status"],
-                if expected_found {
-                    "found"
-                } else {
-                    "exhausted_no_peel"
-                },
-                "{} required={required_mask:03b} cap={owner_cap}: {report}",
-                family.name
-            );
-            assert_eq!(
-                read_tree(&fixture.modules),
-                baseline,
-                "{} proposal must preserve the authored module tree",
-                family.name
-            );
-
-            if expected_found {
-                let plan = &report["plan"];
-                let planned = model_from_plan(plan, &units);
-                let planned_model = accepted
-                    .iter()
-                    .find(|model| model.destinations == planned)
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "{} plan is absent from the raw runtime-accepted models: {plan}",
-                            family.name
-                        )
-                    });
-                assert_ne!(planned_model.moved_units, 0, "{plan}");
-                assert_eq!(
-                    planned_model.moved_units & required_mask,
-                    required_mask,
-                    "{plan}"
-                );
-                assert!(planned_model.fresh_owners <= owner_cap, "{plan}");
-
-                if !validated_witness {
-                    let plan_path = fixture.root().join("constructive-plan.json");
-                    fs::write(&plan_path, serde_json::to_vec(plan).unwrap()).unwrap();
-                    let plan_arg = plan_path.to_string_lossy().into_owned();
-                    let check_args = ["modules", "check", "--plan", plan_arg.as_str()];
-                    fixture.assert_success(&check_args);
-                    assert_eq!(read_tree(&fixture.modules), baseline);
-                    let preview_args =
-                        ["modules", "apply", "--plan", plan_arg.as_str(), "--dry-run"];
-                    fixture.assert_success(&preview_args);
-                    assert_eq!(read_tree(&fixture.modules), baseline);
-                    let apply_args = ["modules", "apply", "--plan", plan_arg.as_str()];
-                    fixture.assert_success(&apply_args);
-                    fixture.assert_runs(family.expected);
-                    restore_modules(&fixture, &baseline);
-                    validated_witness = true;
-                }
-            } else {
-                assert!(report["plan"].is_null(), "{report}");
-            }
-        }
-    }
-    assert!(
-        validated_witness,
-        "{} should have a found witness",
-        family.name
-    );
-}
-
-fn write_assignment(fixture: &GraphFixture, selectors: &[Selector; 3], destinations: &[u8; 3]) {
-    let mut docs = BTreeMap::<&str, ModuleDoc<'_>>::new();
-    docs.entry("middle").or_default().members.push("anchor");
-    for (selector, destination) in selectors.iter().zip(destinations) {
-        if *destination == 0 {
-            continue;
-        }
-        let document = docs.entry(DESTINATIONS[*destination as usize]).or_default();
-        match selector {
-            Selector::Binding(binding) => document.members.push(binding),
-            Selector::Anonymous(statement) => document.anonymous_statements.push(statement),
-        }
-    }
-
-    for (module, document) in docs {
-        let mut yaml = String::new();
-        if !document.members.is_empty() {
-            yaml.push_str("members:\n");
-            for binding in document.members {
-                yaml.push_str(&format!("  - selector: {{binding: {{name: {binding}}}}}\n"));
-            }
-        }
-        if !document.anonymous_statements.is_empty() {
-            yaml.push_str("anonymous_statements:\n");
-            for statement in document.anonymous_statements {
-                yaml.push_str(&format!("  - match: '{statement}'\n"));
-            }
-        }
-        fs::write(fixture.modules.join(format!("{module}.yaml")), yaml).unwrap();
-    }
-}
-
-fn model_from_plan(plan: &Value, units: &[String]) -> [u8; 3] {
-    let mut destinations = [0u8; 3];
-    for change in plan["changes"].as_array().expect("plan changes") {
-        let unit = change["unit_id"].as_str().expect("unit id");
-        let index = units
+    // Each bit says whether this exact source unit is assigned to the one new
+    // owner. The ordinary check command is the sole acceptance oracle.
+    let mut accepted_masks = BTreeSet::new();
+    for mask in 0u8..(1 << units.len()) {
+        let changes: Vec<_> = units
             .iter()
-            .position(|candidate| candidate == unit)
-            .unwrap_or_else(|| panic!("plan changed a unit outside --only-units: {change}"));
-        let module = change["module"].as_str().expect("module destination");
-        destinations[index] = match module {
-            "middle" => 1,
-            "a_before" => 2,
-            "z_after" => 3,
-            _ => panic!("plan chose a destination outside the requested scope: {change}"),
+            .enumerate()
+            .filter(|(index, _)| mask & (1 << index) != 0)
+            .map(|(_, unit_id)| json!({"unit_id": unit_id, "module": "fresh"}))
+            .collect();
+        let batch = write_json(&fixture, &format!("batch-{mask}.json"), &json!(changes));
+        let order = if mask == 0 {
+            &old_order
+        } else {
+            &appended_order
         };
-    }
-    destinations
-}
-
-fn restore_modules(fixture: &GraphFixture, baseline: &BTreeMap<PathBuf, Vec<u8>>) {
-    for path in read_tree(&fixture.modules).keys() {
-        if !baseline.contains_key(path) {
-            fs::remove_file(fixture.modules.join(path)).unwrap();
+        let output = fixture.command(&[
+            "modules",
+            "check",
+            "--batch",
+            &batch,
+            "--import-order",
+            order,
+            "--format",
+            "json",
+        ]);
+        let report = parse_stdout_json(&output);
+        assert_eq!(
+            report["accepted"].as_bool(),
+            Some(output.status.success()),
+            "mask={mask:03b}: {report}"
+        );
+        if output.status.success() {
+            accepted_masks.insert(mask);
         }
+        assert_eq!(
+            read_tree(&fixture.modules),
+            baseline,
+            "check wrote spec for mask={mask:03b}"
+        );
     }
-    for (path, bytes) in baseline {
-        fs::write(fixture.modules.join(path), bytes).unwrap();
+
+    let proposal = fixture.json(&[
+        "modules",
+        "propose",
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+        "--into",
+        "fresh",
+        "--only-units",
+        &only,
+    ]);
+    let seed_rows = proposal["seed_atoms"].as_array().unwrap();
+    for row in seed_rows {
+        let row_units: Vec<_> = row["source_units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|unit| unit.as_str().unwrap())
+            .collect();
+        let required_mask = row_units.iter().fold(0u8, |mask, unit| {
+            let index = units
+                .iter()
+                .position(|candidate| candidate == unit)
+                .unwrap();
+            mask | (1 << index)
+        });
+        let expected_feasible = accepted_masks
+            .iter()
+            .any(|mask| mask & required_mask == required_mask && *mask != 0);
+        assert_eq!(
+            row["feasible"].as_bool(),
+            Some(expected_feasible),
+            "seed={row_units:?} oracle={accepted_masks:?}: {proposal}"
+        );
     }
+    assert_eq!(proposal["status"], "found", "{proposal}");
+    let plan = &proposal["plan"];
+    assert_eq!(plan["import_order"][0], "middle");
+    assert_eq!(plan["import_order"][1], "fresh");
+    let plan_mask = plan["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .fold(0u8, |mask, change| {
+            let unit = change["unit_id"].as_str().unwrap();
+            let index = units
+                .iter()
+                .position(|candidate| candidate == unit)
+                .unwrap();
+            assert_eq!(change["module"], "fresh");
+            mask | (1 << index)
+        });
+    assert!(
+        accepted_masks.contains(&plan_mask),
+        "plan outside exact oracle: {plan}"
+    );
+
+    let plan_path = write_json(&fixture, "plan.json", plan);
+    fixture.assert_success(&["modules", "check", "--plan", &plan_path]);
+    fixture.assert_success(&[
+        "modules",
+        "apply",
+        "--plan",
+        &plan_path,
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+        "--dry-run",
+    ]);
+    assert_eq!(read_tree(&fixture.modules), baseline);
+    fixture.assert_success(&[
+        "modules",
+        "apply",
+        "--plan",
+        &plan_path,
+        "--tree-config",
+        tree_config.to_str().unwrap(),
+    ]);
+    fixture.assert_runs("99 1 11 111\n");
 }

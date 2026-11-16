@@ -29,25 +29,27 @@ console.log("after", a.name, instance[Symbol.dispose](), instance[Symbol.asyncDi
 export {{ a }};
 "#
         );
-        let fixture = run_fixture(FixtureOpts::new(
-            &source,
-            vec![logical_module("mod_x", &[Member::new("a")])],
-        ));
+        let fixture = run_fixture(
+            FixtureOpts::new(&source, vec![logical_module("mod_x", &[Member::new("a")])])
+                .with_import_order(&["mod_x", "residual"]),
+        );
         assert_preserved_entry_output(&fixture, "before\nafter a sync async\n");
     }
 }
 
 #[test]
 fn unclaimed_interleaved_statements_preserve_order() {
-    for (mode, destination) in [
-        (unassigned_mode_inline(), "static/app/entry.js"),
+    for (mode, destination, priority) in [
+        (unassigned_mode_inline(), "static/app/entry.js", vec![]),
         (
             unassigned_mode_catchall_file(None),
             "static/app/modules/residual/unhandled.js",
+            vec!["residual"],
         ),
         (
             unassigned_mode_catchall_file(Some("rest")),
             "static/app/modules/rest.js",
+            vec!["residual"],
         ),
     ] {
         let fixture = run_fixture(
@@ -59,7 +61,8 @@ export { a };
 "#,
                 vec![],
             )
-            .with_unassigned_mode(mode),
+            .with_unassigned_mode(mode)
+            .with_import_order(&priority),
         );
         assert_entry_output(&fixture, "before\nmiddle\nafter undefined\n");
         assert_module_source(
@@ -276,7 +279,8 @@ export { A, B, C, D };
             logical_module("mod_x", &[Member::new("A"), Member::new("D")]),
             logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
         ],
-    );
+    )
+    .with_import_order(&["mod_x", "mod_y", "residual"]);
     expect_cycle_rejection(opts, &["mod_x", "mod_y"]);
 }
 
@@ -404,15 +408,18 @@ export { A, B, readA, readB };
 
 #[test]
 fn dependency_graph_report_identifies_pair_only_residual_atomic_group() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"var A = B || "fallback";
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"var A = B || "fallback";
 var B = A + "-b";
 const Existing = B + "-existing";
 console.log(A, B, Existing);
 export { A, B, Existing };
 "#,
-        vec![logical_module("mod_existing", &[Member::new("Existing")])],
-    ));
+            vec![logical_module("mod_existing", &[Member::new("Existing")])],
+        )
+        .with_import_order(&["mod_existing", "residual"]),
+    );
     assert_entry_output(&fixture, "fallback fallback-b fallback-b-existing\n");
 
     let graph = fixture.dependency_graph();
@@ -475,8 +482,9 @@ export { Leaf, Dep, Existing };
 
 #[test]
 fn dependency_graph_report_collapses_residual_written_binding_with_assigner() {
-    let fixture = run_fixture_with_graphs(FixtureOpts::new(
-        r#"let a = 0;
+    let fixture = run_fixture_with_graphs(
+        FixtureOpts::new(
+            r#"let a = 0;
 function b() {
   a = 1;
 }
@@ -484,8 +492,10 @@ const existing = "existing";
 console.log(existing);
 export { a, b, existing };
 "#,
-        vec![logical_module("existing", &[Member::new("existing")])],
-    ));
+            vec![logical_module("existing", &[Member::new("existing")])],
+        )
+        .with_import_order(&["existing", "residual"]),
+    );
     assert_entry_output(&fixture, "existing\n");
 
     let graph = fixture.dependency_graph();
@@ -504,14 +514,17 @@ export { a, b, existing };
 
 #[test]
 fn write_tree_manifests_include_output_metrics() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const A = "a-value";
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const A = "a-value";
 const B = "b-value";
 console.log(A, B);
 export { A, B };
 "#,
-        vec![logical_module("mod_a", &[Member::new("A")])],
-    ));
+            vec![logical_module("mod_a", &[Member::new("A")])],
+        )
+        .with_import_order(&["mod_a", "residual"]),
+    );
     assert_entry_output(&fixture, "a-value b-value\n");
 
     let manifest: serde_json::Value = read_json(&fixture.report_root.join("static/app/chunk.json"));
@@ -961,16 +974,19 @@ fn await_in_instance_class_field_is_allowed() {
     // time. An `await` there is *not* top-level. (Per spec the
     // host method must be `async` for the `await` to be syntactically
     // valid; we use a lazy method here.)
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"class C {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"class C {
   async run() { return await Promise.resolve("ok"); }
 }
 const c = new C();
 c.run().then((v) => console.log(v));
 export { C };
 "#,
-        vec![logical_module("mod_x", &[Member::new("C")])],
-    ));
+            vec![logical_module("mod_x", &[Member::new("C")])],
+        )
+        .with_import_order(&["mod_x", "residual"]),
+    );
     assert_entry_output(&fixture, "ok\n");
 }
 
@@ -1073,14 +1089,17 @@ fn extracted_initializer_cannot_read_inline_entry_binding() {
 
 #[test]
 fn eager_class_callback_preserves_initialization_order() {
-    let fixture = run_fixture(FixtureOpts::new(
-        "const a = 1; const api = { run(f) { f(); return Object; } };\n\
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            "const a = 1; const api = { run(f) { f(); return Object; } };\n\
          class C extends api.run(() => console.log(a)) {}\n\
          function back() { return C; }",
-        vec![
-            logical_module("mod_a", &[Member::new("a"), Member::new("back")]),
-            logical_module("mod_b", &[Member::new("api"), Member::new("C")]),
-        ],
-    ));
+            vec![
+                logical_module("mod_a", &[Member::new("a"), Member::new("back")]),
+                logical_module("mod_b", &[Member::new("api"), Member::new("C")]),
+            ],
+        )
+        .with_import_order(&["mod_b", "mod_a"]),
+    );
     assert_entry_output(&fixture, "1\n");
 }

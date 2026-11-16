@@ -10,8 +10,9 @@ validation of the candidate emit:
    effect facts, with TDZ as an ordinary effect conflict; and
 4. check the independent structural placement obligations of the same candidate.
 
-Neither pass survives as a verdict. Cycle detection becomes at most a hint to
-the order search. The ESM loader model becomes a plain, exact component: it
+Neither pass survives as a verdict. The author-supplied chunk import priority
+remains required; this migration does not add schedule-existence search.
+The ESM loader model becomes a plain, exact component: it
 evaluates the emitted import lists as ECMA-262 does, cyclic or not, and it
 always runs on the real emitted order, never on a fallback order.
 
@@ -248,16 +249,19 @@ the complete conflict enumeration.
      For each such case, prove the read cannot run at initialization or retain
      the conflict. Existing pair premises and legacy acceptance do not prove
      that a callback is deferred.
-2. **Search.** Seed from hard edges and add the refine loop. Preserve the
-   verdict and swapped-pair comparisons for each candidate order.
+2. **Candidate assessment.** Assess the exact assignment and supplied chunk
+   priority. Preserve the verdict and swapped-pair comparisons for that
+   concrete witness. Compose with the bounded constructive residual workflow
+   in <../docs/module_proposals.md>; do not add arbitrary order search or
+   revive the retired refinement/decomposition commands.
 3. **Flip.** TV decides; today's gate becomes a report section for one
    release, then goes, Pass 1's cycle verdict and Pass 2's degraded-order
    fallback with it. `commuting_statements` diagnostics move to the
    effect-set definition of "unused".
-   - Final-candidate edit assessments and emission already use the same
-     `AssignmentAnalysis` import order. Graph-only decomposition validation
-     in `peel/decompose.rs` still uses the legacy gate without that order; retain
-     that boundary until an appropriate search/validation contract is proved.
+   - Keep final-candidate edit assessments, checked plans and emission on the
+     same explicit import-order witness. The placement verifier remains
+     authoritative until the effect-coverage and structural-obligation proof
+     justifies this migration; graph-only acceptance is not effect assessment.
    - Audit destructuring-sibling and nested-`var` routing refusals before the
      finalized assignment. Keep those hard errors until their request-building
      obligations can be represented. An assessment's empty blocker list does

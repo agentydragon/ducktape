@@ -18,18 +18,12 @@
 //!
 //! ## Mutation protocol
 //!
-//! The caller owns the base graph (a [`CountedDiGraph`]) and reports
-//! every committed mutation *after* applying it to the base:
-//!
-//! - [`Self::insert_edge`] / [`Self::remove_edge`] after
-//!   `increment_edge` / `decrement_edge`. Parallel-edge count changes
-//!   that do not add or drop a distinct adjacency pair are no-ops.
-//!
-//! **Monotonicity**: insertions only ever coarsen the SCC partition,
-//! which is why a plain union-find (no rollback) suffices. Edge
-//! *removals* can split an SCC; a committed removal internal to a
-//! multi-module SCC marks the structure stale instead of attempting a
-//! split, and the next query rebuilds in `O(|V| + |E|)`.
+//! [`Self::apply_topology_batch`] consumes a borrowed final adjacency and final
+//! zero crossings. Internal deletions split only the previous SCC; insertions
+//! repair united backward rank intervals. Parallel evidence changes do no work.
+//! The test harness adapts single counted mutations to the same engine.
+//! Cancellation alone marks
+//! an initialized order stale; retry then rebuilds from the final graph.
 //!
 //! ## Speculative queries
 //!
@@ -48,7 +42,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use petgraph::algo::tarjan_scc;
+use petgraph::algo::kosaraju_scc;
 use petgraph::graphmap::DiGraphMap;
 
 use crate::counted_digraph::CountedDiGraph;
@@ -77,6 +71,26 @@ struct OverlayShape {
     removal_inside_multi_scc: bool,
 }
 
+/// Topology changes invalidate certificates only for changed component interiors.
+#[derive(Debug, Clone)]
+pub struct ComponentChanges<N> {
+    pub invalidated: BTreeSet<N>,
+    pub changed: BTreeSet<N>,
+    pub rows_visited: usize,
+    pub edges_visited: usize,
+}
+
+impl<N> Default for ComponentChanges<N> {
+    fn default() -> Self {
+        Self {
+            invalidated: BTreeSet::new(),
+            changed: BTreeSet::new(),
+            rows_visited: 0,
+            edges_visited: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CondensationOrder<N> {
     /// Interned nodes; `nodes[idx]` is the caller-side identifier.
@@ -96,9 +110,9 @@ pub struct CondensationOrder<N> {
     /// in the current traversal iff it equals `current_epoch`.
     visited_epoch: Vec<u32>,
     current_epoch: u32,
-    /// Set by committed removals inside multi-module SCCs; cleared by
-    /// the lazy rebuild.
+    /// Initial/uninitialized state or an interrupted topology refresh.
     stale: bool,
+    multi: BTreeSet<u32>,
 }
 
 impl<N> Default for CondensationOrder<N>
@@ -127,7 +141,248 @@ where
             visited_epoch: Vec::new(),
             current_epoch: 0,
             stale: true,
+            multi: BTreeSet::new(),
         }
+    }
+
+    /// Register the fixed module-token arena once, including isolated owners.
+    pub fn register_nodes(&mut self, nodes: impl IntoIterator<Item = N>) {
+        for node in nodes {
+            self.intern(node);
+        }
+    }
+
+    /// Representative identity; stable until this component splits or merges.
+    pub fn component_of(&self, node: N) -> Option<N> {
+        assert!(
+            !self.stale,
+            "refresh the topology before querying components"
+        );
+        self.idx_of
+            .get(&node)
+            .map(|&index| self.nodes[self.root(index) as usize])
+    }
+
+    fn root(&self, mut index: u32) -> u32 {
+        while self.scc_parent[index as usize] != index {
+            index = self.scc_parent[index as usize];
+        }
+        index
+    }
+
+    pub fn component_members(&self, representative: N) -> impl Iterator<Item = N> + '_ {
+        assert!(!self.stale);
+        let index = self.idx_of[&representative];
+        assert_eq!(self.root(index), index);
+        self.scc_members[index as usize]
+            .iter()
+            .map(|&member| self.nodes[member as usize])
+    }
+
+    /// Dependency-first representatives. No module adjacency is traversed.
+    pub fn dependency_order(&self) -> impl Iterator<Item = N> + '_ {
+        assert!(!self.stale);
+        self.pos_to_rep
+            .iter()
+            .rev()
+            .flatten()
+            .map(|&rep| self.nodes[rep as usize])
+    }
+
+    /// Maintained multi-node representative set, without scanning singletons.
+    pub fn multi_components(&self) -> impl Iterator<Item = N> + '_ {
+        assert!(!self.stale);
+        self.multi.iter().map(|&rep| self.nodes[rep as usize])
+    }
+
+    /// Apply final adjacency zero crossings, rather than transient evidence
+    /// removals/additions. `adjacency` already contains the final graph. An
+    /// excluded node (the true entry for I) must never be registered.
+    ///
+    /// Deletions split only their old SCC. Backward insertion intervals are
+    /// united before repair: several new edges can jointly close a cycle whose
+    /// vertices are not inside any one edge's interval. Cancellation marks the
+    /// index stale; the next call rebuilds from its then-current final graph.
+    pub fn apply_topology_batch<E>(
+        &mut self,
+        adjacency: &BTreeMap<N, BTreeSet<N>>,
+        delta: &BTreeMap<(N, N), bool>,
+        excluded: Option<N>,
+        mut poll: impl FnMut() -> Result<(), E>,
+    ) -> Result<ComponentChanges<N>, E> {
+        let result = self.apply_topology_batch_inner(adjacency, delta, excluded, &mut poll);
+        if result.is_err() {
+            self.stale = true;
+        }
+        result
+    }
+
+    fn apply_topology_batch_inner<E>(
+        &mut self,
+        adjacency: &BTreeMap<N, BTreeSet<N>>,
+        delta: &BTreeMap<(N, N), bool>,
+        excluded: Option<N>,
+        poll: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<ComponentChanges<N>, E> {
+        poll()?;
+        let mut changes = ComponentChanges::default();
+        let mut successors = |node| {
+            adjacency
+                .get(&node)
+                .into_iter()
+                .flatten()
+                .copied()
+                .filter(|target| Some(*target) != excluded)
+                .collect::<Vec<_>>()
+        };
+        let initialized = self.stale;
+        let mut additions = Vec::new();
+        if initialized {
+            for (&from, targets) in adjacency {
+                poll()?;
+                changes.rows_visited += 1;
+                if Some(from) == excluded {
+                    continue;
+                }
+                self.intern(from);
+                for &to in targets {
+                    poll()?;
+                    changes.edges_visited += 1;
+                    if Some(to) != excluded {
+                        self.intern(to);
+                        additions.push((from, to));
+                    }
+                }
+            }
+            changes.invalidated.extend(self.nodes.iter().copied());
+            self.multi.clear();
+            let n = self.nodes.len();
+            self.scc_parent = (0..n as u32).collect();
+            self.scc_members = (0..n as u32).map(|i| vec![i]).collect();
+            self.rank = (0..n as u32).collect();
+            self.pos_to_rep = (0..n as u32).map(Some).collect();
+            self.stale = false;
+        } else {
+            let mut split = BTreeSet::new();
+            for (&(from, to), &present) in delta {
+                poll()?;
+                if Some(from) == excluded || Some(to) == excluded {
+                    continue;
+                }
+                let from_index = self.intern(from);
+                let to_index = self.intern(to);
+                let a = find(&mut self.scc_parent, from_index);
+                let b = find(&mut self.scc_parent, to_index);
+                if a == b {
+                    changes.invalidated.insert(self.nodes[a as usize]);
+                    changes.changed.insert(self.nodes[a as usize]);
+                    if !present && from != to {
+                        split.insert(a);
+                    }
+                }
+                if present {
+                    additions.push((from, to));
+                }
+            }
+            // Splits replace one old rank slot; sorting descending keeps the
+            // old ranks of the remaining split candidates unchanged.
+            let mut split: Vec<_> = split.into_iter().collect();
+            split.sort_by_key(|&rep| std::cmp::Reverse(self.rank[rep as usize]));
+            for rep in split {
+                self.split_component(rep, &mut successors, &mut changes, poll)?;
+            }
+        }
+        let mut windows = Vec::new();
+        for (from, to) in additions {
+            poll()?;
+            let a = find(&mut self.scc_parent, self.idx_of[&from]);
+            let b = find(&mut self.scc_parent, self.idx_of[&to]);
+            let (ra, rb) = (self.rank[a as usize], self.rank[b as usize]);
+            if a != b && ra >= rb {
+                windows.push((rb, ra));
+            }
+        }
+        windows.sort_unstable();
+        let mut united: Vec<(u32, u32)> = Vec::new();
+        for (lo, hi) in windows {
+            if let Some((_, end)) = united.last_mut()
+                && lo <= *end
+            {
+                *end = (*end).max(hi);
+                continue;
+            }
+            united.push((lo, hi));
+        }
+        for (lo, hi) in united {
+            self.repair_window(&mut successors, lo, hi, &mut changes, poll)?;
+        }
+        // Representatives retired during a later merge are not dirty scopes.
+        changes.changed = changes
+            .changed
+            .iter()
+            .map(|&node| self.component_of(node).unwrap())
+            .collect();
+        if initialized {
+            changes.changed.extend(self.dependency_order());
+        }
+        Ok(changes)
+    }
+
+    fn split_component<E>(
+        &mut self,
+        rep: u32,
+        successors: &mut impl FnMut(N) -> Vec<N>,
+        changes: &mut ComponentChanges<N>,
+        poll: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<(), E> {
+        let members = self.scc_members[rep as usize].clone();
+        let member_set: BTreeSet<_> = members.iter().copied().collect();
+        let mut graph = DiGraphMap::<u32, ()>::new();
+        for &member in &members {
+            poll()?;
+            changes.rows_visited += 1;
+            graph.add_node(member);
+            for target in successors(self.nodes[member as usize]) {
+                poll()?;
+                changes.edges_visited += 1;
+                let target = self.idx_of[&target];
+                if member_set.contains(&target) {
+                    graph.add_edge(member, target, ());
+                }
+            }
+        }
+        let groups = kosaraju_scc(&graph);
+        if groups.len() == 1 {
+            return Ok(());
+        }
+        let old_rank = self.rank[rep as usize] as usize;
+        self.multi.remove(&rep);
+        for &member in &members {
+            self.scc_parent[member as usize] = member;
+            self.scc_members[member as usize] = vec![member];
+            self.rank[member as usize] = DEAD_RANK;
+        }
+        let mut reps = Vec::new();
+        // Kosaraju returns dependency-first SCCs. Reversing them gives the
+        // consumer-first order required by the maintained rank invariant.
+        for group in groups.into_iter().rev() {
+            poll()?;
+            let mut iter = group.into_iter();
+            let mut representative = iter.next().expect("nonempty SCC");
+            for member in iter {
+                representative = self.scc_union(representative, member);
+            }
+            reps.push(Some(representative));
+            changes.changed.insert(self.nodes[representative as usize]);
+        }
+        self.pos_to_rep.splice(old_rank..=old_rank, reps);
+        for position in old_rank..self.pos_to_rep.len() {
+            poll()?;
+            if let Some(representative) = self.pos_to_rep[position] {
+                self.rank[representative as usize] = position as u32;
+            }
+        }
+        Ok(())
     }
 
     /// Whether `u` and `v` sit in the same multi-module SCC. The
@@ -144,57 +399,32 @@ where
         su == sv && self.scc_members[su as usize].len() >= 2
     }
 
-    /// Report a committed edge insertion. Call **after**
-    /// `base.increment_edge(u, v)`. No-op for parallel edges (the
-    /// adjacency pair already existed) and self-edges; otherwise the
-    /// standard PK insertion path runs, unioning any cycle the new
-    /// edge closes and re-ranking the affected window.
+    /// Adapt one committed counted insertion to the final-topology engine.
+    #[cfg(test)]
     pub fn insert_edge(&mut self, base: &CountedDiGraph<N>, u: N, v: N) {
-        let iu = self.intern(u);
-        let iv = self.intern(v);
-        if self.stale || u == v {
-            return;
+        if base.edge_count(u, v) == 1 {
+            self.apply_counted_pair(base, u, v, true);
         }
-        debug_assert!(
-            base.edge_count(u, v) > 0,
-            "insert_edge must be called after base.increment_edge",
-        );
-        if base.edge_count(u, v) > 1 {
-            return;
-        }
-        let su = find(&mut self.scc_parent, iu);
-        let sv = find(&mut self.scc_parent, iv);
-        if su == sv {
-            return;
-        }
-        let ru = self.rank[su as usize];
-        let rv = self.rank[sv as usize];
-        debug_assert!(ru != DEAD_RANK && rv != DEAD_RANK);
-        if ru < rv {
-            return;
-        }
-        self.rerank_window(base, rv, ru);
     }
 
-    /// Report a committed edge removal. Call **after**
-    /// `base.decrement_edge(u, v)`. No-op while parallel edges remain
-    /// or when the removed pair crossed two condensation nodes (a
-    /// sub-DAG of a DAG keeps the rank order valid). A removal
-    /// internal to an SCC may split it — the structure marks itself
-    /// stale instead of attempting the split, and the next query
-    /// rebuilds.
+    /// Adapt one committed counted removal; parallel evidence is a no-op.
+    #[cfg(test)]
     pub fn remove_edge(&mut self, base: &CountedDiGraph<N>, u: N, v: N) {
-        if self.stale || u == v {
-            return;
+        if base.edge_count(u, v) == 0 {
+            self.apply_counted_pair(base, u, v, false);
         }
-        let (Some(&iu), Some(&iv)) = (self.idx_of.get(&u), self.idx_of.get(&v)) else {
-            return;
-        };
-        if base.edge_count(u, v) > 0 {
-            return;
-        }
-        if find(&mut self.scc_parent, iu) == find(&mut self.scc_parent, iv) {
-            self.stale = true;
+    }
+
+    #[cfg(test)]
+    fn apply_counted_pair(&mut self, base: &CountedDiGraph<N>, u: N, v: N, present: bool) {
+        match self.apply_topology_batch(
+            base.adjacency(),
+            &BTreeMap::from([((u, v), present)]),
+            None,
+            || Ok::<(), std::convert::Infallible>(()),
+        ) {
+            Ok(_) => {}
+            Err(never) => match never {},
         }
     }
 
@@ -261,61 +491,13 @@ where
 
     fn ensure_fresh(&mut self, base: &CountedDiGraph<N>) {
         if self.stale {
-            self.rebuild(base);
-        }
-    }
-
-    /// Full `O(|V| + |E|)` recompute: SCCs of the base graph via
-    /// Tarjan, then Kahn over the condensation for ranks.
-    fn rebuild(&mut self, base: &CountedDiGraph<N>) {
-        for (a, b) in base.edge_pairs() {
-            self.intern(a);
-            self.intern(b);
-        }
-        let n = self.nodes.len();
-        self.scc_parent = (0..n as u32).collect();
-        self.scc_members = (0..n as u32).map(|i| vec![i]).collect();
-        self.rank = vec![DEAD_RANK; n];
-        let pairs: Vec<(N, N)> = base.edge_pairs().collect();
-        let mut graph: DiGraphMap<u32, ()> = DiGraphMap::new();
-        for i in 0..n as u32 {
-            graph.add_node(i);
-        }
-        for (a, b) in &pairs {
-            let (ia, ib) = (self.idx_of[a], self.idx_of[b]);
-            if ia != ib {
-                graph.add_edge(ia, ib, ());
+            match self.apply_topology_batch(base.adjacency(), &BTreeMap::new(), None, || {
+                Ok::<(), std::convert::Infallible>(())
+            }) {
+                Ok(_) => {}
+                Err(never) => match never {},
             }
         }
-        for group in tarjan_scc(&graph) {
-            if group.len() < 2 {
-                continue;
-            }
-            let mut members = group.into_iter();
-            let mut acc = members.next().expect("group.len() >= 2");
-            for member in members {
-                acc = self.scc_union(acc, member);
-            }
-        }
-        // Ranks: Kahn over the condensation (a DAG by construction).
-        let mut reps: BTreeSet<u32> = BTreeSet::new();
-        for i in 0..n as u32 {
-            reps.insert(find(&mut self.scc_parent, i));
-        }
-        let mut edges: BTreeSet<(u32, u32)> = BTreeSet::new();
-        for (a, b) in &pairs {
-            let ra = find(&mut self.scc_parent, self.idx_of[a]);
-            let rb = find(&mut self.scc_parent, self.idx_of[b]);
-            if ra != rb {
-                edges.insert((ra, rb));
-            }
-        }
-        self.pos_to_rep = vec![None; reps.len()];
-        self.kahn_assign_ranks(&reps, &edges, 0);
-        self.visited_epoch.clear();
-        self.visited_epoch.resize(n, 0);
-        self.current_epoch = 0;
-        self.stale = false;
     }
 
     /// Union two SCC groups (arguments need not be representatives, but
@@ -332,6 +514,8 @@ where
             } else {
                 (rb, ra)
             };
+        self.multi.remove(&absorbed);
+        self.multi.insert(survivor);
         self.scc_parent[absorbed as usize] = survivor;
         let moved = std::mem::take(&mut self.scc_members[absorbed as usize]);
         self.scc_members[survivor as usize].extend(moved);
@@ -341,10 +525,17 @@ where
 
     /// Re-rank the condensation window `[lo, hi]` (inclusive rank
     /// bounds): collect the window's representatives, union any cycle
-    /// among them (Tarjan over the window-induced condensation
+    /// among them (iterative SCC over the window-induced condensation
     /// subgraph), then Kahn-assign consecutive ranks from `lo`.
     /// `O(|window| + |E_window|)` — the PK affected-region bound.
-    fn rerank_window(&mut self, base: &CountedDiGraph<N>, lo: u32, hi: u32) {
+    fn repair_window<E>(
+        &mut self,
+        successors: &mut impl FnMut(N) -> Vec<N>,
+        lo: u32,
+        hi: u32,
+        changes: &mut ComponentChanges<N>,
+        poll: &mut impl FnMut() -> Result<(), E>,
+    ) -> Result<(), E> {
         debug_assert!(!self.stale);
         let window: Vec<u32> = self.pos_to_rep[lo as usize..=hi as usize]
             .iter()
@@ -357,10 +548,15 @@ where
         // separate condensation edge store exists.
         let mut edges: BTreeSet<(u32, u32)> = BTreeSet::new();
         for &r in &window {
+            poll()?;
             for member_pos in 0..self.scc_members[r as usize].len() {
                 let m = self.scc_members[r as usize][member_pos];
-                let targets: Vec<N> = base.successors(self.nodes[m as usize]).collect();
+                poll()?;
+                changes.rows_visited += 1;
+                let targets = successors(self.nodes[m as usize]);
                 for t in targets {
+                    poll()?;
+                    changes.edges_visited += 1;
                     let it = self.idx_of[&t];
                     let st = find(&mut self.scc_parent, it);
                     if st != r && window_set.contains(&st) {
@@ -379,15 +575,20 @@ where
         for &(a, b) in &edges {
             graph.add_edge(a, b, ());
         }
-        for group in tarjan_scc(&graph) {
+        for group in kosaraju_scc(&graph) {
+            poll()?;
             if group.len() < 2 {
                 continue;
+            }
+            for &rep in &group {
+                changes.invalidated.insert(self.nodes[rep as usize]);
             }
             let mut members = group.into_iter();
             let mut acc = members.next().expect("group.len() >= 2");
             for member in members {
                 acc = self.scc_union(acc, member);
             }
+            changes.changed.insert(self.nodes[acc as usize]);
         }
         let reps: BTreeSet<u32> = window
             .iter()
@@ -402,6 +603,7 @@ where
         for slot in next..=hi {
             self.pos_to_rep[slot as usize] = None;
         }
+        Ok(())
     }
 
     /// Assign consecutive ranks starting at `start` to `reps` in a
@@ -844,20 +1046,20 @@ mod tests {
     }
 
     #[test]
-    fn removal_inside_multi_scc_goes_stale_and_rebuild_splits() {
+    fn removal_inside_multi_scc_repairs_only_that_component() {
         let mut base = graph(&[(0, 1), (1, 2), (2, 0)]);
         let mut order = CondensationOrder::new();
         assert!(in_multi_scc(&mut order, &base, 0));
         base.decrement_edge(2, 0);
         order.remove_edge(&base, 2, 0);
-        assert!(order.is_stale(), "in-SCC removal marks stale");
+        assert!(!order.is_stale(), "in-SCC removal repairs locally");
         for n in [0, 1, 2] {
             assert!(
                 !in_multi_scc(&mut order, &base, n),
-                "SCC split after rebuild"
+                "SCC split after local repair"
             );
         }
-        assert!(!order.is_stale(), "query rebuilt lazily");
+        assert!(!order.is_stale(), "query keeps maintained state");
         order.validate(&base).expect("valid after rebuild");
     }
 

@@ -14,12 +14,13 @@ mod bindings_commands;
 mod contract_audit;
 mod inspection_commands;
 mod integrity_explanation;
+mod module_proposals;
 mod modules_commands;
 mod propose_commutations;
 mod selector_explanation;
 mod selector_input;
 mod snapshot;
-mod source_unit_refine;
+mod source_unit_apply;
 mod spec_commands;
 mod spec_lint;
 mod static_imports;
@@ -46,6 +47,20 @@ use crate::invocation::ResolvedInvocation;
 use crate::modules_commands::ModulesNs;
 use crate::scc_cluster::{ClusterArgs, SccArgs, run_cluster, run_scc};
 use crate::spec_commands::SpecNs;
+
+/// Retain the checked source/configuration for every graph a command consumes.
+/// Corpus proposals must not reuse the first chunk's context for other chunks.
+pub(crate) type VerifiedGraphContexts =
+    std::collections::BTreeMap<String, graph_provenance::VerifiedGraphSourceContext>;
+
+fn single_graph_context(
+    context: Option<graph_provenance::VerifiedGraphSourceContext>,
+) -> VerifiedGraphContexts {
+    context
+        .into_iter()
+        .map(|context| (context.chunk_id().to_owned(), context))
+        .collect()
+}
 
 /// Which current authoring scope a graph-backed command actually interprets.
 #[derive(Clone, Copy)]
@@ -417,8 +432,8 @@ enum DebundleCommand {
     /// residual-eligible bindings, …).
     #[command(name = "graph-summary")]
     GraphSummary(GraphSummaryArgs),
-    /// Dereference any identifier (binding, module path, atomic group, or
-    /// source unit) with full graph + spec context.
+    /// Describe a binding, module path, atomic group or source unit with
+    /// full graph and spec context.
     Describe(DescribeArgs),
     /// Inspect source by graph ID, binding, or numbered top-level item.
     #[command(name = "inspect-source")]
@@ -444,20 +459,11 @@ enum DebundleCommand {
 
 fn cli_command() -> clap::Command {
     DebundleArgs::command().mut_subcommand("modules", |modules| {
-        modules
-            .mut_subcommand("refine", |refine| {
-                // These commands did not previously consume the shared transform
-                // environment defaults. Keep their opt-in context explicit while
-                // leaving those defaults available to the existing run/edit verbs.
-                refine
-                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
-                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
-            })
-            .mut_subcommand("apply", |apply| {
-                apply
-                    .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
-                    .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
-            })
+        modules.mut_subcommand("apply", |apply| {
+            apply
+                .mut_arg("tree_source_root", |arg| arg.env(None::<&'static str>))
+                .mut_arg("out_root", |arg| arg.env(None::<&'static str>))
+        })
     })
 }
 
@@ -559,7 +565,7 @@ fn run_debundle_cli(
         }
         _ => None,
     };
-    let source_context = match verify_mixed_graph_command(&args.command, &roots) {
+    let source_contexts = match verify_mixed_graph_command(&args.command, &roots) {
         Ok(source_context) => source_context,
         Err(error) => {
             if top_level_query_format(&args.command).is_none() {
@@ -570,6 +576,9 @@ fn run_debundle_cli(
             return Err(error);
         }
     };
+    // Every other graph-backed command consumes exactly one graph. Modules
+    // receives the full collection and selects each corpus chunk by identity.
+    let source_context = source_contexts.values().next();
     let writes_with_graph = match &args.command {
         DebundleCommand::Bindings(args) => args.writes_with_graph(),
         DebundleCommand::Modules(args) => args.writes_with_graph(),
@@ -649,36 +658,30 @@ fn run_debundle_cli(
             Ok(())
         }
         DebundleCommand::Analyze(args) => args.run(stderr, analysis_engine_sha256),
-        DebundleCommand::Bindings(args) => bindings_commands::run(
-            stderr,
-            args,
-            source_context.as_ref(),
-            analysis_engine_sha256,
-            output,
-        ),
+        DebundleCommand::Bindings(args) => {
+            bindings_commands::run(stderr, args, source_context, analysis_engine_sha256, output)
+        }
         DebundleCommand::Modules(args) => modules_commands::run(
             stderr,
             args,
-            source_context.as_ref(),
+            &source_contexts,
             analysis_engine_sha256,
             output,
         ),
         DebundleCommand::Atoms(args) => inspection_commands::run_atoms(args, output),
         DebundleCommand::Coverage(args) => {
-            inspection_commands::run_coverage(stderr, args, source_context.as_ref(), output)
+            inspection_commands::run_coverage(stderr, args, source_context, output)
         }
-        DebundleCommand::GraphSummary(args) => {
-            inspection_commands::run_graph_summary(args, source_context.as_ref(), output)
-        }
+        DebundleCommand::GraphSummary(args) => inspection_commands::run_graph_summary(args, output),
         DebundleCommand::Describe(describe_args) => inspection_commands::run_describe(
             stderr,
             describe_args,
-            source_context,
+            source_context.cloned(),
             describe_query.expect("Describe query was validated before graph preflight"),
             output,
         ),
         DebundleCommand::InspectSource(args) => {
-            inspection_commands::run_inspect_source(stderr, args, source_context.as_ref(), output)
+            inspection_commands::run_inspect_source(stderr, args, source_context, output)
         }
         DebundleCommand::StaticImports(args) => static_imports::run(args, output),
         DebundleCommand::ExplainIntegrity(explain_args) => {
@@ -686,9 +689,7 @@ fn run_debundle_cli(
         }
         DebundleCommand::Scc(args) => run_scc(args, output),
         DebundleCommand::Cluster(args) => run_cluster(args, output),
-        DebundleCommand::Spec(args) => {
-            spec_commands::run(stderr, args, source_context.as_ref(), output)
-        }
+        DebundleCommand::Spec(args) => spec_commands::run(stderr, args, source_context, output),
         // Don't wrap with a generic context — `gate` subcommands
         // already carry enough context in their bail messages (e.g.
         // "no blocking SCC with id ..."), and an outer wrap would
@@ -874,10 +875,12 @@ fn top_level_query_format(command: &DebundleCommand) -> Option<OutputFormat> {
 fn verify_mixed_graph_command(
     command: &DebundleCommand,
     roots: &CurrentRoots,
-) -> Result<Option<graph_provenance::VerifiedGraphSourceContext>> {
-    match command {
+) -> Result<VerifiedGraphContexts> {
+    if let DebundleCommand::Modules(args) = command {
+        return args.verify_graph(roots);
+    }
+    let context = match command {
         DebundleCommand::Bindings(args) => args.verify_graph(roots),
-        DebundleCommand::Modules(args) => args.verify_graph(roots),
         DebundleCommand::Coverage(args) => verify_graph_compatibility(
             &args.common.dependency_graph_path,
             &args.common.modules_root,
@@ -916,7 +919,8 @@ fn verify_mixed_graph_command(
         }
         DebundleCommand::Spec(args) => args.verify_graph(roots),
         _ => Ok(None),
-    }
+    }?;
+    Ok(single_graph_context(context))
 }
 
 /// Shared tail of every report subcommand: resolve `format` (tty-aware default),

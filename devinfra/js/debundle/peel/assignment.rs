@@ -8,10 +8,7 @@ use analysis::{
     ModuleId, StatementKind, compute_atomic_groups,
 };
 use anyhow::{Context, Result, ensure};
-use gate::{
-    AssignmentValidation, EsmImportSchedule, validate_assignment_with_schedule,
-    validate_assignment_with_verdict,
-};
+use gate::{AssignmentValidation, EsmImportSchedule};
 use serde::{Deserialize, Serialize};
 use spec::{ModulePath, is_residual_namespace_path};
 
@@ -48,6 +45,8 @@ impl AssignmentSnapshot {
 pub struct AssignmentPlan {
     pub snapshot: AssignmentSnapshot,
     pub changes: Vec<SourceUnitAssignment>,
+    /// Complete nonentry owner priority for the resulting assignment.
+    pub import_order: Vec<ModulePath>,
 }
 
 impl AssignmentPlan {
@@ -66,24 +65,47 @@ pub struct AssignmentProblem<'a> {
     pub(super) input: &'a DependencyGraphInput,
     pub(super) baseline: Vec<Option<ModulePath>>,
     pub(super) existing_modules: BTreeSet<ModulePath>,
+    generated_modules: BTreeSet<ModulePath>,
     pub(super) residual_origins: Vec<bool>,
     pub(super) residual_modules: BTreeSet<ModulePath>,
     pub(super) atoms: Vec<AtomicGroup>,
+    pub(super) baseline_certificate: Option<(PlacementAssignment, EsmImportSchedule)>,
+}
+
+/// A complete placement with explicit owner identities. Construction can use a
+/// stable sparse arena while checking/emission uses canonical path order. Entry
+/// is a distinct identity, never a generated residual module or a path alias.
+pub(super) struct PlacementAssignment {
+    pub assignment: ModuleAssignment,
+    pub modules: BTreeMap<ModuleId, ModulePath>,
+}
+
+impl PlacementAssignment {
+    pub fn entry(&self) -> ModuleId {
+        self.assignment.entry_destination().module_id()
+    }
+
+    pub fn nodes(&self) -> BTreeSet<ModuleId> {
+        self.modules.keys().copied().chain([self.entry()]).collect()
+    }
 }
 
 impl<'a> AssignmentProblem<'a> {
     pub fn new(input: &'a DependencyGraphInput) -> Result<Self> {
-        let problem = Self::prepare(input)?;
-        let baseline = problem.validate(&problem.baseline)?;
+        let mut problem = Self::prepare(input)?;
+        let placement = problem.canonical_assignment(&problem.baseline);
+        let (baseline, schedule) = problem
+            .validate_with_priority_and_schedule(&problem.baseline, &input.report().import_order)?;
         ensure!(
             accepted(&baseline),
             "the current complete assignment is rejected: {:?}",
             baseline.report
         );
+        problem.baseline_certificate = Some((placement, schedule));
         Ok(problem)
     }
 
-    fn prepare(input: &'a DependencyGraphInput) -> Result<Self> {
+    pub fn prepare(input: &'a DependencyGraphInput) -> Result<Self> {
         let report = input.report();
         let baseline = report
             .nodes
@@ -95,6 +117,7 @@ impl<'a> AssignmentProblem<'a> {
                 Ok((module.kind != ModuleDestinationKind::Entry).then(|| module.path.clone()))
             })
             .collect::<Result<Vec<_>>>()?;
+        let baseline_owners: BTreeSet<_> = baseline.iter().flatten().cloned().collect();
         let problem = Self {
             input,
             baseline,
@@ -103,6 +126,17 @@ impl<'a> AssignmentProblem<'a> {
                 .nodes
                 .iter()
                 .filter(|module| module.kind != ModuleDestinationKind::Entry)
+                .map(|module| module.path.clone())
+                .collect(),
+            generated_modules: report
+                .quotient
+                .nodes
+                .iter()
+                .filter(|module| {
+                    module.kind == ModuleDestinationKind::Unassigned
+                        || module.path.as_str().starts_with("__auto/atomic_groups/")
+                })
+                .filter(|module| baseline_owners.contains(&module.path))
                 .map(|module| module.path.clone())
                 .collect(),
             residual_origins: report
@@ -118,6 +152,7 @@ impl<'a> AssignmentProblem<'a> {
                 .map(|module| module.path.clone())
                 .collect(),
             atoms: compute_atomic_groups(input.graph()),
+            baseline_certificate: None,
         };
         Ok(problem)
     }
@@ -165,64 +200,82 @@ impl<'a> AssignmentProblem<'a> {
             );
             candidate[unit.0] = Some(module);
         }
+        reindex_generated_atomic_group_owners(&mut candidate)?;
         Ok(candidate)
     }
 
     pub fn validate(&self, candidate: &[Option<ModulePath>]) -> Result<AssignmentValidation> {
-        self.validate_using_schedule(candidate, None)
+        self.validate_with_priority(candidate, &self.input.report().import_order)
     }
 
-    pub(super) fn validate_constructed(
-        &self,
-        candidate: &[Option<ModulePath>],
-        scheduled_paths: &[ModulePath],
-        schedule: &EsmImportSchedule,
-    ) -> Result<AssignmentValidation> {
-        self.validate_using_schedule(candidate, Some((scheduled_paths, schedule)))
+    fn canonical_assignment(&self, candidate: &[Option<ModulePath>]) -> PlacementAssignment {
+        let modules: BTreeMap<_, _> = self
+            .ordered_modules(candidate)
+            .into_iter()
+            .enumerate()
+            .map(|(index, path)| (ModuleId(index), path))
+            .collect();
+        let ids: BTreeMap<_, _> = modules.iter().map(|(&id, path)| (path, id)).collect();
+        let entry = ModuleId(modules.len());
+        PlacementAssignment {
+            assignment: ModuleAssignment::from_assignments(
+                candidate
+                    .iter()
+                    .map(|path| path.as_ref().map_or(entry, |path| ids[path]))
+                    .collect(),
+                EntryDestination::from_module_id(entry),
+            ),
+            modules,
+        }
     }
 
-    fn validate_using_schedule(
+    /// Validate the complete assignment under exactly the supplied global
+    /// priority. This path never searches for an alternative schedule.
+    pub fn validate_with_priority(
         &self,
         candidate: &[Option<ModulePath>],
-        constructed: Option<(&[ModulePath], &EsmImportSchedule)>,
+        import_order: &[ModulePath],
     ) -> Result<AssignmentValidation> {
+        self.validate_with_priority_and_schedule(candidate, import_order)
+            .map(|(validation, _)| validation)
+    }
+
+    pub fn validate_with_priority_and_schedule(
+        &self,
+        candidate: &[Option<ModulePath>],
+        import_order: &[ModulePath],
+    ) -> Result<(AssignmentValidation, EsmImportSchedule)> {
         ensure!(
             candidate.len() == self.baseline.len(),
             "candidate must assign every source unit"
         );
-        let paths = self.ordered_modules(candidate);
-        let ids: BTreeMap<_, _> = paths
-            .iter()
-            .enumerate()
-            .map(|(index, path)| (path, ModuleId(index)))
-            .collect();
-        let residual = ModuleId(paths.len());
-        let assignment = ModuleAssignment::from_assignments(
-            candidate
-                .iter()
-                .map(|path| path.as_ref().map_or(residual, |path| ids[path]))
-                .collect(),
-            EntryDestination::from_module_id(residual),
-        );
+        let canonical = self.canonical_assignment(candidate);
+        let assignment = &canonical.assignment;
+        let residual = canonical.entry();
         let residual_path = ModulePath::parse("residual", "")?;
         let module_path = |id: ModuleId| {
             if id == residual {
                 residual_path.clone()
             } else {
-                paths[id.0].clone()
+                canonical.modules[&id].clone()
             }
         };
-        let mut validation = if let Some((scheduled_paths, schedule)) = constructed {
-            let remapped = self.remap_schedule(&paths, &assignment, scheduled_paths, schedule)?;
-            validate_assignment_with_schedule(
-                self.input.graph(),
-                &assignment,
-                &module_path,
-                &remapped,
-            )?
-        } else {
-            validate_assignment_with_verdict(self.input.graph(), &assignment, &module_path)
-        };
+        let (mut validation, schedule) = gate::validate_assignment_with_priority(
+            self.input.graph(),
+            assignment,
+            &module_path,
+            &canonical.nodes(),
+            import_order,
+        )?;
+        self.add_atomic_conflicts(&mut validation, assignment);
+        Ok((validation, schedule))
+    }
+
+    fn add_atomic_conflicts(
+        &self,
+        validation: &mut AssignmentValidation,
+        assignment: &ModuleAssignment,
+    ) {
         validation.report.atomic_group_conflicts = self
             .atoms
             .iter()
@@ -241,79 +294,22 @@ impl<'a> AssignmentProblem<'a> {
                 )
             })
             .collect();
-        Ok(validation)
-    }
-
-    /// Provisional schedules include unused explicit fresh anchors. Remap by
-    /// logical owner, dropping only isolated unused anchors and their implicit
-    /// entry imports. Recheck all final target sets against the source graph.
-    fn remap_schedule(
-        &self,
-        paths: &[ModulePath],
-        assignment: &ModuleAssignment,
-        scheduled_paths: &[ModulePath],
-        schedule: &EsmImportSchedule,
-    ) -> Result<EsmImportSchedule> {
-        let old_entry = ModuleId(scheduled_paths.len());
-        let entry = assignment.entry_destination().module_id();
-        let ids: BTreeMap<_, _> = paths
-            .iter()
-            .enumerate()
-            .map(|(i, path)| (path, ModuleId(i)))
-            .collect();
-        ensure!(
-            schedule.modules() == (0..=scheduled_paths.len()).map(ModuleId).collect(),
-            "constructed schedule changed its provisional owner universe"
-        );
-        let mut mapping = BTreeMap::from([(old_entry, entry)]);
-        for (i, path) in scheduled_paths.iter().enumerate() {
-            let old = ModuleId(i);
-            if let Some(&id) = ids.get(path) {
-                mapping.insert(old, id);
-            } else {
-                ensure!(
-                    schedule.imports(old).is_empty(),
-                    "unused fresh owner has imports"
-                );
-            }
-        }
-        let mut imports = BTreeMap::new();
-        for (&old, &new) in &mapping {
-            let mut targets = Vec::new();
-            for &target in schedule.imports(old) {
-                if let Some(&mapped) = mapping.get(&target) {
-                    targets.push(mapped);
-                } else {
-                    ensure!(
-                        old == old_entry,
-                        "a nonentry module imports a removed fresh owner"
-                    );
-                }
-            }
-            imports.insert(new, targets);
-        }
-        let canonical =
-            analysis::graph::chunk_constraining_module_edges(self.input.graph(), assignment);
-        let nodes = (0..=paths.len()).map(ModuleId).collect();
-        Ok(EsmImportSchedule::from_imports(
-            entry,
-            &canonical.i_successors,
-            &nodes,
-            imports,
-        )?)
     }
 
     /// Numeric module identities used by the full gate, in emitter order.
     /// The residual entry follows this list.
     pub fn ordered_modules(&self, candidate: &[Option<ModulePath>]) -> Vec<ModulePath> {
-        // Retain empty authored modules too. Emission assigns module identities
-        // in path order, with the residual entry following the planned modules.
-        let paths: BTreeSet<_> = self
+        // Retain empty authored modules, but omit generated/residual owners
+        // drained by this candidate. The materializer emits those owners only
+        // while at least one source unit remains assigned to them.
+        let assigned: BTreeSet<_> = candidate.iter().flatten().cloned().collect();
+        let mut paths: BTreeSet<_> = self
             .existing_modules
             .iter()
+            .filter(|path| !self.generated_modules.contains(*path) || assigned.contains(*path))
             .cloned()
-            .chain(candidate.iter().flatten().cloned())
             .collect();
+        paths.extend(assigned);
         // Authored modules precede generated residual-layout modules in the
         // normal pipeline. Keep that distinction instead of collapsing every
         // unclaimed destination into the entry module.
@@ -352,21 +348,123 @@ impl<'a> AssignmentProblem<'a> {
     }
 }
 
-/// The exact resolved-map edit gate also supports repairing a rejected starting
-/// spec. Discovery/check commands require an accepted baseline via `new`; a
-/// legacy repair still checks its complete final assignment with the same gate.
-pub fn check_resolved_edit(
+/// Validate every source unit's final effective owner, not merely authored
+/// claims. `None` means true entry; generated residual owners retain their paths.
+/// Preparing without baseline acceptance permits repairs of rejected specs,
+/// while the complete candidate still passes the shared placement checks.
+pub fn check_resolved_owners(
     input: &DependencyGraphInput,
-    changes: &[SourceUnitAssignment],
+    owners: &BTreeMap<String, Option<ModulePath>>,
+    emitted_modules: &BTreeSet<ModulePath>,
+    import_order: &[ModulePath],
 ) -> Result<(Vec<ModulePath>, AssignmentValidation)> {
-    let problem = AssignmentProblem::prepare(input)?;
-    let candidate = problem.candidate(changes)?;
+    let mut problem = AssignmentProblem::prepare(input)?;
+    problem.existing_modules = emitted_modules.clone();
+    ensure!(
+        owners.len() == input.report().nodes.len(),
+        "resolved owners must cover every source unit exactly once"
+    );
+    let candidate = input
+        .report()
+        .nodes
+        .iter()
+        .map(|node| {
+            owners
+                .get(&node.id)
+                .cloned()
+                .with_context(|| format!("resolved owners omit source unit {:?}", node.id))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        candidate
+            .iter()
+            .flatten()
+            .all(|module| emitted_modules.contains(module)),
+        "resolved source-unit owner is absent from the emitted module universe"
+    );
     Ok((
         problem.ordered_modules(&candidate),
-        problem.validate(&candidate)?,
+        problem.validate_with_priority(&candidate, import_order)?,
     ))
+}
+
+/// Compact surviving `per_atomic_group` owners after a whole group is claimed.
+/// The materializer enumerates wholly unclaimed atomic groups by their smallest
+/// `SourceUnitId`, then emits those groups densely under
+/// `__auto/atomic_groups/NNNN`. The baseline paths already encode that stable
+/// order, so removing a claimed group requires the same dense projection over
+/// the remaining owner paths. This only handles the per-atomic-group namespace;
+/// coarse residual synthesis has different regrouping rules and uses another
+/// namespace.
+pub fn reindex_generated_atomic_group_owners(
+    owners: &mut [Option<ModulePath>],
+) -> Result<BTreeMap<ModulePath, ModulePath>> {
+    const PREFIX: &str = "__auto/atomic_groups/";
+    let mut existing = BTreeMap::<usize, ModulePath>::new();
+    for path in owners.iter().flatten() {
+        let Some(suffix) = path.as_str().strip_prefix(PREFIX) else {
+            continue;
+        };
+        ensure!(
+            suffix.len() >= 4
+                && suffix.bytes().all(|byte| byte.is_ascii_digit())
+                && (suffix.len() == 4 || !suffix.starts_with('0')),
+            "noncanonical per-atomic-group owner path {:?}",
+            path
+        );
+        let index = suffix
+            .parse::<usize>()
+            .with_context(|| format!("invalid generated atomic-group index in {path}"))?;
+        ensure!(
+            existing.insert(index, path.clone()).is_none(),
+            "duplicate generated atomic-group owner index {index}"
+        );
+    }
+    let remap: BTreeMap<_, _> = existing
+        .into_values()
+        .enumerate()
+        .map(|(index, old)| {
+            let new = ModulePath::parse(&format!("{PREFIX}{index:04}"), "")?;
+            Ok((old, new))
+        })
+        .collect::<Result<_>>()?;
+    for owner in owners.iter_mut().flatten() {
+        if let Some(new) = remap.get(owner) {
+            *owner = new.clone();
+        }
+    }
+    Ok(remap)
 }
 
 pub fn accepted(validation: &AssignmentValidation) -> bool {
     validation.verdict.is_realizable() && validation.report.atomic_group_conflicts.is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_atomic_group_indices_are_compacted_numerically() {
+        let path = |suffix: &str| {
+            ModulePath::parse(&format!("__auto/atomic_groups/{suffix}"), "").unwrap()
+        };
+        let mut owners = vec![
+            Some(path("10000")),
+            Some(path("9999")),
+            Some(path("0000")),
+            Some(ModulePath::parse("authored", "").unwrap()),
+            None,
+        ];
+
+        let remap = reindex_generated_atomic_group_owners(&mut owners).unwrap();
+
+        assert_eq!(owners[0], Some(path("0002")));
+        assert_eq!(owners[1], Some(path("0001")));
+        assert_eq!(owners[2], Some(path("0000")));
+        assert_eq!(owners[3], Some(ModulePath::parse("authored", "").unwrap()));
+        assert_eq!(owners[4], None);
+        assert_eq!(remap.get(&path("9999")), Some(&path("0001")));
+        assert_eq!(remap.get(&path("10000")), Some(&path("0002")));
+    }
 }

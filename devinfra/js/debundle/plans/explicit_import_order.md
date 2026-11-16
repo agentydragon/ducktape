@@ -1,11 +1,54 @@
 # Explicit import order and constructive residual extraction
 
-Status: target contract; implementation is in progress on draft #16801.
-This document does not describe shipped CLI behavior. It supersedes the
-unrestricted discovery and implicit scheduling target. The superseded placement
-plan is removed; useful constraints and lessons live in the maintained design docs.
+Status: active, with required-contract activation tracked in #16801. Strict enforcement,
+ordering-aware edits and the polynomial proposer must land together. Retain
+exact-head checks through landing. Consumer migration and final landed-engine
+acceptance remain unfinished.
 The algorithm and correctness argument are in <../docs/placement_algorithm.md>.
 The grouped chunk-configuration refactor stays deferred as AR9 in <../TODO.md>.
+The authoring workflow for generated atomic-unit modules and their explicit
+priorities is separately deferred as AR10 there.
+
+## Current acceptance gaps
+
+- Private migration and required-engine adoption remain partial. Complete all
+  configured specs, including diagnostic configurations, and run their relevant
+  controls on the final landed pin. Preparatory replay on the permissive schema
+  is not final required-contract acceptance.
+- Complete final-priority configuration for each ownership-subset target.
+  A canonical priority cannot also describe a different selected owner universe.
+  Give those materializations distinct explicit configurations and retain the
+  normal semantic-projection and behavior checks; do not filter an invalid
+  priority in the engine to make adoption appear green.
+  Capture and verify the accepted traversal for each final ownership variant;
+  restricting another assignment's priority is only a candidate, even when that
+  assignment was accepted.
+- The activation and remaining consumer work must still land. Preserve the
+  verified propose/check/preview/apply behavior while trimming independently
+  merged preparation from the activation diff. Complete the downstream guidance
+  audit with its engine-pin migration.
+- Ownership-subset materializations currently reject full graph export, so their
+  bounded diagnostic reports cannot feed the constructor. Before claiming the
+  extraction workflow covers such a consumer, provide an independently authored
+  passing tree or support a selected ownership overlay through graph provenance
+  and selector-plan application together. A rejected canonical graph cannot
+  stand in for the passing subset's baseline. Track this separately from merely
+  giving each ownership variant a valid import priority.
+
+The integration rehearsal discovers an executable 380-unit peel unseeded in
+6.98 seconds, checks it in 0.84 seconds, previews in 6.68 seconds, applies in
+6.53 seconds and materializes in 5.39 seconds. Preview changes no spec files;
+all seven reviewed service names survive. Entry residual drops from 825 to 445
+source units and from 2,119,089 to 165,722 bytes. Both whole-chunk Chromium and
+Node declaration/eval controls
+[pass on the applied strict-engine rehearsal](https://app.buildbuddy.io/invocation/6f57170a-3731-4d3f-a536-99e8aca798ca).
+Cold source analysis is separate preparation (9m42s); the extraction reuses it.
+The committed formatted spec emits the same 76-file app. Both packaged recipes
+pass, and all nine built skill archives match the current 51-file source
+payloads. Retain these controls through landing and final pin adoption.
+
+Remove each gap when its acceptance evidence exists; keep enduring contracts and
+lessons in `docs/`.
 
 ## Required result
 
@@ -17,9 +60,16 @@ The grouped chunk-configuration refactor stays deferred as AR9 in <../TODO.md>.
   gates remain. Ordinary validation, prediction and emission never invoke an
   arbitrary schedule-existence solver or silently change the declared order.
 - Capture an accepted traversal as its discovery priority and verify replay.
-  Migrate public specs and fixtures, then private consumer specs and their
-  engine pin together. Preserve currently passing behavior. The independently
-  known-broken private canonical spec is not an acceptance control.
+  Migrate all public and downstream authored specs, fixtures and examples, then
+  adopt the required-contract engine downstream. Preserve currently passing
+  behavior. Known-broken diagnostic specs must migrate too; their exclusion is
+  only from passing-runtime acceptance, not from the new format or tooling.
+- Finish with one supported contract and no backward compatibility. Remove
+  legacy command routes and aliases, implicit ordering/default repair, decoders
+  or adapters for the old placement/ordering contract and any transitional fallback.
+  Missing priorities must be rejected wherever materialization requires them.
+  Migration/capture helpers do not become a supported legacy execution mode;
+  tiny independent enumeration remains confined to test oracles.
 - A checked plan binds input identity, complete ownership changes and the final
   import priority. Preview, check, apply and materialization consume that same
   decision. Apply validates ownership and order as one decision, stages both updates before
@@ -47,34 +97,57 @@ The grouped chunk-configuration refactor stays deferred as AR9 in <../TODO.md>.
   at least one discovered extraction and run consumer-appropriate behavior
   controls; a known-unit seeded smoke does not establish this requirement.
 
-## Sequence and ownership
+## Outstanding work in execution order
 
-1. **Schema and persistence.** Add `import_order: chunk -> [ModulePath]` to flat
-   and tree specs, protobuf saved specs/apply projections and configuration
-   read/write APIs. Empty priority is valid for an all-entry chunk; absence for
-   a materialized chunk is an error. Preserve ordering-independent inspection.
-2. **Shared verifier and pipeline.** Build schedules from supplied priorities,
-   export discovery priorities, transport them in graph reports and use them
-   in assignment analysis, gate, lowering and saved-analysis application. Remove
-   ordinary exact-constructor calls. Test that malformed or failed witnesses
-   are errors about that witness, not claims of assignment impossibility.
-3. **Migration command and consumers.** Capture from accepted legacy outputs,
-   update public examples/fixtures and isolated private specs, and stage the
-   private engine pin with the schema migration. Recheck every intended passing
-   consumer, including translation/runtime controls where available.
-4. **Plans and authoring.** Carry the final priority in plans; update check,
-   preview, apply, binding moves and module merge/delete through the same
-   complete-map verifier and typed configuration writer. Selector realization
-   must preserve the planned map before mutation.
-5. **Residual construction and CLI consolidation.** Replace the general
-   placement worklist with the proved baseline-preserving operation. Retire
-   competing factorizer/decomposition and proposal-ID paths and fold refine
-   into exact apply. Retain distinct source/atom/graph inspections. Unsupported
-   broader queries fail explicitly rather than silently becoming heuristics.
-6. **Documentation and acceptance.** Update SPEC, help, docs, AGENTS, owned
-   skills, archive contents, executable recipes and consumer wrappers together.
-   Publish the implementation and private migration as reviewable PRs with
-   current exact-head validation and measured unseeded downstream evidence.
+1. **Verify strict fixtures and recipes with activation.** The remaining
+   fixture and recipe changes exercise the required ordering and writer
+   contracts. Author exact emitted owner sets and valid cyclic
+   priorities; retain sources, ownership claims, rejection controls and runtime
+   assertions. Exercise binding moves, source-unit assignments, merge/delete,
+   empty/generated owners and no-write failures through the shared verifier.
+   Update the isolated-edit recipe to transport reviewed final priorities into
+   the receiving configuration while preserving its relocated paths and unrelated
+   fields. Retain residual-reduction assertions against the selected plan rather
+   than an incidental extraction count. Acceptance: full Debundle and shipped
+   recipe checks pass on the final activation head.
+2. **Land the coherent activation.** Keep #16801 rebased onto the landed
+   foundations. Keep required-priority enforcement, ordering-aware
+   editing and the polynomial proposer in one coherent activation change.
+   Keep the native stack's incremental review boundaries explicit. Required enforcement must
+   cover materialization, graph export, saved-analysis application and edits;
+   malformed or failed priorities must not trigger a replacement scheduler.
+   Keep local validation, exact-head hosted checks and merge state distinct.
+3. **Complete downstream migration and adoption.** Inventory every checked-in
+   authored spec and its build/CLI consumers, including baselines, validation
+   fixtures and diagnostic specs. Migrate all of them to the required contract;
+   an unmigrated spec cannot remain on a legacy path or pin. Capture priorities
+   from accepted traversals and verify replay for every intended-passing consumer.
+   The known-broken canonical spec must also migrate, while remaining an explicitly
+   rejected diagnostic rather than a passing-runtime control. Stage spec and
+   engine-pin changes together where needed. Reuse compatible semantic analysis;
+   report cold preparation, selector work and prepared query time separately.
+   Preserve residual routing, disclose unsupported generated/catchall routes and
+   verify available translation and runtime controls. Do not make unrelated
+   migrations wait on one cold run.
+4. **Verify the final supported surface.** Retain one `propose` → `check` →
+   preview/apply workflow and the distinct source/atom/graph inspections. Verify
+   removal of competing factorizer/decomposition, proposal-ID and refine paths,
+   and ensure ordinary commands cannot call the retired arbitrary scheduler.
+   Update SPEC, help, docs, AGENTS, owned skills, archive contents and consumer
+   wrappers with executable examples. Acceptance includes default destinations,
+   configured chunk-subtree roots, multi-chunk corpus context, scoped negatives,
+   stale inputs, selector ambiguity and no-write refusal behavior. Defer wider
+   placement families to W10 and the generated-module authoring redesign to AR10.
+   Audit the final source, build rules, adapters, docs, skill archives and examples
+   for legacy callers and compatibility paths; reject the old contract in CLI
+   tests. Keep intentional invalid-input tests explicit. The final state has no
+   opt-in enforcement switch, implicit upgrade, compatibility alias or supported
+   execution path for unmigrated specs.
+   Verify the retired single-atom report has no remaining callers, including
+   downstream wrappers. Preserve its useful behavioral and blocker coverage in
+   the constructor inventory and checked plans. Source/atom inspection remains
+   distinct from proposal generation; it must not expose a competing placement
+   guarantee.
 
 ## Verification requirements
 
@@ -85,6 +158,10 @@ The grouped chunk-configuration refactor stays deferred as AR9 in <../TODO.md>.
   Enumerating tiny cases belongs only in tests.
 - Real CLI proposal/check/preview/apply/Node positive tests; rejected priority,
   stale input, selector ambiguity, required-group and no-write negative tests.
+- Exercise the default destination with no `--into`, exact chunk-subtree roots,
+  and a corpus containing several configured chunks. Retain each chunk's
+  verified source/configuration context through selector preflight and plan
+  application; logical plan paths must map through the configured physical root.
 - Cover cycles, gray versus white targets, shared closures, conditional
   promotion, rebinding, anonymous units, empty modules, generated residuals,
   case-sensitive module roots and isolated chunk identities.
@@ -96,13 +173,45 @@ The grouped chunk-configuration refactor stays deferred as AR9 in <../TODO.md>.
 ## Incremental delivery
 
 Publish independently validated slices against current `devel` as they become
-ready. The design contract, concrete-priority verifier and inert schema/typed
-persistence can land before the compiler requires the new field. The compiler
-requirement must land with its public fixtures and examples; private priorities
-can be authored first, with their engine pin updated only after strict replay.
-Plans, edits and the residual constructor must each include their affected CLI
-contracts and behavioral tests. Do not require unrelated consumer migrations to
-wait for one cold analysis run.
+ready. Keep #16801 limited to activation in the existing native GitHub stack.
+Adopt any server-rewritten head before pushing a rebase. Keep one
+reviewable commit per PR, preserve working commands between landings and verify
+current stack membership, heads and required checks.
+
+| Landing unit                                      | Target                     | Dependencies and acceptance                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Required-order activation, remaining #16801    | Public native stack        | Required-priority enforcement, ordering-aware editing and the constructive proposer ship with their CLI callers, recipes and guidance. Remove production scheduling search. Require the full integrated suite and useful downstream extraction-loop rehearsal.                                                 |
+| Parallel: remaining downstream configurations     | Downstream `main`          | Cover every authored spec, baseline, fixture and diagnostic configuration, including separate final priorities for ownership-subset targets. Verify accepted witnesses and preserve routing.                                                                                                                   |
+| 2. Strict-engine adoption and remaining adapters  | Downstream `main`          | Requires migrated configurations and merged activation. Move every consumer to that contract and pin, remove legacy adapters/pins, and pass each intended-passing consumer's applicable materialization, translation and behavior controls. Diagnostics use the new contract too.                              |
+| 3. Useful discovered extraction                   | Downstream `main`          | Requires the adopted engine. Land a useful group discovered by the default unseeded operation, carrying its checked priority and selectors; verify residual reduction, preserved owners and behavior on the final spec.                                                                                        |
+| 4. Hard-cutover audit and close delivery tracking | `devel`, downstream `main` | Verify all specs are migrated, all consumers use the required contract and no legacy execution or compatibility path remains. After all acceptance gates pass on landed revisions, remove this completed plan and dispatch references; retain maintained proofs/contracts and deferred AR9, AR10 and W10 work. |
+
+Configuration migration and public activation can proceed independently. The
+native GitHub stack covers the public review layers in this repository. Downstream
+pin PRs wait for the upstream merged revision rather than forming a
+cross-repository stack. Keep #16801 limited to the remaining activation work.
+
+The polynomial constructor depends on an accepted explicit baseline certificate,
+retained DFS events and the ordering-aware assignment API. Its production caller
+is the replacement proposal workflow. Extracting only that kernel before
+activation would either change the existing command contract or introduce a
+dormant layer. Keep the kernel and its independent oracles with activation; the
+canonical constraint projection and graph-priority export are the actual
+behavior-preserving foundation seams.
+
+The activation boundary must remain coherent: do not require priorities while
+ordinary ownership edits, proposals or packaged recipes still produce specs
+without the corresponding final order. Split it further only when each landing
+preserves working callers and exact verifier/emitter agreement. Plans, edits and
+the constructor ship with their affected CLI contracts and behavioral tests.
+Prepare the useful extraction rehearsal early to expose practical gaps before
+activation; land the final extraction after downstream adoption. Do not require
+unrelated consumer migrations to wait for one cold analysis run.
+
+Preparation on the permissive schema is a rollout step only. The delivered state
+requires the new contract everywhere and offers no support for the old one. Any
+transitional compatibility needed to keep an intermediate landing coherent must
+be removed before this effort is complete.
 
 Local tests, exact-head hosted checks, a landed implementation, private pin
 adoption and consumer behavior are separate evidence. Partial slices do not

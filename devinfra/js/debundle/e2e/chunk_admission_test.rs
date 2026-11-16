@@ -62,7 +62,8 @@ console.log(A);
 export { A, reader };
 "#,
             vec![logical_module("mod_x", &[Member::new("A")])],
-        ),
+        )
+        .with_import_order(&["mod_x", "residual"]),
         &["a1_eval", "#0", "admission_overrides"],
     );
 }
@@ -78,14 +79,18 @@ const A = 1;
 console.log(reader());
 export { A, reader };
 "#;
-    for modules in [
-        vec![],
-        vec![logical_module(
-            "mod_x",
-            &[Member::new("reader"), Member::new("A")],
-        )],
+    for (modules, import_order) in [
+        (vec![], &["residual"][..]),
+        (
+            vec![logical_module(
+                "mod_x",
+                &[Member::new("reader"), Member::new("A")],
+            )],
+            &["mod_x"][..],
+        ),
     ] {
-        let fixture = run_fixture(FixtureOpts::new(source, modules));
+        let fixture =
+            run_fixture(FixtureOpts::new(source, modules).with_import_order(import_order));
         assert_entry_output(&fixture, "2\n");
     }
 }
@@ -104,6 +109,7 @@ export { A, reader };
 "#,
             vec![],
         )
+        .with_import_order(&["residual"])
         .with_chunk_renames(chunk_rename("renamed", "A")),
         &["a1_eval", "#0", "admission_overrides"],
     );
@@ -114,16 +120,19 @@ fn indirect_eval_and_function_inside_function_body_are_allowed() {
     // In an ES module, a lazy indirect `eval` and `Function` run in
     // global scope, where no module binding is visible: an ordinary
     // opaque call.
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"function reader() {
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"function reader() {
   return (0, eval)("1 + 1") + Function("return 1")() + new Function("return 1")();
 }
 const A = "ok";
 console.log(A);
 export { A, reader };
 "#,
-        vec![logical_module("mod_x", &[Member::new("A")])],
-    ));
+            vec![logical_module("mod_x", &[Member::new("A")])],
+        )
+        .with_import_order(&["mod_x", "residual"]),
+    );
     assert_entry_output(&fixture, "ok\n");
 }
 
@@ -166,15 +175,18 @@ fn external_and_lazy_dynamic_imports_are_allowed() {
     // External literal targets are black-box leaves (allowed even at
     // top level); non-literal specifiers are allowed in lazy
     // positions (documented residual gap).
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const lazyByName = (name) => import(name);
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const lazyByName = (name) => import(name);
 const loadVendor = () => import("some-external-package");
 const A = "ok";
 console.log(A);
 export { A, lazyByName, loadVendor };
 "#,
-        vec![logical_module("mod_x", &[Member::new("A")])],
-    ));
+            vec![logical_module("mod_x", &[Member::new("A")])],
+        )
+        .with_import_order(&["mod_x", "residual"]),
+    );
     assert_entry_output(&fixture, "ok\n");
 }
 
@@ -221,14 +233,17 @@ export { A, env };
 
 #[test]
 fn import_meta_url_is_allowed() {
-    let fixture = run_fixture(FixtureOpts::new(
-        r#"const here = import.meta.url;
+    let fixture = run_fixture(
+        FixtureOpts::new(
+            r#"const here = import.meta.url;
 const A = "ok";
 console.log(A);
 export { A, here };
 "#,
-        vec![logical_module("mod_x", &[Member::new("A")])],
-    ));
+            vec![logical_module("mod_x", &[Member::new("A")])],
+        )
+        .with_import_order(&["mod_x", "residual"]),
+    );
     assert_entry_output(&fixture, "ok\n");
 }
 

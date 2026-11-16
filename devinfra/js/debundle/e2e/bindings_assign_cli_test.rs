@@ -618,12 +618,37 @@ fn assign_moves_source_match_claim_and_annotation() {
         )],
     );
     let before = fs::read(fixture.modules.join("src.yaml")).unwrap();
-    let args = ["bindings", "assign", "Alpha:dest:Foo"];
-    assert_eq!(
-        fixture.json(&["bindings", "assign", "Alpha:dest:Foo", "--dry-run"])["action"],
-        "dry-run"
+    let config = fixture.root().join("spec_config.yaml");
+    let config_before = fs::read(&config).unwrap();
+    fixture.assert_rejected_unchanged(
+        &["bindings", "assign", "Alpha:dest:Foo"],
+        &["supply --import-order"],
     );
+    let incomplete = fixture.write_final_import_order(&["src"]);
+    fixture.assert_rejected_unchanged(
+        &[
+            "bindings",
+            "assign",
+            "Alpha:dest:Foo",
+            "--import-order",
+            incomplete.to_str().unwrap(),
+        ],
+        &["every emitted nonentry module exactly once"],
+    );
+    assert_eq!(fs::read(&config).unwrap(), config_before);
+    let order = fixture.write_final_import_order(&["src", "dest"]);
+    let args = [
+        "bindings",
+        "assign",
+        "Alpha:dest:Foo",
+        "--import-order",
+        order.to_str().unwrap(),
+    ];
+    let mut preview = args.to_vec();
+    preview.push("--dry-run");
+    assert_eq!(fixture.json(&preview)["action"], "dry-run");
     assert_eq!(fs::read(fixture.modules.join("src.yaml")).unwrap(), before);
+    assert_eq!(fs::read(&config).unwrap(), config_before);
     assert!(!fixture.modules.join("dest.yaml").exists());
     assert_eq!(fixture.json(&args)["moves_applied"], 1);
     let source = module(&fixture, "src.yaml");
@@ -645,8 +670,15 @@ fn assign_splits_source_match_claim_for_independent_bindings() {
             "source_matches: [{match: 'console.log(a + b);', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}], note: shared pattern}]\nannotations: {Alpha: {note: first}, Beta: {note: second}}\n",
         )],
     );
+    let order = fixture.write_final_import_order(&["src", "dest"]);
     assert_eq!(
-        fixture.json(&["bindings", "assign", "Alpha:dest"])["moves_applied"],
+        fixture.json(&[
+            "bindings",
+            "assign",
+            "Alpha:dest",
+            "--import-order",
+            order.to_str().unwrap()
+        ])["moves_applied"],
         1
     );
     let source = module(&fixture, "src.yaml");
@@ -669,12 +701,27 @@ fn assign_moves_atomic_source_match_group_in_one_batch() {
             "source_matches: [{match: 'function b() { a = 1; }', bindings: [{local: a, name: Alpha}, {local: b, name: Beta}]}]",
         )],
     );
+    let order = fixture.write_final_import_order(&["src", "dest"]);
     fixture.assert_rejected_unchanged(
-        &["bindings", "assign", "Alpha:dest"],
+        &[
+            "bindings",
+            "assign",
+            "Alpha:dest",
+            "--import-order",
+            order.to_str().unwrap(),
+        ],
         &["splits one or more atomic groups"],
     );
+    let order = fixture.write_final_import_order(&["dest"]);
     assert_eq!(
-        fixture.json(&["bindings", "assign", "Alpha:dest", "Beta:dest"])["moves_applied"],
+        fixture.json(&[
+            "bindings",
+            "assign",
+            "Alpha:dest",
+            "Beta:dest",
+            "--import-order",
+            order.to_str().unwrap()
+        ])["moves_applied"],
         2
     );
     assert!(!fixture.modules.join("src.yaml").exists());
@@ -754,11 +801,13 @@ fn positional_and_json_batches_create_one_canonical_destination() {
             &batch,
             r#"[{"sym":"a","module":"UI/Widgets","readable":"Alpha"},{"sym":"b","module":"ui/widgets"}]"#,
         );
-        let args = if batch_json {
+        let mut args = if batch_json {
             vec!["bindings", "assign", "--batch", batch.to_str().unwrap()]
         } else {
             vec!["bindings", "assign", "a:UI/Widgets:Alpha", "b:ui/widgets"]
         };
+        let order = fixture.write_final_import_order(&["ui/widgets"]);
+        args.extend(["--import-order", order.to_str().unwrap()]);
         let before: Vec<_> = ["src/a.yaml", "src/b.yaml"]
             .into_iter()
             .map(|path| (path, fs::read(fixture.modules.join(path)).unwrap()))
@@ -801,7 +850,19 @@ fn move_and_unassign_annotations_preserve_only_intentionally_retained_modules() 
             "const a = 1; console.log(a);",
             &[("src.yaml", &yaml), ("unrelated.yaml", "members: []")],
         );
-        fixture.json(&["bindings", "assign", "a:dest:Readable"]);
+        let owners = if comment.is_empty() {
+            vec!["unrelated", "dest"]
+        } else {
+            vec!["src", "unrelated", "dest"]
+        };
+        let order = fixture.write_final_import_order(&owners);
+        fixture.json(&[
+            "bindings",
+            "assign",
+            "a:dest:Readable",
+            "--import-order",
+            order.to_str().unwrap(),
+        ]);
         assert_eq!(
             fixture.modules.join("src.yaml").exists(),
             !comment.is_empty()
@@ -893,6 +954,11 @@ fn automatic_cleanup_preserves_module_notes_but_explicit_delete_can_remove_them(
             let yaml =
                 format!("note: {note:?}\nmembers: [{{selector: {{binding: {{name: a}}}}}}]\n");
             let fixture = GraphFixture::new("const a = 1; console.log(a);", &[("src.yaml", &yaml)]);
+            let order = fixture.write_final_import_order(&["src", "dest"]);
+            let mut edit = edit.clone();
+            if edit[1] == "assign" {
+                edit.extend(["--import-order", order.to_str().unwrap()]);
+            }
             let mut preview = edit.clone();
             preview.push("--dry-run");
             let report = fixture.json(&preview);

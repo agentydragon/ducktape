@@ -14,11 +14,19 @@ const MERGE: &[&str] = &[
     "empty.yaml",
 ];
 
-fn assert_valid_merge_gate(fixture: &GraphFixture) {
+fn assert_merge_gate(fixture: &GraphFixture, dry_run: bool) {
+    let order = fixture.write_final_import_order(&["combined"]);
     let mut args = MERGE.to_vec();
-    args.push("--dry-run");
+    args.extend(["--import-order", order.to_str().unwrap()]);
+    if dry_run {
+        args.push("--dry-run");
+    }
     let report = fixture.json(&args);
     assert_eq!(report["gate"], "claims_checked", "{report}");
+}
+
+fn assert_valid_merge_gate(fixture: &GraphFixture) {
+    assert_merge_gate(fixture, true);
 }
 
 #[test]
@@ -84,8 +92,7 @@ fn import_specifier_claims_are_accepted_only_for_named_imports() {
             EMPTY,
         ],
     );
-    let report = named.json(MERGE);
-    assert_eq!(report["gate"], "claims_checked", "{report}");
+    assert_merge_gate(&named, false);
 
     for source in [
         "import dep from \"external-package\";\nconsole.log(dep);\n",
@@ -128,8 +135,7 @@ fn mixed_untyped_local_and_typed_import_claims_use_direct_source_gate() {
         ],
     );
 
-    let report = fixture.json(MERGE);
-    assert_eq!(report["gate"], "claims_checked", "{report}");
+    assert_merge_gate(&fixture, false);
 }
 
 #[test]
@@ -184,8 +190,7 @@ fn repeated_declarations_require_connected_co_declaration_evidence_for_the_same_
     }
 
     report_io::write_json_gzip(&fixture.graph, &original).unwrap();
-    let report = fixture.json(MERGE);
-    assert_eq!(report["gate"], "claims_checked", "{report}");
+    assert_merge_gate(&fixture, false);
     fixture.assert_runs("2\n");
 }
 

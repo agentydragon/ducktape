@@ -41,7 +41,11 @@ fn assign_unassign_and_merge_report_the_edits_that_still_run() {
         ),
     ] {
         let fixture = GraphFixture::acyclic_pair();
+        let order = fixture.write_final_import_order(&["a", "c"]);
         let mut json_args = args.clone();
+        if args[1] == "assign" {
+            json_args.extend(["--import-order", order.to_str().unwrap()]);
+        }
         json_args.extend(["--format", "json"]);
         let out = fixture.command(&json_args);
         let stderr = String::from_utf8_lossy(&out.stderr);
@@ -116,11 +120,15 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
         &["modules", "delete", "ui/empty.yaml"],
         &["graph compatibility mismatch"],
     );
+    fixture.set_import_order(&["a", "b", "ui/empty"]);
     fixture.refresh_graph();
     let report = fixture.json(&["modules", "delete", "ui/empty.yaml"]);
-    assert_core(&report, "delete", "applied", "not_required");
-    assert!(report.get("needs_full_assessment").is_none(), "{report}");
-    assert_eq!(report["files_written"].as_array().unwrap().len(), 0);
+    // Empty owners still participate in the module universe. Deleting their
+    // files verifies the remaining claims and updates the configured priority.
+    assert_core(&report, "delete", "applied", "claims_checked");
+    assert_eq!(report["needs_full_assessment"], true, "{report}");
+    assert_eq!(report["files_written"].as_array().unwrap().len(), 1);
+    assert!(has_file(&report, "files_written", "spec_config.yaml"));
     assert_eq!(report["files_deleted"].as_array().unwrap().len(), 1);
     assert!(has_file(&report, "files_deleted", "ui/empty.yaml"));
     fixture.assert_runs("2\n");
@@ -129,10 +137,13 @@ fn dry_run_merge_and_empty_delete_report_their_gate_contract() {
 #[test]
 fn atom_split_reports_both_destinations_and_writes_the_same_artifact() {
     let fixture = GraphFixture::atomic_pair();
+    let order = fixture.write_final_import_order(&["home/atom", "dogfood/split"]);
     let out = fixture.command(&[
         "bindings",
         "assign",
         "alpha:dogfood/split",
+        "--import-order",
+        order.to_str().unwrap(),
         "--format",
         "json",
     ]);
@@ -194,10 +205,13 @@ fn atom_split_also_writes_current_cycles_for_gate_queries() {
             "members: [{selector: {binding: {name: alpha}}}, {selector: {binding: {name: beta}}}]\n",
         )],
     );
+    let order = fixture.write_final_import_order(&["home/atom", "dogfood/split"]);
     let out = fixture.command(&[
         "bindings",
         "assign",
         "alpha:dogfood/split",
+        "--import-order",
+        order.to_str().unwrap(),
         "--format",
         "json",
     ]);
@@ -295,10 +309,13 @@ fn completed_edit_results_replace_both_rejection_artifacts() {
     let cycles_path = fixture.graph.with_file_name("cycles.json");
     let atomic_path = fixture.graph.with_file_name("atomic_group_conflicts.json");
 
+    let order = fixture.write_final_import_order(&["a", "b", "c", "home/atom", "dogfood/split"]);
     let atom_split = fixture.command(&[
         "bindings",
         "assign",
         "left:dogfood/split",
+        "--import-order",
+        order.to_str().unwrap(),
         "--format",
         "json",
     ]);
@@ -397,12 +414,22 @@ fn closed_mutation_output_pipes_preserve_applied_state_and_stderr_failures_are_n
     for assign in [false, true] {
         for (close_stdout, close_stderr) in [(true, false), (false, true), (true, true)] {
             let fixture = GraphFixture::acyclic_pair();
+            let order = fixture.write_final_import_order(&["a", "c"]);
             let args = if assign {
-                vec!["bindings", "assign", "beta:c", "--format", "json"]
+                vec![
+                    "bindings",
+                    "assign",
+                    "beta:c",
+                    "--import-order",
+                    order.to_str().unwrap(),
+                    "--format",
+                    "json",
+                ]
             } else {
                 // This edit has no pre-outcome warning: only the command boundary's
                 // saved-graph diagnostic must still run after stdout closes.
                 write_text_file(&fixture.modules.join("empty.yaml"), "{}\n");
+                fixture.set_import_order(&["a", "b", "empty"]);
                 fixture.refresh_graph();
                 vec!["modules", "delete", "empty.yaml", "--format", "json"]
             };

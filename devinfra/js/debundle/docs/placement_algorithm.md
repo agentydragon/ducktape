@@ -25,6 +25,9 @@ The chunk's `import_order` contains every emitted nonentry owner exactly once.
 Every module sorts its actual canonical import targets by that same priority;
 entry targets are implicit, and imports of entry sort first. The resulting
 concrete schedule contains exactly those targets. Its DFS starts at entry.
+An ownership subset has its own emitted owner universe: filtering a priority
+from an accepted full assignment creates a new DFS witness that must be
+verified independently.
 The placement Gate also requires intact atoms and no rebinding across owners.
 
 Fallback-promoted edges whose callee source unit equals their caller source unit
@@ -81,8 +84,8 @@ region; O(d + r) is the efficient graph-work target, not a constant-time promise
 Worst-case r can be the whole quotient. Current ordered maps add logarithmic
 factors. Finding a new arbitrary schedule is not part of this bound.
 
-**Capturing an existing witness.** List nonentry owners in DFS discovery order
-from an accepted legacy traversal. Sorting every import list by this list
+**Migration-only witness capture.** For an already accepted pre-contract
+traversal, list nonentry owners in DFS discovery order. Sorting every import list by this list
 reproduces its discovery and finish trace: at each recursive step the next white
 target is the earliest undiscovered target in that list. Reordering already
 gray/black targets adds no traversal events. Induction on the stack operations

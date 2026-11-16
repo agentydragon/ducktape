@@ -26,7 +26,7 @@ pub struct DependencyGraphInput {
 
 impl DependencyGraphInput {
     pub fn read(path: &Path) -> Result<Self> {
-        let report = report_io::read_json_gzip(path)
+        let report = report_io::read_json_report(path)
             .with_context(|| format!("reading full dependency graph {}; export it with debundle run --graphs or the dependency_graphs Bazel output group", path.display()))?;
         Self::from_report(report)
             .with_context(|| format!("reconstructing dependency graph {}", path.display()))

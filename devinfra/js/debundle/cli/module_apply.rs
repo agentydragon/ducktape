@@ -1,4 +1,4 @@
-//! Apply explicit source-unit assignments without transient name-pinned YAML.
+//! Apply exact source-unit assignments after a full graph check.
 
 use graph_provenance::VerifiedGraphSourceContext;
 use std::fs;
@@ -8,31 +8,41 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::Args;
 use peel::OutputFormat;
+use serde_json::from_slice;
 use spec_tree::ModuleTreeScope;
 
-use crate::binding::load_module_docs;
-use crate::candidate_assessment::CandidateEffectAssessmentExistingTreeArgs;
+use crate::binding::{CandidateEffectAssessmentContext, load_module_docs};
+use crate::candidate_assessment::{
+    CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
+};
 use crate::edit_gate::GraphEditArgs;
 use crate::outcome::{MutationVerb, emit_gate_rejection_json};
+use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 
 #[derive(Debug, Args)]
 pub struct ModulesApplyArgs {
-    /// JSON array of exact {unit_id, module} changes, including residual and anonymous units.
+    /// JSON array of exact {unit_id, module} changes; `-` reads stdin.
     #[arg(long, required_unless_present = "plan", conflicts_with = "plan")]
     assignments: Option<String>,
-    /// Saved exact plan from modules propose/check, verified against the current graph.
+    /// Saved exact plan from `modules propose` or `modules check`.
     #[arg(long, conflicts_with = "assignments")]
     plan: Option<PathBuf>,
-    /// JSON map from newly claimed source binding names to readable names.
+    /// Complete JSON array of nonentry module paths for an explicit batch.
+    #[arg(long = "import-order", conflicts_with = "plan")]
+    import_order: Option<PathBuf>,
+    /// JSON map from newly claimed binding names to readable names.
     #[arg(long)]
     readable_names: Option<PathBuf>,
+    /// JSON object keyed by source-unit ID, then binding name, with reviewed selectors.
+    #[arg(long = "selector-overrides")]
+    selector_overrides: Option<PathBuf>,
     /// Root directory of per-module YAML files.
     #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
     pub(super) modules_root: PathBuf,
     /// Tree config that scopes this graph-backed edit to its chunk's module roots.
     #[arg(long = "tree-config", env = "DEBUNDLE_TREE_CONFIG")]
     pub(super) tree_config: Option<PathBuf>,
-    /// Current dependency graph, used to check the resulting assignment.
+    /// Current dependency graph used to check the resulting assignment.
     #[arg(long = "graph", env = "DEBUNDLE_GRAPH")]
     pub(super) graph: PathBuf,
     /// Root for the chunk's source file.
@@ -50,6 +60,15 @@ pub struct ModulesApplyArgs {
     pub(super) format: Option<OutputFormat>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct ApplyOutcome {
+    #[serde(flatten)]
+    outcome: crate::source_unit_apply::SourceUnitApplyOutcome,
+    /// Why the canonical effect verdict was unavailable for this graph-backed edit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect_assessment_unavailable: Option<EffectAssessmentUnavailable>,
+}
+
 pub fn run_modules_apply(
     output: &mut dyn std::io::Write,
     stderr: &mut (dyn std::io::Write + Send),
@@ -57,12 +76,21 @@ pub fn run_modules_apply(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
+    anyhow::ensure!(
+        args.readable_names.is_none() || args.assignments.is_some() || args.plan.is_some(),
+        "--readable-names requires --assignments or --plan"
+    );
+    anyhow::ensure!(
+        args.selector_overrides.is_none() || args.assignments.is_some() || args.plan.is_some(),
+        "--selector-overrides requires --assignments or --plan"
+    );
     let edit = GraphEditArgs {
         modules_root: args.modules_root.clone(),
         dry_run: args.dry_run,
         no_verify: false,
         dependency_graph_path: Some(args.graph.clone()),
         source_root: Some(args.source_root.clone()),
+        import_order: None,
         format: args.format,
     };
     let effect_context = args.effect_assessment.resolve_for_verified_write(
@@ -70,85 +98,116 @@ pub fn run_modules_apply(
         source_context,
         args.tree_config.as_deref(),
     )?;
-    anyhow::ensure!(
-        args.readable_names.is_none() || args.assignments.is_some() || args.plan.is_some(),
-        "--readable-names requires --assignments or --plan"
-    );
-    {
-        let assignments = if let Some(path) = &args.plan {
-            let plan: peel::assignment::AssignmentPlan = serde_json::from_slice(&fs::read(path)?)?;
-            plan.verify(&args.graph)?;
-            physical_plan_changes(plan.changes, &args)?
-        } else {
-            serde_json::from_str(&read_batch(
-                args.assignments.as_deref().expect("assignment mode"),
-            )?)
-            .context("parsing source-unit assignment batch")?
-        };
-        let readable_names = args
-            .readable_names
+    let (assignments, import_order) = if let Some(path) = &args.plan {
+        let plan: peel::assignment::AssignmentPlan = from_slice(&fs::read(path)?)?;
+        plan.verify(&args.graph)?;
+        (
+            physical_plan_changes(plan.changes, &args, source_context)?,
+            Some(plan.import_order),
+        )
+    } else {
+        let assignments = serde_json::from_str(&read_batch(
+            args.assignments
+                .as_deref()
+                .expect("clap requires assignments or plan"),
+        )?)
+        .context("parsing source-unit assignment batch")?;
+        let import_order = args
+            .import_order
             .as_ref()
-            .map(|path| serde_json::from_slice(&fs::read(path)?).context("parsing readable names"))
-            .transpose()?
-            .unwrap_or_default();
-        let effect_assessment_context = effect_context.as_ref().map(|context| {
-            crate::binding::CandidateEffectAssessmentContext {
+            .map(|path| {
+                from_slice(&fs::read(path)?)
+                    .with_context(|| format!("parsing import order {}", path.display()))
+            })
+            .transpose()?;
+        (assignments, import_order)
+    };
+    let readable_names = args
+        .readable_names
+        .as_ref()
+        .map(|path| from_slice(&fs::read(path)?).context("parsing readable names"))
+        .transpose()?
+        .unwrap_or_default();
+    let selector_overrides = args
+        .selector_overrides
+        .as_ref()
+        .map(|path| from_slice(&fs::read(path)?).context("parsing selector overrides"))
+        .transpose()?
+        .unwrap_or_default();
+    let effect_assessment_context =
+        effect_context
+            .as_ref()
+            .map(|context| CandidateEffectAssessmentContext {
                 transform: &context.transform,
                 analysis: pipeline::AnalysisArtifactInput {
                     path: &context.analysis_path,
                     analysis_engine_sha256,
                 },
                 graph_source: context.graph_source,
-            }
-        });
-        let outcome = crate::source_unit_refine::run_source_unit_refine(
-            stderr,
-            &args.modules_root,
-            &args.graph,
-            &args.source_root,
-            source_context,
-            crate::source_unit_refine::SourceUnitRefineOptions {
-                tree_config: args.tree_config.as_deref(),
-                assignments,
-                verb: MutationVerb::Apply,
-                readable_names,
-                dry_run: args.dry_run,
-                effect_assessment_context,
-            },
-        )
-        .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Apply, args.format, err))?;
-        outcome.outcome.warn_if_unassessed_write(stderr)?;
-        command_output::write_report(
-            &outcome,
-            OutputFormat::resolve(args.format),
-            output,
-            |out, text| {
-                use std::fmt::Write;
-                writeln!(
-                    text,
-                    "{}: {} residual source unit(s) claimed, {} existing unit(s) moved",
-                    out.outcome.action,
-                    out.residual_source_units_claimed,
-                    out.source_units_reassigned
-                )?;
-                writeln!(text, "{}", serde_yaml::to_string(&out.synthesized_claims)?)?;
-                Ok(())
-            },
-        )?;
-        Ok(())
-    }
+            });
+    let outcome = run_source_unit_apply(
+        stderr,
+        &args.modules_root,
+        &args.graph,
+        &args.source_root,
+        source_context,
+        SourceUnitApplyOptions {
+            tree_config: args.tree_config.as_deref(),
+            assignments,
+            import_order,
+            readable_names,
+            selector_overrides,
+            dry_run: args.dry_run,
+            effect_assessment_context,
+        },
+    )
+    .map_err(|err| emit_gate_rejection_json(output, MutationVerb::Apply, args.format, err))?;
+    outcome.outcome.warn_if_unassessed_write(stderr)?;
+    let report = ApplyOutcome {
+        effect_assessment_unavailable: outcome
+            .effect_relocation_assessment
+            .is_none()
+            .then_some(EffectAssessmentUnavailable::AnalysisNotSupplied),
+        outcome,
+    };
+    command_output::write_report(
+        &report,
+        OutputFormat::resolve(args.format),
+        output,
+        |out, text| {
+            use std::fmt::Write;
+            writeln!(
+                text,
+                "{}: {} residual source unit(s) claimed, {} existing unit(s) moved",
+                out.outcome.outcome.action,
+                out.outcome.residual_source_units_claimed,
+                out.outcome.source_units_reassigned
+            )?;
+            writeln!(
+                text,
+                "{}",
+                serde_yaml::to_string(&out.outcome.synthesized_claims)?
+            )?;
+            Ok(())
+        },
+    )?;
+    Ok(())
 }
 
 fn physical_plan_changes(
     mut changes: Vec<peel::assignment::SourceUnitAssignment>,
     args: &ModulesApplyArgs,
+    source_context: Option<&VerifiedGraphSourceContext>,
 ) -> Result<Vec<peel::assignment::SourceUnitAssignment>> {
     let Some(config) = &args.tree_config else {
         return Ok(changes);
     };
     let input = analysis::DependencyGraphInput::read(&args.graph)?;
     let scope = ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
-    let docs = load_module_docs(&args.modules_root)?;
+    let modules_root = source_context
+        .and_then(VerifiedGraphSourceContext::modules_root)
+        .unwrap_or(&args.modules_root);
+    let docs = load_module_docs(modules_root)?;
     for change in &mut changes {
         let logical = spec::ModulePath::parse(&change.module, "")?;
         let mut existing = Vec::new();

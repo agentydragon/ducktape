@@ -111,11 +111,10 @@ Each example identifies both endpoint units, the other atomic group and endpoint
 destination, the binding when present, and whether it constrains initialization.
 Examples are bounded evidence, not an exhaustive dependency closure.
 
-`dependency_graph.json.gz.import_order` records every nonentry emitted owner
-once, in the retained traversal's discovery order. Using that priority on the
-same canonical import graph reproduces its DFS discovery/finish trace. The
-entry owner is implicit. This is traversal evidence; a rejected diagnostic
-materialization does not make its captured traversal a valid witness.
+`dependency_graph.json.gz.import_order` records the supplied priority verbatim,
+with every emitted nonentry owner once and the entry implicit. Validation and
+emission use that same priority on the canonical import graph. A rejected
+diagnostic retains its failed priority; export does not repair or certify it.
 
 `dependency_graph.json.gz.atomic_graph.nodes[]` contains atomic groups. Each node
 represents one SCC of the constraining-edge subgraph over source-unit nodes; its
@@ -478,7 +477,8 @@ this same value.
 `"<chunk_id>::"` (the in-process `PlannedModule.id` spelling minted in
 `lowering/plans.rs`), lowercases, and normalizes separators. Two
 spellings of one module therefore collapse to a single value, so `==`
-is an honest identity test for module paths.
+is an honest identity test — this is what makes the placement search's
+self-merge bug structurally impossible.
 
 The internal array handle `ModuleId(usize)` is a dense in-process index
 for O(1) lookups; it is distinct from `ModulePath` and is not the public

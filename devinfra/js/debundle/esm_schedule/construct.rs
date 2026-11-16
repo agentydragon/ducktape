@@ -183,30 +183,13 @@ impl EsmImportSchedule {
                 roots.push(candidates[0]);
                 continue;
             }
-            let mut constrained_dependencies = BTreeSet::new();
-            for &dependency in constraints.values().flatten() {
-                poll()?;
-                constrained_dependencies.insert(dependency);
-            }
-            let chosen = {
-                let mut constructor =
-                    Constructor::new(&internal_imports[index], constraints, &mut poll)?;
-                let mut chosen = None;
-                for root in candidates {
-                    constructor.poll()?;
-                    // Every SCC member must finish before its first root. A
-                    // constraining incoming edge therefore forbids this root.
-                    if constrained_dependencies.contains(&root) {
-                        continue;
-                    }
-                    if constructor.complete(root)? {
-                        chosen = Some((root, constructor.schedule()?));
-                        break;
-                    }
-                }
-                chosen
-            };
-            let Some((root, local_imports)) = chosen else {
+            let chosen =
+                construct_component(&internal_imports[index], constraints, candidates, &mut poll)?;
+            let Some(ComponentSchedule {
+                root,
+                imports: local_imports,
+            }) = chosen
+            else {
                 return Ok(Err(obstruction(
                     components[index].iter().copied().collect(),
                     entry,
@@ -247,7 +230,41 @@ impl EsmImportSchedule {
     }
 }
 
-fn is_tdz_free<E>(
+pub(super) struct ComponentSchedule {
+    pub root: ModuleId,
+    pub imports: BTreeMap<ModuleId, Vec<ModuleId>>,
+}
+
+/// Exact intrinsic component solve; callers own SCC maintenance and preferred
+/// global policy. Every candidate is a possible first entry into this SCC.
+pub(super) fn construct_component<E>(
+    imports: &BTreeMap<ModuleId, Vec<ModuleId>>,
+    constraints: &BTreeMap<ModuleId, Vec<ModuleId>>,
+    candidates: Vec<ModuleId>,
+    poll: &mut impl FnMut() -> Result<(), E>,
+) -> Result<Option<ComponentSchedule>, E> {
+    let mut constrained_dependencies = BTreeSet::new();
+    for &dependency in constraints.values().flatten() {
+        poll()?;
+        constrained_dependencies.insert(dependency);
+    }
+    let mut constructor = Constructor::new(imports, constraints, poll)?;
+    for root in candidates {
+        constructor.poll()?;
+        if constrained_dependencies.contains(&root) {
+            continue;
+        }
+        if constructor.complete(root)? {
+            return Ok(Some(ComponentSchedule {
+                root,
+                imports: constructor.schedule()?,
+            }));
+        }
+    }
+    Ok(None)
+}
+
+pub(super) fn is_tdz_free<E>(
     schedule: &EsmImportSchedule,
     pairs: &BTreeSet<(ModuleId, ModuleId)>,
     poll: &mut impl FnMut() -> Result<(), E>,

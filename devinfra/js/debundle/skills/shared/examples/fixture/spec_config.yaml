@@ -7,3 +7,5 @@ inputs:
 write_js_tree: true
 unassigned_mode:
   main: { kind: inline_in_entry }
+import_order:
+  main: [values, calculation]

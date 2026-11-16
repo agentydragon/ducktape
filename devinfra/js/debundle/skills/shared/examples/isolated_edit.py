@@ -2,16 +2,18 @@
 
 The adapter supplies the JSON stdout of ``snapshot create`` (or ``snapshot
 verify`` after relocation), the chunk's configured module subdirectory, reviewed
-paths relative to that subtree, and a new evidence directory. ``modules merge``
-accepts a per-chunk modules root, not the app-level ``--tree-config`` option.
-Run this file with ``--help`` for its standalone arguments. It uses the copied
-engine and roots, previews before applying, then explicitly regenerates analysis.
+paths relative to that subtree, the complete final nonentry import priority as a
+JSON array, and a new evidence directory. ``modules merge`` accepts a per-chunk
+modules root, not the app-level ``--tree-config`` option. Run this file with
+``--help`` for its standalone arguments. It uses the copied engine and roots,
+previews before applying, then explicitly regenerates analysis.
 The launcher saves argv/cwd in *.started.json before execution; CLI invocation
 JSON and *.result.json separately record the interpreted request and exit
 status, with stdout/stderr alongside them. Adapter smoke tests remain separate.
 """
 
 import argparse
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -26,6 +28,7 @@ class Snapshot(TypedDict):
     graph_source_root: str
     graph_package_roots: dict[str, str]
     source_root: str
+    tree_config: str
     modules: str
     regeneration_argv: list[str]
 
@@ -59,12 +62,28 @@ def graph_command(snapshot: Snapshot) -> list[str]:
     return argv
 
 
+def module_yaml_path(modules: Path, name: str) -> Path:
+    path = modules / name
+    return path if name.endswith((".yaml", ".yml")) else Path(f"{path}.yaml")
+
+
+def fingerprint(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
 def merge_and_regenerate(
-    snapshot: Snapshot, module_subdir: Path, sources: list[str], target: str, evidence: Path
+    snapshot: Snapshot,
+    module_subdir: Path,
+    sources: list[str],
+    target: str,
+    final_import_order: list[str],
+    evidence: Path,
 ) -> None:
     """Apply one reviewed merge; another edit needs the newly generated graph."""
     evidence = evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
+    import_order = evidence / "import_order.json"
+    import_order.write_text(json.dumps(final_import_order, indent=2) + "\n")
     cwd = Path(snapshot["directory"])
     verified = recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")
     snapshot = cast(Snapshot, json.loads(verified))
@@ -82,13 +101,29 @@ def merge_and_regenerate(
         snapshot["source_root"],
         "--format",
         "json",
+        "--import-order",
+        str(import_order),
         "--target",
         target,
     ]
     # Global capture options precede the command; source paths follow `--`.
     plan = [merge[0], "--print-invocation", *merge[1:], "--", *sources]
     (evidence / "apply.plan.json").write_text(subprocess.check_output(plan, cwd=cwd, text=True))
+    reviewed_files = {module_yaml_path(modules, source) for source in sources} | {
+        module_yaml_path(modules, target),
+        Path(snapshot["tree_config"]),
+    }
+    before_preview = {str(path): fingerprint(path) for path in sorted(reviewed_files)}
     recorded_run([*merge, "--dry-run", "--", *sources], cwd, evidence / "preview")
+    after_preview = {str(path): fingerprint(path) for path in sorted(reviewed_files)}
+    preview_write_check = {
+        "unchanged": before_preview == after_preview,
+        "before": before_preview,
+        "after": after_preview,
+    }
+    (evidence / "preview_write_check.json").write_text(json.dumps(preview_write_check, indent=2) + "\n")
+    if before_preview != after_preview:
+        raise RuntimeError("modules merge --dry-run changed a module file or tree config")
     recorded_run([*merge, "--", *sources], cwd, evidence / "apply")
     # The starting snapshot/graph now describes the pre-edit tree. Do not treat
     # `snapshot verify` on that edited tree as a post-edit acceptance check.
@@ -100,11 +135,20 @@ def main() -> None:
     parser.add_argument("--snapshot-report", type=Path, required=True)
     parser.add_argument("--module-subdir", type=Path, required=True)
     parser.add_argument("--target", required=True)
+    parser.add_argument(
+        "--import-order",
+        type=Path,
+        required=True,
+        help="JSON array containing the complete final nonentry module priority",
+    )
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("sources", nargs="+")
     args = parser.parse_args()
     snapshot = cast(Snapshot, json.loads(args.snapshot_report.read_text()))
-    merge_and_regenerate(snapshot, args.module_subdir, args.sources, args.target, args.evidence)
+    final_import_order = json.loads(args.import_order.read_text())
+    if not isinstance(final_import_order, list) or not all(isinstance(path, str) for path in final_import_order):
+        parser.error("--import-order must be a JSON array of module paths")
+    merge_and_regenerate(snapshot, args.module_subdir, args.sources, args.target, final_import_order, args.evidence)
 
 
 if __name__ == "__main__":

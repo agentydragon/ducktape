@@ -5,6 +5,52 @@ use std::fs;
 
 use debundle_e2e_support::write_text_file;
 use serde_yaml::Value;
+use std::collections::BTreeSet;
+
+fn write_merge_import_order(
+    fixture: &GraphFixture,
+    name: &str,
+    final_modules: &[&str],
+    appended_modules: &[&str],
+) -> std::path::PathBuf {
+    let final_modules: BTreeSet<String> = final_modules
+        .iter()
+        .map(|path| path.to_ascii_lowercase())
+        .collect();
+    fixture.write_import_order(
+        name,
+        &final_modules,
+        &appended_modules
+            .iter()
+            .map(|path| path.to_ascii_lowercase())
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn refresh_graph_with_appended_owners(fixture: &GraphFixture, appended_modules: &[&str]) {
+    let report = fixture.dependency_graph();
+    let mut final_modules: BTreeSet<String> = report
+        .import_order
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    let appended_modules: Vec<String> = appended_modules
+        .iter()
+        .map(|path| path.to_ascii_lowercase())
+        .collect();
+    final_modules.extend(appended_modules.iter().cloned());
+    let order_path = fixture.write_import_order(
+        "fixture-import-order.json",
+        &final_modules,
+        &appended_modules,
+    );
+    let order: Vec<String> = serde_json::from_slice(&fs::read(order_path).unwrap()).unwrap();
+    let config_path = fixture.root().join("spec_config.yaml");
+    let mut config: Value = serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    config["import_order"]["main"] = serde_yaml::to_value(order).unwrap();
+    write_text_file(&config_path, &serde_yaml::to_string(&config).unwrap());
+    fixture.refresh_graph();
+}
 
 #[test]
 fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
@@ -33,8 +79,23 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
           {"target":"models/Beta.yaml","sources":["old-b.yaml"]}
         ]"#,
     );
-    let args = ["modules", "merge", "--batch", batch.to_str().unwrap()];
+    let import_order = write_merge_import_order(
+        &fixture,
+        "merge-import-order.json",
+        &["models/Alpha", "models/Beta"],
+        &["models/Beta"],
+    );
+    let args = [
+        "modules",
+        "merge",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--import-order",
+        import_order.to_str().unwrap(),
+    ];
     let paths = ["old-a.yaml", "old-b.yaml", "models/Alpha.yaml"];
+    let config_path = fixture.root().join("spec_config.yaml");
+    let config_before = fs::read(&config_path).unwrap();
     let before: Vec<_> = paths
         .iter()
         .map(|path| fs::read(fixture.modules.join(path)).unwrap())
@@ -45,9 +106,21 @@ fn merge_batch_preserves_exact_filenames_claims_and_runtime() {
     for (path, bytes) in paths.iter().zip(before) {
         assert_eq!(fs::read(fixture.modules.join(path)).unwrap(), bytes);
     }
+    assert_eq!(fs::read(&config_path).unwrap(), config_before);
     assert!(!fixture.modules.join("models/Beta.yaml").exists());
     let outcome = fixture.json(&args);
-    assert_eq!(outcome["files_written"].as_array().unwrap().len(), 2);
+    let files_written = outcome["files_written"].as_array().unwrap();
+    assert_eq!(files_written.len(), 3);
+    assert!(
+        files_written
+            .iter()
+            .any(|path| path == config_path.to_str().unwrap())
+    );
+    let updated_config: Value = serde_yaml::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+    assert_eq!(
+        updated_config["import_order"]["main"],
+        serde_yaml::to_value(["models/alpha", "models/beta"]).unwrap()
+    );
     assert_eq!(outcome["files_deleted"].as_array().unwrap().len(), 2);
     assert_eq!(outcome["targets"].as_array().unwrap().len(), 2);
     for path in [
@@ -90,8 +163,21 @@ fn merge_batch_gate_failure_leaves_every_target_and_source_unchanged() {
       {"target":"a.yaml","sources":["b.yaml"]}
     ]"#,
     );
+    let import_order = write_merge_import_order(
+        &fixture,
+        "merge-import-order.json",
+        &["a", "models/Middle"],
+        &["models/Middle"],
+    );
     fixture.assert_rejected_unchanged(
-        &["modules", "merge", "--batch", batch.to_str().unwrap()],
+        &[
+            "modules",
+            "merge",
+            "--batch",
+            batch.to_str().unwrap(),
+            "--import-order",
+            import_order.to_str().unwrap(),
+        ],
         &["unrealizable"],
     );
     fixture.assert_runs("3\n");
@@ -173,7 +259,20 @@ fn merge_batch_allows_case_only_relocation() {
       {"target":"models/Beta.yaml","sources":["b.yaml"]}
     ]"#,
     );
-    fixture.assert_success(&["modules", "merge", "--batch", batch.to_str().unwrap()]);
+    let import_order = write_merge_import_order(
+        &fixture,
+        "merge-import-order.json",
+        &["A", "models/Beta"],
+        &["models/Beta"],
+    );
+    fixture.assert_success(&[
+        "modules",
+        "merge",
+        "--batch",
+        batch.to_str().unwrap(),
+        "--import-order",
+        import_order.to_str().unwrap(),
+    ]);
     assert!(fixture.modules.join("A.yaml").exists());
     assert!(!fixture.modules.join("a.yaml").exists());
     fixture.assert_runs("2\n");
@@ -189,7 +288,12 @@ fn single_merge_rejects_untouched_symlink_aliases_without_writes() {
         write_text_file(&fixture.modules.join("target.yaml"), "members: []");
         write_text_file(&fixture.modules.join("nested/target.yaml"), "members: []");
         std::os::unix::fs::symlink(target, fixture.modules.join(alias)).unwrap();
-        fixture.refresh_graph();
+        let alias_module = if alias.ends_with(".yaml") {
+            "alias"
+        } else {
+            "alias-dir/target"
+        };
+        refresh_graph_with_appended_owners(&fixture, &["target", "nested/target", alias_module]);
         fixture.assert_rejected_unchanged(
             &["modules", "merge", "--target", destination, "a"],
             &["does not support symlink entries"],
@@ -226,7 +330,12 @@ fn merge_batch_rejects_untouched_symlink_aliases_without_writes() {
             &["modules", "merge", "--batch", batch.to_str().unwrap()],
             &["graph compatibility mismatch"],
         );
-        fixture.refresh_graph();
+        let alias_module = if alias.ends_with(".yaml") {
+            "alias"
+        } else {
+            "alias-dir/empty"
+        };
+        refresh_graph_with_appended_owners(&fixture, &["target", "nested/empty", alias_module]);
         fixture.assert_rejected_unchanged(
             &["modules", "merge", "--batch", batch.to_str().unwrap()],
             &["does not support symlink entries"],

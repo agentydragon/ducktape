@@ -34,7 +34,7 @@ use spec::{
 use spec_modules::{collect_module_files, module_path_from_file, read_module_file};
 use yaml_edit::write_yaml_atomic;
 
-use crate::edit_gate::{Gate, post_edit_spec_from_docs};
+use crate::edit_gate::{CheckedImportOrder, Gate, post_edit_spec_from_docs};
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
 /// The source of a binding's current spec identity.
@@ -698,7 +698,8 @@ pub fn parse_move_triple(s: &str) -> Result<Move> {
     })
 }
 
-/// Parse `--batch <file>` JSON containing explicit `{sym, module, readable?}` moves.
+/// Parse `--batch <file>` JSON containing a top-level array of
+/// `{sym, module, readable?}` objects.
 pub fn parse_batch_json(text: &str) -> Result<Vec<Move>> {
     if let Ok(moves) = serde_json::from_str::<Vec<Move>>(text) {
         return Ok(moves);
@@ -766,7 +767,7 @@ pub fn run_bindings_assign(
     let mut by_identity: BTreeMap<(String, BindingLocation), PlannedMove> = BTreeMap::new();
     for m in moves {
         let hit = resolve_in_docs(modules_root, &docs, &m.sym).with_context(|| {
-            "bindings assign moves existing YAML claims; for residual source units use `debundle modules apply --assignments`"
+            "bindings assign moves existing YAML claims; for a fresh residual proposal use `debundle modules apply`"
         })?;
         let dest_module = canonical_module_path(&m.module)?;
         let planned = PlannedMove {
@@ -972,6 +973,10 @@ pub fn run_bindings_assign(
     // run` loads, so canonical source_matches[] claims gate
     // identically. Runs before any file is written.
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let priority = gate.import_priority_for_spec(
+            modules_root,
+            &post_edit_spec_from_docs(&docs, &to_delete)?,
+        )?;
         let candidate_modules = docs
             .iter()
             .filter(|(path, _)| !to_delete.contains(*path))
@@ -984,6 +989,7 @@ pub fn run_bindings_assign(
                 context.graph_source,
                 modules_root,
                 &candidate_modules,
+                &priority,
                 diagnostics,
             )
         })?)
@@ -993,14 +999,17 @@ pub fn run_bindings_assign(
     if let Some(assessment) = &effect_relocation_assessment {
         pipeline::ensure_candidate_emittable_for_write(assessment, dry_run)?;
     }
-    if !no_moves {
+    let checked_order = if !no_moves {
         gate.check(stderr, modules_root, || {
             post_edit_spec_from_docs(&docs, &to_delete)
-        })?;
-    }
+        })?
+    } else {
+        CheckedImportOrder::Unchanged
+    };
 
-    let (files_written, files_deleted) =
+    let (mut files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    checked_order.write(dry_run, &mut files_written)?;
     Ok(AssignOutcome {
         outcome: MutationOutcome::ownership_edit(
             MutationVerb::Assign,
@@ -1359,6 +1368,10 @@ pub fn run_bindings_unassign(
     // writes. The pipeline resolves this candidate through the same canonical
     // selector and emitter-planning path as `run --analysis`.
     let effect_relocation_assessment = if let Some(context) = effect_assessment_context {
+        let priority = gate.import_priority_for_spec(
+            modules_root,
+            &post_edit_spec_from_docs(&docs, &to_delete)?,
+        )?;
         let candidate_modules = docs
             .iter()
             .filter(|(path, _)| !to_delete.contains(*path))
@@ -1371,6 +1384,7 @@ pub fn run_bindings_unassign(
                 context.graph_source,
                 modules_root,
                 &candidate_modules,
+                &priority,
                 diagnostics,
             )
         })?)
@@ -1382,14 +1396,17 @@ pub fn run_bindings_unassign(
     // atom-split) before any file is written. Built from the mutated
     // docs through the run pipeline's claims model, so source_matches[]
     // claims in surviving modules stay claimed.
-    if !no_symbols {
+    let checked_order = if !no_symbols {
         gate.check(stderr, modules_root, || {
             post_edit_spec_from_docs(&docs, &to_delete)
-        })?;
-    }
+        })?
+    } else {
+        CheckedImportOrder::Unchanged
+    };
 
-    let (files_written, files_deleted) =
+    let (mut files_written, files_deleted) =
         apply_doc_changes(&original_docs, &docs, &to_delete, dry_run)?;
+    checked_order.write(dry_run, &mut files_written)?;
     Ok(UnassignOutcome {
         outcome: MutationOutcome::ownership_edit(
             MutationVerb::Unassign,
@@ -1443,10 +1460,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_batch_json_rejects_advisory_proposal_output() {
-        assert!(parse_batch_json(
-            r#"{"proposals":[{"proposed_module_id":"auto_partition_0001","binding_ids":["a"]}]}"#
-        )
-        .is_err());
+    fn parse_batch_json_accepts_exact_binding_moves() {
+        let moves = parse_batch_json(r#"[{"sym":"a","module":"ui/widgets","readable":"WidgetA"}]"#)
+            .unwrap();
+        assert_eq!(moves.len(), 1);
+        assert_eq!(moves[0].sym, "a");
+        assert_eq!(moves[0].module, "ui/widgets");
+        assert_eq!(moves[0].readable.as_deref(), Some("WidgetA"));
     }
 }

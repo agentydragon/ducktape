@@ -33,10 +33,16 @@ export { first, second };
             &["console.log(first.description, second.description);"],
         ),
     ]);
+    options = options.with_import_order(&["native", "values/chosen", "run"]);
     let (staged, _fixture) = staged(options);
     let artifact = fs::read(&staged.artifact).unwrap();
     let source_path = staged.root().join("snapshot/static/app.js");
     assert_node_output(&source_path, "7 8\n", "");
+    let mut spec: serde_yaml::Value =
+        serde_yaml::from_str(&fs::read_to_string(&staged.spec).unwrap()).unwrap();
+    spec["import_order"]["static/app"] =
+        serde_yaml::to_value(["values/chosen", "run", "residual"]).unwrap();
+    write_yaml_file(&staged.spec, &spec);
     let selection = staged.root().join("ownership_subset.json");
     for (selected, kept, released) in [
         ("readableFirst", "first", "second"),
@@ -134,6 +140,7 @@ fn resolved_member_layout_edits_keep_analysis_identity() {
     let mut module = modules.remove("native").unwrap();
     module["members"][0]["name"] = "chosen".into();
     modules.insert("renamed".into(), module);
+    spec["import_order"]["static/app"] = serde_yaml::to_value(["renamed"]).unwrap();
     let input = &mut spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0];
     input["resolved_member"]["module"] = "renamed".into();
     input["resolved_member"]["name"] = "chosen".into();

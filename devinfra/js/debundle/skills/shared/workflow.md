@@ -5,19 +5,19 @@ operations. This guide owns the spec/tool improvement loop and shared planning,
 worker, and integration procedures; project adapters supply concrete paths,
 commands, conventions, and gates.
 
-| Task                                | Read                                                                                   | Result                                                                               |
-| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Plan an assignment without editing  | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Source-backed placement proposal, existing-assignment worklist, or selector worklist |
-| Ground residual proposals           | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                                                 |
-| Apply one assigned edit             | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence                                |
-| Combine worker results              | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition                                   |
-| Improve specs and the tool together | [Drive specs and tool improvements](#drive-specs-and-tool-improvements)                | Prioritized canonical capability and justified solution route                        |
-| Coordinate a round                  | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups                        |
+| Task                                | Read                                                                                   | Result                                                        |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Plan an assignment without editing  | [Plan an assignment](../../docs/planning.md#plan-an-assignment)                        | Checked placement plan or selector worklist                   |
+| Ground residual proposals           | [Prepare seeds](../../docs/planning.md#prepare-seeds)                                  | Named worker packets in `seeds.json`                          |
+| Apply one assigned edit             | [Execute a lane](../../docs/spec_editing.md#workflow-executing-a-delegated-assignment) | Reviewed YAML delta and completed validation evidence         |
+| Combine worker results              | [Integrate worker results](../../docs/integration.md)                                  | Validated combined spec and per-branch disposition            |
+| Improve specs and the tool together | [Drive specs and tool improvements](#drive-specs-and-tool-improvements)                | Prioritized canonical capability and justified solution route |
+| Coordinate a round                  | [Coordinate a round](#coordinate-a-round)                                              | Isolated assignments, current evidence, and routed follow-ups |
 
 ## Roles
 
 - `debundle_plan_work`: read-only source/graph planning.
-- `debundle_intake`: grounds an exact residual-placement plan and names its module destinations.
+- `debundle_intake`: grounds a checked placement plan and names its destinations.
 - `debundle_lane_worker`: implements one scoped assignment.
 - `debundle_integrator`: combines worker results in isolated integration state.
 - `debundle_orchestrator`: owns adapter inputs, dispatch, and progress tracking.
@@ -84,18 +84,23 @@ For a runnable composition of one reviewed `modules merge`, starting after
 `snapshot create` and `snapshot verify`, see
 [`examples/isolated_edit.py`](examples/isolated_edit.py). It prints the plan,
 runs the dry-run, applies with invocation capture, and regenerates explicitly;
-it is an example of that edit flow, not a generic adapter framework.
+it is an example of that edit flow, not a generic adapter framework. Supply the
+complete final nonentry priority as a JSON array with `--import-order`; the
+recipe saves it in the evidence directory and passes it to `modules merge`.
 
-For residual extraction from an accepted partial spec, inspect the graph and
-source, then use [exact residual placement](../../docs/module_search.md) and the
+For residual extraction from an accepted partial spec, use
+[exact residual placement](../../docs/module_proposals.md) and the
 shipped [`examples/peel_more.py`](examples/peel_more.py) recipe. It saves one
 snapshot-bound plan, checks its graph/program identity, previews and applies the
-same changes, then regenerates. Its `--max-checks` budget limits analyzed
-partition states; the report's work counts show projections, contractions,
-branch attempts and final certifications. Budget exhaustion is `incomplete`,
-not a no-peel proof. Review ownership and synthesized selectors,
-and retain separate adapter behavioral evidence. The complete search produces
-a graph placement witness.
+same ownership and import-priority changes, then regenerates. It derives a
+baseline-preserving entry-residual group for one fresh owner; there is no
+partition search or implicit scheduler. A completed negative covers only that
+family, and interruption is inconclusive. Begin with unseeded discovery; use `modules propose --graphs`
+with the configured module tree for a corpus, or `--graph` for one chunk. Corpus
+rows retain separate chunk-local plans and unsupported/incomplete outcomes. Review discovered
+ownership and source meaning before selector application, and retain separate
+adapter behavioral evidence. Keep the complete jointly checked plan in one worker
+packet; its atoms and destinations are not independently accepted subplans.
 These shared Python recipes import sibling helpers. Include their `examples`
 directory on `PYTHONPATH` when using an isolated interpreter that omits the
 script directory from its import path; the archive test supplies that scaffold.
@@ -490,9 +495,10 @@ before extending the prerequisite chain.
 1. Select the outcome and solution route above. Reuse matching pipeline
    outputs, graphs and reports, refreshing stale evidence as needed. Use
    [planning](../../docs/planning.md#plan-an-assignment) for assignment work.
-2. Route residual proposals through intake. Send reviewed maps for existing-module
-   assignments directly to workers. Prefer coherent synthesis buckets for selector
-   cleanup.
+2. Route discovered placement plans through intake for source grounding. Send
+   already reviewed assignment plans directly to workers. Preserve each whole
+   plan, including required companion moves and destinations. Prefer
+   coherent synthesis buckets for selector cleanup.
 3. Establish each worker's isolated inputs and permitted scope using the
    [adapter contract](#adapter-contract), then dispatch the relevant role.
 4. Collect completed patches and execution evidence; integrate green work using

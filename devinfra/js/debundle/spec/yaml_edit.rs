@@ -4,6 +4,7 @@
 //! multi-file command is not a transaction.
 
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -13,6 +14,13 @@ use tempfile::NamedTempFile;
 /// Replace one file atomically. Callers decide whether the typed document
 /// changed and handle dry-run before calling.
 pub fn write_yaml_atomic(path: &Path, doc: &Value) -> Result<()> {
+    let bytes =
+        serde_yaml::to_string(doc).with_context(|| format!("serializing {}", path.display()))?;
+    write_bytes_atomic(path, bytes.as_bytes())
+}
+
+/// Persist already validated spec bytes without reinterpreting the document.
+pub fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -22,8 +30,8 @@ pub fn write_yaml_atomic(path: &Path, doc: &Value) -> Result<()> {
     // writer's scratch file, and is cleaned up automatically on failure.
     let mut temp = NamedTempFile::new_in(parent)
         .with_context(|| format!("creating temporary YAML beside {}", path.display()))?;
-    serde_yaml::to_writer(temp.as_file_mut(), doc)
-        .with_context(|| format!("serializing {}", path.display()))?;
+    temp.write_all(bytes)
+        .with_context(|| format!("writing {}", path.display()))?;
     temp.persist(path)
         .with_context(|| format!("replacing {}", path.display()))?;
     Ok(())

@@ -130,6 +130,66 @@ fn subset_spec() -> FixtureOpts<'static> {
     .with_unassigned_mode(unassigned_mode_per_atomic_group())
 }
 
+const SUBSET_PRIORITY_SOURCE: &str = r#"const dependency = "alpha";
+const consumer = dependency + "-beta";
+function lazy_reader() { return consumer; }
+function bridge() { return consumer; }
+console.log(dependency, consumer, bridge());
+"#;
+
+fn subset_priority_spec(priority: &[&str]) -> FixtureOpts<'static> {
+    FixtureOpts::new(
+        SUBSET_PRIORITY_SOURCE,
+        vec![
+            logical_module(
+                "features/dependency",
+                &[Member::new("dependency"), Member::new("lazy_reader")],
+            ),
+            logical_module("features/consumer", &[Member::new("consumer")]),
+            logical_module("features/bridge", &[Member::new("bridge")]),
+        ],
+    )
+    .with_unassigned_mode(unassigned_mode_inline())
+    .with_import_order(priority)
+}
+
+#[test]
+fn ownership_subset_needs_its_own_accepted_import_priority() {
+    const EXPECTED: &str = "alpha alpha-beta alpha-beta\n";
+
+    let full = run_fixture(subset_priority_spec(&[
+        "features/bridge",
+        "features/dependency",
+        "features/consumer",
+    ]));
+    assert_preserved_entry_output(&full, EXPECTED);
+
+    let subset = write_subset(
+        r#"{"modules":[{"chunk":"static/app","module":"features/dependency"},{"chunk":"static/app","module":"features/consumer"}]}"#,
+    );
+    let subset_args = ["--ownership-subset", subset.path().to_str().unwrap()];
+
+    let filtered = run_rejection_fixture_with_args(
+        subset_priority_spec(&["features/dependency", "features/consumer"]),
+        &subset_args,
+        1,
+    );
+    let cycles = filtered.cycles();
+    assert!(
+        cycles
+            .iter()
+            .any(|cycle| cycle["rejection"] == "esm_evaluation_tdz"),
+        "filtering the accepted full priority should expose the supplied-order TDZ, got {cycles:#?}\n{}",
+        filtered.stderr
+    );
+
+    let subset_witness = run_fixture_with_args(
+        subset_priority_spec(&["features/consumer", "features/dependency"]),
+        &subset_args,
+    );
+    assert_preserved_entry_output(&subset_witness, EXPECTED);
+}
+
 fn write_subset(json: &str) -> tempfile::NamedTempFile {
     let subset = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(subset.path(), json).unwrap();

@@ -79,6 +79,22 @@ impl EsmImportOrder {
         assignment: &ModuleAssignment,
         emitted_modules: &BTreeSet<ModuleId>,
     ) -> Self {
+        Self::build_for_constraints(
+            &canonical.pairs().collect(),
+            &canonical.i_successors,
+            dependency_graph,
+            assignment,
+            emitted_modules,
+        )
+    }
+
+    pub fn build_for_constraints(
+        constraining_pairs: &BTreeSet<(ModuleId, ModuleId)>,
+        i_successors: &BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+        dependency_graph: &DependencyGraph,
+        assignment: &ModuleAssignment,
+        emitted_modules: &BTreeSet<ModuleId>,
+    ) -> Self {
         let entry = assignment.entry_destination().module_id();
         debug_assert!(emitted_modules.contains(&entry));
         debug_assert!(
@@ -86,13 +102,7 @@ impl EsmImportOrder {
                 .iter()
                 .all(|(_, module)| emitted_modules.contains(&module))
         );
-
-        let constraining_pairs: BTreeSet<(ModuleId, ModuleId)> = canonical.pairs().collect();
-        let mut import_order = Self::build(
-            &constraining_pairs,
-            &canonical.i_successors,
-            emitted_modules,
-        );
+        let mut import_order = Self::build(constraining_pairs, i_successors, emitted_modules);
         let mut first_units = BTreeMap::<ModuleId, SourceUnitOrdinal>::new();
         for node in dependency_graph.iter_nodes() {
             first_units
@@ -100,7 +110,7 @@ impl EsmImportOrder {
                 .and_modify(|first| *first = (*first).min(node.statement_ordinal))
                 .or_insert(node.statement_ordinal);
         }
-        import_order.preserve_source_order(&canonical.i_successors, &first_units, entry);
+        import_order.preserve_source_order(i_successors, &first_units, entry);
         import_order
     }
 

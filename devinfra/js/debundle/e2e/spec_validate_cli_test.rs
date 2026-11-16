@@ -84,6 +84,7 @@ fn enum_names_use_snake_case_and_reject_legacy_spellings() {
     ] {
         let fixture = write_validate_fixture_spec(
             FixtureOpts::new("const value = 1;", Vec::new())
+                .with_import_order(&["residual"])
                 .with_raw_spec_key(
                     "program_premises",
                     json!({
@@ -194,7 +195,9 @@ fn validate_existing_binding_with_wrong_kind_counts_as_unmatched() {
 
 #[test]
 fn validate_empty_selection_reports_zero_counts_in_every_format_and_mode() {
-    let full_tree = write_validate_fixture_spec(FixtureOpts::new("const unused = 1;", Vec::new()));
+    let full_tree = write_validate_fixture_spec(
+        FixtureOpts::new("const unused = 1;", Vec::new()).with_import_order(&["residual"]),
+    );
     let json = run_spec_validate(&full_tree.spec_path, &["--format", "json"]);
     assert!(json.status.success(), "stderr={}", json.stderr);
     let json_report: Value = serde_json::from_str(&json.stdout).unwrap();
@@ -287,7 +290,9 @@ fn validate_preserves_fail_fast_pipeline_error_after_chunk_reports() {
             vec![logical_module("first/clean", &[Member::new("present")])],
         )
         .with_extra_chunks(&[("static/later", "const available = 1;\n")])
-        .with_extra_chunk_logical_modules(&[("static/later", extra_modules)]),
+        .with_extra_chunk_logical_modules(&[("static/later", extra_modules)])
+        .with_import_order(&["first/clean"])
+        .with_chunk_import_order("static/later", &["later/missing", "residual"]),
     );
     let output = process::debundle_output(
         Command::new(debundler_path())

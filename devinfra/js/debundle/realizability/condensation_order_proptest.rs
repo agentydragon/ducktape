@@ -191,3 +191,43 @@ proptest! {
         );
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+    #[test]
+    fn final_batches_and_local_splits_match_full_scc_recomputation(
+        steps in proptest::collection::vec(
+            proptest::collection::vec((0usize..NODES, 0usize..NODES, any::<bool>()), 0..8), 1..80
+        )
+    ) {
+        let mut graph = CountedDiGraph::new();
+        let mut order = CondensationOrder::new();
+        order.register_nodes(0..NODES);
+        let poll = || Ok::<(), std::convert::Infallible>(());
+        order.apply_topology_batch(graph.adjacency(), &BTreeMap::new(), None, poll).unwrap();
+        for operations in steps {
+            let before: std::collections::BTreeSet<_> = graph.edge_pairs().collect();
+            for (from,to,present) in operations {
+                if from == to { continue; }
+                if present && graph.edge_count(from,to) == 0 { graph.increment_edge(from,to); }
+                if !present && graph.edge_count(from,to) > 0 { graph.decrement_edge(from,to); }
+            }
+            let after: std::collections::BTreeSet<_> = graph.edge_pairs().collect();
+            let delta = before.symmetric_difference(&after).map(|&edge| (edge,after.contains(&edge))).collect();
+            order.apply_topology_batch(graph.adjacency(), &delta, None, poll).unwrap();
+            prop_assert_eq!(order.validate(&graph), Ok(()));
+            let mut reference = petgraph::graphmap::DiGraphMap::<usize, ()>::new();
+            for node in 0..NODES { reference.add_node(node); }
+            for (from,to) in graph.edge_pairs() { reference.add_edge(from,to,()); }
+            let expected = petgraph::algo::tarjan_scc(&reference);
+            for a in 0..NODES {
+                for b in 0..NODES {
+                    prop_assert_eq!(order.component_of(a) == order.component_of(b), expected.iter().any(|group| group.contains(&a) && group.contains(&b)));
+                }
+            }
+            let multi: std::collections::BTreeSet<_> = order.multi_components().flat_map(|rep| order.component_members(rep)).collect();
+            let expected_multi: std::collections::BTreeSet<_> = expected.iter().filter(|group| group.len()>1).flatten().copied().collect();
+            prop_assert_eq!(multi, expected_multi);
+        }
+    }
+}

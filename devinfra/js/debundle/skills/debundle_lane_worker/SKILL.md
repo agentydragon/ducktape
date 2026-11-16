@@ -23,9 +23,10 @@ Review synthesized selectors and preserved metadata; graph acceptance alone does
 not establish selector realization. Refresh the graph and run the adapter gate,
 regeneration and relevant emitted behavior after the edit.
 
-Prefer the snapshot-bound `.plan` from complete discovery or `modules check`:
+Prefer the snapshot-bound `.plan` from discovery or `modules check`:
 use `modules check --plan` and `modules apply --plan` so reused IDs in a refreshed
-graph cannot retarget the edit. The shipped
+graph cannot retarget the edit. Keep all jointly required moves together; do not
+apply only a chosen subset of a checked plan. The shipped
 [peel-more recipe](references/skills/shared/examples/peel_more.py) executes the
 checked discovery/application/regeneration loop in a verified snapshot.
 

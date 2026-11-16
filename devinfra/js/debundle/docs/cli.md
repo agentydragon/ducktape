@@ -121,10 +121,10 @@ selector root, when supplied too, must contain the relocated input.
 Plain `graph-summary` reads the saved report without verifying the current
 engine, source, packages or YAML. Its success establishes report readability;
 supplying relocation flags does not turn it into a compatibility check. For a
-bounded replay preflight, use
-`inspect-source --id unit:N` with the matching graph and roots, or `describe`
-with the graph's module scope. Retain the command's actual successful exit
-status and source report before claiming source compatibility.
+bounded replay preflight, use `inspect-source --id unit:N` with the matching
+graph and roots, or `describe` with the graph's module scope. Retain the
+command's successful exit status and source report before claiming source
+compatibility.
 
 `--modules` must name the graph chunk's exact configured
 subtree. Commands accepting `--tree-config` may name the full modules tree
@@ -228,8 +228,9 @@ It preserves order and duplicates; a positional ID is mutually exclusive. Graph,
 modules, source root, bounds and edge filters apply to every item. With `--tree-config`,
 `--modules` may name the full app tree; IDs resolve against all roots for the graph's chunk.
 
-One invocation loads/verifies the graph once and reuses binding-home analysis. Module paths still resolve claims through the ordinary source-backed
-resolver. Keep inputs unchanged; no analysis is cached between commands.
+One invocation loads/verifies the graph once and reuses binding-home lookups.
+Module paths still resolve claims through the ordinary source-backed resolver.
+Keep inputs unchanged; no analysis is cached between commands.
 
 JSON wraps ordinary standalone reports in `{"results": [...]}`; NDJSON emits one
 report per ID, and text prints in order. **All items must succeed before any result report**,
@@ -283,21 +284,19 @@ rejection object, including `mismatch.reason` and regeneration details. With
 not write an error report to stdout. Clap usage and argument-parsing failures
 remain Clap diagnostics because dispatch has not begun.
 
-Read-only inspection commands prefer direct graph/spec lookups. `modules
-propose` always runs the exact placement search and returns a snapshot-bound
-plan when it finds a placement. `describe`, `coverage`, and `graph-summary`
-report graph and ownership data without proposal-enrichment options.
+Read-only inspection commands provide graph, source-unit, atomic-group and
+module-ownership evidence. `modules propose` searches the unseeded residual
+domain for an exact placement; see [exact residual placement](module_proposals.md).
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
-`bindings rename`, `modules apply`, `modules refine`, `modules merge`,
-`modules delete`) take the same
+`bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
 `--format` flag with the same tty/pipe default. Under `text` they print a
 one-line verdict (`<action>` plus move/file counts). Under a JSON format
 each verb prints **one outcome object** sharing a common schema core:
 
 | Field                   | Values                                                                                                                                                                                         |
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `refine` \| `merge` \| `delete`                                                                                                               |
+| `verb`                  | `assign` \| `unassign` \| `rename` \| `apply` \| `merge` \| `delete`                                                                                                                           |
 | `action`                | `applied` \| `dry-run` \| `noop` \| `unchanged` \| `rejected`                                                                                                                                  |
 | `gate`                  | `passed` \| `claims_checked` \| `names_only` \| `skipped` (`--no-verify`) \| `not_required` (edit cannot change the assignment); success outcomes only; see "Ownership-edit assessment states" |
 | `needs_full_assessment` | `true` when an ownership edit passed only the graph-backed checks (no `--analysis`); omitted otherwise                                                                                         |
@@ -306,8 +305,9 @@ each verb prints **one outcome object** sharing a common schema core:
 
 Verb-specific fields flatten in alongside the core: `moves_applied`
 (assign), `unassigned` (unassign), `identity` / `old_readable` /
-`new_readable` (rename), `proposals_applied` / `bindings_claimed` /
-`selector_reviews` (apply), `target` (single merge) / `targets` (merge batch).
+`new_readable` (rename), `source_units_reassigned` /
+`residual_source_units_claimed` / `synthesized_claims` (apply), `target` (single
+merge) / `targets` (merge batch).
 When requested, `bindings assign`, `bindings unassign`, `modules apply`,
 `modules merge`, and `modules delete` also return
 `effect_relocation_assessment`, a report-only assessment of their exact
@@ -317,10 +317,10 @@ assessing the final candidate before changing YAML. This requires `--graph`
 and the full tree transform context (`--tree-config`,
 `--tree-modules`, `--tree-vendor-marks`, `--tree-source-root`, and
 `--out-root`); `--modules` and `--tree-modules` must resolve to the same root.
-`modules apply` and `modules refine` reuse their existing `--modules` root as
-`--tree-modules` and their existing `--tree-config`, avoiding a second
-root/config argument. These two commands require the auxiliary tree inputs to
-be explicit; they do not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
+`modules apply` reuses its existing `--modules` root as `--tree-modules` and
+its existing `--tree-config`, avoiding a second root/config argument. It
+requires the auxiliary tree inputs to be explicit; it does not inherit
+`DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
 Other existing assessment commands retain their transform environment defaults.
 The current path supports one full-tree graph chunk. It loads complete typed
 facts through the canonical pipeline and verifies source, engine and analysis
@@ -337,7 +337,9 @@ diagnostics" below.
 For `modules delete`, every requested file must resolve to a module in the
 complete typed module tree. The exact resolved deletion set is used by both the
 legacy edit gate and the assessment candidate; non-empty files still require
-`--force`. The assessment reports the emitted order after those module
+`--force`. Empty owners also occur in the emitted universe and entry fanout:
+their deletion requires the gate and removes their priority slots. The
+assessment reports the emitted order after those module
 documents are removed. As with the other edit assessments, it proves only
 statement-order commutation for that candidate and does not replace the gate.
 
@@ -437,13 +439,13 @@ module-level `source_unit_ids` remains an aggregate and is not positionally
 aligned with the binding arrays. Use the report for the same source/spec/engine
 snapshot; it does not resolve later spec edits.
 
-`describe` and `inspect-source --id` take IDs and dispatch on shape:
-bindings (minified or readable), module paths (`runtime/plugins`) or
-unambiguous module filenames, module ids (`logical:7`), source-unit IDs
-(`unit:42`), and atom ids (`atomic:N`). An unknown
-identifier-like prefix such as `module:7` is rejected before graph loading or
-compatibility checks, with `logical:7` suggested for a module ID. An existing
-module path containing a colon is resolved as a path before this check.
+`describe` and `inspect-source --id` dispatch bindings (minified or readable),
+module paths (`runtime/plugins`) or unambiguous module filenames, module IDs
+(`logical:7`), source-unit IDs (`unit:42`) and atom IDs (`atomic:N`). An
+unknown identifier-like prefix such as `module:7` is rejected before graph
+loading or compatibility checks, with `logical:7` suggested for a module ID.
+An existing module path containing a colon is resolved as a path before this
+check.
 
 `describe` emits at most 20 rows in each report section by default. Use
 `--limit N` for a different positive per-section cap, or `--all` to return
@@ -474,7 +476,7 @@ filters.
 
 Every command that modifies the spec runs validation **by default** before
 writing changes back to disk. For commands that affect the chunk's module
-assignment (anything that moves a binding between modules), that means
+assignment or emitted owner universe, that means
 the post-edit claim checks followed by the full realizability + atom-split
 gate — which requires `--graph <dependency_graph.json.gz>` unless `--no-verify` is set.
 Direct local claims must identify graph source units, typed `kind` pins must match
@@ -514,7 +516,7 @@ Read-only commands take neither flag — they have no side effects.
 ### Ownership-edit assessment states
 
 The ownership edits (`bindings assign`, `bindings unassign`, `modules apply`,
-`modules refine`, `modules merge`, `modules delete`) report these
+`modules merge`, `modules delete`) report these
 validated states:
 
 | `gate`           | `needs_full_assessment` | Meaning                                                                                                                                             |
@@ -628,6 +630,22 @@ still needs its own gate verdict. Passing one ownership subset does not imply
 that adding or removing claims will pass, because that changes the destinations
 and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
+
+### Residual placement
+
+Use [`modules propose`](module_proposals.md) to search its documented
+append-one-owner closure family. For a specific single-atom or joint move,
+provide the complete source-unit assignment and final import priority to
+`modules check --batch`; it checks the full assignment, including every atom
+and ESM evaluation. Apply only a checked plan or batch with `modules apply`,
+then run normal materialization and relevant runtime checks. A completed
+proposal search covers only its documented family, not arbitrary partitions
+or moves into existing owners.
+
+`residual_atomic_groups` remains an inventory of groups in the actual current
+assignment. Use `atoms --residual-only`, `describe`, and `inspect-source` to
+inspect their units, ownership and source spans. These inspection commands do
+not validate a hypothetical move.
 
 ### Other full reports
 
@@ -1179,10 +1197,9 @@ debundle bindings unassign XOe \
 ```
 
 The same opt-in applies to `bindings assign`, `modules apply`, and
-`modules merge`. For `modules apply` and `modules refine`, the existing
-`--modules` root and `--tree-config` arguments also supply the transform's
-tree modules and config; the command does not accept duplicate root/config
-flags.
+`modules merge`. For `modules apply`, the existing `--modules` root and
+`--tree-config` arguments also supply the transform's tree modules and config;
+the command does not accept duplicate root/config flags.
 
 This assessment currently supports one materialized graph chunk whose
 `--tree-config` assigns the full module tree to that chunk (no scoped
@@ -1216,17 +1233,8 @@ omitting `readable` preserves the current readable name):
 
 ## Checking explicit destination batches (`modules check`)
 
-For a residual-peel decision, use the default exact
-[`modules propose`](module_search.md) strategy. It returns a
-snapshot-bound `.plan`, a scoped `exhausted_no_peel` result, or an explicitly
-incomplete result. It constructs graph-constrained placements directly, including
-joint atoms and multiple destinations; it does not enumerate the Cartesian
-product of atom-to-destination choices. `--max-checks` and `--time-budget-ms`
-limit analyzed partition states and cooperative placement time after graph and
-baseline preparation. Deadline checks also run inside schedule derivation;
-individual graph operations can finish before the next check. Work counts
-summarize projections, schedule checkpoints, contractions, branch attempts and
-final certification.
+For residual discovery, use [`modules propose`](module_proposals.md), including
+`--graphs` for a configured corpus. Keep each returned chunk-local plan together.
 
 `modules check --batch changes.json` checks an explicit source-unit assignment
 against the accepted starting graph. Supply the same `--graph`, `--modules`,
@@ -1238,8 +1246,9 @@ destinations under the configured physical module roots. `--batch -` reads stdin
 The complete check covers structural atoms, cross-module rebinding and global
 ESM evaluation, including remaining residual code. It supports unions of atoms,
 existing-owner changes and anonymous statements. Import/export scaffolding stays
-in place. A rejected starting assignment, unknown or duplicate source units and
-invalid destinations are errors. It writes no spec files.
+in place. Unknown or duplicate source units and invalid destinations are errors.
+A rejected starting assignment can be repaired only when the complete requested
+result passes the same gate. The command writes no spec files.
 
 JSON output reports `accepted`, the checked changes, residual units extracted,
 existing units moved and the full validation report. An accepted candidate exits
@@ -1281,74 +1290,22 @@ existing units moved, synthesized claims and changed files. Graph/selector
 acceptance still requires normal materialization and relevant runtime checks.
 Refresh the graph after applying an edit.
 
-## Tree-config-scoped module assignments
+## Applying assignments in a multi-chunk tree
 
-For an app-level spec with several chunks, pass the same `--tree-config` to
-`modules propose` and `modules apply`. The config's `module_roots` maps the
-graph's chunk ID to authored YAML subtrees. `modules apply` checks only those
-subtrees against the chunk graph and preserves each configured root's exact
-filesystem spelling; it normalizes only the logical module suffix. A destination
-outside the mapped roots is rejected. Single-chunk specs can omit the flag when
-`--modules` already names that chunk's tree.
+Pass the matching `--tree-config` to `modules propose`, `modules check` and
+`modules apply`. The config maps each graph chunk ID to its authored module
+roots. Check and apply accept logical destinations under those roots and scope
+the complete selector and assignment checks to the selected graph chunk.
+Single-chunk specs can omit the config when `--modules` already names that
+chunk's tree.
 
-## Applying reviewed source-unit assignments (`modules refine`)
-
-Use `modules refine` to apply a reviewed source-unit-to-module batch to claims already
-present in the scoped module tree:
-
-```sh
-debundle modules refine --batch reviewed-source-units.json \
-  --graph dependency_graph.json.gz --modules spec/modules --source-root source
-```
-
-The batch is a JSON array of `{ "unit_id": "...", "module": "..." }`
-rows. `module` is a logical module ID, not a YAML filename; use the ID without
-the `.yaml` suffix. For example:
-
-```json
-[{ "unit_id": "unit:42", "module": "features/editor/state" }]
-```
-
-Use source-unit IDs from the current graph. With `--tree-config`, include the
-selected chunk root in the module ID. Do not
-pass a filename such as `features/editor/state.yaml`: the command resolves the
-logical ID to a YAML path, so a filename-shaped value can produce a doubled
-`.yaml` suffix. Source units omitted from the batch keep their current
-assignment. Each row moves every existing selector that resolves to
-that source unit, including `members:`, grouped `source_matches[].bindings[]`, and
-`anonymous_statements:` entries. It preserves selector text, binding names,
-annotations, source-match notes, and anonymous-statement comments and notes.
-Module-level `comment:` and `note:` fields stay with their original module.
-
-The command accepts only already-claimed, non-residual source units. Residual,
-unclaimed, import, and export source units cannot be assigned. It rejects duplicate
-source-unit rows, split/conflicting current claims, destination name or annotation
-collisions, and stale dependency graphs. It then resolves every selector in the
-complete scoped post-edit spec and compares every graph source unit—including
-unchanged and residual source units—to the requested complete assignment. Only after
-that identity check does the shared atomic-group and realizability gate run.
-There is no `--no-verify` mode. `--dry-run` performs the same checks without
-writing YAML; a rejected batch leaves every module document unchanged.
-
-For a report-only effect relocation assessment of the exact candidate, add
-`--dry-run --analysis <staged-artifact>` and the tree transform inputs
-`--tree-vendor-marks`, `--tree-source-root`, and `--out-root`. The existing
-`--tree-config` and `--modules` arguments also supply the assessment's tree
-config and module root. The config must select exactly one full-tree root for
-the graph chunk, and the transform must materialize only that graph chunk.
-The assessment's source root and output root must be passed explicitly; it does
-not inherit `DEBUNDLE_TREE_SOURCE_ROOT` or `DEBUNDLE_OUT`.
-This assessment uses the complete post-refinement documents, after drained
-modules are removed, and runs after the unchanged identity and realizability
-gates pass but before YAML writes. It reports statement-order commutation only;
-it does not change edit acceptance or prove replacement, privacy, or singleton
-obligations. A missing or stale artifact, incomplete context, or scoped tree
-config is rejected before any YAML is written. The existing scoped
-`--tree-config` behavior remains available without `--analysis`.
-
-The primitive does not create selectors or choose semantic module names. It
-applies the reviewed source-unit map as written; inspect the resulting modules and
-run the project extraction gate after an accepted edit.
+For newly claimed bindings, `--readable-names FILE` maps runtime binding names
+to reviewed readable names. `--selector-overrides FILE` maps source-unit IDs to
+binding names and reviewed selectors; entries may use the normal
+`source_matches` claim shape or a relational `members[].selector`. Overrides
+must claim exactly the selected binding, and binding-name pins are rejected.
+Omitted entries use selector synthesis. Existing claims move with their
+selectors and metadata intact. Preview and write run the same final checks.
 
 ## Rejection diagnostics
 
@@ -1609,11 +1566,11 @@ on the next `run` or `spec validate`. Runtime failures follow the typed
 
 ## Workflow: investigating a binding end-to-end
 
-When a binding's role or destination is unclear:
+When a binding's role or a candidate boundary is unclear:
 
-For bounded owner discovery, use `graph-summary --limit N` to inspect the
-largest residual atomic groups. Put the owners you want to investigate in a
-JSON array, then use
+For bounded owner discovery, choose the first page for the question: use
+`graph-summary --limit N` or `atoms --residual-only --limit N` to inspect large
+residual atomic groups. Put the owners you want to investigate in a JSON array, then use
 `describe --batch owners.json --direction incoming --limit N` (repeat
 `--reason KIND` when useful). Each report's `edge_census` counts raw incoming
 and outgoing edges by dependency kind and role after direction/reason filters;
@@ -1625,7 +1582,8 @@ those aggregate projections do not retain the raw edge role. This filtered
 inspection helps choose what to read next; it is not a gate verdict.
 
 1. **`debundle describe <sym>`** — graph + spec context: the binding's
-   source unit, home module, atom membership, and incoming/outgoing edges.
+   source unit, home module, atom membership, and incoming/outgoing edges. Add
+   `atoms` and `coverage` for additional ownership and structural context.
 2. **`debundle inspect-source --id <sym>`** — inspect the source unit's numbered
    source item. Use `--view raw` for original bytes and
    `--context-statements 1` for neighboring items.
@@ -1827,8 +1785,8 @@ both member and source-match bindings; module edits address the top-level
 
 ## See also
 
-- `design.md` — the realizability theorem the gate enforces and the layered
-  mental model for materialization.
+- `design.md` — the realizability theorem the gate enforces; § "Layered
+  mental model" + § "Factor assembly inside `debundle run`" for the materializer.
 - `wire_format.md` — JSON sidecar conventions readers of these commands
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing

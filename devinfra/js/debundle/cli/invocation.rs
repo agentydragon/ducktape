@@ -433,8 +433,7 @@ fn classify_mode(command: &[String], arguments: &[ResolvedArgument]) -> Invocati
             }
         }
         [modules, verb]
-            if modules == "modules"
-                && ["apply", "refine", "merge", "delete"].contains(&verb.as_str()) =>
+            if modules == "modules" && ["apply", "merge", "delete"].contains(&verb.as_str()) =>
         {
             if flag_value(arguments, "no_verify") {
                 InvocationMode::UnvalidatedEdit

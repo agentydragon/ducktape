@@ -288,6 +288,7 @@ pub struct MaterializeSpecInputs<'a> {
     pub logical_modules: &'a BTreeMap<String, BTreeMap<String, LogicalModule>>,
     pub chunk_renames: &'a BTreeMap<String, ChunkRenames>,
     pub unassigned_mode: &'a BTreeMap<String, UnassignedMode>,
+    pub import_order: &'a BTreeMap<String, Vec<spec::ModulePath>>,
     pub chunk_analysis_options: &'a BTreeMap<String, DependencyGraphOptions>,
     pub chunk_export_purity: &'a BTreeMap<String, ChunkExportPurity>,
 }
@@ -310,6 +311,7 @@ pub fn materialize_logical_modules(
         logical_modules,
         chunk_renames,
         unassigned_mode,
+        import_order,
         chunk_analysis_options,
         chunk_export_purity,
     } = spec_inputs;
@@ -494,6 +496,7 @@ pub fn materialize_logical_modules(
                                 spec: ChunkSpec {
                                     chunk_renames,
                                     unassigned_mode,
+                                    import_order,
                                 },
                             },
                             frontend_chunk,

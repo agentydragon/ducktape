@@ -1,30 +1,28 @@
-//! Constructive residual placement over coarsenings of fixed owner anchors.
+//! Complete constructive extraction under one declared append-last policy.
 //!
-//! Branches are only the compatible contractions required by a domain,
-//! cardinality or exact ESM-schedule obstruction. Constraining cycles force
-//! co-location, including cycles with fallback-promoted edges. The
-//! concrete full assignment validator is reserved for final certification.
+//! Existing owners and their global priority stay fixed. The only candidate
+//! owner is fresh; it is appended after the fixed priority. `baseline_insertion`
+//! computes every seed SCC's minimal successor closure and timing window in a
+//! polynomial pass, then this module certifies only the selected complete map.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::time::Instant;
+use std::collections::{BTreeMap, BTreeSet};
 
 use analysis::{EntryDestination, ModuleAssignment, ModuleId, StatementKind};
-use anyhow::{Context, Result, bail, ensure};
-use gate::{
-    AssignmentConstraints, EsmImportOrder, EsmImportSchedule, ScheduleObstruction,
-    project_assignment_constraints,
-};
-use petgraph::{algo::tarjan_scc, graphmap::DiGraphMap};
+use anyhow::{Context, Result, ensure};
+use gate::project_assignment_constraints;
 use source_identity::SourceUnitId;
 use spec::{ModulePath, is_residual_namespace_path};
 
 use super::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use super::search::{
-    Destinations, SearchOptions, SearchReport, SearchScope, SearchStatus, SearchWorkReport,
-    StopReason,
+    SearchOptions, SearchReport, SearchScope, SearchStatus, SearchWorkReport,
+    UnsupportedResidualOwnerReport,
 };
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[path = "baseline_insertion.rs"]
+mod baseline_insertion;
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum Owner {
     Entry,
     Module(ModulePath),
@@ -39,19 +37,18 @@ impl Owner {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 enum Token {
     Owner(Owner),
     Atom(usize),
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone)]
 struct Block {
     tokens: BTreeSet<Token>,
     units: BTreeSet<usize>,
     owner: Option<Owner>,
     allowed_owners: BTreeSet<Owner>,
-    allow_fresh: bool,
 }
 
 impl Block {
@@ -61,232 +58,208 @@ impl Block {
             .expect("every placement block retains an initial token")
             .clone()
     }
-
-    fn occupied(&self) -> bool {
-        !self.units.is_empty()
-    }
 }
 
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Clone)]
 struct Partition {
     blocks: Vec<Block>,
 }
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct BlockKey {
-    tokens: BTreeSet<Token>,
-    owner: Option<Owner>,
-    allowed_owners: BTreeSet<Owner>,
-    allow_fresh: bool,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-struct PartitionKey(Vec<BlockKey>);
 
 impl Partition {
     fn new(mut blocks: Vec<Block>) -> Self {
         blocks.sort_by_key(Block::key);
         Self { blocks }
     }
-
-    fn key(&self) -> PartitionKey {
-        PartitionKey(
-            self.blocks
-                .iter()
-                .map(|block| BlockKey {
-                    tokens: block.tokens.clone(),
-                    owner: block.owner.clone(),
-                    allowed_owners: block.allowed_owners.clone(),
-                    allow_fresh: block.allow_fresh,
-                })
-                .collect(),
-        )
-    }
-
-    fn block(&self, key: &Token) -> Option<&Block> {
-        self.blocks.iter().find(|block| block.key() == *key)
-    }
-
-    fn merge(&self, left: &Token, right: &Token) -> Option<Self> {
-        if left == right {
-            return Some(self.clone());
-        }
-        let left_index = self.blocks.iter().position(|block| block.key() == *left)?;
-        let right_index = self.blocks.iter().position(|block| block.key() == *right)?;
-        let left_block = &self.blocks[left_index];
-        let right_block = &self.blocks[right_index];
-
-        let owner = match (&left_block.owner, &right_block.owner) {
-            (Some(left), Some(right)) if left != right => return None,
-            (Some(owner), _) | (_, Some(owner)) => Some(owner.clone()),
-            (None, None) => None,
-        };
-        let allowed_owners: BTreeSet<_> = left_block
-            .allowed_owners
-            .intersection(&right_block.allowed_owners)
-            .cloned()
-            .collect();
-        if owner
-            .as_ref()
-            .is_some_and(|owner| !allowed_owners.contains(owner))
-        {
-            return None;
-        }
-        let allow_fresh = left_block.allow_fresh && right_block.allow_fresh;
-        if owner.is_none() && allowed_owners.is_empty() && !allow_fresh {
-            return None;
-        }
-
-        let mut merged = Block {
-            tokens: left_block
-                .tokens
-                .union(&right_block.tokens)
-                .cloned()
-                .collect(),
-            units: left_block
-                .units
-                .union(&right_block.units)
-                .copied()
-                .collect(),
-            owner,
-            allowed_owners,
-            allow_fresh,
-        };
-        // Anchored blocks are a selected owner identity. Their effective domain
-        // is exactly that anchor, even when the members could have chosen other
-        // destinations in a sibling search branch.
-        if let Some(owner) = &merged.owner {
-            merged.allowed_owners = BTreeSet::from([owner.clone()]);
-            merged.allow_fresh = false;
-        }
-
-        let (low, high) = if left_index < right_index {
-            (left_index, right_index)
-        } else {
-            (right_index, left_index)
-        };
-        let mut blocks = self.blocks.clone();
-        blocks.remove(high);
-        blocks.remove(low);
-        blocks.push(merged);
-        Some(Self::new(blocks))
-    }
 }
 
-#[derive(Clone)]
 struct MoveAtom {
     members: BTreeSet<usize>,
-    required: bool,
 }
 
-struct Scope {
+pub(super) struct Scope {
     atoms: Vec<MoveAtom>,
     movable_units: BTreeSet<usize>,
     required_units: BTreeSet<usize>,
-    allowed_existing_targets: BTreeSet<ModulePath>,
-    explicit_fresh_targets: BTreeSet<ModulePath>,
+    required_names: Vec<String>,
+    only_names: Option<Vec<String>>,
     baseline_owners: BTreeSet<Owner>,
-    residual_modules: BTreeSet<ModulePath>,
-    effective_new_limit: usize,
-    allow_arbitrary_fresh: bool,
-}
-
-struct Candidate {
-    owners: BTreeMap<Token, Owner>,
-    occupied_fresh_owners: BTreeSet<Owner>,
-    assignment: Vec<Option<ModulePath>>,
-}
-
-struct Projection {
-    candidate: Candidate,
-    module_paths: Vec<ModulePath>,
-    constraints: AssignmentConstraints,
-    block_by_module: BTreeMap<ModuleId, Token>,
-    block_by_unit: Vec<Token>,
-    nodes: BTreeSet<ModuleId>,
-    entry: ModuleId,
-    pairs: BTreeSet<(ModuleId, ModuleId)>,
-    successors: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
-    preferred: EsmImportOrder,
-}
-
-struct Solver<'p, 'i, 'o> {
-    problem: &'p AssignmentProblem<'i>,
-    options: &'o SearchOptions,
-    scope: Scope,
-    started: Instant,
-    visited: HashSet<PartitionKey>,
-    report: SearchReport,
+    target: Owner,
 }
 
 pub(super) fn search(
     problem: &AssignmentProblem<'_>,
     options: &SearchOptions,
 ) -> Result<SearchReport> {
-    let started = Instant::now();
-    let (scope, required_names) = prepare_scope(problem, options)?;
-    let movable_atoms = scope.atoms.len();
-    let report = SearchReport {
-        status: SearchStatus::ExhaustedNoPeel,
-        stop_reason: None,
-        checks: 0,
-        work: SearchWorkReport::default(),
-        movable_atoms,
-        residual_units_extracted: 0,
-        existing_units_moved: 0,
-        scope: SearchScope {
-            destinations: options.destinations,
-            into: options.into.clone(),
-            required_units: required_names,
-            only_units: options.only_units.clone(),
-            max_new_modules: options.max_new_modules,
-        },
-        changes: Vec::new(),
-    };
-    if scope.atoms.is_empty() {
-        return Ok(report);
-    }
-
+    let scope = prepare_scope(problem, options)?;
     let initial = initial_partition(problem, &scope);
-    let mut solver = Solver {
+    let module_ids: BTreeMap<_, _> = initial
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| (block.key(), ModuleId(index)))
+        .collect();
+    let entry = module_ids[&Token::Owner(Owner::Entry)];
+    let mut assignments = vec![entry; problem.baseline.len()];
+    for block in &initial.blocks {
+        let module = module_ids[&block.key()];
+        for &unit in &block.units {
+            assignments[unit] = module;
+        }
+    }
+    let constraints = project_assignment_constraints(
+        problem.input.graph(),
+        &ModuleAssignment::from_assignments(assignments, EntryDestination::from_module_id(entry)),
+    );
+    let insertion = baseline_insertion::inventory(
         problem,
-        options,
-        scope,
-        started,
-        visited: HashSet::new(),
-        report,
+        &scope,
+        &initial,
+        &module_ids,
+        &constraints,
+        &scope.target,
+    )?;
+
+    let target = scope
+        .target
+        .path()
+        .expect("append-last target is a module path")
+        .clone();
+    let mut candidate = problem.baseline.clone();
+    for &unit in &insertion.selected_units {
+        candidate[unit] = Some(target.clone());
+    }
+    let mut import_order = problem.input.report().import_order.clone();
+    if !insertion.selected_units.is_empty() {
+        import_order.push(target.clone());
+    }
+    let mut blockers = insertion.blockers;
+    let mut unsupported_by_owner = BTreeMap::<ModulePath, Vec<String>>::new();
+    if options.only_units.is_none() {
+        for unit in 0..problem.baseline.len() {
+            if problem.residual_origins[unit]
+                && let Some(owner) = problem.baseline[unit].as_ref()
+            {
+                unsupported_by_owner.entry(owner.clone()).or_default().push(
+                    problem
+                        .input
+                        .source_unit_report(SourceUnitId(unit))
+                        .id
+                        .clone(),
+                );
+            }
+        }
+    }
+    let unsupported_residual_routing: Vec<_> = unsupported_by_owner
+        .into_iter()
+        .map(|(module, source_units)| UnsupportedResidualOwnerReport {
+            module: module.as_str().to_owned(),
+            source_units,
+        })
+        .collect();
+    let mut changes = Vec::new();
+    let mut selected_source_units = Vec::new();
+    let mut final_certifications = 0;
+    let status = if insertion.selected_units.is_empty() {
+        if blockers.is_empty() && !options.required.is_empty() {
+            blockers.push("required_seed_has_no_feasible_append_last_closure".to_owned());
+        }
+        if unsupported_residual_routing.is_empty() {
+            SearchStatus::ExhaustedNoPeel
+        } else {
+            SearchStatus::UnsupportedResidualRouting
+        }
+    } else {
+        let (validation, _) =
+            problem.validate_with_priority_and_schedule(&candidate, &import_order)?;
+        ensure!(
+            accepted(&validation),
+            "append-last window theorem disagreed with complete assignment certification: {:?}",
+            validation.report
+        );
+        final_certifications = 1;
+        for &unit in &insertion.selected_units {
+            let id = problem
+                .input
+                .source_unit_report(SourceUnitId(unit))
+                .id
+                .clone();
+            selected_source_units.push(id.clone());
+            changes.push(SourceUnitAssignment {
+                unit_id: id,
+                module: target.as_str().to_string(),
+            });
+        }
+        SearchStatus::Found
     };
-    solver.visit(initial)?;
-    let report = solver.report;
-    Ok(report)
+
+    Ok(SearchReport {
+        status,
+        scope: SearchScope {
+            policy: "one_fresh_owner_appended_to_fixed_priority",
+            destination: target.as_str().to_string(),
+            required_units: scope.required_names,
+            only_units: scope.only_names,
+        },
+        movable_atoms: scope.atoms.len(),
+        residual_units_extracted: insertion.selected_units.len(),
+        seed_atoms: insertion.seed_atoms,
+        selected_source_units,
+        blockers,
+        unsupported_residual_routing,
+        work: SearchWorkReport {
+            baseline_insertion_rows: insertion.rows,
+            baseline_insertion_edges: insertion.edges,
+            seed_roots_assessed: insertion.roots,
+            selected_closures_materialized: u64::from(!insertion.selected_units.is_empty()),
+            final_certifications,
+        },
+        changes,
+        import_order,
+    })
 }
 
-fn prepare_scope(
-    problem: &AssignmentProblem<'_>,
-    options: &SearchOptions,
-) -> Result<(Scope, Vec<String>)> {
-    let resolve = |ids: &[String]| -> Result<BTreeSet<SourceUnitId>> {
-        ids.iter()
-            .map(|id| {
-                problem
-                    .input
-                    .source_unit_id(id)
-                    .with_context(|| format!("unknown source unit {id:?}"))
-            })
-            .collect()
-    };
-    let required = resolve(&options.required)?;
-    let only = options.only_units.as_deref().map(resolve).transpose()?;
+fn prepare_scope(problem: &AssignmentProblem<'_>, options: &SearchOptions) -> Result<Scope> {
+    ensure!(
+        options.into.len() <= 1,
+        "modules propose accepts at most one fresh --into destination"
+    );
+
+    let required_ids: BTreeSet<_> = options
+        .required
+        .iter()
+        .map(|id| {
+            problem
+                .input
+                .source_unit_id(id)
+                .with_context(|| format!("unknown source unit {id:?}"))
+        })
+        .collect::<Result<_>>()?;
+    let only_ids: Option<BTreeSet<_>> = options
+        .only_units
+        .as_deref()
+        .map(|ids| {
+            ids.iter()
+                .map(|id| {
+                    problem
+                        .input
+                        .source_unit_id(id)
+                        .with_context(|| format!("unknown source unit {id:?}"))
+                })
+                .collect()
+        })
+        .transpose()?;
+
     let mut atoms = Vec::new();
     for atom in &problem.atoms {
         let permitted = atom.members.iter().all(|unit| {
             problem.residual_origins[unit.0]
+                && problem.baseline[unit.0].is_none()
                 && !matches!(
                     problem.input.source_unit_report(*unit).statement_kind,
                     StatementKind::Import | StatementKind::Export
                 )
         });
-        if let Some(only) = &only {
+        if let Some(only) = &only_ids {
             let selected = atom.members.intersection(only).count();
             ensure!(
                 selected == 0 || selected == atom.members.len(),
@@ -301,92 +274,55 @@ fn prepare_scope(
             }
             ensure!(
                 permitted,
-                "--only-units contains authored units or import/export scaffolding"
+                "--only-units contains an authored owner, import/export scaffolding, or a non-entry residual unit"
             );
         }
         if permitted {
             atoms.push(MoveAtom {
                 members: atom.members.iter().map(|unit| unit.0).collect(),
-                required: false,
             });
         }
     }
+
     let movable_units: BTreeSet<_> = atoms
         .iter()
         .flat_map(|atom| atom.members.iter().copied())
         .collect();
-    let movable_ids: BTreeSet<_> = movable_units
-        .iter()
-        .map(|unit| SourceUnitId(*unit))
-        .collect();
+    let required_units: BTreeSet<_> = required_ids.iter().map(|unit| unit.0).collect();
     ensure!(
-        required.is_subset(&movable_ids),
-        "--require must name movable residual body units inside the permitted scope"
+        required_units.is_subset(&movable_units),
+        "--require must name true-entry residual body units inside the permitted atomic scope"
     );
-    let required_units: BTreeSet<_> = required.iter().map(|unit| unit.0).collect();
-    for atom in &mut atoms {
-        atom.required = atom
-            .members
-            .iter()
-            .any(|unit| required_units.contains(unit));
-    }
 
-    let existing_targets: BTreeSet<_> = problem
-        .existing_modules
-        .difference(&problem.residual_modules)
-        .cloned()
-        .collect();
-    let new_limit = options.max_new_modules.unwrap_or(atoms.len());
-    let mut into = BTreeSet::new();
-    let mut explicit_fresh_targets = BTreeSet::new();
-    if options.into.is_empty() {
-        if !matches!(options.destinations, Destinations::New) {
-            into.extend(existing_targets.iter().cloned());
-        }
+    let existing_modules = &problem.existing_modules;
+    let target = if let Some(raw) = options.into.first() {
+        ensure!(
+            !std::path::Path::new(raw).is_absolute() && !raw.contains('\0'),
+            "destination must be a relative module path"
+        );
+        let path = ModulePath::parse(raw, "")?;
+        ensure!(
+            !path.as_str().ends_with(".yaml") && !path.as_str().ends_with(".yml"),
+            "destination must be extensionless"
+        );
+        ensure!(
+            !existing_modules.contains(&path)
+                && !problem.residual_modules.contains(&path)
+                && !is_residual_namespace_path(path.as_str()),
+            "--into must name one fresh, non-residual owner; {path} already exists or is reserved"
+        );
+        path
     } else {
-        for raw in &options.into {
-            ensure!(
-                !std::path::Path::new(raw).is_absolute() && !raw.contains('\0'),
-                "destination must be a relative module path"
-            );
-            let path = ModulePath::parse(raw, "")?;
-            ensure!(
-                !path.as_str().ends_with(".yaml") && !path.as_str().ends_with(".yml"),
-                "destination must be extensionless"
-            );
-            let is_existing = existing_targets.contains(&path);
-            ensure!(
-                is_existing || new_limit > 0,
-                "--into names a fresh owner but --max-new-modules is zero"
-            );
-            ensure!(
-                !problem.residual_modules.contains(&path)
-                    && (!is_residual_namespace_path(path.as_str()) || is_existing),
-                "destination is reserved for generated residual output"
-            );
-            ensure!(
-                match options.destinations {
-                    Destinations::New => !is_existing,
-                    Destinations::Existing => is_existing,
-                    Destinations::Both => true,
-                },
-                "--into conflicts with --destinations"
-            );
-            if is_existing {
-                into.insert(path);
-            } else {
-                explicit_fresh_targets.insert(path);
+        let mut index = 0usize;
+        loop {
+            let path = ModulePath::parse(&format!("extracted/peel_{index:04}"), "")?;
+            if !existing_modules.contains(&path) && !problem.residual_modules.contains(&path) {
+                break path;
             }
+            index = index.checked_add(1).context("fresh owner index overflow")?;
         }
-    }
-    let allow_arbitrary_fresh = options.into.is_empty()
-        && !matches!(options.destinations, Destinations::Existing)
-        && new_limit > 0;
-    let effective_new_limit = if options.into.is_empty() {
-        new_limit
-    } else {
-        new_limit.min(explicit_fresh_targets.len())
     };
+
     let baseline_owners: BTreeSet<_> = problem
         .existing_modules
         .iter()
@@ -394,26 +330,15 @@ fn prepare_scope(
         .map(Owner::Module)
         .chain(std::iter::once(Owner::Entry))
         .collect();
-    let mut permitted_targets = into;
-    permitted_targets.extend(explicit_fresh_targets.iter().cloned());
-
-    let final_atoms = atoms;
-    let scope = Scope {
-        atoms: final_atoms,
+    Ok(Scope {
+        atoms,
         movable_units,
         required_units,
-        allowed_existing_targets: permitted_targets
-            .iter()
-            .filter(|path| !explicit_fresh_targets.contains(*path))
-            .cloned()
-            .collect(),
-        explicit_fresh_targets,
+        required_names: options.required.clone(),
+        only_names: options.only_units.clone(),
         baseline_owners,
-        residual_modules: problem.residual_modules.clone(),
-        effective_new_limit,
-        allow_arbitrary_fresh,
-    };
-    Ok((scope, options.required.clone()))
+        target: Owner::Module(target),
+    })
 }
 
 fn owner_for_path(path: Option<&ModulePath>) -> Owner {
@@ -421,695 +346,43 @@ fn owner_for_path(path: Option<&ModulePath>) -> Owner {
 }
 
 fn initial_partition(problem: &AssignmentProblem<'_>, scope: &Scope) -> Partition {
-    let mut atom_units = BTreeSet::new();
     let mut blocks = Vec::new();
-    let mut owners: BTreeSet<_> = scope.baseline_owners.iter().cloned().collect();
-    owners.extend(
-        scope
-            .explicit_fresh_targets
-            .iter()
-            .cloned()
-            .map(Owner::Module),
-    );
+    let mut owners = scope.baseline_owners.clone();
+    owners.insert(scope.target.clone());
     let mut fixed_units = BTreeMap::<Owner, BTreeSet<usize>>::new();
     for unit in 0..problem.baseline.len() {
         if scope.movable_units.contains(&unit) {
-            atom_units.insert(unit);
             continue;
         }
         let owner = owner_for_path(problem.baseline[unit].as_ref());
         fixed_units.entry(owner).or_default().insert(unit);
     }
     for owner in owners {
-        let mut members = fixed_units.remove(&owner).unwrap_or_default();
-        if owner == Owner::Entry {
-            // None is a complete baseline owner, even if every entry-origin
-            // atom is movable in the query.
-            members.extend(fixed_units.remove(&owner).unwrap_or_default());
-        }
+        let units = fixed_units.remove(&owner).unwrap_or_default();
         blocks.push(Block {
             tokens: BTreeSet::from([Token::Owner(owner.clone())]),
-            units: members,
+            units,
             owner: Some(owner.clone()),
             allowed_owners: BTreeSet::from([owner]),
-            allow_fresh: false,
         });
     }
     debug_assert!(fixed_units.is_empty());
 
     for (index, atom) in scope.atoms.iter().enumerate() {
-        let baseline_unit = *atom
+        let mut allowed_owners = BTreeSet::from([Owner::Entry, scope.target.clone()]);
+        if atom
             .members
-            .first()
-            .expect("every movable atom contains at least one unit");
-        let baseline_owner = owner_for_path(problem.baseline[baseline_unit].as_ref());
-        let mut allowed_owners: BTreeSet<_> = scope
-            .allowed_existing_targets
             .iter()
-            .cloned()
-            .chain(scope.explicit_fresh_targets.iter().cloned())
-            .map(Owner::Module)
-            .collect();
-        allowed_owners.insert(baseline_owner.clone());
-        if atom.required {
-            allowed_owners.remove(&baseline_owner);
+            .any(|unit| scope.required_units.contains(unit))
+        {
+            allowed_owners.remove(&Owner::Entry);
         }
         blocks.push(Block {
             tokens: BTreeSet::from([Token::Atom(index)]),
             units: atom.members.clone(),
             owner: None,
             allowed_owners,
-            allow_fresh: scope.allow_arbitrary_fresh,
         });
     }
     Partition::new(blocks)
-}
-
-impl Solver<'_, '_, '_> {
-    fn visit(&mut self, mut state: Partition) -> Result<()> {
-        loop {
-            let Some(normalized) = self.propagate_owner_domains(state)? else {
-                return Ok(());
-            };
-            state = normalized;
-            let key = state.key();
-            if self.visited.contains(&key) {
-                return Ok(());
-            }
-            if self.stop_if_limited() {
-                return Ok(());
-            }
-            self.visited.insert(key);
-            self.report.checks = self
-                .report
-                .checks
-                .checked_add(1)
-                .context("placement quotient-state count overflow")?;
-            self.report.work.partition_states = self.report.checks;
-
-            self.report.work.quotient_projections =
-                self.report.work.quotient_projections.saturating_add(1);
-            let Some(projection) = self.project(&state)? else {
-                return Ok(());
-            };
-
-            if let Some((left, right)) = self.cross_rebind_force(&projection) {
-                let Some(next) = self.try_forced_merge(&state, &left, &right) else {
-                    return Ok(());
-                };
-                state = next;
-                continue;
-            }
-
-            if let Some((consumer, _dependency)) = projection
-                .pairs
-                .iter()
-                .copied()
-                .find(|(from, to)| *to == projection.entry && *from != projection.entry)
-            {
-                let Some(consumer_block) = projection.block_by_module.get(&consumer).cloned()
-                else {
-                    bail!("entry constraint has no source owner block");
-                };
-                let entry_block = Token::Owner(Owner::Entry);
-                let Some(next) = self.try_forced_merge(&state, &consumer_block, &entry_block)
-                else {
-                    return Ok(());
-                };
-                if next == state {
-                    return Ok(());
-                }
-                state = next;
-                continue;
-            }
-
-            if let Some(blocks) = self.constraining_cycle(&projection)? {
-                let first = blocks.first().expect("a constraining cycle has blocks");
-                for block in blocks.iter().skip(1) {
-                    if self.stop_if_time() {
-                        return Ok(());
-                    }
-                    let Some(next) = self.try_forced_merge(&state, first, block) else {
-                        return Ok(());
-                    };
-                    state = next;
-                }
-                continue;
-            }
-
-            // Domain and owner-count clauses are cheap necessary constraints.
-            // Avoid exact scheduling of a partition already outside move scope.
-            let cap_branches = self.new_owner_cap_branches(&state)?;
-            if let Some(branches) = cap_branches {
-                self.visit_branches(branches)?;
-                return Ok(());
-            }
-
-            if let Some(block) = state
-                .blocks
-                .iter()
-                .find(|block| block.owner.is_none() && !block.allow_fresh)
-            {
-                self.report.work.branch_clauses.owner_domain = self
-                    .report
-                    .work
-                    .branch_clauses
-                    .owner_domain
-                    .saturating_add(1);
-                let mut branches = Vec::new();
-                for owner in &block.allowed_owners {
-                    if self.stop_if_time() {
-                        return Ok(());
-                    }
-                    let owner_block = Token::Owner(owner.clone());
-                    if let Some(next) = self.try_branch_merge(&state, &block.key(), &owner_block)
-                        && next != state
-                    {
-                        branches.push(next);
-                    }
-                }
-                self.visit_branches(branches)?;
-                return Ok(());
-            }
-
-            if self.stop_if_time() {
-                return Ok(());
-            }
-            let started = self.started;
-            let budget = self.options.time_budget;
-            let mut checkpoints = 0u64;
-            let schedule = EsmImportSchedule::construct_with_poll(
-                projection.entry,
-                &projection.pairs,
-                &projection.successors,
-                &projection.nodes,
-                &projection.preferred,
-                || {
-                    checkpoints = checkpoints.saturating_add(1);
-                    if budget.is_some_and(|limit| started.elapsed() >= limit) {
-                        Err(())
-                    } else {
-                        Ok(())
-                    }
-                },
-            );
-            self.report.work.schedule_checkpoints = self
-                .report
-                .work
-                .schedule_checkpoints
-                .saturating_add(checkpoints);
-            let schedule = match schedule {
-                Ok(Ok(schedule)) => schedule,
-                Ok(Err(obstruction)) => {
-                    let branches =
-                        self.schedule_obstruction_branches(&state, &projection, &obstruction)?;
-                    self.visit_branches(branches)?;
-                    return Ok(());
-                }
-                Err(()) => {
-                    self.stop_if_time();
-                    return Ok(());
-                }
-            };
-
-            self.certify_candidate(projection, &schedule)?;
-            return Ok(());
-        }
-    }
-
-    fn propagate_owner_domains(&mut self, mut state: Partition) -> Result<Option<Partition>> {
-        loop {
-            if self.stop_if_time() {
-                return Ok(None);
-            }
-            if state.blocks.iter().any(|block| {
-                block.owner.is_none() && !block.allow_fresh && block.allowed_owners.is_empty()
-            }) {
-                return Ok(None);
-            }
-            let forced = state.blocks.iter().find_map(|block| {
-                if block.owner.is_none() && !block.allow_fresh && block.allowed_owners.len() == 1 {
-                    Some((block.key(), block.allowed_owners.first()?.clone()))
-                } else {
-                    None
-                }
-            });
-            let Some((block, owner)) = forced else {
-                return Ok(Some(state));
-            };
-            let owner_block = Token::Owner(owner);
-            let Some(next) = self.try_forced_merge(&state, &block, &owner_block) else {
-                return Ok(None);
-            };
-            if next == state {
-                return Ok(None);
-            }
-            state = next;
-        }
-    }
-
-    fn stop_if_limited(&mut self) -> bool {
-        if self.stop_if_time() {
-            return true;
-        }
-        if self
-            .options
-            .max_checks
-            .is_some_and(|limit| self.report.checks >= limit)
-        {
-            self.report.status = SearchStatus::Incomplete;
-            self.report.stop_reason = Some(StopReason::MaxChecks);
-            return true;
-        }
-        false
-    }
-
-    fn stop_if_time(&mut self) -> bool {
-        if self
-            .options
-            .time_budget
-            .is_some_and(|budget| self.started.elapsed() >= budget)
-        {
-            self.report.status = SearchStatus::Incomplete;
-            self.report.stop_reason = Some(StopReason::TimeBudget);
-            return true;
-        }
-        false
-    }
-
-    fn try_forced_merge(
-        &mut self,
-        state: &Partition,
-        left: &Token,
-        right: &Token,
-    ) -> Option<Partition> {
-        let merged = state.merge(left, right)?;
-        if merged != *state {
-            self.report.work.forced_contractions =
-                self.report.work.forced_contractions.saturating_add(1);
-        }
-        Some(merged)
-    }
-
-    fn try_branch_merge(
-        &mut self,
-        state: &Partition,
-        left: &Token,
-        right: &Token,
-    ) -> Option<Partition> {
-        self.report.work.contraction_attempts =
-            self.report.work.contraction_attempts.saturating_add(1);
-        state.merge(left, right)
-    }
-
-    fn visit_branches(&mut self, branches: Vec<Partition>) -> Result<()> {
-        for branch in branches {
-            if self.report.status != SearchStatus::ExhaustedNoPeel {
-                break;
-            }
-            if self.stop_if_time() {
-                break;
-            }
-            self.visit(branch)?;
-        }
-        Ok(())
-    }
-
-    fn project(&mut self, state: &Partition) -> Result<Option<Projection>> {
-        let Some(candidate) = self.materialize_provisional(state)? else {
-            return Ok(None);
-        };
-        let mut paths = self.problem.ordered_modules(&candidate.assignment);
-        let mut path_set: BTreeSet<_> = paths.iter().cloned().collect();
-        for owner in candidate.owners.values() {
-            if let Some(path) = owner.path()
-                && path_set.insert(path.clone())
-            {
-                paths.push(path.clone());
-            }
-        }
-        let module_ids: BTreeMap<_, _> = paths
-            .iter()
-            .enumerate()
-            .map(|(index, path)| (path.clone(), ModuleId(index)))
-            .collect();
-        let entry = ModuleId(paths.len());
-        let module_assignment = ModuleAssignment::from_assignments(
-            candidate
-                .assignment
-                .iter()
-                .map(|path| path.as_ref().map_or(entry, |path| module_ids[path]))
-                .collect(),
-            EntryDestination::from_module_id(entry),
-        );
-        let nodes: BTreeSet<_> = (0..=paths.len()).map(ModuleId).collect();
-        let constraints =
-            project_assignment_constraints(self.problem.input.graph(), &module_assignment);
-        let pairs: BTreeSet<_> = constraints.canonical.pairs().collect();
-        let successors = constraints.canonical.i_successors.clone();
-        let preferred = EsmImportOrder::build_for_assignment(
-            &constraints.canonical,
-            self.problem.input.graph(),
-            &module_assignment,
-            &nodes,
-        );
-        let mut block_by_module = BTreeMap::new();
-        let Some(first_block) = state.blocks.first() else {
-            return Ok(None);
-        };
-        let mut block_by_unit = vec![first_block.key(); candidate.assignment.len()];
-        for block in &state.blocks {
-            for &unit in &block.units {
-                block_by_unit[unit] = block.key();
-            }
-            let owner = candidate
-                .owners
-                .get(&block.key())
-                .expect("every partition block has a provisional owner");
-            let module = owner.path().map_or(entry, |path| module_ids[path]);
-            block_by_module.insert(module, block.key());
-        }
-
-        Ok(Some(Projection {
-            candidate,
-            module_paths: paths,
-            constraints,
-            block_by_module,
-            block_by_unit,
-            nodes,
-            entry,
-            pairs,
-            successors,
-            preferred,
-        }))
-    }
-
-    fn materialize_provisional(&mut self, state: &Partition) -> Result<Option<Candidate>> {
-        let mut reserved: BTreeSet<_> = self
-            .scope
-            .baseline_owners
-            .iter()
-            .filter_map(Owner::path)
-            .cloned()
-            .chain(self.scope.explicit_fresh_targets.iter().cloned())
-            .collect();
-        let mut owners = BTreeMap::new();
-        for block in &state.blocks {
-            if let Some(owner) = &block.owner {
-                owners.insert(block.key(), owner.clone());
-            }
-        }
-        let mut suffix = 0usize;
-        for block in &state.blocks {
-            if block.owner.is_none() {
-                if self.stop_if_time() {
-                    return Ok(None);
-                }
-                let path = loop {
-                    if self.stop_if_time() {
-                        return Ok(None);
-                    }
-                    let raw = format!("extracted/peel_{suffix:04}");
-                    suffix = suffix
-                        .checked_add(1)
-                        .context("fresh owner index overflow")?;
-                    let path = ModulePath::parse(&raw, "")?;
-                    if !reserved.contains(&path) {
-                        break path;
-                    }
-                };
-                reserved.insert(path.clone());
-                owners.insert(block.key(), Owner::Module(path));
-            }
-        }
-        let mut assignment = self.problem.baseline.clone();
-        for block in &state.blocks {
-            let owner = owners
-                .get(&block.key())
-                .expect("every partition block has a provisional owner");
-            for &unit in &block.units {
-                assignment[unit] = owner.path().cloned();
-            }
-        }
-        let occupied_fresh_owners = state
-            .blocks
-            .iter()
-            .filter(|block| block.occupied())
-            .filter_map(|block| {
-                let owner = owners.get(&block.key())?;
-                match owner {
-                    Owner::Module(path)
-                        if self.scope.explicit_fresh_targets.contains(path)
-                            || !self.scope.baseline_owners.contains(owner) =>
-                    {
-                        Some(owner.clone())
-                    }
-                    _ => None,
-                }
-            })
-            .collect();
-        Ok(Some(Candidate {
-            owners,
-            occupied_fresh_owners,
-            assignment,
-        }))
-    }
-
-    fn cross_rebind_force(&self, projection: &Projection) -> Option<(Token, Token)> {
-        let graph = self.problem.input.graph();
-        projection
-            .constraints
-            .cross_rebinds
-            .iter()
-            .find_map(|rebind| {
-                let edge = graph.edge(rebind.dependency_edge);
-                let left = projection.block_by_unit.get(edge.from.0)?.clone();
-                let right = projection.block_by_unit.get(edge.to.0)?.clone();
-                (left != right).then_some((left, right))
-            })
-    }
-
-    /// Every current C edge preserves nonincreasing final postorder rank.
-    /// A fallback edge can disappear only when its caller becomes true entry,
-    /// which finishes last. Both directed paths in an SCC therefore force equal
-    /// ranks, hence the same final owner, even for fallback-promoted edges.
-    fn constraining_cycle(&self, projection: &Projection) -> Result<Option<BTreeSet<Token>>> {
-        let mut graph = DiGraphMap::<ModuleId, ()>::new();
-        for &node in &projection.nodes {
-            graph.add_node(node);
-        }
-        for &(from, to) in &projection.pairs {
-            graph.add_edge(from, to, ());
-        }
-        let mut components: Vec<BTreeSet<_>> = tarjan_scc(&graph)
-            .into_iter()
-            .filter(|component| component.len() > 1)
-            .map(|component| component.into_iter().collect())
-            .collect();
-        components.sort_by_key(|component| component.iter().next().copied());
-        let Some(component) = components.into_iter().next() else {
-            return Ok(None);
-        };
-        let block_keys: BTreeSet<_> = component
-            .iter()
-            .filter_map(|module| projection.block_by_module.get(module).cloned())
-            .collect();
-        if block_keys.len() != component.len() {
-            bail!("constraining SCC has no unique placement block for each module");
-        }
-        Ok(Some(block_keys))
-    }
-
-    fn schedule_obstruction_branches(
-        &mut self,
-        state: &Partition,
-        projection: &Projection,
-        obstruction: &ScheduleObstruction,
-    ) -> Result<Vec<Partition>> {
-        self.report.work.branch_clauses.schedule_closure = self
-            .report
-            .work
-            .branch_clauses
-            .schedule_closure
-            .saturating_add(1);
-        let mut in_closure = BTreeSet::new();
-        for module in &obstruction.forward_closure {
-            if self.stop_if_time() {
-                return Ok(Vec::new());
-            }
-            if let Some(block) = projection.block_by_module.get(module) {
-                in_closure.insert(block.clone());
-            }
-        }
-        let mut branches = Vec::new();
-        for (index, left) in state.blocks.iter().enumerate() {
-            if self.stop_if_time() {
-                break;
-            }
-            for right in state.blocks.iter().skip(index + 1) {
-                if self.stop_if_time() {
-                    break;
-                }
-                let left_key = left.key();
-                let right_key = right.key();
-                if !in_closure.contains(&left_key) && !in_closure.contains(&right_key) {
-                    continue;
-                }
-                if let Some(merged) = self.try_branch_merge(state, &left_key, &right_key)
-                    && merged != *state
-                {
-                    branches.push(merged);
-                }
-            }
-        }
-        branches.sort_by_key(Partition::key);
-        branches.dedup();
-        Ok(branches)
-    }
-
-    fn new_owner_cap_branches(&mut self, state: &Partition) -> Result<Option<Vec<Partition>>> {
-        let occupied_fresh: Vec<_> = state
-            .blocks
-            .iter()
-            .filter(|block| {
-                block.occupied()
-                    && match &block.owner {
-                        Some(Owner::Entry) => false,
-                        Some(Owner::Module(path)) => {
-                            self.scope.explicit_fresh_targets.contains(path)
-                        }
-                        None => block.allow_fresh,
-                    }
-            })
-            .map(Block::key)
-            .collect();
-        if occupied_fresh.len() <= self.scope.effective_new_limit {
-            return Ok(None);
-        }
-        self.report.work.branch_clauses.fresh_owner_cap = self
-            .report
-            .work
-            .branch_clauses
-            .fresh_owner_cap
-            .saturating_add(1);
-        let selected: Vec<_> = occupied_fresh
-            .into_iter()
-            .take(self.scope.effective_new_limit.saturating_add(1))
-            .collect();
-        let selected_set: BTreeSet<_> = selected.iter().cloned().collect();
-        let mut branches = Vec::new();
-        for (index, left) in selected.iter().enumerate() {
-            if self.stop_if_time() {
-                break;
-            }
-            for right in selected.iter().skip(index + 1) {
-                if self.stop_if_time() {
-                    break;
-                }
-                if let Some(merged) = self.try_branch_merge(state, left, right)
-                    && merged != *state
-                {
-                    branches.push(merged);
-                }
-            }
-        }
-        for key in &selected_set {
-            if self.stop_if_time() {
-                break;
-            }
-            let Some(block) = state.block(key) else {
-                continue;
-            };
-            if block.owner.is_some() {
-                continue;
-            }
-            // Read compatible anchors directly from the block's domain;
-            // unrelated baseline owners cannot satisfy this clause.
-            for owner in &block.allowed_owners {
-                if !self.scope.baseline_owners.contains(owner) {
-                    continue;
-                }
-                if self.stop_if_time() {
-                    break;
-                }
-                let target = Token::Owner(owner.clone());
-                if let Some(merged) = self.try_branch_merge(state, key, &target)
-                    && merged != *state
-                {
-                    branches.push(merged);
-                }
-            }
-        }
-        branches.sort_by_key(Partition::key);
-        branches.dedup();
-        Ok(Some(branches))
-    }
-
-    fn certify_candidate(
-        &mut self,
-        projection: Projection,
-        schedule: &EsmImportSchedule,
-    ) -> Result<()> {
-        if self.stop_if_time() {
-            return Ok(());
-        }
-        let candidate = projection.candidate;
-        ensure!(
-            self.in_scope(&candidate),
-            "constructed placement disagreed with its move scope"
-        );
-        let gain = self.problem.residual_gain(&candidate.assignment);
-        if gain == 0 {
-            return Ok(());
-        }
-        self.report.work.final_certifications =
-            self.report.work.final_certifications.saturating_add(1);
-        let validation = self.problem.validate_constructed(
-            &candidate.assignment,
-            &projection.module_paths,
-            schedule,
-        )?;
-        ensure!(
-            accepted(&validation),
-            "constructive placement disagreed with final assignment certification"
-        );
-        if self.stop_if_time() {
-            return Ok(());
-        }
-        self.report.status = SearchStatus::Found;
-        self.report.residual_units_extracted = gain;
-        self.report.existing_units_moved = self.problem.existing_units_moved(&candidate.assignment);
-        self.report.changes = candidate
-            .assignment
-            .iter()
-            .zip(&self.problem.baseline)
-            .enumerate()
-            .filter(|(_, (after, before))| after != before)
-            .map(|(index, (after, _))| SourceUnitAssignment {
-                unit_id: self
-                    .problem
-                    .input
-                    .source_unit_report(SourceUnitId(index))
-                    .id
-                    .clone(),
-                module: after
-                    .as_ref()
-                    .expect("a changed movable unit cannot be assigned to entry")
-                    .as_str()
-                    .to_string(),
-            })
-            .collect();
-        Ok(())
-    }
-
-    fn in_scope(&self, candidate: &Candidate) -> bool {
-        if candidate.occupied_fresh_owners.len() > self.scope.effective_new_limit {
-            return false;
-        }
-        self.scope.required_units.iter().all(|unit| {
-            candidate.assignment[*unit]
-                .as_ref()
-                .is_some_and(|path| !self.scope.residual_modules.contains(path))
-        })
-    }
 }

@@ -69,6 +69,14 @@ where
             .flatten()
     }
 
+    pub(crate) fn adjacency(&self) -> &BTreeMap<N, BTreeSet<N>> {
+        &self.out_edges
+    }
+
+    pub(crate) fn reverse_adjacency(&self) -> &BTreeMap<N, BTreeSet<N>> {
+        &self.in_edges
+    }
+
     /// Every `(from, to)` pair whose edge count is nonzero, in sorted
     /// order. Used by callers that need to materialize the full
     /// adjacency outside the graph's internal representation (e.g. the

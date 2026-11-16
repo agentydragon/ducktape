@@ -116,17 +116,6 @@ impl CandidateEffectAssessmentArgs {
 }
 
 impl CandidateEffectAssessmentExistingTreeArgs {
-    /// Resolve assessment inputs using the command's existing tree
-    /// config and module-root flags, so each option has one CLI owner.
-    pub fn resolve<'a>(
-        &self,
-        edit: &GraphEditArgs,
-        source_context: Option<&'a VerifiedGraphSourceContext>,
-        tree_config: Option<&std::path::Path>,
-    ) -> Result<Option<ResolvedCandidateEffectAssessment<'a>>> {
-        self.resolve_with_write_policy(edit, source_context, tree_config, false)
-    }
-
     pub fn resolve_for_verified_write<'a>(
         &self,
         edit: &GraphEditArgs,
@@ -173,6 +162,7 @@ impl ResolvedCandidateEffectAssessment<'_> {
         stderr: &mut (dyn std::io::Write + Send),
         edit_modules_root: &std::path::Path,
         candidate_modules: &BTreeMap<String, LogicalModule>,
+        import_order: &[spec::ModulePath],
         analysis_engine_sha256: &'static str,
     ) -> Result<gate::CandidateRelocationAssessmentReport> {
         command_diagnostics::run(stderr, |diagnostics| {
@@ -185,6 +175,7 @@ impl ResolvedCandidateEffectAssessment<'_> {
                 self.graph_source,
                 edit_modules_root,
                 candidate_modules,
+                import_order,
                 diagnostics,
             )
         })

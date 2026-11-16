@@ -9,6 +9,7 @@ from typing import cast
 
 import pytest
 import pytest_bazel
+import yaml
 from python.runfiles import runfiles
 
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import (
@@ -86,10 +87,15 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     shutil.rmtree(output)
     shutil.rmtree(packages)
     worker_records = evidence / "worker"
-    merge_and_regenerate(worker, Path("main"), ["values", "calculation"], "arithmetic", worker_records)
+    reviewed_import_order = ["arithmetic"]
+    merge_and_regenerate(
+        worker, Path("main"), ["values", "calculation"], "arithmetic", reviewed_import_order, worker_records
+    )
     assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "claims_checked"
+    assert json.loads((worker_records / "import_order.json").read_text()) == reviewed_import_order
     for step in ("baseline", "preview", "apply", "regenerate"):
         assert json.loads((worker_records / f"{step}.result.json").read_text()) == {"exit_code": 0}
+    assert json.loads((worker_records / "preview_write_check.json").read_text())["unchanged"] is True
     plan = json.loads((worker_records / "apply.plan.json").read_text())
     assert plan["executable"] == worker["engine"]
     assert plan["argv"] == json.loads((worker_records / "apply.invocation.json").read_text())["argv"]
@@ -131,7 +137,8 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
     assert json.loads(invalid.with_suffix(".result.json").read_text()) == {"exit_code": 2}
     assert not invalid.with_suffix(".invocation.json").exists()
 
-    # Verify the receiving baseline BEFORE applying the reviewed YAML delta.
+    # Verify the receiving baseline before replaying the reviewed merge and
+    # priority delta. Each snapshot keeps its own relocated config and roots.
     recorded_run(
         [integration["engine"], "snapshot", "verify", integration["directory"]],
         Path(integration["directory"]),
@@ -143,13 +150,38 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(tmp_path: P
         json.loads(worker_manifest.read_text())["graph_sha256"]
         == json.loads(integration_manifest.read_text())["graph_sha256"]
     )
-    for name in ("values.yaml", "calculation.yaml"):
-        assert not (Path(worker["modules"]) / "main" / name).exists()
-        (Path(integration["modules"]) / "main" / name).unlink()
-    shutil.copyfile(
-        Path(worker["modules"]) / "main/arithmetic.yaml", Path(integration["modules"]) / "main/arithmetic.yaml"
+    worker_config = Path(worker["tree_config"])
+    integration_config = Path(integration["tree_config"])
+    assert worker_config != integration_config
+    integration_config_before = yaml.safe_load(integration_config.read_text())
+    integration_records = evidence / "integration"
+    merge_and_regenerate(
+        integration, Path("main"), ["values", "calculation"], "arithmetic", reviewed_import_order, integration_records
     )
-    recorded_run(integration["regeneration_argv"], Path(integration["directory"]), evidence / "integration")
+    integration_config_after = yaml.safe_load(integration_config.read_text())
+    assert integration_config_after["import_order"]["main"] == reviewed_import_order
+    integration_config_before.pop("import_order", None)
+    integration_config_after.pop("import_order", None)
+    assert integration_config_after == integration_config_before
+    assert json.loads((integration_records / "import_order.json").read_text()) == reviewed_import_order
+    for snapshot_info, records in ((worker, worker_records), (integration, integration_records)):
+        modules = Path(snapshot_info["modules"]) / "main"
+        written_config = yaml.safe_load(Path(snapshot_info["tree_config"]).read_text())
+        assert written_config["import_order"]["main"] == reviewed_import_order
+        assert not (modules / "values.yaml").exists()
+        assert not (modules / "calculation.yaml").exists()
+        assert (modules / "arithmetic.yaml").is_file()
+        assert json.loads((records / "apply.stdout").read_text())["gate"] == "claims_checked"
+        assert json.loads((records / "preview_write_check.json").read_text())["unchanged"] is True
+        for step in ("baseline", "preview", "apply", "regenerate"):
+            assert json.loads((records / f"{step}.result.json").read_text()) == {"exit_code": 0}
+        apply_invocation = json.loads((records / "apply.invocation.json").read_text())
+        assert apply_invocation["argv"][apply_invocation["argv"].index("--import-order") + 1] == str(
+            records / "import_order.json"
+        )
+    assert (Path(worker["modules"]) / "main/arithmetic.yaml").read_bytes() == (
+        Path(integration["modules"]) / "main/arithmetic.yaml"
+    ).read_bytes()
     for snapshot_info in (worker, integration):
         entry = Path(snapshot_info["directory"]) / "output/app/main/entry.js"
         actual = run([node, str(entry)], tmp_path)

@@ -2441,7 +2441,7 @@ fn member_place(
 /// A module's `source_matches[]` members grouped by shared template: members
 /// whose templates differ only in their `target_binding` and do not claim the
 /// same binding. A one-binding claim keeps group matching semantics after a
-/// `modules refine` split.
+/// exact assignment split.
 fn source_match_groups(module: &SpecModule) -> Vec<Group> {
     let mut by_template = BTreeMap::<AnonymousStatementSelector, Vec<usize>>::new();
     for (index, member) in module.members.iter().enumerate() {

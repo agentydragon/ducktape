@@ -26,26 +26,34 @@ the validator enforces) before working on the splitting pipeline.
   remaining mismatches.
 - Heuristics produce diagnostics and candidate sets only; the spec author decides.
 - Use `modules check` for explicit destination batches. Whole-assignment acceptance
-  includes structural atoms and global ESM evaluation; local probes and proposal
+  includes structural atoms and ESM evaluation under the supplied chunk priority;
+  local probes and proposal
   readiness labels cannot replace it. Recheck combined batches, and keep graph
   acceptance distinct from selector realization and emitted runtime evidence.
-- For residual placement, inspect the graph/source, then use the default exact
-  `modules propose` command.
+- For residual placement, use `modules propose` on the current graph or the
+  configured corpus (`--graphs` plus `--tree-config`). Start without selecting
+  already-known movable units. Inspect the discovered groups in source.
   Review the full mapping, check and preview/apply its saved plan, and run
   materialization plus relevant behavior
-  checks. Only `exhausted_no_peel` rules out a placement in the reported fixed-
-  authored-owner and destination scope. Budgets, interruption, errors, and empty
-  advisory output are inconclusive. The search propagates necessary graph
-  constraints and can branch across partitions with Bell-number worst cases;
-  it does not enumerate the Cartesian product of atom assignments.
-  `--max-checks` budgets analyzed partition states, not arbitrary complete-
-  assignment retries. Keep graph
+  checks. A completed negative rules out only the advertised append-one-owner,
+  baseline-preserving family of entry-residual peels. Unsupported routing,
+  interruption, errors and empty output are not exhaustion. Derive all-seed
+  feasibility from atom closure SCCs and event bounds; expand one selected
+  closure and certify it once. Never fall through to partition enumeration,
+  arbitrary schedule solving or an unnamed heuristic. Keep graph
   acceptance distinct from selector realization and runtime evidence. The CLI
-  workflow is in <docs/module_search.md>. The scheduling complexity boundary is
-  in <docs/polynomial_esm_scheduling.md>; the scoped target construction is in
+  workflow is in <docs/module_proposals.md>; the construction proof is in
   <docs/placement_algorithm.md>. Preserve the real-source CLI and property/oracle
   tests when changing candidate generation, scheduling, gate checks, or plan
   application.
+- Materialized chunks require `import_order` with every nonentry emitted owner
+  exactly once. Check that concrete witness through the shared verifier and
+  retain it through emission. Never repair it implicitly. Plans carry ordering
+  and ownership together; changed snapshots or combined plans require recheck.
+- Do not clone/project the entire source graph or run global certification per
+  inventory seed. Prepare the canonical finest quotient once and derive
+  summaries on its SCC DAG. Compare cheap decisions with independent small
+  subset/import-list oracles; certify the selected complete plan once.
 - When a new bundle shape exposes a missing capability, extend the debundler,
   reproducing the failure minimally first. When debundle tooling blocks a task,
   follow <docs/bug_reproductions.md> before working around it. Keep private source
@@ -108,6 +116,9 @@ A sound scoped solution can be the lasting choice. Theorem: <docs/design.md>
 
 ## Testing
 
+- Name changed Rust library targets explicitly in Bazel validation, alongside
+  their tests. Dependent E2E tests can pass without running a library's own
+  Clippy check. Remove orphaned production helpers with their callers.
 - **Default: e2e through the `debundle` CLI** (`e2e/`, `e2e/support/`), even for a
   bug in one internal stage. Assert the external contract (module exports, entry
   output under Node, layout, source shape).

@@ -71,7 +71,7 @@ pub struct BindingReport {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DependencyGraphReport {
     pub chunk_id: String,
-    /// Nonentry discovery priority reproducing the retained materialization DFS.
+    /// Concrete nonentry module priority used by this materialization.
     pub import_order: Vec<spec::ModulePath>,
     /// The run's [`ProgramGraphReport`], relative to this file's directory.
     /// Resolve with [`graph_provenance::program_graph_path`].

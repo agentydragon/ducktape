@@ -6,8 +6,16 @@ use std::fs;
 
 #[test]
 fn bindings_assign_rejects_atom_split_in_both_modes_without_writes() {
-    GraphFixture::atomic_pair().assert_rejected_unchanged(
-        &["bindings", "assign", "alpha:dogfood/split"],
+    let fixture = GraphFixture::atomic_pair();
+    let order = fixture.write_final_import_order(&["home/atom", "dogfood/split"]);
+    fixture.assert_rejected_unchanged(
+        &[
+            "bindings",
+            "assign",
+            "alpha:dogfood/split",
+            "--import-order",
+            order.to_str().unwrap(),
+        ],
         &["splits one or more atomic groups"],
     );
 }
@@ -49,12 +57,15 @@ fn bulk_edits_resolve_both_spellings_against_the_pre_edit_spec() {
         &["bindings", "assign", "Alpha:first", "alpha:second"],
         &["contradictory destinations"],
     );
+    let order = fixture.write_final_import_order(&["dest"]);
     let report = fixture.json(&[
         "bindings",
         "assign",
         "Alpha:dest:First",
         "alpha:dest:First",
         "Beta:dest:Second",
+        "--import-order",
+        order.to_str().unwrap(),
     ]);
     assert_eq!(report["moves_applied"], 2);
     assert!(!fixture.modules.join("home.yaml").exists());

@@ -7,7 +7,7 @@ use petgraph::algo::greedy_feedback_arc_set;
 use petgraph::graph::DiGraph;
 use serde::{Deserialize, Serialize};
 
-use crate::realizability::{RealizabilityVerdict, SccDiagnosis, SccRejection, check_realizability};
+use crate::realizability::{RealizabilityVerdict, SccDiagnosis, SccRejection};
 use analysis::assignment_assembly::AtomicGroupConflict;
 use analysis::graph::{DependencyEdgeId, EndpointView, assignment_endpoints};
 use analysis::module_assignment::ModuleAssignment;
@@ -29,11 +29,10 @@ pub struct AssignmentReport {
     /// `AssignmentAnalysis::assembly_conflicts`; the materializer rejects any
     /// spec with a non-empty list before emitting code.
     pub atomic_group_conflicts: Vec<AtomicGroupConflict>,
-    /// Topological linearization of `I ∪ S` rooted at the entry,
-    /// dependency-first. Empty when the dep graph has cycles
-    /// (validation rejects). Captured here so debug tooling can
-    /// see the linker's evaluation order without re-running
-    /// materialization. See docs/design.md "Lemma 2".
+    /// Concrete DFS finish order under the supplied import priority, including
+    /// entry. A rejected witness still has an order: `cycles` diagnoses why it
+    /// violates initialization constraints. This field never certifies that a
+    /// different order exists or that the current assignment is impossible.
     pub linker_order: Vec<ModulePath>,
     /// Clause-2 violations (cross-destination rebinding writes) from
     /// the realizability verdict, rendered for diagnostics. A
@@ -246,7 +245,7 @@ pub struct CycleEdge {
     /// that issued the read). `None` when the source source_unit is an
     /// anonymous statement with no declared bindings — diagnostics
     /// fall back to `<anon stmt #{statement_ordinal}>` in that case.
-    /// Populated by [`validate_assignment`] from the dependency graph,
+    /// Populated by the supplied-priority verifier from the dependency graph,
     /// so cycle reports name *both* ends of each cut edge by binding,
     /// not only the module pair.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -678,6 +677,7 @@ fn cut_pairs_count(cut: &[CycleEdge]) -> usize {
 /// particular, an asymmetric I-cycle that Lemma 2's source-import
 /// reversal rescues never appears here, even when another SCC in the
 /// same chunk is genuinely unrealizable.
+#[cfg(test)]
 pub fn validate_assignment(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
@@ -689,13 +689,30 @@ pub fn validate_assignment(
 /// Validate once and retain both the canonical typed verdict and its rendered
 /// report for in-memory consumers that need to pair it with candidate-order
 /// analyses. Callers must not infer gate facts from rendered strings.
+#[cfg(test)]
 pub fn validate_assignment_with_verdict(
     dependency_graph: &DependencyGraph,
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
 ) -> AssignmentValidation {
-    let verdict = check_realizability(dependency_graph, assignment);
-    validation_from_verdict(dependency_graph, assignment, module_path, verdict)
+    let nodes = assignment
+        .iter()
+        .map(|(_, module)| module)
+        .chain(std::iter::once(assignment.entry_destination().module_id()))
+        .collect();
+    let (verdict, schedule) = crate::realizability::check_realizability_retaining_schedule(
+        dependency_graph,
+        assignment,
+        &nodes,
+    )
+    .expect("legacy assignment contains exactly its projected module universe");
+    validation_from_verdict(
+        dependency_graph,
+        assignment,
+        module_path,
+        verdict,
+        &schedule,
+    )
 }
 
 /// Validate exactly the authored shared priority and retain its concrete
@@ -735,7 +752,42 @@ pub fn validate_assignment_with_priority(
         &ids,
     )?;
     Ok((
-        validation_from_verdict(dependency_graph, assignment, module_path, verdict),
+        validation_from_verdict(
+            dependency_graph,
+            assignment,
+            module_path,
+            verdict,
+            &schedule,
+        ),
+        schedule,
+    ))
+}
+
+/// Test oracle for comparing a supplied-priority validation with the historic
+/// schedule-existence reference. It is compiled only in tests.
+#[cfg(test)]
+pub fn validate_assignment_retaining_schedule(
+    dependency_graph: &DependencyGraph,
+    assignment: &ModuleAssignment,
+    module_path: &dyn Fn(ModuleId) -> ModulePath,
+    nodes: &BTreeSet<ModuleId>,
+) -> Result<
+    (AssignmentValidation, crate::esm_schedule::EsmImportSchedule),
+    crate::esm_schedule::ImportScheduleError,
+> {
+    let (verdict, schedule) = crate::realizability::check_realizability_retaining_schedule(
+        dependency_graph,
+        assignment,
+        nodes,
+    )?;
+    Ok((
+        validation_from_verdict(
+            dependency_graph,
+            assignment,
+            module_path,
+            verdict,
+            &schedule,
+        ),
         schedule,
     ))
 }
@@ -758,6 +810,7 @@ pub fn validate_assignment_with_schedule(
         assignment,
         module_path,
         verdict,
+        schedule,
     ))
 }
 
@@ -766,6 +819,7 @@ pub(crate) fn validation_from_verdict(
     assignment: &ModuleAssignment,
     module_path: &dyn Fn(ModuleId) -> ModulePath,
     verdict: RealizabilityVerdict,
+    schedule: &crate::esm_schedule::EsmImportSchedule,
 ) -> AssignmentValidation {
     let cross_rebinds = render_cross_rebinds(dependency_graph, &verdict, module_path);
     if verdict.unrealizable_sccs.is_empty() {
@@ -876,7 +930,28 @@ pub(crate) fn validation_from_verdict(
             .iter()
             .map(|diagnosis| &diagnosis.core.modules)
             .collect();
-        for diagnosis in check_realizability(dependency_graph, &collapsed.assignment)
+        let entry = collapsed.assignment.entry_destination().module_id();
+        let nodes = schedule
+            .modules()
+            .into_iter()
+            .map(|module| collapsed.representative(module))
+            .collect();
+        let mut seen = BTreeSet::new();
+        let priority: Vec<_> = schedule
+            .imports(entry)
+            .iter()
+            .copied()
+            .map(|module| collapsed.representative(module))
+            .filter(|&module| module != entry && seen.insert(module))
+            .collect();
+        let (collapsed_verdict, _) = crate::realizability::check_realizability_with_priority(
+            dependency_graph,
+            &collapsed.assignment,
+            &nodes,
+            &priority,
+        )
+        .expect("contracting a concrete priority retains its exact module universe");
+        for diagnosis in collapsed_verdict
             .unrealizable_sccs
             .iter()
             .filter(|diagnosis| diagnosis.rejection == SccRejection::EsmEvaluationTdz)
@@ -908,9 +983,13 @@ pub(crate) fn validation_from_verdict(
 struct CollapsedAssignment {
     assignment: ModuleAssignment,
     members: BTreeMap<ModuleId, BTreeSet<ModuleId>>,
+    representatives: BTreeMap<ModuleId, ModuleId>,
 }
 
 impl CollapsedAssignment {
+    fn representative(&self, module: ModuleId) -> ModuleId {
+        self.representatives.get(&module).copied().unwrap_or(module)
+    }
     fn expand(&self, modules: &BTreeSet<ModuleId>) -> BTreeSet<ModuleId> {
         modules
             .iter()
@@ -953,6 +1032,7 @@ fn collapse_modules(
     CollapsedAssignment {
         assignment: ModuleAssignment::from_assignments(of, assignment.entry_destination()),
         members,
+        representatives: representative,
     }
 }
 

@@ -507,6 +507,7 @@ pub fn assess_candidate_effect_relocation(
     graph_source: &VerifiedGraphSourceContext,
     edit_modules_root: &Path,
     candidate_modules: &BTreeMap<String, LogicalModule>,
+    import_order: &[spec::ModulePath],
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<CandidateRelocationAssessmentReport> {
     let TransformSpecSource::Tree(tree) = &cli.spec_source else {
@@ -574,6 +575,8 @@ pub fn assess_candidate_effect_relocation(
         graph_source.chunk_id().to_string(),
         candidate_modules.clone(),
     );
+    spec.import_order
+        .insert(graph_source.chunk_id().to_string(), import_order.to_vec());
     validate_transform_spec(&spec)?;
 
     let artifact = fs::read(analysis.path)
@@ -1093,6 +1096,7 @@ fn run_prepared_transform(
                 logical_modules: &spec.logical_modules,
                 chunk_renames: &spec.chunk_renames,
                 unassigned_mode: &spec.unassigned_mode,
+                import_order: &spec.import_order,
                 chunk_analysis_options: &spec.chunk_analysis_options,
                 chunk_export_purity: &spec.chunk_export_purity,
             },

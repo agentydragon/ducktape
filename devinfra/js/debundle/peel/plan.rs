@@ -39,32 +39,43 @@ pub struct CommonArgs {
 }
 
 #[derive(Debug, Clone, ClapArgs)]
-pub struct PlanWorkArgs {
-    #[command(flatten)]
-    pub common: CommonArgs,
+pub struct ProposeArgs {
+    /// Path to the one chunk's dependency graph.
+    #[arg(
+        long = "graph",
+        env = "DEBUNDLE_GRAPH",
+        required_unless_present = "graphs_root",
+        conflicts_with = "graphs_root"
+    )]
+    pub dependency_graph_path: Option<PathBuf>,
 
-    #[arg(long, value_enum)]
-    pub destinations: Option<super::search::Destinations>,
-    /// Restrict targets to these exact module destinations (repeatable).
-    #[arg(long)]
+    /// Root containing a recursively discovered graph corpus. Requires
+    /// --tree-config; discovery runs once for each configured chunk.
+    #[arg(
+        long = "graphs",
+        required_unless_present = "dependency_graph_path",
+        conflicts_with = "dependency_graph_path",
+        requires = "tree_config"
+    )]
+    pub graphs_root: Option<PathBuf>,
+
+    /// Root of emitted-module `*.yaml` spec files.
+    #[arg(long = "modules", env = "DEBUNDLE_MODULES")]
+    pub modules_root: PathBuf,
+
+    /// Name the one new logical owner to append to the current import order.
+    #[arg(long, conflicts_with = "graphs_root")]
     pub into: Vec<String>,
-    /// Require the witness to extract this residual unit, with necessary companions.
-    #[arg(long = "require")]
+    /// Require these residual units to be extracted, with their full feasible
+    /// successor closure.
+    #[arg(long = "require", conflicts_with = "graphs_root")]
     pub required: Vec<String>,
-    /// JSON array of units permitted to move. Must contain whole atoms.
-    #[arg(long)]
+    /// JSON array of units permitted to move. Must contain whole atomic groups.
+    #[arg(long, conflicts_with = "graphs_root")]
     pub only_units: Option<PathBuf>,
-    #[arg(long)]
-    pub max_new_modules: Option<usize>,
-    /// Explicit check budget. Exhaustion reports incomplete, never no peel.
-    #[arg(long)]
-    pub max_checks: Option<u64>,
-    /// Cooperative placement deadline after graph/baseline preparation, in ms.
-    /// Exhaustion reports incomplete; individual graph operations may overrun.
-    #[arg(long)]
-    pub time_budget_ms: Option<u64>,
 
-    /// Root used to validate relative source paths recorded in the graph.
+    /// Root for the chunk's source files, used to preflight that the selected
+    /// plan can be realized as authored selectors before it is executable.
     #[arg(long = "source-root", env = "DEBUNDLE_SOURCE_ROOT")]
     pub source_root: Option<PathBuf>,
 
@@ -487,10 +498,7 @@ pub fn run_patch_plan_report(
     })
 }
 
-pub fn run_graph_summary_report(
-    args: &GraphSummaryArgs,
-    _source_context: Option<&VerifiedGraphSourceContext>,
-) -> Result<GraphSummaryReport> {
+pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
     let mut largest_residual_atomic_groups: Vec<AtomicGroupSummary> = graph
@@ -814,6 +822,7 @@ fn explain_from_graph(
     outgoing_atomic_edges.sort_by(|left, right| left.id.cmp(&right.id));
     quotient_edges.sort_by(|left, right| left.id.cmp(&right.id));
     unknown_binding_ids.sort_unstable();
+
     let mut preferred_source_unit_ids = BTreeSet::new();
     match selection {
         SelectionKind::SourceUnit(source_unit_id) => {
