@@ -24,9 +24,9 @@ images:
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261116203458-db68d2d # {"$imagepolicy": "flux-system:environment-tools:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
-    newTag: devel-20261116202109-db68d2d # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+    newTag: devel-20261116211948-3d43a54 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
-    newTag: devel-20261116202126-db68d2d # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
+    newTag: devel-20261116212013-3d43a54 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20261116031927-926c288 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   # Publication bootstrap: unused until the separate MCP edge cutover.
