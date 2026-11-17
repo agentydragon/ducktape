@@ -6,12 +6,21 @@
 }:
 
 let
+  llvmAddr2line = pkgs.llvmPackages.bintools-unwrapped;
   # The BuildBuddy runner VM drives Bazel CI; Bazel actions run in the separate
   # RBE container image. These are the only Nix tools its scripts need.
   buildBuddyRunnerPackages = {
     inherit (ducktapePkgs) bb;
-    inherit (pkgs) bazelisk;
+    inherit (pkgs)
+      bazelisk
+      time
+      valgrind
+      ;
     bazelDiff = ducktapePkgs.bazel-diff;
+    # Optional Debundle profiling runs on the outer BuildBuddy VM, never in
+    # the RBE action container. perf permissions are checked by the workflow.
+    inherit (pkgs.linuxPackages) perf;
+    inherit llvmAddr2line;
   };
   buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
 
@@ -62,13 +71,8 @@ let
     pkgs.squashfsTools
   ]
   ++ [
-    # llvm-addr2line: drop-in for GNU addr2line used by `perf report` for
-    # inline-frame symbolization. 10-50x faster on Rust DWARF and keeps a
-    # persistent symbol cache across queries from the same process; the
-    # debundle perf-profile wrapper (devinfra/js/debundle/pipeline.bzl)
-    # prepends a shim that aliases addr2line -> llvm-addr2line when it is
-    # on PATH.
-    pkgs.llvmPackages.bintools-unwrapped
+    # Keep the symbolizer available in local dev shells as well as the runner.
+    llvmAddr2line
     # Cluster/infra CLIs (formerly cluster/shell.nix). Used for Talos,
     # Route 53, Nebula PKI, policy validation, and bare-metal provisioning.
     pkgsUnstable.talosctl
