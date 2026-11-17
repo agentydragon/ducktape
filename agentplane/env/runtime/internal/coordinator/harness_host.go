@@ -3,8 +3,10 @@ package coordinator
 import (
 	"context"
 
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // harnessHost translates the new RPC surface to Runtime's shared admission behavior.
@@ -39,10 +41,19 @@ func (h *harnessHost) InterruptTurn(ctx context.Context, request *harnesshostpb.
 }
 
 func (h *harnessHost) ListSessions(ctx context.Context, _ *harnesshostpb.ListSessionsRequest) (*harnesshostpb.ListSessionsResponse, error) {
-	sessions, err := h.runtime.listSessions(ctx)
+	sessions, err := h.runtime.harnessHostSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := grpc.SetHeader(ctx, metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return nil, err
+	}
 	return &harnesshostpb.ListSessionsResponse{Sessions: sessions}, err
 }
 
 func (h *harnessHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, stream grpc.ServerStreamingServer[harnesshostpb.WatchSessionsResponse]) error {
+	if err := stream.SendHeader(metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return err
+	}
 	return h.runtime.watchSessions(stream.Context(), stream.Send)
 }

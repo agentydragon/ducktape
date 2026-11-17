@@ -52,6 +52,7 @@ type Session struct {
 	setup                                                  sessionpb.SetupState
 	launch                                                 sessionpb.LaunchOutcome
 	failure                                                *uint64
+	harnessFailure                                         *uint64
 	setupJob, stopping                                     *oneoff.Operation
 	connection                                             *nativeConnection
 	work                                                   sync.WaitGroup
@@ -208,6 +209,10 @@ func (s *Session) load(ctx context.Context) error {
 	}
 	for _, c := range commands {
 		s.pending[c.CommandId] = true
+	}
+	s.harnessFailure, err = s.journal.LatestHarnessFailureCursor(ctx)
+	if err != nil {
+		return err
 	}
 	return nil
 }

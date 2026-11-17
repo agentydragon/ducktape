@@ -8,8 +8,14 @@ The control listener serves `HarnessHost` alongside the existing `EnvironmentRun
 behind the same peer and incarnation/boot authorization. Both Session command surfaces use
 `Runtime.admit` and creation uses `withSessionAdmission`; lifecycle transitions close and drain
 the same admissions. `EnvironmentRuntime.GetStatus` retains lifecycle, boot ID and harness
-process diagnostics. HarnessHost carries per-Session harness state, setup, active turn and launch
-outcome through shared `SessionSummary` messages.
+process diagnostics. HarnessHost carries `agentplane.harness_host.Session`: active turn, pending
+command count, setup and per-Session harness attachment. `EnvironmentRuntime.ListSessions` keeps
+its existing `SessionSummary` for current callers.
+
+Both HarnessHost inventory RPCs send `x-agentplane-harness-host-session-version: 1` in initial
+metadata. A status reader must validate that marker before receiving watch frames; older Runtimes
+serve colliding `SessionSummary` wire fields. Environments validates it before reading the upstream
+stream and forwards it. Missing or unsupported versions mean unavailable status, never idle.
 
 `HarnessHost.WatchSessions` sends snapshot upserts followed by `CaughtUp`, then changed Session
 upserts with a `CaughtUp` checkpoint. Runtime change notifications trigger fresh inventory reads;

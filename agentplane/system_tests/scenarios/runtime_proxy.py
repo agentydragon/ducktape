@@ -95,7 +95,12 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
         assert status.environment_runtime_boot_id
         runtime_sessions = await runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
         host = harness_host_pb2_grpc.HarnessHostStub(runtime_channel)
-        host_sessions = await host.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        host_list = host.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        assert ("x-agentplane-harness-host-session-version", "1") in tuple(await host_list.initial_metadata())
+        host_sessions = await host_list
+        for session in host_sessions.sessions:
+            assert session.WhichOneof("host") == "environment_hosted"
+            assert session.environment_hosted.harness.state != harness_host_pb2.HarnessAttachment.STATE_UNSPECIFIED
         assert {session.session_id for session in host_sessions.sessions} == {
             session.session_id for session in runtime_sessions.sessions
         }

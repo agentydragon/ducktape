@@ -81,7 +81,7 @@ message InterruptTurnResponse {
 message ListSessionsRequest {}
 
 message ListSessionsResponse {
-  repeated agentplane.proto.SessionSummary sessions = 1;
+  repeated Session sessions = 1;
 }
 
 message WatchSessionsRequest {}
@@ -90,7 +90,70 @@ message CaughtUp {}
 
 message WatchSessionsResponse {
   oneof update {
-    agentplane.proto.SessionSummary upsert = 1;
+    Session upsert = 1;
     CaughtUp caught_up = 2;
   }
 }
+
+// ListSessions and WatchSessions send x-agentplane-harness-host-session-version: 1
+// in their initial response metadata. Readers must require it before accepting status;
+// the preceding SessionSummary wire format used incompatible fields at these numbers.
+message Session {
+  string session_id = 1;
+  string active_turn_id = 2;
+  // Commands durably admitted by this host and not yet applied or otherwise settled.
+  uint32 pending_commands = 3;
+  oneof host {
+    EnvironmentHostedSession environment_hosted = 4;
+    CentralSamplerSession central_sampler_v1 = 5;
+  }
+}
+
+message EnvironmentHostedSession {
+  // This Session's setup script, in its cwd on this Sandbox.
+  agentplane.proto.SetupState setup = 1;
+  HarnessAttachment harness = 2;
+}
+
+message HarnessAttachment {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    STATE_DETACHED = 1;
+    STATE_STARTING = 2;
+    STATE_ATTACHED = 3;
+  }
+  State state = 1;
+  // Last launch failure or unexpected exit since the last HarnessStarted.
+  optional uint64 failure_cursor = 2;
+}
+
+message CentralSamplerSession {
+  // Setup on the executor Sandbox; NOT_REQUIRED when there is no executor.
+  agentplane.proto.SetupState setup = 1;
+  optional Blocked blocked = 2;
+}
+
+message Blocked {
+  oneof cause {
+    UnresolvedIntent unresolved_intent = 1;
+    OrphanedCell orphaned_cell = 2;
+    UnsettledProcess unsettled_process = 3;
+    UnconfirmedEffects unconfirmed_effects = 4;
+  }
+  string detail = 5;
+}
+
+message UnresolvedIntent {
+  string intent_id = 1;
+  string kind = 2;
+}
+
+message OrphanedCell {
+  string cell_id = 1;
+}
+
+message UnsettledProcess {
+  string process_id = 1;
+}
+
+message UnconfirmedEffects {}

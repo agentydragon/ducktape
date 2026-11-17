@@ -6,7 +6,6 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
-	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -15,13 +14,13 @@ import (
 const sessionWatchWriteTimeout = 10 * time.Second
 
 func (r *Runtime) watchSessions(ctx context.Context, send func(*harnesshostpb.WatchSessionsResponse) error) error {
-	previous := map[string]*sessionpb.SessionSummary{}
+	previous := map[string]*harnesshostpb.Session{}
 	initial := true
 	for {
 		// Subscribe before reading so a concurrent update cannot be lost between snapshot and wait.
 		changed := r.changesSince()
 		summariesChanged := r.sessions.SummaryChangesSince()
-		sessions, err := r.listSessions(ctx)
+		sessions, err := r.harnessHostSessions(ctx)
 		if err != nil {
 			return err
 		}

@@ -251,8 +251,21 @@ Session RPCs remain available during caller migration. Both surfaces share durab
 command admission and lifecycle fences: quiesce drains admissions before stopping native work,
 and successful prepare-suspend excludes in-flight admissions and refuses new ones.
 
-`ListSessions` returns shared per-Session summaries (harness state, setup, active turn and launch
-outcome). `WatchSessions` begins with snapshot upserts and `CaughtUp`, then emits changed
-summaries and checkpoints from Runtime change notifications. Intermediate states may coalesce;
-there is no polling or historical replay. A reconnect rebuilds current state from a fresh snapshot,
-without a resume token. Harness process diagnostics remain in `EnvironmentRuntime.GetStatus`.
+`ListSessions` returns `agentplane.harness_host.Session`, separate from the legacy
+`EnvironmentRuntime.ListSessions` summaries. Each hosted Session reports its active turn ID,
+count of host-admitted commands not yet applied or otherwise settled, setup state, and harness
+attachment (detached, starting or attached). Attachment is per Session even when a native process
+is shared. Its optional failure cursor names the last launch failure or unexpected exit since the
+last `HarnessStarted`; setup failures remain in setup state. The failure survives Runtime restart.
+
+`WatchSessions` begins with snapshot upserts and `CaughtUp`, then emits changed Sessions and
+checkpoints from Runtime change notifications. Intermediate states may coalesce; there is no
+polling or historical replay. A reconnect rebuilds the small per-Sandbox inventory from a fresh
+snapshot, without a resume token. Harness process diagnostics remain in `EnvironmentRuntime.GetStatus`.
+
+Both status RPCs send `x-agentplane-harness-host-session-version: 1` in initial metadata. Readers
+must require this version before accepting status, and before receiving any watch frame: earlier
+Runtimes used incompatible `SessionSummary` fields at the same numbers. The Environments proxy
+checks the upstream watch header before decoding frames and forwards the version to its callers.
+Missing, duplicate or unsupported versions fail with `FailedPrecondition`. An older proxy does not
+forward the marker, so a reader must treat that route as unobserved too.

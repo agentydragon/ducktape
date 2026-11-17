@@ -3,6 +3,7 @@ package session
 import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -25,6 +26,7 @@ type Observation struct {
 	incarnation       *string
 	nativeSession     *string
 	failure           *uint64
+	harnessFailure    *uint64
 	processID         string
 	processState      sessionpb.ProcessState
 	executionIdentity *identitypb.Identity
@@ -32,7 +34,7 @@ type Observation struct {
 	shared            bool
 	ready             bool
 	preparing         bool
-	pending           bool
+	pending           uint32
 }
 
 func copied[T any](value *T) *T {
@@ -53,9 +55,10 @@ func (s *Session) Observe() Observation {
 		id: s.id, spec: s.sessionSpec(checkpoint), cursor: checkpoint.ThroughCursor,
 		activeTurn: checkpoint.ActiveTurnID, nativeActiveTurn: s.activeTurn != "", setup: s.setup, launch: s.launch,
 		nativeSession: copied(s.record.NativeSessionId), failure: copied(s.failure),
-		processID: s.processID, processState: s.processState, shared: s.codexAppServer != nil,
+		harnessFailure: copied(s.harnessFailure),
+		processID:      s.processID, processState: s.processState, shared: s.codexAppServer != nil,
 		ready:     !s.halting.Finished() && (current.Phase == Ready || current.Phase == Stopping) && current.ProcessID == s.processID && live,
-		preparing: current.Phase == Preparing, pending: len(s.pending) > 0,
+		preparing: current.Phase == Preparing, pending: uint32(len(s.pending)),
 	}
 	if s.record.ExecutionIdentity != nil {
 		result.executionIdentity = proto.Clone(s.record.ExecutionIdentity).(*identitypb.Identity)
@@ -87,7 +90,7 @@ func (o Observation) AutosuspendBlockers() []*environmentlifecyclepb.Autosuspend
 	if o.activeTurn != "" || o.nativeActiveTurn {
 		add(autosuspendActiveTurn)
 	}
-	if o.pending {
+	if o.pending > 0 {
 		add(autosuspendPendingCommand)
 	}
 	if o.preparing {
@@ -104,7 +107,7 @@ func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProce
 	if o.ready {
 		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_READY
 	}
-	if !o.ready && (o.preparing || o.processID != "" || o.pending) || o.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
+	if !o.ready && (o.preparing || o.processID != "" || o.pending > 0) || o.setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
 		execution = sessionpb.SessionExecutionState_SESSION_EXECUTION_STATE_PREPARING
 	}
 	if o.failure != nil {
@@ -128,6 +131,23 @@ func (o Observation) Status() (*sessionpb.SessionStatus, *sessionpb.HarnessProce
 }
 
 func (s *Session) Attached() *sessionpb.Attached { return s.Observe().Attached() }
+
+func (o Observation) HarnessHostSession() *harnesshostpb.Session {
+	attachment := harnesshostpb.HarnessAttachment_STATE_DETACHED
+	if o.ready {
+		attachment = harnesshostpb.HarnessAttachment_STATE_ATTACHED
+	} else if o.preparing || o.processID != "" {
+		attachment = harnesshostpb.HarnessAttachment_STATE_STARTING
+	}
+	return &harnesshostpb.Session{
+		SessionId: o.id, ActiveTurnId: o.activeTurn, PendingCommands: o.pending,
+		Host: &harnesshostpb.Session_EnvironmentHosted{EnvironmentHosted: &harnesshostpb.EnvironmentHostedSession{
+			Setup:   o.setup,
+			Harness: &harnesshostpb.HarnessAttachment{State: attachment, FailureCursor: copied(o.harnessFailure)},
+		}},
+	}
+}
+
 func (s *Session) AutosuspendBlockers() []*environmentlifecyclepb.AutosuspendBlocker {
 	return s.Observe().AutosuspendBlockers()
 }

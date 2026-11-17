@@ -6,6 +6,7 @@ import (
 
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentlifecyclepb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -21,6 +22,31 @@ const (
 )
 
 func (r *Runtime) listSessions(ctx context.Context) ([]*sessionpb.SessionSummary, error) {
+	sessions, err := r.sessionInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result []*sessionpb.SessionSummary
+	for _, s := range sessions {
+		a := s.Attached()
+		result = append(result, &sessionpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
+	}
+	return result, nil
+}
+
+func (r *Runtime) harnessHostSessions(ctx context.Context) ([]*harnesshostpb.Session, error) {
+	sessions, err := r.sessionInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var result []*harnesshostpb.Session
+	for _, s := range sessions {
+		result = append(result, s.Observe().HarnessHostSession())
+	}
+	return result, nil
+}
+
+func (r *Runtime) sessionInventory(ctx context.Context) ([]*session.Session, error) {
 	if err := r.authorizeSessionRead(ctx); err != nil {
 		return nil, err
 	}
@@ -33,12 +59,7 @@ func (r *Runtime) listSessions(ctx context.Context) ([]*sessionpb.SessionSummary
 			return nil, rpcError(err)
 		}
 	}
-	var result []*sessionpb.SessionSummary
-	for _, s := range r.sessions.Inventory() {
-		a := s.Attached()
-		result = append(result, &sessionpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
-	}
-	return result, nil
+	return r.sessions.Inventory(), nil
 }
 
 func (r *Runtime) GetStatus(ctx context.Context, _ *sessionpb.GetStatusRequest) (*sessionpb.EnvironmentRuntimeStatus, error) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/harness_host"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -25,16 +26,30 @@ type observedHarnessHost struct {
 	listCalls    atomic.Int32
 	watchCalls   atomic.Int32
 	blockWatch   atomic.Bool
+	legacyStatus atomic.Bool
 	watchStarted chan struct{}
 }
 
-func (h *observedHarnessHost) ListSessions(context.Context, *harnesshostpb.ListSessionsRequest) (*harnesshostpb.ListSessionsResponse, error) {
+func (h *observedHarnessHost) ListSessions(ctx context.Context, _ *harnesshostpb.ListSessionsRequest) (*harnesshostpb.ListSessionsResponse, error) {
 	h.listCalls.Add(1)
+	if !h.legacyStatus.Load() {
+		if err := grpc.SetHeader(ctx, metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+			return nil, err
+		}
+	}
 	return &harnesshostpb.ListSessionsResponse{}, nil
 }
 
 func (h *observedHarnessHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, stream harnesshostpb.HarnessHost_WatchSessionsServer) error {
 	h.watchCalls.Add(1)
+	if h.legacyStatus.Load() {
+		// The old WatchSessions upsert had this exact wire layout. Its SessionSpec
+		// collides with Session.active_turn_id; a reader must reject the header first.
+		return stream.SendMsg(&sessionpb.ListSessionsResponse{Sessions: []*sessionpb.SessionSummary{{SessionId: "legacy", Spec: &sessionpb.SessionSpec{Model: "legacy-model"}}}})
+	}
+	if err := stream.SendHeader(metadata.Pairs(harnesshost.SessionVersionMetadataKey, harnesshost.SessionVersion)); err != nil {
+		return err
+	}
 	if h.blockWatch.Load() {
 		close(h.watchStarted)
 		<-stream.Context().Done()
@@ -102,8 +117,12 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if _, err := hostClient.ListSessions(f.callerContext(peertls.AppURI), &harnesshostpb.ListSessionsRequest{}); err != nil {
 		t.Fatalf("configured reader HarnessHost ListSessions = %v", err)
 	}
-	if _, err := hostClient.ListSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.ListSessionsRequest{}); err != nil {
+	var hostHeader metadata.MD
+	if _, err := hostClient.ListSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.ListSessionsRequest{}, grpc.Header(&hostHeader)); err != nil {
 		t.Fatalf("authorized Sessions HarnessHost call did not reach Runtime: %v", err)
+	}
+	if err := harnesshost.RequireSessionVersion(hostHeader); err != nil {
+		t.Fatalf("proxy ListSessions version header: %v", err)
 	}
 	if host.listCalls.Load() != 2 {
 		t.Fatalf("authorized HarnessHost calls reached Runtime %d times, want 2", host.listCalls.Load())
@@ -111,6 +130,13 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	hostWatch, err := hostClient.WatchSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.WatchSessionsRequest{})
 	if err != nil {
 		t.Fatalf("authorized HarnessHost watch did not reach Runtime: %v", err)
+	}
+	watchHeader, err := hostWatch.Header()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := harnesshost.RequireSessionVersion(watchHeader); err != nil {
+		t.Fatalf("proxy WatchSessions version header: %v", err)
 	}
 	watchFrame, err := hostWatch.Recv()
 	if err != nil || watchFrame.GetCaughtUp() == nil {
@@ -309,6 +335,21 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("deletion Quiesce: %v", err)
 	}
+
+	// A pre-status Runtime can send a valid old protobuf payload whose fields collide
+	// with Session. Refuse it before Recv, rather than forwarding a misleading status.
+	host.legacyStatus.Store(true)
+	if _, err := hostClient.ListSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.ListSessionsRequest{}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("legacy HarnessHost ListSessions = %v, want FailedPrecondition", err)
+	}
+	legacyWatch, err := hostClient.WatchSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.WatchSessionsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacyWatch.Recv(); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("legacy HarnessHost WatchSessions = %v, want FailedPrecondition before decoding old wire", err)
+	}
+	host.legacyStatus.Store(false)
 
 	// An invalidated Runtime connection ends an active HarnessHost stream with its retryable
 	// connection status instead of leaking the transport's Canceled result.
