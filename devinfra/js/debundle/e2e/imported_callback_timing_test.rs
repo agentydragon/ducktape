@@ -34,7 +34,7 @@ fn direct_imported_no_reentry_call_with_published_callback() {
             vec![
                 logical_module_with_anon(
                     "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
+                    &binding_members(["callback", "slot"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -217,7 +217,7 @@ fn primitive_namespace_call_does_not_reenter_published_callback_when_asserted() 
             vec![
                 logical_module_with_anon(
                     "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
+                    &binding_members(["callback", "slot"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -254,7 +254,7 @@ fn fresh_literal_record_namespace_call_does_not_reenter_published_callback_when_
             vec![
                 logical_module_with_anon(
                     "callbacks/slot",
-                    &[Member::new("callback"), Member::new("slot")],
+                    &binding_members(["callback", "slot"]),
                     &["globalThis.saved = callback;"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -569,11 +569,7 @@ fn namespace_factory_keeps_unrelated_optional_member_values_independent() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("input"),
-                        Member::new("message"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["input", "message", "wrapped"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -619,13 +615,7 @@ fn optional_namespace_member_aliases_still_disable_factory_deferral() {
                 &source,
                 vec![logical_module_with_anon(
                     "all",
-                    &[
-                        Member::new("later"),
-                        Member::new("holder"),
-                        Member::new("alias"),
-                        Member::new("eager"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["later", "holder", "alias", "eager", "wrapped"]),
                     &["alias.make = eager;", "later = 42;"],
                 )],
             )
@@ -639,12 +629,7 @@ fn optional_namespace_member_aliases_still_disable_factory_deferral() {
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[
-                            Member::new("holder"),
-                            Member::new("alias"),
-                            Member::new("eager"),
-                            Member::new("wrapped"),
-                        ],
+                        &binding_members(["holder", "alias", "eager", "wrapped"]),
                         &["alias.make = eager;"],
                     ),
                     logical_module_with_anon(
@@ -981,7 +966,7 @@ fn inline_only_result_invoked_before_later_write_remains_atomic() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("observed")],
+                    &binding_members(["wrapped", "observed"]),
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
@@ -1021,10 +1006,7 @@ fn successive_factories_do_not_publish_callbacks_to_the_next_factory() {
          const second = factory(() => later);\n\
          const later = 42;\nconsole.log(first(), second());\n",
             vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &[Member::new("first"), Member::new("second")],
-                ),
+                logical_module("callbacks/wrapped", &binding_members(["first", "second"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -1047,7 +1029,7 @@ fn invoking_returned_wrapper_before_initialization_is_rejected() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("outcome")],
+                    &binding_members(["wrapped", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -1073,7 +1055,7 @@ fn escaped_wrapper_can_be_invoked_by_a_later_opaque_call() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("outcome")],
+                    &binding_members(["wrapped", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -1536,7 +1518,7 @@ fn invoked_factory_result_does_not_run_its_callback_after_await_synchronously() 
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("consumed")],
+                    &binding_members(["wrapped", "consumed"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -1579,7 +1561,7 @@ fn invoked_factory_result_keeps_synchronous_callback_and_returned_callback_reads
                 vec![
                     logical_module(
                         "callbacks/wrapped",
-                        &[Member::new("wrapped"), Member::new("consumed")],
+                        &binding_members(["wrapped", "consumed"]),
                     ),
                     logical_module_with_anon(
                         "values/later",
@@ -1622,7 +1604,7 @@ fn callback_factory_contract_does_not_apply_to_an_existing_callback() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("callback")],
+                    &binding_members(["wrapped", "callback"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -1666,7 +1648,7 @@ fn callbacks_written_to_the_returned_value_remain_observable() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("outcome")],
+                    &binding_members(["wrapped", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -1717,11 +1699,7 @@ fn result_mutation_cannot_hide_an_early_getter_read() {
                 vec![
                     logical_module(
                         "callbacks/wrapped",
-                        &[
-                            Member::new("wrapped"),
-                            Member::new("configured"),
-                            Member::new("outcome"),
-                        ],
+                        &binding_members(["wrapped", "configured", "outcome"]),
                     ),
                     logical_module("values/later", &[Member::new("later")]),
                 ],
@@ -1746,10 +1724,7 @@ fn primitive_metadata_writes_keep_the_callback_deferred() {
          const named = (wrapped.label = 'factory');\n\
          const later = 42;\nconsole.log(wrapped(), wrapped.label);\n",
             vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("named")],
-                ),
+                logical_module("callbacks/wrapped", &binding_members(["wrapped", "named"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -1815,12 +1790,7 @@ fn namespace_factory_ignores_local_subclass_prototype_argument() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("wrapped"),
-                        Member::new("LocalBase"),
-                        Member::new("LocalChild"),
-                        Member::new("observe"),
-                    ],
+                    &binding_members(["wrapped", "LocalBase", "LocalChild", "observe"]),
                     &["observe(LocalChild.prototype);"],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -1847,12 +1817,7 @@ fn namespace_factory_retains_inherited_static_namespace_alias() {
              later = 42;\nconsole.log(wrapped);\n",
             vec![logical_module_with_anon(
                 "app",
-                &[
-                    Member::new("LocalBase"),
-                    Member::new("LocalChild"),
-                    Member::new("wrapped"),
-                    Member::new("later"),
-                ],
+                &binding_members(["LocalBase", "LocalChild", "wrapped", "later"]),
                 &[
                     "LocalChild.shared.make = callback => callback();",
                     "later = 42;",
@@ -1881,11 +1846,7 @@ fn namespace_factory_rejects_split_inherited_static_namespace_alias() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("LocalBase"),
-                        Member::new("LocalChild"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["LocalBase", "LocalChild", "wrapped"]),
                     &["LocalChild.shared.make = callback => callback();"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -1909,10 +1870,7 @@ fn namespace_factory_ignores_self_initialized_unrelated_object() {
              const wrapped = api.make(() => later);\n\
              const later = 42;\nconsole.log(wrapped.invoke(), state.value);\n",
             vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &[Member::new("state"), Member::new("wrapped")],
-                ),
+                logical_module("callbacks/wrapped", &binding_members(["state", "wrapped"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -1944,11 +1902,7 @@ console.log(wrapped.invoke(), provider.limit, provider.candidates().length);
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("Provider"),
-                        Member::new("provider"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["Provider", "provider", "wrapped"]),
                     &["provider.limit = 1 / 0;", "provider.candidates = () => [];"],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -2072,7 +2026,7 @@ fn audited_export_factory_result_allows_an_adjacent_metadata_write() {
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[Member::new("result"), Member::new("wrapped")],
+                        &binding_members(["result", "wrapped"]),
                         &["result.label = 'factory';"],
                     ),
                     logical_module("values/later", &[Member::new("later")]),
@@ -2106,7 +2060,7 @@ fn audited_factory_result_in_another_namespace_allows_an_adjacent_metadata_write
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("result"), Member::new("wrapped")],
+                    &binding_members(["result", "wrapped"]),
                     &["result.label = 'factory';"],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -2170,7 +2124,7 @@ fn an_opaque_mutation_between_factory_result_and_metadata_write_stays_conservati
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("result"), Member::new("wrapped")],
+                    &binding_members(["result", "wrapped"]),
                     &["install_label_setter(result);", "result.label = 'factory';"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -2224,7 +2178,7 @@ fn a_replaced_factory_returning_another_namespace_stays_conservative() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("result"), Member::new("wrapped")],
+                    &binding_members(["result", "wrapped"]),
                     &[
                         "other.make = getNamespace;",
                         "result.label = 'factory';",
@@ -2543,10 +2497,7 @@ fn primitive_operator_operands_keep_callback_reentry_visible() {
              const later = 42;\n\
              console.log(key.description, wrapped.invoke());\n",
             vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &[Member::new("key"), Member::new("wrapped")],
-                ),
+                logical_module("callbacks/wrapped", &binding_members(["key", "wrapped"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -2582,7 +2533,7 @@ fn primitive_operator_coercion_keeps_key_with_later_value() {
             source,
             vec![logical_module_with_anon(
                 "values",
-                &[Member::new("key"), Member::new("later")],
+                &binding_members(["key", "later"]),
                 &["later = 42;"],
             )],
         )
@@ -2625,7 +2576,7 @@ fn compound_assignment_member_target_keeps_key_with_later_value() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("values/key", &[Member::new("box"), Member::new("key")]),
+                logical_module("values/key", &binding_members(["box", "key"])),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
         ),
@@ -2636,7 +2587,7 @@ fn compound_assignment_member_target_keeps_key_with_later_value() {
         source,
         vec![logical_module_with_anon(
             "values",
-            &[Member::new("box"), Member::new("key"), Member::new("later")],
+            &binding_members(["box", "key", "later"]),
             &["later = 42;"],
         )],
     ));
@@ -2669,7 +2620,7 @@ fn symbol_to_primitive_getter_return_keeps_key_with_later_value() {
             source,
             vec![logical_module_with_anon(
                 "values",
-                &[Member::new("key"), Member::new("later")],
+                &binding_members(["key", "later"]),
                 &["later = 42;"],
             )],
         )
@@ -2692,7 +2643,7 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
             vec![
                 logical_module_with_anon(
                     "values/key",
-                    &[Member::new("object"), Member::new("key")],
+                    &binding_members(["object", "key"]),
                     &["object[Symbol.toPrimitive] = () => later;"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -2705,11 +2656,7 @@ fn regex_literal_with_custom_to_primitive_keeps_key_with_later_value() {
         source,
         vec![logical_module_with_anon(
             "values",
-            &[
-                Member::new("object"),
-                Member::new("key"),
-                Member::new("later"),
-            ],
+            &binding_members(["object", "key", "later"]),
             &["object[Symbol.toPrimitive] = () => later;", "later = 42;"],
         )],
     ));
@@ -2736,7 +2683,7 @@ fn strict_equality_and_known_primitive_operands_skip_coercion_callbacks() {
          const later = 42;\n\
          console.log(same, key, later);\n",
             vec![
-                logical_module("values/key", &[Member::new("same"), Member::new("key")]),
+                logical_module("values/key", &binding_members(["same", "key"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         )
@@ -2823,7 +2770,7 @@ fn namespace_factory_keeps_fresh_container_identity_separate_from_contents() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("holder"), Member::new("wrapped")],
+                    &binding_members(["holder", "wrapped"]),
                     &["holder.metadata = 1;"],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -2862,11 +2809,7 @@ fn namespace_inside_fresh_container_can_still_replace_a_factory_member() {
             source,
             vec![logical_module_with_anon(
                 "all",
-                &[
-                    Member::new("holder"),
-                    Member::new("wrapped"),
-                    Member::new("later"),
-                ],
+                &binding_members(["holder", "wrapped", "later"]),
                 &[write, "later = 42;"],
             )],
         )
@@ -2880,7 +2823,7 @@ fn namespace_inside_fresh_container_can_still_replace_a_factory_member() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("holder"), Member::new("wrapped")],
+                    &binding_members(["holder", "wrapped"]),
                     &[write],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
@@ -2956,11 +2899,7 @@ fn namespace_container_publication_and_uncertain_receivers_remain_conservative()
                 &source,
                 vec![logical_module_with_anon(
                     "all",
-                    &[
-                        Member::new("holder"),
-                        Member::new("wrapped"),
-                        Member::new("later"),
-                    ],
+                    &binding_members(["holder", "wrapped", "later"]),
                     &side_effects
                         .iter()
                         .copied()
@@ -2978,7 +2917,7 @@ fn namespace_container_publication_and_uncertain_receivers_remain_conservative()
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[Member::new("holder"), Member::new("wrapped")],
+                        &binding_members(["holder", "wrapped"]),
                         &side_effects,
                     ),
                     logical_module_with_anon(
@@ -3134,7 +3073,7 @@ fn namespace_composed_result_invoked_early_is_rejected() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("outcome")],
+                    &binding_members(["wrapped", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -3193,7 +3132,7 @@ fn namespace_result_published_before_initialization_is_rejected() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("outcome")],
+                    &binding_members(["wrapped", "outcome"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -3229,10 +3168,7 @@ fn namespace_alias_mutation_disables_the_factory_contract() {
              const wrapped = api.make(() => later);\n\
              const later = 42;\nconsole.log(wrapped);\n",
             vec![
-                logical_module(
-                    "callbacks/wrapped",
-                    &[Member::new("alias"), Member::new("wrapped")],
-                ),
+                logical_module("callbacks/wrapped", &binding_members(["alias", "wrapped"])),
                 logical_module("values/later", &[Member::new("later")]),
             ],
         ),
@@ -3254,11 +3190,7 @@ fn altered_retained_object_cannot_hide_an_early_accessor_read() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("inner"),
-                        Member::new("configured"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["inner", "configured", "wrapped"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],
@@ -3464,7 +3396,7 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
                 &source,
                 vec![logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("later")],
+                    &binding_members(["wrapped", "later"]),
                 )],
             )
             .with_import_order(&["callbacks/wrapped", "residual"])
@@ -3519,7 +3451,7 @@ fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[Member::new("wrapped"), Member::new("eager")],
+                        &binding_members(["wrapped", "eager"]),
                         &[setup],
                     ),
                     logical_module_with_anon(
@@ -3558,7 +3490,7 @@ fn unrelated_destructuring_member_writes_keep_factory_callbacks_deferred() {
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("target")],
+                    &binding_members(["wrapped", "target"]),
                     &["({ kind: target.kind } = { kind: 'metadata' });"],
                 ),
                 logical_module("values/later", &[Member::new("later")]),
@@ -3603,11 +3535,7 @@ fn destructuring_member_values_keep_namespace_publication_visible() {
                 vec![
                     logical_module_with_anon(
                         "callbacks/wrapped",
-                        &[
-                            Member::new("wrapped"),
-                            Member::new("target"),
-                            Member::new("eager"),
-                        ],
+                        &binding_members(["wrapped", "target", "eager"]),
                         &[setup, "target.value.make = eager;"],
                     ),
                     logical_module_with_anon(
@@ -3659,15 +3587,9 @@ fn private_namespace_capabilities_keep_unrelated_receivers_independent() {
                 vec![
                     logical_module(
                         "callbacks/wrapped",
-                        &[
-                            Member::new("shadow"),
-                            Member::new("Buffer"),
-                            Member::new("buffer"),
-                            Member::new("marker"),
-                            Member::new("children"),
-                            Member::new("Local"),
-                            Member::new("wrapped"),
-                        ],
+                        &binding_members([
+                            "shadow", "Buffer", "buffer", "marker", "children", "Local", "wrapped",
+                        ]),
                     ),
                     logical_module("values/later", &[Member::new("later")]),
                 ],
@@ -3804,7 +3726,7 @@ fn namespace_capability_privacy_preserves_early_result_invocation() {
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[Member::new("wrapped"), Member::new("observed")],
+                    &binding_members(["wrapped", "observed"]),
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),
             ],
@@ -3927,7 +3849,7 @@ fn source_empty_map_record_factory_defers_members_and_getter() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                logical_module("queue", &binding_members(["queue", "readLater"])),
                 logical_module("later", &[Member::new("Later")]),
             ],
         )
@@ -4022,11 +3944,7 @@ fn source_record_capabilities_activate_on_later_use_and_publication() {
                 &source,
                 vec![logical_module_with_anon(
                     "together",
-                    &[
-                        Member::new("queue"),
-                        Member::new("observed"),
-                        Member::new("later"),
-                    ],
+                    &binding_members(["queue", "observed", "later"]),
                     &together_statements,
                 )],
             )
@@ -4039,7 +3957,7 @@ fn source_record_capabilities_activate_on_later_use_and_publication() {
                 vec![
                     logical_module_with_anon(
                         "queue",
-                        &[Member::new("queue"), Member::new("observed")],
+                        &binding_members(["queue", "observed"]),
                         &statements,
                     ),
                     logical_module_with_anon("later", &[Member::new("later")], &["later = 42;"]),
@@ -4070,7 +3988,7 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
             FixtureOpts::new(
                 source,
                 vec![
-                    logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+                    logical_module("queue", &binding_members(["queue", "readLater"])),
                     logical_module("later", &[Member::new("Later")]),
                 ],
             )
@@ -4085,7 +4003,7 @@ fn source_record_factory_rejects_eager_or_unstable_capabilities() {
 fn source_record_factory_with_unresolved_builtin_keeps_conservative_policy() {
     let source = "import 'node:fs';\nimport { factory } from './peer.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n";
     let fixture = run_fixture(FixtureOpts::new(source, vec![
-        logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+        logical_module("queue", &binding_members(["queue", "readLater"])),
         logical_module("later", &[Member::new("Later")]),
     ]).with_extra_chunks(&[("static/peer", "export function factory() { let state = new Map(); return { get size() { return state.size; } }; }\n")]));
     assert_preserved_entry_output(&fixture, "0 Later\n");
@@ -4098,7 +4016,7 @@ fn source_record_factory_with_unresolved_builtin_keeps_conservative_policy() {
 fn source_record_factory_does_not_cross_reexports() {
     let source = "import { factory } from './bridge.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nexport { queue, Later };\n";
     expect_atomic_conflict_rejection(FixtureOpts::new(source, vec![
-        logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+        logical_module("queue", &binding_members(["queue", "readLater"])),
         logical_module("later", &[Member::new("Later")]),
     ]).with_extra_chunks(&[
         ("static/bridge", "export { factory } from './peer.js';\n"),
@@ -4119,11 +4037,7 @@ fn source_record_deferred_live_cell_access_preserves_the_tdz() {
                 &source,
                 vec![logical_module(
                     "together",
-                    &[
-                        Member::new("queue"),
-                        Member::new("observed"),
-                        Member::new("later"),
-                    ],
+                    &binding_members(["queue", "observed", "later"]),
                 )],
             )
             .with_extra_chunks(&peers),
@@ -4133,7 +4047,7 @@ fn source_record_deferred_live_cell_access_preserves_the_tdz() {
             FixtureOpts::new(
                 &source,
                 vec![
-                    logical_module("queue", &[Member::new("queue"), Member::new("observed")]),
+                    logical_module("queue", &binding_members(["queue", "observed"])),
                     logical_module("later", &[Member::new("later")]),
                 ],
             )
@@ -4183,7 +4097,7 @@ fn source_record_namespace_opts<'a>(chunks: &'a [(&'a str, &'a str)]) -> Fixture
     FixtureOpts::new(
         "import { factory } from './peer.js';\nimport './namespace.js';\nexport function readLater() { return Later; }\nconst queue = factory();\nclass Later {}\nconsole.log(queue.size, readLater().name);\nexport { queue, Later };\n",
         vec![
-            logical_module("queue", &[Member::new("queue"), Member::new("readLater")]),
+            logical_module("queue", &binding_members(["queue", "readLater"])),
             logical_module("later", &[Member::new("Later")]),
         ],
     ).with_extra_chunks(chunks)
@@ -4316,7 +4230,7 @@ fn source_record_unknown_global_slot_mutation_preserves_constructor_reentry() {
             vec![
                 logical_module_with_anon(
                     "queue",
-                    &[Member::new("queue"), Member::new("readLater")],
+                    &binding_members(["queue", "readLater"]),
                     &["globalThis.saved = readLater;"],
                 ),
                 logical_module("later", &[Member::new("Later")]),
