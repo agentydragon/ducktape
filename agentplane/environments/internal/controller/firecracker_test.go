@@ -6,11 +6,14 @@ import (
 	"slices"
 	"testing"
 
+	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 type testFirecrackerStatus struct {
@@ -270,5 +273,90 @@ func TestFirecrackerIdleRequiresFreshRuntimeSnapshotAfterResume(t *testing.T) {
 	}
 	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
 		t.Fatalf("Firecracker idle called Quiesce %d times", calls)
+	}
+}
+
+func TestFirecrackerLauncherLossAfterStatusConflictRetainsState(t *testing.T) {
+	for _, deleting := range []bool{false, true} {
+		name := "running"
+		if deleting {
+			name = "deleting"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, c := newReconciler(t, true, firecrackerTemplate())
+			concurrentWrites := 0
+			r.Credentials = testRequester(t, interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+					if err := c.Update(ctx, obj, opts...); err != nil {
+						return err
+					}
+					if record, ok := obj.(*workloadapi.WorkloadCredential); ok && record.Spec.Pod != nil {
+						// A concurrent Sandbox writer races the final status update after the
+						// launcher is created and its credential is bound, before publication.
+						sandbox := &sandboxapi.Sandbox{}
+						if err := c.Get(ctx, sandboxKey, sandbox); err != nil {
+							return err
+						}
+						ensureAnnotations(sandbox)
+						sandbox.Annotations["test.example/concurrent-writer"] = "changed"
+						concurrentWrites++
+						return c.Update(ctx, sandbox)
+					}
+					return nil
+				},
+			}))
+			conflicted := false
+			for range 5 {
+				issueCredential(t, c, sandboxKey)
+				_, err := r.Reconcile(ctx, request)
+				if apierrors.IsConflict(err) {
+					conflicted = true
+					break
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !conflicted || concurrentWrites != 1 {
+				t.Fatalf("launcher status did not conflict: conflicted=%v writes=%d", conflicted, concurrentWrites)
+			}
+			pod := getPod(t, c)
+			if pod == nil || !isFirecrackerPod(pod) {
+				t.Fatal("no Firecracker launcher was created")
+			}
+			if getSandbox(t, c).Status.Incarnation != nil {
+				t.Fatal("launcher was published before the failed status update")
+			}
+			pvc := getPVC(t, c)
+			if pvc == nil {
+				t.Fatal("no retained state PVC")
+			}
+			if err := c.Delete(ctx, pod); err != nil {
+				t.Fatal(err)
+			}
+			if deleting {
+				if err := c.Delete(ctx, getSandbox(t, c)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			restarted := &Reconciler{Client: c, Objects: c, KubeVirt: true, Credentials: testRequester(t, c), States: NewRuntimeStates(nil, r.Now), Now: r.Now, Quiescer: &fakeQuiescer{}}
+			if _, err := restarted.Reconcile(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			if reason := runningReason(t, c); reason != "FirecrackerLauncherLost" {
+				t.Fatalf("missing launcher reason = %s", reason)
+			}
+			if getPod(t, c) != nil {
+				t.Fatal("missing launcher was replaced")
+			}
+			retained := getPVC(t, c)
+			if retained == nil || retained.UID != pvc.UID || !retained.DeletionTimestamp.IsZero() {
+				t.Fatal("lost launcher released its retained state PVC")
+			}
+			if !slices.Contains(getSandbox(t, c).Finalizers, StateVolumeFinalizer) {
+				t.Fatal("lost launcher released the state volume finalizer")
+			}
+		})
 	}
 }

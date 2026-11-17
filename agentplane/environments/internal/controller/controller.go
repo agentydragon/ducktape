@@ -616,6 +616,14 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *sandboxapi.Sandbox, 
 	bound := runtimeCredentialBinding(sandbox)
 	bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(pod.UID)
 	w.credentialBinding = &bound
+	if isFirecrackerPod(pod) {
+		// Reconcile and finalize's FirecrackerLauncherLost guards need the created Pod UID
+		// before any credential request or final status conflict can hide a lost launcher.
+		sandbox.Status.RunnerCredential = &bound
+		if err := r.Status().Update(ctx, sandbox); err != nil {
+			return w, nil, err
+		}
+	}
 	// Bind the record at once: the first binding after its fresh ID accepts that ID.
 	_, _, _, err := r.requestIncarnationCredential(ctx, sandbox, requester.Pod{Name: pod.Name, UID: pod.UID})
 	return w, nil, err
