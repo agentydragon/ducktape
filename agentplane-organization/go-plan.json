@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "source_sha": "de0cf4067a4a6958bbf251530cf3c30b13dd19f9",
-  "observed_at_utc": "2026-11-17T07:28:00Z",
+  "source_sha": "61a5f814adddc1955a359cbaeb62eaeab9390793",
+  "observed_at_utc": "2026-11-17T08:17:00Z",
   "scope": "Every tracked Go file and package under agentplane, including tests, generated tracked files, fixtures, commands and experiments. All top-level Agentplane areas remain visible as context. This is a target-organization proposal, not a claim that proposed APIs or directories are implemented.",
   "counts": {
-    "files": 1415,
-    "directories": 265,
-    "production": 789,
-    "tests": 626
+    "files": 1431,
+    "directories": 268,
+    "production": 797,
+    "tests": 634
   },
   "legend": {
     "=": "Intentional retained owner with an explicit package rationale",
@@ -1704,8 +1704,8 @@
       "id": "central_sampler",
       "path": "agentplane/central_sampler",
       "counts": {
-        "files": 171,
-        "directories": 28
+        "files": 180,
+        "directories": 29
       },
       "directories": [
         {
@@ -1867,16 +1867,17 @@
         {
           "path": "agentplane/central_sampler/internal/providerrequest",
           "production": 2,
-          "tests": 1,
+          "tests": 2,
           "files": [
             "agentplane/central_sampler/internal/providerrequest/content.go",
+            "agentplane/central_sampler/internal/providerrequest/content_test.go",
             "agentplane/central_sampler/internal/providerrequest/preparation.go",
             "agentplane/central_sampler/internal/providerrequest/preparation_test.go"
           ]
         },
         {
           "path": "agentplane/central_sampler/internal/residentruntime",
-          "production": 14,
+          "production": 15,
           "tests": 13,
           "files": [
             "agentplane/central_sampler/internal/residentruntime/anthropic_test.go",
@@ -1898,6 +1899,7 @@
             "agentplane/central_sampler/internal/residentruntime/runtime.go",
             "agentplane/central_sampler/internal/residentruntime/runtime_lifecycle_test.go",
             "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
+            "agentplane/central_sampler/internal/residentruntime/runtime_slot.go",
             "agentplane/central_sampler/internal/residentruntime/session_compaction.go",
             "agentplane/central_sampler/internal/residentruntime/session_driver.go",
             "agentplane/central_sampler/internal/residentruntime/session_host.go",
@@ -1910,9 +1912,11 @@
         },
         {
           "path": "agentplane/central_sampler/internal/rpc",
-          "production": 2,
-          "tests": 3,
+          "production": 3,
+          "tests": 4,
           "files": [
+            "agentplane/central_sampler/internal/rpc/harness_host.go",
+            "agentplane/central_sampler/internal/rpc/harness_host_test.go",
             "agentplane/central_sampler/internal/rpc/provider_request_read.go",
             "agentplane/central_sampler/internal/rpc/request_read_service_test.go",
             "agentplane/central_sampler/internal/rpc/service.go",
@@ -1922,15 +1926,15 @@
         },
         {
           "path": "agentplane/central_sampler/internal/sessionstore",
-          "production": 27,
-          "tests": 11,
+          "production": 28,
+          "tests": 12,
           "files": [
             "agentplane/central_sampler/internal/sessionstore/admission.go",
             "agentplane/central_sampler/internal/sessionstore/baseline_migration_test.go",
             "agentplane/central_sampler/internal/sessionstore/commands.go",
             "agentplane/central_sampler/internal/sessionstore/content_request.go",
-            "agentplane/central_sampler/internal/sessionstore/content_store.go",
             "agentplane/central_sampler/internal/sessionstore/content_store_integration_test.go",
+            "agentplane/central_sampler/internal/sessionstore/contentdb.go",
             "agentplane/central_sampler/internal/sessionstore/conversations.go",
             "agentplane/central_sampler/internal/sessionstore/environment_context_test.go",
             "agentplane/central_sampler/internal/sessionstore/evidence.go",
@@ -1938,6 +1942,8 @@
             "agentplane/central_sampler/internal/sessionstore/execution_context.go",
             "agentplane/central_sampler/internal/sessionstore/exporter_outbox.go",
             "agentplane/central_sampler/internal/sessionstore/exporter_test.go",
+            "agentplane/central_sampler/internal/sessionstore/host_status.go",
+            "agentplane/central_sampler/internal/sessionstore/host_status_test.go",
             "agentplane/central_sampler/internal/sessionstore/integration_test.go",
             "agentplane/central_sampler/internal/sessionstore/integration_testmain_test.go",
             "agentplane/central_sampler/internal/sessionstore/intents.go",
@@ -1963,6 +1969,16 @@
             "agentplane/central_sampler/internal/sessionstore/status_test.go",
             "agentplane/central_sampler/internal/sessionstore/store.go",
             "agentplane/central_sampler/internal/sessionstore/types.go"
+          ]
+        },
+        {
+          "path": "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
+          "production": 1,
+          "tests": 2,
+          "files": [
+            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/integration_test.go",
+            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/integration_testmain_test.go",
+            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/store.go"
           ]
         },
         {
@@ -2077,7 +2093,6 @@
       "context_paths": ["agentplane/central_sampler/api/sampler.proto"],
       "pending_tracks": [
         "central-sampler-harness-host",
-        "sampler-content-persistence",
         "sampler-resident-session",
         "history-journals",
         "settings-single-source",
@@ -2116,6 +2131,7 @@
           "agentplane/central_sampler/internal/residentruntime",
           "agentplane/central_sampler/internal/rpc",
           "agentplane/central_sampler/internal/sessionstore",
+          "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
           "agentplane/central_sampler/internal/settings",
           "agentplane/central_sampler/internal/testsupport",
           "agentplane/central_sampler/internal/toolcontract",
@@ -2399,10 +2415,10 @@
             "agentplane/central_sampler/internal/providerrequest/preparation.go"
           ],
           "declared_packages": ["providerrequest"],
-          "pending_tracks": ["sampler-content-persistence"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
-            "tests": 1
+            "tests": 2
           }
         },
         {
@@ -2421,7 +2437,7 @@
           "declared_packages": ["residentruntime"],
           "pending_tracks": ["sampler-resident-session"],
           "counts": {
-            "non_test": 14,
+            "non_test": 15,
             "tests": 13
           }
         },
@@ -2438,29 +2454,42 @@
           "declared_packages": ["rpc"],
           "pending_tracks": ["central-sampler-harness-host"],
           "counts": {
-            "non_test": 2,
-            "tests": 3
+            "non_test": 3,
+            "tests": 4
           }
         },
         {
           "path": "agentplane/central_sampler/internal/sessionstore",
           "role": "Transaction authority for durable sampler Sessions, intents and evidence",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/central_sampler/internal/sessionstore",
-            "agentplane/central_sampler/internal/providerrequest",
-            "agentplane/central_sampler/internal/sessionstore/internal/contentdb"
-          ],
-          "reason": "Retain locks, ownership generations, admission and commit authority. #17050 moved request assembly to `providerrequest` and environment rendering to `environmentcontext`; content persistence is the remaining named extraction candidate, not permission to spread Store receiver methods across packages.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Conversation checkpoints, native decoding, execution snapshots, request projection and previous-request reads. #17243 moved transaction-scoped content and context-chain persistence to `internal/contentdb` and the provider reference switch to `providerrequest`.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/sessionstore/admission.go"
           ],
           "declared_packages": ["sessionstore"],
-          "pending_tracks": ["sampler-content-persistence"],
+          "pending_tracks": [],
           "counts": {
-            "non_test": 27,
-            "tests": 11
+            "non_test": 28,
+            "tests": 12
+          }
+        },
+        {
+          "path": "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
+          "role": "Transaction-scoped content-addressed content and immutable context-chain persistence over `sampler_content` and `sampler_context`; implements `providerrequest.Content` and imports no provider package.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted from `sessionstore` by #17243 (sampler-content-persistence); schema and SQL unchanged. Whether the sampler keeps these tables at all is the Journal service direction (history-journals).",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/central_sampler/internal/sessionstore/internal/contentdb/store.go"
+          ],
+          "declared_packages": ["contentdb"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 2
           }
         },
         {
@@ -3604,7 +3633,7 @@
       "id": "env",
       "path": "agentplane/env",
       "counts": {
-        "files": 211,
+        "files": 213,
         "directories": 31
       },
       "directories": [
@@ -3767,8 +3796,8 @@
         },
         {
           "path": "agentplane/env/runtime/internal/coordinator",
-          "production": 27,
-          "tests": 34,
+          "production": 28,
+          "tests": 35,
           "files": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
             "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
@@ -3787,6 +3816,8 @@
             "agentplane/env/runtime/internal/coordinator/execution_forward_test.go",
             "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
             "agentplane/env/runtime/internal/coordinator/execution_owner.go",
+            "agentplane/env/runtime/internal/coordinator/execution_parent.go",
+            "agentplane/env/runtime/internal/coordinator/execution_parent_test.go",
             "agentplane/env/runtime/internal/coordinator/execution_recovery_test.go",
             "agentplane/env/runtime/internal/coordinator/execution_service.go",
             "agentplane/env/runtime/internal/coordinator/execution_service_test.go",
@@ -4039,7 +4070,6 @@
       "pending_tracks": [
         "harness-host-extraction",
         "env-supervision-backends",
-        "env-runtime-coordinator",
         "protobuf-alignment"
       ],
       "goal_note": "Guest-side Firecracker agent that thaws the guest and serves host management over vsock.; Guest thaw-agent process entry point.; Translates typed Executor RPCs into the local Codex exec-server protocol.; Guest PID 1 companion owning Codex process supervision, health, output forwarding, and fence protocol.; Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.; Runtime process lifecycle over managed processes, systemd scopes/units, and PID 1 helpers.",
@@ -4378,13 +4408,10 @@
         {
           "path": "agentplane/env/runtime/internal/coordinator",
           "role": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator.",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/env/runtime/internal/coordinator",
-            "agentplane/env/runtime/internal/executionlifecycle"
-          ],
-          "reason": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator. The aggregate stays whole: no boundary owns `Runtime.mu`, `transitionMu` and the `lifecycleWorkers` joins together. Only `executionLifecycle` is a candidate, behind a narrow parent.",
-          "gate": "Race tests for start, fence, recovery and close before `executionLifecycle` loses its `*Runtime` back-pointer.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Runtime stays the aggregate authority for admission, environment generations, transitions and `finishClose`/`joinClose`. #17237 gave the execution lifecycle a narrow `executionParent` in place of the `*Runtime` back-pointer; private service-readiness and process-exit dependencies keep it in this package, so no `internal/executionlifecycle`.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
             "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
@@ -4392,13 +4419,10 @@
             "agentplane/env/runtime/internal/coordinator/close_intent_race_test.go"
           ],
           "declared_packages": ["coordinator"],
-          "pending_tracks": [
-            "harness-host-extraction",
-            "env-runtime-coordinator"
-          ],
+          "pending_tracks": ["harness-host-extraction"],
           "counts": {
-            "non_test": 27,
-            "tests": 34
+            "non_test": 28,
+            "tests": 35
           }
         },
         {
@@ -4693,8 +4717,8 @@
       "id": "environments",
       "path": "agentplane/environments",
       "counts": {
-        "files": 89,
-        "directories": 13
+        "files": 92,
+        "directories": 14
       },
       "directories": [
         {
@@ -4773,6 +4797,16 @@
             "agentplane/environments/internal/runtimecontrol/quiescer.go",
             "agentplane/environments/internal/runtimecontrol/quiescer_test.go",
             "agentplane/environments/internal/runtimecontrol/suspender.go"
+          ]
+        },
+        {
+          "path": "agentplane/environments/internal/runtimecredentials",
+          "production": 2,
+          "tests": 1,
+          "files": [
+            "agentplane/environments/internal/runtimecredentials/decision.go",
+            "agentplane/environments/internal/runtimecredentials/decision_test.go",
+            "agentplane/environments/internal/runtimecredentials/requests.go"
           ]
         },
         {
@@ -4877,7 +4911,6 @@
       "context_paths": ["agentplane/environments/v1/environment_service.proto"],
       "pending_tracks": [
         "harness-host-extraction",
-        "sandbox-controller-lifecycle",
         "settings-single-source",
         "protobuf-alignment"
       ],
@@ -4899,6 +4932,7 @@
           "agentplane/environments/internal/controller",
           "agentplane/environments/internal/resume",
           "agentplane/environments/internal/runtimecontrol",
+          "agentplane/environments/internal/runtimecredentials",
           "agentplane/environments/internal/service",
           "agentplane/environments/internal/service/management",
           "agentplane/environments/internal/service/view",
@@ -4947,13 +4981,10 @@
         {
           "path": "agentplane/environments/internal/controller",
           "role": "Sandbox reconciler for claims, credentials, runtime control, Firecracker VM lifecycle, workspace, and status.",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/environments/internal/controller",
-            "agentplane/environments/internal/runtimecredentials"
-          ],
-          "reason": "The reconciler is a legitimate composition/state owner and sandboxcontroller disambiguates it from controller-runtime. Its mixed credential and VM child-management responsibilities warrant a boundary probe, not a synonym-only controller→reconciler directory move. Since #16407 it lives under `environments/`, where the boundary probe works.",
-          "gate": "Credential decisions become typed outcomes and VM writes move into `vm.go` before `internal/runtimecredentials` exists (sandbox-controller-lifecycle).",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "One owner for Sandbox reconcile, children, finalize and the VM. #17217 made credential decisions closed outcomes the Reconciler applies in `runtime_credential_apply.go`, with VM annotations and RunStrategy written only in `vm.go`; #17231 moved the credential policy and requests to `internal/runtimecredentials`.",
+          "gate": "",
           "evidence_paths": [
             "agentplane/environments/internal/controller/apply.go",
             "agentplane/environments/internal/controller/behavior.go",
@@ -4961,7 +4992,7 @@
             "agentplane/environments/internal/controller/children_integration_test.go"
           ],
           "declared_packages": ["sandboxcontroller"],
-          "pending_tracks": ["sandbox-controller-lifecycle"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 18,
             "tests": 14
@@ -5001,6 +5032,24 @@
           "counts": {
             "non_test": 3,
             "tests": 2
+          }
+        },
+        {
+          "path": "agentplane/environments/internal/runtimecredentials",
+          "role": "Sandbox runtime credential policy: from Sandbox, Identity, WorkloadCredential and child snapshots, requests credentials and returns the closed outcomes the Reconciler applies; holds no controller-runtime client and writes no object.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Extracted from the controller by #17231 (sandbox-controller-lifecycle) after #17217 made the decisions typed outcomes.",
+          "gate": "",
+          "evidence_paths": [
+            "agentplane/environments/internal/runtimecredentials/decision.go",
+            "agentplane/environments/internal/runtimecredentials/requests.go"
+          ],
+          "declared_packages": ["runtimecredentials"],
+          "pending_tracks": [],
+          "counts": {
+            "non_test": 2,
+            "tests": 1
           }
         },
         {
@@ -5567,6 +5616,61 @@
           ],
           "declared_packages": ["streaming", "streaming_test"],
           "pending_tracks": [],
+          "counts": {
+            "non_test": 1,
+            "tests": 1
+          }
+        }
+      ],
+      "tree_annotations": {
+        "current": [],
+        "goal": []
+      }
+    },
+    {
+      "id": "harness_host",
+      "path": "agentplane/harness_host",
+      "counts": {
+        "files": 2,
+        "directories": 1
+      },
+      "directories": [
+        {
+          "path": "agentplane/harness_host",
+          "production": 1,
+          "tests": 1,
+          "files": [
+            "agentplane/harness_host/session_status.go",
+            "agentplane/harness_host/session_status_test.go"
+          ]
+        }
+      ],
+      "context_paths": [],
+      "pending_tracks": ["harness-host-extraction"],
+      "goal_note": "The HarnessHost API shared by Environment Runtimes and the central sampler",
+      "decision": {
+        "state": "RETAIN",
+        "role": "HarnessHost proto and its Session status wire handshake",
+        "goal_summary": "The HarnessHost API shared by Environment Runtimes and the central sampler",
+        "reason": "Retain the named package owners for their specific roles and dependency boundaries below. Retention is an explicit current decision, not exclusion from future review.",
+        "evidence_paths": [
+          "agentplane/harness_host/BUILD.bazel",
+          "agentplane/harness_host/harness_host.proto",
+          "agentplane/harness_host/session_status.go"
+        ],
+        "reviewed_package_paths": ["agentplane/harness_host"]
+      },
+      "package_decisions": [
+        {
+          "path": "agentplane/harness_host",
+          "role": "The HarnessHost Session status wire handshake: the version header every `WatchSessions` client checks before reading frames.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "Added by #17232 beside `harness_host.proto`: the previous Runtime sent `SessionSummary` with incompatible fields at the same numbers, so clients refuse a stream without the version.",
+          "gate": "",
+          "evidence_paths": ["agentplane/harness_host/session_status.go"],
+          "declared_packages": ["harnesshost"],
+          "pending_tracks": ["harness-host-extraction"],
           "counts": {
             "non_test": 1,
             "tests": 1
@@ -9812,7 +9916,8 @@
         "env",
         "environments",
         "session_dispatcher",
-        "notification_service"
+        "notification_service",
+        "harness_host"
       ],
       "status": "AGREED DIRECTION",
       "kind": "service split behind a parallel change",
@@ -9825,7 +9930,7 @@
         "Callers: the Dispatcher's hosted delivery (`dispatcher/runtime_client.go`) moves to HarnessHost. Notifications (`internal/rpc/runner.go`) drop the call instead: `INBOX_SESSION_KEYING`, released on 2026-11-17 (05:53 UTC), keys inboxes by Session with no Sandbox or Runtime check. Every live Sandbox must run a step 1 Runtime first; one still on an older Runtime needs a restart, which is a decision card.",
         "Removal: drop the moved RPCs from `EnvironmentRuntime` once the step 3 images are pinned. Its command messages go when nothing uses them; the central sampler's `Sampler` service imports four of them until central-sampler-harness-host."
       ],
-      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call; step 4 follows its images. The DAG node is `HARNESS_HOST_EXTRACTION`.",
+      "gate": "Released by the operator on 2026-11-17 (03:34 UTC). Steps 1 and 2 landed: the proto with the Runtime's HarnessHost adapter (#17159) and the proxy's forwarding (#17164). Step 3 waits until every live Sandbox runs a step 1 Runtime (a restart needs a decision card) and on `INBOX_SESSION_KEYING`, which removes the Notifications call; step 4 follows its images. #17232 added per-Session activity (active turn, pending commands, setup, harness attachment) to `ListSessions` and `WatchSessions`, behind a Session status version header in `agentplane/harness_host`. The DAG node is `HARNESS_HOST_EXTRACTION`.",
       "preserve": "The lifecycle admission fence (`Quiesce` and `PrepareSuspend` close HarnessHost commands and drain admissions in flight), per-Sandbox routing and incarnation fencing through the proxy, Sessions-only command admission, and the command messages' field numbers.",
       "validation": [
         "//agentplane/env/runtime/control:control_test",
@@ -9884,7 +9989,7 @@
         "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
         "Move `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` to a sampler admin service. The only production `Sampler` client, `dispatcher/central_delivery.go`, calls none of them; system tests call `GetCommand` and `FollowEvents`. Delete those nothing calls, then remove `Sampler`."
       ],
-      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. Step 1 is three PRs, each after the operator's pin check: #17209 (merged 06:58 UTC) derives the executor from the placement and binds the incarnation on first open; the staging namespace setting, then the required setting with the request fields retired, follow. HarnessHost serving and the single Dispatcher client are not released. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. Step 1 is three PRs, each after the operator's pin check: #17209 derived the executor from the placement and binds the incarnation on first open, and #17233 added the staging namespace setting; the third, making the setting required and retiring the request fields, waits on a live central turn on staging. Step 2 landed as #17240: the sampler serves HarnessHost beside `Sampler`, with owner-filtered `ListSessions` and `WatchSessions`, and no caller uses it yet. The single Dispatcher client follows that image's pin. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -9903,54 +10008,6 @@
       "review_size": "Four PRs in order: request shape, HarnessHost serving, one Dispatcher client, admin service."
     },
     {
-      "id": "sampler-content-persistence",
-      "title": "Isolate transaction-scoped content persistence",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/internal/sessionstore/content_store.go",
-        "agentplane/central_sampler/internal/sessionstore/content_request.go",
-        "agentplane/central_sampler/internal/sessionstore/request_plan.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/sessionstore/internal/contentdb",
-        "agentplane/central_sampler/internal/providerrequest"
-      ],
-      "source_owner": "agentplane/central_sampler/internal/sessionstore",
-      "status": "PLANNED",
-      "summary": "`contentStore` mixes three things: a content-addressed store over `sampler_content` (put, get, batched prefetch, deterministic save); context chains over `sampler_context` (`storeContext`, `appendContextIDs`, `loadContext` with the `contextItem` hash); and Conversation state (`storeConversationContext` with its `storedContexts` checkpoints, `nativeControl` execution snapshots and native decoding). Only `prefetch` reads provider formats, to walk content references.",
-      "how": [
-        "Move the provider switch in `prefetch` to `providerrequest`, which already imports both providers, as one reference function over content kinds.",
-        "Add `sessionstore/internal/contentdb` with the content-addressed store and the context chains. It takes the caller's transaction and the reference function, implements `providerrequest.Content`, and imports no provider package.",
-        "Keep the Conversation-coupled code in `sessionstore` as Conversation methods over `contentdb`: native-context checkpoints, execution snapshots, native decoding, and `request_plan.go`'s projection and previous-request reads.",
-        "Move the content and context integration coverage with `contentdb`."
-      ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"; \"i think we should not wait on SAMPLER_JOURNAL_DIET\"). Released by the operator at 06:29 UTC (\"sampler content persistence: sounds good to me\"). The Journal service direction does not block it: it decides whether the sampler keeps `sampler_content` and `sampler_context` at all, and `contentdb` moves or goes whole either way. #17050 left content behind `providerrequest.Content`.",
-      "preserve": "Canonical content hashes, deterministic write ordering, bounded batched reads, verified references and rollback.",
-      "validation": [
-        "//agentplane/central_sampler/protocol:protocol_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/internal/sessionstore/content_store.go",
-        "agentplane/central_sampler/internal/sessionstore/content_request.go",
-        "agentplane/central_sampler/internal/sessionstore/request_plan.go",
-        "agentplane/central_sampler/internal/sessionstore/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 8,
-      "group": "sampler-state",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "env-supervision-backends",
       "title": "Give systemd unit operations a private owner",
       "status": "PLANNED",
@@ -9966,7 +10023,7 @@
         "Later, and only with a contract: `systemdBackend.start` returns a typed start handle like PID1's `Child` instead of writing `Process` streams, PID and wait state, with uncertain starts, fence outcomes and joins proved under the kernel fixtures. Until then `systemd.go` stays in `supervision`.",
         "`systemd_launcher.go` stays: `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`."
       ],
-      "gate": "PLANNED for step 1, a move with no behavior change: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Step 1 released by the operator at 06:29 UTC (\"systemd: sounds good to me\"). Step 2 needs the start-handle contract the 2026-11-16 worker could not prove: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
+      "gate": "PLANNED for step 1, a move with no behavior change: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Step 1 released by the operator at 06:29 UTC (\"systemd: sounds good to me\") and open as #17246. Step 2 needs the start-handle contract the 2026-11-16 worker could not prove: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -10010,58 +10067,6 @@
       "proposed_file_targets": []
     },
     {
-      "id": "env-runtime-coordinator",
-      "title": "Give the execution lifecycle a narrow parent",
-      "status": "PLANNED",
-      "components": ["env"],
-      "source_paths": [
-        "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
-        "agentplane/env/runtime/internal/coordinator/execution_service.go",
-        "agentplane/env/runtime/internal/coordinator/execution_owner.go",
-        "agentplane/env/runtime/internal/coordinator/protocol.go",
-        "agentplane/env/runtime/internal/coordinator/runtime.go",
-        "agentplane/env/runtime/internal/coordinator/forward.go"
-      ],
-      "target_paths": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
-      "summary": "Keep `Runtime` whole: admission, generations, transitions and the close path (`finishClose`/`joinClose`) belong to the aggregate, and no boundary owns `Runtime.mu`, `transitionMu` and the `lifecycleWorkers` joins together. The one cut: `executionLifecycle` (`execution_lifecycle.go`, 748 lines) already has its own mutex and state but holds `*Runtime` and takes `Runtime.mu` 27 times, to publish the execution owner, read `closing`, `failed` and recovery permission, join `lifecycleWorkers`, and drain or cancel execution calls.",
-      "how": [
-        "In place: replace the `*Runtime` back-pointer with a narrow parent whose methods take `Runtime.mu` themselves: publish or clear the execution owner, check whether a start or recovery is still admitted, register a lifecycle worker, report a change or a failure, and drain or cancel execution calls.",
-        "Fix the lock order (`executionLifecycle.mu` is never held while taking `Runtime.mu`) and add race tests for start, fence, recovery and close.",
-        "Then move `executionLifecycle` with its controller and owner types to `internal/executionlifecycle` if nothing private remains; otherwise it stays in `coordinator` behind the narrower parent.",
-        "No `internal/transitions` package: the transition files are small and run under `transitionMu` with the aggregate."
-      ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:52 UTC (\"runtime coordinator recut sounds good\"). The 2026-11-16 map found no owner for the whole close path, so this cut leaves it with `Runtime`. HarnessHost's adapter files in this package are separate; its step 4 deletes `environment_runtime_sessions.go`.",
-      "preserve": "Journal admission/no replay; Generation/incarnation fences; retain old owner until fence proved; Final History ACK at exact sealed cursor before Delivered; Cancel/drain/join before resources close",
-      "validation": [
-        "//agentplane/env/runtime/internal/coordinator:coordinator_test"
-      ],
-      "evidence_paths": [
-        "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
-        "agentplane/env/runtime/internal/coordinator/execution_service.go",
-        "agentplane/env/runtime/internal/coordinator/execution_owner.go",
-        "agentplane/env/runtime/internal/coordinator/protocol.go",
-        "agentplane/env/runtime/internal/coordinator/runtime.go",
-        "agentplane/env/runtime/internal/coordinator/forward.go"
-      ],
-      "dependencies": [],
-      "priority": 11,
-      "review_size": "Two PRs: the narrow parent with race tests in place, then the package move if nothing private remains.",
-      "candidate_owner_paths": [
-        "agentplane/env/runtime/internal/executionlifecycle"
-      ],
-      "path_moves": [],
-      "package_renames": [],
-      "kind": "responsibility extraction",
-      "source_owner": "agentplane/env/runtime/internal/coordinator",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
       "id": "sampler-resident-session",
       "title": "Give each resident Session a slot instead of the Runtime lock",
       "components": ["central_sampler"],
@@ -10085,7 +10090,7 @@
         "Then move the per-Session files (driver, turn, interrupt, compaction, setup, host and provider recovery) to `residentruntime/session`; the scheduler stays.",
         "A per-Session status that the sampler's HarnessHost `WatchSessions` will need can later be published through the same slot."
       ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:29 UTC (\"sampler resident session: sounds good to me\"). The slot is the coordination contract the 2026-11-16 worker asked for: lease claim, heartbeat and release stay in the driver, and the scheduler joins drivers before shutdown completes. central-sampler-harness-host step 1's first PR (#17209, merged 06:58 UTC) edited `session_host.go`; the slot PR starts after it.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:29 UTC (\"sampler resident session: sounds good to me\"). The slot is the coordination contract the 2026-11-16 worker asked for: lease claim, heartbeat and release stay in the driver, and the scheduler joins drivers before shutdown completes. PR 1, the slot, landed as #17235: per-Session behavior no longer reads `Runtime` or takes its mutex. PR 2, the move to `residentruntime/session`, is open as #17244.",
       "preserve": "Single resident owner, lease loss fencing, durable provider progress, host-loss recovery and ordered drain.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -10156,56 +10161,6 @@
       "package_renames": [],
       "kind": "responsibility extraction",
       "source_owner": "agentplane/session_dispatcher/dispatcher",
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "sandbox-controller-lifecycle",
-      "title": "Make Sandbox credential decisions typed outcomes with one VM writer",
-      "status": "PLANNED",
-      "components": ["environments"],
-      "source_paths": [
-        "agentplane/environments/internal/controller/environment_runtime_credential.go",
-        "agentplane/environments/internal/controller/vm.go",
-        "agentplane/environments/internal/controller/identity.go",
-        "agentplane/environments/internal/controller/controller.go"
-      ],
-      "target_paths": [
-        "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials"
-      ],
-      "summary": "Keep reconciliation policy, `finalize` and status ordering in the controller. Today `ensureVMRuntimeCredential` both decides and writes: it updates the VM's credential annotations and RunStrategy, requests and revokes WorkloadCredentials and writes `status.runnerCredential`, while `vm.go`'s `startVM` and `haltVM` also write the VM. First make each credential decision a closed typed outcome that the Reconciler applies, with every VM write in `vm.go`; then the decisions and WorkloadCredential requests can leave for `internal/runtimecredentials`.",
-      "how": [
-        "In place: `ensureVMRuntimeCredential` and `ensurePodRuntimeCredential` return one closed outcome (keep the published incarnation, record the next start credential, accept this VMI or Pod, rotate after a recreated VMI, halt on a credential mismatch, replace a stale Pod, pending) and write nothing.",
-        "The Reconciler applies it: VM annotations and RunStrategy only through `vm.go`, Pod replacement through the existing delete path, and `status.runnerCredential` in one status write after the child write.",
-        "Then move the decisions and the WorkloadCredential requests (`requestStartCredential`, `requestIncarnationCredential`, `credentialSubject`) to `internal/runtimecredentials`; it receives objects, returns outcomes and holds no controller-runtime client.",
-        "`finalize` (quiescing, child disappearance, PVC and finalizer release) and VM child management stay in the controller; there is no `internal/vm` package."
-      ],
-      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"). Released by the operator at 06:29 UTC (\"okay, dispatch sandbox controller\"). The 2026-11-16 map found decisions, VM writes and status publication interleaved in `ensureVMRuntimeCredential`; this cut separates them in place before anything moves. A status-write conflict after a VM write must converge on the next reconcile from the VM's annotations, and the PR proves it with a test. PR 1, the typed outcomes in place, landed as #17217; the Reconciler applies them in `runtime_credential_apply.go`. PR 2, the `internal/runtimecredentials` move, is next.",
-      "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state. The Firecracker launcher and its checkpoint are kept on a credential mismatch.",
-      "validation": [
-        "//agentplane/environments/internal/controller:controller_test",
-        "//agentplane/environments/internal/controller:children_integration_test",
-        "//agentplane/environments/internal/runtimecontrol:runtimecontrol_test"
-      ],
-      "evidence_paths": [
-        "agentplane/environments/internal/controller/controller.go",
-        "agentplane/environments/internal/controller/claim.go",
-        "agentplane/environments/internal/controller/environment_runtime_credential.go",
-        "agentplane/environments/internal/controller/identity.go",
-        "agentplane/environments/internal/controller/vm.go",
-        "agentplane/environments/internal/controller/firecracker.go",
-        "agentplane/environments/internal/controller/firecracker_suspend.go",
-        "agentplane/environments/internal/controller/state_volume.go"
-      ],
-      "dependencies": [],
-      "priority": 15,
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "source_owner": "agentplane/environments/internal/controller",
-      "review_size": "Two PRs: typed outcomes with one VM writer in place, then the `internal/runtimecredentials` move.",
       "file_splits": [],
       "deleted_paths": [],
       "stage": 4,
@@ -10316,7 +10271,7 @@
       "summary": "Operator, 2026-11-14: \"journals\" sounds like where History should eventually go, not decided in detail; the same day the operator approved the vocabulary: a Journal is what a harness or process emits, stored verbatim, and History is heading toward the Journal service; a Thread is the messaging object with editable messages that agents and people act on, and the current folded-projection meaning of Thread goes away with the fold. The migration itself is not approved work. History's packages stay as they are until a design picks the Journal service's shape: reorganizing or renaming `projection`, `threadfold` or `storage` now would move code that design may delete. The approved name is what `HISTORY_SERVICE_RENAME` would apply; it lands with that design so the files move once.",
       "how": [
         "Decide the Journal service design: stored shapes, which projections remain, where the Thread object lives, and the sampler's own copy of the conversation.",
-        "Then plan History's moves, renames and deletions against it; sampler-content-persistence checks the same design before moving sampler content storage."
+        "Then plan History's moves, renames and deletions against it; the same design decides whether the sampler keeps `sampler_content` and `sampler_context`, which #17243 isolated in `sessionstore/internal/contentdb`."
       ],
       "gate": "Open: names approved, design and migration not.",
       "preserve": "Retained Session history; an ownership move follows the staging data preservation rule.",
@@ -10509,15 +10464,12 @@
       "stage": 4,
       "title": "Extract responsibilities behind a local contract",
       "work": [
-        "sampler-content-persistence",
         "env-supervision-backends",
-        "env-runtime-coordinator",
         "sampler-resident-session",
         "runner-gateway-dispatcher-store",
-        "sandbox-controller-lifecycle",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track) and the Runtime coordinator at 06:52 UTC; #17217 landed the Sandbox Controller's typed credential outcomes, its first PR. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks and the code host track was dropped, its package retained. The operator released four at 06:29 UTC (only step 1 of the systemd track) and the Runtime coordinator at 06:52 UTC; #17217 and #17231 finished the Sandbox Controller track, #17237 the Runtime coordinator (private service-readiness and process-exit dependencies keep the lifecycle in `coordinator`, so it has no second PR) and #17243 content persistence; #17235 landed the resident Session slot. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED, and they landed as #17167 (one transaction owner), #17215 (GitHub matching and publication) and #17221 (observation projection)."
     },
     {
       "stage": 5,
@@ -10538,12 +10490,12 @@
   ],
   "scope_coverage": {
     "top_level_areas": 36,
-    "go_packages": 265,
-    "go_files": 1415,
+    "go_packages": 268,
+    "go_files": 1431,
     "all_source_directories_accounted_for": true,
     "all_files_have_disposition": true,
     "all_packages_have_role_and_rationale": true,
-    "review_source_sha": "de0cf4067a4a6958bbf251530cf3c30b13dd19f9",
+    "review_source_sha": "61a5f814adddc1955a359cbaeb62eaeab9390793",
     "review_slices": [
       {
         "slice": "action_service",
@@ -10560,8 +10512,8 @@
       {
         "slice": "central_sampler",
         "components": ["central_sampler"],
-        "packages": 28,
-        "go_files": 171
+        "packages": 29,
+        "go_files": 180
       },
       {
         "slice": "cli",
@@ -10597,13 +10549,13 @@
         "slice": "env",
         "components": ["env"],
         "packages": 31,
-        "go_files": 211
+        "go_files": 213
       },
       {
         "slice": "environments",
         "components": ["environments"],
-        "packages": 13,
-        "go_files": 89
+        "packages": 14,
+        "go_files": 92
       },
       {
         "slice": "firecracker",
@@ -10616,6 +10568,12 @@
         "components": ["grpc"],
         "packages": 5,
         "go_files": 9
+      },
+      {
+        "slice": "harness_host",
+        "components": ["harness_host"],
+        "packages": 1,
+        "go_files": 2
       },
       {
         "slice": "history_service",
