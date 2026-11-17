@@ -46,11 +46,11 @@ success. An explicitly `outcomeUnknown` result includes rotation diagnostics; ne
 result nor a lost response permits automatic retry.
 
 The gateway runs as one Go process. Its HTTP/JSON handlers are generated from the protobuf
-contract and call the management service in-process. An optional TLS gRPC listener exposes the
-same service using a dedicated owner bearer. HTTP management requires an owner session or owner
-bearer and same-origin browser mutations. The provider gRPC clients use verified TLS and no
-automatic retries. `GetInfo`, `GetSession`, and `GetImportOperation` have a 5-second status
-deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy requests use a
+contract and call the management service in-process; this is the owner-facing management API.
+The gateway has no owner-facing gRPC listener. HTTP management requires an owner session or
+owner bearer and same-origin browser mutations. Gateway-to-provider gRPC clients use verified
+TLS and no automatic retries. `GetInfo`, `GetSession`, and `GetImportOperation` have a 5-second
+status deadline. `Probe`, `ImportSession`, `VerifyCandidate`, and provider HTTP proxy requests use a
 120-second operation deadline, with caller cancellation taking effect sooner. Quest serializes
 status reads and operations through one owner lock and browser queue, so status reads can time out
 while an operation is running. Each import supplies a client-generated UUIDv4 operation ID. The

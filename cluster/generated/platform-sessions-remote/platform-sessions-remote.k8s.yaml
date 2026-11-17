@@ -3072,19 +3072,6 @@ spec:
     alphabetical:
       order: asc
 ---
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: gateway
-  namespace: platform-sessions
-spec:
-  dnsNames:
-    - gateway.platform-sessions.svc
-  issuerRef:
-    kind: ClusterIssuer
-    name: cluster-internal-ca
-  secretName: platform-sessions-gateway-tls
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -3124,14 +3111,6 @@ spec:
                 configMapKeyRef:
                   key: connections.json
                   name: remote-config
-            - name: PLATFORM_SESSIONS_GRPC_ADDRESS
-              value: 0.0.0.0:8444
-            - name: PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE
-              value: /var/run/platform-sessions/owner
-            - name: PLATFORM_SESSIONS_GRPC_TLS_CERT
-              value: /var/run/gateway-tls/tls.crt
-            - name: PLATFORM_SESSIONS_GRPC_TLS_KEY
-              value: /var/run/gateway-tls/tls.key
           envFrom:
             - secretRef:
                 name: platform-sessions-oidc
@@ -3144,8 +3123,6 @@ spec:
           ports:
             - containerPort: 8080
               name: http
-            - containerPort: 8444
-              name: grpc
           readinessProbe:
             httpGet:
               path: /healthz
@@ -3175,9 +3152,6 @@ spec:
               readOnly: true
             - mountPath: /var/run/provider-trust
               name: trust
-              readOnly: true
-            - mountPath: /var/run/gateway-tls
-              name: tls
               readOnly: true
       imagePullSecrets:
         - name: forgejo-images-creds
@@ -3352,9 +3326,6 @@ spec:
                 path: ca.crt
             name: cluster-internal-ca-bundle
           name: trust
-        - name: tls
-          secret:
-            secretName: platform-sessions-gateway-tls
 ---
 apiVersion: v1
 kind: Service
@@ -3366,8 +3337,5 @@ spec:
     - name: http
       port: 8080
       targetPort: http
-    - name: grpc
-      port: 8444
-      targetPort: grpc
   selector:
     app: platform-sessions-gateway

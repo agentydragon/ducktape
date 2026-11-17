@@ -1,14 +1,12 @@
-// The platform sessions gateway serves HTTP/JSON and optional gRPC management
-// while each remote provider owns its session and data plane.
+// The platform sessions gateway serves HTTP/JSON management while each remote
+// provider owns its session and data plane.
 package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,8 +19,6 @@ import (
 	"github.com/agentydragon/ducktape/platform_sessions/management/gateway"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"github.com/bazelbuild/rules_go/go/runfiles"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 type instance struct {
@@ -160,28 +156,6 @@ func run() error {
 	handler, err := gateway.HTTPServer(ctx, service, gateway.HTTPConfig{Owner: gateway.OwnerConfig{Issuer: os.Getenv("PLATFORM_SESSIONS_ISSUER"), ClientID: os.Getenv("PLATFORM_SESSIONS_CLIENT_ID"), ClientSecret: os.Getenv("PLATFORM_SESSIONS_CLIENT_SECRET"), SessionSecret: os.Getenv("PLATFORM_SESSIONS_SESSION_SECRET"), PublicBaseURL: os.Getenv("PLATFORM_SESSIONS_PUBLIC_BASE_URL"), AllowedSubject: os.Getenv("PLATFORM_SESSIONS_ALLOWED_SUBJECT")}, Providers: providers, Bearers: bearers, Assets: frontendAssets, ManagementDocument: managementDoc})
 	if err != nil {
 		return err
-	}
-	grpcAddress := os.Getenv("PLATFORM_SESSIONS_GRPC_ADDRESS")
-	if grpcAddress != "" {
-		cert, err := tls.LoadX509KeyPair(os.Getenv("PLATFORM_SESSIONS_GRPC_TLS_CERT"), os.Getenv("PLATFORM_SESSIONS_GRPC_TLS_KEY"))
-		if err != nil {
-			return errors.New("invalid management gRPC TLS credentials")
-		}
-		token, err := secretFile(os.Getenv("PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE"))
-		if err != nil {
-			return err
-		}
-		listener, err := net.Listen("tcp", grpcAddress)
-		if err != nil {
-			return errors.New("could not bind management gRPC")
-		}
-		grpcServer := gateway.GRPCServer(service, token, grpc.Creds(credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12})))
-		defer grpcServer.Stop()
-		go func() {
-			if err := grpcServer.Serve(listener); err != nil {
-				stop()
-			}
-		}()
 	}
 	port := os.Getenv("PLATFORM_SESSIONS_PORT")
 	if port == "" {
