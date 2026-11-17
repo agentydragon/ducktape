@@ -137,7 +137,9 @@ class EnvironmentFirecrackerTemplate(Construct):
             image_pull_secret_name=image_pull_secret_name,
             keep_sidecar_until_workload_exit=True,
             restart_policy="Never",
-            security_context=k8s.PodSecurityContext(run_as_user=0, run_as_group=0, fs_group=1000),
+            security_context=k8s.PodSecurityContext(
+                run_as_user=0, run_as_group=0, fs_group=1000, fs_group_change_policy="OnRootMismatch"
+            ),
             workload_volumes=[
                 wiring.volume,
                 k8s.Volume(name="guest-config", config_map=k8s.ConfigMapVolumeSource(name=self.configuration.name)),
