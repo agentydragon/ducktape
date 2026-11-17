@@ -8,29 +8,12 @@ import (
 	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
+	githubfilters "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/filters"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
-
-func commitObservationClause(alias string, selection githubmodel.CommitObservationSelection, args *argList) string {
-	var selected []string
-	if selection.CheckRuns {
-		part := alias + ".event = " + args.add(string(githubmodel.EventCheckRun))
-		if selection.CompletedCheckRunsOnly {
-			part += " AND " + alias + ".payload->>'status' = " + args.add(string(githubmodel.CheckRunCompleted))
-		}
-		selected = append(selected, "("+part+")")
-	}
-	if selection.CommitStatuses {
-		selected = append(selected, "("+alias+".event = "+args.add(string(githubmodel.EventStatus))+")")
-	}
-	if len(selected) == 0 {
-		return "FALSE"
-	}
-	return "(" + strings.Join(selected, " OR ") + ")"
-}
 
 // recordCommitObservations appends current-state snapshots then transitions after the immutable creation
 // boundary. Inbox copies and generated identities commit together, so replay after restart is durable.
@@ -78,7 +61,7 @@ func (c *Coordinator) recordCommitObservations(ctx context.Context, tx transacti
 	if len(accessible) == 0 {
 		return count, false, nil
 	}
-	selected := commitObservationClause("e", selection, &args)
+	selected := githubfilters.CommitObservationClause("e", selection, args.add)
 	repository := args.add(subject.RepositoryID)
 	kind := args.add(subject.Kind)
 	key := args.add(subject.Key)

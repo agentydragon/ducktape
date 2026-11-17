@@ -16,6 +16,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout",
     deps = [
         "//agentplane/notification_service/internal/sourceadapter",
+        "//agentplane/notification_service/internal/sources/github/filters",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication",
         "//agentplane/notification_service/internal/sources/github/state",
@@ -53,6 +54,7 @@ go_test(
     x_defs = {"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout.goldenRlocation": "$(rlocationpath //agentplane/notification_service/internal/store:golden.json)"},
     deps = [
         "//agentplane/notification_service/internal/sourceadapter",
+        "//agentplane/notification_service/internal/sources/github/filters",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication",
         "//agentplane/notification_service/internal/sources/github/state",
