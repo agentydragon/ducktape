@@ -387,3 +387,49 @@ status; inspect the artifacts even when the command fails.
 
 Save important runs under the consuming repo's `debug/perf/` directory with the
 captured command, stdout/stderr and profiler artifacts.
+
+## Public performance workflow
+
+Run the public Excalidraw workload directly with Bazel:
+
+```sh
+bbr test -c opt --nocache_test_results --remote_build_event_upload=all \
+  --runs_per_test=3 \
+  //devinfra/js/debundle/perf:excalidraw_pipeline_bench
+```
+
+The test executes fresh project, analyze and apply commands. GNU `time -v`
+output and each command's stdout/stderr go to `TEST_UNDECLARED_OUTPUTS_DIR`
+for attachment to the BuildBuddy test invocation. Inputs are read directly from
+Bazel runfiles; intermediate pipeline outputs stay in `TEST_TMPDIR`. The benchmark
+produces no custom metrics, aggregate reports or automatic revision comparisons.
+
+For simultaneous raw Analyze CPU and allocation profiles, add
+`--test_env=DEBUNDLE_BENCH_PROFILE=1`. This runs `perf record` around
+`heaptrack --raw`, retaining `perf.data` and `heaptrack.raw.zst` (or `.raw.gz`).
+CPU samples include allocation-tracing overhead; use an unprofiled run for native
+timing comparisons. Report generation and analysis are separate manual
+operations. The Excalidraw pipeline benchmark runs locally on
+the outer BuildBuddy runner, whose pinned image supplies the profiling tools.
+Tool builds and the synthetic benchmark tests use RBE. Each native command
+has a timeout, a 16 GiB per-process address-space limit and a 512 MiB per-file
+limit.
+
+The optional
+[Debundle performance workflow](https://github.com/agentydragon/ducktape/actions/workflows/debundle-performance.yml)
+selects targets and runs the same Bazel test command. `suite=excalidraw` selects
+Excalidraw, `suite=bench` selects the synthetic `e2e/bench/` tests, and
+`suite=all` queries all Debundle tests tagged `bench`. Explicit query results
+include manual tests, which wildcard test expansion would omit.
+`additional_test_flags` passes standard Bazel arguments, including
+`--runs_per_test` and `--test_timeout`. Scheduled runs select `all` with
+`--runs_per_test=3`.
+
+```sh
+gh workflow run debundle-performance.yml --ref devel \
+  -f candidate_ref="$revision" -f suite=excalidraw \
+  -f additional_test_flags=--runs_per_test=3 -f profile=false
+```
+
+Use the BuildBuddy invocation's native tool outputs for subsequent analysis.
+Run each revision separately when comparing changes.

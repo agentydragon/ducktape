@@ -597,6 +597,12 @@ Open usability and scripting-safety findings from exercising the documented
 workflows against a real spec; resolved items are deleted. Corpus-specific
 paths and source-unit IDs belong in the consuming repo.
 
+- **Align engine executable names.** The pipeline currently invokes `debundle`,
+  `debundle_analyze` and `debundle_project_analysis`, while the benchmark calls
+  them debundler, analyzer and projector. Choose consistent executable names
+  (for example, those three role nouns) or consolidate the stages into one CLI.
+  Update Bazel labels, callers, environment variables and documentation together.
+
 ### Workflow and iteration follow-ups
 
 - **W1 — Execute commands from a verified snapshot context.** Reuse the current
