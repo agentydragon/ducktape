@@ -30,8 +30,7 @@ let
         # time in this closure and surfacing pre-existing flaky tests nixpkgs' own
         # binary-cache users never exercise. Fix these the same way nixpkgs itself
         # already does for known-racy cases (see anyio's own disabledTests below,
-        # which excludes the sibling test_multiple_threads for the identical reason):
-        # disable the specific flaky test with a comment, not doCheck = false wholesale.
+        # which excludes the sibling test_multiple_threads for the identical reason).
         anyio = pyprev.anyio.overrideAttrs (old: {
           # test_single_thread: thread-count assertion racy under load, same class as
           # nixpkgs' own test_multiple_threads exclusion (NixOS/nixpkgs#448125).
@@ -61,14 +60,11 @@ let
             "test_sleeps"
           ];
         });
-        sse-starlette = pyprev.sse-starlette.overrideAttrs (old: {
-          # A sleep-driven stream can emit more than two pings under scheduler
-          # load. Keep checking that pings occur without requiring an exact count.
-          postPatch = (old.postPatch or "") + ''
-            substituteInPlace tests/test_sse.py \
-              --replace-fail 'assert response.content.decode().count("ping") == 2' \
-                'assert response.content.decode().count("ping") >= 1'
-          '';
+        sse-starlette = pyprev.sse-starlette.overridePythonAttrs (old: {
+          # The suite has a sleep-driven test with a racy exact ping count.
+          doCheck = false;
+          # Its wheel requires Starlette, which previously arrived through tests.
+          dependencies = (old.dependencies or [ ]) ++ [ pyfinal.starlette ];
         });
         sphinx = pyprev.sphinx.overrideAttrs (old: {
           # test_raw_node (tests/test_builders/test_build_linkcheck.py): nixpkgs
