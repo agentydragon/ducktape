@@ -1187,3 +1187,72 @@ the same scratch root's `excalidraw-paired/`; binary hashes are in
 `baseline-tools/` and `candidate-tools/`. The runs use production code identical
 to implementation commit `61ce1b518a`; intervening base changes only touched
 Debundle tests or other projects.
+
+## Candidate-containment graph materialization (2026-11-17)
+
+A late bounded run identifies the terminal allocation more narrowly than the
+source-flow prefix profiles. The observed production analyzer is the combined
+numeric-key/read-certificate candidate, implementation `f9c040d9fb3e4fdc4240ceb2821abaafce13e5c0`
+([#17359](https://github.com/agentydragon/ducktape/pull/17359),
+[#17374](https://github.com/agentydragon/ducktape/pull/17374)). Its binary SHA-256 is
+`62c303cbf7c6bd4a44c574e9352034c38b02e781c660aabd6af9404abbd4318a`.
+The candidate-containment implementation is unchanged between that candidate and
+fresh baseline devel `5b9b7e54e59acdd09a0ca8d6a1ecadbbef3d6375`.
+
+The analyzer used the frozen private capture/projection, four Rayon workers,
+one-second raw OTLP JSONL, progress markers, a 600-second runtime cap, 16 GiB
+memory cap and no swap. A 49 Hz CPU profile was attached for a late 120-second
+window. This is an analyze-only diagnostic, not a fresh whole-pipeline acceptance
+run or an unprofiled timing comparison. The unit ended with `oom-kill` after
+453.606 seconds wall and 445.802 seconds CPU, at the 16 GiB cap.
+
+The progress log records `solve_program_value_flow` ending and
+`close_program_value_flow` starting before OOM. The final 30 seconds of the
+captured CPU window attribute 72.37% self cost to
+`GraphMap<FlowKey>::add_edge`, 8.12% to its edge-index reallocation, and 5.31%
+to its node-adjacency entry lookup. The complete 120-second window attributes
+31.18% to `add_edge`; its earlier portion still includes source propagation.
+The `FlowKey` graph type identifies candidate-containment compilation: the
+preceding call-effect closure uses a different graph/key representation.
+A second attachment attempted after the first capture found the process already
+gone and produced no usable samples.
+
+The completed origin relations are already compressed bitmaps. Expanding each
+eligible origin into a `DiGraphMap` edge retains an edge index and both adjacency
+directions. SCC closure bounds the number of semantic propagation steps but does
+not remove that representation cost. A finite polynomial relation can still
+exhaust the memory budget when expanded this way. The next implementation must
+reuse the immutable compressed adjacency for graph traversal and avoid retaining
+an expanded component-edge relation as well.
+
+Separate observational transfer witnesses confirm the counted-loop certificate
+is active at the earlier hotspot. Subsequent broad reads include an index loaded
+from a pooled ref cell, a type-guarded index without a retained branch-local type
+fact, and numeric fields of shared memoized tuples. One unrestricted selection
+joins 11,275 origins, including 10,680 from one shared return-record aggregate.
+This explains why improving one numeric read does not close the end-to-end task;
+it does not justify another recognizer ahead of the measured graph expansion.
+
+Raw commands, progress, OTLP, native unit receipt, perf data and standard reports
+are under `/tmp/agents/2026_11_17/tana-remaining-growth/loop-late-metrics/` and the
+adjacent `.stderr` file. The bounded observational witnesses are in
+`loop-diagnostic/`; they are private, transient diagnostic artifacts. No private
+source or capture-specific dispatch belongs in the implementation.
+
+### Fresh devel control
+
+A fresh optimized control at `5b9b7e54e59acdd09a0ca8d6a1ecadbbef3d6375`
+([tool build](https://app.buildbuddy.io/invocation/c2d8132c-900f-4d27-81cc-f5ee7b048a22))
+uses identical frozen private inputs, four workers, metrics disabled, progress
+markers, a 600-second whole-pipeline limit and 16 GiB with no swap. Projection
+completed in 14.26 seconds. Source-value solve completed; candidate closure
+started; the unit then ended with `oom-kill` at 516.134 seconds wall and
+509.794 seconds CPU, at the 16 GiB cap. Analysis did not finish and passing-spec
+application did not run. This independently reproduces the failure on devel;
+it is not a timing comparison against the profiled numeric-key candidate.
+
+Raw outputs and the native unit receipt are in the same task root's
+`tana-closure-baseline/` and `tana-closure-baseline.stderr`. Binary identities
+are recorded in `closure-baseline-tools/identity.json`. An initial setup attempt
+failed before executing projection because downloaded artifacts lacked execute
+permission; it is retained separately and excluded from these measurements.

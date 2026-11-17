@@ -267,18 +267,6 @@ impl Values {
         Arc::make_mut(&mut self.bitmap).insert(id)
     }
 
-    /// Ids of this set's origins also present in `mask`, without decoding
-    /// origins that are not eligible for candidate reachability.
-    fn ids_within<'a>(&'a self, mask: &'a RoaringBitmap) -> impl Iterator<Item = OriginId> + 'a {
-        let unknown = self.origins.id(Value::Top);
-        let unknown = (self.unknown && mask.contains(unknown.0)).then_some(unknown);
-        self.bitmap
-            .iter()
-            .filter(move |id| mask.contains(*id))
-            .map(OriginId)
-            .chain(unknown)
-    }
-
     pub(super) fn iter(&self) -> ValuesIter<'_> {
         ValuesIter {
             ids: self.bitmap.iter(),

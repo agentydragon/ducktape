@@ -51,9 +51,21 @@ Remaining work:
 
    The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
    still exhausts 16 GiB during analysis before applying the passing spec.
-   Attribute the remaining growth with phase work metrics and a bounded native
-   profile; use a concrete remaining value-flow witness to choose the next
-   summary family. Projection completed quickly and is not the measured blocker.
+   The [late-phase profile](../perf/analysis_serial_phases.md#candidate-containment-graph-materialization-2026-11-17)
+   distinguishes two costs: source-flow propagation is large, but finishes;
+   materializing candidate-containment edges then exhausts memory. Validate the
+   borrowed compressed-adjacency closure against independent graph/proof oracles
+   and the full private pipeline before choosing another semantic summary.
+   Preserve shared completed origin bitmaps through SCC construction and avoid
+   retaining a second edge table for the component graph. Do not infer completion
+   from a smaller local origin set or a completed source-value stratum.
+
+   Keep the upstream precision witnesses separate: pooled ref cells, returned
+   record fields and memoized tuple fields can still produce broad may-origins.
+   Numeric-key proofs remove unrelated named fields only where their premise
+   holds. They do not establish a general type for a mutable binding, nor solve
+   the shared-allocation problem. Further summaries require a measured remaining
+   blocker after the graph-materialization fix. Projection is not the blocker.
 
    Each slice must pass a fresh Tana pipeline within 600 seconds and 16 GiB, as
    well as the matched optimized Excalidraw check below (no more than 10% wall
