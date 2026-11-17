@@ -2,10 +2,12 @@ package runtimeproxy
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
@@ -95,6 +97,16 @@ func (g *Server) Methods() (auth.Methods, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostSessionCallers := append([]string(nil), g.config.SessionServices...)
+	for _, caller := range g.config.RuntimeReaders {
+		if !slices.Contains(hostSessionCallers, caller) {
+			hostSessionCallers = append(hostSessionCallers, caller)
+		}
+	}
+	hostSessionReaders, err := auth.Services(hostSessionCallers)
+	if err != nil {
+		return nil, err
+	}
 	controllerRule, err := auth.Services(g.config.ControllerServices)
 	if err != nil {
 		return nil, err
@@ -111,6 +123,13 @@ func (g *Server) Methods() (auth.Methods, error) {
 		environmentruntimepb.EnvironmentRuntime_ChangeModel_FullMethodName:           dispatcher,
 		environmentruntimepb.EnvironmentRuntime_ChangeReasoningEffort_FullMethodName: dispatcher,
 		environmentruntimepb.EnvironmentRuntime_InterruptTurn_FullMethodName:         dispatcher,
+		harnesshostpb.HarnessHost_ListSessions_FullMethodName:                        hostSessionReaders,
+		harnesshostpb.HarnessHost_CreateSession_FullMethodName:                       dispatcher,
+		harnesshostpb.HarnessHost_SubmitInput_FullMethodName:                         dispatcher,
+		harnesshostpb.HarnessHost_ChangeModel_FullMethodName:                         dispatcher,
+		harnesshostpb.HarnessHost_ChangeReasoningEffort_FullMethodName:               dispatcher,
+		harnesshostpb.HarnessHost_InterruptTurn_FullMethodName:                       dispatcher,
+		harnesshostpb.HarnessHost_WatchSessions_FullMethodName:                       dispatcher,
 		environmentruntimepb.EnvironmentRuntime_Quiesce_FullMethodName:               controllerRule,
 		environmentruntimepb.EnvironmentRuntime_PrepareSuspend_FullMethodName:        controllerRule,
 		environmentruntimepb.EnvironmentRuntime_ResumeAdmission_FullMethodName:       controllerRule,
@@ -130,6 +149,7 @@ func (g *Server) Methods() (auth.Methods, error) {
 // RegisterProxy installs the per-Sandbox Environment Runtime proxy.
 func (g *Server) RegisterProxy(server *grpc.Server) {
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, &environmentRuntimeProxy{server: g})
+	harnesshostpb.RegisterHarnessHostServer(server, &harnessHostProxy{server: g})
 }
 
 // RegisterExecutor enables the typed execution path only when its own caller allowlist is

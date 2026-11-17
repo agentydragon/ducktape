@@ -9,6 +9,7 @@ from agentplane.app.testing.client import Client
 from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.environments.v1 import environment_service_pb2, environment_service_pb2_grpc
 from agentplane.grpc.calls import dial
+from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.api import (
     INCARNATION_UID_HEADER,
@@ -92,7 +93,19 @@ async def environments_forwards_runtime_reads_and_refuses_stale_incarnations(
                         raise
                     await asyncio.sleep(0.1)
         assert status.environment_runtime_boot_id
-        await runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        runtime_sessions = await runtime.ListSessions(session_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        host = harness_host_pb2_grpc.HarnessHostStub(runtime_channel)
+        host_sessions = await host.ListSessions(harness_host_pb2.ListSessionsRequest(), metadata=metadata, timeout=5)
+        assert {session.session_id for session in host_sessions.sessions} == {
+            session.session_id for session in runtime_sessions.sessions
+        }
+        with pytest.raises(grpc.aio.AioRpcError) as stale_host:
+            await host.ListSessions(
+                harness_host_pb2.ListSessionsRequest(),
+                metadata=(*metadata, (INCARNATION_UID_HEADER, "stale-incarnation")),
+                timeout=5,
+            )
+        assert stale_host.value.code() == grpc.StatusCode.ABORTED
         environments = environment_service_pb2_grpc.EnvironmentServiceStub(channel)
         diagnostics = await environments.GetRuntimeDiagnostics(
             environment_service_pb2.GetRuntimeDiagnosticsRequest(target=target), timeout=5

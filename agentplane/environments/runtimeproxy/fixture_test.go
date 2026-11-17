@@ -248,7 +248,7 @@ func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceC
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: listener.Addr().String(), ca: ca}
-	for _, service := range []string{"", peertls.AppURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
+	for _, service := range []string{"", peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
 		certificateService := service
 		if certificateService == "" {
 			certificateService = peertls.AppURI

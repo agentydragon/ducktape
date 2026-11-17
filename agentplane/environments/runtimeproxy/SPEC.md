@@ -1,6 +1,6 @@
 # Runtime proxy connection and authorization contracts
 
-Every Environments replica serves the EnvironmentRuntime proxy and Executor on
+Every Environments replica serves the EnvironmentRuntime proxy, HarnessHost and Executor on
 `sandbox-controller:8082`, pinning `spiffe://agentplane/sandbox-controller`. The outbound Runtime peer
 is `spiffe://agentplane/runtime-proxy`, separate from the leader's incarnation-binding observer.
 The Environments binary owns `environments/runtimeproxy`. The Sessions binary at
@@ -46,11 +46,14 @@ resolves and validates the current Sandbox and Pod first, then returns `Aborted`
 if that incarnation differs. A duplicate or empty value is `InvalidArgument`.
 
 - `environment_service.runtime_proxy.session_callers` grants Runtime `CreateSession`, `SubmitInput`, `ChangeModel`,
-  `ChangeReasoningEffort` and `InterruptTurn` to exact Sessions service actors. Dispatcher workers
-  present their Sessions certificate across replicas; they replace outgoing metadata and never
-  forward a caller's credentials. There is no startup TokenReview or own-Pod authentication read.
-- `environment_service.runtime_proxy.readers` grants `ListSessions` and `GetStatus` diagnostics, without command or wake
-  authority. `WatchState` remains private to proxy-to-Runtime observation.
+  `ChangeReasoningEffort` and `InterruptTurn` on both Runtime APIs, plus HarnessHost `ListSessions` and `WatchSessions`,
+  to exact Sessions service actors. Dispatcher workers present their Sessions certificate across replicas; they replace
+  outgoing metadata and never forward a caller's credentials. There is no startup TokenReview or own-Pod authentication
+  read.
+- `environment_service.runtime_proxy.readers` grants the existing EnvironmentRuntime `ListSessions` and `GetStatus`
+  diagnostics, without command or wake authority. `HarnessHost.ListSessions` admits the union of `readers` and
+  `session_callers`, pairing the existing inventory readers with Sessions' watch grant.
+  `WatchState` remains private to proxy-to-Runtime observation.
 - `environment_service.runtime_proxy.controller_callers` grants `Quiesce`, `PrepareSuspend` and `ResumeAdmission`.
 - `environment_service.runtime_proxy.executor_callers` independently enables the Executor methods, including `OpenSession`.
   This does not create a Runtime Session or enter Dispatcher admission.

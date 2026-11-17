@@ -3,10 +3,12 @@ package runtimeproxy
 import (
 	"context"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
@@ -17,6 +19,29 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	kubeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type observedHarnessHost struct {
+	harnesshostpb.UnimplementedHarnessHostServer
+	listCalls    atomic.Int32
+	watchCalls   atomic.Int32
+	blockWatch   atomic.Bool
+	watchStarted chan struct{}
+}
+
+func (h *observedHarnessHost) ListSessions(context.Context, *harnesshostpb.ListSessionsRequest) (*harnesshostpb.ListSessionsResponse, error) {
+	h.listCalls.Add(1)
+	return &harnesshostpb.ListSessionsResponse{}, nil
+}
+
+func (h *observedHarnessHost) WatchSessions(_ *harnesshostpb.WatchSessionsRequest, stream harnesshostpb.HarnessHost_WatchSessionsServer) error {
+	h.watchCalls.Add(1)
+	if h.blockWatch.Load() {
+		close(h.watchStarted)
+		<-stream.Context().Done()
+		return stream.Context().Err()
+	}
+	return stream.Send(&harnesshostpb.WatchSessionsResponse{Update: &harnesshostpb.WatchSessionsResponse_CaughtUp{CaughtUp: &harnesshostpb.CaughtUp{}}})
+}
 
 func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	f := newSandboxFixture(t)
@@ -37,7 +62,9 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	runtime := &observedRuntime{
 		sandboxUID: string(f.sandbox.UID), incarnationUID: string(f.pod.UID), bootID: "proxy-test-boot",
 	}
+	host := &observedHarnessHost{watchStarted: make(chan struct{})}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
+	harnesshostpb.RegisterHarnessHostServer(runtimeServer, host)
 	go func() { _ = runtimeServer.Serve(runtimeListener) }()
 	t.Cleanup(runtimeServer.Stop)
 	destination.target = runtimeListener.Addr().String()
@@ -71,6 +98,30 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	if runtime.calls.Load() != 1 {
 		t.Fatal("authorized app call did not reach the direct Runtime server")
 	}
+	hostClient := harnesshostpb.NewHarnessHostClient(proxy)
+	if _, err := hostClient.ListSessions(f.callerContext(peertls.AppURI), &harnesshostpb.ListSessionsRequest{}); err != nil {
+		t.Fatalf("configured reader HarnessHost ListSessions = %v", err)
+	}
+	if _, err := hostClient.ListSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.ListSessionsRequest{}); err != nil {
+		t.Fatalf("authorized Sessions HarnessHost call did not reach Runtime: %v", err)
+	}
+	if host.listCalls.Load() != 2 {
+		t.Fatalf("authorized HarnessHost calls reached Runtime %d times, want 2", host.listCalls.Load())
+	}
+	hostWatch, err := hostClient.WatchSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.WatchSessionsRequest{})
+	if err != nil {
+		t.Fatalf("authorized HarnessHost watch did not reach Runtime: %v", err)
+	}
+	watchFrame, err := hostWatch.Recv()
+	if err != nil || watchFrame.GetCaughtUp() == nil {
+		t.Fatalf("HarnessHost watch frame = %v, %v; want caught-up snapshot", watchFrame, err)
+	}
+	if _, err := hostWatch.Recv(); err == nil {
+		t.Fatal("HarnessHost watch stayed open after Runtime ended it")
+	}
+	if host.watchCalls.Load() != 1 {
+		t.Fatalf("authorized HarnessHost watch reached Runtime %d times, want 1", host.watchCalls.Load())
+	}
 	matchingIncarnationContext := metadata.AppendToOutgoingContext(
 		f.callerContext(peertls.AppURI), sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, string(f.pod.UID),
 	)
@@ -79,6 +130,16 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	}
 	if runtime.calls.Load() != 2 {
 		t.Fatalf("matching incarnation reached Runtime %d times, want 2", runtime.calls.Load())
+	}
+
+	wrongHostIncarnationContext := metadata.AppendToOutgoingContext(
+		f.callerContext(peertls.SessionsURI), sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, "replaced-runner-uid",
+	)
+	if _, err := hostClient.ListSessions(wrongHostIncarnationContext, &harnesshostpb.ListSessionsRequest{}); status.Code(err) != codes.Aborted {
+		t.Fatalf("HarnessHost accepted a different expected incarnation: %v", err)
+	}
+	if got := host.listCalls.Load(); got != 2 {
+		t.Fatalf("stale HarnessHost incarnation reached Runtime %d times, want 2", got)
 	}
 
 	wrongIncarnationContext := metadata.AppendToOutgoingContext(
@@ -247,6 +308,27 @@ func TestRuntimeProxyAuthenticatesCallerAndSandboxIdentity(t *testing.T) {
 	}
 	if _, err := client.Quiesce(f.callerContext(peertls.SandboxControllerURI), &sessionpb.QuiesceRequest{}); err != nil {
 		t.Fatalf("deletion Quiesce: %v", err)
+	}
+
+	// An invalidated Runtime connection ends an active HarnessHost stream with its retryable
+	// connection status instead of leaking the transport's Canceled result.
+	host.blockWatch.Store(true)
+	fencedWatch, err := hostClient.WatchSessions(f.callerContext(peertls.SessionsURI), &harnesshostpb.WatchSessionsRequest{})
+	if err != nil {
+		t.Fatalf("start HarnessHost watch for connection invalidation: %v", err)
+	}
+	select {
+	case <-host.watchStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runtime did not start the HarnessHost watch")
+	}
+	connection, err := server.connections.holder(string(f.sandbox.UID))
+	if err != nil {
+		t.Fatalf("get Runtime connection before invalidation: %v", err)
+	}
+	server.connections.remove(connection, errSupersededConnection)
+	if _, err := fencedWatch.Recv(); status.Code(err) != codes.Aborted {
+		t.Fatalf("invalidated HarnessHost watch = %v, want Aborted", err)
 	}
 
 	stopObserver()

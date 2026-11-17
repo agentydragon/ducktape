@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/sandboxreader"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -18,6 +19,7 @@ type runtimeConnection struct {
 	podUID      string
 	bootID      string
 	runtime     environmentruntimepb.EnvironmentRuntimeClient
+	harnessHost harnesshostpb.HarnessHostClient
 	direct      *fencedRuntimeConn
 	closeDirect func()
 	ended       chan struct{}

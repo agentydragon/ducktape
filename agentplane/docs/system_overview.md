@@ -12,7 +12,7 @@ The Controller serves EnvironmentService on each replica at `sandbox-controller:
 `spiffe://agentplane/sandbox-controller`. Its independent policy watches and uncached Kubernetes
 reads do not require leadership. App and Actions use this receiver with service SVIDs; Actions
 preserves typed delegation. EnvironmentService rejects Kubernetes bearer credentials and performs no
-TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, Executor or
+TokenReview; its exact reader, manager, launcher and operator SVID roles remain independent. The Gateway has no direct Runtime access, discovery RBAC or proxy grants. Runtime proxy, HarnessHost and Executor calls target this same Environments listener. The Gateway serves Dispatcher and health only; it registers no Runtime proxy, HarnessHost, Executor or
 EnvironmentService and opens no direct Runtime watch.
 
 EnvironmentService also serves an App-only `GetRuntimeDiagnostics` read through its replica-local,
@@ -40,7 +40,7 @@ flowchart LR
     subgraph services[Agentplane services]
         direction TB
         gw[Runner Gateway TLS RPC :8080: Dispatcher]
-        sandboxctl[Environments :8082: EnvironmentService, Runtime proxy and Executor]
+        sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
         sessionsService[sessions Service :8080]
         environmentsService[environments Service :8082]
         sessionsService -->|same listener and server SVID| gw
@@ -221,7 +221,7 @@ and testing use the SVID hop; TLS mode never falls back to token mode.
 
 The Gateway uses its Sessions caller SVID (`spiffe://agentplane/sessions`) to reach the Environments
 proxy and sampler. Its listener retains `spiffe://agentplane/session-dispatcher` as the server URI.
-Environments owns Runtime proxy/Executor and the `spiffe://agentplane/runtime-proxy` outbound SVID,
+Environments owns Runtime proxy, HarnessHost, Executor and the `spiffe://agentplane/runtime-proxy` outbound SVID,
 separate from the Controller's binding observer. The old Gateway Runtime certificate and unused role
 mounts remain deployed only until the receiver-removal image is pinned and running; they grant no
 receiver authority in that image. Sessions-to-proxy remains a network hop with its own exact grant.
@@ -304,7 +304,7 @@ flowchart LR
     relay[VM launcher relay]
     egress[Egress proxy]
     central[Experimental central sampler]
-    sandboxctl[Environments :8082: EnvironmentService, Runtime proxy and Executor]
+    sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor]
     k8s[Kubernetes API]
     app -->|Session creation + commands| dispatcher
     app -->|Dispatch watch for the browser: gRPC| dispatcher
@@ -396,7 +396,7 @@ flowchart LR
     actions -->|service mTLS: direct orchestration reads or typed Identity envelope| history[History]
     actions -->|direct service mTLS: orchestration launcher role| environments
     actions -->|service mTLS + typed Identity envelope: session delegation| environments
-    sessions[Sessions service role] -->|service mTLS: session methods| proxy[Runtime proxy role]
+    sessions[Sessions service role] -->|service mTLS: Runtime Session methods| proxy[Runtime proxy role]
     controller[Sandbox Controller service] -->|service mTLS: controller methods| proxy
     sampler[Central sampler service] -->|service mTLS: Executor grant| executor[Executor]
     proxy -->|runtime-proxy SVID, fenced mTLS| runtime[Native Runtime]
@@ -499,8 +499,11 @@ flowchart LR
 
 ## Environment control and native Sessions
 
-The Environments Runtime proxy and Executor admit only exact component service SVIDs: Notifications for reads, Sessions for native Session
-operations, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods.
+The Environments Runtime proxy, HarnessHost and Executor admit only exact component service SVIDs: configured Runtime
+readers and Sessions for HarnessHost session inventory reads, Sessions for native Session creation, commands and
+watches, Sandbox Controller for lifecycle operations, and Central Sampler for Executor methods. HarnessHost inventory
+admits the union of `session_callers` and `readers`; existing EnvironmentRuntime diagnostics retain their configured
+reader grants.
 These are independent method grants. Caller configuration activates each edge only after its image
 is pinned; the proxy's existing native Runtime mTLS identity remains separate.
 
@@ -508,7 +511,7 @@ is pinned; the proxy's existing native Runtime mTLS identity remains separate.
 flowchart LR
     app[App service SVID] -->|EnvironmentService.GetRuntimeDiagnostics only| sandboxctl
     services[Configured Notifications, Sessions, Controller and sampler service SVIDs]
-    services -->|service SVID only: method-scoped proxy and Executor grants| sandboxctl
+    services -->|service SVID only: method-scoped Runtime, HarnessHost and Executor grants| sandboxctl
     subgraph environment_runtime[Environment Runtime process]
       runtime[Runtime admission and lifecycle]
       sessions[Session manager, adapters and journals]
@@ -519,10 +522,10 @@ flowchart LR
       sessions -->|journal inventory| delivery
     end
     history[History ingress]
-    sandboxctl -->|every-replica proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
+    sandboxctl -->|every-replica proxy, HarnessHost / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     policy_api[Kubernetes PolicySets / PolicyBindings / Identities]
     sandboxctl -->|list/watch grants; patch EnvironmentReady| policy_api
-    sandboxctl[Environments :8082: EnvironmentService, Runtime proxy and Executor] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
+    sandboxctl[Environments :8082: EnvironmentService, Runtime proxy, HarnessHost and Executor] -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
     delivery -.->|durable journal push and ACK| history
 ```
 
@@ -812,7 +815,7 @@ flowchart LR
 
 ## Service definitions
 
-- gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). The Runner Gateway serves Dispatcher and standard gRPC health; Environments proxies the Environment Runtime and Executor services over direct mTLS connections.
+- gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [HarnessHost](../harness_host/harness_host.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). The Runner Gateway serves Dispatcher and standard gRPC health; Environments proxies the Environment Runtime, HarnessHost and Executor services over direct mTLS connections.
 - HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/proxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../x/indexing/app.py).
 - Controllers and egress: [Sandbox Controller](../environments/internal/controller/controller.go), [Policy Controller](../policy_controller/internal/controller/controller.go), [central egress proxy](../egress/internal/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).
 
@@ -885,13 +888,13 @@ flowchart LR
 
 The Dispatcher delivery worker presents its separate `spiffe://agentplane/sessions` certificate
 when dialing `sandbox-controller:8082`, independently of which proxy replica watches the
-Runtime. It verifies the receiver's `spiffe://agentplane/sandbox-controller` server certificate. The receiver grants only Runtime Session operations to that Sessions role.
+Runtime. It verifies the receiver's `spiffe://agentplane/sandbox-controller` server certificate. The receiver grants Runtime Session operations to that role and exposes HarnessHost creation, commands and current-state watches under the same grant. Existing Dispatcher calls continue to use EnvironmentRuntime.
 The Gateway→central sampler hop also presents the Sessions certificate, following the explicit
 account-to-SVID ownership rewrite. A rollback to bearer requires the reviewed reverse ownership Job.
 
 ```mermaid
 flowchart LR
-    sessions[Dispatcher / Sessions role] -->|service SVID mTLS; Session methods| proxy[Runtime proxy]
+    sessions[Dispatcher / Sessions role] -->|service SVID mTLS; Runtime Session methods| proxy[Runtime proxy]
     sessions -->|Sessions SVID mTLS; rewritten ownership| sampler[Central sampler]
     proxy -->|existing Runtime mTLS| runtime[Environment Runtime]
 ```
@@ -899,13 +902,13 @@ flowchart LR
 ## Environments Runtime transport receiver
 
 Deployment enables `environment_service.runtime_proxy` on the existing every-replica
-`sandbox-controller:8082` listener, registering Runtime proxy and Executor with exact service SVID
+`sandbox-controller:8082` listener, registering Runtime proxy, HarnessHost and Executor with exact service SVID
 grants. Each replica's routing inventory and Runtime watches operate independently of leadership
 and the leader's lifecycle facts. The dedicated outbound `runtime-proxy` SVID remains separate
 from the Controller's incarnation-binding observer; UID/incarnation/boot fencing and uncertain
 mutation outcomes stay unchanged. Notifications inventory, Sessions delivery, Controller lifecycle
 and central sampler Executor target this Service and pin its Sandbox Controller server SVID.
 App diagnostics use EnvironmentService on the same listener, without a raw-proxy grant. Dispatcher API calls retain their separate endpoint and identity.
-The Gateway registers no Runtime proxy or Executor receiver. Its obsolete credentials, network
+The Gateway registers no Runtime proxy, HarnessHost or Executor receiver. Its obsolete credentials, network
 permissions and ignored grant settings retire after the receiver-free image is pinned and running.
 No Environments-to-Sessions edge is added.

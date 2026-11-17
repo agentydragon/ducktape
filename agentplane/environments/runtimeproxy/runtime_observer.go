@@ -8,6 +8,7 @@ import (
 	"time"
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/sethvargo/go-retry"
@@ -44,7 +45,20 @@ func (c *fencedRuntimeConn) Invoke(ctx context.Context, method string, args, rep
 }
 
 func (c *fencedRuntimeConn) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-	return c.conn.NewStream(metadata.NewOutgoingContext(ctx, c.identity.Copy()), desc, method, opts...)
+	streamContext, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-c.connection.ended:
+			cancel()
+		case <-streamContext.Done():
+		}
+	}()
+	stream, err := c.conn.NewStream(metadata.NewOutgoingContext(streamContext, c.identity.Copy()), desc, method, opts...)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	return stream, nil
 }
 
 // runtimeObserver is one Sandbox's observer worker; done closes when the worker stops on its own.
@@ -270,6 +284,7 @@ func (g *Server) observeRuntime(ctx context.Context, destination runtimeDestinat
 					"agentplane-environment-runtime-boot-id", response.EnvironmentRuntimeBootId,
 				)}
 				connection.runtime = environmentruntimepb.NewEnvironmentRuntimeClient(connection.direct)
+				connection.harnessHost = harnesshostpb.NewHarnessHostClient(connection.direct)
 				// Publish the callable connection only after validating the workload and boot.
 				g.connections.accept(connection)
 				span.AddEvent("runner.control.ready", trace.WithAttributes(
