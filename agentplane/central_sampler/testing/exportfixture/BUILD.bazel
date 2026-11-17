@@ -16,6 +16,7 @@ go_library(
         "//agentplane/central_sampler/protocol",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_protobuf//proto",
     ],
