@@ -270,7 +270,10 @@ func (h *StartHandle) runStart(ctx context.Context, properties []goSystemd.Prope
 				startErr = fmt.Errorf("native unit start job failed: %s (%s)", result, h.diagnostics())
 				break
 			}
-			service, observeErr := h.readSnapshotOn(ctx, h.conn)
+			// ReapSnapshot is an injection point for tests of transient reaper
+			// failures. Startup must always read the manager directly so that a
+			// reaper-only failure cannot turn a successful start into a failed one.
+			service, observeErr := Read(ctx, h.conn, h.name)
 			if observeErr != nil {
 				h.observeUnit(service, observeErr)
 				startErr = observeErr
