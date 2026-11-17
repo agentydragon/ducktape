@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:proto_library.bzl", "proto_library")
+load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
+load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+proto_library(
+    name = "harness_host_proto",
+    srcs = ["harness_host.proto"],
+    deps = [
+        "//agentplane/proto:event_log_proto",
+        "//agentplane/proto:identity_proto",
+        "//agentplane/proto:session_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "harness_host_pb2",
+    deps = [":harness_host_proto"],
+)
+
+py_grpc_service_library(
+    name = "harness_host_pb2_grpc",
+    async_only = True,
+    proto = ":harness_host_proto",
+    py_proto = ":harness_host_pb2",
+)
+
+go_proto_library(
+    name = "harness_host_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb",
+    proto = ":harness_host_proto",
+    deps = [
+        "//agentplane/proto:event_log_go_proto",
+        "//agentplane/proto:identity_go_proto",
+        "//agentplane/proto:session_go_proto",
+    ],
+)

@@ -16,6 +16,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/session"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -652,13 +653,14 @@ func TestSessionDeliveryCompleteRequiresCurrentGenerationAndSealUID(t *testing.T
 
 func TestCloseWaitsForAdmission(t *testing.T) {
 	r, s := lifecycleTestSession(t)
+	host := &harnessHost{runtime: r}
 	ctx, cancel := context.WithTimeout(context.Background(), lifecycleTestTimeout)
 	defer cancel()
 
 	releaseBatch := holdJournalBatch(t, ctx, s)
 	inputDone := make(chan error, 1)
 	go func() {
-		_, err := r.SubmitInput(sessionCallContext(r, ctx), &environmentruntimepb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
+		_, err := host.SubmitInput(sessionCallContext(r, ctx), &harnesshostpb.SubmitInputRequest{SessionId: s.ID(), CommandId: "close-race", Text: "input"})
 		inputDone <- err
 	}()
 	if err := watchSessionResource(ctx, r.lifecycleState, lifecycle.EnvironmentResourceID, func(input environmentAdmissionCountSpec) (bool, error) {
@@ -687,7 +689,7 @@ func TestCloseWaitsForAdmission(t *testing.T) {
 		t.Fatalf("wait for Close to drain admission: %v", err)
 	}
 	cursor := s.EventJournal().LastCursor()
-	if _, err := r.SubmitInput(sessionCallContext(r, ctx), &environmentruntimepb.SubmitInputRequest{
+	if _, err := host.SubmitInput(sessionCallContext(r, ctx), &harnesshostpb.SubmitInputRequest{
 		SessionId: s.ID(), CommandId: "close-after-barrier", Text: "late input",
 	}); status.Code(err) != codes.Unavailable {
 		releaseBatch()

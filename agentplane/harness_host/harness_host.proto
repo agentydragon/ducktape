@@ -1,0 +1,96 @@
+// Harness placement contract shared by native and central hosts.
+syntax = "proto3";
+
+package agentplane.harness_host;
+
+import "agentplane/proto/event_log.proto";
+import "agentplane/proto/session.proto";
+import "agentplane/proto/identity.proto";
+
+service HarnessHost {
+  // Durably reserve or confirm immutable Session creation configuration, before native readiness.
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  // Command responses acknowledge durable admission; delivery continues after caller disconnect.
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // Current-state watch: snapshot upserts, CaughtUp, then changed Session upserts and CaughtUp.
+  // Reconnect always starts a fresh snapshot; there is no historical replay or resume token.
+  // Reconcile missing Sessions only after the initial CaughtUp. Hosts retain Sessions for the
+  // lifetime of a stream; a host that removes one must terminate watches for a fresh snapshot.
+  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
+}
+
+message CreateSessionRequest {
+  string session_id = 1;
+  agentplane.proto.SessionSpec spec = 2;
+  optional string setup_script = 3;  // selected only at creation
+  // The Identity the Dispatcher recorded from the Sandbox's `spec.identity` at creation, absent when
+  // it named none. The Host retains it with the Session.
+  agentplane.proto.Identity execution_identity = 5;
+}
+
+message CreateSessionResponse {
+  agentplane.proto.Attached attached = 1;
+}
+
+// Command responses carry durable CommandAdmitted evidence, before any required startup.
+// Startup and delivery continue after caller disconnect; later failures are journal outcomes.
+message SubmitInputRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string text = 3;
+}
+
+message SubmitInputResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message ChangeModelRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string model = 3;
+}
+
+message ChangeModelResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message ChangeReasoningEffortRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string effort = 3;
+}
+
+message ChangeReasoningEffortResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message InterruptTurnRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string turn_id = 3;
+}
+
+message InterruptTurnResponse {
+  agentplane.proto.EventEntry admission = 1;
+}
+
+message ListSessionsRequest {}
+
+message ListSessionsResponse {
+  repeated agentplane.proto.SessionSummary sessions = 1;
+}
+
+message WatchSessionsRequest {}
+
+message CaughtUp {}
+
+message WatchSessionsResponse {
+  oneof update {
+    agentplane.proto.SessionSummary upsert = 1;
+    CaughtUp caught_up = 2;
+  }
+}

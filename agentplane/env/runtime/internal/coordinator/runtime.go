@@ -283,7 +283,7 @@ func newRuntime(config Config, injectedState state.State, deps runtimeDeps) (*Ru
 		IsClosing: r.isClosing, AdoptIncarnation: r.adoptIncarnation,
 		Facts: r.facts, Changes: r.changesSince,
 		Interceptor: config.ControlInterceptor,
-	}, r)
+	}, r, &harnessHost{runtime: r})
 	r.executorProxy = newExecutionProxy(r)
 	securityTransferred = true
 	return r, nil

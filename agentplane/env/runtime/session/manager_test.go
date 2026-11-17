@@ -549,7 +549,7 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	s := newSession(sessionDependencies{
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
 		ctx:              ctx, state: resources, store: store,
-		changed: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
+		changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) }, publish: func(*Session, bool) {},
 	}, "codex-session", record, j)
 	attachment := s.appServerAttachment()
 	s.mu.Lock()

@@ -14,6 +14,7 @@ go_library(
         "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/env/runtime/execution:executor_go_proto",
         "//agentplane/grpc/streaming",
+        "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/net/peertls",
         "//agentplane/observability",
         "//agentplane/proto:environment_runtime_state_go_proto",

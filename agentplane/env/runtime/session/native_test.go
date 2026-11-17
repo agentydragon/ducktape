@@ -250,7 +250,7 @@ func TestTurnStartedReceiveBatchDoesNotDeadlockCompletion(t *testing.T) {
 	}()
 	s := newSession(sessionDependencies{
 		environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} },
-		ctx:              ctx, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) },
+		ctx:              ctx, publish: func(*Session, bool) {}, changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) },
 	}, "session", &retained.Record{}, j)
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "current"}), nil); err != nil {
 		t.Fatal(err)
@@ -775,7 +775,7 @@ func TestConfirmationReplayKeepsTerminalReceipt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, fail: func(err error) { t.Error(err) }}
+	deps := sessionDependencies{environmentState: func() Environment { return Environment{IncarnationUID: "test-incarnation"} }, ctx: ctx, state: resources, store: store, publish: func(*Session, bool) {}, changed: func() {}, summaryChanged: func() {}, fail: func(err error) { t.Error(err) }}
 	s := newSession(deps, "session-1", record, journal)
 	command := &commandpb.Command{CommandId: "input-1", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "hello"}}}
 	if _, _, err := journal.Admit(ctx, command, ""); err != nil {

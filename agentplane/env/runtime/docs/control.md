@@ -4,7 +4,22 @@ Environment Runtime owns Sandbox identity, bootstrap, external control, Session 
 journals, History delivery and lifecycle coordination with Execution. The public API retains both
 environment and Session operations; an independent Session domain/storage model is deferred.
 
-The public wire definitions are [`environment_runtime.proto`](../control/environment_runtime.proto),
+The control listener serves `HarnessHost` alongside the existing `EnvironmentRuntime` RPCs,
+behind the same peer and incarnation/boot authorization. Both Session command surfaces use
+`Runtime.admit` and creation uses `withSessionAdmission`; lifecycle transitions close and drain
+the same admissions. `EnvironmentRuntime.GetStatus` retains lifecycle, boot ID and harness
+process diagnostics. HarnessHost carries per-Session harness state, setup, active turn and launch
+outcome through shared `SessionSummary` messages.
+
+`HarnessHost.WatchSessions` sends snapshot upserts followed by `CaughtUp`, then changed Session
+upserts with a `CaughtUp` checkpoint. Runtime change notifications trigger fresh inventory reads;
+it never polls. Intermediate states may coalesce. Every reconnect starts a complete snapshot
+and the consumer reconciles missing Sessions only at its initial `CaughtUp`. No resume token is
+needed for current-state reconciliation: the host retains Sessions while serving and has no
+retained change log to replay. A host removing Sessions must end its watches for resnapshot.
+
+The public wire definitions are [`harness_host.proto`](../../../harness_host/harness_host.proto),
+[`environment_runtime.proto`](../control/environment_runtime.proto),
 [`session.proto`](../../../proto/session.proto), and
 [`environment_runtime_state.proto`](../../../proto/environment_runtime_state.proto).
 

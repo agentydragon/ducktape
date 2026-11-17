@@ -20,7 +20,7 @@ const (
 	autosuspendExecution = "ExecutorRelay"
 )
 
-func (r *Runtime) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+func (r *Runtime) listSessions(ctx context.Context) ([]*sessionpb.SessionSummary, error) {
 	if err := r.authorizeSessionRead(ctx); err != nil {
 		return nil, err
 	}
@@ -33,10 +33,10 @@ func (r *Runtime) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsReq
 			return nil, rpcError(err)
 		}
 	}
-	result := &sessionpb.ListSessionsResponse{}
+	var result []*sessionpb.SessionSummary
 	for _, s := range r.sessions.Inventory() {
 		a := s.Attached()
-		result.Sessions = append(result.Sessions, &sessionpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
+		result = append(result, &sessionpb.SessionSummary{SessionId: a.SessionId, Spec: a.Spec, LastCursor: a.LastCursor, HarnessState: a.HarnessState, ActiveTurnId: a.ActiveTurnId, SetupState: a.SetupState, LaunchOutcome: a.LaunchOutcome})
 	}
 	return result, nil
 }

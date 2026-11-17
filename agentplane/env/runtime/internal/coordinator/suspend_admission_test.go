@@ -2,12 +2,14 @@ package coordinator
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"google.golang.org/grpc"
@@ -37,6 +39,7 @@ func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *tes
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
+	host := harnesshostpb.NewHarnessHostClient(conn)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	bindTestIncarnation(t, client, "sandbox-uid", "pod-uid-1")
@@ -96,10 +99,36 @@ func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *tes
 	if _, err := client.GetStatus(call(), &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("GetStatus while prepared = %v, want Unavailable", err)
 	}
-	if _, err := client.SubmitInput(call(), &environmentruntimepb.SubmitInputRequest{
+	request := openLifecycleSession("suspend-adapter-session", filepath.Join(workspace, "project"))
+	if _, err := host.CreateSession(call(), &harnesshostpb.CreateSessionRequest{
+		SessionId: request.SessionId, Spec: request.Spec, ExecutionIdentity: request.ExecutionIdentity,
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("HarnessHost CreateSession while prepared = %v, want Unavailable", err)
+	}
+	if _, err := host.SubmitInput(call(), &harnesshostpb.SubmitInputRequest{
 		SessionId: "not-yet-created", CommandId: "suspend-race-command", Text: "hello",
 	}); status.Code(err) != codes.Unavailable {
-		t.Fatalf("SubmitInput while prepared = %v, want Unavailable before store lookup", err)
+		t.Fatalf("HarnessHost SubmitInput while prepared = %v, want Unavailable before store lookup", err)
+	}
+	if _, err := host.ChangeModel(call(), &harnesshostpb.ChangeModelRequest{
+		SessionId: "not-yet-created", CommandId: "suspend-model", Model: "model-next",
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("HarnessHost ChangeModel while prepared = %v, want Unavailable before store lookup", err)
+	}
+	if _, err := host.ChangeReasoningEffort(call(), &harnesshostpb.ChangeReasoningEffortRequest{
+		SessionId: "not-yet-created", CommandId: "suspend-effort", Effort: "high",
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("HarnessHost ChangeReasoningEffort while prepared = %v, want Unavailable before store lookup", err)
+	}
+	if _, err := host.InterruptTurn(call(), &harnesshostpb.InterruptTurnRequest{
+		SessionId: "not-yet-created", CommandId: "suspend-interrupt", TurnId: "turn-id",
+	}); status.Code(err) != codes.Unavailable {
+		t.Fatalf("HarnessHost InterruptTurn while prepared = %v, want Unavailable before store lookup", err)
+	}
+	if watch, err := host.WatchSessions(call(), &harnesshostpb.WatchSessionsRequest{}); err != nil {
+		t.Fatalf("start HarnessHost WatchSessions while prepared: %v", err)
+	} else if _, err := watch.Recv(); status.Code(err) != codes.Unavailable {
+		t.Fatalf("HarnessHost WatchSessions while prepared = %v, want Unavailable", err)
 	}
 	if _, err := executorpb.NewExecutorClient(conn).StartProcess(call(), &executorpb.StartProcessRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Execution while prepared = %v, want Unavailable", err)
@@ -119,6 +148,11 @@ func TestSuspendAdmissionFencePersistsAcrossIndependentWatchAndGeneration(t *tes
 	}
 	if _, err := client.GetStatus(call(), &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("admission did not reopen: %v", err)
+	}
+	if _, err := host.SubmitInput(call(), &harnesshostpb.SubmitInputRequest{
+		SessionId: "not-yet-created", CommandId: "after-resume", Text: "hello",
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("HarnessHost SubmitInput after resume = %v, want NotFound from store lookup", err)
 	}
 	facts, err := r.facts()
 	if err != nil || facts.IdleSince == nil {

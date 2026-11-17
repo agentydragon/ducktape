@@ -11,6 +11,7 @@ import (
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/grpc/streaming"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
@@ -71,7 +72,8 @@ func (a *Authorization) IncarnationUID() string { return a.identity.incarnationU
 type Server struct {
 	environmentruntimepb.EnvironmentRuntimeServer
 
-	config Config
+	config      Config
+	harnessHost harnesshostpb.HarnessHostServer
 
 	adoptionMu          sync.Mutex
 	mu                  sync.RWMutex
@@ -79,12 +81,12 @@ type Server struct {
 	identity            *watch
 }
 
-func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer) *Server {
-	return &Server{config: config, EnvironmentRuntimeServer: backend}
+func New(config Config, backend environmentruntimepb.EnvironmentRuntimeServer, host harnesshostpb.HarnessHostServer) *Server {
+	return &Server{config: config, EnvironmentRuntimeServer: backend, harnessHost: host}
 }
 
 // Listen opens the configured authenticated control listener and registers the
-// Environment Runtime, executor stream, and standard gRPC health services.
+// Environment Runtime, HarnessHost, executor stream, and standard gRPC health services.
 func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc.Server, error) {
 	transportCredentials, err := s.config.Security.ServerCredentials(environmentruntimetransport.RuntimeProxyURI, environmentruntimetransport.SandboxControllerURI)
 	if err != nil {
@@ -113,9 +115,11 @@ func (s *Server) Listen(executor executorpb.ExecutorServer) (net.Listener, *grpc
 	healthServer := health.NewServer()
 	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(environmentruntimepb.EnvironmentRuntime_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus(harnesshostpb.HarnessHost_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	healthServer.SetServingStatus(executorpb.Executor_ServiceDesc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(server, healthServer)
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, s)
+	harnesshostpb.RegisterHarnessHostServer(server, s.harnessHost)
 	executorpb.RegisterExecutorServer(server, executor)
 	return listener, server, nil
 }
