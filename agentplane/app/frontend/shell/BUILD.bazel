@@ -42,12 +42,74 @@ js_library(
 )
 
 ts_library(
+    name = "phone_width",
+    srcs = ["phone_width.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+# dock.tsx imports this stylesheet for the bundler.
+js_library(
+    name = "dock_css",
+    srcs = ["dock.css"],
+)
+
+ts_library(
+    name = "dock_workspace",
+    srcs = ["dock_workspace.ts"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        "//:node_modules/dockview-react",
+        "//:node_modules/zod",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "dock_workspace_test",
+    srcs = ["dock_workspace.test.ts"],
+    deps = [
+        ":dock_workspace",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "dock",
+    srcs = ["dock.tsx"],
+    tsconfig = "//agentplane/app/frontend:tsconfig",
+    deps = [
+        ":dock_css",
+        ":dock_workspace",
+        ":phone_width",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tanstack/react-query",
+        "//:node_modules/@types/react",
+        "//:node_modules/dockview-react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/sessions:live",
+        "//agentplane/app/frontend/sessions:page",
+        "//agentplane/app/frontend/sessions:thread_list",
+        "//agentplane/app/frontend/ui:icons",
+    ],
+)
+
+ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
     ],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":phone_width",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -116,6 +178,7 @@ ts_library(
     ],
     tsconfig = "//agentplane/app/frontend:tsconfig",
     deps = [
+        ":dock",
         ":shell_css",
         ":sidebar",
         ":tab_metadata",

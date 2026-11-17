@@ -6,6 +6,7 @@
 # gazelle:exclude test_visual_environment_identity.py
 # gazelle:exclude test_visual_history_layout.py
 # gazelle:exclude test_visual_policies.py
+# gazelle:exclude test_visual_dock.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 # gazelle:exclude test_visual_operation_presentation.py
@@ -339,6 +340,12 @@ agentplane_visual_test(
     name = "visual_identities",
     src = "test_visual_identities.py",
     title = "Agentplane: identities",
+)
+
+agentplane_visual_test(
+    name = "visual_dock",
+    src = "test_visual_dock.py",
+    title = "Agentplane: dockable workspace",
 )
 
 agentplane_visual_test(
