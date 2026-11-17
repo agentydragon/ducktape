@@ -34,10 +34,13 @@ namespace-scoped ExternalSecret reads the existing, controller-owned
 copied into the image or manifest.
 
 The store must explicitly allow `buildbuddy-executor` before qualification.
-The first attempt stopped at that prerequisite; see the
-[recorded result](debug/2026_11_16_qualification.md). Review and reconcile the
-store's declarative owner before retrying; do not copy registry credentials or
-patch the shared allowlist to bypass that boundary.
+[PR #17092](https://github.com/agentydragon/ducktape/pull/17092) provides that
+reviewed prerequisite. Reconcile the declarative owner before retrying; do not
+copy registry credentials or patch the shared allowlist to bypass that boundary.
+
+The [qualified candidate and results](results.md) include all seven passing
+cases, first-boot clocks and an in-flight drain. The Linux 6.12 LTS selection is
+required by the K3s fixture's legacy iptables support.
 
 From the repo root, with a pushed candidate digest and a task scratch directory:
 
