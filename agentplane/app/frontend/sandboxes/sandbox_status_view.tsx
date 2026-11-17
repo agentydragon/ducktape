@@ -256,7 +256,7 @@ function SandboxDetails({
       <Table.Tbody>
         <Detail label="State">{sandboxSummary(sandbox).label}</Detail>
         <Detail label="Created">{createdAt ? <TimeAgo value={timestampDate(createdAt)} /> : "—"}</Detail>
-        {sandbox.configuration?.preset && <Detail label="Preset">{sandbox.configuration?.preset}</Detail>}
+        {sandbox.configuration?.preset && <Detail label="Launch preset">{sandbox.configuration?.preset}</Detail>}
         <Detail
           label="ServiceAccount"
           help="The subject its policy bindings name. Two sandboxes sharing an account share what they may do."

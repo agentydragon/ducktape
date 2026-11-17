@@ -4037,6 +4037,11 @@ const visualHarness = {
       }),
     ];
   },
+  setSandboxPreset(sandboxName: string, preset: string): void {
+    const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
+    if (!sandbox?.configuration) throw new Error(`Sandbox ${sandboxName} has no configuration fixture`);
+    sandbox.configuration.preset = preset;
+  },
   bindSandboxIdentity(sandboxName: string, identityName: string): void {
     const sandbox = SANDBOXES.find((candidate) => candidate.target?.name === sandboxName);
     if (!sandbox) throw new Error(`Missing Sandbox fixture ${sandboxName}`);

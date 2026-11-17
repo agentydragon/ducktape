@@ -409,8 +409,10 @@ async def test_sandbox_status(view: VisualPage, app: AgentplaneFixture) -> None:
 
 @DESKTOP_AND_MOBILE
 async def test_sandbox_status_details(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.set_sandbox_preset("ready-sandbox", "test-coder")
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     page = view.page
+    await expect(page.get_by_role("rowheader", name="Launch preset")).to_be_visible()
     await expect(page.get_by_role("rowheader", name="Wake on message")).to_be_visible()
     await expect(page.get_by_text("Loading Runtime diagnostics…")).to_have_count(0)
     await view.capture(target=page.locator("#app"))

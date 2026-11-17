@@ -1185,6 +1185,14 @@ async def test_policy_set_selector_hides_picked_option(view: VisualPage, app: Ag
 @DESKTOP_AND_MOBILE
 async def test_sandbox_form_test_coder_preset_layout(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=test-coder")
+    await expect(view.page.get_by_role("combobox", name="Launch preset")).to_be_visible()
+    await expect(view.page.get_by_role("combobox", name="Runtime template")).to_be_visible()
+    await expect(
+        view.page.get_by_text(
+            "Fills the runtime template, policy sets, inbox tags, and bootstrap below; session defaults stay in app configuration"
+        )
+    ).to_be_visible()
+    await expect(view.page.get_by_text("The Pod or VM shape this Sandbox runs on")).to_be_visible()
     await view.page.wait_for_selector('.mantine-Pill-root:has-text("test-pr-failed-jobs")', state="attached")
     await expect(view.page.locator(".mantine-Pill-root")).to_have_count(14)
     headers = view.page.locator("thead tr th")
