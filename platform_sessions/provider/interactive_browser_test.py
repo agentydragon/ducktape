@@ -165,6 +165,32 @@ async def test_cancelled_start_waits_for_worker_before_cleanup(tmp_path: Path, m
     assert events == ["startup finished", "cleanup"]
 
 
+@pytest.mark.asyncio
+async def test_worker_exit_during_startup_cannot_make_runtime_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser = InteractiveBrowserRuntime(
+        profile_dir=tmp_path / "profile", initial_url="https://example.test/login", owner_token=_TOKEN
+    )
+    events: list[str] = []
+
+    def start_blocking() -> None:
+        browser._thread = threading.Thread(target=lambda: None)
+        browser._thread.start()
+        browser._thread.join()
+
+    def stop_blocking() -> None:
+        events.append("cleanup")
+
+    monkeypatch.setattr(browser, "_start_blocking", start_blocking)
+    monkeypatch.setattr(browser, "_stop_blocking", stop_blocking)
+    with pytest.raises(RuntimeError, match="worker stopped during startup"):
+        await browser.start()
+    assert events == ["cleanup"]
+    with pytest.raises(RuntimeError, match="not running"):
+        browser.run_sync(lambda _: None)
+
+
 def test_dead_browser_worker_cannot_admit_new_operation(tmp_path: Path) -> None:
     browser = runtime(tmp_path)
     browser._thread = threading.Thread(target=lambda: None)

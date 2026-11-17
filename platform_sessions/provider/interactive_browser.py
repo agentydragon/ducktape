@@ -125,6 +125,10 @@ class InteractiveBrowserRuntime:
             startup = asyncio.create_task(asyncio.to_thread(self._start_blocking))
             try:
                 await asyncio.shield(startup)
+                with self._state_lock:
+                    if self._state == "worker_failed" or self._thread is None or not self._thread.is_alive():
+                        raise RuntimeError("browser worker stopped during startup")
+                    self._state = "running"
             except BaseException:
                 # A cancelled to_thread call keeps running in its worker. Wait for it to
                 # finish before cleanup, so startup cannot recreate a process afterward.
@@ -135,8 +139,6 @@ class InteractiveBrowserRuntime:
                 with self._state_lock:
                     self._state = "stopped"
                 raise
-            with self._state_lock:
-                self._state = "running"
 
     def run_sync(self, callback: Callable[[BrowserContext], _T], *, allow_during_viewer: bool = False) -> _T:
         """Run a short provider callback on Playwright's owner thread.
@@ -388,7 +390,7 @@ class InteractiveBrowserRuntime:
                 started.set()
             finally:
                 with self._state_lock:
-                    if self._state == "running":
+                    if self._state in ("starting", "running"):
                         self._state = "worker_failed"
                 while True:
                     try:
