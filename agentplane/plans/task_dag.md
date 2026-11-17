@@ -2489,6 +2489,14 @@ flowchart LR
     SESSION_AND_INBOX_LIFETIME[Decision: Session and inbox lifetimes after environment deletion]
     DELIVERY_DESTINATION_CONTRACT[In progress: Session-ID command addressing]
     SESSION_HISTORY_PRESENTATION[Blocked: Session history and environment presentation]
+    HARNESS_HOST_EXTRACTION[Planned: HarnessHost service in the Runtime]
+    CENTRAL_SAMPLER_HARNESS_HOST[Planned: central sampler serves HarnessHost]
+    DISPATCHER_RUNNING_STATUS[Blocked: Dispatcher records running status]
+    HARNESS_HOST_EXTRACTION -- HarnessHost proto --> CENTRAL_SAMPLER_HARNESS_HOST
+    SESSION_LIVE_STATUS_OWNERSHIP_DESIGN --> DISPATCHER_RUNNING_STATUS
+    DISPATCHER_SESSION_WATCH --> DISPATCHER_RUNNING_STATUS
+    HARNESS_HOST_EXTRACTION -- WatchSessions, hosted Sessions --> DISPATCHER_RUNNING_STATUS
+    CENTRAL_SAMPLER_HARNESS_HOST -- WatchSessions, central Sessions --> DISPATCHER_RUNNING_STATUS
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_ACTING_DESIGN[Decision: central Session acting, section 14] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_CREATION_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
@@ -2581,6 +2589,13 @@ as the conservative choice; their long-term home is open. The build is
 open here: the shape of the Dispatcher's current-status record. A watch needs stored state, so the
 Dispatcher persists it rather than routing reads to the Runtime; the open part is how Runtime
 observations reach it with no call from Environments to Sessions, and their fencing and staleness.
+That question is with the operator (card, 2026-11-17 00:07 UTC): the Dispatcher watches each running
+Sandbox through the Environments proxy (recommended), the Environments leader relays one combined
+stream, or status is derived from History. With HarnessHost lined up
+([`HARNESS_HOST_EXTRACTION`](#harness_host_extraction--pull-harnesshost-out-of-the-environment-runtime)),
+the recommended path's per-Sandbox stream is HarnessHost's `WatchSessions`, not per-Session facts
+added to `WatchState`; the build is
+[`DISPATCHER_RUNNING_STATUS`](#dispatcher_running_status--the-dispatcher-records-running-status).
 Where these facts live on devel today:
 
 - **Existence:** the Dispatcher holds the Session records (`CreateSession`, `GetSession`,
@@ -2628,7 +2643,87 @@ attachments without requiring a Sandbox on every Session.
 4. **Cleanup:** the App's History-derived list membership goes once the step 3 App image rolls.
 
 Running status moves onto the watch only after the current-status record in
-`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` is reviewed.
+`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` is reviewed; that build is `DISPATCHER_RUNNING_STATUS`.
+
+### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
+
+**Planned, not released; operator, 2026-11-17 UTC.** 00:31: "at least we should probably have
+something like "HarnessHost" service - that's already a separate seam in runtime already anyway,
+right? that would handle session status and commands." 03:18: "if WatchStatus watches all sessions,
+it should be WatchSessions, no?" 03:19: "line up the pull-out of HarnessHost and unifying of central
+harness on it on the plan".
+
+`EnvironmentRuntime` mixes two callers' surfaces: Sandbox lifecycle for the Sandbox Controller
+(`WatchState`, `Quiesce`, `PrepareSuspend`, `ResumeAdmission`) and Session work for Sessions and
+Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
+`InterruptTurn`, `ListSessions`, and the per-Session half of `GetStatus`). The second half becomes a
+`HarnessHost` service in package `agentplane.harness_host`:
+
+- `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
+  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. `ListSessions` and the
+  stream carry per-Session harness, setup and active-turn state and the harness process
+  serving the Session.
+- `EnvironmentRuntime` keeps the lifecycle RPCs and a `GetStatus` reduced to lifecycle and boot ID.
+- Inside the Runtime, both services stay on `coordinator.Runtime`: HarnessHost commands still pass
+  the lifecycle admission fence (`Runtime.admit`), so `Quiesce` and `PrepareSuspend` still close
+  them and drain admissions in flight.
+- Environments' Runtime proxy forwards HarnessHost per Sandbox with the same routing and
+  `x-agentplane-incarnation-uid` fencing. Admission: commands, `CreateSession` and `WatchSessions` for the Sessions SVID;
+  `ListSessions` for Sessions and Notifications.
+
+Ordered PRs:
+
+1. **Proto and Runtime:** the HarnessHost proto; the Runtime serves it beside the old RPCs.
+2. **Proxy:** Environments forwards HarnessHost, then the cdk8s admission settings once that image is
+   pinned.
+3. **Callers:** the Dispatcher's hosted delivery and Notifications move to HarnessHost.
+   Notifications drop the call instead if `RUNTIME_PROXY_CALLER_AUDIT`'s move of subscription
+   validation to Sessions lands first. **Gate:** every live Sandbox runs a step 1 Runtime; a
+   Sandbox's Runtime changes only when it restarts, so a Sandbox still on an older Runtime needs a
+   restart, and that is a decision card for the operator.
+4. **Removal:** drop the moved RPCs from `EnvironmentRuntime` after the step 3 images are pinned.
+
+**Exit:** the Runtime's lifecycle-fence tests cover HarnessHost commands; the system tests that
+create and drive hosted Sessions pass through the proxy; `EnvironmentRuntime` keeps only
+lifecycle. Where the proto and servicer files live is the Go plan's HarnessHost track.
+
+### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
+
+**Planned, not released; operator, 2026-11-17 03:19 UTC (above).** Earlier, 00:24: "maybeit might
+make sense for central sampler to implement a service that's the same as we use for hosted
+harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's four command messages;
+the differences are its `CreateSessionRequest` and its own RPCs. Starts once
+`HARNESS_HOST_EXTRACTION` step 1 lands the proto.
+
+1. **One CreateSession:** the sampler's `executor` and `expected_incarnation_uid` leave
+   `CreateSessionRequest`. The executor's namespace joins `central_sampler_v1` placement beside
+   `executor_environment`; the executor incarnation fence stays, as placement or as a precondition
+   both hosts check, decided in this PR.
+2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`.
+3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
+   HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
+   Sandbox.
+4. **Admin service:** `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`,
+   `FollowEvents` and `Compact` have no production caller; system tests call `GetCommand` and
+   `FollowEvents`. They move to a sampler admin service, those nothing calls are deleted, and
+   `Sampler` is removed.
+
+**Exit:** the central sampler system tests pass with the Dispatcher on the HarnessHost client, and
+the sampler serves no `Sampler` RPC.
+
+### `DISPATCHER_RUNNING_STATUS` — the Dispatcher records running status
+
+**Blocked.** The Dispatcher stores each Session's running state, fenced by host incarnation and
+marked stale or unknown when its stream is down, and publishes it on its Session `WatchSessions`;
+the App's running marks and busy-Thread archive guard read it. Hosted Sessions come from one
+HarnessHost `WatchSessions` stream per running Sandbox through the Environments proxy, central
+Sessions from the sampler's; hosted Sessions can land first. Waits on the card in
+`SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` (record shape, fencing, staleness), on
+`DISPATCHER_SESSION_WATCH`, and on HarnessHost's `WatchSessions`. If the card picks status from
+History, this node needs no HarnessHost edge.
+
+**Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
+Sandbox each show the reviewed current, stale and unknown states in the App.
 
 ### `SESSION_DATA_OWNERSHIP_DESIGN` — review Session data, services and databases
 
@@ -3877,12 +3972,12 @@ evidence and line-level steps for every track below; its stages are ordered by c
 (pre-cutover leftovers) is done and left the plan; stage 2 (layout fixes) finished with the
 Gateway-era Go names (#16846, #16847). The other stages keep their numbers.
 
-| Plan stage                      | DAG node                                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`                     |
-| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                    |
-| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK` |
-| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                 |
+| Plan stage                      | DAG node                                                                                                                                                          |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3. Agreed moves                 | `orchestration_v1` retirement is `SESSION_TOOL_SURFACE_CONSOLIDATION`; HarnessHost is `HARNESS_HOST_EXTRACTION`, then `CENTRAL_SAMPLER_HARNESS_HOST` (section 13) |
+| 4. Local extractions            | `GO_LOCAL_EXTRACTIONS`                                                                                                                                            |
+| 5. Waiting on service decisions | `NOTIFICATION_SERVICE_SPLIT`, `JOURNAL_REPRESENTATION_DESIGN`, `SERVICE_SETTINGS_RETHINK`                                                                         |
+| 6. Deferred                     | `PROTO_PACKAGE_ALIGNMENT`                                                                                                                                         |
 
 EnvironmentService serves from every Environments replica
 ([Environments specification](../environments/SPEC.md)), with explicit resume internal and automatic
