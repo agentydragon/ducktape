@@ -1,11 +1,23 @@
-"""Render the common system-test suite fixtures."""
+"""Render all ten system-test suite fixtures in one Bazel action."""
 
 import argparse
 from pathlib import Path
 
 from agentplane.system_tests.deployment import fixture_chart, suite_deployment
 from agentplane.system_tests.deployment.render_fixture import write_fixture
-from agentplane.system_tests.deployment.rendered_fixture import MODEL_PLACEHOLDERS, Backend, SandboxRuntime
+from agentplane.system_tests.deployment.rendered_fixture import (
+    MCP_PLACEHOLDERS,
+    MODEL_PLACEHOLDERS,
+    Backend,
+    SandboxRuntime,
+)
+from agentplane.system_tests.suites import pod_native_deployment
+from agentplane.system_tests.suites.mcp import (
+    history_deployment,
+    mcp_deployment,
+    mcp_services_deployment,
+    recovery_deployment,
+)
 
 
 def render(path: Path, *, runtime: SandboxRuntime, backend: Backend, include_mcp_edge: bool) -> None:
@@ -23,36 +35,26 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("output_dir", type=Path)
     args = parser.parse_args()
-    render(
-        args.output_dir / "pod_manifests.json",
-        runtime=SandboxRuntime.POD,
-        backend=Backend.LOCAL_MODEL,
-        include_mcp_edge=False,
-    )
-    render(
-        args.output_dir / "probe_manifests.json",
-        runtime=SandboxRuntime.POD,
-        backend=Backend.LOCAL_MODEL,
-        include_mcp_edge=True,
-    )
-    render(
-        args.output_dir / "vm_manifests.json",
-        runtime=SandboxRuntime.KUBEVIRT,
-        backend=Backend.LOCAL_MODEL,
-        include_mcp_edge=False,
-    )
-    render(
-        args.output_dir / "firecracker_manifests.json",
-        runtime=SandboxRuntime.FIRECRACKER,
-        backend=Backend.LOCAL_MODEL,
-        include_mcp_edge=False,
-    )
-    render(
-        args.output_dir / "real_model_manifests.json",
-        runtime=SandboxRuntime.POD,
-        backend=Backend.PUBLIC_LITELLM,
-        include_mcp_edge=True,
-    )
+    recipes = [
+        ("pod_manifests.json", SandboxRuntime.POD, Backend.LOCAL_MODEL, False),
+        ("probe_manifests.json", SandboxRuntime.POD, Backend.LOCAL_MODEL, True),
+        ("vm_manifests.json", SandboxRuntime.KUBEVIRT, Backend.LOCAL_MODEL, False),
+        ("firecracker_manifests.json", SandboxRuntime.FIRECRACKER, Backend.LOCAL_MODEL, False),
+        ("real_model_manifests.json", SandboxRuntime.POD, Backend.PUBLIC_LITELLM, True),
+    ]
+    for filename, runtime, backend, include_mcp_edge in recipes:
+        render(args.output_dir / filename, runtime=runtime, backend=backend, include_mcp_edge=include_mcp_edge)
+
+    shared_model = MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL]
+    renderers = [
+        ("pod_native_manifests.json", pod_native_deployment.render, None),
+        ("recovery_manifests.json", recovery_deployment.render, None),
+        ("history_manifests.json", history_deployment.render, None),
+        ("mcp_manifests.json", mcp_deployment.render, MCP_PLACEHOLDERS),
+        ("mcp_services_manifests.json", mcp_services_deployment.render, MCP_PLACEHOLDERS),
+    ]
+    for filename, recipe, mcp in renderers:
+        write_fixture(args.output_dir / filename, recipe(), models=shared_model, mcp=mcp)
 
 
 if __name__ == "__main__":

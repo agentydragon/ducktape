@@ -1,4 +1,3 @@
-load("//agentplane/system_tests/deployment:render.bzl", "render_fixture", "render_suite_fixtures")
 load(
     "//agentplane/system_tests/k3s:defs.bzl",
     "APP_IMAGES",
@@ -109,14 +108,14 @@ py_test(
         K3S_BINARY,
         ":probe_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:probe_manifests",
+        "//agentplane/system_tests/suites:probe_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:probe_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:probe_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :probe_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -147,14 +146,14 @@ py_test(
         K3S_BINARY,
         ":probe_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:probe_manifests",
+        "//agentplane/system_tests/suites:probe_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:probe_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:probe_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :probe_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -186,14 +185,14 @@ py_test(
         K3S_BINARY,
         ":firecracker_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:firecracker_manifests",
+        "//agentplane/system_tests/suites:firecracker_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:firecracker_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:firecracker_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :firecracker_image_manifest)",
         "KVM_DEVICE_PLUGIN_IMAGE": GENERIC_DEVICE_PLUGIN_IMAGE["@generic_device_plugin_linux_amd64"],
         "AGENTPLANE_K3S_REQUIRE_KVM": "1",
@@ -250,14 +249,14 @@ py_test(
         K3S_BINARY,
         ":pod_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -291,14 +290,14 @@ py_test(
         K3S_BINARY,
         ":pod_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -343,14 +342,14 @@ py_test(
         K3S_BINARY,
         ":pod_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -374,14 +373,14 @@ py_test(
         K3S_BINARY,
         ":pod_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -402,14 +401,14 @@ py_test(
         K3S_BINARY,
         ":pod_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -438,7 +437,7 @@ py_test(
         K3S_BINARY,
         ":vm_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests",
+        "//agentplane/system_tests/suites:vm_manifests.json",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -447,7 +446,7 @@ py_test(
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
@@ -495,7 +494,7 @@ py_test(
         K3S_BINARY,
         ":vm_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests",
+        "//agentplane/system_tests/suites:vm_manifests.json",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -504,7 +503,7 @@ py_test(
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
@@ -545,7 +544,7 @@ py_test(
         K3S_BINARY,
         ":vm_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests",
+        "//agentplane/system_tests/suites:vm_manifests.json",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -554,7 +553,7 @@ py_test(
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
@@ -598,7 +597,7 @@ py_test(
         K3S_BINARY,
         ":vm_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests",
+        "//agentplane/system_tests/suites:vm_manifests.json",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -607,7 +606,7 @@ py_test(
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
@@ -649,7 +648,7 @@ py_test(
         K3S_BINARY,
         ":vm_profile_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:vm_manifests",
+        "//agentplane/system_tests/suites:vm_manifests.json",
         "@cert_manager_v1_21_2_release//file",
         "@kubevirt_operator_bundle//file",
         "@kyverno_install//file",
@@ -658,7 +657,7 @@ py_test(
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:vm_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :vm_profile_image_manifest)",
         "KUBEVIRT_OPERATOR_RLOCATION": "$(rlocationpath @kubevirt_operator_bundle//file)",
         "KYVERNO_INSTALL_RLOCATION": "$(rlocationpath @kyverno_install//file)",
@@ -700,14 +699,14 @@ py_test(
         K3S_BINARY,
         ":real_model_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:real_model_manifests",
+        "//agentplane/system_tests/suites:real_model_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:real_model_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:real_model_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :real_model_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -765,14 +764,14 @@ py_test(
         K3S_BINARY,
         ":deletion_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_manifests",
+        "//agentplane/system_tests/suites:pod_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :deletion_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -798,41 +797,25 @@ py_binary(
     deps = [":suite_recipe"],
 )
 
-render_suite_fixtures(
-    name = "common_suite_manifests",
+genrule(
+    name = "suite_manifests",
     outs = [
         "firecracker_manifests.json",
+        "history_manifests.json",
+        "mcp_manifests.json",
+        "mcp_services_manifests.json",
+        "pod_native_manifests.json",
         "pod_manifests.json",
         "probe_manifests.json",
+        "recovery_manifests.json",
         "real_model_manifests.json",
         "vm_manifests.json",
     ],
-    renderer = ":suite_recipe_bin",
-)
-
-filegroup(
-    name = "pod_manifests",
-    srcs = [":pod_manifests.json"],
-)
-
-filegroup(
-    name = "probe_manifests",
-    srcs = [":probe_manifests.json"],
-)
-
-filegroup(
-    name = "vm_manifests",
-    srcs = [":vm_manifests.json"],
-)
-
-filegroup(
-    name = "firecracker_manifests",
-    srcs = [":firecracker_manifests.json"],
-)
-
-filegroup(
-    name = "real_model_manifests",
-    srcs = [":real_model_manifests.json"],
+    cmd = "JSII_NODE=\"$(execpath @nodejs_linux_amd64//:bin/node)\" \"$(execpath :suite_recipe_bin)\" \"$(RULEDIR)\"",
+    tools = [
+        ":suite_recipe_bin",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
 )
 
 py_library(
@@ -890,14 +873,14 @@ py_test(
         K3S_BINARY,
         ":pod_native_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:pod_native_manifests",
+        "//agentplane/system_tests/suites:pod_native_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:pod_native_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :pod_native_image_manifest)",
     },
     exec_properties = K3S_EXEC_PROPERTIES | K3S_PERSISTENCE_PROPERTIES | {
@@ -924,12 +907,6 @@ py_test(
     ],
 )
 
-py_binary(
-    name = "pod_native_deployment_bin",
-    main_module = "agentplane.system_tests.suites.pod_native_deployment",
-    deps = [":pod_native_deployment"],
-)
-
 py_library(
     name = "pod_native_deployment",
     srcs = ["pod_native_deployment.py"],
@@ -937,14 +914,8 @@ py_library(
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:fixture_database",
         "//agentplane/system_tests/deployment:fixture_finalization",
-        "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
     ],
-)
-
-render_fixture(
-    name = "pod_native_manifests",
-    renderer = ":pod_native_deployment_bin",
 )
 
 # Disposable NixOS worker qualification: the source and inputs match the existing test.
@@ -957,14 +928,14 @@ py_test(
         K3S_BINARY,
         ":firecracker_image_manifest",
         "//agentplane/system_tests/k3s/pki:trust_manager_install_yaml",
-        "//agentplane/system_tests/suites:firecracker_manifests",
+        "//agentplane/system_tests/suites:firecracker_manifests.json",
         "@cert_manager_v1_21_2_release//file",
     ],
     env = {
         "K3S_BINARY_RLOCATION": K3S_BINARY_RLOCATION,
         "CERT_MANAGER_INSTALL_RLOCATION": "$(rlocationpath @cert_manager_v1_21_2_release//file)",
         "TRUST_MANAGER_INSTALL_RLOCATION": "$(rlocationpath //agentplane/system_tests/k3s/pki:trust_manager_install_yaml)",
-        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:firecracker_manifests)",
+        "K3S_FIXTURE_RLOCATION": "$(rlocationpath //agentplane/system_tests/suites:firecracker_manifests.json)",
         "K3S_IMAGE_MANIFEST_RLOCATION": "$(rlocationpath :firecracker_image_manifest)",
         "KVM_DEVICE_PLUGIN_IMAGE": GENERIC_DEVICE_PLUGIN_IMAGE["@generic_device_plugin_linux_amd64"],
         "AGENTPLANE_K3S_REQUIRE_KVM": "1",
@@ -1001,9 +972,14 @@ py_library(
     name = "suite_recipe",
     srcs = ["suite_recipe.py"],
     deps = [
+        ":pod_native_deployment",
         "//agentplane/system_tests/deployment:fixture_chart",
         "//agentplane/system_tests/deployment:render_fixture",
         "//agentplane/system_tests/deployment:rendered_fixture",
         "//agentplane/system_tests/deployment:suite_deployment",
+        "//agentplane/system_tests/suites/mcp:history_deployment",
+        "//agentplane/system_tests/suites/mcp:mcp_deployment",
+        "//agentplane/system_tests/suites/mcp:mcp_services_deployment",
+        "//agentplane/system_tests/suites/mcp:recovery_deployment",
     ],
 )

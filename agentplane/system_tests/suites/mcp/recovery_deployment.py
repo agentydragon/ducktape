@@ -4,7 +4,6 @@ from dataclasses import asdict, replace
 
 from agentplane.system_tests.deployment import fixture_chart, fixture_database
 from agentplane.system_tests.deployment.fixture_finalization import finalize_fixture
-from agentplane.system_tests.deployment.render_fixture import write_output
 from agentplane.system_tests.deployment.rendered_fixture import (
     MODEL_PLACEHOLDERS,
     PLACEHOLDERS,
@@ -49,7 +48,3 @@ def render() -> RenderedFixture:
     fixture_chart.add_model_credentials(chart, env, models=models)
     fixture_chart.add_policy_controller(chart, env)
     return finalize_fixture(chart, env, models, central_sampler=central_sampler)
-
-
-if __name__ == "__main__":
-    write_output(render(), models=MODEL_PLACEHOLDERS[Backend.LOCAL_MODEL])
