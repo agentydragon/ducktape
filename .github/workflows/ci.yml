@@ -68,6 +68,11 @@ jobs:
       # What bazel-ci already built. Empty if it was skipped or died before Bazel
       # ran, which release.yml turns into "publish everything" rather than "nothing".
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
+      # Forward identity whenever bazel-ci produced it. Planners validate the exact
+      # test invocation: only a successful sweep supplies reusable passes, while a
+      # finished failed sweep can suppress reruns for recorded repeatable failures.
+      bazel_test_invocation_id: ${{ needs.bazel-ci.outputs.test_invocation_id }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.outputs.test_source_commit }}
     secrets: inherit
 
   # push-images retains a disabled props-agents job. Whether to revive Props
@@ -78,4 +83,6 @@ jobs:
     uses: ./.github/workflows/push-images.yml
     with:
       bazel_invocation_ids: ${{ needs.bazel-ci.outputs.bazel_invocation_ids }}
+      bazel_test_invocation_id: ${{ needs.bazel-ci.outputs.test_invocation_id }}
+      bazel_test_source_commit: ${{ needs.bazel-ci.outputs.test_source_commit }}
     secrets: inherit

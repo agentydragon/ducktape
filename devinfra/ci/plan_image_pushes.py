@@ -26,6 +26,10 @@ an image costs one job; wrongly excluding one silently skips a deployment.
 
 Runs as bare `python3 -m` on a GitHub Actions runner, so it stays on the standard
 library. `crane` comes from the workflow's setup-crane step.
+
+Publication jobs may reuse the test verdict for a literal workspace test label
+only when the same successful push-CI invocation proves its source, configuration
+and one-attempt test result. Suites and patterns keep the publication test gate.
 """
 
 from __future__ import annotations
@@ -167,17 +171,26 @@ def plan(images: list[Image], decider: Callable[[Image], Decision], workers: int
         return list(pool.map(decider, images))
 
 
-def matrix_include(decisions: list[Decision]) -> list[dict[str, str]]:
-    return [
-        {
+def matrix_include(
+    decisions: list[Decision], reusable_tests: set[str] | None = None, blocked_tests: set[str] | None = None
+) -> list[dict[str, str]]:
+    """Matrix rows for pushes; an image whose test gate push CI already failed never starts a job."""
+    reusable_tests = reusable_tests or set()
+    blocked_tests = blocked_tests or set()
+    rows = []
+    for decision in decisions:
+        if not decision.needs_push or decision.image.test in blocked_tests:
+            continue
+        row = {
             "image_name": decision.image.name,
             "image": decision.image.target,
             "test_target": decision.image.test or "",
             "registry": decision.image.registry,
         }
-        for decision in decisions
-        if decision.needs_push
-    ]
+        if decision.image.test in reusable_tests:
+            row["reuse_test_verdict"] = "true"
+        rows.append(row)
+    return rows
 
 
 def _write_github_output(**values: str) -> None:
@@ -198,21 +211,46 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--invocations", default="", help="comma-separated bazel-ci invocation ids; empty pushes everything (fail open)"
     )
+    parser.add_argument("--test-invocation-id", default="", help="exact bazel-ci test invocation id")
+    parser.add_argument("--test-source-commit", default="", help="source SHA verified by bazel-ci checkout")
+    parser.add_argument("--rbe-container-image", default="", help="publication test RBE image override, if any")
     parser.add_argument("--crane", type=Path, default=None, help="crane binary (default: the one on PATH)")
     parser.add_argument("--workers", type=int, default=8, help="concurrent registry queries")
 
     args = parser.parse_args(argv)
     images = load_images(args.spec)
 
-    invocation = publication_evidence.load([value for value in args.invocations.split(",") if value])
-    digests = local_digests(images, invocation, fetch_blob)
+    evidence = publication_evidence.load(
+        [value for value in args.invocations.split(",") if value],
+        test_invocation_id=args.test_invocation_id,
+        source_commit=args.test_source_commit,
+        rbe_container_image=args.rbe_container_image,
+    )
+    digests = local_digests(images, evidence.outputs, fetch_blob)
 
     crane = Crane(args.crane)
     decisions = plan(images, lambda image: decide(image, digests, crane), args.workers)
-    include = matrix_include(decisions)
+    reusable_tests = set()
+    blocked_tests = set()
+    for decision in decisions:
+        selector = decision.image.test
+        if not decision.needs_push or not selector:
+            continue
+        blocked, why = evidence.tests.already_failed(selector)
+        if blocked:
+            blocked_tests.add(selector)
+            print(f"::warning::{decision.image.name}: not pushed, {why}", file=sys.stderr)
+            continue
+        covered, reason = evidence.tests.is_covered(selector)
+        if covered:
+            reusable_tests.add(selector)
+            print(f"::notice::{decision.image.name}: reusing the verified bazel-ci test verdict", file=sys.stderr)
+        else:
+            print(f"::notice::{decision.image.name}: retaining its test gate ({reason})", file=sys.stderr)
+    include = matrix_include(decisions, reusable_tests, blocked_tests)
 
     for d in sorted(decisions, key=lambda d: d.image.name):
-        marker = "PUSH" if d.needs_push else "skip"
+        marker = "PUSH" if d.needs_push and d.image.test not in blocked_tests else "skip"
         print(f"{marker:>4}  {d.image.name:<32} {d.reason}", file=sys.stderr)
     print(f"\n{len(include)} of {len(decisions)} images need a push.", file=sys.stderr)
 

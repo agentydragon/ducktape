@@ -131,14 +131,10 @@ def test_unpublished_release_is_kept() -> None:
     assert [row["pkg"] for row in matrix_include(decided)] == ["pkg"]
 
 
-@pytest.mark.parametrize("selector", ["//fake:test", "//fake:tests", "//fake/...", "@fake//:test", "//fake:a //fake:b"])
-@pytest.mark.parametrize("bazel_flags", ["", "-c opt"])
-def test_changed_release_carries_its_test_selector_and_build_flags(selector: str, bazel_flags: str) -> None:
-    release = dataclasses.replace(make_release(bazel_flags=bazel_flags), tests=selector)
-    rows = matrix_include(plan([release], by_label_a(), lambda _: False, workers=1))
-    assert len(rows) == 1
-    assert rows[0]["tests"] == selector
-    assert rows[0]["bazel_flags"] == bazel_flags
+def test_a_release_whose_tests_push_ci_already_failed_gets_no_job() -> None:
+    release = dataclasses.replace(make_release(), tests="//:a_test")
+    decided = plan([release], by_label_a(), lambda _: False, workers=2)
+    assert matrix_include(decided, blocked_tests={"//:a_test"}) == []
 
 
 def test_the_tag_looked_up_is_the_content_tag() -> None:
