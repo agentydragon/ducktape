@@ -120,10 +120,10 @@
               ><${Title} order=${1} my="sm"
                 >Share setup carefully; split benchmarks from correctness<//
               ><${Text} size="lg"
-                >The memory benchmark has moved out of ordinary CI, with a small
-                behavioral witness retained. Debundle test granularity, cluster
-                synthesis and Agentplane fixture lifetimes remain opportunities;
-                end-to-end CI savings have not been measured.<//
+                >The memory benchmark split and cached cluster synthesis have
+                landed. The sampled Debundle grouping and Agentplane fixture
+                moves did not establish worthwhile gains; end-to-end CI savings
+                remain unmeasured.<//
               ><${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /> · Source
                 <${Code}>${e.source_devel_commit}<//><//
@@ -132,11 +132,11 @@
             <${Alert}
               title="Decision: keep correctness coverage while testing the alternatives"
               color="blue"
-              >The Debundle memory benchmark split has landed. Next, compare
-              shared Debundle test executables and a reusable cdk8s synthesis
-              artifact on identical inputs. Do not blanket-batch K3s suites or
-              assume a warm runner contains a live, clean fixture. The large
-              memory guard now runs explicitly; no schedule was added.<//
+              >The Debundle memory benchmark split and cluster synthesis cache
+              have landed. Keep evaluating fixture reuse with matched inputs; do
+              not blanket-batch K3s suites or assume a warm runner contains a
+              live, clean fixture. The large memory guard now runs explicitly;
+              no schedule was added.<//
             >
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Paper} withBorder p="md"
@@ -311,46 +311,40 @@
               >
             </section>
             <section>
-              <${Title} order=${2}
-                >3. Make cluster synthesis a shareable input<//
+              <${Title} order=${2}>3. Cache cluster synthesis — completed<//
               ><${Text} my="sm"
                 >${" "}${source("cluster/cdk8s/test_generate_manifests.py", "The manifest test")}${" "}
-                synthesizes the tree once per module, caches parsed YAML,
-                compares generated files with the committed tree, and publishes
-                a drift patch. Its ${cluster.actions} fresh actions across${" "}
-                ${cluster.runs} sample runs consumed ${cluster.process_s}s in
-                aggregate. The separate
+                at the audit source pin synthesized the tree once per module,
+                cached parsed YAML, compared generated files with the committed
+                tree, and published a drift patch. Its ${cluster.actions} fresh
+                actions across${" "} ${cluster.runs} sample runs consumed ${" "}
+                ${cluster.process_s}s in aggregate. The separate
                 ${" "}${source("cluster/validation/test_cluster_integration.py", "cluster integration suite")}${" "}
                 parses the checked-in tree and builds referenced Kustomizations
                 once per session; it validates different contracts, so merging
                 the test names does not automatically eliminate either setup.<//
               >
               <${Text} my="sm"
-                >Trial a declared, hermetic Bazel synthesis artifact consumed by
-                the snapshot check and, where semantically appropriate,
-                validators. Keep the closed-root and byte-for-byte
-                committed-output comparison, generated patch, runfiles
-                completeness and artifact-copy behavior. Compare the existing
-                full run with the same selected labels and inputs; measure
-                synthesis, build and cache invalidation separately. Using an
-                action output may share generation across consumers, but should
-                not replace checks against committed manifests with checks only
-                against regenerated ones. Current impact on required feedback is
-                unmeasured.<//
+                >The original proposal was to extract a hermetic synthesis
+                artifact while preserving the closed-root and byte-for-byte
+                committed-output comparison, drift patch and runfiles. The
+                integration test must continue to check the committed tree.
+                Impact on required CI feedback remains unmeasured.<//
               >
               <${Text} my="sm"
-                >Follow-up: ${" "}<${Anchor}
+                >Completed: ${" "}<${Anchor}
                   href="https://github.com/agentydragon/ducktape/pull/17131"
                   >PR #17131<//
-                >${" "} proposes a declared synthesis artifact consumed by the
-                snapshot test, while the integration suite continues to validate
-                committed manifests. In a same-source cache probe, a test-only
-                comment change reran the snapshot test and reused the identical
-                synthesis action from remote cache. The snapshot and separate
-                integration targets both passed on the rebased PR head.
-                ${" "}<${Anchor} href="./followup-evidence.json">Run evidence<//
-                >${" "}records both source revisions and the action digest. PR
-                gate savings remain unmeasured.<//
+                >${" "} landed a synthesis artifact using an inline
+                <${Code}>run_binary<//> target. The snapshot test consumes it;
+                the separate integration suite still checks committed manifests.
+                Both targets passed on the final head with uncached synthesis. A
+                test-only comment change reran the snapshot test and reused that
+                synthesis action from remote cache. ${" "}<${Anchor}
+                  href="./followup-evidence.json"
+                  >Run evidence<//
+                >${" "}records the final and earlier revisions and action
+                digests. PR gate savings remain unmeasured.<//
               >
             </section>
             <section>
@@ -471,9 +465,8 @@
               <${Text} size="sm" c="dimmed"
                 >The original audit measurements retain their source pin and
                 observation window; follow-up experiments name their own source
-                revisions. The benchmark split has landed; other setup sharing
-                and dependency changes remain proposals, with no end-to-end CI
-                improvement measured here.<//
+                revisions. The benchmark split and synthesis artifact have
+                landed; no end-to-end CI improvement is measured here.<//
               >
             </footer>
           <//><//
