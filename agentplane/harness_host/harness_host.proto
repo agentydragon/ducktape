@@ -27,10 +27,8 @@ message CreateSessionRequest {
   string session_id = 1;
   agentplane.proto.SessionSpec spec = 2;
   optional string setup_script = 3;  // selected only at creation
-  reserved 4;
-  reserved "execution_principal";
   // The Identity the Dispatcher recorded from the Sandbox's `spec.identity` at creation, absent when
-  // it named none. The Host retains it with the Session; legacy records are not reassigned.
+  // it named none. The Host retains it with the Session.
   agentplane.proto.Identity execution_identity = 5;
 }
 
