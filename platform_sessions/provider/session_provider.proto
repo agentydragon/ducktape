@@ -3,6 +3,7 @@ syntax = "proto3";
 package platform_sessions.provider;
 
 import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
 import "google/protobuf/timestamp.proto";
 
 // Control-plane operations for a provider process. A process can serve one or more configured
@@ -164,39 +165,25 @@ message GetImportOperationRequest {
 message ImportOperation {
   InstanceRef instance = 1;
   string operation_id = 2;
-  ImportOperationState state = 3;
-  // Present only for completed operations. Unknown includes interrupted operations.
-  ImportSessionResponse result = 4;
-}
-
-enum ImportOperationState {
-  IMPORT_OPERATION_STATE_UNSPECIFIED = 0;
-  IMPORT_OPERATION_STATE_PENDING = 1;
-  IMPORT_OPERATION_STATE_COMPLETED = 2;
-  IMPORT_OPERATION_STATE_UNKNOWN = 3;
+  // Pending and unknown have no result payload. Completed carries exactly one import result.
+  oneof state {
+    google.protobuf.Empty pending = 3;
+    ImportSessionResponse completed = 4;
+    google.protobuf.Empty unknown = 5;
+  }
 }
 
 message ImportSessionResponse {
   InstanceRef instance = 1;
-  // A nonzero outcome is required. Unknown future values must not be treated as success.
-  ImportOutcome outcome = 3;
-  CandidateRejected rejected = 11;
-  UpstreamUnavailable upstream_unavailable = 14;
-  OperationOutcomeUnknown outcome_unknown = 15;
-  ImportFailure failure = 16;
-  reserved 10, 12, 13;
-  reserved "installed", "reauthentication_required", "challenge_required";
-}
-
-enum ImportOutcome {
-  IMPORT_OUTCOME_UNSPECIFIED = 0;
-  IMPORT_OUTCOME_INSTALLED = 1;
-  IMPORT_OUTCOME_REJECTED = 2;
-  IMPORT_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
-  IMPORT_OUTCOME_CHALLENGE_REQUIRED = 4;
-  IMPORT_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
-  IMPORT_OUTCOME_UNKNOWN = 6;
-  IMPORT_OUTCOME_FAILURE = 7;
+  oneof outcome {
+    google.protobuf.Empty installed = 2;
+    CandidateRejected rejected = 3;
+    google.protobuf.Empty reauthentication_required = 4;
+    google.protobuf.Empty challenge_required = 5;
+    UpstreamUnavailable upstream_unavailable = 6;
+    OperationOutcomeUnknown outcome_unknown = 7;
+    ImportFailure failure = 8;
+  }
 }
 
 // A definite import failure. An operation with unresolved credential rotation must instead
@@ -254,48 +241,30 @@ message VerifyCandidateRequest {
 
 message VerifyCandidateResponse {
   InstanceRef instance = 1;
-  reserved 16;
-  reserved "unsupported";
   // This result concerns only the candidate; it does not change installed-session state.
-  VerifyOutcome outcome = 3;
-  CandidateRejected rejected = 11;
-  UpstreamUnavailable upstream_unavailable = 14;
-  OperationOutcomeUnknown outcome_unknown = 15;
-  reserved 10, 12, 13;
-  reserved "verified", "reauthentication_required", "challenge_required";
-}
-
-enum VerifyOutcome {
-  VERIFY_OUTCOME_UNSPECIFIED = 0;
-  VERIFY_OUTCOME_VERIFIED = 1;
-  VERIFY_OUTCOME_REJECTED = 2;
-  VERIFY_OUTCOME_REAUTHENTICATION_REQUIRED = 3;
-  VERIFY_OUTCOME_CHALLENGE_REQUIRED = 4;
-  VERIFY_OUTCOME_UPSTREAM_UNAVAILABLE = 5;
-  VERIFY_OUTCOME_UNKNOWN = 6;
+  oneof outcome {
+    google.protobuf.Empty verified = 2;
+    CandidateRejected rejected = 3;
+    google.protobuf.Empty reauthentication_required = 4;
+    google.protobuf.Empty challenge_required = 5;
+    UpstreamUnavailable upstream_unavailable = 6;
+    OperationOutcomeUnknown outcome_unknown = 7;
+  }
 }
 
 message ProbeResult {
   google.protobuf.Timestamp completed_at = 1;
   ProbeSource source = 2;
   // A transport error is not a completed probe and must never trigger automatic replay.
-  ProbeOutcome outcome = 3;
-  UpstreamUnavailable upstream_unavailable = 13;
-  OperationOutcomeUnknown outcome_unknown = 14;
-  ProbeFailure failure = 16;
-  reserved 10, 11, 12, 15;
-  reserved "verified", "reauthentication_required", "challenge_required", "no_session";
-}
-
-enum ProbeOutcome {
-  PROBE_OUTCOME_UNSPECIFIED = 0;
-  PROBE_OUTCOME_VERIFIED = 1;
-  PROBE_OUTCOME_REAUTHENTICATION_REQUIRED = 2;
-  PROBE_OUTCOME_CHALLENGE_REQUIRED = 3;
-  PROBE_OUTCOME_UPSTREAM_UNAVAILABLE = 4;
-  PROBE_OUTCOME_UNKNOWN = 5;
-  PROBE_OUTCOME_NO_SESSION = 6;
-  PROBE_OUTCOME_FAILURE = 7;
+  oneof outcome {
+    google.protobuf.Empty verified = 3;
+    google.protobuf.Empty reauthentication_required = 4;
+    google.protobuf.Empty challenge_required = 5;
+    UpstreamUnavailable upstream_unavailable = 6;
+    OperationOutcomeUnknown outcome_unknown = 7;
+    google.protobuf.Empty no_session = 8;
+    ProbeFailure failure = 9;
+  }
 }
 
 message ProbeFailure {

@@ -54,6 +54,7 @@ proto_library(
     srcs = ["session_provider.proto"],
     deps = [
         "@protobuf//:duration_proto",
+        "@protobuf//:empty_proto",
         "@protobuf//:timestamp_proto",
     ],
 )
