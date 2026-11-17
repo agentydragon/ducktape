@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	systemd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -137,7 +138,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		t.Cleanup(func() {
 			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cleanupCancel()
-			if err := FenceSystemdUnit(cleanupCtx, conn, ownerUnit, SystemdFence{Ordered: true}); err != nil {
+			if err := systemdops.FenceUnit(cleanupCtx, conn, ownerUnit, systemdops.UnitFence{Ordered: true}); err != nil {
 				t.Errorf("fence synthetic owner: %v", err)
 			}
 		})
@@ -256,7 +257,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		assertHeldInvocationProperties(t, conditioned.properties, owner, markerA)
 		assertHeldInvocationProperties(t, control.properties, owner, markerA)
 		for _, launch := range []heldSystemdLaunch{conditioned, control} {
-			unit, err := ReadSystemdUnit(ctx, conn, launch.name)
+			unit, err := systemdops.Read(ctx, conn, launch.name)
 			if err != nil || unit.LoadState != "not-found" {
 				t.Fatalf("held A unit %s exists before owner restart: unit=%+v err=%v", launch.name, unit, err)
 			}
@@ -280,7 +281,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			t.Fatalf("successor COSI reconciliation did not create owner B marker %s: %v", markerB, err)
 		}
 		for _, launch := range []heldSystemdLaunch{conditioned, control} {
-			unit, err := ReadSystemdUnit(ctx, conn, launch.name)
+			unit, err := systemdops.Read(ctx, conn, launch.name)
 			if err != nil || unit.LoadState != "not-found" {
 				t.Fatalf("successor COSI inventory did not observe held unit %s absent: unit=%+v err=%v", launch.name, unit, err)
 			}
@@ -323,11 +324,11 @@ func TestSystemdKernelFixture(t *testing.T) {
 			case <-time.After(20 * time.Millisecond):
 			}
 		}
-		unitB, err := ReadSystemdUnit(ctx, conn, control.name)
+		unitB, err := systemdops.Read(ctx, conn, control.name)
 		if err != nil || unitB.ActiveState != "active" || unitB.ExecMainPID == 0 {
 			t.Fatalf("stale no-condition unit is not active under owner B: unit=%+v err=%v", unitB, err)
 		}
-		currentOwner, err := ReadSystemdUnit(ctx, conn, ownerUnit)
+		currentOwner, err := systemdops.Read(ctx, conn, ownerUnit)
 		if err != nil || currentOwner.ActiveState != "active" || currentOwner.InvocationID != ownerB.InvocationID {
 			t.Fatalf("native control effect did not run while owner B was active: owner=%+v err=%v", currentOwner, err)
 		}
@@ -459,7 +460,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), nil); err != nil {
 				t.Fatal(err)
 			}
-			defer FenceSystemdUnit(context.Background(), conn, name, SystemdFence{Ordered: true})
+			defer systemdops.FenceUnit(context.Background(), conn, name, systemdops.UnitFence{Ordered: true})
 		}
 		recovered := *launcher
 		reconcileKernelSystemdScope(t, &recovered, stateDir, sandboxUID, runtimeOwner)
@@ -477,7 +478,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		if _, err := conn.StartTransientUnitContext(ctx, parent, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, "agentplane.slice"), nil); err != nil {
 			t.Fatal(err)
 		}
-		defer FenceSystemdUnit(context.Background(), conn, parent, SystemdFence{Ordered: true})
+		defer systemdops.FenceUnit(context.Background(), conn, parent, systemdops.UnitFence{Ordered: true})
 		owned := *launcher
 		owned.lifetimeUnit = parent
 		marker := filepath.Join(dir, "saved")
@@ -554,12 +555,12 @@ func TestSystemdKernelFixture(t *testing.T) {
 		owned := *launcher
 		authoritativePID := make(chan uint32, 1)
 		propertyReads := 0 // Only this process's reaper calls the hook.
-		owned.reapSnapshot = func(readCtx context.Context, bus *systemd.Conn, name string) (SystemdUnitSnapshot, error) {
+		owned.reapSnapshot = func(readCtx context.Context, bus *systemd.Conn, name string) (systemdops.UnitSnapshot, error) {
 			propertyReads++
 			if propertyReads == 1 {
-				return SystemdUnitSnapshot{}, context.DeadlineExceeded
+				return systemdops.UnitSnapshot{}, context.DeadlineExceeded
 			}
-			props, err := ReadSystemdUnit(readCtx, bus, name)
+			props, err := systemdops.Read(readCtx, bus, name)
 			if err == nil {
 				select {
 				case authoritativePID <- props.MainPID:
@@ -721,14 +722,14 @@ func receiveSubmittedProperties(t *testing.T, ctx context.Context, submitted <-c
 	}
 }
 
-func waitSystemdInvocation(t *testing.T, ctx context.Context, conn *systemd.Conn, name, previousInvocation, runtimeDirectory string) SystemdUnitSnapshot {
+func waitSystemdInvocation(t *testing.T, ctx context.Context, conn *systemd.Conn, name, previousInvocation, runtimeDirectory string) systemdops.UnitSnapshot {
 	t.Helper()
 	timer := time.NewTimer(15 * time.Second)
 	defer timer.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		unit, err := ReadSystemdUnit(ctx, conn, name)
+		unit, err := systemdops.Read(ctx, conn, name)
 		if err != nil {
 			t.Fatalf("read synthetic owner %s: %v", name, err)
 		}
@@ -773,17 +774,17 @@ func waitForSystemdPathAbsent(t *testing.T, ctx context.Context, path string) {
 
 func assertSystemdProofEmpty(t *testing.T, ctx context.Context, conn *systemd.Conn, name string) {
 	t.Helper()
-	unit, err := ReadSystemdUnit(ctx, conn, name)
+	unit, err := systemdops.Read(ctx, conn, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !unit.stopped() {
+	if !unit.Stopped() {
 		t.Fatalf("unit %s still %s", name, unit.ActiveState)
 	}
 	if unit.ControlGroup == "" {
 		return
 	}
-	if empty, err := systemdGroupEmpty(unit.ControlGroup); err != nil || !empty {
+	if empty, err := systemdops.GroupEmpty(unit.ControlGroup); err != nil || !empty {
 		t.Fatalf("unit %s kernel domain still populated: empty=%v err=%v", name, empty, err)
 	}
 }

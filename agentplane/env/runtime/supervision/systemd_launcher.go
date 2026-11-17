@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	systemd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
 )
@@ -48,7 +49,7 @@ type SystemdLauncher struct {
 	lifetimeUnit                   string
 	lifetimeMarker                 string
 	startTransient                 func(context.Context, *systemd.Conn, string, []systemd.Property, chan<- string) (int, error)
-	reapSnapshot                   func(context.Context, *systemd.Conn, string) (SystemdUnitSnapshot, error)
+	reapSnapshot                   func(context.Context, *systemd.Conn, string) (systemdops.UnitSnapshot, error)
 }
 
 // ValidateProcessLimits checks values and ensures one process remains within its aggregate budget.
@@ -200,14 +201,14 @@ func (p *SystemdLauncher) reconcileScope(ctx context.Context, owner SystemdOwner
 		return err
 	}
 	for _, unit := range units {
-		service, err := ReadSystemdUnit(ctx, conn, unit.Name)
+		service, err := systemdops.Read(ctx, conn, unit.Name)
 		if err != nil {
 			return err
 		}
 		if service.Slice != p.Slice {
 			continue
 		}
-		if err := FenceSystemdUnit(ctx, conn, unit.Name, SystemdFence{Ordered: true}); err != nil {
+		if err := systemdops.FenceUnit(ctx, conn, unit.Name, systemdops.UnitFence{Ordered: true}); err != nil {
 			return fmt.Errorf("fence prior native unit %s: %w", unit.Name, err)
 		}
 		_ = conn.ResetFailedUnitContext(ctx, unit.Name)

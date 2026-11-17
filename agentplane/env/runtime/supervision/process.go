@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 )
 
 const (
@@ -211,7 +213,7 @@ func (p *Process) ObserveSystemd(sink func(SystemdObservation)) {
 	}
 }
 
-func (p *Process) observeSystemd(unit, invocation, group string, snapshot SystemdUnitSnapshot, err error) {
+func (p *Process) observeSystemd(unit, invocation, group string, snapshot systemdops.UnitSnapshot, err error) {
 	p.updateSystemd(func(observation *SystemdObservation) {
 		observation.Unit = unit
 		observation.ExpectedInvocationID = invocation

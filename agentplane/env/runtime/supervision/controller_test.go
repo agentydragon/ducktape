@@ -10,6 +10,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	"github.com/cosi-project/runtime/pkg/controller/runtime"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
@@ -319,7 +320,7 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			starts.Add(1)
 			observe := func(observation SystemdObservation) { f.host.observeSystemd(id, observation) }
 			observers <- observe
-			observe(SystemdObservation{Revision: 1, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+			observe(SystemdObservation{Revision: 1, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 			return &Instance{
 				Done: done, PID: 123,
 				Stop: func(context.Context) error {
@@ -336,8 +337,8 @@ func TestProcessControllerRetainsSystemdObservationsAcrossFence(t *testing.T) {
 			t.Fatalf("initial observation = %+v", initial.Systemd)
 		}
 		observe := <-observers
-		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
-		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: SystemdUnitSnapshot{InvocationID: "old", ActiveState: "active"}})
+		observe(SystemdObservation{Revision: 3, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "failed"}, Error: "manager disconnected"})
+		observe(SystemdObservation{Revision: 2, Unit: "old.service", Snapshot: systemdops.UnitSnapshot{InvocationID: "old", ActiveState: "active"}})
 		facts, found, err := readResource[observationSpec](f.ctx, f.state, processTestNamespace, id)
 		if err != nil || !found || facts.Systemd.Revision != 3 || facts.Systemd.Snapshot.ActiveState != "failed" {
 			t.Fatalf("process observations lost newest systemd observation: facts=%+v found=%t err=%v", facts, found, err)

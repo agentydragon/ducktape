@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/cosi"
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/meta/spec"
@@ -77,7 +78,7 @@ type SystemdObservation struct {
 	StartError           string
 	ExpectedInvocationID string
 	CapturedControlGroup string
-	Snapshot             SystemdUnitSnapshot
+	Snapshot             systemdops.UnitSnapshot
 	Error                string
 	ExitState            SystemdExitState
 	ExitCode             int

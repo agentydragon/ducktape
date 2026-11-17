@@ -4,16 +4,18 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	systemdops "github.com/agentydragon/ducktape/agentplane/env/runtime/supervision/internal/systemd"
 )
 
 func TestSystemdObservationReplayAndDeduplication(t *testing.T) {
 	p := &Process{}
-	unit := SystemdUnitSnapshot{InvocationID: "invocation", ActiveState: "active"}
+	unit := systemdops.UnitSnapshot{InvocationID: "invocation", ActiveState: "active"}
 	p.observeSystemd("native.service", "invocation", "/test", unit, nil)
 	var got []SystemdObservation
 	p.ObserveSystemd(func(observation SystemdObservation) { got = append(got, observation) })
 	p.observeSystemd("native.service", "invocation", "/test", unit, nil)
-	p.observeSystemd("native.service", "invocation", "/test", SystemdUnitSnapshot{}, errors.New("disconnected"))
+	p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{}, errors.New("disconnected"))
 	if len(got) != 2 || got[0].Revision != 1 || got[0].Snapshot != unit || got[1].Revision != 2 || got[1].Error != "disconnected" || got[1].Snapshot != unit || got[1].ExpectedInvocationID != "invocation" || got[1].CapturedControlGroup != "/test" {
 		t.Fatalf("observations = %+v", got)
 	}
@@ -23,7 +25,7 @@ func TestSystemdUnconfirmedStartSurvivesLaterManagerObservations(t *testing.T) {
 	p := &Process{}
 	p.observeSystemdStart("native.service", SystemdStartSubmitted, nil)
 	p.observeSystemdStart("native.service", SystemdStartUnconfirmed, errors.New("reply lost"))
-	p.observeSystemd("native.service", "", "", SystemdUnitSnapshot{LoadState: "not-found"}, nil)
+	p.observeSystemd("native.service", "", "", systemdops.UnitSnapshot{LoadState: "not-found"}, nil)
 	var got SystemdObservation
 	p.ObserveSystemd(func(observation SystemdObservation) { got = observation })
 	if got.StartState != SystemdStartUnconfirmed || got.StartError != "reply lost" || got.Snapshot.LoadState != "not-found" {
@@ -44,9 +46,9 @@ func TestSystemdExitOutcomeSurvivesUnitCollection(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			p := &Process{}
-			p.observeSystemd("native.service", "invocation", "/test", SystemdUnitSnapshot{InvocationID: "invocation"}, nil)
+			p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{InvocationID: "invocation"}, nil)
 			p.observeSystemdExit(test.code, test.observed, test.err)
-			p.observeSystemd("native.service", "invocation", "/test", SystemdUnitSnapshot{LoadState: "not-found"}, nil)
+			p.observeSystemd("native.service", "invocation", "/test", systemdops.UnitSnapshot{LoadState: "not-found"}, nil)
 			var got SystemdObservation
 			p.ObserveSystemd(func(observation SystemdObservation) { got = observation })
 			if got.ExitState != test.want || got.ExitCode != test.code || got.Snapshot.LoadState != "not-found" {
