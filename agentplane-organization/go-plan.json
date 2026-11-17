@@ -2079,7 +2079,6 @@
         "central-sampler-harness-host",
         "sampler-content-persistence",
         "sampler-resident-session",
-        "sampler-codehost-ownership",
         "history-journals",
         "settings-single-source",
         "protobuf-alignment"
@@ -2181,19 +2180,15 @@
         {
           "path": "agentplane/central_sampler/internal/codemode",
           "role": "One shared JavaScript child and logical-session wire multiplexing",
-          "decision": "design",
-          "target_paths": [
-            "agentplane/central_sampler/internal/codemode",
-            "agentplane/central_sampler/internal/codemode/host",
-            "agentplane/central_sampler/internal/codemode/session"
-          ],
-          "reason": "The manager combines child-process dispatch with logical sessions. Name ownership before introducing children that could import their parent.",
+          "decision": "retain",
+          "target_paths": [],
+          "reason": "One owner: `Manager` routes replies and handles child death with private access to each `Session`'s journal and delegates, and the handshake sets the `Process`'s capabilities. At 1,495 lines in five files a split adds an import boundary without removing shared state. Re-cut on 2026-11-17 (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"): the extraction track was dropped. `CODE_MODE_HOST_DESIGN` (keep Codex's pinned JavaScript host or own a V8 host) decides this package's future.",
           "gate": "",
           "evidence_paths": [
             "agentplane/central_sampler/internal/codemode/journal.go"
           ],
           "declared_packages": ["codemode"],
-          "pending_tracks": ["sampler-codehost-ownership"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 5,
             "tests": 1
@@ -4386,11 +4381,10 @@
           "decision": "design",
           "target_paths": [
             "agentplane/env/runtime/internal/coordinator",
-            "agentplane/env/runtime/internal/transitions",
             "agentplane/env/runtime/internal/executionlifecycle"
           ],
-          "reason": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator. Keep the package intact until its ownership/design gate is met; no new destination is selected. Lifecycle extraction is separate; whole receiver files must not cross packages.",
-          "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close.",
+          "reason": "Runtime request admission, generation transitions, execution/session lifecycle, fencing, and ordered close coordinator. The aggregate stays whole: no boundary owns `Runtime.mu`, `transitionMu` and the `lifecycleWorkers` joins together. Only `executionLifecycle` is a candidate, behind a narrow parent.",
+          "gate": "Race tests for start, fence, recovery and close before `executionLifecycle` loses its `*Runtime` back-pointer.",
           "evidence_paths": [
             "agentplane/env/runtime/internal/coordinator/admission_race_test.go",
             "agentplane/env/runtime/internal/coordinator/aggregate_test.go",
@@ -4494,7 +4488,7 @@
             "agentplane/env/runtime/internal/lifecycle/resources.go"
           ],
           "declared_packages": ["lifecycle"],
-          "pending_tracks": ["env-runtime-coordinator"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 2,
             "tests": 0
@@ -4586,7 +4580,7 @@
             "agentplane/env/runtime/journal/migrations.go"
           ],
           "declared_packages": ["journal"],
-          "pending_tracks": ["env-runtime-coordinator"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 5,
             "tests": 6
@@ -4606,7 +4600,7 @@
             "agentplane/env/runtime/session/configuration_test.go"
           ],
           "declared_packages": ["session"],
-          "pending_tracks": ["env-runtime-coordinator"],
+          "pending_tracks": [],
           "counts": {
             "non_test": 14,
             "tests": 11
@@ -4640,7 +4634,7 @@
             "agentplane/env/runtime/supervision",
             "agentplane/env/runtime/supervision/internal/systemd"
           ],
-          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities. #17054 moved PID1 reaping to `internal/pid1`; a systemd extraction is useful only after that backend stops mutating shared Process state through private access.",
+          "reason": "The public Supervisor/Process lifecycle and its COSI observation/controller contract are one owner, while systemd unit/scope/reference mechanics and PID1 namespace reaping are distinct backend responsibilities. #17054 moved PID1 reaping to `internal/pid1`; the systemd D-Bus unit operations, which touch no `Process` state, move first; the systemd backend itself moves only after it stops mutating shared `Process` state through private access.",
           "gate": "Define launch, stream, exit and fence results and the controller/worker close protocol; backend packages must not receive the whole mutable Process or Supervisor.",
           "evidence_paths": [
             "agentplane/env/runtime/supervision/backend.go",
@@ -4649,10 +4643,7 @@
             "agentplane/env/runtime/supervision/host.go"
           ],
           "declared_packages": ["supervision"],
-          "pending_tracks": [
-            "env-supervision-backends",
-            "env-runtime-coordinator"
-          ],
+          "pending_tracks": ["env-supervision-backends"],
           "counts": {
             "non_test": 14,
             "tests": 11
@@ -4958,11 +4949,10 @@
           "decision": "design",
           "target_paths": [
             "agentplane/environments/internal/controller",
-            "agentplane/environments/internal/runtimecredentials",
-            "agentplane/environments/internal/vm"
+            "agentplane/environments/internal/runtimecredentials"
           ],
           "reason": "The reconciler is a legitimate composition/state owner and sandboxcontroller disambiguates it from controller-runtime. Its mixed credential and VM child-management responsibilities warrant a boundary probe, not a synonym-only controller→reconciler directory move. Since #16407 it lives under `environments/`, where the boundary probe works.",
-          "gate": "Map finalizers, desired/resource-version transitions, credentials and VM cleanup before moving receiver methods or resources.",
+          "gate": "Credential decisions become typed outcomes and VM writes move into `vm.go` before `internal/runtimecredentials` exists (sandbox-controller-lifecycle).",
           "evidence_paths": [
             "agentplane/environments/internal/controller/apply.go",
             "agentplane/environments/internal/controller/behavior.go",
@@ -9777,12 +9767,12 @@
       "priority": 6,
       "summary": "Operator, 2026-11-17 03:19 UTC: \"line up the pull-out of HarnessHost and unifying of central harness on it on the plan\". Earlier, 00:24: \"maybeit might make sense for central sampler to implement a service that's the same as we use for hosted harnesses? idk\". The sampler's `Sampler` service already reuses the Runtime's four command messages; the differences are its `CreateSessionRequest` (`executor`, `expected_incarnation_uid`) and its own RPCs. Afterwards central and hosted delivery use one HarnessHost client and differ only in the target. Placement: the sampler serves HarnessHost from `central_sampler/internal/rpc`, beside the admin service and sharing its admission; the admin service's proto stays in `central_sampler/api/`; the Dispatcher's two clients (`central_delivery.go`, `runtime_client.go`) become one in `session_dispatcher/dispatcher`.",
       "how": [
-        "One CreateSession: `executor` and `expected_incarnation_uid` leave the sampler's request, and the executor's namespace joins `central_sampler_v1` placement beside `executor_environment` (`proto/session.proto`). The executor incarnation fence stays, as placement or as a precondition both hosts check, decided in that PR.",
+        "One CreateSession: `executor` and `expected_incarnation_uid` leave the sampler's request. `executor` only repeats `executor_environment` plus the one environment namespace (its `owner` is derived), so the sampler builds the Executor destination, and the one it announces to History, from the placement and the namespace, which comes from its settings or the placement. The incarnation fence becomes the sampler's own: the Environments proxy's first Executor `OpenSession` sent without an expected incarnation binds the current one and returns it, and the sampler fences on it as today. The executor stays required in the V1 placement. Receivers (sampler and proxy images) tolerate absence before the Dispatcher stops sending.",
         "Serve HarnessHost, including `ListSessions` and `WatchSessions`, beside `Sampler`.",
         "After that image is pinned, the Dispatcher's central delivery uses the hosted HarnessHost client; only the target differs (the sampler, or the Environments proxy for the Sandbox).",
         "Move `RecoverSession`, `GetSession`, `GetCommand`, `ReadProviderRequest`, `FollowEvents` and `Compact` to a sampler admin service. The only production `Sampler` client, `dispatcher/central_delivery.go`, calls none of them; system tests call `GetCommand` and `FollowEvents`. Delete those nothing calls, then remove `Sampler`."
       ],
-      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The request shape, HarnessHost serving and the single Dispatcher client are not released. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
+      "gate": "The proto landed with harness-host-extraction step 1 (#17159). The operator released the admin service on 2026-11-17 (05:53 UTC: \"we can start with central sampler admin service\"): the `Sampler`-only RPCs move to it and unused ones are deleted, while `Sampler` stays until the Dispatcher's client moves. The operator released the request shape (step 1) at 06:10 UTC (asked \"could we then just drop those fields\", then \"yeah sounds good to me\" to dispatching it); it follows the admin service, which edits the same files. HarnessHost serving and the single Dispatcher client are not released. The DAG node is `CENTRAL_SAMPLER_HARNESS_HOST`.",
       "preserve": "The executor incarnation fence, the sampler's command admission and idempotency, and the system tests' `GetCommand` and `FollowEvents` reads.",
       "validation": [
         "//agentplane/central_sampler/internal/rpc:unit_test",
@@ -9814,14 +9804,15 @@
         "agentplane/central_sampler/internal/providerrequest"
       ],
       "source_owner": "agentplane/central_sampler/internal/sessionstore",
-      "status": "DESIGN REQUIRED",
-      "summary": "Content SQL, batch lookup and deterministic writes can form a private leaf; provider-specific graph traversal and request projection belong with request preparation.",
+      "status": "PLANNED",
+      "summary": "`contentStore` mixes three things: a content-addressed store over `sampler_content` (put, get, batched prefetch, deterministic save); context chains over `sampler_context` (`storeContext`, `appendContextIDs`, `loadContext` with the `contextItem` hash); and Conversation state (`storeConversationContext` with its `storedContexts` checkpoints, `nativeControl` execution snapshots and native decoding). Only `prefetch` reads provider formats, to walk content references.",
       "how": [
-        "Separate generic SQL content operations from provider-native reference traversal and conversation projection.",
-        "Give contentdb the caller-owned transaction and verified content values; Store owns begin/commit/rollback.",
-        "Move representative content, projection and rollback coverage with the implementation."
+        "Move the provider switch in `prefetch` to `providerrequest`, which already imports both providers, as one reference function over content kinds.",
+        "Add `sessionstore/internal/contentdb` with the content-addressed store and the context chains. It takes the caller's transaction and the reference function, implements `providerrequest.Content`, and imports no provider package.",
+        "Keep the Conversation-coupled code in `sessionstore` as Conversation methods over `contentdb`: native-context checkpoints, execution snapshots, native decoding, and `request_plan.go`'s projection and previous-request reads.",
+        "Move the content and context integration coverage with `contentdb`."
       ],
-      "gate": "The current contentStore calls both provider codecs and uses conversation fields. Split responsibilities first; do not move the whole file unchanged. The sampler keeps its own copy of the conversation, which the open Journal service design (history-journals) may change; check that design before moving content storage. On 2026-11-16 the extraction worker found that content SQL, cache and hash handling share provider references and native-context checkpoints, and left it for that design. #17050 kept content reads and writes in Store behind `providerrequest.Content`.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"; \"i think we should not wait on SAMPLER_JOURNAL_DIET\"); not released. The Journal service direction does not block it: it decides whether the sampler keeps `sampler_content` and `sampler_context` at all, and `contentdb` moves or goes whole either way. #17050 left content behind `providerrequest.Content`.",
       "preserve": "Canonical content hashes, deterministic write ordering, bounded batched reads, verified references and rollback.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9849,21 +9840,21 @@
     },
     {
       "id": "env-supervision-backends",
-      "title": "Give the systemd process backend a private owner",
-      "status": "DESIGN REQUIRED",
+      "title": "Give systemd unit operations a private owner",
+      "status": "PLANNED",
       "components": ["env"],
       "source_paths": ["agentplane/env/runtime/supervision"],
       "target_paths": [
         "agentplane/env/runtime/supervision",
         "agentplane/env/runtime/supervision/internal/systemd"
       ],
-      "summary": "Keep Supervisor/Process and their COSI controller at supervision. #17054 moved the PID1 namespace process and reaper mechanics to `internal/pid1` behind a concrete child handle; the candidate `internal/systemd` would own D-Bus unit/scope/reference operations behind the same start/stop/fence/wait contract.",
+      "summary": "Keep `Supervisor`, `Process`, `Host` and their COSI controller in `supervision`; #17054 moved PID1 reaping to `internal/pid1`. The systemd D-Bus unit operations (`systemd_units.go`: unit snapshots, stop and job wait, the ordered fence and the empty-cgroup check; `systemd_unit_reference.go`: held unit references) touch no `Process`, `Host` or backend state and are called only inside `supervision`.",
       "how": [
-        "Map backendFactory/processBackend access to Process fields, host start/stop slots, exit observations, retained unit references and namespace reaper workers.",
-        "Specify immutable launch inputs, owned I/O handles, typed exit/unknown/fence results and explicit joins. Keep controller state publication in the outer owner.",
-        "Extract the systemd backend and its fixture/race tests in a 200–3,000 changed-LOC PR, as #17054 did for PID1; retain it in supervision if the interface only exports the existing mutable internals."
+        "Move `systemd_units.go` and `systemd_unit_reference.go` to `supervision/internal/systemd` unchanged in behavior, with the reference tests; split `systemd_units_test.go` so the fence and unit tests move and the backend's exit-status and stop-job tests stay. `systemd.go`, the launcher and the scope controller call the new package.",
+        "Later, and only with a contract: `systemdBackend.start` returns a typed start handle like PID1's `Child` instead of writing `Process` streams, PID and wait state, with uncertain starts, fence outcomes and joins proved under the kernel fixtures. Until then `systemd.go` stays in `supervision`.",
+        "`systemd_launcher.go` stays: `env/configuration` and the Codex exec server import `SystemdLauncher`, `SystemdOwner` and `SystemdScopeID`."
       ],
-      "gate": "Do not move systemd*.go unchanged while they still rely on private Process state. Prove stop/close ordering and uncertain fence outcomes under the existing real fixtures. On 2026-11-16 the extraction worker landed the PID1 half (#17054) and deferred this one: systemd unit, scope and reference operations still couple to private Process streams, host start/stop slots and retained invocation ownership, and the contract for uncertain starts, fence outcomes and joins is unproven.",
+      "gate": "PLANNED for step 1, a move with no behavior change: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"); not released. Step 2 needs the start-handle contract the 2026-11-16 worker could not prove: the backend writes private `Process` streams, uses host start and stop slots and holds the invocation.",
       "preserve": "Signal/terminate/wait/reap/join order, cgroup and systemd scope ownership, no restart after an uncertain stop, PID1 namespace fencing, pipe/exit delivery and fixture runfiles.",
       "validation": [
         "//agentplane/env/runtime/supervision:supervision_test",
@@ -9885,9 +9876,22 @@
       "dependencies": [],
       "priority": 10,
       "kind": "responsibility extraction",
-      "path_moves": [],
+      "path_moves": [
+        {
+          "from": "agentplane/env/runtime/supervision/systemd_units.go",
+          "to": "agentplane/env/runtime/supervision/internal/systemd/units.go"
+        },
+        {
+          "from": "agentplane/env/runtime/supervision/systemd_unit_reference.go",
+          "to": "agentplane/env/runtime/supervision/internal/systemd/unit_reference.go"
+        },
+        {
+          "from": "agentplane/env/runtime/supervision/systemd_unit_reference_test.go",
+          "to": "agentplane/env/runtime/supervision/internal/systemd/unit_reference_test.go"
+        }
+      ],
       "source_owner": "agentplane/env/runtime/supervision",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
+      "review_size": "One PR for the unit operations; the backend move waits for its contract.",
       "file_splits": [],
       "deleted_paths": [],
       "stage": 4,
@@ -9895,54 +9899,45 @@
     },
     {
       "id": "env-runtime-coordinator",
-      "title": "Map Runtime lifecycle owners before any coordinator extraction",
-      "status": "DESIGN REQUIRED",
+      "title": "Give the execution lifecycle a narrow parent",
+      "status": "PLANNED",
       "components": ["env"],
       "source_paths": [
-        "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/lifecycle",
-        "agentplane/env/runtime/session",
-        "agentplane/env/runtime/journal",
-        "agentplane/env/runtime/supervision"
+        "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
+        "agentplane/env/runtime/internal/coordinator/execution_service.go",
+        "agentplane/env/runtime/internal/coordinator/execution_owner.go",
+        "agentplane/env/runtime/internal/coordinator/protocol.go",
+        "agentplane/env/runtime/internal/coordinator/runtime.go",
+        "agentplane/env/runtime/internal/coordinator/forward.go"
       ],
       "target_paths": [
         "agentplane/env/runtime/internal/coordinator",
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
-      "summary": "Keep the 24-production/33-test coordinator package whole. No receiver-file moves. Build state/lock/worker ownership map first, then propose one named, race-tested owner boundary per change. Candidate goal owners (provisional): keep Runtime composition/admission in internal/coordinator; move transition/effect sequencing behind a narrow owner under internal/transitions; move execution start/watch/stop/fence ownership behind a narrow owner under internal/executionlifecycle. These are not file allocations: interfaces and state/worker ownership must be proven first, and the probe may conclude the aggregate package is cleaner.",
+      "summary": "Keep `Runtime` whole: admission, generations, transitions and the close path (`finishClose`/`joinClose`) belong to the aggregate, and no boundary owns `Runtime.mu`, `transitionMu` and the `lifecycleWorkers` joins together. The one cut: `executionLifecycle` (`execution_lifecycle.go`, 748 lines) already has its own mutex and state but holds `*Runtime` and takes `Runtime.mu` 27 times, to publish the execution owner, read `closing`, `failed` and recovery permission, join `lifecycleWorkers`, and drain or cancel execution calls.",
       "how": [
-        "Map Runtime.mu admission/failure/execution counts/lifecycle desired/calls/stream registries/closing; transitionMu accepted lifecycle sequence.",
-        "Map EnvironmentState mutex/COSI seal; runtimeOperationCoordinator effect sequence/worker; executionLifecycle start/watch/stop worker and StopAndFence; session.Manager per-session workers; Journal single SQLite connection/mutex.",
-        "Map close order: stop admission/cancel accepted transition, await existing fence, publish next Closing generation, sequence COSI close barrier, join session/lifecycle/process workers and stores.",
-        "After the map, define API/state owners; do not split methods by receiver file.",
-        "Candidate transitions owner needs a small state snapshot/update API; candidate execution lifecycle owner needs explicit generation/fence and worker join interfaces. Keep COSI, session manager, and journal ownership in their existing private packages unless the map proves a different seam."
+        "In place: replace the `*Runtime` back-pointer with a narrow parent whose methods take `Runtime.mu` themselves: publish or clear the execution owner, check whether a start or recovery is still admitted, register a lifecycle worker, report a change or a failure, and drain or cancel execution calls.",
+        "Fix the lock order (`executionLifecycle.mu` is never held while taking `Runtime.mu`) and add race tests for start, fence, recovery and close.",
+        "Then move `executionLifecycle` with its controller and owner types to `internal/executionlifecycle` if nothing private remains; otherwise it stays in `coordinator` behind the narrower parent.",
+        "No `internal/transitions` package: the transition files are small and run under `transitionMu` with the aggregate."
       ],
-      "gate": "Require state/lock/worker map and race tests for fences, uncertain journal outcomes, cancel/drain/join, exact final ACK and store close. Candidate directories are provisional; do not create them until the state/worker/API map proves callers can use narrow interfaces without duplicating locks or worker ownership. On 2026-11-16 the extraction worker's map found no candidate boundary that owns `Runtime.mu` (admission, generations, execution owner, calls/streams and fences) together with `transitionMu` and the `lifecycleWorkers` joins: `finishClose`/`joinClose` crosses transition settlement, the execution fence (`protocol.go`), the sealed ACK (`session/controller.go` `Reconcile`) and worker joins with store closure. It stays whole for now.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"); not released. The 2026-11-16 map found no owner for the whole close path, so this cut leaves it with `Runtime`. HarnessHost's adapter files in this package are separate; its step 4 deletes `environment_runtime_sessions.go`.",
       "preserve": "Journal admission/no replay; Generation/incarnation fences; retain old owner until fence proved; Final History ACK at exact sealed cursor before Delivered; Cancel/drain/join before resources close",
       "validation": [
-        "//agentplane/env/runtime/internal/coordinator:coordinator_test",
-        "//agentplane/env/runtime/session:session_test",
-        "//agentplane/env/runtime/journal:journal_test",
-        "//agentplane/env/runtime/supervision:supervision_test"
+        "//agentplane/env/runtime/internal/coordinator:coordinator_test"
       ],
       "evidence_paths": [
-        "agentplane/env/runtime/internal/coordinator/runtime.go",
-        "agentplane/env/runtime/internal/coordinator/operation_coordinator.go",
         "agentplane/env/runtime/internal/coordinator/execution_lifecycle.go",
-        "agentplane/env/runtime/internal/coordinator/transition_execution.go",
-        "agentplane/env/runtime/internal/coordinator/session_lifecycle_controller.go",
-        "agentplane/env/runtime/internal/coordinator/close_status.go",
-        "agentplane/env/runtime/session/manager.go",
-        "agentplane/env/runtime/journal/journal.go",
+        "agentplane/env/runtime/internal/coordinator/execution_service.go",
+        "agentplane/env/runtime/internal/coordinator/execution_owner.go",
         "agentplane/env/runtime/internal/coordinator/protocol.go",
-        "agentplane/env/runtime/session/controller.go"
+        "agentplane/env/runtime/internal/coordinator/runtime.go",
+        "agentplane/env/runtime/internal/coordinator/forward.go"
       ],
       "dependencies": [],
       "priority": 11,
-      "review_size": "Aim for 200–3,000 changed LOC after rename detection; split the lane if caller/build updates exceed that range.",
+      "review_size": "Two PRs: the narrow parent with race tests in place, then the package move if nothing private remains.",
       "candidate_owner_paths": [
-        "agentplane/env/runtime/internal/transitions",
         "agentplane/env/runtime/internal/executionlifecycle"
       ],
       "path_moves": [],
@@ -9956,7 +9951,7 @@
     },
     {
       "id": "sampler-resident-session",
-      "title": "Separate replica scheduling from one resident Session",
+      "title": "Give each resident Session a slot instead of the Runtime lock",
       "components": ["central_sampler"],
       "source_paths": [
         "agentplane/central_sampler/internal/residentruntime/runtime_replica.go",
@@ -9970,14 +9965,15 @@
         "agentplane/central_sampler/internal/residentruntime/session"
       ],
       "source_owner": "agentplane/central_sampler/internal/residentruntime",
-      "status": "DESIGN REQUIRED",
-      "summary": "Replica discovery/claim/recovery and one Session execution loop have distinct lifetimes. Introduce an explicit per-session owner after documenting cancellation and lease release.",
+      "status": "PLANNED",
+      "summary": "Keep replica scheduling (`runtime_replica.go`: launch, recovery scan, capacity, drain, and the drivers join before shutdown ends) on `Runtime` and its mutex. The per-Session code reaches the scheduler in a few places only: it sets `task.owner` and `task.waitingProvider` under `Runtime.mu`, reads `shutdownDeadline` and `stopping`, waits on `draining` and `task.wake`, and calls `acquireExecution`/`releaseExecution`.",
       "how": [
-        "Map wake/claim ownership, worker registration, heartbeat, host handles and drain joins.",
-        "Define the per-session owner inputs and terminal result; scheduler owns its registry and shutdown ordering.",
-        "Extract a bounded driver path with existing recovery, interrupt, unknown-effect and drain tests."
+        "Add a per-Session slot the scheduler hands each driver: wake and drain channels, stopping and the shutdown deadline, set owner, set waiting-for-provider, acquire and release execution. Its methods take `Runtime.mu`; the driver never sees `Runtime`.",
+        "Pass the driver its own dependencies (store, settings, the executor and code-session constructors, the code host) instead of reading them from `Runtime`.",
+        "Then move the per-Session files (driver, turn, interrupt, compaction, setup, host and provider recovery) to `residentruntime/session`; the scheduler stays.",
+        "A per-Session status that the sampler's HarnessHost `WatchSessions` will need can later be published through the same slot."
       ],
-      "gate": "Do not distribute Runtime receiver methods across packages or pass the whole Runtime aggregate into a child package. On 2026-11-16 the extraction worker found worker state sharing `Runtime.mu` with registration, recovery, capacity and drain: claim/heartbeat, cancellation/join and lease release need a new coordination contract first.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"); not released. The slot is the coordination contract the 2026-11-16 worker asked for: lease claim, heartbeat and release stay in the driver, and the scheduler joins drivers before shutdown completes. central-sampler-harness-host step 1 (released 06:10 UTC) edits `session_host.go`; land it first or rebase.",
       "preserve": "Single resident owner, lease loss fencing, durable provider progress, host-loss recovery and ordered drain.",
       "validation": [
         "//agentplane/central_sampler/protocol:protocol_test",
@@ -9997,57 +9993,7 @@
       "dependencies": [],
       "priority": 12,
       "group": "sampler-runtime",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
-      "kind": "responsibility extraction",
-      "path_moves": [],
-      "file_splits": [],
-      "deleted_paths": [],
-      "stage": 4,
-      "proposed_file_targets": []
-    },
-    {
-      "id": "sampler-codehost-ownership",
-      "title": "Clarify shared code host and logical-session ownership",
-      "components": ["central_sampler"],
-      "source_paths": [
-        "agentplane/central_sampler/internal/codemode/manager.go",
-        "agentplane/central_sampler/internal/codemode/process.go",
-        "agentplane/central_sampler/internal/codemode/session.go",
-        "agentplane/central_sampler/internal/codemode/wire.go"
-      ],
-      "target_paths": [
-        "agentplane/central_sampler/internal/codemode/host",
-        "agentplane/central_sampler/internal/codemode/session",
-        "agentplane/central_sampler/internal/codemode"
-      ],
-      "source_owner": "agentplane/central_sampler/internal/codemode",
-      "status": "DESIGN REQUIRED",
-      "summary": "Keep one shared child process and explicit logical Sessions. Split the manager only where child transport and per-session state stop needing mutual private access.",
-      "how": [
-        "Map reply routing, child death, session registration, pending requests and journal callbacks.",
-        "Specify child lifetime and a typed terminal notification to logical Sessions.",
-        "Extract transport or logical-session state only when the split removes mutual access; retain a single package if the probe shows the current encapsulation is tighter."
-      ],
-      "gate": "A candidate hierarchy is conditional on a smaller dependency surface; a file-count reduction alone is not acceptance. On 2026-11-16 the extraction worker found that Manager routing and death handling need mutual private access with Session journals and delegates, and the handshake mutates Process capabilities.",
-      "preserve": "Shared host identity, logical-session routing, pending response outcomes and journal-before-effect.",
-      "validation": [
-        "//agentplane/central_sampler/internal/codemode:codemode_test",
-        "//agentplane/central_sampler/internal/sessionstore:sessionstore_test",
-        "//agentplane/central_sampler/internal/residentruntime:unit_test",
-        "//agentplane/central_sampler/internal/residentruntime:integration_test",
-        "//agentplane/history_service/internal/ingress:integration_test"
-      ],
-      "evidence_paths": [
-        "agentplane/central_sampler/internal/codemode/manager.go",
-        "agentplane/central_sampler/internal/codemode/process.go",
-        "agentplane/central_sampler/internal/codemode/session.go",
-        "agentplane/central_sampler/internal/codemode/wire.go",
-        "agentplane/central_sampler/internal/codemode/BUILD.bazel"
-      ],
-      "dependencies": [],
-      "priority": 13,
-      "group": "sampler-runtime",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; split by the named responsibility and keep all callers/tests with it.",
+      "review_size": "Two PRs: the slot in place, then the per-Session files' move.",
       "kind": "responsibility extraction",
       "path_moves": [],
       "file_splits": [],
@@ -10105,23 +10051,28 @@
     },
     {
       "id": "sandbox-controller-lifecycle",
-      "title": "Separate Sandbox credential and VM child lifetimes from reconciliation policy",
-      "status": "DESIGN REQUIRED",
+      "title": "Make Sandbox credential decisions typed outcomes with one VM writer",
+      "status": "PLANNED",
       "components": ["environments"],
-      "source_paths": ["agentplane/environments/internal/controller"],
+      "source_paths": [
+        "agentplane/environments/internal/controller/environment_runtime_credential.go",
+        "agentplane/environments/internal/controller/vm.go",
+        "agentplane/environments/internal/controller/identity.go",
+        "agentplane/environments/internal/controller/controller.go"
+      ],
       "target_paths": [
         "agentplane/environments/internal/controller",
-        "agentplane/environments/internal/runtimecredentials",
-        "agentplane/environments/internal/vm"
+        "agentplane/environments/internal/runtimecredentials"
       ],
-      "summary": "Keep reconciliation policy and status/finalizer ordering together. Probe concrete runtime-credential and VM child-resource owners so the controller does not also contain every provisioning and teardown detail. Candidate paths require narrow state and effect contracts.",
+      "summary": "Keep reconciliation policy, `finalize` and status ordering in the controller. Today `ensureVMRuntimeCredential` both decides and writes: it updates the VM's credential annotations and RunStrategy, requests and revokes WorkloadCredentials and writes `status.runnerCredential`, while `vm.go`'s `startVM` and `haltVM` also write the VM. First make each credential decision a closed typed outcome that the Reconciler applies, with every VM write in `vm.go`; then the decisions and WorkloadCredential requests can leave for `internal/runtimecredentials`.",
       "how": [
-        "Map claim/identity binding, runtime credential issue/rotation/revocation, quiesce/suspend, VM child ownership, state volume finalizers and status publication.",
-        "Define runtimecredentials inputs/results around object UID, incarnation and expected revision; it cannot independently publish reconciler status.",
-        "Define VM create/update/stop/cleanup outcomes with one owner for fencing and child deletion. Extract one bounded path and its failure/rollback tests per PR."
+        "In place: `ensureVMRuntimeCredential` and `ensurePodRuntimeCredential` return one closed outcome (keep the published incarnation, record the next start credential, accept this VMI or Pod, rotate after a recreated VMI, halt on a credential mismatch, replace a stale Pod, pending) and write nothing.",
+        "The Reconciler applies it: VM annotations and RunStrategy only through `vm.go`, Pod replacement through the existing delete path, and `status.runnerCredential` in one status write after the child write.",
+        "Then move the decisions and the WorkloadCredential requests (`requestStartCredential`, `requestIncarnationCredential`, `credentialSubject`) to `internal/runtimecredentials`; it receives objects, returns outcomes and holds no controller-runtime client.",
+        "`finalize` (quiescing, child disappearance, PVC and finalizer release) and VM child management stay in the controller; there is no `internal/vm` package."
       ],
-      "gate": "No transfer of receiver methods with the whole mutable Reconciler. Prove retry/idempotency, identity replacement, stale-version rejection and teardown ordering before either candidate becomes a package. Map owners over the merged process: EnvironmentService joined the controller in #16613 and the Runtime proxy and Executor in #16656. On 2026-11-16 the extraction worker's map found no clean cut yet. `ensureVMRuntimeCredential` writes the VM's credential annotations and RunStrategy, runs credential effects and publishes Sandbox credential status together; `finalize` couples quiescence, child disappearance and PVC/finalizer release; retry is unproven when child effects succeed and the Sandbox status write then conflicts; and `vmi` must keep the predecessor VMI visible during deletion. A cut first needs a single VM writer and typed credential outcomes, which are not released.",
-      "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state.",
+      "gate": "PLANNED: re-cut on 2026-11-17 after the operator asked (06:18 UTC: \"okay, see which cuts can be re-cut to make sense.\"); not released. The 2026-11-16 map found decisions, VM writes and status publication interleaved in `ensureVMRuntimeCredential`; this cut separates them in place before anything moves. A status-write conflict after a VM write must converge on the next reconcile from the VM's annotations, and the PR proves it with a test.",
+      "preserve": "Object UID/resource-version checks; identity and incarnation fences; credential revocation; finalizer and child cleanup ordering; retained user state. The Firecracker launcher and its checkpoint are kept on a credential mismatch.",
       "validation": [
         "//agentplane/environments/internal/controller:controller_test",
         "//agentplane/environments/internal/controller:children_integration_test",
@@ -10142,7 +10093,7 @@
       "kind": "responsibility extraction",
       "path_moves": [],
       "source_owner": "agentplane/environments/internal/controller",
-      "review_size": "Aim for 200–3,000 changed LOC per PR after rename detection; keep one coherent responsibility and all callers/tests together.",
+      "review_size": "Two PRs: typed outcomes with one VM writer in place, then the `internal/runtimecredentials` move.",
       "file_splits": [],
       "deleted_paths": [],
       "stage": 4,
@@ -10603,7 +10554,7 @@
         "harness-host-extraction",
         "central-sampler-harness-host"
       ],
-      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service at 05:53 UTC; the rest is not released."
+      "result": "The Sandbox Controller is at `environments/` (#16407); EnvironmentService (#16613; automatic wake stays with the Dispatcher, #16626) and the Runtime proxy and Executor (#16656; callers moved in #16723, the Gateway's registration retired in #16760, #16768, #16775 and #16782) followed, and the rest of the Runner Gateway is the Sessions binary at `session_dispatcher/` (#16785; deployed and wire names unchanged). Retire orchestration_v1 once its interface review and the environment-rule slices are answered. HarnessHost is lined up (operator, 2026-11-17 03:19 UTC): pull it out of the Environment Runtime, then serve it from the central sampler so the Dispatcher keeps one client. Its first two steps landed (#17159, #17164), and the operator released the sampler's admin service (05:53 UTC) and its request shape (06:10 UTC); the rest is not released."
     },
     {
       "stage": 4,
@@ -10613,7 +10564,6 @@
         "env-supervision-backends",
         "env-runtime-coordinator",
         "sampler-resident-session",
-        "sampler-codehost-ownership",
         "runner-gateway-dispatcher-store",
         "sandbox-controller-lifecycle",
         "notification-github-fact-effects",
@@ -10621,7 +10571,7 @@
         "notification-github-observation-projection",
         "notification-inbox-owner"
       ],
-      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut yet for five tracks and the systemd backend; their gates say why. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED."
+      "result": "Each item needs a transaction, state or lifecycle contract inside one component, not a service decision. The Dispatcher's Store owner design joined on 2026-11-16, when the per-Session lease (#16858) settled delivery ownership, the service decision it waited on. Lifecycle owners come last and need race tests; the Sandbox Controller's maps owners over the merged Environments process (#16613, #16656). The operator released the app browser routes, the app browser session store and CLI command families on 2026-11-15 (12:59 UTC); the CLI (#16717), the session store (#16720) and the app routes (#16725) landed. On 2026-11-16 at 20:05 UTC the operator released the rest except the Dispatcher Store design (\"send the go plan extraction\"); each worker drafts its contract at the top of its PR. #17050 landed the sampler's execution-state and request-preparation extractions, #17053 the MCP edge's Action client and the Action Service's admission gate, #17054 the PID1 half of the supervision backends, and #17065 the sampler's Executor transport. The workers found no clean cut on 2026-11-16 for five tracks and the systemd backend. On 2026-11-17 the operator asked for re-cuts (06:18 UTC); five are now smaller planned tracks, not released, and the code host track was dropped, its package retained. The Notification Service's in-process tracks joined on 2026-11-17, when the operator kept one service (03:59 UTC); he released all six at 04:04-04:07 UTC. #17185 moved the command under `cmd` and #17176 the GitHub values and codecs; the transaction contract (#17147) made the next three PLANNED."
     },
     {
       "stage": 5,
