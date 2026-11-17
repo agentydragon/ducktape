@@ -4065,7 +4065,7 @@ the live Identity landed in #16373.
 flowchart LR
     RUNTIME_PROXY_CALLER_AUDIT[Review: Runtime-proxy caller dispositions]
     ENVIRONMENT_KEEP_ALIVE_HOLDS[Proposed design: keep-alive holds]
-    GO_LOCAL_EXTRACTIONS[In flight: Notification GitHub extractions; other stage 4 tracks planned]
+    GO_LOCAL_EXTRACTIONS[In flight: released stage 4 extractions; the Runtime coordinator planned]
     RUNNER_GATEWAY_RENAME[Unscheduled: deployed names, section 15]
 ```
 
@@ -4106,13 +4106,17 @@ tracks split a component's internals without changing service boundaries:
 - **Released, 2026-11-17 04:04–04:05 UTC (recorded in the Go plan):** the Notification GitHub
   extractions, cleanups of the current one-service form. The shared transaction owner merged
   (#17167); GitHub inbox fan-out, then the GitHub observation projection, follow.
-- **Planned, not released:** re-cut 2026-11-17 after the operator's 06:18 UTC "okay, see which cuts
-  can be re-cut to make sense.": typed Sandbox credential decisions with one VM writer in the Sandbox
-  Controller; a narrow parent for the Runtime's execution lifecycle; a slot per resident sampler
-  Session instead of the Runtime lock; the sampler's transaction-scoped content persistence, which no
-  longer waits for `SAMPLER_JOURNAL_DIET` ("i think we should not wait on SAMPLER_JOURNAL_DIET");
-  and a private owner for systemd unit operations, whose backend move waits for a start-handle
-  contract.
+- **Released, 2026-11-17 06:29 UTC** ("okay, dispatch sandbox controller"; "sounds good to me" for
+  each of the others), after the operator's 06:18 UTC re-cut request ("okay, see which cuts can be
+  re-cut to make sense."); the Plan lane dispatches their workers:
+  - typed Sandbox credential decisions with one VM writer in the Sandbox Controller;
+  - a slot per resident sampler Session instead of the Runtime lock, after the sampler's HarnessHost
+    step 1, which edits the same file;
+  - the sampler's transaction-scoped content persistence, which no longer waits for
+    `SAMPLER_JOURNAL_DIET` (06:18 UTC: "i think we should not wait on SAMPLER_JOURNAL_DIET");
+  - step 1 of a private owner for systemd unit operations, the D-Bus unit operations move; the
+    backend move waits for a start-handle contract.
+- **Planned, not released:** a narrow parent for the Runtime's execution lifecycle.
 - **Design required:** the Dispatcher's Store owner, and the generic inbox owner left after the
   GitHub extractions.
 
