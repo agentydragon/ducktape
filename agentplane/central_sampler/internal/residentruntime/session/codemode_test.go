@@ -15,13 +15,13 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executionstate"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/executor"
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/sessionstore"
 	samplersettings "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/settings"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/toolcontract"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 )
 
@@ -338,7 +338,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 	responseA := receivePeerFrame(t, peer)
 	runtimetesting.AssertDelegateResponse(t, responseA, 1001, "ok")
 	var notification codemode.DelegateResponse
-	if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, responseA), &notification); err != nil {
+	if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, responseA), &notification); err != nil {
 		t.Fatal(err)
 	}
 	notificationJSON, err := json.Marshal(notification.Result.Value)
@@ -346,7 +346,7 @@ func TestCodeModeSharesHostAndIsolatesLogicalSessionDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 	var notificationFields map[string]json.RawMessage
-	if err := jsonwire.DecodeObject(notificationJSON, &notificationFields); err != nil {
+	if err := jsonrpc.UnmarshalObject(notificationJSON, &notificationFields); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := notificationFields["result"]; exists {
@@ -440,7 +440,7 @@ func TestCodeModeCallerCancellationKeepsSharedHostAndDropsLateResponse(t *testin
 			Type string `json:"type"`
 			ID   int64  `json:"id"`
 		}
-		if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &cancelFrame); err != nil {
+		if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, fields), &cancelFrame); err != nil {
 			t.Fatal(err)
 		}
 		if cancelFrame.Type != "operation/cancel" || cancelFrame.ID != firstID {
@@ -866,14 +866,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
+				if err := jsonrpc.UnmarshalObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				if request.Method == "session/wait" {
@@ -916,14 +916,14 @@ func TestCodeModeHostFailureFansOutThenRestartsWithoutReplay(t *testing.T) {
 				Type    string          `json:"type"`
 				Request json.RawMessage `json:"request"`
 			}
-			if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
+			if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, fields), &envelope); err != nil {
 				t.Fatal(err)
 			}
 			if envelope.Type == "operation/request" {
 				var request struct {
 					Method string `json:"method"`
 				}
-				if err := jsonwire.DecodeObject(envelope.Request, &request); err != nil {
+				if err := jsonrpc.UnmarshalObject(envelope.Request, &request); err != nil {
 					t.Fatal(err)
 				}
 				switch request.Method {
@@ -985,7 +985,7 @@ func TestForegroundObservationYieldsOnlyWhenTheHostAcknowledgesIt(t *testing.T) 
 					Type string `json:"type"`
 					ID   int64  `json:"id"`
 				}
-				if err := jsonwire.DecodeObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
+				if err := jsonrpc.UnmarshalObject(runtimetesting.MarshalFields(t, fields), &frame); err != nil {
 					t.Fatal(err)
 				}
 				if frame.Type != test.next || frame.ID != id {

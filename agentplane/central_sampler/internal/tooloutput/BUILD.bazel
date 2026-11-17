@@ -11,9 +11,9 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/tooloutput",
     deps = [
-        "//agentplane/central_sampler/internal/jsonwire",
         "//agentplane/central_sampler/internal/outputbuffer",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/env/jsonrpc",
     ],
 )
 
@@ -27,7 +27,7 @@ go_test(
     embed = [":tooloutput"],
     race = "on",
     deps = [
-        "//agentplane/central_sampler/internal/jsonwire",
         "//agentplane/central_sampler/protocol",
+        "//agentplane/env/jsonrpc",
     ],
 )

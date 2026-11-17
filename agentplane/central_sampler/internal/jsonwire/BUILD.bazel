@@ -6,6 +6,7 @@ go_library(
     name = "jsonwire",
     srcs = ["json.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire",
+    deps = ["//agentplane/env/jsonrpc"],
 )
 
 go_test(

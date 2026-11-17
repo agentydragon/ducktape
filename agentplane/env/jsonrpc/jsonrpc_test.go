@@ -60,3 +60,29 @@ func TestParseRejectsAllButOneObject(t *testing.T) {
 		}
 	}
 }
+
+func TestUnmarshalObjectRequiresOneObjectAndPreservesNumbers(t *testing.T) {
+	var value map[string]any
+	if err := UnmarshalObject([]byte(` {"count":9007199254740993} `), &value); err != nil {
+		t.Fatal(err)
+	}
+	number, ok := value["count"].(json.Number)
+	if !ok || number.String() != "9007199254740993" {
+		t.Fatalf("decoded count is %T %v, want exact JSON number", value["count"], value["count"])
+	}
+
+	for _, input := range []string{"", "[]", "null", `"value"`, "1"} {
+		t.Run(input, func(t *testing.T) {
+			if err := UnmarshalObject([]byte(input), &value); err == nil || err.Error() != "protocol payload must be a JSON object" {
+				t.Fatalf("UnmarshalObject(%q) error = %v", input, err)
+			}
+		})
+	}
+	for _, input := range []string{"{}{}", "{} invalid"} {
+		t.Run(input, func(t *testing.T) {
+			if err := UnmarshalObject([]byte(input), &value); err == nil || err.Error() != "protocol payload has trailing JSON" {
+				t.Fatalf("UnmarshalObject(%q) error = %v", input, err)
+			}
+		})
+	}
+}

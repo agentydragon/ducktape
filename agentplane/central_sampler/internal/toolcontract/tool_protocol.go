@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/agentydragon/ducktape/agentplane/central_sampler/internal/jsonwire"
+	"github.com/agentydragon/ducktape/agentplane/env/jsonrpc"
 )
 
 // ExecSource is the source and optional budget parsed from a freeform exec call.
@@ -192,7 +192,7 @@ func safeIntegerArgument(name string, value *uint64) (*int, error) {
 // Tools have a closed schema. Explicit null is invalid for every supported input field.
 func decodeToolInput(data []byte, value any) error {
 	var fields map[string]json.RawMessage
-	if err := jsonwire.DecodeObject(data, &fields); err != nil {
+	if err := jsonrpc.UnmarshalObject(data, &fields); err != nil {
 		return err
 	}
 	for field, raw := range fields {

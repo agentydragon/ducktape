@@ -6,6 +6,10 @@ go_library(
     name = "jsonrpc",
     srcs = ["jsonrpc.go"],
     importpath = "github.com/agentydragon/ducktape/agentplane/env/jsonrpc",
+    visibility = [
+        "//agentplane/central_sampler:__subpackages__",
+        "//agentplane/env:__subpackages__",
+    ],
 )
 
 go_test(
