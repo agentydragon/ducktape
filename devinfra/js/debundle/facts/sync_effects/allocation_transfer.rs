@@ -597,9 +597,10 @@ pub(super) fn sequence<'a, C, E: 'a>(
     Some(transfer.finish())
 }
 
-/// Noncoercing primitive operations discard operand values, never their access
-/// evidence or abrupt outcomes. Later operands run only on a completing path.
-fn primitive_operation<'a>(
+/// Discard operand values, never their access evidence or abrupt outcomes.
+/// The caller supplies operation authority; erased coercions remain opaque.
+/// Later operands run only on a completing path.
+pub(super) fn primitive_operation<'a>(
     context: &mut impl AllocationContext,
     operands: impl IntoIterator<Item = &'a ValueExpr>,
     result: AbstractValue,
