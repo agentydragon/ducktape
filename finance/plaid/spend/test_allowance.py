@@ -21,6 +21,8 @@ from finance.plaid.spend.allowance import (
     AnalysisCategory,
     AnyOf,
     CategoryExact,
+    Condition,
+    CounterpartyExact,
     DateRange,
     FieldExact,
     Kind,
@@ -28,6 +30,7 @@ from finance.plaid.spend.allowance import (
     NamePrefix,
     PaceAlert,
     PeriodId,
+    PlaidCounterparty,
     Rule,
     RuleScope,
     Status,
@@ -972,3 +975,50 @@ def test_one_off_yaml_round_trip_and_configuration_view(one_off_configuration: P
 
 if __name__ == "__main__":
     pytest_bazel.main()
+
+
+def test_transaction_and_sparse_mapping_use_the_same_classification_facts() -> None:
+    purchase = row("2026-01-31", 20).model_copy(
+        update={
+            "name": "Straße Café",
+            "merchant_name": "Example Merchant",
+            "account_type": "credit",
+            "merchant_category_code": "1234",
+            "counterparties": [PlaidCounterparty(name="Example App", type="payment_app")],
+        }
+    )
+    facts = {
+        "name": purchase.name,
+        "merchant_name": purchase.merchant_name,
+        "pfc_primary": purchase.pfc_primary,
+        "pfc_detailed": purchase.pfc_detailed,
+        "amount": purchase.amount,
+        "date": purchase.date.isoformat(),
+        "account_type": purchase.account_type,
+        "merchant_category_code": purchase.merchant_category_code,
+        "counterparties": purchase.counterparties,
+    }
+    conditions: list[Condition] = [
+        NamePrefix(field="name", prefix="STRASSE"),
+        NameContains(field="merchant_name", substring="MERCHANT"),
+        CategoryExact(field="pfc_primary", value="SHOPPING"),
+        AmountExact(value="20.00"),
+        AmountSign(sign="positive"),
+        DateRange(start=date(2026, 1, 30), end=date(2026, 2, 1)),
+        FieldExact(field="name", value="STRASSE CAFÉ"),
+        FieldExact(field="merchant_name", value="EXAMPLE MERCHANT"),
+        FieldExact(field="account_type", value="CREDIT"),
+        FieldExact(field="merchant_category_code", value="1234"),
+        CounterpartyExact(name="example app", counterparty_type="PAYMENT_APP"),
+    ]
+    for condition in conditions:
+        rule = Rule(condition=condition, kind=Kind.FLEXIBLE)
+        assert matching_rule(purchase, [rule]) == rule
+        assert matching_rule(facts, [rule]) == rule
+        assert matching_rule({}, [rule]) is None
+
+
+def test_first_matching_rule_wins_with_normalized_facts() -> None:
+    first = name_rule("name", "example", Kind.FIXED)
+    second = name_rule("name", "example", Kind.FLEXIBLE)
+    assert matching_rule({"name": "EXAMPLE SHOP"}, [first, second]) == first
