@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "jsonassert",
+    testonly = True,
+    srcs = ["jsonassert.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/testing/jsonassert",
+    visibility = ["//agentplane:__subpackages__"],
+)

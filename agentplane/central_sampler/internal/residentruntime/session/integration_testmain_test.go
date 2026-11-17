@@ -1,10 +1,7 @@
 package session
 
 import (
-	"bytes"
-	"encoding/json"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 
@@ -78,23 +75,4 @@ func providerAttemptTestPolicy() sessionstore.ProviderAttemptPolicy {
 func providerAttemptTestPolicyPointer() *sessionstore.ProviderAttemptPolicy {
 	policy := providerAttemptTestPolicy()
 	return &policy
-}
-
-func equivalentJSON(t *testing.T, got, want []byte) {
-	t.Helper()
-	decode := func(raw []byte) any {
-		t.Helper()
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			t.Fatalf("decode JSON %q: %v", raw, err)
-		}
-		return value
-	}
-	if left, right := decode(got), decode(want); !reflect.DeepEqual(left, right) {
-		gotJSON, _ := json.Marshal(left)
-		wantJSON, _ := json.Marshal(right)
-		t.Fatalf("JSON differs:\n got: %s\nwant: %s", gotJSON, wantJSON)
-	}
 }

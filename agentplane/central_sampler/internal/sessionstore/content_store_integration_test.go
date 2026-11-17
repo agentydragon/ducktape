@@ -1,13 +1,11 @@
 package sessionstore
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/central_sampler/providers/responses"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/jsonassert"
 	"github.com/google/uuid"
 )
 
@@ -123,20 +122,8 @@ func tableRowCount(t *testing.T, store *Store, table string) int {
 
 func equivalentJSON(t *testing.T, got, want []byte) {
 	t.Helper()
-	decode := func(raw []byte) any {
-		t.Helper()
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		if err := decoder.Decode(&value); err != nil {
-			t.Fatalf("decode JSON %q: %v", raw, err)
-		}
-		return value
-	}
-	if left, right := decode(got), decode(want); !reflect.DeepEqual(left, right) {
-		gotJSON, _ := json.Marshal(left)
-		wantJSON, _ := json.Marshal(right)
-		t.Fatalf("JSON differs:\n got: %s\nwant: %s", gotJSON, wantJSON)
+	if !jsonassert.Equal(t, got, want) {
+		t.Fatalf("JSON differs:\n got: %s\nwant: %s", got, want)
 	}
 }
 
