@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import pytest
 import pytest_bazel
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from playwright.async_api import Browser, Page, Playwright, expect
 from python.runfiles import Runfiles
@@ -38,6 +38,7 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
         "probes": [],
         "probe_outcome": "PROBE_OUTCOME_VERIFIED",
         "metadata_requests": 0,
+        "metadata_failures_remaining": 0,
         "instructions": [{"text": "Copy the exported session.", "command": "tool export"}],
         "session_requests": {},
         "delay_first_session": False,
@@ -78,6 +79,9 @@ async def dashboard(runfiles: Runfiles) -> AsyncIterator[tuple[str, dict[str, An
     @app.get("/api/v1/instances")
     def instances() -> dict[str, Any]:
         state["metadata_requests"] += 1
+        if state["metadata_failures_remaining"]:
+            state["metadata_failures_remaining"] -= 1
+            raise HTTPException(status_code=503, detail="temporarily unavailable")
         return {
             "instances": [
                 {
@@ -294,6 +298,31 @@ async def test_provider_instructions_refresh_without_reload(
         await page.clock.fast_forward(30_000)
     await expect(card.get_by_text("Updated export steps from the provider.")).to_be_visible()
     await expect(card.get_by_text("Copy the exported session.")).to_have_count(0)
+    assert state["metadata_requests"] == 2
+    assert len(page_loads) == initial_page_loads
+    await context.close()
+
+
+async def test_initial_metadata_failure_retries_without_page_reload(
+    browser: Browser, dashboard: tuple[str, dict[str, Any]]
+) -> None:
+    origin, state = dashboard
+    state["metadata_failures_remaining"] = 1
+    context = await browser.new_context(color_scheme="light")
+    page = await context.new_page()
+    await page.clock.install()
+    page_loads: list[str] = []
+    page.on("load", lambda _: page_loads.append(page.url))
+    await page.goto(origin, wait_until="domcontentloaded")
+
+    await expect(page.get_by_role("status")).to_contain_text(
+        "Could not load integrations. We'll retry automatically in 30 seconds."
+    )
+    assert state["metadata_requests"] == 1
+    initial_page_loads = len(page_loads)
+    async with page.expect_response(lambda response: response.url.endswith("/api/v1/instances")):
+        await page.clock.fast_forward(30_000)
+    await expect(page.get_by_role("region", name="one integration")).to_be_visible()
     assert state["metadata_requests"] == 2
     assert len(page_loads) == initial_page_loads
     await context.close()

@@ -375,7 +375,7 @@ function App() {
         if (!current || !entries) return;
         await Promise.all(entries.map(refresh));
       } catch {
-        if (current) setIntegrationError("Could not load integrations. Reload the page to try again.");
+        if (current) setIntegrationError("Could not load integrations. We'll retry automatically in 30 seconds.");
       }
     };
     void initialize();
