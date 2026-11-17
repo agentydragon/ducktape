@@ -31,7 +31,8 @@ variants use `{}`. For example, probe outcomes are `{"verified":{}}`,
 Import outcomes are `{"installed":{}}`, `{"rejected":{"reason":"CANDIDATE_REJECTION_REASON_MALFORMED"}}`,
 `{"reauthenticationRequired":{}}`, `{"challengeRequired":{}}`,
 `{"upstreamUnavailable":{}}`, `{"outcomeUnknown":{"credentialRotationMayHaveOccurred":true}}`,
-or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. The import response carries
+or `{"failure":{"reason":"IMPORT_FAILURE_REASON_STORAGE_ERROR"}}`. There is no candidate-only
+response; upstream checks happen as part of import before installation. The import response carries
 an instance reference beside the selected outcome.
 
 Completed probes identify whether they were scheduled, manual, verification, startup, or another
