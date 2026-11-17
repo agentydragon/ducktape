@@ -12,7 +12,7 @@ use crate::analysis_inputs::{CommutingEndpoint, ResolvedCommutingStatements};
 use crate::execution_evidence::SourceLocation;
 use crate::facts::{
     CellOverlap, CellOverlapIndex, EffectCell, HeapContentCells, SourceUnitReadClosure,
-    may_conflict, may_overlap,
+    first_overlapping, may_conflict, may_overlap,
 };
 use crate::{StatementEffectSummary, StatementFacts, StatementKind};
 
