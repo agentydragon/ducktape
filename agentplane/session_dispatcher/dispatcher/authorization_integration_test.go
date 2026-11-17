@@ -24,7 +24,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -339,7 +338,7 @@ func TestDispatcherServiceAccountSVIDDoesNotOwnSandboxIdentitySessions(t *testin
 		t.Fatalf("ServiceAccount SVID created a Session: %v, want PermissionDenied", err)
 	}
 	identity := &identitypb.Identity{Name: "svid-session-owner", Uid: "00000000-0000-4000-8000-00000000a002"}
-	placementtest.EnsurePlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
+	testPlacement(request.GetSpec(), ownerSandbox.Name, ownerSandbox.UID)
 	if _, err := authority.queueStore.CreateSessionWithPlacementForCaller(t.Context(), sessionID, ownerSandbox.Name, ownerSandbox.UID,
 		request.GetSpec(), nil, nil,
 		store.SessionExecution{Identity: identity}, store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}); err != nil {

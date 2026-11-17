@@ -73,7 +73,7 @@ go_test(
         "//agentplane/proto:session_go_proto",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
         "//agentplane/session_dispatcher/dispatcher/wake",
-        "//agentplane/session_dispatcher/internal/placementtest",
+        "//agentplane/session_dispatcher/internal/placement",
         "//agentplane/session_dispatcher/internal/terminalnotice",
         "//agentplane/session_dispatcher/migrations",
         "//agentplane/testing/postgres",

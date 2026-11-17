@@ -14,7 +14,6 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/terminalnotice"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -680,7 +679,7 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	foreignCaller := IdentityCaller{Identity: foreign, Proof: IdentitySVID{}}
 	id, uid := uuid.NewString(), uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
-	placementtest.EnsurePlacement(spec, "transaction-sandbox", uid)
+	testPlacement(spec, "transaction-sandbox", uid)
 	if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, "transaction-sandbox", uid,
 		spec, nil, nil, SessionExecution{Identity: owner}, ownerCaller); err != nil {
 		t.Fatal(err)
@@ -689,7 +688,7 @@ func TestSessionTransactionChecksRetainedAuthorityBeforeConflict(t *testing.T) {
 	// including when the API's initial read did not yet see that winning opening.
 	for _, name := range []string{"transaction-sandbox", "conflicting-sandbox"} {
 		conflictingSpec := &sessionpb.SessionSpec{}
-		placementtest.EnsurePlacement(conflictingSpec, name, uid)
+		testPlacement(conflictingSpec, name, uid)
 		if _, err := store.CreateSessionWithPlacementForCaller(t.Context(), id, name, uid,
 			conflictingSpec, nil, nil, SessionExecution{Identity: foreign}, foreignCaller); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("transaction exposed an existing opening to foreign Identity: %v", err)

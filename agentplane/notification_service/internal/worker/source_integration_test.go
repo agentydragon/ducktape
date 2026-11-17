@@ -10,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources"
 	model "github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/agentydragon/ducktape/agentplane/testing/logcapture"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/status"
 )
@@ -240,7 +239,7 @@ func TestAStopWhileTheInboxIsBeingGivenBackDoesNotKeepTheLease(t *testing.T) {
 func TestAReleaseThatFailsWhileStoppingIsLoggedByItsType(t *testing.T) {
 	h := newHarness(t, debounce(3600, 3600))
 	subscription := h.subscribe(t, "first")
-	logs := logcapture.Capture(t)
+	logs := captureLogs(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	h.actions.on(func(read context.Context, _ inboxstore.Claim, _ inboxstore.DueSubscription) error {
@@ -256,7 +255,7 @@ func TestAReleaseThatFailsWhileStoppingIsLoggedByItsType(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("step = %v, want context.Canceled", err)
 	}
-	records := logRecords(t, logs)
+	records := logs.records(t)
 	if len(records) != 1 {
 		t.Fatalf("%d log records, want 1: %v", len(records), records)
 	}

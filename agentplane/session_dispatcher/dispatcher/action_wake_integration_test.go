@@ -9,7 +9,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/google/uuid"
@@ -91,7 +90,7 @@ func TestActionAttributedSendUsesActionsBrokerForIdleSuspendedSandbox(t *testing
 
 			sessionID, commandID := uuid.NewString(), uuid.NewString()
 			spec := &sessionpb.SessionSpec{}
-			placementtest.EnsurePlacement(spec, sandbox.Name, string(sandbox.UID))
+			testPlacement(spec, sandbox.Name, string(sandbox.UID))
 			caller := store.IdentityCaller{
 				Identity: identity,
 				Proof: store.IdentityServiceDelegation{

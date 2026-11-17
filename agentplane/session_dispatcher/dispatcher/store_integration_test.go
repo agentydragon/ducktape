@@ -26,7 +26,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/wake"
-	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placementtest"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
@@ -1961,7 +1960,7 @@ func TestInterruptRechecksSessionAfterLiveAuthorization(t *testing.T) {
 	admission := store.IdentityCaller{Identity: identity, Proof: store.IdentitySVID{}}
 	sessionID := uuid.NewString()
 	spec := &sessionpb.SessionSpec{}
-	placementtest.EnsurePlacement(spec, "sandbox-api", sandboxUID)
+	testPlacement(spec, "sandbox-api", sandboxUID)
 	if _, err := queueStore.CreateSessionWithPlacementForCaller(ctx, sessionID, "sandbox-api", sandboxUID, spec, nil, nil, store.SessionExecution{Identity: identity}, admission); err != nil {
 		t.Fatal(err)
 	}

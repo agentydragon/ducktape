@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -28,7 +29,6 @@ import (
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
-	"github.com/agentydragon/ducktape/agentplane/testing/logcapture"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	testwakeups "github.com/agentydragon/ducktape/agentplane/testing/wakeups"
 	"github.com/google/uuid"
@@ -217,8 +217,26 @@ func issueCommentOfSize(t *testing.T, size int) []byte {
 	return issueComment(7, strings.Repeat("x", size-len(empty)))
 }
 
+// logBuffer collects log lines; the handler logs from the server's goroutines.
+type logBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
+}
+
 // rejections are the records of refused deliveries.
-func rejections(t *testing.T, b *logcapture.Buffer) []map[string]any {
+func (b *logBuffer) rejections(t *testing.T) []map[string]any {
 	t.Helper()
 	var records []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(b.String()), "\n") {
@@ -234,6 +252,15 @@ func rejections(t *testing.T, b *logcapture.Buffer) []map[string]any {
 		}
 	}
 	return records
+}
+
+func captureLogs(t *testing.T) *logBuffer {
+	t.Helper()
+	logs := &logBuffer{}
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return logs
 }
 
 func TestAcceptedDeliveryIsStoredOnceAndRedeliveredAsDuplicate(t *testing.T) {
@@ -400,7 +427,7 @@ func TestRefusedDeliveriesAreLoggedBoundedAndRedacted(t *testing.T) {
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			logs := logcapture.Capture(t)
+			logs := captureLogs(t)
 			d := signedDelivery(c.event, c.body)
 			if c.corrupt != nil {
 				c.corrupt(&d)
@@ -408,7 +435,7 @@ func TestRefusedDeliveriesAreLoggedBoundedAndRedacted(t *testing.T) {
 			signed := d.signature
 			d.post(t, r.URL).expect(t, c.status, refusal{Detail: c.detail})
 
-			records := rejections(t, logs)
+			records := logs.rejections(t)
 			if len(records) != 1 {
 				t.Fatalf("%d rejection records, want 1: %s", len(records), logs)
 			}
