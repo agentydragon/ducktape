@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 )
 
 func publishSnapshotObservations(t *testing.T, g githubFixture, sub githubSubscription, event githubmodel.EventName, start, count int) {
@@ -54,7 +55,7 @@ func snapshotSubscription(t *testing.T, event githubmodel.EventName, count int) 
 
 func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
 	for _, event := range []githubmodel.EventName{githubmodel.EventCheckRun, githubmodel.EventPullRequestReview} {
-		for _, snapshots := range []int{GitHubDeliveryPageSize - 1, GitHubDeliveryPageSize, GitHubDeliveryPageSize + 1} {
+		for _, snapshots := range []int{DeliveryPageSize - 1, DeliveryPageSize, DeliveryPageSize + 1} {
 			t.Run(fmt.Sprintf("%s/%d", event, snapshots), func(t *testing.T) {
 				g, sub, table := snapshotSubscription(t, event, snapshots)
 				// New observations fall after the subscription's immutable creation boundary.
@@ -64,12 +65,12 @@ func TestGitHubSnapshotPagesResumeInSequenceBeforeTransitions(t *testing.T) {
 				total := snapshots + 2
 				for delivered := 0; delivered < total; {
 					// No in-memory continuation is retained between worker attempts.
-					g.Store = New(g.db, g.runner, defaultQuotas())
+					g.setQuotas(defaultQuotas())
 					if err := g.reconcile(t, claim, sub); err != nil {
 						t.Fatal(err)
 					}
 					page := g.read(t, sub.InboxID, after)
-					want := min(GitHubDeliveryPageSize, total-delivered)
+					want := min(DeliveryPageSize, total-delivered)
 					if len(page.Entries) != want {
 						t.Fatalf("page after %d entries = %d, want %d", delivered, len(page.Entries), want)
 					}
@@ -107,10 +108,10 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 			g, sub, table := snapshotSubscription(t, event, 2)
 			quotas := defaultQuotas()
 			quotas.EntriesPerInbox = 1
-			g.Store = New(g.db, g.runner, quotas)
+			g.setQuotas(quotas)
 			claim := g.claimInbox(t, sub.InboxID)
-			var quota *QuotaError
-			if err := g.reconcile(t, claim, sub); !errors.As(err, &quota) || quota.Quota != EntriesPerInbox {
+			var quota *store.QuotaError
+			if err := g.reconcile(t, claim, sub); !errors.As(err, &quota) || quota.Quota != store.EntriesPerInbox {
 				t.Fatalf("recording error = %v, want inbox entry quota", err)
 			}
 			if page := g.read(t, sub.InboxID, 0); len(page.Entries) != 0 || page.Inbox.LastCursor != 0 {
@@ -122,7 +123,7 @@ func TestGitHubSnapshotAppendFailureRetainsEntirePageForRestart(t *testing.T) {
 			if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
 				t.Fatalf("matches after rollback = %d, want none", got)
 			}
-			g.Store = New(g.db, g.runner, defaultQuotas())
+			g.setQuotas(defaultQuotas())
 			g.reconcileSubscription(t, sub)
 			if got := len(g.read(t, sub.InboxID, 0).Entries); got != 2 {
 				t.Fatalf("entries after restart = %d, want both snapshots", got)

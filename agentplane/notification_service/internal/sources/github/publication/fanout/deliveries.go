@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -14,16 +14,20 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
+
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/wakeup"
+	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/google/uuid"
 )
 
-// GitHubDeliveryPageSize is how many deliveries one GitHubDeliveries call returns at most. A full page means
+// DeliveryPageSize is how many deliveries one Deliveries call returns at most. A full page means
 // there may be more.
-const GitHubDeliveryPageSize = 128
+const DeliveryPageSize = githubmodel.DeliveryPageSize
 
-// GitHubMatch is what decides which stored deliveries a GitHub subscription is owed.
-type GitHubMatch struct {
+// Match is what decides which stored deliveries a GitHub subscription is owed.
+type Match struct {
 	SubscriptionID uuid.UUID
 	InboxID        uuid.UUID
 	AppID          int64
@@ -39,8 +43,8 @@ type GitHubMatch struct {
 	Fences []githubstate.AccessFence
 }
 
-// GitHubDelivery is a stored delivery that matched, with the identity of its entry.
-type GitHubDelivery struct {
+// Delivery is a stored delivery that matched, with the identity of its entry.
+type Delivery struct {
 	Position int64
 	Event    sourceadapter.GitHubEvent
 	Payload  json.RawMessage
@@ -54,11 +58,11 @@ func (a *argList) add(value any) string {
 	return "$" + strconv.Itoa(len(*a))
 }
 
-// GitHubDeliveries returns the next deliveries, by position, that the subscription is owed and has not been
+// Deliveries returns the next deliveries, by position, that the subscription is owed and has not been
 // given: those after its start position, of its App, of a repository it reads under a fence, selected by its
 // filters, and about its subject. A delivery is about the subject if it names it, or, for a commit event, if it is
 // for a commit the subject has been seen at. A commit subject is only ever matched the second way.
-func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitHubDelivery, error) {
+func (c *Coordinator) Deliveries(ctx context.Context, match Match) ([]Delivery, error) {
 	if len(match.Filters) == 0 || len(match.Fences) == 0 {
 		return nil, errors.New("a GitHub match needs filters and fences")
 	}
@@ -122,7 +126,7 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 		}
 	}
 	// The relational natural key matches this delivery; payload expiry does not affect identity.
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := c.db.QueryContext(ctx, `
 		SELECT d.position, d.app_id, d.delivery_id, d.repository_id, d.event, d.action, d.payload
 		FROM github_delivery d
 		WHERE d.app_id = `+args.add(match.AppID)+`
@@ -138,14 +142,14 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 					AND e.github_app_id = d.app_id AND e.github_delivery_id = d.delivery_id
 					AND e.github_repository_id = d.repository_id AND e.github_event = d.event
 					AND e.github_action IS NOT DISTINCT FROM d.action)
-		ORDER BY d.position LIMIT `+strconv.Itoa(GitHubDeliveryPageSize), args...)
+		ORDER BY d.position LIMIT `+strconv.Itoa(DeliveryPageSize), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var deliveries []GitHubDelivery
+	var deliveries []Delivery
 	for rows.Next() {
-		var delivery GitHubDelivery
+		var delivery Delivery
 		var event string
 		var action sql.NullString
 		var payload []byte
@@ -163,14 +167,14 @@ func (s *Store) GitHubDeliveries(ctx context.Context, match GitHubMatch) ([]GitH
 	return deliveries, rows.Err()
 }
 
-// GitHubRecording is the outcome of matching a GitHub subscription, to be recorded under the worker's claim.
-type GitHubRecording struct {
+// Recording is the outcome of matching a GitHub subscription, to be recorded under the worker's claim.
+type Recording struct {
 	SubscriptionID uuid.UUID
 	// Version and Generation are the subscription's when it was read. A subscription that moved on, by a
 	// cancellation, a renewal or ingress since, is not recorded over.
 	Version    int64
 	Generation int64
-	Matched    []GitHubDelivery
+	Matched    []Delivery
 	// More says the page was full: the subscription is due again at once.
 	More bool
 	// Fences are the grants the match was read under, and Subject and SubjectGeneration the subject refresh.
@@ -183,19 +187,19 @@ type GitHubRecording struct {
 	RetryAt *time.Time
 }
 
-// RecordGitHub appends the matched deliveries to the claimed inbox and schedules the subscription's next
+// Record appends the matched deliveries to the claimed inbox and schedules the subscription's next
 // attempt, in one transaction.
 //
 // Nothing is appended, and the subscription is made due at once, if a fence or the subject refresh no longer
 // holds. If a grant expires while the page is written, the transaction is rolled back and the call fails with
 // *githubstate.RefreshDeferredError. It fails with ErrClaimLost if the claim no longer holds, and does nothing for a
 // cancelled, expired or changed subscription.
-func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubRecording) error {
-	return s.transaction(ctx, func(tx transaction.Tx) error {
+func (c *Coordinator) Record(ctx context.Context, claim store.Claim, recording Recording) error {
+	return c.runner.Run(ctx, func(tx transaction.Tx) error {
 		if err := githubstate.Lock(ctx, tx); err != nil {
 			return err
 		}
-		if _, err := fenced(ctx, tx, claim); err != nil {
+		if _, err := store.FenceClaimTx(ctx, tx, claim); err != nil {
 			return err
 		}
 		var cancelled bool
@@ -221,26 +225,26 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			}
 		}
 		if !current {
-			if _, err := tx.ExecContext(ctx, `UPDATE subscription SET next_attempt = $2 WHERE id = $1`,
-				recording.SubscriptionID, now()); err != nil {
+			due := now()
+			if err := c.inboxes.ScheduleSourceTx(ctx, tx, recording.SubscriptionID, &due); err != nil {
 				return err
 			}
-			return notify(ctx, tx)
+			return postgres.Notify(ctx, tx, wakeup.WorkChannel, "")
 		}
 		for _, delivery := range recording.Matched {
-			if err := s.AppendEvent(ctx, tx, claim.ID, recording.SubscriptionID, delivery.Event, delivery.Payload); err != nil {
+			if err := c.append(ctx, tx, claim.ID, recording.SubscriptionID, delivery.Event, delivery.Payload); err != nil {
 				return err
 			}
 		}
-		mergeabilityCount, mergeabilityMore, err := s.recordMergeability(ctx, tx, claim.ID, recording)
+		mergeabilityCount, mergeabilityMore, err := c.inboxes.RecordMergeabilityTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}
-		commitCount, commitMore, err := s.recordGitHubCommitObservations(ctx, tx, claim.ID, recording)
+		commitCount, commitMore, err := c.inboxes.RecordGitHubCommitObservationsTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}
-		prStateCount, prStateMore, err := s.recordGitHubPRState(ctx, tx, claim.ID, recording)
+		prStateCount, prStateMore, err := c.inboxes.RecordGitHubPRStateTx(ctx, tx, claim.ID, recording.SubscriptionID, recording.Subject, recording.Fences)
 		if err != nil {
 			return err
 		}
@@ -253,19 +257,16 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 			due := now()
 			next = &due
 		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE subscription SET next_attempt = $2, last_success_at = $3, error_kind = NULL, error = NULL,
-				error_since = NULL, error_observed_at = NULL
-			WHERE id = $1`, recording.SubscriptionID, next, now()); err != nil {
+		if err := c.inboxes.SourceSucceededTx(ctx, tx, recording.SubscriptionID, next, now()); err != nil {
 			return err
 		}
 		if len(recording.Matched) > 0 || mergeabilityCount > 0 || commitCount > 0 || prStateCount > 0 {
-			if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2 WHERE id = $1`, claim.ID, now()); err != nil {
+			if err := c.inboxes.TouchInboxTx(ctx, tx, claim.ID, now()); err != nil {
 				return err
 			}
 		}
 		// Recheck every time-sensitive fence after appending and scheduling so expiry rolls the whole page back.
-		if _, err := fenced(ctx, tx, claim); err != nil {
+		if _, err := store.FenceClaimTx(ctx, tx, claim); err != nil {
 			return err
 		}
 		var finalCancelled bool
@@ -292,6 +293,6 @@ func (s *Store) RecordGitHub(ctx context.Context, claim Claim, recording GitHubR
 		if !valid || !recording.RepairAt.After(now()) {
 			return &githubstate.RefreshDeferredError{Until: now()}
 		}
-		return notify(ctx, tx)
+		return postgres.Notify(ctx, tx, wakeup.WorkChannel, "")
 	})
 }

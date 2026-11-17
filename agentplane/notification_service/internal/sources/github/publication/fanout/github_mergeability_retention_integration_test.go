@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"encoding/json"
@@ -53,7 +53,7 @@ func TestCleanupGitHubDeliveriesRetainsSnapshotsAndInboxCopies(t *testing.T) {
 	cutoff := time.Now().Add(-24 * time.Hour)
 	g.exec(t, `UPDATE github_mergeability_event SET created_at = $2
 		WHERE app_id = $1 AND repository_id = $3 AND pull_request_number = 7`, g.app, cutoff.Add(-time.Hour), g.repository)
-	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.mergeabilitySequences(t, 7); len(got) != 0 {

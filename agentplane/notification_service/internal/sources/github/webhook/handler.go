@@ -15,10 +15,12 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
+
 	githubapi "github.com/google/go-github/v88/github"
 	"github.com/google/uuid"
 )
@@ -46,13 +48,13 @@ type Handler struct {
 	secret       []byte
 	maxBodyBytes int64
 	slots        chan struct{}
-	database     *store.Store
+	database     *fanout.Coordinator
 	// bound is ingressBound; a test shortens it.
 	bound time.Duration
 }
 
 // New is the handler for the App that settings name. The settings are validated by their owner.
-func New(settings settings.Settings, database *store.Store) *Handler {
+func New(settings settings.Settings, database *fanout.Coordinator) *Handler {
 	return &Handler{
 		appID:        settings.AppID,
 		secret:       []byte(settings.WebhookSecret),
@@ -141,7 +143,7 @@ func (h *Handler) receive(ctx context.Context, header http.Header, raw []byte) (
 		slog.ErrorContext(ctx, "GitHub webhook payload unreadable", "error", err)
 		return http.StatusInternalServerError, refusal{Detail: internalFault}
 	}
-	created, err := h.database.IngestGitHub(ctx, ingest)
+	created, err := h.database.Ingest(ctx, ingest)
 	switch {
 	case errors.Is(err, githubstate.ErrDeliveryReused):
 		return http.StatusConflict, refusal{Detail: err.Error()}

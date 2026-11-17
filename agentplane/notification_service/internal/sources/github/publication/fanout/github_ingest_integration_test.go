@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -85,7 +85,7 @@ func TestRedeliveryStoresNothingAndReusedIDIsRefused(t *testing.T) {
 	changed := first
 	digest := sha256.Sum256([]byte("other content"))
 	changed.Digest = digest[:]
-	if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
+	if _, err := g.coordinator.Ingest(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
 		t.Errorf("error = %v, want githubstate.ErrDeliveryReused", err)
 	}
 	if got := g.deliveries(t); got != 1 {
@@ -326,7 +326,7 @@ func TestIngestMakesTheAppsActiveSourcesDueAndLeavesOthersAlone(t *testing.T) {
 	cancelled := g.followIn(t, otherDestination("cancelled"), source, "cancelled")
 	expired := g.followIn(t, otherDestination("expired"), source, "expired")
 	retired := g.followIn(t, otherDestination("retired"), source, "retired")
-	otherApp := newGitHubFixture(t)
+	otherApp := newGitHubFixtureWithStoreFixture(t, fixtureForDatabase(t, g.db, g.databaseURL, defaultQuotas()))
 	foreign := otherApp.follow(t, source, "other-app")
 
 	g.exec(t, `UPDATE subscription SET cancelled = true WHERE id = $1`, cancelled.ID)
@@ -382,14 +382,14 @@ func otherDestination(name string) model.DestinationRef {
 
 func TestIngestWakesWorkersOnlyForADeliveryItStores(t *testing.T) {
 	g := newGitHubFixture(t)
-	check := observeWakeups(t, g.fixture)
+	check := observeFanoutWakeups(t, g)
 	delivery := g.delivery("issues", onIssue(7))
 	check("a new delivery", true, func() { g.ingest(t, delivery) })
 	check("a redelivery", false, func() { g.ingest(t, delivery) })
 	check("a refused delivery", false, func() {
 		changed := delivery
 		changed.Digest = []byte("other")
-		if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
+		if _, err := g.coordinator.Ingest(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
 			t.Error(err)
 		}
 	})
@@ -414,7 +414,7 @@ func TestPublicationFailureRollsBackTheGitHubDeliveryAndWake(t *testing.T) {
 		}
 	})
 
-	created, err := g.IngestGitHub(t.Context(), g.delivery("issues", onIssue(7)))
+	created, err := g.coordinator.Ingest(t.Context(), g.delivery("issues", onIssue(7)))
 	if err == nil || created {
 		t.Fatalf("ingesting with a failing wake publication = %v, %v, want an error and no committed delivery", created, err)
 	}
@@ -516,7 +516,7 @@ func TestDeliveriesPythonStoredAreRecognisedAsRedeliveries(t *testing.T) {
 			digest[0] ^= 1
 			changed := ingest
 			changed.Digest = digest
-			if _, err := g.IngestGitHub(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
+			if _, err := g.coordinator.Ingest(t.Context(), changed); !errors.Is(err, githubstate.ErrDeliveryReused) {
 				t.Errorf("error = %v, want githubstate.ErrDeliveryReused", err)
 			}
 		})
@@ -539,7 +539,7 @@ func TestGitHubRetentionDeletesReceiptsAndLinksButPreservesInboxCopies(t *testin
 	boundary := g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("boundary"))
 	g.exec(t, `UPDATE github_delivery SET received_at = $2 WHERE delivery_id = $1`, boundary.DeliveryID, cutoff)
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("recent"))
-	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.deliveries(t); got != 2 {
@@ -575,13 +575,13 @@ func TestGitHubRetentionBoundsEachDeletionBatch(t *testing.T) {
 		SELECT app_id, gen_random_uuid(), installation_id, event, digest, payload, now() - interval '8 days'
 		FROM github_delivery CROSS JOIN generate_series(1,1001) WHERE delivery_id = $1`, seed.DeliveryID)
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
-	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.deliveries(t); got != 2 {
 		t.Fatalf("retained %d receipts, want recent seed and one expired receipt", got)
 	}
-	if err := g.CleanupGitHubDeliveries(t.Context(), cutoff); err != nil {
+	if err := g.coordinator.Cleanup(t.Context(), cutoff); err != nil {
 		t.Fatal(err)
 	}
 	if got := g.deliveries(t); got != 1 {

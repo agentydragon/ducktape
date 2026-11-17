@@ -204,7 +204,7 @@ func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) Subsc
 	t.Helper()
 	owner := f.incarnation()
 	owner.SandboxUID = creation.DestinationRef.UID
-	subscription, err := f.Subscribe(t.Context(), owner, creation, nil)
+	subscription, err := f.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,11 @@ func (f fixture) appendEvent(inboxID, subscriptionID uuid.UUID, event sourceadap
 		if _, err := tx.ExecContext(ctx, `SELECT 1 FROM inbox WHERE id = $1 FOR UPDATE`, inboxID); err != nil {
 			return err
 		}
-		return f.AppendEvent(ctx, tx, inboxID, subscriptionID, event, json.RawMessage(payload))
+		input, err := sourceadapter.AppendInputFor(event, json.RawMessage(payload))
+		if err != nil {
+			return err
+		}
+		return f.AppendTx(ctx, tx, inboxID, subscriptionID, input)
 	})
 }
 

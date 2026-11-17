@@ -41,8 +41,8 @@ func (c Claim) Holder() Owner {
 	return Owner{Identity: c.OwnerIdentity, SandboxUID: c.DestinationRef.UID}
 }
 
-// heldInbox is the claimed inbox as a fenced call reads it, locked for update.
-type heldInbox struct {
+// LockedInbox is the claimed inbox as a fenced call reads it, locked for update.
+type LockedInbox struct {
 	Inbox
 	staleCheckAt *time.Time
 }
@@ -124,23 +124,23 @@ func (s *Store) ClaimSource(ctx context.Context) (*Claim, error) {
 	return claim, err
 }
 
-// fenced locks the claimed inbox for update, or fails with ErrClaimLost when the claim no longer holds it.
-func fenced(ctx context.Context, tx transaction.Tx, claim Claim) (heldInbox, error) {
+// FenceClaimTx locks the claimed inbox for update, or fails with ErrClaimLost when the claim no longer holds it.
+func FenceClaimTx(ctx context.Context, tx transaction.Tx, claim Claim) (LockedInbox, error) {
 	if err := inboxLease.Fence(ctx, tx, claim.held); errors.Is(err, lease.ErrLost) {
-		return heldInbox{}, ErrClaimLost
+		return LockedInbox{}, ErrClaimLost
 	} else if err != nil {
-		return heldInbox{}, err
+		return LockedInbox{}, err
 	}
 	var staleCheckAt sql.NullTime
 	inbox, err := scanInbox(tx.QueryRowContext(ctx, `
 		SELECT `+inboxColumns+`, stale_check_at FROM inbox WHERE id = $1 AND NOT retired`, claim.ID), &staleCheckAt)
 	if errors.Is(err, sql.ErrNoRows) {
-		return heldInbox{}, ErrClaimLost
+		return LockedInbox{}, ErrClaimLost
 	}
 	if err != nil {
-		return heldInbox{}, err
+		return LockedInbox{}, err
 	}
-	held := heldInbox{Inbox: inbox}
+	held := LockedInbox{Inbox: inbox}
 	if staleCheckAt.Valid {
 		held.staleCheckAt = utc(staleCheckAt.Time)
 	}
@@ -148,9 +148,9 @@ func fenced(ctx context.Context, tx transaction.Tx, claim Claim) (heldInbox, err
 }
 
 // fencedTransaction runs f in a transaction that holds the claimed inbox locked.
-func (s *Store) fencedTransaction(ctx context.Context, claim Claim, f func(tx transaction.Tx, held heldInbox) error) error {
+func (s *Store) fencedTransaction(ctx context.Context, claim Claim, f func(tx transaction.Tx, held LockedInbox) error) error {
 	return s.transaction(ctx, func(tx transaction.Tx) error {
-		held, err := fenced(ctx, tx, claim)
+		held, err := FenceClaimTx(ctx, tx, claim)
 		if err != nil {
 			return err
 		}
@@ -163,7 +163,7 @@ func (s *Store) fencedTransaction(ctx context.Context, claim Claim, f func(tx tr
 // Source deadlines are scheduled independently by ClaimSource. deliveryError is shown on the inbox until the
 // next release replaces it, and a failure postpones delivery work by at least five seconds.
 func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string, noticeDueAt *time.Time) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		released := now()
 		notice, err := latestNotice(ctx, tx, held.ID)
 		if err != nil {
@@ -212,7 +212,7 @@ func (s *Store) Release(ctx context.Context, claim Claim, deliveryError *string,
 
 // ReleaseSource gives a source claim back without changing any delivery state or deadline.
 func (s *Store) ReleaseSource(ctx context.Context, claim Claim) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, _ heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, _ LockedInbox) error {
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
 		}
@@ -262,7 +262,7 @@ func (s *Store) NextSourceWorkAt(ctx context.Context) (*time.Time, error) {
 // ObserveStale records an unavailable exact Sandbox incarnation. The inbox and its subscriptions
 // remain live; source reads continue, while notice delivery waits for a matching destination.
 func (s *Store) ObserveStale(ctx context.Context, claim Claim, reason string, retry time.Duration) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		recheck := now().Add(retry)
 		if err := inboxLease.Release(ctx, tx, claim.held); err != nil {
 			return err
@@ -281,7 +281,7 @@ func (s *Store) ClearStale(ctx context.Context, claim Claim) error {
 	if claim.staleCheckAt == nil {
 		return nil
 	}
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		_, err := tx.ExecContext(ctx, `UPDATE inbox SET stale_check_at = NULL WHERE id = $1`, held.ID)
 		return err
 	})
@@ -330,7 +330,7 @@ func (s *Store) Source(ctx context.Context, claim Claim) (*DueSubscription, erro
 // retryAfter. The failure's start moves only when its kind changes. A subscription that was cancelled, expired
 // or renewed since it was read as source (its version moved) keeps its state.
 func (s *Store) SourceFailed(ctx context.Context, claim Claim, source Subscription, kind model.SourceFailureKind, message string, retryAfter time.Duration) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		failed := now()
 		result, err := tx.ExecContext(ctx, `
 			UPDATE subscription SET next_attempt = $4,
@@ -347,7 +347,7 @@ func (s *Store) SourceFailed(ctx context.Context, claim Claim, source Subscripti
 
 // SourceDeferred postpones the subscription's next attempt to until, without recording a failure.
 func (s *Store) SourceDeferred(ctx context.Context, claim Claim, source Subscription, until time.Time) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		result, err := tx.ExecContext(ctx,
 			`UPDATE subscription SET next_attempt = $3 WHERE id = $1 AND inbox_id = $2 AND NOT cancelled AND version = $4`,
 			source.ID, held.ID, until, source.Version)
@@ -375,7 +375,7 @@ type EntryTimes struct {
 // covered, acknowledged and expired cursors, or nil when there are none.
 func (s *Store) PendingEntryTimes(ctx context.Context, claim Claim) (*EntryTimes, error) {
 	var times *EntryTimes
-	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		var err error
 		times, _, err = entriesBeyond(ctx, tx, held.ID, max(held.Covered, held.Acknowledged, held.ExpiredThrough))
 		return err

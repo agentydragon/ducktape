@@ -10,7 +10,7 @@ import (
 
 func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
 	h := newHarness(t)
-	maintenance := Maintenance{Store: h.store, Retention: settings.Retention{Days: new(3)}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: new(3)}}
 	repositoryID := seedMergeabilityHistory(t, h)
 	h.exec(`INSERT INTO github_delivery
 		(app_id, delivery_id, installation_id, event, digest, payload, received_at)
@@ -44,7 +44,7 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 
 func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	h := newHarness(t)
-	maintenance := Maintenance{Store: h.store, Retention: settings.Retention{Days: nil}}
+	maintenance := Maintenance{Fanout: h.provider.fanout, Retention: settings.Retention{Days: nil}}
 	repositoryID := seedMergeabilityHistory(t, h)
 	sub := h.follow(pullRequestSource(7), "retention")
 	h.exec(`INSERT INTO entry (

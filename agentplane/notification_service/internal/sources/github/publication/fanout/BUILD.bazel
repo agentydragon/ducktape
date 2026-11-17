@@ -1,0 +1,65 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = ["//agentplane/notification_service:__subpackages__"])
+
+go_library(
+    name = "fanout",
+    srcs = [
+        "coordinator.go",
+        "deliveries.go",
+        "ingest.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout",
+    deps = [
+        "//agentplane/notification_service/internal/sourceadapter",
+        "//agentplane/notification_service/internal/sources/github/model",
+        "//agentplane/notification_service/internal/sources/github/publication",
+        "//agentplane/notification_service/internal/sources/github/state",
+        "//agentplane/notification_service/internal/store",
+        "//agentplane/notification_service/internal/transaction",
+        "//agentplane/notification_service/internal/wakeup",
+        "//agentplane/postgres",
+        "@com_github_google_uuid//:uuid",
+    ],
+)
+
+go_test(
+    name = "fanout_integration_test",
+    size = "medium",
+    srcs = [
+        "github_commit_integration_test.go",
+        "github_fixture_test.go",
+        "github_ingest_integration_test.go",
+        "github_matching_integration_test.go",
+        "github_mergeability_integration_test.go",
+        "github_mergeability_retention_integration_test.go",
+        "github_pr_state_integration_test.go",
+        "github_record_integration_test.go",
+        "github_snapshot_integration_test.go",
+        "github_status_projection_integration_test.go",
+        "github_subscribe_integration_test.go",
+        "golden_test.go",
+        "integration_testmain_test.go",
+        "wakeups_integration_test.go",
+    ],
+    data = ["//agentplane/notification_service/internal/store:golden.json"],
+    embed = [":fanout"],
+    tags = ["requires_docker"],
+    x_defs = {"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout.goldenRlocation": "$(rlocationpath //agentplane/notification_service/internal/store:golden.json)"},
+    deps = [
+        "//agentplane/notification_service/internal/sourceadapter",
+        "//agentplane/notification_service/internal/sources/github/model",
+        "//agentplane/notification_service/internal/sources/github/publication",
+        "//agentplane/notification_service/internal/sources/github/state",
+        "//agentplane/notification_service/internal/store",
+        "//agentplane/notification_service/internal/transaction",
+        "//agentplane/notification_service/internal/wakeup",
+        "//agentplane/notification_service/migrations",
+        "//agentplane/notification_service/model",
+        "//agentplane/postgres/wakeups",
+        "//agentplane/testing/postgres",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_lib_pq//:pq",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)

@@ -10,6 +10,7 @@ go_library(
         "github_mergeability.go",
         "github_repository.go",
         "github_reviews.go",
+        "publication.go",
         "selection.go",
         "subscription.go",
         "validation.go",

@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"context"
@@ -12,8 +12,6 @@ import (
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
-	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
 	"github.com/google/uuid"
 )
 
@@ -246,8 +244,8 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 			if state.lastSuccess.Valid || !state.nextAttempt.Valid || state.nextAttempt.Time.After(now()) {
 				t.Errorf("subscription state = %+v, want no success and due at once", state)
 			}
-			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != claim.held.Holder {
-				t.Errorf("claim = %v, want the worker's %s", holder, claim.held.Holder)
+			if holder := g.claimHolder(t); !holder.Valid || holder.UUID != g.claimedBy {
+				t.Errorf("claim = %v, want the worker's %s", holder, g.claimedBy)
 			}
 		})
 	}
@@ -355,7 +353,7 @@ func TestASubscriptionExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testi
 
 func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	g := newGitHubFixture(t)
-	check := observeWakeups(t, g.fixture)
+	check := observeFanoutWakeups(t, g)
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	g.deliver(t, "issue_comment", withAction("created"), onPullRequest(7), labelled("comment"))
 	claim := g.claimInbox(t, g.inbox)
@@ -392,13 +390,9 @@ func TestDeliveryAlreadyRecordedIsNotRecordedAgain(t *testing.T) {
 		AppID: g.app, DeliveryID: delivery.DeliveryID, RepositoryID: g.repository,
 		Event: githubmodel.EventIssueComment, Action: &action,
 	})
-	if err := g.transaction(t.Context(), func(tx transaction.Tx) error {
-		return entrystorage.Insert(t.Context(), tx, g.inbox, 1, event, delivery.Payload, time.Now().UTC())
-	}); err != nil {
+	if err := g.appendEvent(t.Context(), g.inbox, sub.ID, event, delivery.Payload); err != nil {
 		t.Fatal(err)
 	}
-	g.exec(t, `INSERT INTO subscription_match (subscription_id, cursor) VALUES ($1, 1)`, sub.ID)
-	g.exec(t, `UPDATE inbox SET last_cursor = 1 WHERE id = $1`, g.inbox)
 
 	g.reconcileAll(t, sub)
 	if page := g.read(t, g.inbox, 0); len(page.Entries) != 1 || page.Inbox.LastCursor != 1 {

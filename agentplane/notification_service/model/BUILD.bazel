@@ -5,10 +5,12 @@ package(default_visibility = ["//agentplane/notification_service:__subpackages__
 go_library(
     name = "model",
     srcs = [
+        "append.go",
         "event_identity.go",
         "identity.go",
         "source_failure.go",
         "subscription.go",
+        "subscription_binding.go",
         "validation.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/model",

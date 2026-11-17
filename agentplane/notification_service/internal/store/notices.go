@@ -63,7 +63,7 @@ func lockedNotice(ctx context.Context, tx transaction.Tx, inboxID, commandID uui
 // CurrentNotice returns the claimed inbox's latest notice in whatever state it is, or nil before the first.
 func (s *Store) CurrentNotice(ctx context.Context, claim Claim) (*Notice, error) {
 	var notice *Notice
-	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) (err error) {
+	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) (err error) {
 		notice, err = latestNotice(ctx, tx, held.ID)
 		return err
 	})
@@ -75,7 +75,7 @@ func (s *Store) CurrentNotice(ctx context.Context, claim Claim) (*Notice, error)
 // awaits one. Preparing is not delivering: nothing is sent.
 func (s *Store) PrepareNotice(ctx context.Context, claim Claim) (*Notice, error) {
 	var prepared *Notice
-	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		current, err := latestNotice(ctx, tx, held.ID)
 		if err != nil {
 			return err
@@ -114,7 +114,7 @@ func (s *Store) PrepareNotice(ctx context.Context, claim Claim) (*Notice, error)
 // entry, which it keeps to verify the boundary again after a restart. It is only possible before the first
 // attempt to deliver the notice.
 func (s *Store) CheckpointBeforeAttempt(ctx context.Context, claim Claim, notice Notice, entry *eventlogpb.EventEntry) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		row, err := lockedNotice(ctx, tx, held.ID, notice.CommandID)
 		if err != nil {
 			return err
@@ -151,7 +151,7 @@ func marshalEntry(entry *eventlogpb.EventEntry) ([]byte, error) {
 // before any attempt: nothing is left to tell it.
 func (s *Store) Attempt(ctx context.Context, claim Claim, notice Notice) (bool, error) {
 	var attempt bool
-	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	err := s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		row, err := lockedNotice(ctx, tx, held.ID, notice.CommandID)
 		if err != nil {
 			return err
@@ -175,7 +175,7 @@ func (s *Store) Attempt(ctx context.Context, claim Claim, notice Notice) (bool, 
 // DeliveryFailed ends the notice with a terminal outcome from the sender's side. No other notice is prepared
 // for the entries it covers.
 func (s *Store) DeliveryFailed(ctx context.Context, claim Claim, notice Notice, message string) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		if _, err := lockedNotice(ctx, tx, held.ID, notice.CommandID); err != nil {
 			return err
 		}
@@ -192,7 +192,7 @@ func (s *Store) DeliveryFailed(ctx context.Context, claim Claim, notice Notice, 
 // fails with *InvalidHistoryError if History now holds a different entry there; so does an entry that does not
 // follow the notice's runner cursor.
 func (s *Store) Receipt(ctx context.Context, claim Claim, notice Notice, entry *eventlogpb.EventEntry, afterCursor int64) error {
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		row, err := lockedNotice(ctx, tx, held.ID, notice.CommandID)
 		if err != nil {
 			return err

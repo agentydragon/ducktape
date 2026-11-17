@@ -1,4 +1,4 @@
-package store
+package fanout
 
 import (
 	"errors"
@@ -34,14 +34,14 @@ func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T)
 	access := githubstate.AccessKey{AppID: 1, InstallationID: 2, RepositoryID: 3}
 	invalidAccess := []githubstate.AccessKey{{InstallationID: 2, RepositoryID: 3}, {AppID: 1, RepositoryID: 3}, {AppID: 1, InstallationID: 2}}
 	for _, bad := range invalidAccess {
-		if _, err := f.Subscribe(t.Context(), f.incarnation(), github, &bad); !errors.Is(err, model.ErrInvalid) {
+		if _, err := f.Subscribe(t.Context(), f.incarnation(), github, sourceadapter.GitHubAuthorization{Access: bad}); !errors.Is(err, model.ErrInvalid) {
 			t.Errorf("access %+v: error = %v, want model.ErrInvalid", bad, err)
 		}
 	}
 	if _, err := f.Subscribe(t.Context(), f.incarnation(), github, nil); err == nil {
 		t.Error("a GitHub subscription was created without the access it was authorized under")
 	}
-	if _, err := f.Subscribe(t.Context(), f.incarnation(), f.body("actions"), &access); err == nil {
+	if _, err := f.Subscribe(t.Context(), f.incarnation(), f.body("actions"), sourceadapter.GitHubAuthorization{Access: access}); err == nil {
 		t.Error("an Actions subscription was created bound to GitHub access")
 	}
 	inboxes, err := f.ListInboxes(t.Context(), f.incarnation())
@@ -132,7 +132,8 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment, Actions: []string{"created", "edited"}},
 		githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}},
 	), "follow")
-	original, err := g.Subscribe(t.Context(), g.incarnation(), created, ptr(g.access()))
+	authorization := sourceadapter.GitHubAuthorization{Access: g.access()}
+	original, err := g.Subscribe(t.Context(), g.incarnation(), created, authorization)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +154,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment, Actions: []string{"edited", "created", "edited"}},
 		githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}},
 	))
-	replayed, err := g.Subscribe(t.Context(), g.incarnation(), reordered, ptr(g.access()))
+	replayed, err := g.Subscribe(t.Context(), g.incarnation(), reordered, authorization)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +168,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 	}
 
 	// Idempotency still compares normalized filter sets regardless of their order or duplicates.
-	if again, err := g.Subscribe(t.Context(), g.incarnation(), created, ptr(g.access())); err != nil || again.ID != original.ID {
+	if again, err := g.Subscribe(t.Context(), g.incarnation(), created, authorization); err != nil || again.ID != original.ID {
 		t.Fatalf("a normalized replay = %+v, %v; want subscription %s", again, err, original.ID)
 	}
 
@@ -177,7 +178,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment, Actions: []string{"deleted"}},
 		githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}},
 	))
-	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, ptr(g.access())); !errors.Is(err, ErrIdempotencyKeyReused) {
+	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, authorization); !errors.Is(err, ErrIdempotencyKeyReused) {
 		t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 	}
 }

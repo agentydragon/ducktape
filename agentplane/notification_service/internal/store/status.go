@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
 	entrystorage "github.com/agentydragon/ducktape/agentplane/notification_service/internal/store/internal/entry"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/transaction"
+	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	"github.com/google/uuid"
 )
 
@@ -145,7 +146,7 @@ func summarize(cursor int64, event sourceadapter.EventIdentity, payload []byte, 
 	return summary, nil
 }
 
-func summarizeStored(cursor int64, event sourceadapter.EventIdentity, githubPayload []byte, content storagecodec.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
+func summarizeStored(cursor int64, event sourceadapter.EventIdentity, githubPayload []byte, content model.EntryContentStorage, createdAt time.Time) (EntrySummary, error) {
 	if _, ok := event.(sourceadapter.MessageEvent); ok {
 		return EntrySummary{Cursor: cursor, CreatedAt: createdAt.UTC(), Event: event}, nil
 	}
@@ -308,11 +309,11 @@ func pendingEntrySummaries(ctx context.Context, tx transaction.Tx, inboxID uuid.
 		var cursor int64
 		var identityRead entrystorage.IdentityRow
 		var payload []byte
-		var content storagecodec.EntryContentStorage
+		var content model.EntryContentStorage
 		var createdAt time.Time
 		destinations := append([]any{&cursor}, identityRead.Destinations()...)
 		destinations = append(destinations, &payload)
-		destinations = append(destinations, content.Destinations()...)
+		destinations = append(destinations, storagecodec.EntryContentDestinations(&content)...)
 		destinations = append(destinations, &createdAt)
 		if err := rows.Scan(destinations...); err != nil {
 			return nil, err

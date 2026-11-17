@@ -3,16 +3,10 @@ package store
 import (
 	"bytes"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"testing"
 
-	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
-
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/storagecodec"
-
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/google/uuid"
@@ -64,76 +58,12 @@ type golden struct {
 		Entry      json.RawMessage `json:"entry"`
 		Serialized string          `json:"serialized"`
 	} `json:"runner_entries"`
-	// Deliveries are signed webhook bodies Python accepts, with the call its ingest makes for each.
-	Deliveries []goldenDelivery `json:"deliveries"`
-	// RejectedDeliveries are bodies Python refuses, with why.
-	RejectedDeliveries []struct {
-		Name       string    `json:"name"`
-		Event      string    `json:"event"`
-		DeliveryID uuid.UUID `json:"delivery_id"`
-		Raw        string    `json:"raw"`
-		Reason     string    `json:"reason"`
-	} `json:"rejected_deliveries"`
-}
-
-type goldenDelivery struct {
-	Name       string    `json:"name"`
-	Event      string    `json:"event"`
-	DeliveryID uuid.UUID `json:"delivery_id"`
-	Raw        string    `json:"raw"`
-	Ingest     struct {
-		AppID          int64           `json:"app_id"`
-		DeliveryID     uuid.UUID       `json:"delivery_id"`
-		InstallationID int64           `json:"installation_id"`
-		RepositoryID   *int64          `json:"repository_id"`
-		Event          string          `json:"event"`
-		Digest         string          `json:"digest"`
-		Payload        json.RawMessage `json:"payload"`
-		Action         *string         `json:"action"`
-		HeadSHA        *string         `json:"head_sha"`
-		Subjects       []struct {
-			RepositoryID int64  `json:"repository_id"`
-			Kind         string `json:"kind"`
-			SubjectKey   string `json:"subject_key"`
-		} `json:"subjects"`
-		RepositoryName *string `json:"repository_name"`
-		Revisions      []struct {
-			RepositoryID   int64  `json:"repository_id"`
-			RepositoryName string `json:"repository_name"`
-			SHA            string `json:"sha"`
-		} `json:"revisions"`
-	} `json:"ingest"`
-}
-
-// ingest is what Python's ingest stored for the delivery, as the store takes it.
-func (d goldenDelivery) ingest(t *testing.T) githubstate.Ingest {
-	t.Helper()
-	digest, err := hex.DecodeString(d.Ingest.Digest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ingest := githubstate.Ingest{
-		AppID: d.Ingest.AppID, DeliveryID: d.Ingest.DeliveryID, InstallationID: d.Ingest.InstallationID,
-		Event: d.Ingest.Event, Digest: digest, Payload: d.Ingest.Payload, Action: d.Ingest.Action, HeadSHA: d.Ingest.HeadSHA,
-	}
-	if d.Ingest.RepositoryID != nil {
-		ingest.Repository = &githubmodel.Repository{ID: *d.Ingest.RepositoryID, Name: *d.Ingest.RepositoryName}
-	}
-	for _, subject := range d.Ingest.Subjects {
-		ingest.Subjects = append(ingest.Subjects, githubstate.SubjectKey{RepositoryID: subject.RepositoryID, Kind: subject.Kind, Key: subject.SubjectKey})
-	}
-	for _, revision := range d.Ingest.Revisions {
-		ingest.Revisions = append(ingest.Revisions, githubmodel.HeadRevision{
-			Repository: githubmodel.Repository{ID: revision.RepositoryID, Name: revision.RepositoryName}, SHA: revision.SHA,
-		})
-	}
-	return ingest
 }
 
 func loadGolden(t *testing.T) golden {
 	t.Helper()
 	var vectors golden
-	if err := storagecodec.Decode(goldenJSON, &vectors); err != nil {
+	if err := json.Unmarshal(goldenJSON, &vectors); err != nil {
 		t.Fatal(err)
 	}
 	return vectors

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -57,7 +58,7 @@ func TestNativeEntryContentRejectsIncompleteAndWrongSourceRows(t *testing.T) {
 	}
 }
 
-func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
+func TestAppendTxWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *testing.T) {
 	f := newFixture(t, defaultQuotas())
 	subscription := f.subscribe(t, f.body("identity-columns"))
 	requestID := uuid.New()
@@ -68,7 +69,7 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 	events := []sourceadapter.EventIdentity{
 		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
 		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
-		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty}),
 		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &opened}),
 		sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 3}),
 		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
@@ -143,9 +144,9 @@ func TestAppendEventWritesEverySourceIdentityWithoutCollapsingGitHubAction(t *te
 		t.Errorf("message identity columns = %+v", got[7])
 	}
 	for i, wantNull := range []bool{false, true, true, true, true, false, false, false} {
-		var content storagecodec.EntryContentStorage
+		var content model.EntryContentStorage
 		if err := f.db.QueryRowContext(t.Context(), `SELECT `+storagecodec.EntryContentReadColumns+`
-			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(content.Destinations()...); err != nil {
+			FROM entry WHERE inbox_id = $1 AND cursor = $2`, subscription.InboxID, i+1).Scan(storagecodec.EntryContentDestinations(&content)...); err != nil {
 			t.Fatal(err)
 		}
 		if wantNull {
@@ -185,9 +186,9 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	empty := ""
 	events := []sourceadapter.EventIdentity{
 		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 17}),
-		sourceadapter.ActionsEvent{RequestID: requestID, Sequence: 18},
+		sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: requestID, Sequence: 18}),
 		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest}),
-		sourceadapter.GitHubEvent{AppID: 1, DeliveryID: uuid.New(), RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty},
+		sourceadapter.WrapGitHubEvent(githubmodel.WebhookEvent{AppID: 1, DeliveryID: deliveryID, RepositoryID: 2, Event: githubmodel.EventPullRequest, Action: &empty}),
 		sourceadapter.WrapGitHubObservationEvent(githubmodel.ObservationEvent{AppID: 1, RepositoryID: 2, Event: githubmodel.EventCheckRun, Sequence: 19}),
 		sourceadapter.WrapGitHubMergeabilityEvent(githubmodel.MergeabilityEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Sequence: 4}),
 		sourceadapter.WrapGitHubMergeabilitySnapshotEvent(githubmodel.MergeabilitySnapshotEvent{AppID: 1, RepositoryID: 2, PullRequestNumber: 3, Version: 5}),
@@ -211,7 +212,11 @@ func TestEventReadersAndReplayDedupUseRelationalIdentity(t *testing.T) {
 	f.exec(t, `UPDATE inbox SET expired_through = 1 WHERE id = $1`, subscription.InboxID)
 	for _, event := range events {
 		if err := f.transaction(t.Context(), func(tx transaction.Tx) error {
-			return f.AppendEvent(t.Context(), tx, subscription.InboxID, subscription.ID, event, []byte(`{"retry":true}`))
+			input, err := sourceadapter.AppendInputFor(event, []byte(entryPayloadForTest(t, event)))
+			if err != nil {
+				return err
+			}
+			return f.AppendTx(t.Context(), tx, subscription.InboxID, subscription.ID, input)
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -287,5 +292,65 @@ func TestIdentityActionActorReadsSummarizesAndExpiresWithoutChangingEventIdentit
 	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, event, string(payload))
 	if got := f.read(t, subscription.InboxID, 0).Inbox.LastCursor; got != 1 {
 		t.Fatalf("expired event replayed: cursor %d", got)
+	}
+}
+
+func TestMessageReplayIgnoresSenderIdentityMetadataAndRetainsItAfterExpiry(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, f.body("message-sender-metadata"))
+	original := sourceadapter.WrapMessageEvent(model.MessageEvent{
+		MessageID:      uuid.New(),
+		Sender:         model.ServiceAccount{Namespace: "sender-ns", Name: "sender"},
+		SenderIdentity: &model.Identity{Name: "original", UID: uuid.NewString()},
+	})
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, original, `{"body":"first body"}`)
+	replay := original
+	replay.SenderIdentity = &model.Identity{Name: "replacement", UID: uuid.NewString()}
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, replay, `{"body":"replacement body"}`)
+	page := f.read(t, subscription.InboxID, 0)
+	if page.Inbox.LastCursor != 1 || len(page.Entries) != 1 {
+		t.Fatalf("message metadata replay = %+v", page)
+	}
+	requireEqual(t, page.Entries[0].Event, sourceadapter.EventIdentity(original))
+	if string(page.Entries[0].Payload) != `{"body":"first body"}` {
+		t.Fatalf("replay replaced message body: %s", page.Entries[0].Payload)
+	}
+
+	f.acknowledge(t, subscription.InboxID, 1)
+	f.exec(t, `UPDATE entry SET created_at = now() - interval '31 days' WHERE inbox_id = $1`, subscription.InboxID)
+	f.cleanAll(t)
+	f.mustAppendEvent(t, subscription.InboxID, subscription.ID, replay, `{"body":"replacement body"}`)
+	page = f.read(t, subscription.InboxID, 0)
+	if page.Inbox.LastCursor != 1 || page.Inbox.ExpiredThrough != 1 || len(page.Entries) != 0 {
+		t.Fatalf("expired message replay = %+v", page)
+	}
+	var name, uid string
+	var body sql.NullString
+	if err := f.db.QueryRowContext(t.Context(), `SELECT message_sender_identity_name, message_sender_identity_uid, message_body
+		FROM entry WHERE inbox_id = $1 AND cursor = 1`, subscription.InboxID).Scan(&name, &uid, &body); err != nil {
+		t.Fatal(err)
+	}
+	if name != original.SenderIdentity.Name || uid != original.SenderIdentity.UID || body.Valid {
+		t.Fatalf("expired message metadata = %q/%q, body = %+v", name, uid, body)
+	}
+}
+
+func TestAppendTxRejectsDuplicateKeyColumnsBeforeAdvancingCursor(t *testing.T) {
+	f := newIsolatedFixture(t, defaultQuotas())
+	subscription := f.subscribe(t, f.body("duplicate-key-column"))
+	event := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: uuid.New(), Sequence: 1})
+	input, err := sourceadapter.AppendInputFor(event, []byte(entryPayloadForTest(t, event)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Key.Fields = append(input.Key.Fields, input.Key.Fields[0])
+	err = f.transaction(t.Context(), func(tx transaction.Tx) error {
+		return f.AppendTx(t.Context(), tx, subscription.InboxID, subscription.ID, input)
+	})
+	if err == nil || !strings.Contains(err.Error(), "duplicate entry key column") {
+		t.Fatalf("duplicate key error = %v", err)
+	}
+	if page := f.read(t, subscription.InboxID, 0); page.Inbox.LastCursor != 0 || len(page.Entries) != 0 {
+		t.Fatalf("duplicate key changed inbox: %+v", page)
 	}
 }

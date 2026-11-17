@@ -32,50 +32,12 @@ func commitObservationClause(alias string, selection githubmodel.CommitObservati
 	return "(" + strings.Join(selected, " OR ") + ")"
 }
 
-// snapshotGitHubCommitObservations stores the current native state for current PR-head revisions at the
-// subscription's immutable creation boundary. New transitions have larger sequences and remain replayable.
-func snapshotGitHubCommitObservations(ctx context.Context, tx transaction.Tx, subscriptionID uuid.UUID, appID int64,
-	subject githubstate.SubjectKey, source githubmodel.Source,
-) error {
-	selection := source.CommitObservationSelection()
-	args := argList{subscriptionID, appID, subject.RepositoryID, subject.Kind, subject.Key}
-	selected := commitObservationClause("c", selection, &args)
-	_, err := tx.ExecContext(ctx, `INSERT INTO github_commit_subscription_snapshot
-		(subscription_id, app_id, installation_id, repository_id, event, sequence, payload)
-		SELECT $1, c.app_id, c.installation_id, c.repository_id, c.event, c.last_sequence, c.payload
-		FROM (
-			SELECT DISTINCT ON (app_id, installation_id, repository_id, head_sha, event,
-				CASE WHEN event = 'check_run' THEN COALESCE(payload->>'appId', payload->>'checkAppId') END,
-				CASE WHEN event = 'check_run' THEN payload->>'name' END,
-				CASE WHEN event = 'check_run' AND COALESCE(payload->>'appId', payload->>'checkAppId') IS NULL THEN entity_key END,
-				CASE WHEN event = 'status' THEN entity_key END) *
-			FROM github_commit_current
-			ORDER BY app_id, installation_id, repository_id, head_sha, event,
-				CASE WHEN event = 'check_run' THEN COALESCE(payload->>'appId', payload->>'checkAppId') END,
-				CASE WHEN event = 'check_run' THEN payload->>'name' END,
-				CASE WHEN event = 'check_run' AND COALESCE(payload->>'appId', payload->>'checkAppId') IS NULL THEN entity_key END,
-				CASE WHEN event = 'status' THEN entity_key END,
-				(payload->>'id')::bigint DESC
-		) c
-		JOIN github_pull_request p ON p.repository_id = $3 AND p.number::text = $5 AND p.head_sha = c.head_sha
-		JOIN github_repository_access a ON a.app_id = c.app_id AND a.installation_id = c.installation_id
-			AND a.repository_id = c.repository_id AND a.valid_until > now() AND a.error IS NULL
-		JOIN github_installation i ON i.app_id = a.app_id AND i.installation_id = a.installation_id
-			AND i.generation = a.validated_installation_generation
-		WHERE c.app_id = $2 AND EXISTS (
-			SELECT 1 FROM github_subject_revision r WHERE r.repository_id = $3 AND r.kind = $4 AND r.subject_key = $5
-				AND r.head_repository_id = c.repository_id AND r.sha = p.head_sha)
-			AND `+selected+`
-		ON CONFLICT DO NOTHING`, args...)
-	return err
-}
-
-// recordGitHubCommitObservations appends current-state snapshots then transitions after the immutable creation
+// RecordGitHubCommitObservationsTx appends current-state snapshots then transitions after the immutable creation
 // boundary. Inbox copies and generated identities commit together, so replay after restart is durable.
-func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
-	recording GitHubRecording,
+func (s *Store) RecordGitHubCommitObservationsTx(ctx context.Context, tx transaction.Tx, inboxID uuid.UUID,
+	subscriptionID uuid.UUID, subject githubstate.SubjectKey, fences []githubstate.AccessFence,
 ) (int, bool, error) {
-	if recording.Subject.Kind != "pull_request" {
+	if subject.Kind != "pull_request" {
 		return 0, false, nil
 	}
 	var creationProto sql.Null[[]byte]
@@ -83,11 +45,11 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transacti
 	var idempotencyKey string
 	var after int64
 	if err := tx.QueryRowContext(ctx, `SELECT creation_proto, source_provider, idempotency_key, github_commit_after_sequence
-		FROM subscription WHERE id = $1`, recording.SubscriptionID).
+		FROM subscription WHERE id = $1`, subscriptionID).
 		Scan(&creationProto, &sourceProvider, &idempotencyKey, &after); err != nil {
 		return 0, false, err
 	}
-	body, err := sourceadapter.DecodeStoredSubscriptionCreation(recording.SubscriptionID, creationProto, sourceProvider, idempotencyKey)
+	body, err := sourceadapter.DecodeStoredSubscriptionCreation(subscriptionID, creationProto, sourceProvider, idempotencyKey)
 	if err != nil {
 		return 0, false, err
 	}
@@ -99,17 +61,17 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transacti
 	if !selection.CheckRuns && !selection.CommitStatuses {
 		return 0, false, nil
 	}
-	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, recording, "github_commit_subscription_snapshot")
+	count, more, err := s.recordGitHubObservationSnapshots(ctx, tx, inboxID, subscriptionID, fences, "github_commit_subscription_snapshot")
 	if err != nil {
 		return 0, false, err
 	}
 	if more {
 		return count, true, nil
 	}
-	remaining := GitHubDeliveryPageSize - count
+	remaining := githubmodel.DeliveryPageSize - count
 	var args argList
-	accessible := make([]string, 0, len(recording.Fences))
-	for _, fence := range recording.Fences {
+	accessible := make([]string, 0, len(fences))
+	for _, fence := range fences {
 		accessible = append(accessible, "(e.app_id = "+args.add(fence.Key.AppID)+" AND e.repository_id = "+args.add(fence.Key.RepositoryID)+
 			" AND e.installation_id = "+args.add(fence.Key.InstallationID)+")")
 	}
@@ -117,9 +79,9 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transacti
 		return count, false, nil
 	}
 	selected := commitObservationClause("e", selection, &args)
-	repository := args.add(recording.Subject.RepositoryID)
-	kind := args.add(recording.Subject.Kind)
-	key := args.add(recording.Subject.Key)
+	repository := args.add(subject.RepositoryID)
+	kind := args.add(subject.Kind)
+	key := args.add(subject.Key)
 	sequence := args.add(after)
 	limit := args.add(remaining + 1)
 	query := `SELECT e.app_id, e.installation_id, e.repository_id, e.event, e.sequence, e.payload
@@ -131,7 +93,7 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transacti
 			AND e.sequence > ` + sequence + `
 			AND NOT EXISTS (SELECT 1 FROM subscription_match m JOIN entry existing
 				ON existing.inbox_id = ` + args.add(inboxID) + ` AND existing.cursor = m.cursor
-				WHERE m.subscription_id = ` + args.add(recording.SubscriptionID) + `
+				WHERE m.subscription_id = ` + args.add(subscriptionID) + `
 					AND existing.identity_provider = 'github_observation'
 					AND existing.github_app_id = e.app_id AND existing.github_repository_id = e.repository_id
 					AND existing.github_event = e.event AND existing.github_observation_sequence = e.sequence)
@@ -149,7 +111,11 @@ func (s *Store) recordGitHubCommitObservations(ctx context.Context, tx transacti
 		events = events[:remaining]
 	}
 	for _, item := range events {
-		if err := s.AppendEvent(ctx, tx, inboxID, recording.SubscriptionID, item.identity, item.payload); err != nil {
+		input, err := sourceadapter.AppendInputFor(item.identity, item.payload)
+		if err != nil {
+			return 0, false, err
+		}
+		if err := s.AppendTx(ctx, tx, inboxID, subscriptionID, input); err != nil {
 			return 0, false, fmt.Errorf("append GitHub commit observation: %w", err)
 		}
 		count++

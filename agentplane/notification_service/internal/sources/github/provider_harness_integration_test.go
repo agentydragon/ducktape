@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication"
@@ -179,7 +181,7 @@ func (h *harness) restart() {
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID
 	sharedState := githubstate.New(h.db, runner, time.Duration(settings.FreshnessSeconds)*time.Second, publication.Adapter{})
-	h.provider = NewProvider(newTestClient(h.t, h.fake), h.store, sharedState, settings)
+	h.provider = NewProvider(newTestClient(h.t, h.fake), fanout.New(h.db, runner, h.store), sharedState, settings)
 }
 
 func (h *harness) exec(query string, args ...any) {
@@ -223,7 +225,7 @@ func (h *harness) follow(source githubmodel.Source, key string) store.Subscripti
 	}
 	subscription, err := h.store.Subscribe(h.t.Context(), testIncarnation, sourceadapter.Subscribe{
 		DestinationRef: testDestination, SessionID: "session", IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7,
-	}, &access)
+	}, sourceadapter.GitHubAuthorization{Access: access})
 	if err != nil {
 		h.t.Fatal(err)
 	}
@@ -240,7 +242,7 @@ func (h *harness) deliver(event string, payload map[string]any) error {
 	if err != nil {
 		return err
 	}
-	_, err = h.store.IngestGitHub(h.t.Context(), ingest)
+	_, err = h.provider.fanout.Ingest(h.t.Context(), ingest)
 	return err
 }
 

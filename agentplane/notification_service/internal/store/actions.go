@@ -35,7 +35,7 @@ func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubs
 	if !ok {
 		return fmt.Errorf("subscription %s does not follow an Action request", due.ID)
 	}
-	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held heldInbox) error {
+	return s.fencedTransaction(ctx, claim, func(tx transaction.Tx, held LockedInbox) error {
 		recorded := now()
 		var after sql.NullInt64
 		err := tx.QueryRowContext(ctx, `
@@ -66,7 +66,11 @@ func (s *Store) RecordActionEvents(ctx context.Context, claim Claim, due DueSubs
 				return err
 			}
 			identity := sourceadapter.WrapActionsEvent(model.ActionsEvent{RequestID: source.RequestID, Sequence: event.Sequence})
-			if err := s.AppendEvent(ctx, tx, held.ID, due.ID, identity, payload); err != nil {
+			input, err := sourceadapter.AppendInputFor(identity, payload)
+			if err != nil {
+				return err
+			}
+			if err := s.AppendTx(ctx, tx, held.ID, due.ID, input); err != nil {
 				return err
 			}
 			sequence = event.Sequence

@@ -197,7 +197,7 @@ func (f fixture) subscribe(t *testing.T) store.Subscription {
 		IdempotencyKey: "test-key",
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
 		LifetimeDays:   7,
-	}, nil)
+	}, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}

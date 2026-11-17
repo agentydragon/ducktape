@@ -119,90 +119,16 @@ func (s *Store) checkActiveSubscriptionQuota(ctx context.Context, tx transaction
 	return nil
 }
 
-// sourceBinding is what a subscription's source adds to its row: the columns that tie it to the source's own
-// state.
-type sourceBinding struct {
-	actionsAfterSequence sql.NullInt64
-	// githubStartPosition is the newest delivery when a GitHub subscription was created: only later ones are owed.
-	githubStartPosition                             sql.NullInt64
-	githubCommitAfterSequence                       sql.NullInt64
-	githubPRStateAfterSequence                      sql.NullInt64
-	githubApp, githubInstallation, githubRepository sql.NullInt64
-	githubSubjectKind, githubSubjectKey             sql.NullString
-}
-
-// checkAccess requires the access a source needs: a GitHub subscription is bound to the repository access it was
-// authorized under, and no other source has any.
-func checkAccess(source sourceadapter.Source, access *githubstate.AccessKey) error {
-	_, github := source.(sourceadapter.GitHubSource)
-	switch {
-	case !github && access != nil:
-		return errors.New("only a GitHub subscription is bound to GitHub access")
-	case github && access == nil:
-		return errors.New("a GitHub subscription is bound to the access it was authorized under")
-	case github && (access.AppID <= 0 || access.InstallationID <= 0 || access.RepositoryID <= 0):
-		return model.Invalid("GitHub access names an App, installation and repository above 0")
-	}
-	return nil
-}
-
-// bindSource is where subscribing meets a source kind. A GitHub subscription also creates, unless they exist, the
-// shared rows it reads through: its installation, repository, grant and subject. The caller holds the GitHub lock.
-func bindSource(ctx context.Context, tx transaction.Tx, source sourceadapter.Source, access *githubstate.AccessKey) (sourceBinding, error) {
-	switch source := source.(type) {
-	case sourceadapter.ActionsSource:
-		return sourceBinding{actionsAfterSequence: sql.NullInt64{Int64: source.AfterSequence, Valid: true}}, nil
-	case sourceadapter.GitHubSource:
-		subject, err := githubstate.NewSubjectKey(access.RepositoryID, source.Subject)
-		if err != nil {
-			return sourceBinding{}, err
-		}
-		var start int64
-		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(position), 0) FROM github_delivery`).Scan(&start); err != nil {
-			return sourceBinding{}, err
-		}
-		var commitSequence int64
-		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_commit_event`).Scan(&commitSequence); err != nil {
-			return sourceBinding{}, err
-		}
-		var prStateSequence int64
-		if err := tx.QueryRowContext(ctx, `SELECT coalesce(max(sequence), 0) FROM github_pr_state_event`).Scan(&prStateSequence); err != nil {
-			return sourceBinding{}, err
-		}
-		if err := githubstate.GrantTx(ctx, tx, *access, source.Repository); err != nil {
-			return sourceBinding{}, err
-		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO github_subject (repository_id, kind, subject_key, generation) VALUES ($1, $2, $3, 0) ON CONFLICT DO NOTHING`,
-			subject.RepositoryID, subject.Kind, subject.Key); err != nil {
-			return sourceBinding{}, err
-		}
-		return sourceBinding{
-			githubStartPosition:        sql.NullInt64{Int64: start, Valid: true},
-			githubCommitAfterSequence:  sql.NullInt64{Int64: commitSequence, Valid: true},
-			githubPRStateAfterSequence: sql.NullInt64{Int64: prStateSequence, Valid: true},
-			githubApp:                  sql.NullInt64{Int64: access.AppID, Valid: true},
-			githubInstallation:         sql.NullInt64{Int64: access.InstallationID, Valid: true},
-			githubRepository:           sql.NullInt64{Int64: access.RepositoryID, Valid: true},
-			githubSubjectKind:          sql.NullString{String: subject.Kind, Valid: true},
-			githubSubjectKey:           sql.NullString{String: subject.Key, Valid: true},
-		}, nil
-	default:
-		return sourceBinding{}, model.Invalid("source must be an Action request or a GitHub subject")
-	}
-}
-
-// sourceadapter.Subscribe creates the owner's subscription, and the Session's inbox with the first one. A creation whose
+// Subscribe creates the owner's subscription, and the Session's inbox with the first one. A creation whose
 // idempotency key the inbox already holds returns that subscription, cancelled or not, if it was created with
 // the same arguments, and fails with ErrIdempotencyKeyReused if not.
 //
-// access is the repository access a GitHub subscription was authorized under, which the caller has just read from
-// GitHub, and nil for any other source. A replay of a creation returns the subscription it made and writes no rows.
-func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.Subscribe, access *githubstate.AccessKey) (Subscription, error) {
+// Authorization records the successful source authorization. A replay returns the subscription it made and writes no rows.
+func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.Subscribe, authorization sourceadapter.Authorization) (Subscription, error) {
 	if err := body.Validate(); err != nil {
 		return Subscription{}, err
 	}
-	if err := checkAccess(body.Source, access); err != nil {
+	if err := sourceadapter.CheckAuthorization(body.Source, authorization); err != nil {
 		return Subscription{}, err
 	}
 	creationProto, sourceProvider, err := sourceadapter.EncodeSubscriptionCreation(body)
@@ -211,11 +137,8 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 	}
 	var subscription Subscription
 	err = s.transaction(ctx, func(tx transaction.Tx) error {
-		if _, github := body.Source.(sourceadapter.GitHubSource); github {
-			// Lock order: the GitHub lock, then the inbox.
-			if err := githubstate.Lock(ctx, tx); err != nil {
-				return err
-			}
+		if err := sourceadapter.LockSubscriptionTx(ctx, tx, body.Source, authorization); err != nil {
+			return err
 		}
 		inbox, err := s.ensureInbox(ctx, tx, owner, body.DestinationRef, body.SessionID)
 		if err != nil {
@@ -245,7 +168,7 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 		if err := s.checkActiveSubscriptionQuota(ctx, tx, inbox.ID, written); err != nil {
 			return err
 		}
-		binding, err := bindSource(ctx, tx, body.Source, access)
+		binding, err := sourceadapter.BindSubscriptionTx(ctx, tx, body.Source, authorization)
 		if err != nil {
 			return err
 		}
@@ -256,30 +179,14 @@ func (s *Store) Subscribe(ctx context.Context, owner Owner, body sourceadapter.S
 				github_start_position, github_app_id, github_installation_id, github_repository_id, github_subject_kind,
 				github_subject_key, github_commit_after_sequence, github_pr_state_after_sequence, generation, cancelled, expires_at, next_attempt)
 			VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $9, $10, $11, $12, coalesce($13, 0), coalesce($14, 0), 0, false, $15, $16)`,
-			id, inbox.ID, body.IdempotencyKey, creationProto, sourceProvider, binding.actionsAfterSequence,
-			binding.githubStartPosition, binding.githubApp, binding.githubInstallation, binding.githubRepository,
-			binding.githubSubjectKind, binding.githubSubjectKey, binding.githubCommitAfterSequence,
-			binding.githubPRStateAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
+			id, inbox.ID, body.IdempotencyKey, creationProto, sourceProvider, binding.ActionsAfterSequence,
+			binding.GitHubStartPosition, binding.GitHubApp, binding.GitHubInstallation, binding.GitHubRepository,
+			binding.GitHubSubjectKind, binding.GitHubSubjectKey, binding.GitHubCommitAfterSequence,
+			binding.GitHubPRStateAfterSequence, expiry(written, body.LifetimeDays), written); err != nil {
 			return err
 		}
-		if _, ok := body.Source.(sourceadapter.GitHubSource); ok {
-			if _, err := tx.ExecContext(ctx, `UPDATE subscription
-				SET github_mergeability_after_sequence = (SELECT coalesce(max(sequence), 0) FROM github_mergeability_event)
-				WHERE id = $1`, id); err != nil {
-				return err
-			}
-			if source, ok := body.Source.(sourceadapter.GitHubSource); ok && binding.githubSubjectKind.String == "pull_request" {
-				subject, err := githubstate.NewSubjectKey(access.RepositoryID, source.Subject)
-				if err != nil {
-					return err
-				}
-				if err := snapshotGitHubCommitObservations(ctx, tx, id, access.AppID, subject, source.Source); err != nil {
-					return err
-				}
-				if err := snapshotGitHubPRState(ctx, tx, id, access.AppID, access.InstallationID, subject, prStateFilters(source.Source)); err != nil {
-					return err
-				}
-			}
+		if err := sourceadapter.InitializeSubscriptionTx(ctx, tx, id, body.Source, authorization); err != nil {
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE inbox SET updated_at = $2, next_attempt = $2 WHERE id = $1`,
 			inbox.ID, written); err != nil {

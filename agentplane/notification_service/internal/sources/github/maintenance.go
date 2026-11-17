@@ -5,14 +5,15 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
-	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/store"
 )
 
 // Maintenance expires GitHub's cached receipts and observations. It makes no GitHub API calls,
 // and runs even when the GitHub source is disabled. Published inbox content has its own lifetime.
 type Maintenance struct {
-	Store     *store.Store
+	Fanout    *fanout.Coordinator
 	Retention settings.Retention
 }
 
@@ -21,7 +22,7 @@ func (m Maintenance) Cleanup(ctx context.Context) error {
 	if m.Retention.Days == nil {
 		return nil
 	}
-	return m.Store.CleanupGitHubDeliveries(ctx, time.Now().Add(-time.Duration(*m.Retention.Days)*24*time.Hour))
+	return m.Fanout.Cleanup(ctx, time.Now().Add(-time.Duration(*m.Retention.Days)*24*time.Hour))
 }
 
 func (m Maintenance) Run(ctx context.Context) error {

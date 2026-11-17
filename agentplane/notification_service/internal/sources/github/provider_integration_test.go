@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/publication/fanout"
+
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -664,13 +666,13 @@ func TestAMatchingPageIsNotCappedByTheHistoryOfAssociations(t *testing.T) {
 	}
 	claim := h.claim()
 	h.reconcile(claim)
-	if cursor := h.page(subscription.InboxID).Inbox.LastCursor; cursor != store.GitHubDeliveryPageSize {
-		t.Fatalf("last cursor = %d after the first page, want %d", cursor, store.GitHubDeliveryPageSize)
+	if cursor := h.page(subscription.InboxID).Inbox.LastCursor; cursor != fanout.DeliveryPageSize {
+		t.Fatalf("last cursor = %d after the first page, want %d", cursor, fanout.DeliveryPageSize)
 	}
 
 	// A full page makes the subscription due again at once.
 	h.reconcile(claim)
-	page, err := h.store.Read(t.Context(), testIncarnation, subscription.InboxID, store.GitHubDeliveryPageSize, store.GitHubDeliveryPageSize)
+	page, err := h.store.Read(t.Context(), testIncarnation, subscription.InboxID, fanout.DeliveryPageSize, fanout.DeliveryPageSize)
 	if err != nil || len(page.Entries) != 2 || page.Inbox.LastCursor != 130 {
 		t.Fatalf("second page = %+v, %v; want the last 2 of 130 entries", page, err)
 	}
@@ -684,7 +686,7 @@ func TestASubscriptionOfAnotherAppIsASourceChange(t *testing.T) {
 	due := h.next(claim)
 	settings := settings.DefaultSettings()
 	settings.AppID = fixture.AppID + 1
-	other := NewProvider(h.provider.client, h.store, h.provider.state, settings)
+	other := NewProvider(h.provider.client, h.provider.fanout, h.provider.state, settings)
 
 	requests := h.fake.Total()
 	failure := fixture.AsError[*sources.ProviderError](t, other.Process(t.Context(), claim, due))

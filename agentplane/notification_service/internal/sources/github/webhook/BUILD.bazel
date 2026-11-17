@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/webhook",
     deps = [
         "//agentplane/notification_service/internal/sources/github",
+        "//agentplane/notification_service/internal/sources/github/publication/fanout",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/store",
@@ -26,6 +27,7 @@ go_test(
     embed = [":webhook"],
     tags = ["requires_docker"],
     deps = [
+        "//agentplane/notification_service/internal/sources/github/publication/fanout",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/state",
         "//agentplane/notification_service/internal/store",
