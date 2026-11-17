@@ -136,20 +136,25 @@
                   >PR #17125<//
                 >, keeps a bounded owned blob volume while starting a fresh
                 registry for pushes, authentication and manifest cleanup.
-                Registry lifecycle and Optimize tests passed on the proposal's
-                original head <${Code}>add185a548<//>, before its rebase; those
-                runs do not validate the current PR head. Two Optimize runs on
-                the same worker and volume took 146.8s and 68.6s with different
-                registry containers; those observations are not a controlled
-                estimate of fleet or PR feedback savings.
+                Registry lifecycle and Optimize tests passed uncached on PR head
+                <${Code}>e02143fd<//> in ${" "}<${Anchor}
+                  href="https://app.buildbuddy.io/invocation/cbe0ab57-9bbf-48a2-83a3-219694c958bb"
+                  >this BuildBuddy run<//
+                >. The lifecycle test confirmed that blobs remain available with
+                a fresh container while manifests and unfinished uploads are
+                removed. Matching worker and volume names across runs do not
+                prove a warm blob hit or a PR feedback saving.
               <//>
               <${Text} my="sm">
                 Measure cold and compatible-warm runs with the same inputs,
                 including snapshot transfer, cleanup and recovery, before
-                considering wider enrollment. The proposal leaves snapshot save
-                policy unset. A recycled runner, a retained snapshot and a live
-                fixture are different lifetimes; do not assume one implies
-                another. ${" "}<${Anchor} href="./followup-evidence.json"
+                considering wider enrollment. A second zero-wait lease
+                acquisition fails; determine whether competing owners can occur
+                and whether the fixture should fall back to an uncached
+                registry. The proposal leaves snapshot save policy unset. A
+                recycled runner, a retained snapshot and a live fixture are
+                different lifetimes; do not assume one implies another.
+                ${" "}<${Anchor} href="./followup-evidence.json"
                   >Validation evidence<//
                 >.
               <//>

@@ -75,7 +75,13 @@
       "https://app.buildbuddy.io/invocation/555f3144-d580-4998-888f-ec8234cb2946",
       "https://app.buildbuddy.io/invocation/22e25ad7-34c0-414a-bf25-313c1cba0ed4"
     ],
-    "scope": "Optimize only. Two worker-local runs reused one volume with a fresh registry per run; total test action times are not fleet or PR-feedback estimates."
+    "scope": "Optimize only. Two worker-local runs reused one volume with a fresh registry per run; total test action times are not fleet or PR-feedback estimates.",
+    "exact_head_validation": {
+      "source_head": "e02143fdac0d9375d9d8bab6ff9f02ae2935b674",
+      "invocation": "https://app.buildbuddy.io/invocation/cbe0ab57-9bbf-48a2-83a3-219694c958bb",
+      "result": "Uncached registry lifecycle and Optimize E2E passed in 26.3s and 74.1s respectively. Lifecycle verification includes retained blobs across a fresh registry, metadata cleanup, and second lease acquisition failing.",
+      "limits": "No contention occurred in Optimize; the lease test uses two locks in one process. Matching worker and volume names and byte counts across runs do not prove a warm blob hit or a causal timing saving."
+    }
   },
   "agentplane_fixture_inventory": {
     "source_sha": "e2c8ad07b2a802023ed7b697ce6a0b32e4db849f",
