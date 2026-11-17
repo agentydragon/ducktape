@@ -822,7 +822,10 @@ snapshot was at 128 million reads; it does not represent the exact cap state.
 | Source event rules               |               115,373 |                639,898 |
 | Event executions                 |               169,653 |                803,607 |
 | Read calls                       |             1,204,573 |            128,000,000 |
-| Largest observed origin set read |                   228 |                 20,385 |
+| Largest observed origin set read |                   228 |                 20,430 |
+
+These older widths include the separate unknown alternative as one element;
+the later transfer witnesses count concrete origins and unknown separately.
 
 Tana's hottest field groups included `stopPropagation` (8,620,545 reads, all
 absent), `preventDefault` (7,669,487, all absent), `current` (5,045,676),
@@ -842,10 +845,9 @@ unknown alternative in this relation, not an instruction to enumerate every
 allocation. The interpreter's precision-loss/global-reach fallbacks are later
 than the phase reached by this capped run.
 
-Follow-up is to trace the first broadening transfers and establish which absent
-property keys can have producers, then measure a bounded change against the
-same inputs. Do not infer an algorithmic remedy or a completed private-consumer
-run from these partial counts. The task's raw commands, metadata, count
+The producer-census checkpoint and transfer witnesses below continue this
+attribution. Do not infer a completed private-consumer run from these partial
+counts. The task's raw commands, metadata, count
 snapshots and OTLP files are under
 `/tmp/agents/2026_11_17/tana-flow-cause/{excal-attribution,tana-attribution-2}`;
 these local receipts can expire and contain private source identities.
@@ -982,3 +984,106 @@ Raw commands, GNU time files, OTLP, manifests and tool identities are in
 `census-{control,census}-{off,on}-excalidraw-{1,2,3}`,
 `census-control-tana-2`, `census-candidate-tana`, and the two
 `census-*-comparison.json` receipts. These temporary files can expire.
+
+## First origin-breadth transfers (2026-11-17)
+
+Temporary optimized instrumentation on devel
+`98fcd64042fa071bde2ce043c4b402b1a036e6d9`, including the merged property
+producer census, records actual fact-join widths at the first 1,024/4,096/16,384
+concrete-origin crossings. It observes existing reads and joins without adding
+semantic reads, dependencies or proposals. Each witness keeps its event,
+before/incoming/after cardinalities, unknown separately, twelve sampled origins
+and at most eight largest inputs read during that evaluation. Cached invocation
+operands can produce a witness with no new reads in that evaluation; the event's
+argument expression remains available. This is bounded attribution, not a
+per-origin provenance graph or a native timing measurement.
+
+Build receipts:
+[first trace](https://app.buildbuddy.io/invocation/70554d3b-4393-485e-8c7c-1d7005073c32),
+[narrowed trace](https://app.buildbuddy.io/invocation/d6be9851-002e-4e05-b72a-c7450bc84d99).
+Both probes reuse the frozen private projection under a 120-second wall limit,
+16-GiB/no-swap cap, four Rayon threads and one-second OTLP exports. Both stop
+inside source value flow. The first reaches its 20,000-record diagnostic limit;
+the second excludes most property-union carriers and retains 12,837 witnesses
+through evaluation 809,739 without reaching that limit.
+
+Representative ordered witnesses from the narrowed trace:
+
+| Destination                                           | Before | Incoming concrete origins |  After |
+| ----------------------------------------------------- | -----: | ------------------------: | -----: |
+| JSX props formal, one literal argument                |  1,023 |                         1 |  1,024 |
+| Same formal, later literal argument                   |  4,095 |                         1 |  4,096 |
+| JSX element's `ref` field                             |      0 |                     9,709 |  9,709 |
+| Generic property-lookup local                         |      0 |                    17,040 | 17,040 |
+| Generic property-lookup return                        |     11 |                    17,047 | 17,047 |
+| Deep-merge formal, called through a throttle variable |    483 |                    17,043 | 17,134 |
+| Another dynamic member-read local                     |     59 |                    20,429 | 20,429 |
+
+These identify several distinct sources of breadth:
+
+- A shared JSX formal legitimately accumulates one object from each source call.
+  This starts as many small contributions, rather than one mysterious huge
+  incoming set. The helper later reuses its props parameter for a ref value.
+  The flow-insensitive binding cell retains its entry values, so writing that
+  parameter into the returned element's `ref` also writes the props objects.
+  The trace observes 9,709 concrete origins in that field, rising above 18,000
+  later. Shared allocation-site identities and dynamic member reads then
+  distribute broad field unions.
+- A shared default-export helper returns its argument or its `default` member.
+  All calls feed one formal and one return cell. A variable authored as a
+  throttle helper consequently has 47 concrete origins in its callee set.
+  Its invocation actually contributes to the deep-merge and generic
+  property-lookup formals. This is cross-call pollution through the shared
+  wrapper, established by the transfer witnesses and source mapping.
+- A generic property-lookup helper reads a dynamic key from its shared object
+  formal. Its local acquires 17,040 concrete origins through object field-union
+  facts, its shared return spreads those values to callers, and a subsequent
+  call feeds them back into unrelated helpers' formals. The widest previously
+  observed local similarly grows from 59 to 20,429 concrete origins in one
+  dynamic member projection, with unknown retained separately.
+
+This explains concrete extra call edges and broad carriers before the later
+interpreter fallback machinery runs. It does not attribute all subscriptions
+or CPU time to any one mechanism. A narrower return summary at a call site
+must prove its eligibility and preserve conservative unknowns; changing queue
+order, dropping possible origins or naming a library is not such a proof.
+
+### Isolating the shared default-wrapper return
+
+An opt-in, capture-specific ablation changes only the observed default wrapper's
+return-value expression: each call reads its own argument and that argument's
+`default` field, rather than the pooled return cell. Original invocation/effect
+collection remains. This is an experimental abstract-transfer change, not a
+production recognizer or a correctness proof for general specialization.
+[Optimized ablation build](https://app.buildbuddy.io/invocation/7d253961-79f5-49f4-8759-be6186ee66c6).
+
+Under the same 120-second/16-GiB bounds, the deep-merge formal never crosses
+1,024 concrete origins; the control's first crossing is the throttle-variable
+call that takes it from 483 to 17,134. Other broad sets remain, reaching 19,956
+concrete origins in recorded witnesses. This isolates one source of pollution
+without explaining the entire remaining relation.
+
+Last complete OTLP snapshots and systemd receipts:
+
+| Observation       | Trace control | Wrapper ablation |
+| ----------------- | ------------: | ---------------: |
+| Subscriptions     |    73,099,653 |       59,904,861 |
+| Reads             |   125,524,389 |      100,617,526 |
+| Fact rows         |     2,854,386 |        2,512,302 |
+| Event evaluations |       809,649 |          799,808 |
+| Unit peak memory  |       9.7 GiB |          8.5 GiB |
+| Unit CPU          |      118.895s |         115.505s |
+
+Both stop inside source value flow. These are different partial abstract states,
+with deliberately different transfers, not matched completed pipelines. The
+memory/count differences are exploratory evidence, not a production speedup or
+soundness result. A general implementation must prove eligible callees and
+return summaries, preserve conservative unknown/effect behavior, and pass the
+normal CLI/runtime and Excalidraw performance checks. The active performance
+plan owns that work and the outstanding 600-second full-pipeline proof.
+
+Raw commands, source-coordinate metadata, JSONL witnesses, OTLP, tool identities
+and temporary diagnostic patches are under
+`/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/origin-breadth/`.
+The witnesses contain private source identities and stay local. These scratch
+receipts can expire; the temporary diagnostic code is excluded from production.
