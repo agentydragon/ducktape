@@ -19,6 +19,7 @@ go_library(
         "//agentplane/identity/credentials/workloadid",
         "//agentplane/net/peertls",
         "//agentplane/session_instructions",
+        "@com_github_prometheus_procfs//:procfs",
         "@org_uber_go_zap//:zap",
         "@org_uber_go_zap//zapcore",
     ],

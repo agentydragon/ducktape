@@ -59,6 +59,24 @@ func TestCopyAndSyncCopiesSparseRegularFile(t *testing.T) {
 	}
 }
 
+func TestCreateExt4LeavesExistingDestinationAlone(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "state.img")
+	want := []byte("existing image")
+	if err := os.WriteFile(destination, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := createExt4(context.Background(), destination, bytesPerMiB, "APSTATE", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("existing image contents = %q, want %q", got, want)
+	}
+}
+
 func testStorage(t *testing.T) *Storage {
 	t.Helper()
 	root := t.TempDir()

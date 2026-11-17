@@ -26,6 +26,7 @@ const (
 	launchSourceDirectory = "/run/agentplane/sandbox"
 	trustSourceDirectory  = "/run/agentplane/trust"
 	configDigestDomain    = "agentplane-firecracker-config/v3\x00"
+	bytesPerMiB           = 1024 * 1024
 )
 
 type FileRecord struct {
@@ -158,14 +159,14 @@ func (storage *Storage) Prepare(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := createExt4(ctx, storage.Paths["state"], fmt.Sprintf("%dM", storage.config.StateSizeMiB), "APSTATE", ""); err != nil {
+	if err := createExt4(ctx, storage.Paths["state"], int64(storage.config.StateSizeMiB)*bytesPerMiB, "APSTATE", ""); err != nil {
 		return err
 	}
 	if storage.config.WorkspaceKind == WorkspaceKindRawDiskImage {
 		if err := os.MkdirAll(filepath.Dir(storage.Paths["workspace"]), 0o700); err != nil {
 			return err
 		}
-		if err := createExt4(ctx, storage.Paths["workspace"], fmt.Sprintf("%dM", storage.config.WorkspaceSizeMiB), "APWORKSPACE", ""); err != nil {
+		if err := createExt4(ctx, storage.Paths["workspace"], int64(storage.config.WorkspaceSizeMiB)*bytesPerMiB, "APWORKSPACE", ""); err != nil {
 			return err
 		}
 	} else if err := prepareWorkspaceBlock(ctx, storage.Paths["workspace"]); err != nil {
@@ -593,14 +594,21 @@ func allZero(data []byte) bool {
 	return true
 }
 
-func createExt4(ctx context.Context, destination, size, label, source string) error {
+func createExt4(ctx context.Context, destination string, sizeBytes int64, label, source string) error {
 	if _, err := os.Stat(destination); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	staging := uniqueSibling(destination)
-	if _, err := runCommand(ctx, "truncate", "-s", size, staging); err != nil {
+	image, err := os.OpenFile(staging, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0o666)
+	if err != nil {
+		return err
+	}
+	truncateErr := image.Truncate(sizeBytes)
+	closeErr := image.Close()
+	if err := errors.Join(truncateErr, closeErr); err != nil {
+		_ = os.Remove(staging)
 		return err
 	}
 	args := []string{"-F", "-q", "-m", "0", "-L", label}

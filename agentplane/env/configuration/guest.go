@@ -1,14 +1,11 @@
 package configuration
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
+	"github.com/prometheus/procfs"
 )
 
 type guestResources struct {
@@ -72,10 +69,10 @@ func (r guestResources) Validate() error {
 // systemd properties. The VM applies these before starting the Environment Runtime, so this
 // path must reject malformed limits before systemctl is invoked.
 func GuestResourceSystemdProperties(configPath string) ([]string, error) {
-	return guestResourceSystemdPropertiesWithMeminfo(configPath, "/proc/meminfo")
+	return guestResourceSystemdPropertiesWithProcRoot(configPath, "/proc")
 }
 
-func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) ([]string, error) {
+func guestResourceSystemdPropertiesWithProcRoot(configPath, procRoot string) ([]string, error) {
 	file, err := readConfiguration(configPath)
 	if err != nil {
 		return nil, err
@@ -87,7 +84,7 @@ func guestResourceSystemdPropertiesWithMeminfo(configPath, meminfoPath string) (
 	if vm == nil {
 		return nil, errors.New("resource preflight requires a VM environment")
 	}
-	actualMemory, err := guestMemoryTotalBytes(meminfoPath)
+	actualMemory, err := guestMemoryTotalBytes(procRoot)
 	if err != nil {
 		return nil, fmt.Errorf("cannot verify guest memory for config at %s: %w", configPath, err)
 	}
@@ -117,29 +114,23 @@ func validateGuestMemoryCapacity(resources guestResources, actualMemoryBytes int
 	return nil
 }
 
-func guestMemoryTotalBytes(path string) (int64, error) {
-	file, err := os.Open(path)
+func guestMemoryTotalBytes(procRoot string) (int64, error) {
+	filesystem, err := procfs.NewFS(procRoot)
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) == 0 || fields[0] != "MemTotal:" {
-			continue
-		}
-		if len(fields) != 3 || fields[2] != "kB" {
-			return 0, errors.New("MemTotal must be a positive kB value")
-		}
-		value, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil || value <= 0 || value > int64(^uint64(0)>>1)/1024 {
-			return 0, errors.New("MemTotal must be a positive kB value")
-		}
-		return value * 1024, nil
+	meminfo, err := filesystem.Meminfo()
+	if err != nil {
+		return 0, err
 	}
-	if err := scanner.Err(); err != nil {
-		return 0, fmt.Errorf("read memory information: %w", err)
+	if meminfo.MemTotalBytes == nil {
+		return 0, fmt.Errorf("MemTotal is missing from proc filesystem %s", procRoot)
 	}
-	return 0, fmt.Errorf("MemTotal is missing from %s", path)
+	if *meminfo.MemTotalBytes == 0 {
+		return 0, fmt.Errorf("MemTotal is zero in proc filesystem %s", procRoot)
+	}
+	if *meminfo.MemTotalBytes > uint64(^uint64(0)>>1) {
+		return 0, fmt.Errorf("MemTotal is too large in proc filesystem %s", procRoot)
+	}
+	return int64(*meminfo.MemTotalBytes), nil
 }

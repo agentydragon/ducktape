@@ -93,16 +93,36 @@ func TestGuestMemoryCapacityRequiresLiveAllocationToMatchSeed(t *testing.T) {
 }
 
 func TestGuestMemoryTotalBytesParsesMeminfoLines(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "meminfo")
-	if err := os.WriteFile(path, []byte("MemTotal:       1536000 kB\nHugePages_Total: 0\n"), 0o600); err != nil {
+	procRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(procRoot, "meminfo"), []byte("MemTotal:       1536000 kB\nHugePages_Total: 0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := guestMemoryTotalBytes(path)
+	got, err := guestMemoryTotalBytes(procRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := int64(1536000 * 1024); got != want {
 		t.Fatalf("MemTotal = %d, want %d", got, want)
+	}
+}
+
+func TestGuestMemoryTotalBytesRejectsMissingOrZeroMemTotal(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		meminfo string
+	}{
+		{name: "missing", meminfo: "HugePages_Total: 0\n"},
+		{name: "zero", meminfo: "MemTotal: 0 kB\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			procRoot := t.TempDir()
+			if err := os.WriteFile(filepath.Join(procRoot, "meminfo"), []byte(test.meminfo), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := guestMemoryTotalBytes(procRoot); err == nil {
+				t.Fatal("guestMemoryTotalBytes() accepted missing or zero MemTotal")
+			}
+		})
 	}
 }
 
