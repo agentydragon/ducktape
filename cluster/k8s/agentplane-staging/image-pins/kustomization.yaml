@@ -21,7 +21,7 @@ images:
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-gateway
     newTag: devel-20261117064110-4d0d8a9 # {"$imagepolicy": "flux-system:agentplane-runner-gateway:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-sessions
-    newTag: devel-20261117064116-4d0d8a9 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
+    newTag: devel-20261117085739-fffff43 # {"$imagepolicy": "flux-system:agentplane-sessions:tag"}
   # Bootstrap only: the image workflow publishes on devel; wait for Flux to select a real tag before creating Sandboxes.
   - name: git.allegedly.works/ducktape-ci/environment-tools
     newTag: devel-20261116203458-db68d2d # {"$imagepolicy": "flux-system:environment-tools:tag"}
