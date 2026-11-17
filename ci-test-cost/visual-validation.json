@@ -1,10 +1,10 @@
 {
-  "reviewed_at_utc": "2026-11-17T03:50:29.564227+00:00",
-  "invocation": "https://app.buildbuddy.io/invocation/cc7ce19f-c9d2-4125-a0fb-d6c0f729c2fe",
+  "reviewed_at_utc": "2026-11-17T04:00:52.144674+00:00",
+  "invocation": "https://app.buildbuddy.io/invocation/a9c7c96d-cc48-4958-9922-cde1b4065808",
   "result": "PASS: four RBE browser cases, desktop and mobile, initial light and dark; report captures reviewed; navigation, live preference changes and disclosures checked.",
-  "scope": "Temporary source-worktree preview served the report, original and follow-up evidence, prior manifest, root navigation and shared assets. The manifest changed only to add hashes and validation metadata after capture. Other reports were not copied into the preview.",
+  "scope": "Temporary source-worktree preview served the report, original and follow-up evidence, prior manifest, root navigation and shared assets. The manifest changed only to add report and validation metadata after capture. Other reports were not copied into the preview.",
   "assets_sha256": {
-    "ci-test-cost/index.html": "001b0d7bb36f401229daf1edd0e6c1f599a0af6e8dd5b0ecc6c6248751117bee",
+    "ci-test-cost/index.html": "ef5ace0acbc7a96fc8be49795cd34d3b37649b5e4cffee513a72ff29b3196598",
     "ci-test-cost/evidence.json": "b8a05bfcfdd3cea03398ea95869afbf5a609e9ac44f5fe221511036ad8112914",
     "index.html": "a1c71af1aeb8027ef4f1a804640e3e6fca301c1a70f4038aa3984d00a81a371e",
     "report.js": "9d08874628ae6f20b8e9c05fc0f1b6400532f411cbda22d743bf7ddd77614df8",
@@ -12,13 +12,13 @@
     "ci-test-cost/followup-evidence.json": "e00887e000383b4d5b9b7b6de44b343165ba574754bfd87999eccc6c8fb40d84"
   },
   "capture_sha256": [
-    "040e457dfb26c8aa47e8817959e5527e3e76aec4bcb1aebe8b3f4942b370425f",
+    "02f498415df7f8201fa90be7804a2ece98897ab53f5eb62b89300f0bc2247b97",
+    "2fe3f56fdaba0edd3852337f1c92d937ca570b785dc4a7823a46a7668f6dbf66",
     "539901f230fb55008485577f6de19e093e3221808e1921b5e7eaeff57d2931b5",
     "659c8be77265ba08af180056a36626805340f7e4dfa556ff20cfca809324b64f",
-    "673617260fe2d9040da4dd52b052a0dcd463a876a578577fe4aa3e82d4de30c9",
     "6e75b6fd2bd4d9ecdf756b2b68b5f7431adddcdb3f63ca271cf757ddc7d5c986",
-    "ae2a7b81ffdccc10bd0c0ef27891a1ba0232824a6daabaaa7fbd1c095802962a",
-    "b88c39c8bcd0a56df58b34b5e7c280037a5acbe66598e33b9f612e02d8a6d656",
+    "9a3901385522294b43ae4ec51cb0ba1ed973f7ee6b59f5086037d152a0c12c05",
+    "b226c3cf5f3a3bad5976e3851ffadc91f473bb3413f0ca7370410f2f34eab252",
     "ec9a62fabd0e76cb1add121806ac4f0d802f830dbbb706f863a596ec48e3b392"
   ]
 }
