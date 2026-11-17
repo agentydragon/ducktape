@@ -68,25 +68,25 @@ reentry and prefix-availability CLI controls, work counts for unchanged/shared
 reach, and retained precision-loss evidence. Never replace the dependency proof
 with a whole-world revision cache or raise limits to imply progress.
 
-### PF6 — Polynomial namespace/class provenance
+### PF6 — Complete polynomial namespace provenance
 
-Replace recursive path unfolding in `NamespaceValueFacts::may_be_local_class_value`
-and `ValueExpr::may_equal_namespace` (`facts/sync_effects/value_model.rs`). Their
-visiting sets prevent cycles but forget completed unsuccessful queries. The
-source witness `a0 = {}; ai = flag ? a_previous : a_previous` doubles recursive
-calls per level despite a linear number of source nodes. Class provenance is
-queried during `NamespaceValueFacts::from_assignments`, before the private
-namespace fast path; that fast path does not eliminate this cost. This is a
-source-derived polynomial-time violation, not measured attribution of Tana CPU.
+Class-provenance preparation uses the bounded Boolean binding closure in
+<../docs/inference.md#local-class-provenance>. Its shared false diamonds and
+seeded/unseeded cycles have deterministic work controls; a public conditional
+chain without classes or namespace contracts runs through fresh and saved CLI
+analysis and emitted Node execution.
 
-Evaluate shared provenance nodes with explicit cycle semantics and polynomial
-time/state bounds. Deduplicating identical conditional arms alone leaves general
-shared diamonds vulnerable. Replace namespace alias inference's single `()` fact
-with consumed binding dependencies rather than waking every assignment whenever
-any alias is added. Close with deterministic chain/diamond/cycle work controls
-and CLI bundle/spec cases for class and namespace outcomes, including supported
-and conservative-fallback controls. Do not cache an in-progress cyclic query's
-negative result as a completed answer.
+Remaining authority: `ValueExpr::may_equal_namespace`,
+`ValueExpr::may_publish_namespace_inner`, `NamespaceValueFacts::class_may_publish`
+and the single alias-set fact in `infer_namespace_aliases`. Replace assignment
+path unfolding with a finite shared query graph and indexed alias changes.
+Own-data member projection depends on the current alias set, and publication's
+recursive class surface conservatively yields true while a binding provenance
+cycle has no seed of its own. Preserve both meanings; never cache a recursive
+in-progress false answer as a completed result. Require namespace-positive and
+all-false chains, shared diamonds, cycles, projection/publication controls and
+fresh/saved behavioral execution or refusal before closing PF6. Matched large
+consumer profiles remain separate evidence from these structural bounds.
 
 ### PF7 — Incremental source transfers and complete delta costs
 
