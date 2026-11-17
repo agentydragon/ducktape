@@ -16,6 +16,8 @@ pub(super) struct Accepted {
     pub entry: String,
     pub stdout: String,
     #[serde(default)]
+    pub original_stdout: Option<String>,
+    #[serde(default)]
     pub check_all_js: bool,
     #[serde(default)]
     pub exports: BTreeMap<PathBuf, ExportExpectation>,
@@ -54,11 +56,41 @@ pub(super) struct Probe {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields, untagged)]
+pub(super) enum Rejected {
+    AtomicConflict {
+        #[serde(default = "main_entry")]
+        entry: String,
+        atomic_conflict: AtomicConflict,
+    },
+    Cycle {
+        #[serde(default = "main_entry")]
+        entry: String,
+        cycle: Cycle,
+    },
+    Stderr {
+        #[serde(default = "main_entry")]
+        entry: String,
+        stderr_contains_all: Vec<String>,
+    },
+}
+
+impl Rejected {
+    pub(super) fn entry(&self) -> &str {
+        match self {
+            Self::AtomicConflict { entry, .. }
+            | Self::Cycle { entry, .. }
+            | Self::Stderr { entry, .. } => entry,
+        }
+    }
+}
+
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Rejected {
-    #[serde(default = "main_entry")]
-    pub entry: String,
-    pub atomic_conflict: AtomicConflict,
+pub(super) struct Cycle {
+    pub modules: Vec<String>,
+    #[serde(default)]
+    pub sequenced: bool,
 }
 
 #[derive(Clone, Deserialize)]

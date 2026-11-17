@@ -1,4 +1,4 @@
-use super::case::Expectation;
+use super::case::{Expectation, Rejected};
 use super::{Case, InputFile, cases};
 use debundle_e2e_support::{
     CaseWorkspace, FixtureOpts, assert_module_exports, assert_node_output,
@@ -95,7 +95,13 @@ fn wrong_conflict_cause_does_not_pass() {
     let Expectation::Reject { reject } = &mut case.expectation else {
         unreachable!()
     };
-    reject.atomic_conflict.causes = vec!["missing_cause".to_owned()];
+    let Rejected::AtomicConflict {
+        atomic_conflict, ..
+    } = reject
+    else {
+        unreachable!()
+    };
+    atomic_conflict.causes = vec!["missing_cause".to_owned()];
     assert!(catch_unwind(|| case.run()).is_err());
 }
 
@@ -200,4 +206,108 @@ fn syntax_check_catches_an_unimported_runtime_sibling() {
             .downcast_ref::<String>()
             .is_some_and(|message| message.contains("node --check failed"))
     );
+}
+
+fn written_case(source: &str, spec: &str, expectation: &str) -> (CaseWorkspace, Case) {
+    let inputs = CaseWorkspace::with_retention_root(None);
+    let mut files = Vec::new();
+    for (name, text) in [("main.js", source), ("spec.yaml", spec)] {
+        let path = inputs.path().join(name);
+        write_text_file(&path, text);
+        files.push(InputFile {
+            relative: name.into(),
+            source: path,
+        });
+    }
+    let case = Case {
+        name: "runner_check".into(),
+        spec: "spec.yaml".into(),
+        inputs: files,
+        expectation: serde_yaml::from_str(expectation).unwrap(),
+    };
+    (inputs, case)
+}
+
+#[test]
+fn cycle_refusal_checks_modules_and_sequenced_cut() {
+    let (_inputs, mut case) = written_case(
+        "const a = (() => 1)();\nconst b = Object.entries((() => ({ x: 1 }))());\nconst c = b.length + a;\nconsole.log(c);\nexport { a, b, c };\n",
+        "logical_modules:\n  main:\n    b_module:\n      members: [{selector: {binding: {name: b}}}]\nunassigned_mode:\n  main: {kind: catchall_file}\nimport_order:\n  main: [b_module, residual]\n",
+        "reject:\n  cycle:\n    modules: [b_module, residual]\n    sequenced: true\n",
+    );
+    case.run();
+    let Expectation::Reject {
+        reject: Rejected::Cycle { cycle, .. },
+    } = &mut case.expectation
+    else {
+        unreachable!()
+    };
+    cycle.modules.push("absent_module".into());
+    let failure = catch_unwind(|| case.run()).expect_err("wrong cycle module must fail");
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("no blocking SCC"))
+    );
+}
+
+#[test]
+fn error_refusal_checks_every_expected_token() {
+    let (_inputs, mut case) = written_case(
+        "function pick() { return 'first'; }\nfunction pick() { return 'second'; }\nconsole.log(pick());\nexport { pick };\n",
+        "logical_modules:\n  main:\n    selected:\n      members: [{selector: {binding: {name: pick}}}]\nunassigned_mode:\n  main: {kind: catchall_file}\nimport_order:\n  main: [selected]\n",
+        "reject:\n  stderr_contains_all: [pick]\n",
+    );
+    case.run();
+    let Expectation::Reject {
+        reject: Rejected::Stderr {
+            stderr_contains_all,
+            ..
+        },
+    } = &mut case.expectation
+    else {
+        unreachable!()
+    };
+    stderr_contains_all.push("absent_error_token".into());
+    let failure = catch_unwind(|| case.run()).expect_err("wrong refusal token must fail");
+    assert!(
+        failure
+            .downcast_ref::<String>()
+            .is_some_and(|message| message.contains("stderr missing"))
+    );
+}
+
+#[test]
+fn rejection_reason_is_exclusive_and_rejects_unknown_fields() {
+    for yaml in [
+        "reject: {cycle: {modules: [a]}, stderr_contains_all: [a]}",
+        "reject: {cycle: {modules: [a], unexpected: true}}",
+        "reject: {stderr_contains_all: [a], unexpected: true}",
+    ] {
+        assert!(serde_yaml::from_str::<Expectation>(yaml).is_err(), "{yaml}");
+    }
+}
+
+#[test]
+fn explicit_original_output_still_checks_both_entries() {
+    let (_inputs, mut case) = written_case(
+        "function a() {} console.log(a.name); export { a };\n",
+        "logical_modules:\n  main:\n    renamed:\n      members: [{name: readable, selector: {binding: {name: a}}}]\nunassigned_mode:\n  main: {kind: catchall_file}\nimport_order:\n  main: [renamed]\n",
+        r#"accept:
+  stdout: "readable\n"
+  original_stdout: "a\n"
+"#,
+    );
+    case.run();
+    let Expectation::Accept { accept } = &mut case.expectation else {
+        unreachable!()
+    };
+    accept.original_stdout = Some("wrong original\n".into());
+    assert!(catch_unwind(|| case.run()).is_err());
+    let Expectation::Accept { accept } = &mut case.expectation else {
+        unreachable!()
+    };
+    accept.original_stdout = Some("a\n".into());
+    accept.stdout = "wrong emitted\n".into();
+    assert!(catch_unwind(|| case.run()).is_err());
 }
