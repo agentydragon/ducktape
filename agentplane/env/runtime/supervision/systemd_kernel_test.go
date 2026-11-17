@@ -38,6 +38,18 @@ type heldSystemdLaunch struct {
 	release    chan bool
 }
 
+type systemdExec struct {
+	Path      string
+	Arguments []string
+	Flags     []string
+}
+
+type systemdCondition struct {
+	Type            string
+	Trigger, Negate bool
+	Parameter       string
+}
+
 // This target runs before the Environment Runtime in one ordinary VM guest. Session setup tests cover
 // workspace creation, credentials, kernel budgets and detached-child fencing through
 // the public protocol; these checks need private injection or direct supervisor access.
@@ -344,8 +356,8 @@ func TestSystemdKernelFixture(t *testing.T) {
 	t.Run("streams_and_environment", func(t *testing.T) {
 		p := startSystemdProof(t, ctx, supervisor, dir, "printf 'out:%s:%s:%s\\n' \"$(id -u)\" \"$(id -g)\" \"$PWD\"; printf 'err:%s\\n' \"$SENTINEL\" >&2; printf 'home:%s\\n' \"$HOME\"; test -z \"${AGENTPLANE_PARENT_ONLY_SENTINEL+x}\"; IFS= read -r line; printf 'input:%s\\n' \"$line\"")
 		var observationMu sync.Mutex
-		var latest SystemdObservation
-		p.ObserveSystemd(func(observation SystemdObservation) {
+		var latest systemdops.Observation
+		systemdHandleForProcess(t, p).Observe(func(observation systemdops.Observation) {
 			observationMu.Lock()
 			defer observationMu.Unlock()
 			if observation.Revision > latest.Revision {
@@ -364,7 +376,7 @@ func TestSystemdKernelFixture(t *testing.T) {
 		observationMu.Lock()
 		observed := latest
 		observationMu.Unlock()
-		if observed.Unit != unitName || observed.Revision < 2 || observed.StartState != SystemdStartAccepted || observed.ExpectedInvocationID == "" || observed.CapturedControlGroup == "" || observed.ExitState != SystemdExitObserved || observed.ExitCode != 0 {
+		if observed.Unit != unitName || observed.Revision < 2 || observed.StartState != systemdops.StartAccepted || observed.ExpectedInvocationID == "" || observed.CapturedControlGroup == "" || observed.ExitState != systemdops.ExitObserved || observed.ExitCode != 0 {
 			t.Fatalf("systemd observations did not retain attempt identity: %+v", observed)
 		}
 		want := fmt.Sprintf("out:%d:%d:%s\nhome:/explicit/proof-home\ninput:verbatim input\n", launcher.AgentUID, launcher.AgentGID, dir)
@@ -848,11 +860,16 @@ func readSystemdProofJSON(t *testing.T, path string, target any) {
 
 func systemdProofUnitName(t *testing.T, process *Process) string {
 	t.Helper()
-	backend, ok := process.backend.(*systemdBackend)
+	return systemdHandleForProcess(t, process).UnitName()
+}
+
+func systemdHandleForProcess(t *testing.T, process *Process) *systemdops.StartHandle {
+	t.Helper()
+	handle, ok := process.handle.(*systemdops.StartHandle)
 	if !ok {
-		t.Fatalf("process backend = %T, want *systemdBackend", process.backend)
+		t.Fatalf("process start handle = %T, want *systemd.StartHandle", process.handle)
 	}
-	return backend.name
+	return handle
 }
 
 func systemdErrorKind(err error) string {

@@ -63,18 +63,6 @@ func (p *SystemdLauncher) ValidateProcessLimits(limits ResourceLimits) error {
 	return nil
 }
 
-type systemdExec struct {
-	Path      string
-	Arguments []string
-	Flags     []string
-}
-
-type systemdCondition struct {
-	Type            string
-	Trigger, Negate bool
-	Parameter       string
-}
-
 type systemdDeviceLimit struct {
 	Path  string
 	Limit uint64
@@ -250,8 +238,30 @@ func (p *SystemdLauncher) newSupervisor() *Supervisor {
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
 		launcher := prepared
 		launcher.BlockDevices = append([]string(nil), prepared.BlockDevices...)
-		return &systemdBackend{config: config, launcher: &launcher}
+		backend := systemdops.NewBackend(systemdops.BackendConfig{
+			Command: config.Command, Environment: environment(config.Env), Dir: config.Dir, StopGrace: config.StopGrace,
+			Scope: launcher.scope, Slice: launcher.Slice, LifetimeMarker: launcher.lifetimeMarker, ParentUnit: launcher.parentUnit(),
+			LaunchReady: func() bool { return launcher.launchReady == nil || launcher.launchReady.Load() },
+			Properties:  func() ([]systemd.Property, error) { return launcher.properties(launcher.ProcessLimits) },
+			Identity:    launcher.identityProperties(), OpenConnection: openSystemdConnection,
+			StartTransient: launcher.startTransient, ReapSnapshot: launcher.reapSnapshot, Property: property,
+		})
+		return &systemdProcessBackend{backend: backend}
 	}}
+}
+
+// systemdProcessBackend adapts the private systemd handle to the generic
+// supervision backend contract.
+type systemdProcessBackend struct{ backend *systemdops.Backend }
+
+func (b *systemdProcessBackend) validate() error { return b.backend.Validate() }
+
+func (b *systemdProcessBackend) start(ctx context.Context) (processHandle, error) {
+	handle, err := b.backend.Start(ctx)
+	if handle == nil {
+		return nil, err
+	}
+	return handle, err
 }
 
 // systemd removes the owner directory synchronously when the service dies. An
