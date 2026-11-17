@@ -1,5 +1,6 @@
 //! Selected-ownership corpus proposals reuse verified program preparation.
 
+use debundle_e2e_graph_support::{json_module_path_for_unit, json_node_declaring};
 use debundle_e2e_support::{
     TreeFixture, TreeWorkspace, assert_node_output, parse_stdout_json, read_gzip_json, read_tree,
     run_debundle, tree_spec_args, write_tree_fixture,
@@ -155,39 +156,7 @@ fn graph_for(reports_root: &Path, chunk: &str) -> PathBuf {
 }
 
 fn unit_id_for_binding(graph: &Value, binding: &str) -> String {
-    graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|unit| {
-            unit["declared_bindings"]
-                .as_array()
-                .is_some_and(|bindings| {
-                    bindings
-                        .iter()
-                        .any(|candidate| candidate["binding"] == binding)
-                })
-        })
-        .unwrap_or_else(|| panic!("graph has no source unit for {binding}: {graph}"))["id"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
-fn module_path(graph: &Value, unit_id: &str) -> String {
-    let unit = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|unit| unit["id"] == unit_id)
-        .unwrap_or_else(|| panic!("graph lacks source unit {unit_id}: {graph}"));
-    let destination = &unit["destination"];
-    graph["module_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|module| module["key"] == *destination)
-        .unwrap_or_else(|| panic!("graph lacks module key {destination}: {graph}"))["path"]
+    json_node_declaring(graph, binding)["id"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -290,7 +259,11 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
         assert_eq!(graph["import_order"], json!(["kept"]), "{chunk}");
         for binding in ["b", "c"] {
             let unit = unit_id_for_binding(&graph, binding);
-            assert_eq!(module_path(&graph, &unit), "kept", "{chunk}:{binding}");
+            assert_eq!(
+                json_module_path_for_unit(&graph, &unit),
+                "kept",
+                "{chunk}:{binding}"
+            );
         }
     }
 
@@ -494,13 +467,13 @@ fn selected_corpus_plans_share_preparation_and_apply_as_chunk_local_views() {
             read_gzip_json(&graph_for(&output_root.join("reports/tree"), &chunk));
         for change in plan["changes"].as_array().unwrap() {
             let unit_id = change["unit_id"].as_str().unwrap();
-            assert_ne!(module_path(&graph_before, unit_id), owner);
-            assert_eq!(module_path(&graph_after, unit_id), owner);
+            assert_ne!(json_module_path_for_unit(&graph_before, unit_id), owner);
+            assert_eq!(json_module_path_for_unit(&graph_after, unit_id), owner);
         }
         for binding in ["b", "c"] {
             let unit_id = unit_id_for_binding(&graph_after, binding);
             assert_eq!(
-                module_path(&graph_after, &unit_id),
+                json_module_path_for_unit(&graph_after, &unit_id),
                 "kept",
                 "{chunk}:{binding}"
             );
@@ -587,12 +560,12 @@ fn corpus_does_not_share_preparation_across_distinct_selected_views() {
     let beta_graph: Value = read_gzip_json(&graph_for(&graphs_root.join("beta"), "beta"));
     let alpha_b = unit_id_for_binding(&alpha_graph, "b");
     let alpha_c = unit_id_for_binding(&alpha_graph, "c");
-    assert_eq!(module_path(&alpha_graph, &alpha_b), "kept");
-    assert_ne!(module_path(&alpha_graph, &alpha_c), "kept");
+    assert_eq!(json_module_path_for_unit(&alpha_graph, &alpha_b), "kept");
+    assert_ne!(json_module_path_for_unit(&alpha_graph, &alpha_c), "kept");
     let beta_b = unit_id_for_binding(&beta_graph, "b");
     let beta_c = unit_id_for_binding(&beta_graph, "c");
-    assert_ne!(module_path(&beta_graph, &beta_b), "kept");
-    assert_eq!(module_path(&beta_graph, &beta_c), "kept");
+    assert_ne!(json_module_path_for_unit(&beta_graph, &beta_b), "kept");
+    assert_eq!(json_module_path_for_unit(&beta_graph, &beta_c), "kept");
 
     assert_eq!(read_tree(&fixture.modules), original_modules);
     assert_eq!(fs::read(&fixture.config).unwrap(), original_config);

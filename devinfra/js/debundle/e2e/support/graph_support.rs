@@ -223,6 +223,25 @@ pub fn json_node_declaring<'a>(graph: &'a Value, binding: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no source node for {binding}: {graph}"))
 }
 
+/// Module path for the destination assigned to a serialized source-unit node.
+pub fn json_module_path_for_unit<'a>(graph: &'a Value, unit_id: &str) -> &'a str {
+    let unit = graph["nodes"]
+        .as_array()
+        .expect("dependency graph nodes")
+        .iter()
+        .find(|unit| unit["id"] == unit_id)
+        .unwrap_or_else(|| panic!("graph lacks source unit {unit_id}: {graph}"));
+    let destination = &unit["destination"];
+    graph["module_graph"]["nodes"]
+        .as_array()
+        .expect("module graph nodes")
+        .iter()
+        .find(|module| module["key"] == *destination)
+        .unwrap_or_else(|| panic!("graph lacks module key {destination}: {graph}"))["path"]
+        .as_str()
+        .expect("module path string")
+}
+
 /// Every serialized node's `synchronous_execution.<field>` rows, in node order.
 pub fn json_execution_rows(graph: &Value, field: &str) -> Vec<Value> {
     graph["nodes"]

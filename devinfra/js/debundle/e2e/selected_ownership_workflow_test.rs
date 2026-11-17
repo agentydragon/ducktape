@@ -1,5 +1,6 @@
 //! End-to-end selected-view residual discovery and overlay authoring.
 
+use debundle_e2e_graph_support::{json_module_path_for_unit, json_node_declaring};
 use debundle_e2e_support::{
     TreeFixture, TreeRun, assert_node_output, debundler_path, read_gzip_json, read_tree,
     tree_spec_args, write_tree_fixture,
@@ -229,40 +230,8 @@ fn assert_apply_rejected_without_writes(fixture: &SelectedFixture, plan: &Path, 
     assert_eq!(fs::read(source_path).unwrap(), source_before);
 }
 
-fn module_path(graph: &Value, unit_id: &str) -> String {
-    let unit = graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|unit| unit["id"] == unit_id)
-        .unwrap_or_else(|| panic!("graph lacks source unit {unit_id}: {graph}"));
-    let destination = &unit["destination"];
-    graph["module_graph"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|module| module["key"] == *destination)
-        .unwrap_or_else(|| panic!("graph lacks module key {destination}: {graph}"))["path"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
-
 fn unit_id_for_binding(graph: &Value, binding: &str) -> String {
-    graph["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|unit| {
-            unit["declared_bindings"]
-                .as_array()
-                .is_some_and(|bindings| {
-                    bindings
-                        .iter()
-                        .any(|candidate| candidate["binding"] == binding)
-                })
-        })
-        .unwrap_or_else(|| panic!("graph has no source unit for {binding}: {graph}"))["id"]
+    json_node_declaring(graph, binding)["id"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -299,7 +268,10 @@ fn unseeded_selected_residual_peel_checks_previews_applies_and_runs() {
         json!([{"module": "kept"}])
     );
     let retained_unit = unit_id_for_binding(&graph_before, "b");
-    assert_eq!(module_path(&graph_before, &retained_unit), "kept");
+    assert_eq!(
+        json_module_path_for_unit(&graph_before, &retained_unit),
+        "kept"
+    );
     let original_view: Value = serde_json::from_slice(&fs::read(&fixture.subset).unwrap()).unwrap();
     let existing_placement = original_view["placements"]["app"]["existing"].clone();
     let modules_before = read_tree(&fixture.modules);
@@ -408,13 +380,13 @@ console.log(JSON.stringify([Object.keys(kept).sort(), Object.keys(existing).sort
     );
     for change in changes {
         let id = change["unit_id"].as_str().unwrap();
-        assert_ne!(module_path(&graph_before, id), "fresh");
-        assert_eq!(module_path(&graph_after, id), "fresh");
+        assert_ne!(json_module_path_for_unit(&graph_before, id), "fresh");
+        assert_eq!(json_module_path_for_unit(&graph_after, id), "fresh");
     }
     for binding in ["a", "b"] {
         let id = unit_id_for_binding(&graph_before, binding);
         let expected_owner = if binding == "b" { "kept" } else { "existing" };
-        assert_eq!(module_path(&graph_after, &id), expected_owner);
+        assert_eq!(json_module_path_for_unit(&graph_after, &id), expected_owner);
     }
 }
 
@@ -456,8 +428,8 @@ fn omitted_all_different_anchor_changes_retained_identity_in_control() {
     let graph: Value = read_gzip_json(&fixture.graph);
     let a = unit_id_for_binding(&graph, "a");
     let b = unit_id_for_binding(&graph, "b");
-    assert_eq!(module_path(&graph, &a), "kept");
-    assert_ne!(module_path(&graph, &b), "kept");
+    assert_eq!(json_module_path_for_unit(&graph, &a), "kept");
+    assert_ne!(json_module_path_for_unit(&graph, &b), "kept");
 }
 
 #[test]
