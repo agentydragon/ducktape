@@ -30,5 +30,25 @@ def test_independent_renders_are_byte_identical(tmp_path: Path) -> None:
         assert outputs[0] == outputs[1], command
 
 
+def test_suite_renders_are_byte_identical(tmp_path: Path) -> None:
+    renderer = Runfiles.CreateOrRaise().root() / os.environ["K3S_SUITE_RENDERER"]
+    directories = [tmp_path / "first", tmp_path / "second"]
+    for directory in directories:
+        directory.mkdir()
+        with (undeclared_outputs_dir() / f"suite-{directory.name}.log").open("wb") as log:
+            subprocess.run([renderer, directory], env=os.environ, check=True, stdout=log, stderr=subprocess.STDOUT)
+    names = {
+        "pod_manifests.json",
+        "probe_manifests.json",
+        "vm_manifests.json",
+        "firecracker_manifests.json",
+        "real_model_manifests.json",
+    }
+    assert {path.name for path in directories[0].iterdir()} == names
+    assert {path.name for path in directories[1].iterdir()} == names
+    for name in names:
+        assert (directories[0] / name).read_bytes() == (directories[1] / name).read_bytes(), name
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

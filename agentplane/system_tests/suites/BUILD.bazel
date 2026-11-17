@@ -1,4 +1,4 @@
-load("//agentplane/system_tests/deployment:render.bzl", "render_fixture")
+load("//agentplane/system_tests/deployment:render.bzl", "render_fixture", "render_suite_fixtures")
 load(
     "//agentplane/system_tests/k3s:defs.bzl",
     "APP_IMAGES",
@@ -25,7 +25,6 @@ load(
     "k3s_recycling_key",
 )
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load(":suite_recipes.bzl", "SUITE_RECIPES")
 
 package(
     default_testonly = True,
@@ -799,34 +798,41 @@ py_binary(
     deps = [":suite_recipe"],
 )
 
-render_fixture(
+render_suite_fixtures(
+    name = "common_suite_manifests",
+    outs = [
+        "firecracker_manifests.json",
+        "pod_manifests.json",
+        "probe_manifests.json",
+        "real_model_manifests.json",
+        "vm_manifests.json",
+    ],
+    renderer = ":suite_recipe_bin",
+)
+
+filegroup(
     name = "pod_manifests",
-    arguments = SUITE_RECIPES["pod"],
-    renderer = ":suite_recipe_bin",
+    srcs = [":pod_manifests.json"],
 )
 
-render_fixture(
+filegroup(
     name = "probe_manifests",
-    arguments = SUITE_RECIPES["probe"],
-    renderer = ":suite_recipe_bin",
+    srcs = [":probe_manifests.json"],
 )
 
-render_fixture(
+filegroup(
     name = "vm_manifests",
-    arguments = SUITE_RECIPES["vm"],
-    renderer = ":suite_recipe_bin",
+    srcs = [":vm_manifests.json"],
 )
 
-render_fixture(
+filegroup(
     name = "firecracker_manifests",
-    arguments = SUITE_RECIPES["firecracker"],
-    renderer = ":suite_recipe_bin",
+    srcs = [":firecracker_manifests.json"],
 )
 
-render_fixture(
+filegroup(
     name = "real_model_manifests",
-    arguments = SUITE_RECIPES["real_model"],
-    renderer = ":suite_recipe_bin",
+    srcs = [":real_model_manifests.json"],
 )
 
 py_library(
