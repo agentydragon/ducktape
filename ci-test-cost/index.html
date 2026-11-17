@@ -118,13 +118,13 @@
               ><${Text} c="dimmed" mt="md"
                 >CI test cost · 16–17 November 2026 UTC<//
               ><${Title} order=${1} my="sm"
-                >Share setup carefully; split scale from correctness<//
+                >Share setup carefully; split benchmarks from correctness<//
               ><${Text} size="lg"
-                >A real memory-budget stress case is a candidate for the
-                existing opt-in scale lane. Debundle test granularity, cluster
-                synthesis and Agentplane fixture lifetimes offer separate
-                opportunities, but the available records do not establish an
-                end-to-end CI speedup.<//
+                >A memory-budget benchmark is a candidate for the opt-in
+                benchmark lane. Debundle test granularity, cluster synthesis and
+                Agentplane fixture lifetimes offer separate opportunities, but
+                the available records do not establish an end-to-end CI
+                speedup.<//
               ><${Text} size="sm" c="dimmed" mt="sm"
                 ><${ManifestStamp} src="./manifest.json" /> · Source
                 <${Code}>${e.source_devel_commit}<//><//
@@ -142,7 +142,7 @@
             >
             <${SimpleGrid} cols=${{ base: 1, sm: 3 }}>
               <${Paper} withBorder p="md"
-                ><${Text} c="dimmed">Memory stress · 8 runs<//
+                ><${Text} c="dimmed">Memory benchmark · 8 runs<//
                 ><${Title} order=${2}>35.1s median<//
                 ><${Text}
                   >Longest fresh action per run; p90 38.7s, mean 35.5s. The full
@@ -216,7 +216,7 @@
               >
             </section>
             <section>
-              <${Title} order=${2}>1. Separate the actual scale regression<//
+              <${Title} order=${2}>1. Separate the memory benchmark<//
               ><${Text} my="sm"
                 >${" "}${source("devinfra/js/debundle/e2e/source_fact_memory_test.rs", "source_fact_memory_test")}${" "}
                 builds 512 aliases × 512 properties, runs the normal CLI and
@@ -229,18 +229,23 @@
               <${Text} my="sm"
                 >Proposed trial: retain a small default semantic witness that
                 runs the same spec→bundle→emitted-JavaScript behavior, and move
-                the full matrix plus RSS budget to a separate target tagged
-                <${Code}>manual, scale<//>. The existing
-                ${" "}${source("devinfra/js/debundle/e2e/BUILD.bazel", "scale targets")}${" "}
+                the full matrix plus RSS budget to a separate opt-in target. At
+                this report’s source pin, the
+                ${" "}${source("devinfra/js/debundle/e2e/BUILD.bazel", "Debundle targets")}${" "}
                 and
-                ${" "}${source("agentplane/history_service/internal/projection/BUILD.bazel", "history scale test")}${" "}
-                use both tags. ${" "}${source(".bazelrc", "CI filters")}${" "}
-                exclude manual; the scale tag alone does not. Arrange an owned
-                scheduled or explicit run before relying on the large guard.
-                This deliberately moves the large-input memory detection later;
-                a small witness does not establish the same memory bound.
-                Measure both tests and preserve their separate assertions before
-                any policy change.<//
+                ${" "}${source("agentplane/history_service/internal/projection/BUILD.bazel", "history target")}${" "}
+                use <${Code}>manual, scale<//>. If ${" "}
+                <${Anchor}
+                  href="https://github.com/agentydragon/ducktape/pull/17109"
+                  >the benchmark convention PR<//
+                >${" "} lands, use <${Code}>manual, bench<//> for new targets.
+                ${" "}${source(".bazelrc", "CI filters")}${" "}exclude manual;
+                the grouping tag alone does not. Arrange an owned scheduled or
+                explicit run before relying on the large guard. This
+                deliberately moves the large-input memory detection later; a
+                small witness does not establish the same memory bound. Measure
+                both tests and preserve their separate assertions before any
+                policy change.<//
               >
               <${Text} my="sm"
                 >Do not move the similarly expensive
@@ -414,9 +419,8 @@
             <footer>
               <${Text} size="sm" c="dimmed"
                 >This report is prepared for a gh-pages PR and deploys after
-                merge. Setup sharing, scale-test policy and narrower
-                dependencies are proposals, not implemented or measured CI
-                improvements.<//
+                merge. Setup sharing, benchmark policy and narrower dependencies
+                are proposals, not implemented or measured CI improvements.<//
               >
             </footer>
           <//><//
