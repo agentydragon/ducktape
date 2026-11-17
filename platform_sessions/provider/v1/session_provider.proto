@@ -21,7 +21,10 @@ service SessionProviderControl {
   // This operation can exchange or rotate upstream credentials. A caller that loses the response
   // after dispatch must not replay the request automatically; it must reconnect and inspect the
   // local snapshot, preserving OUTCOME_UNKNOWN if the provider cannot establish what happened.
-  rpc ImportSession(ImportSessionRequest) returns (ImportSessionResponse);
+  rpc ImportSession(ImportSessionRequest) returns (ImportOperation);
+
+  // Reads the durable, sanitized record for an import without contacting upstream.
+  rpc GetImportOperation(GetImportOperationRequest) returns (ImportOperation);
 
   // Performs one provider-defined session verification. A successful result means the provider
   // confirmed authentication, not merely that an HTTP request succeeded. A probe may rotate
@@ -145,6 +148,28 @@ message ImportSessionRequest {
   // May contain reusable credentials, up to 65,536 bytes. Never include this field in logs,
   // errors, or telemetry.
   bytes candidate = 4;
+  // Client-generated canonical UUIDv4. Reusing an ID must never dispatch again.
+  string operation_id = 5;
+}
+
+message GetImportOperationRequest {
+  InstanceRef instance = 1;
+  string operation_id = 2;
+}
+
+message ImportOperation {
+  InstanceRef instance = 1;
+  string operation_id = 2;
+  ImportOperationState state = 3;
+  // Present only for completed operations. Unknown includes interrupted operations.
+  ImportSessionResponse result = 4;
+}
+
+enum ImportOperationState {
+  IMPORT_OPERATION_STATE_UNSPECIFIED = 0;
+  IMPORT_OPERATION_STATE_PENDING = 1;
+  IMPORT_OPERATION_STATE_COMPLETED = 2;
+  IMPORT_OPERATION_STATE_UNKNOWN = 3;
 }
 
 message ImportSessionResponse {
