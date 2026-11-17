@@ -446,8 +446,14 @@ separately. Edge registration also costs one hash-set check per
 read/proposal pair encountered by semantic evaluation; repeated registration
 and full value-set joins remain PF1 work, not a claimed linear-time solve.
 Both bounds are polynomial in the finite fact/atom universe, without path
-enumeration. The reverse index lives only until this closure completes;
-explanatory premise retention is a separate projection choice.
+enumeration. `take_final` retires its incoming and outgoing proof edges with
+the completed payload, in time proportional to those incident edges; no scan
+of the whole graph is needed. Incoming edges reuse the retained explanatory
+premise set, or a live input index when explanations are omitted. This keeps
+ordered request/result transfers from accumulating proof indexes for dead
+prefixes. Any remaining index lives only until this closure completes;
+explanatory premise retention is a separate projection choice. Empty dependency
+sets neither allocate payloads nor perform dependency-set cloning or joins.
 
 `FlowRules::SOURCE_ONLY` is a checked contract: its source-origin, parameter and
 property facts cannot introduce or inherit typed dependencies. `assume` and

@@ -301,6 +301,9 @@ impl<R: IterativeRules> IterativeInference<R> {
 /// Source-only families leave it empty, including values-only projections.
 struct ProofTransfers<Key> {
     edges: FxHashMap<Key, FxHashSet<Key>>,
+    // With explanatory premises omitted, keep just the incoming live edges
+    // needed to retire a completed transfer without scanning the whole graph.
+    inputs: FxHashMap<Key, FxHashSet<Key>>,
     #[cfg(test)]
     atom_deliveries: usize,
 }
@@ -309,8 +312,21 @@ impl<Key> Default for ProofTransfers<Key> {
     fn default() -> Self {
         Self {
             edges: FxHashMap::default(),
+            inputs: FxHashMap::default(),
             #[cfg(test)]
             atom_deliveries: 0,
+        }
+    }
+}
+
+impl<Key: Eq + Hash> ProofTransfers<Key> {
+    fn remove_target(&mut self, source: &Key, target: &Key) {
+        let Some(targets) = self.edges.get_mut(source) else {
+            return;
+        };
+        targets.remove(target);
+        if targets.is_empty() {
+            self.edges.remove(source);
         }
     }
 }
@@ -445,7 +461,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         if R::SOURCE_ONLY {
             return change;
         }
-        let mut dependencies = self.dependencies.clone();
+        let mut dependencies = (!self.dependencies.is_empty()).then(|| self.dependencies.clone());
         for source in &self.reads {
             if *source != key
                 && self
@@ -455,17 +471,33 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                     .or_default()
                     .insert(key.clone())
             {
+                if !RETAIN_PREMISES {
+                    self.proof_edges
+                        .inputs
+                        .entry(key.clone())
+                        .or_default()
+                        .insert(source.clone());
+                }
                 // A newly activated edge must also receive atoms that
                 // appeared after the read, even on an unchanged proposal.
-                if let Some(fact) = self.facts.get(source) {
+                if let Some(proof) = self
+                    .facts
+                    .get(source)
+                    .and_then(|fact| fact.dependencies.as_ref())
+                {
                     #[cfg(test)]
                     {
-                        self.proof_edges.atom_deliveries += proof_atom_count(fact.dependencies());
+                        self.proof_edges.atom_deliveries += proof_atom_count(proof);
                     }
-                    dependencies.extend(fact.dependencies());
+                    dependencies
+                        .get_or_insert_with(ProofDependencies::default)
+                        .extend(proof);
                 }
             }
         }
+        let Some(dependencies) = dependencies else {
+            return change;
+        };
         let added = self.extend_proof(&key, &dependencies);
         change.proof = !added.is_empty();
         if change.proof {
@@ -491,6 +523,20 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
     fn take_final(&mut self, key: R::Key) -> Option<R::Fact> {
         let fact = self.facts.remove(&key)?;
         self.dependencies.extend(fact.dependencies());
+        // Completion freezes both values and their evidence. The proof queue
+        // has drained; neither incoming nor outgoing live edges are needed.
+        // Reuse the existing premise set when retained, rather than keeping
+        // another forward graph beside the explanatory one.
+        if RETAIN_PREMISES {
+            for source in fact.premises() {
+                self.proof_edges.remove_target(source, &key);
+            }
+        } else if let Some(sources) = self.proof_edges.inputs.remove(&key) {
+            for source in sources {
+                self.proof_edges.remove_target(&source, &key);
+            }
+        }
+        self.proof_edges.edges.remove(&key);
         self.reads.retain(|read| *read != key);
         self.changed.remove(&key);
         Some(fact.value)
@@ -1195,5 +1241,52 @@ mod tests {
         inference.seed(0, ());
         let facts = inference.solve([(0, ProofRule::Axiom(0, 0))]);
         IterativeInference::from_completed(SourceOnly, facts);
+    }
+
+    fn check_transfer_retirement<const RETAIN_PREMISES: bool>() {
+        let mut facts = FxHashMap::default();
+        let mut proof_edges = ProofTransfers::default();
+        let dependencies = ProofDependencies {
+            value_inputs: BTreeSet::from([input(0)]),
+            ..Default::default()
+        };
+        {
+            let mut context = IterativeContext::<ProofGraphRules, RETAIN_PREMISES>::new(
+                &mut facts,
+                &mut proof_edges,
+            );
+            context.assume(&dependencies);
+            context.propose(0, ());
+        }
+        for step in 0..256 {
+            let intermediate = 2 * step + 1;
+            let result = intermediate + 1;
+            let mut context = IterativeContext::<ProofGraphRules, RETAIN_PREMISES>::new(
+                &mut facts,
+                &mut proof_edges,
+            );
+            // This shared input is complete, but reading it live installs the
+            // same edges as the ordered runtime's certificate consumers.
+            context.read(0);
+            context.propose(intermediate, ());
+            context.read(intermediate);
+            context.propose(result, ());
+            // Taking a transfer freezes the proof along with its value.
+            context.take_final(intermediate).unwrap();
+            context.take_final(result).unwrap();
+            assert_eq!(context.dependencies, dependencies);
+            assert_eq!(facts.len(), 1);
+            assert!(
+                proof_edges.edges.is_empty(),
+                "retired transfer edges must not accumulate across prefixes"
+            );
+            assert!(proof_edges.inputs.is_empty());
+        }
+    }
+
+    #[test]
+    fn completed_transfers_retire_live_proof_edges_with_or_without_explanations() {
+        check_transfer_retirement::<true>();
+        check_transfer_retirement::<false>();
     }
 }
