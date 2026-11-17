@@ -457,10 +457,19 @@ func TestSystemdKernelFixture(t *testing.T) {
 		ownedName := launcher.scope + uuid.NewString() + ".service"
 		unrelatedName := "agentplane-proof-unrelated-" + uuid.NewString() + ".service"
 		for _, name := range []string{ownedName, unrelatedName} {
-			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), nil); err != nil {
+			completion := make(chan string, 1)
+			if _, err := conn.StartTransientUnitContext(ctx, name, "fail", proofUnitProperties("/bin/busybox", []string{"/bin/busybox", "sleep", "60"}, WorkloadSlice), completion); err != nil {
 				t.Fatal(err)
 			}
 			defer systemdops.FenceUnit(context.Background(), conn, name, systemdops.UnitFence{Ordered: true})
+			select {
+			case result := <-completion:
+				if result != "done" {
+					t.Fatalf("start %s: job result %q", name, result)
+				}
+			case <-ctx.Done():
+				t.Fatalf("start %s: %v", name, ctx.Err())
+			}
 		}
 		recovered := *launcher
 		reconcileKernelSystemdScope(t, &recovered, stateDir, sandboxUID, runtimeOwner)
