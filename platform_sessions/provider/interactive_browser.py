@@ -122,9 +122,15 @@ class InteractiveBrowserRuntime:
                 if self._state != "created":
                     raise RuntimeError("browser runtime cannot be restarted")
                 self._state = "starting"
+            startup = asyncio.create_task(asyncio.to_thread(self._start_blocking))
             try:
-                await asyncio.to_thread(self._start_blocking)
+                await asyncio.shield(startup)
             except BaseException:
+                # A cancelled to_thread call keeps running in its worker. Wait for it to
+                # finish before cleanup, so startup cannot recreate a process afterward.
+                while not startup.done():
+                    with suppress(asyncio.CancelledError, Exception):
+                        await asyncio.shield(startup)
                 await asyncio.to_thread(self._stop_blocking)
                 with self._state_lock:
                     self._state = "stopped"
@@ -143,6 +149,8 @@ class InteractiveBrowserRuntime:
                 raise RuntimeError("browser runtime is not running")
             if self._thread is None or not self._thread.is_alive():
                 raise RuntimeError("browser worker has stopped")
+            if threading.current_thread() is self._thread:
+                raise RuntimeError("run_sync cannot be called on the browser worker")
             if self._viewer_connected and not allow_during_viewer:
                 raise BrowserBusy("owner is using the browser")
             work = _Work(callback)
@@ -158,7 +166,8 @@ class InteractiveBrowserRuntime:
 
     async def websocket(self, websocket: WebSocket) -> None:
         """Authenticate and relay one local websockify connection."""
-        supplied = websocket.headers.get("authorization", "")
+        values = websocket.headers.getlist("authorization")
+        supplied = values[0] if len(values) == 1 else ""
         if not supplied.isascii() or not hmac.compare_digest(supplied, "Bearer " + self._owner_token):
             await websocket.close(code=4401)
             return
@@ -378,6 +387,9 @@ class InteractiveBrowserRuntime:
                 failure.append(error)
                 started.set()
             finally:
+                with self._state_lock:
+                    if self._state == "running":
+                        self._state = "worker_failed"
                 while True:
                     try:
                         unfinished = self._jobs.get_nowait()
@@ -397,9 +409,7 @@ class InteractiveBrowserRuntime:
         if self._thread is not None:
             self._jobs.put(None)
             self._thread.join(timeout=15)
-            if self._thread.is_alive():
-                logger.error("interactive Chromium worker did not stop before timeout")
-            self._thread = None
+        worker_alive = self._thread is not None and self._thread.is_alive()
         for process in (self._websockify, self._vnc, self._xvfb):
             if process is None:
                 continue
@@ -418,3 +428,10 @@ class InteractiveBrowserRuntime:
         self._vnc_port = None
         self._websockify_port = None
         self._display = None
+        if worker_alive and self._thread is not None:
+            self._thread.join(timeout=3)
+            if self._thread.is_alive():
+                # The owning process must not release its instance lock while this worker
+                # can still touch the durable browser profile.
+                raise RuntimeError("interactive Chromium worker did not stop")
+        self._thread = None

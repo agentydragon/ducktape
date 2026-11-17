@@ -228,6 +228,7 @@ py_test(
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
         "@pypi//websockets",
     ],
 )
