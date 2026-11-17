@@ -1,11 +1,11 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
+    source:
+      static/app/modules/mod_x.js:
+        contains: ["import {", Readable, vendor, "export {", Readable]
+    stdout: "42\n"
     runtime_files:
       static/vendor.js: static/vendor.js
       static/app/vendor.js: static/vendor.js
-    stdout: "42\n"
-    source:
-      static/app/modules/mod_x.js:
-        contains: ["import {", Readable, vendor, "export {"]
+    check_all_js: true

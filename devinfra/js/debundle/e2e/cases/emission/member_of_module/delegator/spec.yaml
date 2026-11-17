@@ -8,9 +8,7 @@ logical_modules:
               module: "./gen.js"
               member: next
               kind: function_declaration
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - ids
+  static/app: [ids]
+unassigned_mode:
+  static/app: { kind: catchall_file }

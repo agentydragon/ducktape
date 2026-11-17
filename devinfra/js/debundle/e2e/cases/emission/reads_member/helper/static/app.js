@@ -4,8 +4,8 @@ const gen = {
     return ++this.counter;
   },
 };
-function readId() {
+function ls() {
   return gen.nextUniqueId();
 }
-console.log(readId());
-export { gen, readId };
+console.log(ls());
+export { gen, ls };

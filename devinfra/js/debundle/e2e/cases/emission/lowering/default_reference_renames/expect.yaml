@@ -1,9 +1,6 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
+    exports: { static/app/modules/x.js: { include: [alpha, beta] } }
     stdout: "a b\n"
-    exports:
-      static/app/modules/x.js:
-        include: [alpha, beta]
-        exclude: []
+    check_all_js: true

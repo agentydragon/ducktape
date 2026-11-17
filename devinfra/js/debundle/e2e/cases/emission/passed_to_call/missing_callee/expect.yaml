@@ -1,5 +1,8 @@
 spec.yaml:
   reject:
-    stderr_contains_all:
-      - "passed_to_call"
-      - "absentCallee"
+    entry: static/app
+    stderr_contains_all: [passed_to_call, absentCallee]
+unknown_object.spec.yaml:
+  reject:
+    entry: static/app
+    stderr_contains_all: [passed_to_call, notAMember]

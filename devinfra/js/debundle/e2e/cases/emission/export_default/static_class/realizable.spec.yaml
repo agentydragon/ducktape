@@ -2,10 +2,8 @@ logical_modules:
   static/app:
     mod_i:
       members:
-        - selector: { binding: { name: init } }
-unassigned_mode:
-  static/app:
-    kind: inline_in_entry
+        - { name: init, selector: { binding: { name: init } } }
 import_order:
-  static/app:
-    - mod_i
+  static/app: [mod_i]
+unassigned_mode:
+  static/app: { kind: inline_in_entry }

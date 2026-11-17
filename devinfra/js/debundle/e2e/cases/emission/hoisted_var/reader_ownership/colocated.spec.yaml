@@ -2,12 +2,10 @@ logical_modules:
   static/app:
     mod_a:
       members:
-        - selector: { binding: { name: reader } }
+        - { name: reader, selector: { binding: { name: reader } } }
       anonymous_statements:
         - match: 'try { var impl = "primary"; } catch (e) { var impl = "fallback"; }'
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - mod_a
+  static/app: [mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

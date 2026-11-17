@@ -1,4 +1,4 @@
 spec.yaml:
   reject:
-    stderr_contains_all:
-      - "static/app::x"
+    entry: static/app
+    stderr_contains_all: ["static/app::x"]

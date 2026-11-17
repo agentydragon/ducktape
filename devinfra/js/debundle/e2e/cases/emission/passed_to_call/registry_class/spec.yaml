@@ -2,10 +2,7 @@ logical_modules:
   static/app:
     registry:
       members:
-        - name: appRegistry
-          selector:
-            binding:
-              name: registry
+        - { name: appRegistry, selector: { binding: { name: registry } } }
     services:
       members:
         - name: FooServiceClass
@@ -14,11 +11,7 @@ logical_modules:
               callee_member: register
               object: appRegistry
               kind: class_declaration
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - registry
-    - services
-    - residual
+  static/app: [registry, services, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

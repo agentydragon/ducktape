@@ -1,8 +1,8 @@
-function anchor(x) {
+function EBt(x) {
   return x + 1;
 }
-function delegate(x) {
-  return anchor(x);
+function UBt(x) {
+  return EBt(x);
 }
-console.log(delegate(41));
-export { anchor, delegate };
+console.log(UBt(41));
+export { EBt, UBt };

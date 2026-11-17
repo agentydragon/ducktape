@@ -3,13 +3,8 @@ logical_modules:
     ids:
       members:
         - name: genId
-          selector:
-            member_of_module:
-              module: "./gen.js"
-              member: next
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+          selector: { member_of_module: { module: "./gen.js", member: next } }
 import_order:
-  static/app:
-    - ids
+  static/app: [ids]
+unassigned_mode:
+  static/app: { kind: catchall_file }

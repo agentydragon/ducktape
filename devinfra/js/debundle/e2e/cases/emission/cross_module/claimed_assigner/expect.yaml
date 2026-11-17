@@ -1,15 +1,9 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "1\n"
-    exports:
-      static/app/modules/state.js:
-        include: [a, b]
-        exclude: []
+    exports: { static/app/modules/state.js: { include: [a, b] } }
     source:
-      static/app/modules/state.js:
-        contains: ["let a = 0;", "function b()", "a = 1;"]
-      static/app/entry.js:
-        contains: ["import { a, b }"]
-        excludes: ["a = 1;"]
+      static/app/modules/state.js: { contains: ["let a = 0;", "function b()", "a = 1;"] }
+      static/app/entry.js: { contains: ["import { a, b }"], excludes: ["a = 1;"] }
+    stdout: "1\n"
+    check_all_js: true

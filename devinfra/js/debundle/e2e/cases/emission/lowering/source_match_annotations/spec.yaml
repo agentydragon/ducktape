@@ -2,21 +2,17 @@ logical_modules:
   static/app:
     format:
       source_matches:
-        - match: |
+        - match: |-
             function selected(value) {
               return value.trim();
             }
           bindings:
-            - local: selected
-              name: FormatValue
+            - { local: selected, name: FormatValue }
       annotations:
         FormatValue:
           comment: "Formats display text."
           note: "YAML-only migration note."
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - format
-    - residual
+  static/app: [format, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

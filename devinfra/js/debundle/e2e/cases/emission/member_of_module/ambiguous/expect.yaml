@@ -1,5 +1,4 @@
 spec.yaml:
   reject:
-    stderr_contains_all:
-      - "member_of_module"
-      - "next"
+    entry: static/app
+    stderr_contains_all: [member_of_module, next]

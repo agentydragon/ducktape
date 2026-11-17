@@ -1,9 +1,9 @@
-var getDescriptor = Object.getOwnPropertyDescriptor;
-var defineProperty = Object.defineProperty;
-var decorateWidget = (decorators, target, key) => {
-  const desc = getDescriptor(target, key);
+var gx = Object.getOwnPropertyDescriptor;
+var px = Object.defineProperty;
+var dx = (decorators, target, key) => {
+  const desc = gx(target, key);
   for (const decorator of decorators) decorator(target, key, desc);
-  defineProperty(target, key, desc);
+  px(target, key, desc);
 };
 const stamp = (target, key, desc) => {
   const original = desc.value;
@@ -16,6 +16,6 @@ class Widget {
     return "w";
   }
 }
-decorateWidget([stamp], Widget.prototype, "name", 1);
+dx([stamp], Widget.prototype, "name", 1);
 console.log(new Widget().name());
 export { Widget };

@@ -2,12 +2,10 @@ logical_modules:
   static/app:
     mod_a:
       members:
-        - selector: { binding: { name: a } }
-        - selector: { binding: { name: b } }
-        - selector: { binding: { name: c } }
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+        - { name: a, selector: { binding: { name: a } } }
+        - { name: b, selector: { binding: { name: b } } }
+        - { name: c, selector: { binding: { name: c } } }
 import_order:
-  static/app:
-    - mod_a
+  static/app: [mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

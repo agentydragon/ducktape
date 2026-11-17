@@ -1,39 +1,31 @@
 logical_modules:
   static/app:
     alpha:
+      members:
+        - name: alphaDecorator
+          selector:
+            makes_decorate_call: { class: Alpha, member: alphaLabel }
       source_matches:
-        - match: |
+        - match: |-
             class Alpha {
               alphaLabel() {
                 STMT_LIST;
               }
             }
           bindings: [Alpha]
-      members:
-        - name: alphaDecorator
-          selector:
-            makes_decorate_call:
-              class: Alpha
-              member: alphaLabel
     beta:
+      members:
+        - name: betaDecorator
+          selector: { makes_decorate_call: { class: Beta } }
       source_matches:
-        - match: |
+        - match: |-
             class Beta {
               betaLabel() {
                 STMT_LIST;
               }
             }
           bindings: [Beta]
-      members:
-        - name: betaDecorator
-          selector:
-            makes_decorate_call:
-              class: Beta
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - alpha
-    - beta
-    - residual
+  static/app: [alpha, beta, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

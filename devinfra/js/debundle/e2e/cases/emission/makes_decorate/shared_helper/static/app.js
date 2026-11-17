@@ -1,9 +1,9 @@
-var getDescriptor = Object.getOwnPropertyDescriptor;
-var defineProperty = Object.defineProperty;
-var decorate = (decorators, target, key) => {
-  const desc = getDescriptor(target, key);
+var g0 = Object.getOwnPropertyDescriptor;
+var p0 = Object.defineProperty;
+var d0 = (decorators, target, key) => {
+  const desc = g0(target, key);
   for (const decorator of decorators) decorator(target, key, desc);
-  defineProperty(target, key, desc);
+  p0(target, key, desc);
 };
 const tag = (target, key, desc) => {
   const original = desc.value;
@@ -16,6 +16,6 @@ class C {
     return "hi";
   }
 }
-decorate([tag], C.prototype, "greet", 1);
+d0([tag], C.prototype, "greet", 1);
 console.log(new C().greet());
 export { C };

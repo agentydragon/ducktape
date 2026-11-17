@@ -1,10 +1,8 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "provider:local\n"
     source:
       static/app/modules/consumer.js:
-        contains:
-          - "sharedReadableName as sharedReadableName$1"
-          - 'sharedReadableName$1() + ":" + sharedReadableName()'
+        contains: ["sharedReadableName as sharedReadableName$1", 'sharedReadableName$1() + ":" + sharedReadableName()']
+    stdout: "provider:local\n"
+    check_all_js: true

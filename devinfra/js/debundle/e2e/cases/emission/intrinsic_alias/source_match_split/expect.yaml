@@ -1,13 +1,15 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "hi! 100\n"
     source:
       static/app/modules/decorate_runtime.js:
         contains:
-          - "source bindings: decorateHelper, defineAlias, descriptorAlias"
-          - "applyDecorators"
-          - "definePropertyAlias"
-          - "descriptorAlias"
-        excludes: ["firstValue"]
+          [
+            "source bindings: decorateHelper, defineAlias, descriptorAlias",
+            applyDecorators,
+            definePropertyAlias,
+            descriptorAlias,
+          ]
+        excludes: [firstValue]
+    stdout: "hi! 100\n"
+    check_all_js: true

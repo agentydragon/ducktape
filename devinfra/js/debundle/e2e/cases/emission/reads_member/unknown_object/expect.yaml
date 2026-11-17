@@ -1,5 +1,4 @@
 spec.yaml:
   reject:
-    stderr_contains_all:
-      - "noSuchObject"
-      - "reads_member"
+    entry: static/app
+    stderr_contains_all: [noSuchObject, reads_member]

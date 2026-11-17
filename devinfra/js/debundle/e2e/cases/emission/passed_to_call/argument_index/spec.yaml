@@ -3,14 +3,8 @@ logical_modules:
     widgets:
       members:
         - name: WidgetClass
-          selector:
-            passed_to_call:
-              callee_member: define
-              arg_index: 1
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+          selector: { passed_to_call: { callee_member: define, arg_index: 1 } }
 import_order:
-  static/app:
-    - widgets
-    - residual
+  static/app: [widgets, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

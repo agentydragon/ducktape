@@ -1,5 +1,4 @@
 spec.yaml:
   reject:
-    stderr_contains_all:
-      - "passed_to_call"
-      - "register"
+    entry: static/app
+    stderr_contains_all: [passed_to_call, register]

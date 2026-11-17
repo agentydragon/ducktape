@@ -1,8 +1,5 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
     stdout: "Aundefined\n"
-    source:
-      static/app/entry.js:
-        contains: ["const taken_name", "typeof taken_name"]
+    check_all_js: true

@@ -2,24 +2,16 @@ logical_modules:
   static/app:
     registries:
       members:
-        - selector:
-            binding:
-              name: viewRegistry
-        - selector:
-            binding:
-              name: commandRegistry
+        - name: viewRegistry
+          selector: { binding: { name: viewRegistry } }
+        - name: commandRegistry
+          selector: { binding: { name: commandRegistry } }
     views:
       members:
         - name: TableViewComponent
           selector:
-            passed_to_call:
-              callee_member: register
-              object: viewRegistry
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+            passed_to_call: { callee_member: register, object: viewRegistry }
 import_order:
-  static/app:
-    - registries
-    - views
-    - residual
+  static/app: [registries, views, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

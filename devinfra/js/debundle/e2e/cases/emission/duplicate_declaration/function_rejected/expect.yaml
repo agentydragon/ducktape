@@ -1,4 +1,2 @@
 spec.yaml:
-  reject:
-    stderr_contains_all:
-      - "pick"
+  reject: { entry: static/app, stderr_contains_all: [pick] }

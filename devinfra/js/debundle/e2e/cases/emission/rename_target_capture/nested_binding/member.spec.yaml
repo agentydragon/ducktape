@@ -4,8 +4,8 @@ logical_modules:
       members:
         - name: taken_name
           selector: { binding: { name: source_value } }
-        - selector: { binding: { name: f } }
-unassigned_mode:
-  static/app: { kind: catchall_file }
+        - { name: f, selector: { binding: { name: f } } }
 import_order:
   static/app: [x]
+unassigned_mode:
+  static/app: { kind: catchall_file }

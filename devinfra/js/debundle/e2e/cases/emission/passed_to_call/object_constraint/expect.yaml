@@ -1,13 +1,10 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "TableViewComponent DeleteCommand\n"
-    original_stdout: "TableView DeleteCommand\n"
     source:
       static/app/modules/views.js:
-        contains:
-          - "source bindings: TableView"
-          - "class TableViewComponent"
-        excludes:
-          - "source bindings: DeleteCommand"
+        contains: ["source bindings: TableView", "class TableViewComponent"]
+        excludes: ["source bindings: DeleteCommand"]
+    stdout: "TableViewComponent DeleteCommand\n"
+    original_stdout: "TableView DeleteCommand\n"
+    check_all_js: true

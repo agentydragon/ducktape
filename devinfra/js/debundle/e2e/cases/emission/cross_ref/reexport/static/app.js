@@ -1,8 +1,8 @@
-class Accessor {
+class Acc {
   tag() {
     return "acc";
   }
 }
-const alias = Accessor;
-console.log(new alias().tag());
-export { Accessor, alias };
+const HI = Acc;
+console.log(new HI().tag());
+export { Acc, HI };

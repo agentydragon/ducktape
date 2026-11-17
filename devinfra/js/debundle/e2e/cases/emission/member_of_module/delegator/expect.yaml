@@ -1,16 +1,10 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    runtime_files:
-      static/app/gen.js: "static/gen.js"
-    stdout: "7\n"
-    exports:
-      static/app/modules/ids.js:
-        include: [generateId]
-        exclude: []
+    exports: { static/app/modules/ids.js: { include: [generateId] } }
     source:
       static/app/modules/ids.js:
-        contains:
-          - "source bindings: nextId"
-          - "function generateId"
+        contains: ["source bindings: nextId", "function generateId"]
+    stdout: "7\n"
+    runtime_files: { static/app/gen.js: static/gen.js }
+    check_all_js: true

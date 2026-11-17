@@ -1,17 +1,13 @@
 logical_modules:
   static/app:
-    provider:
-      members:
-        - name: sharedReadableName
-          selector: { binding: { name: a } }
     consumer:
       members:
-        - name: sharedReadableName
-          selector: { binding: { name: b } }
-        - name: run
-          selector: { binding: { name: c } }
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+        - { name: sharedReadableName, selector: { binding: { name: b } } }
+        - { name: run, selector: { binding: { name: c } } }
+    provider:
+      members:
+        - { name: sharedReadableName, selector: { binding: { name: a } } }
 import_order:
-  static/app: [consumer, provider]
+  static/app: [provider, consumer]
+unassigned_mode:
+  static/app: { kind: catchall_file }

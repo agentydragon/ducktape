@@ -3,12 +3,8 @@ logical_modules:
     helpers:
       members:
         - name: readShared
-          selector:
-            reads_member:
-              member: shared
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+          selector: { reads_member: { member: shared } }
 import_order:
-  static/app:
-    - helpers
+  static/app: [helpers]
+unassigned_mode:
+  static/app: { kind: catchall_file }

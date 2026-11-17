@@ -8,10 +8,7 @@ logical_modules:
               module: "./accessors.js"
               member: CardsBase
               kind: class_declaration
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - accessors
-    - residual
+  static/app: [accessors, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

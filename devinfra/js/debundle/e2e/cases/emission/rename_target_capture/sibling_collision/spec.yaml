@@ -4,7 +4,7 @@ logical_modules:
       members:
         - name: sibling_name
           selector: { binding: { name: origin_name } }
-unassigned_mode:
-  static/app: { kind: catchall_file }
 import_order:
   static/app: [x]
+unassigned_mode:
+  static/app: { kind: catchall_file }

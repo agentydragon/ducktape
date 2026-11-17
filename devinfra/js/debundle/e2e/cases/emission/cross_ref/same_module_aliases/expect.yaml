@@ -1,16 +1,17 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "a1a2\n"
     exports:
       static/app/modules/exports.js:
         include: [FirstAccessor, SecondAccessor, FirstAccessorExport, SecondAccessorExport]
-        exclude: []
     source:
       static/app/modules/exports.js:
         contains:
-          - "source bindings: A2"
-          - "B2"
-          - "const FirstAccessorExport = FirstAccessor;"
-          - "const SecondAccessorExport = SecondAccessor;"
+          [
+            "source bindings: A2",
+            B2,
+            "const FirstAccessorExport = FirstAccessor;",
+            "const SecondAccessorExport = SecondAccessor;",
+          ]
+    stdout: "a1a2\n"
+    check_all_js: true

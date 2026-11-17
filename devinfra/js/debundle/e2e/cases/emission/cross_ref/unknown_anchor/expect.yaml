@@ -1,5 +1,0 @@
-spec.yaml:
-  reject:
-    stderr_contains_all:
-      - "noSuchAnchor"
-      - "cross_ref"

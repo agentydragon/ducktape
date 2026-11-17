@@ -1,16 +1,16 @@
-var alphaGetDescriptor = Object.getOwnPropertyDescriptor;
-var alphaDefineProperty = Object.defineProperty;
-var decorateAlpha = (decorators, target, key) => {
-  const desc = alphaGetDescriptor(target, key);
+var ga = Object.getOwnPropertyDescriptor;
+var pa = Object.defineProperty;
+var da = (decorators, target, key) => {
+  const desc = ga(target, key);
   for (const decorator of decorators) decorator(target, key, desc);
-  alphaDefineProperty(target, key, desc);
+  pa(target, key, desc);
 };
-var betaGetDescriptor = Object.getOwnPropertyDescriptor;
-var betaDefineProperty = Object.defineProperty;
-var decorateBeta = (decorators, target, key) => {
-  const desc = betaGetDescriptor(target, key);
+var gb = Object.getOwnPropertyDescriptor;
+var pb = Object.defineProperty;
+var db = (decorators, target, key) => {
+  const desc = gb(target, key);
   for (const decorator of decorators) decorator(target, key, desc);
-  betaDefineProperty(target, key, desc);
+  pb(target, key, desc);
 };
 const mark = (suffix) => (target, key, desc) => {
   const original = desc.value;
@@ -28,7 +28,7 @@ class Beta {
     return "b";
   }
 }
-decorateAlpha([mark("A")], Alpha.prototype, "alphaLabel", 1);
-decorateBeta([mark("B")], Beta.prototype, "betaLabel", 1);
+da([mark("A")], Alpha.prototype, "alphaLabel", 1);
+db([mark("B")], Beta.prototype, "betaLabel", 1);
 console.log(new Alpha().alphaLabel(), new Beta().betaLabel());
 export { Alpha, Beta };

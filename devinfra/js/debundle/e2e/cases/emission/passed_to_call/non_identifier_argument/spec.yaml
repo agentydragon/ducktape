@@ -3,12 +3,8 @@ logical_modules:
     things:
       members:
         - name: Thing
-          selector:
-            passed_to_call:
-              callee_member: register
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+          selector: { passed_to_call: { callee_member: register } }
 import_order:
-  static/app:
-    - things
+  static/app: [things]
+unassigned_mode:
+  static/app: { kind: catchall_file }

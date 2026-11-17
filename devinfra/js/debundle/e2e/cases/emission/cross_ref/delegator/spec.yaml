@@ -3,9 +3,7 @@ logical_modules:
     anchors:
       members:
         - name: isTranscriptionProvider
-          selector:
-            binding:
-              name: anchor
+          selector: { binding: { name: EBt } }
     delegators:
       members:
         - name: isMeetingTranscriptionProvider
@@ -13,10 +11,7 @@ logical_modules:
             cross_ref:
               references: isTranscriptionProvider
               kind: function_declaration
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - anchors
-    - delegators
+  static/app: [anchors, delegators]
+unassigned_mode:
+  static/app: { kind: catchall_file }

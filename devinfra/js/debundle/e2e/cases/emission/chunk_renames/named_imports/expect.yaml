@@ -1,15 +1,16 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
     stdout: "local dep-x dep-y\n"
-    runtime_files:
-      static/vendor/entry.js: vendor/entry.js
     source:
       static/app/entry.js:
         contains:
-          - 'import { x as importedThing, y } from "../vendor/entry.js";'
-          - "let payload ="
-          - "console.log(payload, importedThing, y)"
-          - "export { payload as x }"
-        excludes: ["import { payload as importedThing", "let x ="]
+          [
+            'import { x as importedThing, y } from "../vendor/entry.js";',
+            "let payload =",
+            "console.log(payload, importedThing, y)",
+            "export { payload as x }",
+          ]
+        excludes: ["import { payload as importedThing", "let x =", "console.log(x, importedThing, y)"]
+    runtime_files: { static/vendor/entry.js: vendor/entry.js }
+    check_all_js: true

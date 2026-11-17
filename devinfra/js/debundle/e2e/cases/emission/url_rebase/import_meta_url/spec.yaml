@@ -2,8 +2,9 @@ logical_modules:
   static/app:
     nested/worker_url:
       members:
-        - selector: { binding: { name: buildWorkerUrl } }
-unassigned_mode:
-  static/app: { kind: catchall_file }
+        - name: buildWorkerUrl
+          selector: { binding: { name: buildWorkerUrl } }
 import_order:
   static/app: [nested/worker_url]
+unassigned_mode:
+  static/app: { kind: catchall_file }

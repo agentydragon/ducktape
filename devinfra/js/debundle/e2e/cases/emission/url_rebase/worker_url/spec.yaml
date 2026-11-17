@@ -2,8 +2,8 @@ logical_modules:
   static/app:
     x:
       members:
-        - selector: { binding: { name: a } }
-unassigned_mode:
-  static/app: { kind: catchall_file }
+        - { name: a, selector: { binding: { name: a } } }
 import_order:
   static/app: [x]
+unassigned_mode:
+  static/app: { kind: catchall_file }

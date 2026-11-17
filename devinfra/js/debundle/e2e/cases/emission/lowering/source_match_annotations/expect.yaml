@@ -1,13 +1,10 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "hi\n"
-    exports:
-      static/app/modules/format.js:
-        include: [FormatValue]
-        exclude: []
+    exports: { static/app/modules/format.js: { include: [FormatValue] } }
     source:
       static/app/modules/format.js:
         contains: ["// Formats display text."]
         excludes: ["YAML-only migration note."]
+    stdout: "hi\n"
+    check_all_js: true

@@ -2,15 +2,9 @@ logical_modules:
   static/app:
     mod_a:
       members:
-        - selector:
-            binding:
-              name: dup
-        - selector:
-            binding:
-              name: shadow
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+        - { name: dup, selector: { binding: { name: dup } } }
+        - { name: shadow, selector: { binding: { name: shadow } } }
 import_order:
-  static/app:
-    - mod_a
+  static/app: [mod_a]
+unassigned_mode:
+  static/app: { kind: catchall_file }

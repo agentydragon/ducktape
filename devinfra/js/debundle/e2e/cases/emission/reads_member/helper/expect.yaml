@@ -1,14 +1,10 @@
 spec.yaml:
   accept:
     entry: static/app
-    check_all_js: true
-    stdout: "1\n"
     exports:
-      static/app/modules/helpers.js:
-        include: [generateUniqueId]
-        exclude: []
+      static/app/modules/helpers.js: { include: [generateUniqueId] }
     source:
       static/app/modules/helpers.js:
-        contains:
-          - "source bindings: readId"
-          - "function generateUniqueId"
+        contains: ["source bindings: ls", "function generateUniqueId"]
+    stdout: "1\n"
+    check_all_js: true

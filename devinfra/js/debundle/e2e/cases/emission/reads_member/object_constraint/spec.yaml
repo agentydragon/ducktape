@@ -4,8 +4,7 @@ logical_modules:
       source_matches:
         - match: 'const $a = { id: "ctx-1" };'
           bindings:
-            - local: "$a"
-              name: CodegenContext
+            - { local: "$a", name: CodegenContext }
     helpers:
       members:
         - name: readContextId
@@ -14,11 +13,7 @@ logical_modules:
               member: id
               object: CodegenContext
               kind: function_declaration
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - context
-    - helpers
-    - residual
+  static/app: [context, helpers, residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }

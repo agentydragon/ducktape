@@ -3,13 +3,8 @@ logical_modules:
     helpers:
       members:
         - name: readContextId
-          selector:
-            reads_member:
-              member: id
-              object: noSuchObject
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+          selector: { reads_member: { member: id, object: noSuchObject } }
 import_order:
-  static/app:
-    - helpers
+  static/app: [helpers]
+unassigned_mode:
+  static/app: { kind: catchall_file }

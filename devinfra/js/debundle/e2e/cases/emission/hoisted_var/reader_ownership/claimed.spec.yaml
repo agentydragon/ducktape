@@ -5,11 +5,8 @@ logical_modules:
         - match: 'try { var impl = "primary"; } catch (e) { var impl = "fallback"; }'
     mod_reader:
       members:
-        - selector: { binding: { name: reader } }
-unassigned_mode:
-  static/app:
-    kind: catchall_file
+        - { name: reader, selector: { binding: { name: reader } } }
 import_order:
-  static/app:
-    - mod_impl
-    - mod_reader
+  static/app: [mod_impl, mod_reader]
+unassigned_mode:
+  static/app: { kind: catchall_file }

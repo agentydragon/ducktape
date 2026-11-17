@@ -1,7 +1,4 @@
-logical_modules: {}
-unassigned_mode:
-  static/app:
-    kind: catchall_file
 import_order:
-  static/app:
-    - residual
+  static/app: [residual]
+unassigned_mode:
+  static/app: { kind: catchall_file }
