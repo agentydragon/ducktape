@@ -1,0 +1,86 @@
+{
+  "valid_envelopes": [
+    {
+      "name": "nested_session",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "example-provider",
+        "session": {
+          "nested": {
+            "cookies": [1, 2]
+          },
+          "label": "synthetic"
+        }
+      }
+    }
+  ],
+  "invalid_envelopes": [
+    {
+      "name": "non_object_envelope",
+      "expected_provider": "example-provider",
+      "envelope": []
+    },
+    {
+      "name": "null_envelope",
+      "expected_provider": "example-provider",
+      "envelope": null
+    },
+    {
+      "name": "missing_provider",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "session": {}
+      }
+    },
+    {
+      "name": "missing_session",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "example-provider"
+      }
+    },
+    {
+      "name": "provider_mismatch",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "another-provider",
+        "session": {}
+      }
+    },
+    {
+      "name": "non_object_session",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "example-provider",
+        "session": "synthetic"
+      }
+    },
+    {
+      "name": "array_session",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "example-provider",
+        "session": []
+      }
+    },
+    {
+      "name": "unexpected_envelope_key",
+      "expected_provider": "example-provider",
+      "envelope": {
+        "provider": "example-provider",
+        "session": {},
+        "extra": true
+      }
+    }
+  ],
+  "invalid_json": [
+    {
+      "name": "malformed_json",
+      "value": "invalid JSON"
+    },
+    {
+      "name": "empty_input",
+      "value": ""
+    }
+  ]
+}
