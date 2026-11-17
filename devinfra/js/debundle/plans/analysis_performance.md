@@ -60,9 +60,9 @@ Remaining work:
    attributes that interval to repeated candidate remapping and per-member
    bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
    completes whole-program value-flow preparation within memory, then reaches
-   previous 600-second deadline in main-chunk analysis. Compile completed value
-   facts into a source-sized read index, preserving absent versus empty facts
-   and deterministic property-row enumeration. Evaluate the resulting lookup,
+   previous 600-second deadline in main-chunk analysis. Validate the completed
+   value read index described in <../docs/inference.md> against the full
+   pipeline. Evaluate the resulting lookup,
    bitmap-query and source-solver costs separately against the stricter
    whole-pipeline budget. Preserve shared SCC summaries,
    bounded immutable-identity caches, transient-query lifetimes and independent

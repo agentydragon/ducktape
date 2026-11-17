@@ -1207,6 +1207,30 @@ outputs remain its persistence boundary, tested through fresh/saved CLI parity.
 The analyzer retires the shared flow after all parallel chunk consumers join,
 before artifact encoding allocates its output buffers.
 
+**Completed-value read index.** After solving, move each value fact into an
+immutable index over the existing dense binding and allocation-site domains.
+Bindings, return summaries and dynamic-property summaries have direct slots;
+each site's populated static properties form a sorted sparse row. No table is
+allocated for the product of sites and property names. Chunk preparation visits
+that site's row directly instead of searching a program-wide ordered map.
+
+This is an exact representation change. Each supported key identifies one slot
+or one `(site, property)` row; construction rejects duplicate keys. Absent rows
+remain absent, and an explicitly stored empty value remains present. Sorting
+changes only row order. Moving each `Values` preserves its bitmap Arc and opaque
+alternative, so immutable-identity projection caches retain their lifetime and
+sharing guarantees. No transfer, source qualification or projection rule changes.
+Tests compare the index with the original completed key/value map from a real
+source solve, including sparse properties, missing reads and bitmap identity;
+fresh/saved CLI tests remain the behavioral check.
+
+For `B` binding slots, `S` sites, `F` populated value facts and `P_s` static
+property facts at site `s`, construction costs
+`O(B + S + F + sum_s P_s log P_s)` with `O(B + S + F)` index storage, excluding
+the unchanged shared bitmap payloads. Binding and summary lookups are `O(1)`;
+static-property lookup is `O(log(1 + P_s))`, and enumeration is `O(P_s)`.
+Production retains no second full map of the same value facts.
+
 **Candidate-summary projection.** Preserve the closure's shared SCC bitmap
 through coordinate conversion. Each source view interns local projections by
 the identity of an immutable summary in its retained `shared.reachability`
