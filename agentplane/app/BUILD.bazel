@@ -7,6 +7,7 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//agentplane/env/e2e/testing:exec_properties.bzl", "NATIVE_RUNNER_DOCKER_ENV", "NATIVE_RUNNER_DOCKER_EXEC_PROPERTIES")
+load("//devinfra/buildbuddy:recycling_key.bzl", "runner_recycling_key")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
 load("//util/testing:postgres_exec_properties.bzl", "POSTGRES_IMAGE_EXEC_PROPERTIES")
@@ -19,12 +20,15 @@ package(default_visibility = [
 # Both browser suites load this image family, so either can seed the shared snapshot.
 # Frontend images change independently and use the normal digest-checked loader.
 _BROWSER_IMAGE_EXEC_PROPERTIES = {
-    "test.runner-recycling-key": "thread-browser-images-v1-" + "-".join([
-        POSTGRES_18_DIGEST,
-        ELECTRIC_1_8_1_DIGEST,
-        RYUK_DIGEST,
-        NGINX_UNPRIVILEGED_DIGEST,
-    ]),
+    "test.runner-recycling-key": runner_recycling_key(
+        "thread-browser-images-v1",
+        [
+            POSTGRES_18_DIGEST,
+            ELECTRIC_1_8_1_DIGEST,
+            RYUK_DIGEST,
+            NGINX_UNPRIVILEGED_DIGEST,
+        ],
+    ),
 }
 
 proto_library(
