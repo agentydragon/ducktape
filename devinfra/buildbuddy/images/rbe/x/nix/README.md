@@ -48,7 +48,8 @@ used candidate
 published by [this candidate workflow](https://github.com/agentydragon/ducktape/actions/runs/44123299486).
 It ran with `uid=1000`, `init-dockerd=true`, and `recycle-runner=false`; the unchanged
 `.bbrc` clocksource wrapper succeeded, `sudo -n id -u` returned `0`, and a nested sudo
-attempt as `nobody` was denied. The test also confirmed `/run/current-system` was absent
+attempt as `nobody` was denied. The test also confirmed
+`/run/current-system/sw/share/nix-ld` was absent
 and Bazel 9.2.0 ran under `env -i`. It did not check out the repository or build a repository
 target. A separate [Firecracker repository run](https://app.buildbuddy.io/invocation/459ae447-3ee3-4585-8683-b522d4af6d34)
 checked out exact `devel` commit `5fee893d9aeb9c20e87a55339c29128bc0e92fd1` with this candidate
