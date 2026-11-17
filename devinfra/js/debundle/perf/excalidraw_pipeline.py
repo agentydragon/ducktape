@@ -5,11 +5,18 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from enum import StrEnum
 from pathlib import Path
 
 from python.runfiles import Runfiles
 
 ADDRESS_SPACE_BYTES, FILE_SIZE_BYTES, PHASE_TIMEOUT_SECONDS = 16 * 1024**3, 512 * 1024**2, 30 * 60
+
+
+class ProfileMode(StrEnum):
+    NONE = "none"
+    CPU = "cpu"
+    HEAP = "heap"
 
 
 def runfile(runfiles: Runfiles, variable: str) -> Path:
@@ -53,31 +60,29 @@ def bounded_command(argv: list[str], timeout_seconds: int) -> list[str]:
     ]
 
 
-def phase_command(argv: list[str], *, phase: str, profile: bool, outputs: Path) -> list[str]:
-    if phase != "analyze" or not profile:
+def phase_command(argv: list[str], *, phase: str, profile: ProfileMode, outputs: Path) -> list[str]:
+    if phase != "analyze" or profile == ProfileMode.NONE:
         return argv
-    return [
-        runner_tool("perf"),
-        "record",
-        "--event=cpu-clock:u",
-        "--freq=49",
-        "--call-graph=dwarf",
-        "--compression-level=1",
-        f"--output={outputs / 'perf.data'}",
-        "--",
-        runner_tool("heaptrack"),
-        "--raw",
-        "--output",
-        str(outputs / "heaptrack"),
-        *argv,
-    ]
+    if profile == ProfileMode.CPU:
+        return [
+            runner_tool("perf"),
+            "record",
+            "--event=cpu-clock:u",
+            "--freq=49",
+            "--call-graph=fp",
+            "--compression-level=1",
+            f"--output={outputs / 'perf.data'}",
+            "--",
+            *argv,
+        ]
+    return [runner_tool("heaptrack"), "--raw", "--output", str(outputs / "heaptrack"), *argv]
 
 
 def execute_phase(
     phase: str,
     argv: list[str],
     *,
-    profile: bool,
+    profile: ProfileMode,
     outputs: Path,
     env: dict[str, str],
     timeout_seconds: int = PHASE_TIMEOUT_SECONDS,
@@ -93,9 +98,7 @@ def execute_phase(
 
 
 def main() -> None:
-    profile = os.environ.get("DEBUNDLE_BENCH_PROFILE", "0")
-    if profile not in ("0", "1"):
-        raise ValueError("DEBUNDLE_BENCH_PROFILE must be 0 or 1")
+    profile = ProfileMode(os.environ.get("DEBUNDLE_BENCH_PROFILE", "none"))
     temp_root = Path(os.environ["TEST_TMPDIR"]) / "debundle-performance"
     output_root = Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"])
     temp_root.mkdir(parents=True, exist_ok=True)
@@ -108,6 +111,10 @@ def main() -> None:
         "analyzer": runfile(runfiles, "DEBUNDLE_BENCH_CANDIDATE_ANALYZER"),
         "debundler": runfile(runfiles, "DEBUNDLE_BENCH_CANDIDATE_DEBUNDLER"),
     }
+    if profile != ProfileMode.NONE:
+        analyze_outputs = output_root / "analyze"
+        analyze_outputs.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(binaries["analyzer"], analyze_outputs / "debundle_analyze")
     work = temp_root / "work"
     work.mkdir(parents=True, exist_ok=True)
     projection = work / "analysis.projection"
@@ -162,7 +169,7 @@ def main() -> None:
     env.pop("DEBUNDLE_OUT", None)
     env.pop("DEBUNDLE_TREE_SOURCE_ROOT", None)
     for phase, argv in commands.items():
-        execute_phase(phase, argv, profile=profile == "1", outputs=output_root / phase, env=env)
+        execute_phase(phase, argv, profile=profile, outputs=output_root / phase, env=env)
 
 
 if __name__ == "__main__":

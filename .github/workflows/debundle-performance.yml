@@ -19,9 +19,10 @@ on:
         type: string
         default: --runs_per_test=3
       profile:
-        description: Capture raw Analyze CPU and allocation profiles together
-        type: boolean
-        default: false
+        description: Capture an Analyze CPU or allocation profile
+        type: choice
+        options: [none, cpu, heap]
+        default: none
 
 permissions:
   contents: read
@@ -70,6 +71,6 @@ jobs:
           bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
           env_overrides: |
             DEBUNDLE_BENCH_SUITE=${{ inputs.suite || 'all' }}
-            DEBUNDLE_BENCH_PROFILE=${{ inputs.profile && '1' || '0' }}
+            DEBUNDLE_BENCH_PROFILE=${{ inputs.profile || 'none' }}
             DEBUNDLE_BENCH_ADDITIONAL_TEST_FLAGS_B64=${{ steps.invocation.outputs.flags }}
             DEBUNDLE_BENCH_INVOCATION_ID=${{ steps.invocation.outputs.id }}
