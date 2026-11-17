@@ -53,24 +53,17 @@ Remaining work:
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
-   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
-   still exhausts 16 GiB during analysis before applying the passing spec.
-   The [late-phase profile](../perf/analysis_serial_phases.md#candidate-containment-graph-materialization-2026-11-17)
-   distinguishes two costs: source-flow propagation is large, but finishes;
-   materializing candidate-containment edges then exhausts memory. The
-   [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
-   completes closure within memory but times out before whole-program value-flow
-   preparation ends. The [post-closure profile](../perf/analysis_serial_phases.md#chunk-candidate-projection)
-   attributes that interval to repeated candidate remapping and per-member
-   bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
-   completes whole-program value-flow preparation within memory, then reaches
-   previous 600-second deadline in main-chunk analysis. Validate the completed
-   value read index described in <../docs/inference.md> against the full
-   pipeline. Evaluate the resulting lookup,
-   bitmap-query and source-solver costs separately against the stricter
-   whole-pipeline budget. Preserve shared SCC summaries,
-   bounded immutable-identity caches, transient-query lifetimes and independent
-   graph/proof oracles. Do not infer full completion from one completed phase.
+   Finish whole-pipeline validation of the completed-value read index, shared
+   candidate queries and activation-local property joins described in
+   <../docs/inference.md>. Keep earlier measurements and failed approaches in
+   <../perf/analysis_serial_phases.md>; phase progress does not close this task.
+   Attribute the remaining source dependency collection, dirty-key delivery,
+   completed expression queries and interpreter-effect work separately. Test
+   pending heap-effect masks against exact state/proof oracles and the full
+   pipeline before claiming a benefit. Reprofile after composition so a later
+   optimization targets a remaining cost rather than an earlier bottleneck.
+   Preserve shared SCC summaries, bounded immutable-identity caches,
+   transient-query lifetimes and independent graph/proof oracles.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.

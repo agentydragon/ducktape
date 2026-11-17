@@ -78,7 +78,7 @@ fn selected_helper_borrow_preserves_enum_plain_data() {
 fn argument_input_proof_survives_repeated_computed_heap_effects() {
     let source = SOURCE.replace(
         "export { Status, keys, names, preferences };",
-        r#"const holder = { value: 1, read() { return this.value; } };
+        r#"const holder = { value: 1, read: function () { return this.value; } };
 function getHolder() { return holder; }
 getHolder().read();
 getHolder().read();

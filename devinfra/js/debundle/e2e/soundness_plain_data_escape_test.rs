@@ -184,7 +184,7 @@ export { foo, before, after };
 #[test]
 fn repeated_computed_method_receiver_then_write_preserves_read_order() {
     let fixture = run_fixture(FixtureOpts::new(
-        r#"const foo = { value: 1, read() { return this.value; } };
+        r#"const foo = { value: 1, read: function () { return this.value; } };
 function getFoo() { return foo; }
 const next = 2;
 const before = foo.value;
