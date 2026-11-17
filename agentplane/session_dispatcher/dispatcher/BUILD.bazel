@@ -24,8 +24,6 @@ go_library(
         "//agentplane/session_dispatcher:__subpackages__",
     ],
     deps = [
-        "//agentplane/central_sampler/api:sampler_go_proto",
-        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/access",
         "//agentplane/environments/lifecycle",
         "//agentplane/grpc/bearer",
@@ -204,8 +202,7 @@ go_test(
     ],
     embed = [":dispatcher"],
     deps = [
-        "//agentplane/central_sampler/api:sampler_go_proto",
-        "//agentplane/env/runtime/control:environment_runtime_go_proto",
+        "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/proto:command_go_proto",

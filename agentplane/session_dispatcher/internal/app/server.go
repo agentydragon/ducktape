@@ -159,18 +159,18 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		return fmt.Errorf("Dispatcher PostgreSQL listener: %w", err)
 	}
 	defer hub.Close()
-	nativeRuntime := &dispatcher.RuntimeProxyClient{
+	host := &dispatcher.HarnessHostClient{
 		Namespace: c.Namespace, TokenFile: c.RunnerTokenFile, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second,
 		GatewayTLS:     c.GatewayTLS,
 		TargetTemplate: c.RunnerControlTargetTemplate,
 	}
-	activity := &dispatcher.HostActivityObserver{Store: queueStore, Catalog: catalog, Client: nativeRuntime, Hub: hub, Namespace: c.Namespace}
+	activity := &dispatcher.HostActivityObserver{Store: queueStore, Catalog: catalog, Client: host, Hub: hub, Namespace: c.Namespace}
 	if c.CentralSampler != nil {
 		activity.Sampler = &dispatcher.CentralActivityClient{Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
 	}
 	go func() { reportUnexpected(ctx, failed, "HarnessHost activity observer", activity.Run(ctx)) }()
 
-	runtime := &dispatcher.SessionDeliveryRouter{Native: nativeRuntime, Store: queueStore, Target: c.CentralSampler, Timeout: time.Duration(c.RunnerTimeoutSeconds) * time.Second}
+	runtime := &dispatcher.SessionDeliveryRouter{Host: host, Store: queueStore, Target: c.CentralSampler}
 
 	ready := make(chan struct{})
 	worker := &dispatcher.DeliveryWorker{

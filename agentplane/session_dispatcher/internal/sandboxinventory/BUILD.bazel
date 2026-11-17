@@ -40,8 +40,8 @@ go_test(
     embed = [":sandboxinventory"],
     tags = ["requires_docker"],
     deps = [
-        "//agentplane/env/runtime/control:environment_runtime_go_proto",
         "//agentplane/environments/lifecycle",
+        "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
         "//agentplane/policy/api/v1alpha1",

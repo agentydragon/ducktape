@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
@@ -63,19 +63,19 @@ func (c *observedCatalog) ListSandboxes(ctx context.Context) ([]dispatcher.Sandb
 }
 
 type deliveryRuntime struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	harnesshostpb.UnimplementedHarnessHostServer
 	opened   chan string
 	commands chan string
 }
 
-func (r *deliveryRuntime) CreateSession(_ context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
+func (r *deliveryRuntime) CreateSession(_ context.Context, request *harnesshostpb.CreateSessionRequest) (*harnesshostpb.CreateSessionResponse, error) {
 	r.opened <- request.SessionId
-	return &environmentruntimepb.CreateSessionResponse{}, nil
+	return &harnesshostpb.CreateSessionResponse{}, nil
 }
 
-func (r *deliveryRuntime) SubmitInput(_ context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
+func (r *deliveryRuntime) SubmitInput(_ context.Context, request *harnesshostpb.SubmitInputRequest) (*harnesshostpb.SubmitInputResponse, error) {
 	r.commands <- request.CommandId
-	return &environmentruntimepb.SubmitInputResponse{}, nil
+	return &harnesshostpb.SubmitInputResponse{}, nil
 }
 
 type noWake struct{}
@@ -92,7 +92,7 @@ type deliveryFixture struct {
 	sandbox    *sandboxapi.Sandbox
 	identity   *identitypb.Identity
 	runtime    *deliveryRuntime
-	sender     *dispatcher.RuntimeProxyClient
+	sender     *dispatcher.HarnessHostClient
 	catalog    *observedCatalog
 }
 
@@ -158,7 +158,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	receiver := &deliveryRuntime{opened: make(chan string, 256), commands: make(chan string, 256)}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, receiver)
+	harnesshostpb.RegisterHarnessHostServer(server, receiver)
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
 	senderCertificate := ca.Issue(t, peertls.SessionsURI)
@@ -166,7 +166,7 @@ func newDeliveryFixture(t *testing.T) *deliveryFixture {
 	return &deliveryFixture{
 		ctx: ctx, queueStore: store.NewStore(postgres.Open(t, dsn), 256), dsn: dsn, objects: objects, sandbox: sandbox,
 		identity: &identitypb.Identity{Name: identity.Name, Uid: string(identity.UID)}, runtime: receiver,
-		catalog: &observedCatalog{KubernetesSandboxes: catalog}, sender: &dispatcher.RuntimeProxyClient{Namespace: namespace, Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI, ClientURI: peertls.SessionsURI, CertFile: senderCertificate.CertFile, KeyFile: senderCertificate.KeyFile}},
+		catalog: &observedCatalog{KubernetesSandboxes: catalog}, sender: &dispatcher.HarnessHostClient{Namespace: namespace, Timeout: 5 * time.Second, TargetTemplate: listener.Addr().String(), GatewayTLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI, ClientURI: peertls.SessionsURI, CertFile: senderCertificate.CertFile, KeyFile: senderCertificate.KeyFile}},
 	}
 }
 

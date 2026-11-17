@@ -2589,14 +2589,10 @@ HarnessHost; `EnvironmentRuntime` keeps only lifecycle (`WatchState`, `Quiesce`,
 
 ### `CENTRAL_SAMPLER_HARNESS_HOST` — the central sampler serves HarnessHost
 
-**Client cutover and `Sampler` removal remain.** The sampler serves
-[HarnessHost](../harness_host/README.md) and takes its executor from placement. Its diagnostics
-are on `SamplerAdmin`; the production `admin_service_callers` grant is a config PR once that image
-is pinned.
+**`Sampler` removal remains.** The sampler serves [HarnessHost](../harness_host/README.md) and
+takes its executor from placement. The Dispatcher uses one HarnessHost delivery client for
+central and hosted Sessions. Diagnostics are on `SamplerAdmin`.
 
-3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
-   HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
-   Sandbox.
 4. **Removal:** drop the `Sampler` RPCs the Dispatcher no longer calls after the step 3 images are
    pinned.
 

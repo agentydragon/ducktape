@@ -5,7 +5,8 @@ import (
 	"errors"
 	"time"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -13,11 +14,14 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/environmentruntimeclient"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
-// RuntimeProxyClient calls the Environments Runtime proxy for each operation. Any replica can
-// serve the call, and command IDs reconcile uncertain replies at the Runtime journal.
-type RuntimeProxyClient struct {
+// HarnessHostClient delivers the same Session protocol to hosted and central harnesses.
+// Command IDs reconcile uncertain replies at the selected host.
+type HarnessHostClient struct {
 	Namespace string
 	TokenFile string
 	Timeout   time.Duration
@@ -28,7 +32,7 @@ type RuntimeProxyClient struct {
 	TargetTemplate string
 }
 
-func (r *RuntimeProxyClient) target(sandbox string) string {
+func (r *HarnessHostClient) target(sandbox string) string {
 	template := r.TargetTemplate
 	if template == "" {
 		template = sandboxapi.RuntimeProxyTargetTemplate()
@@ -36,23 +40,52 @@ func (r *RuntimeProxyClient) target(sandbox string) string {
 	return environmentruntimeclient.ExpandTarget(template, sandbox, r.Namespace)
 }
 
-func (r *RuntimeProxyClient) withClient(ctx context.Context, sandbox SandboxSnapshot, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
-	if r.Timeout <= 0 {
-		return errors.New("Runtime proxy request timeout must be positive")
-	}
-	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace == "" || sandbox.Namespace != r.Namespace {
-		return errors.New("complete in-namespace Sandbox identity is required for Runtime proxy")
-	}
-	return environmentruntimeclient.WithClient(ctx, environmentruntimeclient.Config{
-		TLS: r.GatewayTLS, Target: r.target(sandbox.Name), TokenFile: r.TokenFile, Timeout: r.Timeout,
-		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, SandboxNamespace: sandbox.Namespace,
-		ReplaceOutgoingMetadata: true,
-	}, call)
+type harnessHostTarget struct {
+	address   string
+	tokenFile string
+	tls       *peertls.ClientTLS
+	metadata  metadata.MD
 }
 
-func (r *RuntimeProxyClient) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution store.SessionExecution) error {
-	return r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.CreateSession(ctx, &environmentruntimepb.CreateSessionRequest{
+func (r *HarnessHostClient) proxyTarget(sandbox SandboxSnapshot) (harnessHostTarget, error) {
+	if sandbox.Name == "" || sandbox.UID == "" || sandbox.Namespace == "" || sandbox.Namespace != r.Namespace {
+		return harnessHostTarget{}, errors.New("complete in-namespace Sandbox identity is required for HarnessHost proxy")
+	}
+	return harnessHostTarget{address: r.target(sandbox.Name), tokenFile: r.TokenFile, tls: r.GatewayTLS, metadata: metadata.Pairs(
+		sandboxapi.RuntimeProxySandboxMetadataKey, sandbox.Name,
+		sandboxapi.RuntimeProxySandboxNamespaceMetadataKey, sandbox.Namespace,
+		sandboxapi.RuntimeProxySandboxUIDMetadataKey, sandbox.UID,
+		sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey, sandbox.Namespace,
+		sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey, sandbox.Name,
+	)}, nil
+}
+
+func (r *HarnessHostClient) withClient(ctx context.Context, target harnessHostTarget, call func(context.Context, harnesshostpb.HarnessHostClient) error) error {
+	if r.Timeout <= 0 {
+		return errors.New("HarnessHost request timeout must be positive")
+	}
+	conn, err := bearer.Dial(target.address, target.tokenFile, r.Timeout, target.tls)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
+	defer cancel()
+	// Forward only target routing metadata; the transport supplies the service credential.
+	return call(metadata.NewOutgoingContext(ctx, target.metadata), harnesshostpb.NewHarnessHostClient(conn))
+}
+
+func (r *HarnessHostClient) CreateSession(ctx context.Context, sandbox SandboxSnapshot, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution store.SessionExecution) error {
+	target, err := r.proxyTarget(sandbox)
+	if err != nil {
+		return err
+	}
+	return r.createSession(ctx, target, sessionID, spec, setupScript, execution)
+}
+
+func (r *HarnessHostClient) createSession(ctx context.Context, target harnessHostTarget, sessionID string, spec *sessionpb.SessionSpec, setupScript *string, execution store.SessionExecution) error {
+	return r.withClient(ctx, target, func(ctx context.Context, client harnesshostpb.HarnessHostClient) error {
+		_, err := client.CreateSession(ctx, &harnesshostpb.CreateSessionRequest{
 			SessionId: sessionID, Spec: spec, SetupScript: setupScript,
 			ExecutionIdentity: execution.Identity,
 		})
@@ -60,12 +93,20 @@ func (r *RuntimeProxyClient) CreateSession(ctx context.Context, sandbox SandboxS
 	})
 }
 
-func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapshot, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+func (r *HarnessHostClient) Deliver(ctx context.Context, sandbox SandboxSnapshot, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
+	target, err := r.proxyTarget(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return r.deliver(ctx, target, sessionID, command)
+}
+
+func (r *HarnessHostClient) deliver(ctx context.Context, target harnessHostTarget, sessionID string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
 	var admission *eventlogpb.EventEntry
-	err := r.withClient(ctx, sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
+	err := r.withClient(ctx, target, func(ctx context.Context, client harnesshostpb.HarnessHostClient) error {
 		switch payload := command.GetOperation().(type) {
 		case *commandpb.Command_SubmitInput:
-			response, err := client.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{
+			response, err := client.SubmitInput(ctx, &harnesshostpb.SubmitInputRequest{
 				SessionId: sessionID, CommandId: command.GetCommandId(), Text: payload.SubmitInput.GetText(),
 			})
 			if err == nil {
@@ -73,7 +114,7 @@ func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapsho
 			}
 			return err
 		case *commandpb.Command_ChangeModel:
-			response, err := client.ChangeModel(ctx, &environmentruntimepb.ChangeModelRequest{
+			response, err := client.ChangeModel(ctx, &harnesshostpb.ChangeModelRequest{
 				SessionId: sessionID, CommandId: command.GetCommandId(), Model: payload.ChangeModel.GetModel(),
 			})
 			if err == nil {
@@ -81,7 +122,7 @@ func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapsho
 			}
 			return err
 		case *commandpb.Command_ChangeReasoningEffort:
-			response, err := client.ChangeReasoningEffort(ctx, &environmentruntimepb.ChangeReasoningEffortRequest{
+			response, err := client.ChangeReasoningEffort(ctx, &harnesshostpb.ChangeReasoningEffortRequest{
 				SessionId: sessionID, CommandId: command.GetCommandId(), Effort: payload.ChangeReasoningEffort.GetEffort(),
 			})
 			if err == nil {
@@ -89,7 +130,7 @@ func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapsho
 			}
 			return err
 		case *commandpb.Command_InterruptTurn:
-			response, err := client.InterruptTurn(ctx, &environmentruntimepb.InterruptTurnRequest{
+			response, err := client.InterruptTurn(ctx, &harnesshostpb.InterruptTurnRequest{
 				SessionId: sessionID, CommandId: command.GetCommandId(), TurnId: payload.InterruptTurn.GetTurnId(),
 			})
 			if err == nil {
@@ -97,7 +138,7 @@ func (r *RuntimeProxyClient) Deliver(ctx context.Context, sandbox SandboxSnapsho
 			}
 			return err
 		default:
-			return errors.New("unsupported runner command")
+			return status.Error(codes.InvalidArgument, "unsupported HarnessHost command")
 		}
 	})
 	return admission, err

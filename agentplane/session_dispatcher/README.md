@@ -10,7 +10,8 @@ EnvironmentService, the Runtime proxy and Executor serve on every
 [Environments](../environments/README.md) replica at `sandbox-controller:8082`. The Gateway opens no
 Runtime connection or `WatchState` stream and registers none of those services. Native Dispatcher
 delivery calls Environments under the Sessions SVID (`spiffe://agentplane/sessions`), pinning the
-Sandbox Controller server identity. Central delivery calls the sampler. These calls retain the
+Sandbox Controller server identity. Central delivery calls the sampler. Both placements use the same HarnessHost client for creation
+and commands, selecting only the destination and its routing metadata. These calls retain the
 original command ID and never forward caller credentials. Environments does not call Sessions.
 
 Dispatcher automatic wake retains each row's attribution and applies `wakeOnSend`, caller policy or
@@ -117,12 +118,13 @@ idempotent application and concurrent migrations.
 
 ## Optional central sampler
 
-The optional `central_sampler` configures one gRPC target and rotating caller token file.
+The optional `central_sampler` configures one gRPC target and its service TLS credentials.
 Omitting it disables central Session admission. `SessionSpec.placement` records either the exact
 native environment and harness (`environment_hosted`) or the exact required central executor
 environment (`central_sampler_v1`); callers do not choose a service endpoint. The Dispatcher sends
-central creation requests and commands to the configured sampler; wrapped native Sessions continue through
-[`RuntimeProxyClient`](dispatcher/runtime_client.go). Central controls bypass executor readiness/wake checks after Session creation.
+HarnessHost creation requests and commands to the configured sampler; wrapped native Sessions use
+the same [`HarnessHostClient`](dispatcher/runtime_client.go) through the Environments proxy. Central
+controls bypass executor readiness/wake checks after Session creation.
 Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
 does not support optional attachments or environment-free Sessions.
 

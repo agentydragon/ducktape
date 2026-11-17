@@ -9,6 +9,7 @@ import (
 
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/environments/lifecycle"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/proto/environmentlifecyclepb"
@@ -62,12 +63,12 @@ func (queueWake) RequestWake(context.Context, *lifecycle.Target, lifecycle.WakeC
 }
 
 type queuedRuntimeRequest struct {
-	request  *environmentruntimepb.SubmitInputRequest
+	request  *harnesshostpb.SubmitInputRequest
 	metadata metadata.MD
 }
 
 type queuedRuntimeSession struct {
-	request  *environmentruntimepb.CreateSessionRequest
+	request  *harnesshostpb.CreateSessionRequest
 	metadata metadata.MD
 }
 
@@ -100,16 +101,21 @@ func (r *queueRuntime) WatchState(request *environmentruntimepb.WatchStateReques
 	}
 }
 
-func (r *queueRuntime) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (*environmentruntimepb.CreateSessionResponse, error) {
-	md, _ := metadata.FromIncomingContext(ctx)
-	r.created <- queuedRuntimeSession{request: request, metadata: md}
-	return &environmentruntimepb.CreateSessionResponse{}, nil
+type queueHarnessHost struct {
+	harnesshostpb.UnimplementedHarnessHostServer
+	runtime *queueRuntime
 }
 
-func (r *queueRuntime) SubmitInput(ctx context.Context, request *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
+func (r *queueHarnessHost) CreateSession(ctx context.Context, request *harnesshostpb.CreateSessionRequest) (*harnesshostpb.CreateSessionResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
-	r.submitted <- queuedRuntimeRequest{request: request, metadata: md}
-	return &environmentruntimepb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
+	r.runtime.created <- queuedRuntimeSession{request: request, metadata: md}
+	return &harnesshostpb.CreateSessionResponse{}, nil
+}
+
+func (r *queueHarnessHost) SubmitInput(ctx context.Context, request *harnesshostpb.SubmitInputRequest) (*harnesshostpb.SubmitInputResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	r.runtime.submitted <- queuedRuntimeRequest{request: request, metadata: md}
+	return &harnesshostpb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 81}}, nil
 }
 
 // This test queues work through authenticated Dispatcher RPCs and observes the Runtime's
@@ -167,6 +173,7 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	runtimeServer := grpc.NewServer(grpc.Creds(runtimeCredentials))
 	runtime := &queueRuntime{bootID: "queue-runner-boot", submitted: make(chan queuedRuntimeRequest, 1), created: make(chan queuedRuntimeSession, 1)}
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(runtimeServer, runtime)
+	harnesshostpb.RegisterHarnessHostServer(runtimeServer, &queueHarnessHost{runtime: runtime})
 	go func() { _ = runtimeServer.Serve(runtimeListener) }()
 	defer runtimeServer.Stop()
 	runtimeDestination.target = runtimeListener.Addr().String()
@@ -202,7 +209,7 @@ func TestQueuedDeliveryThroughRuntimeProxy(t *testing.T) {
 	}
 	worker.Catalog = catalog
 	worker.Wake = queueWake{}
-	worker.Delivery = &dispatcher.RuntimeProxyClient{
+	worker.Delivery = &dispatcher.HarnessHostClient{
 		Namespace: f.namespace, GatewayTLS: serverTLS, Timeout: 5 * time.Second,
 		TargetTemplate: proxy.target,
 	}

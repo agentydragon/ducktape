@@ -137,7 +137,7 @@ flowchart LR
     sdk_services -->|OTLP/gRPC| alloy
     app -->|browser trace relay: OTLP/HTTP| alloy
 
-    gw -->|central Session commands + HarnessHost WatchSessions: Sessions SVID mTLS| sampler
+    gw -->|central HarnessHost creation, commands + WatchSessions: Sessions SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| samplerdb
     samplerdb -->|NOTIFY: central_sampler_work| sampler
     samplerdb -->|NOTIFY: central_sampler_outbox| sampler
@@ -152,7 +152,7 @@ flowchart LR
     policy --> k8s
     sandboxctl --> k8s
     sandboxctl -->|Quiesce and suspend admission: service SVID mTLS to every-replica proxy| sandboxctl
-    gw -->|native Session calls + HarnessHost WatchSessions: Sessions SVID mTLS| sandboxctl
+    gw -->|HarnessHost creation, commands + WatchSessions: Sessions SVID mTLS| sandboxctl
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| runtime
     sandboxctl -->|proxy / Executor: runtime-proxy SVID; independent watches and fenced calls| vmruntime
     sandboxctl -->|passive WatchState binds workload UID and observes facts: mTLS gRPC| runtime
@@ -324,8 +324,8 @@ flowchart LR
     actions -->|Actions SVID mTLS: Session commands; typed envelope for delegation| dispatcher
     actions -->|Actions SVID mTLS: Session reads; typed envelope for delegation| history
     app -->|EnvironmentService: inventory + on-demand diagnostics| sandboxctl
-    dispatcher -->|Sessions SVID mTLS: native opens, commands + HarnessHost WatchSessions| sandboxctl
-    dispatcher -->|central opens + commands: Gateway Sessions SVID mTLS :8083| central
+    dispatcher -->|Sessions SVID mTLS: HarnessHost creation, commands + WatchSessions| sandboxctl
+    dispatcher -->|central HarnessHost creation, commands + WatchSessions: Sessions SVID mTLS :8083| central
     sandboxctl -->|every-replica inventory and guarded desired-state writes| k8s
     sandboxctl -->|Controller SVID mTLS: Quiesce via every-replica proxy| sandboxctl
     sandboxctl -->|every-replica proxy: runtime-proxy SVID; independent watches and fenced calls| runtime
@@ -428,7 +428,7 @@ flowchart LR
     llm[LLM ingress]
     responses[Responses API providers]
     anthropic[Anthropic Messages API]
-    dispatcher -->|Sampler commands + HarnessHost WatchSessions :8083; Sessions service SVID mTLS| sampler
+    dispatcher -->|HarnessHost gRPC :8083; Sessions service SVID mTLS| sampler
     sampler -->|continuation, commands and ownership leases| db
     db -->|NOTIFY: central_sampler_work| sampler
     db -->|NOTIFY: central_sampler_outbox| sampler
@@ -488,7 +488,7 @@ references before the caller switch. The Gateway uses the same Sessions SPIFFE I
 
 ```mermaid
 flowchart LR
-    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: exact Sampler method grant| sampler[Central Sampler: SVID only]
+    sessions[Dispatcher / future Sessions service SVID] -->|mTLS: HarnessHost method grant| sampler[Central Sampler: SVID only]
     bearer[Kubernetes bearer] -.->|denied before handler| sampler
     sampler -->|service SPIFFE ID ownership| db[(Sampler PostgreSQL)]
 ```
@@ -898,7 +898,7 @@ flowchart LR
 
 The Dispatcher delivery worker presents its separate `spiffe://agentplane/sessions` certificate
 when dialing `sandbox-controller:8082`, independently of which proxy replica watches the
-Runtime. It verifies the receiver's `spiffe://agentplane/sandbox-controller` server certificate. The receiver grants Runtime Session operations to that role and exposes HarnessHost creation, commands and current-state watches under the same grant. Existing Dispatcher calls continue to use EnvironmentRuntime.
+Runtime. It verifies the receiver's `spiffe://agentplane/sandbox-controller` server certificate. The receiver grants HarnessHost creation, commands and current-state watches to that role. The Dispatcher uses the same HarnessHost client for hosted and central delivery.
 The Gateway→central sampler hop also presents the Sessions certificate, following the explicit
 account-to-SVID ownership rewrite. A rollback to bearer requires the reviewed reverse ownership Job.
 

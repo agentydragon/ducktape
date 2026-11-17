@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
@@ -39,29 +38,20 @@ func (s openingFixture) GetSession(context.Context, string) (*store.Session, err
 	return s.opening, nil
 }
 
-type nativeFixture struct{ calls int }
-
-func (r *nativeFixture) CreateSession(context.Context, SandboxSnapshot, string, *sessionpb.SessionSpec, *string, store.SessionExecution) error {
-	r.calls++
-	return nil
-}
-
-func (r *nativeFixture) Deliver(context.Context, SandboxSnapshot, string, *commandpb.Command) (*eventlogpb.EventEntry, error) {
-	r.calls++
-	return &eventlogpb.EventEntry{Cursor: 99}, nil
-}
-
 type centralFixture struct {
-	samplerpb.UnimplementedSamplerServer
-	opened      *samplerpb.CreateSessionRequest
-	token       string
-	clientURI   string
-	interrupted string
+	harnesshostpb.UnimplementedHarnessHostServer
+	opened    *harnesshostpb.CreateSessionRequest
+	token     string
+	clientURI string
+	requests  []proto.Message
+	routing   metadata.MD
 }
 
-func (s *centralFixture) CreateSession(ctx context.Context, request *samplerpb.CreateSessionRequest) (*samplerpb.CreateSessionResponse, error) {
+func (s *centralFixture) CreateSession(ctx context.Context, request *harnesshostpb.CreateSessionRequest) (*harnesshostpb.CreateSessionResponse, error) {
 	s.opened = request
+	s.requests = append(s.requests, request)
 	md, _ := metadata.FromIncomingContext(ctx)
+	s.routing = md
 	if authorization := md.Get("authorization"); len(authorization) != 0 {
 		s.token = authorization[0]
 	}
@@ -72,128 +62,149 @@ func (s *centralFixture) CreateSession(ctx context.Context, request *samplerpb.C
 			}
 		}
 	}
-	return &samplerpb.CreateSessionResponse{}, nil
+	return &harnesshostpb.CreateSessionResponse{}, nil
 }
 
-func (s *centralFixture) InterruptTurn(_ context.Context, request *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	s.interrupted = request.GetTurnId()
-	return &environmentruntimepb.InterruptTurnResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
+func (s *centralFixture) InterruptTurn(_ context.Context, request *harnesshostpb.InterruptTurnRequest) (*harnesshostpb.InterruptTurnResponse, error) {
+	s.requests = append(s.requests, request)
+	return &harnesshostpb.InterruptTurnResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
 }
 
-func TestRoutingKeepsCentralCommandsOffSandboxRunner(t *testing.T) {
+func (s *centralFixture) SubmitInput(_ context.Context, r *harnesshostpb.SubmitInputRequest) (*harnesshostpb.SubmitInputResponse, error) {
+	s.requests = append(s.requests, r)
+	return &harnesshostpb.SubmitInputResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
+}
+
+func (s *centralFixture) ChangeModel(_ context.Context, r *harnesshostpb.ChangeModelRequest) (*harnesshostpb.ChangeModelResponse, error) {
+	s.requests = append(s.requests, r)
+	return &harnesshostpb.ChangeModelResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
+}
+
+func (s *centralFixture) ChangeReasoningEffort(_ context.Context, r *harnesshostpb.ChangeReasoningEffortRequest) (*harnesshostpb.ChangeReasoningEffortResponse, error) {
+	s.requests = append(s.requests, r)
+	return &harnesshostpb.ChangeReasoningEffortResponse{Admission: &eventlogpb.EventEntry{Cursor: 17}}, nil
+}
+
+func serveDeliveryHost(t *testing.T, fixture *centralFixture) string {
+	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := grpc.NewServer()
-	fixture := &centralFixture{}
-	samplerpb.RegisterSamplerServer(server, fixture)
+	harnesshostpb.RegisterHarnessHostServer(server, fixture)
 	go server.Serve(listener)
 	t.Cleanup(server.Stop)
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("projected\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	native := &nativeFixture{}
-	sandbox := SandboxSnapshot{Name: "executor", Namespace: "test", UID: "sandbox-uid", Incarnation: "pod-uid", Blocker: "sandbox_not_ready"}
-	spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
-	execution := store.SessionExecution{
-		Identity: &identitypb.Identity{Name: "executor-identity", Uid: "00000000-0000-4000-8000-00000000a008"},
-	}
-	runtime := &SessionDeliveryRouter{Native: native, Store: openingFixture{&store.Session{
-		SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity,
-	}}, Target: &CentralTarget{Target: listener.Addr().String(), TokenFile: tokenFile}, Timeout: time.Second}
-	setup := "printf 'executor setup\\n'"
-	if err := runtime.CreateSession(context.Background(), sandbox, "session", spec, &setup, execution); err != nil {
-		t.Fatal(err)
-	}
-	if !proto.Equal(fixture.opened.GetSpec(), spec) || fixture.opened.GetSetupScript() != setup || fixture.token != "Bearer projected" ||
-		!proto.Equal(fixture.opened.GetExecutionIdentity(), execution.Identity) {
-		t.Fatalf("unexpected opening: %v token %q", fixture.opened, fixture.token)
-	}
-	admission, err := runtime.Deliver(context.Background(), sandbox, "session", &commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "turn"}}})
-	if err != nil || admission.GetCursor() != 17 || fixture.interrupted != "turn" || native.calls != 0 {
-		t.Fatalf("interrupt %v %v native calls %d", admission, err, native.calls)
-	}
-	changed := sandbox
-	changed.UID = "replacement"
-	if _, err := runtime.Deliver(context.Background(), changed, "session", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("changed binding accepted: %v", err)
-	}
-	nativeSpec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}}}
-	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
-	if err := runtime.CreateSession(context.Background(), sandbox, "native", nativeSpec, nil, execution); err != nil {
-		t.Fatal(err)
-	}
-	runtime.Store = openingFixture{}
-	if _, err := runtime.Deliver(context.Background(), sandbox, "old-session", &commandpb.Command{}); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("missing Session routed to native Runtime: %v", err)
-	}
-	if native.calls != 1 {
-		t.Fatalf("missing Session caused native delivery: %d calls", native.calls)
-	}
-	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.EnvironmentHosted, Spec: nativeSpec, ExecutionIdentity: execution.Identity}}
-	if _, err := runtime.Deliver(context.Background(), changed, "native", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("native Session routed to replacement Sandbox: %v", err)
-	}
-	if native.calls != 1 {
-		t.Fatalf("replacement Sandbox caused native delivery: %d calls", native.calls)
-	}
-	if _, err := runtime.Deliver(context.Background(), sandbox, "native", &commandpb.Command{}); err != nil {
-		t.Fatal(err)
-	}
-	if native.calls != 2 {
-		t.Fatalf("native calls %d", native.calls)
-	}
-	runtime.Target = nil
-	runtime.Store = openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler, Spec: spec, ExecutionIdentity: execution.Identity}}
-	if err := runtime.CreateSession(context.Background(), sandbox, "disabled", spec, nil, store.SessionExecution{}); status.Code(err) != codes.FailedPrecondition {
-		t.Fatalf("disabled sampler accepted: %v", err)
+	return listener.Addr().String()
+}
+
+func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
+	for _, kind := range []placement.SessionPlacement{placement.EnvironmentHosted, placement.CentralSampler} {
+		t.Run(string(kind), func(t *testing.T) {
+			proxy, sampler := &centralFixture{}, &centralFixture{}
+			tokenFile := filepath.Join(t.TempDir(), "test-token")
+			if err := os.WriteFile(tokenFile, []byte("test-service-credential"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sandbox := SandboxSnapshot{Name: "test-executor", Namespace: "test", UID: "test-sandbox-uid", Incarnation: "test-pod-uid", Blocker: "sandbox_not_ready"}
+			execution := store.SessionExecution{Identity: &identitypb.Identity{Name: "test-identity", Uid: "00000000-0000-4000-8000-00000000a008"}}
+			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
+			if kind == placement.EnvironmentHosted {
+				spec.Placement.Kind = &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}, Harness: sessionpb.Harness_HARNESS_CODEX}}
+			}
+			router := &SessionDeliveryRouter{
+				Host:   &HarnessHostClient{Namespace: sandbox.Namespace, TokenFile: tokenFile, TargetTemplate: serveDeliveryHost(t, proxy), Timeout: time.Second},
+				Target: &CentralTarget{Target: serveDeliveryHost(t, sampler), TokenFile: tokenFile},
+				Store:  openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: kind}},
+			}
+			setup := "printf test-setup"
+			ctx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs("authorization", "untrusted-caller", sandboxapi.RuntimeProxySandboxUIDMetadataKey, "untrusted-sandbox"))
+			if err := router.CreateSession(ctx, sandbox, "test-session", spec, &setup, execution); err != nil {
+				t.Fatal(err)
+			}
+			selected, other := proxy, sampler
+			if kind == placement.CentralSampler {
+				selected, other = sampler, proxy
+			}
+			if len(selected.requests) != 1 || len(other.requests) != 0 {
+				t.Fatalf("selected=%v other=%v", selected.requests, other.requests)
+			}
+			wantCreate := &harnesshostpb.CreateSessionRequest{SessionId: "test-session", Spec: spec, SetupScript: &setup, ExecutionIdentity: execution.Identity}
+			if !proto.Equal(selected.opened, wantCreate) {
+				t.Fatalf("creation = %v, want %v", selected.opened, wantCreate)
+			}
+			if selected.token != "Bearer test-service-credential" {
+				t.Fatalf("caller credential forwarded: %q", selected.token)
+			}
+			for key, want := range map[string]string{
+				sandboxapi.RuntimeProxySandboxMetadataKey:               sandbox.Name,
+				sandboxapi.RuntimeProxySandboxNamespaceMetadataKey:      sandbox.Namespace,
+				sandboxapi.RuntimeProxySandboxUIDMetadataKey:            sandbox.UID,
+				sandboxapi.RuntimeProxySandboxOwnerNamespaceMetadataKey: sandbox.Namespace,
+				sandboxapi.RuntimeProxySandboxOwnerNameMetadataKey:      sandbox.Name,
+			} {
+				if kind == placement.CentralSampler {
+					want = ""
+				}
+				if got := firstMetadataValue(selected.routing, key); got != want {
+					t.Fatalf("routing %s = %q, want %q", key, got, want)
+				}
+			}
+			for _, test := range []struct {
+				command *commandpb.Command
+				want    proto.Message
+			}{
+				{&commandpb.Command{CommandId: "input", Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: "test-input"}}}, &harnesshostpb.SubmitInputRequest{SessionId: "test-session", CommandId: "input", Text: "test-input"}},
+				{&commandpb.Command{CommandId: "model", Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: "test-model"}}}, &harnesshostpb.ChangeModelRequest{SessionId: "test-session", CommandId: "model", Model: "test-model"}},
+				{&commandpb.Command{CommandId: "effort", Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: "high"}}}, &harnesshostpb.ChangeReasoningEffortRequest{SessionId: "test-session", CommandId: "effort", Effort: "high"}},
+				{&commandpb.Command{CommandId: "interrupt", Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: "test-turn"}}}, &harnesshostpb.InterruptTurnRequest{SessionId: "test-session", CommandId: "interrupt", TurnId: "test-turn"}},
+			} {
+				admission, err := router.Deliver(ctx, sandbox, "test-session", test.command)
+				if err != nil || admission.GetCursor() != 17 {
+					t.Fatalf("admission = %v, %v", admission, err)
+				}
+				if got := selected.requests[len(selected.requests)-1]; !proto.Equal(got, test.want) {
+					t.Fatalf("command = %v, want %v", got, test.want)
+				}
+			}
+			if len(other.requests) != 0 {
+				t.Fatalf("other target called: %v", other.requests)
+			}
+			if _, err := router.Deliver(ctx, sandbox, "test-session", &commandpb.Command{}); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("unsupported command = %v", err)
+			}
+			changed := sandbox
+			changed.UID = "test-replacement"
+			if _, err := router.Deliver(ctx, changed, "test-session", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("replacement Sandbox = %v", err)
+			}
+			if err := router.CreateSession(ctx, changed, "test-session", spec, nil, execution); status.Code(err) != codes.FailedPrecondition {
+				t.Fatalf("replacement creation = %v", err)
+			}
+			router.Store = openingFixture{}
+			if _, err := router.Deliver(ctx, sandbox, "missing", &commandpb.Command{}); !errors.Is(err, store.ErrNotFound) {
+				t.Fatalf("missing Session = %v", err)
+			}
+			if len(selected.requests) != 5 {
+				t.Fatalf("rejected requests reached host: %v", selected.requests)
+			}
+		})
 	}
 }
 
-func TestCentralSamplerClientVerifiesServerTLSAndKeepsBearerAuthentication(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	serverCertificate := ca.IssueWithUsage(t, peertls.CentralSamplerURI, x509.ExtKeyUsageServerAuth)
-	serverCredentials, err := (peertls.ServerTLSListener{
-		Listen: "127.0.0.1:0", CertFile: serverCertificate.CertFile, KeyFile: serverCertificate.KeyFile,
-	}).Credentials(peertls.CentralSamplerURI)
-	if err != nil {
-		t.Fatal(err)
+func TestCentralDeliveryRequiresConfiguredTarget(t *testing.T) {
+	sandbox := SandboxSnapshot{Name: "test-sandbox", UID: "test-uid", Incarnation: "test-pod"}
+	router := &SessionDeliveryRouter{Host: &HarnessHostClient{Timeout: time.Second}, Store: openingFixture{&store.Session{SandboxName: sandbox.Name, SandboxUID: sandbox.UID, Placement: placement.CentralSampler}}}
+	execution := store.SessionExecution{Identity: &identitypb.Identity{Name: "test-identity", Uid: "test-identity-uid"}}
+	if err := router.CreateSession(t.Context(), sandbox, "test-session", nil, nil, execution); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("disabled creation = %v", err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer(grpc.Creds(serverCredentials))
-	fixture := &centralFixture{}
-	samplerpb.RegisterSamplerServer(server, fixture)
-	go server.Serve(listener)
-	t.Cleanup(server.Stop)
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("projected\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	runtime := &SessionDeliveryRouter{
-		Target: &CentralTarget{
-			Target: listener.Addr().String(), TokenFile: tokenFile,
-			TLS: &peertls.ClientTLS{CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI},
-		},
-		Timeout: time.Second,
-	}
-	err = runtime.withClient(context.Background(), func(ctx context.Context, client samplerpb.SamplerClient) error {
-		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{})
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fixture.token != "Bearer projected" {
-		t.Fatalf("sampler bearer authentication = %q", fixture.token)
+	if _, err := router.Deliver(t.Context(), sandbox, "test-session", &commandpb.Command{}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("disabled delivery = %v", err)
 	}
 }
 
-func TestCentralSamplerClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
+func TestCentralHarnessHostClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	serverCertificate := ca.IssueWithUsage(t, peertls.CentralSamplerURI, x509.ExtKeyUsageServerAuth)
 	serverTLS, err := serverCertificate.WorkloadServerTLSConfigWithServices(peertls.CentralSamplerURI, true)
@@ -206,23 +217,18 @@ func TestCentralSamplerClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T)
 	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	fixture := &centralFixture{}
-	samplerpb.RegisterSamplerServer(server, fixture)
+	harnesshostpb.RegisterHarnessHostServer(server, fixture)
 	go server.Serve(listener)
 	t.Cleanup(server.Stop)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
-	runtime := &SessionDeliveryRouter{
-		Target: &CentralTarget{
-			Target: listener.Addr().String(),
-			TLS: &peertls.ClientTLS{
-				CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI,
-				CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,
-			},
-		},
-		Timeout: time.Second,
-	}
-	err = runtime.withClient(context.Background(), func(ctx context.Context, client samplerpb.SamplerClient) error {
-		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{})
+	runtime := &HarnessHostClient{Timeout: time.Second}
+	target := harnessHostTarget{address: listener.Addr().String(), tls: &peertls.ClientTLS{
+		CAFile: ca.RootFile, ServerURI: peertls.CentralSamplerURI,
+		CertFile: caller.CertFile, KeyFile: caller.KeyFile, ClientURI: peertls.SessionsURI,
+	}}
+	err = runtime.withClient(context.Background(), target, func(ctx context.Context, client harnesshostpb.HarnessHostClient) error {
+		_, err := client.CreateSession(ctx, &harnesshostpb.CreateSessionRequest{})
 		return err
 	})
 	if err != nil {
@@ -234,7 +240,7 @@ func TestCentralSamplerClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T)
 }
 
 type proxyRuntimeFixture struct {
-	environmentruntimepb.UnimplementedEnvironmentRuntimeServer
+	harnesshostpb.UnimplementedHarnessHostServer
 	token        string
 	clientURI    string
 	sandboxName  string
@@ -242,7 +248,7 @@ type proxyRuntimeFixture struct {
 	sandboxScope string
 }
 
-func (s *proxyRuntimeFixture) ListSessions(ctx context.Context, _ *sessionpb.ListSessionsRequest) (*sessionpb.ListSessionsResponse, error) {
+func (s *proxyRuntimeFixture) ListSessions(ctx context.Context, _ *harnesshostpb.ListSessionsRequest) (*harnesshostpb.ListSessionsResponse, error) {
 	md, _ := metadata.FromIncomingContext(ctx)
 	if authorization := md.Get("authorization"); len(authorization) != 0 {
 		s.token = authorization[0]
@@ -257,7 +263,7 @@ func (s *proxyRuntimeFixture) ListSessions(ctx context.Context, _ *sessionpb.Lis
 			}
 		}
 	}
-	return &sessionpb.ListSessionsResponse{}, nil
+	return &harnesshostpb.ListSessionsResponse{}, nil
 }
 
 func firstMetadataValue(md metadata.MD, key string) string {
@@ -268,7 +274,7 @@ func firstMetadataValue(md metadata.MD, key string) string {
 	return values[0]
 }
 
-func TestRuntimeProxyClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
+func TestHarnessHostClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	serverCertificate := ca.IssueWithUsage(t, peertls.SessionDispatcherURI, x509.ExtKeyUsageServerAuth)
 	serverTLS, err := serverCertificate.WorkloadServerTLSConfigWithServices(peertls.SessionDispatcherURI, true)
@@ -281,12 +287,12 @@ func TestRuntimeProxyClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 	}
 	server := grpc.NewServer(grpc.Creds(credentials.NewTLS(serverTLS)))
 	fixture := &proxyRuntimeFixture{}
-	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, fixture)
+	harnesshostpb.RegisterHarnessHostServer(server, fixture)
 	go server.Serve(listener)
 	t.Cleanup(server.Stop)
 
 	caller := ca.Issue(t, peertls.SessionsURI)
-	runtime := &RuntimeProxyClient{
+	runtime := &HarnessHostClient{
 		Namespace: "agentplane", Timeout: time.Second, TargetTemplate: listener.Addr().String(),
 		GatewayTLS: &peertls.ClientTLS{
 			CAFile: ca.RootFile, ServerURI: peertls.SessionDispatcherURI,
@@ -294,8 +300,12 @@ func TestRuntimeProxyClientUsesSessionsSVIDWithoutBearerMetadata(t *testing.T) {
 		},
 	}
 	sandbox := SandboxSnapshot{Name: "sandbox", Namespace: "agentplane", UID: "sandbox-uid"}
-	err = runtime.withClient(context.Background(), sandbox, func(ctx context.Context, client environmentruntimepb.EnvironmentRuntimeClient) error {
-		_, err := client.ListSessions(ctx, &sessionpb.ListSessionsRequest{})
+	target, err := runtime.proxyTarget(sandbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runtime.withClient(context.Background(), target, func(ctx context.Context, client harnesshostpb.HarnessHostClient) error {
+		_, err := client.ListSessions(ctx, &harnesshostpb.ListSessionsRequest{})
 		return err
 	})
 	if err != nil {

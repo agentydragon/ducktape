@@ -20,7 +20,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.env.e2e.testing import events
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.process_fixtures import RunnerProcess
-from agentplane.env.runtime.control import environment_runtime_pb2
+from agentplane.harness_host import harness_host_pb2
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.proto import event_log_pb2, session_pb2
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster
@@ -97,11 +97,11 @@ async def _recorded_turn(history: GoHistoryService, session_id: str, after: int)
     raise AssertionError("History did not commit turn completion")
 
 
-def _response(record: dict[str, object]) -> environment_runtime_pb2.SubmitInputResponse:
+def _response(record: dict[str, object]) -> harness_host_pb2.SubmitInputResponse:
     encoded = record.get("response")
     assert isinstance(encoded, str), record
     try:
-        return environment_runtime_pb2.SubmitInputResponse.FromString(base64.b64decode(encoded, validate=True))
+        return harness_host_pb2.SubmitInputResponse.FromString(base64.b64decode(encoded, validate=True))
     except (ValueError, DecodeError) as error:
         raise AssertionError(f"invalid recorded Runtime response: {error}") from error
 
@@ -140,7 +140,7 @@ async def test_dispatcher_retries_after_real_runtime_admission_reply_is_lost(
         encoded_request = record.get("request")
         assert isinstance(encoded_request, str), record
         request_bytes = base64.b64decode(encoded_request, validate=True)
-        request = environment_runtime_pb2.SubmitInputRequest.FromString(request_bytes)
+        request = harness_host_pb2.SubmitInputRequest.FromString(request_bytes)
         assert request.command_id == command_id
         assert request.session_id == session_id
         assert request.text == "Reply LOST-REPLY"

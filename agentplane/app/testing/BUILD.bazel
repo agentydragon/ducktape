@@ -90,7 +90,6 @@ py_library(
     name = "replication_source",
     srcs = ["replication_source.py"],
     deps = [
-        "//agentplane/env/runtime/control:environment_runtime_pb2",
         "//agentplane/env/runtime/control:environment_runtime_pb2_grpc",
         "//agentplane/harness_host:harness_host_pb2",
         "//agentplane/harness_host:harness_host_pb2_grpc",

@@ -2,11 +2,7 @@ package dispatcher
 
 import (
 	"context"
-	"time"
 
-	samplerpb "github.com/agentydragon/ducktape/agentplane/central_sampler/api/samplerpb"
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
-	"github.com/agentydragon/ducktape/agentplane/grpc/bearer"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -14,7 +10,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/placement"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -33,10 +28,9 @@ type sessionReader interface {
 // Sessions directly to their sampler. The execution Sandbox is a binding,
 // not the authority for the central conversation's lifetime.
 type SessionDeliveryRouter struct {
-	Native  SessionDelivery
-	Store   sessionReader
-	Target  *CentralTarget
-	Timeout time.Duration
+	Host   *HarnessHostClient
+	Store  sessionReader
+	Target *CentralTarget
 }
 
 func validateSessionExecutor(session *store.Session, sandbox SandboxSnapshot) error {
@@ -59,23 +53,17 @@ func ValidateRuntime(sessionPlacement placement.SessionPlacement, setup *string,
 	return nil
 }
 
-func (r *SessionDeliveryRouter) withClient(ctx context.Context, call func(context.Context, samplerpb.SamplerClient) error) error {
-	target := r.Target
-	if target == nil {
-		return status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
+func (r *SessionDeliveryRouter) hostTarget(sessionPlacement placement.SessionPlacement, sandbox SandboxSnapshot) (harnessHostTarget, error) {
+	if sessionPlacement == placement.EnvironmentHosted {
+		return r.Host.proxyTarget(sandbox)
 	}
-	if target.Target == "" || r.Timeout <= 0 {
-		return status.Error(codes.Internal, "invalid configured central sampler target")
+	if r.Target == nil {
+		return harnessHostTarget{}, status.Error(codes.FailedPrecondition, "central sampler service is not enabled")
 	}
-	conn, err := bearer.Dial(target.Target, target.TokenFile, r.Timeout, target.TLS)
-	if err != nil {
-		return err
+	if r.Target.Target == "" {
+		return harnessHostTarget{}, status.Error(codes.Internal, "invalid configured central sampler target")
 	}
-	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
-	defer cancel()
-	// The sampler sees only the bearer, never metadata the Dispatcher's caller attached.
-	return call(metadata.NewOutgoingContext(ctx, metadata.MD{}), samplerpb.NewSamplerClient(conn))
+	return harnessHostTarget{address: r.Target.Target, tokenFile: r.Target.TokenFile, tls: r.Target.TLS}, nil
 }
 
 func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox SandboxSnapshot, id string, spec *sessionpb.SessionSpec, setup *string, execution store.SessionExecution) error {
@@ -92,19 +80,14 @@ func (r *SessionDeliveryRouter) CreateSession(ctx context.Context, sandbox Sandb
 	if err := ValidateRuntime(session.Placement, setup, r.Target); err != nil {
 		return err
 	}
-	if session.Placement == placement.EnvironmentHosted {
-		return r.Native.CreateSession(ctx, sandbox, id, spec, setup, execution)
-	}
-	if sandbox.Incarnation == "" {
+	if session.Placement == placement.CentralSampler && sandbox.Incarnation == "" {
 		return status.Error(codes.FailedPrecondition, "executor incarnation is not available")
 	}
-	return r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
-		_, err := client.CreateSession(ctx, &samplerpb.CreateSessionRequest{
-			SessionId: id, Spec: spec, SetupScript: setup,
-			ExecutionIdentity: execution.Identity,
-		})
+	target, err := r.hostTarget(session.Placement, sandbox)
+	if err != nil {
 		return err
-	})
+	}
+	return r.Host.createSession(ctx, target, id, spec, setup, execution)
 }
 
 func (r *SessionDeliveryRouter) Deliver(ctx context.Context, sandbox SandboxSnapshot, id string, command *commandpb.Command) (*eventlogpb.EventEntry, error) {
@@ -115,39 +98,9 @@ func (r *SessionDeliveryRouter) Deliver(ctx context.Context, sandbox SandboxSnap
 	if err := validateSessionExecutor(session, sandbox); err != nil {
 		return nil, err
 	}
-	if session.Placement == placement.EnvironmentHosted {
-		return r.Native.Deliver(ctx, sandbox, id, command)
+	target, err := r.hostTarget(session.Placement, sandbox)
+	if err != nil {
+		return nil, err
 	}
-	var admission *eventlogpb.EventEntry
-	err = r.withClient(ctx, func(ctx context.Context, client samplerpb.SamplerClient) error {
-		switch payload := command.GetOperation().(type) {
-		case *commandpb.Command_SubmitInput:
-			reply, err := client.SubmitInput(ctx, &environmentruntimepb.SubmitInputRequest{SessionId: id, CommandId: command.GetCommandId(), Text: payload.SubmitInput.GetText()})
-			if err == nil {
-				admission = reply.GetAdmission()
-			}
-			return err
-		case *commandpb.Command_ChangeModel:
-			reply, err := client.ChangeModel(ctx, &environmentruntimepb.ChangeModelRequest{SessionId: id, CommandId: command.GetCommandId(), Model: payload.ChangeModel.GetModel()})
-			if err == nil {
-				admission = reply.GetAdmission()
-			}
-			return err
-		case *commandpb.Command_ChangeReasoningEffort:
-			reply, err := client.ChangeReasoningEffort(ctx, &environmentruntimepb.ChangeReasoningEffortRequest{SessionId: id, CommandId: command.GetCommandId(), Effort: payload.ChangeReasoningEffort.GetEffort()})
-			if err == nil {
-				admission = reply.GetAdmission()
-			}
-			return err
-		case *commandpb.Command_InterruptTurn:
-			reply, err := client.InterruptTurn(ctx, &environmentruntimepb.InterruptTurnRequest{SessionId: id, CommandId: command.GetCommandId(), TurnId: payload.InterruptTurn.GetTurnId()})
-			if err == nil {
-				admission = reply.GetAdmission()
-			}
-			return err
-		default:
-			return status.Error(codes.InvalidArgument, "unsupported central sampler command")
-		}
-	})
-	return admission, err
+	return r.Host.deliver(ctx, target, id, command)
 }
