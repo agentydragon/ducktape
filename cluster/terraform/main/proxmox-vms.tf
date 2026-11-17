@@ -127,7 +127,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   # virtio-gl (VirGL): guest GL runs on atlas's iGPU, so Mutter composites
   # with GPU acceleration even when the NVIDIA GPUs are locked up or display-
   # less (plain virtio fell back to llvmpipe → choppy SPICE audio — see
-  # nix/debug/wyrm2/spice_audio/README.md).
+  # nix/debug/wyrm2/spice/audio/README.md).
   vga {
     type   = "virtio-gl"
     memory = 256

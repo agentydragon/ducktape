@@ -42,7 +42,7 @@ Post-move recheck (2026-07-02, new apartment) + gaming plan:
   VA-API via virgl also dead: Proxmox's virglrenderer isn't built with video
   encode passthrough → no usable encode profiles in the guest. Kept as the
   casual/desktop path. Looking Glass remains N/A (no Linux guest support,
-  see `spice_lag/README.md`). For Steam titles, **Steam Remote Play** can
+  see <../../nix/debug/wyrm2/spice/lag/README.md>). For Steam titles, **Steam Remote Play** can
   NVENC on the 5090 regardless of display placement (captures in-pipeline).
 - **`nvidia-drm.modeset` conflict fixed** in `nix/nixos/hosts/wyrm2/default.nix`
   (`hardware.nvidia.modesetting.enable = false`; it was appending `modeset=1`
@@ -68,7 +68,7 @@ Post-move recheck (2026-07-02, new apartment) + gaming plan:
 - [x] Sunshine up, Moonlight paired from atlas (x264 software encode only —
       see above)
 - [x] SPICE auto-resize follows window again (`monitors.xml` deleted
-      2026-07-02 — see <../../nix/debug/wyrm2/spice_autoresize.md>)
+      2026-07-02 — see <../../nix/debug/wyrm2/spice/autoresize.md>)
 - [ ] Watch for guest GPU lockups under sustained load (`modeset=0` was the
       suspected contributor — note the direct-display plan below reverts to
       `modeset=1`, ending this experiment)
@@ -115,7 +115,7 @@ Goal is playing games on this machine; streaming was a workaround. Instead:
 - **SPICE must keep working** (hard requirement): virtio stays the primary
   desktop display, unaffected. **Known tension**: arranging the new second
   monitor in GNOME Settings writes `monitors.xml`, which re-pins Virtual-1
-  and kills SPICE auto-resize (see <../../nix/debug/wyrm2/spice_autoresize.md>). Options: accept
+  and kills SPICE auto-resize (see <../../nix/debug/wyrm2/spice/autoresize.md>). Options: accept
   the pin, or configure the NVIDIA output without persisting (TBD at bench
   time).
 - **Optional refinement**: run games in gamescope directly on the NVIDIA
@@ -140,7 +140,7 @@ rebuild + VM restart, `qm set` USB port passthrough, bench test.
 - **Guest-side GPU lockups still occur** — `nvidia-smi` shows ERR after
   extended uptime. Guest VM reboot recovers. When GPUs are locked, gnome-shell
   falls back to llvmpipe (software rendering), causing high CPU usage and audio
-  choppiness. See `spice_audio/README.md`
+  choppiness. See <../../nix/debug/wyrm2/spice/audio/README.md>
 - ~~**`nvidia-drm.modeset` conflict**~~: fixed 2026-07-02
   (`modesetting.enable = false`), pending reboot — see Current State above
 

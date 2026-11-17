@@ -102,8 +102,8 @@
   home.packages = [
     ducktapePackages.bebas-neue-font
     ducktapePackages.claude-desktop
-    pkgs.freerdp # RDP client for wyrm2's xrdp over Nebula (used by the wyrm2-rdp desktop entry)
-    pkgs.moonlight-qt # Sunshine client (GPU stream) for wyrm2 when logged in
+    # pkgs.freerdp # Restore with the parked wyrm2-rdp launcher below.
+    # pkgs.moonlight-qt # Restore if Sunshine streaming from Wyrm2 is re-enabled.
     pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
@@ -114,20 +114,14 @@
     ducktapePackages.tana-outliner
   ];
 
-  # One-click "bookmark" for wyrm2's xrdp. Uses xfreerdp directly (not
-  # gnome-connections, which crashes on xrdp's drive-redirection channels — a
-  # gtk-frdp bug). terminal=true so xfreerdp can prompt for the PAM password; the
-  # RDP window opens after. wyrm2 is reached over Nebula (firewall-restricted to the
-  # nebula1 interface). See nix/debug/wyrm2/remote_desktop_wyrm2.md.
-  xdg.desktopEntries."wyrm2-rdp" = {
-    name = "wyrm2 (RDP)";
-    exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";
-    terminal = true;
-    categories = [
-      "Network"
-      "RemoteAccess"
-    ];
-  };
+  # Parked with Wyrm2's XRDP service; restore together with pkgs.freerdp.
+  # Uses xfreerdp because gnome-connections crashes on XRDP drive redirection.
+  # xdg.desktopEntries."wyrm2-rdp" = {
+  #   name = "wyrm2 (RDP)";
+  #   exec = "xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu /dynamic-resolution";
+  #   terminal = true;
+  #   categories = [ "Network" "RemoteAccess" ];
+  # };
 
   # Enable GNOME fractional scaling (125/150/175%). GNOME gates these steps
   # behind this experimental flag; without it Settings only offers 100%/200%.

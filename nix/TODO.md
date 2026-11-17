@@ -1,20 +1,5 @@
 # Nix Configuration TODOs
 
-## Remote desktop to wyrm2 — xrdp-over-Nebula for now; Sunshine/Guac later
-
-GRD system Remote Login (PR #3424) is NixOS-blocked (dormant). The chosen-for-now
-configuration is **xrdp + Xfce over Nebula** (PR #3431): headless, pre-login,
-no auto-login, firewall-restricted to the `nebula1` trusted interface. This audit
-did not verify the running service on wyrm2. The "wyrm2 (RDP)" desktop entry is
-configured on rugged (PR #3435); that host state was not checked either. Connect
-with `xfreerdp /v:10.42.0.20 /u:agentydragon /cert:tofu`. Full RCA + security
-model + connection steps in `nix/debug/wyrm2/remote_desktop_wyrm2.md`.
-
-Later options (not now): Sunshine/Moonlight (passwordless after one-time pairing,
-GPU/gaming, but needs a logged-in seat0 session); Guacamole via Authentik RAC
-(`x/linux_rac/` — passwordless browser desktop via a sealed SSH key + SSO; greenfield,
-not deployed). Roll the chosen approach to the other NixOS hosts once settled.
-
 ## Consider wiring Codex OTEL export
 
 Codex supports native OTLP exporters via `[otel]` in `config.toml`, including

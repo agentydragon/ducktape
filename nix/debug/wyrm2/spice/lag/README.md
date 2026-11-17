@@ -1,10 +1,14 @@
 # SPICE Lag Investigation
 
+This is an investigation record; its deployment and action-item statements
+describe the dated experiments, not the current Wyrm2 configuration. For the
+parked Sunshine setup, see [remote desktop](../../remote_desktop/README.md).
+
 > **Status: Resolved (display latency).** Burst latency fixed (462ms -> 152ms) by disabling videostreaming. Current config: `vga: virtio` (no VirGL), GNOME 49 on Wayland, 4K (3840x2081). Display latency feels acceptable as of 2026-04-16 despite running Wayland (earlier notes predicted "deadly slow" — not observed in practice).
 >
 > **Remaining issue**: Audio over SPICE is choppy. Root cause identified
 > (2026-04-17): CPU contention from gnome-shell llvmpipe software rendering
-> when NVIDIA GPUs are locked up. See `../spice_audio/README.md` for details
+> when NVIDIA GPUs are locked up. See `../audio/README.md` for details
 > and fix options.
 
 ## Conclusions
@@ -445,7 +449,7 @@ window.
 
 ```bash
 # On atlas (SPICE client machine):
-cd debug/spice_lag
+cd nix/debug/wyrm2/spice/lag
 python record.py --samples 10             # 10 markers, 3s apart (steady-state)
 python record.py --samples 40 --delay 0.2 # 40 markers, 200ms apart (burst)
 ```
@@ -495,7 +499,7 @@ gi/PIL + installs openai)
 4. **Sunshine/Moonlight** — deployed 2026-07-02, works but **software x264
    only** (NVENC needs capture+CUDA on one device; display is on virtio,
    CUDA on the 5090s). Kept as casual/desktop transport; gaming pivoted to
-   a direct 5090 → monitor DP output. See `../../../../debug/atlas/gpu_strategy.md`. Looking
+   a direct 5090 → monitor DP output. See `../../../../../debug/atlas/gpu_strategy.md`. Looking
    Glass is not viable (no Linux guest support).
 
 ## Session Notes
@@ -506,5 +510,5 @@ out, which means pausing/restarting the investigation session. The measurement
 scripts run on atlas (the host), not wyrm.
 
 Recordings are stored in `results/` in this directory (on wyrm VM at
-`~/code/ducktape/debug/spice_lag/results/`). They are copied from
+`~/code/ducktape/nix/debug/wyrm2/spice/lag/results/`). They are copied from
 atlas's `/tmp/spice_latency_*/` after each run.

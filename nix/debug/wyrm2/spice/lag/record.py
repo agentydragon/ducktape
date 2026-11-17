@@ -6,7 +6,7 @@ timestamps into a focused SPICE/vim window. Saves video, extracted frames,
 and metadata for offline analysis by analyze.py.
 
 Setup:
-    1. cd debug/spice_lag
+    1. cd nix/debug/wyrm2/spice/lag
     2. Open SPICE client to VM, place window so it has focus
     3. In VM: nvim --clean -c "set guicursor=a:blinkon0" -c "startinsert"
     4. Run: python record.py [--samples N] [--fps F] [--delay D]

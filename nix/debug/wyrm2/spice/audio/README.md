@@ -1,9 +1,12 @@
 # SPICE Audio Choppiness Investigation
 
+The dates and deployment states below describe the original investigation.
+Wyrm2's current PipeWire settings are in its NixOS host configuration.
+
 > **Status (2026-07-02)**: Fix options 2 and 3 applied — VM 110 switched to
 > `vga: virtio-gl` and the `nvidia-drm.modeset` conflict fixed in the wyrm2
 > NixOS config. Both pending a wyrm2 reboot. See
-> `../../../../debug/atlas/gpu_strategy.md` (Current State + post-reboot checklist).
+> `../../../../../debug/atlas/gpu_strategy.md` (Current State + post-reboot checklist).
 
 ## Problem
 
@@ -56,7 +59,7 @@ At quantum=1024 with llvmpipe load, xruns are ~3/second.
 2. **Switch to `vga: virtio-gl`** in Proxmox VM config. This enables virgl
    (3D via host AMD iGPU), so Mutter composites with GPU acceleration even when
    NVIDIA GPUs are locked up. Tested and working on wyrm (VM 100) — see
-   `../spice_lag/README.md`. Requires VM reboot.
+   `../lag/README.md`. Requires VM reboot.
 
 3. **Fix `nvidia-drm.modeset` conflict** in `nix/nixos/hosts/wyrm2/default.nix`:
    `boot.kernelParams` sets `modeset=0` but `hardware.nvidia.modesetting.enable

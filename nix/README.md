@@ -29,6 +29,8 @@ nix/
 
 - [Telegram Desktop poll timer crash](docs/telegram_poll_timer.md): historical
   crash evidence and the current locked source status.
+- [Retired workstation features](docs/workstation_retired_features.md): removed
+  features and what to consider before restoring them.
 
 ## Usage
 

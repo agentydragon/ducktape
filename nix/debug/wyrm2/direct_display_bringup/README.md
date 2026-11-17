@@ -11,16 +11,14 @@ cursed multiseat investigation — see [History](#history-archived).
   login. The virtio-gpu (`00:01.0`, SPICE) and the spare 5090 (`02:00.0`) are
   `mutter-device-ignore`'d, so mutter renders only on the 5090. virtio stays a
   plain text/recovery console.
-- **Remote.** `gnome-remote-desktop` **Remote Login** (headless system RDP with
-  GDM handover) → a fresh headless GNOME session on connect, no prior local login
-  needed, virtual monitor resizes to the client. Reached over an **SSH-key tunnel
-  on nebula** (`ssh -L 3389:localhost:3389 <wyrm2-nebula>`, then RDP to
-  `localhost:3389`); RDP is not firewalled open, so the SSH key is the gate.
+- **Remote.** XRDP/Xfce and Sunshine/Moonlight are parked because they are
+  unused. GNOME Remote Login remains configured but was not verified working.
+  See [remote desktop](../remote_desktop/README.md) for status and restoration.
 - **Why single-seat0 (not multiseat).** GDM **cannot** complete a user login on a
   non-`seat0` seat — the multiseat Wayland handoff (gdm!291) is unmerged, blocked
   on [systemd#42247](https://github.com/systemd/systemd/issues/42247) — and we
   don't need two _simultaneous local_ graphical seats (physical vs. remote are
-  never both live). So we collapsed to one seat and remote in. Full reasoning +
+  never both live). So we collapsed to one seat. Full reasoning +
   the display-manager capability matrix: [History](#history-archived).
 
 ## Wiring
@@ -30,9 +28,8 @@ cursed multiseat investigation — see [History](#history-archived).
 - `services.udev.extraRules` — `mutter-device-ignore` on virtio + spare 5090.
 - `services.displayManager.defaultSession = "gnome"` (mutter honours the
   ignore-tag; wlroots/sway does not — so sway on `seat0` would grab all 3 GPUs).
-- `services.gnome.gnome-remote-desktop.enable` + the `grd-system-rdp-setup`
-  one-shot (self-signed TLS, chowned to the `gnome-remote-desktop` user,
-  `grdctl --system rdp enable`).
+- `services.gnome.gnome-remote-desktop.enable` and declarative TLS/config remain,
+  but the listener was not verified working; no setup one-shot is configured.
 - `services.displayManager.gdm.debug = true` — tombstoned; without it a
   greeter→session failure is a silent freeze.
 
@@ -66,9 +63,9 @@ no-reboot path.)
 
 ## Recovery / diagnostics
 
-- **Login succeeds but the desktop never appears / wedges** → <login*zombie_recovery.md>
+- **Login succeeds but the desktop never appears / wedges** → <login_zombie_recovery.md>
   (a zombie logind session or a stuck `graphical-session.target`; note that
-  restarting the display manager does \_not* fix either).
+  restarting the display manager does **not** fix either).
 - **Seat/DRM/logind state** → `sudo bash seat-diag.sh` (DM-agnostic).
 
 ## History (archived) — the constraints we ran into

@@ -20,10 +20,8 @@ let
   # $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
   # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf) under
   # the [RDP] group (keys rdp-enabled / rdp-server-cert-path / rdp-server-key-path).
-  # Declaring RDP enabled here is what makes the daemon bind 3389 at startup — and it
-  # sidesteps `grdctl --system rdp enable`, whose built-in systemd-enable step can't
-  # write to read-only /etc on NixOS. Symlinked into place by tmpfiles (below); the
-  # TLS pair is a SOPS secret.
+  # This config is symlinked into place by tmpfiles (below); the TLS pair is a
+  # SOPS secret. The listener is not known to work on NixOS despite this setting.
   grdConf = pkgs.writeText "grd-system-rdp.conf" ''
     [RDP]
     rdp-enabled=true
@@ -31,15 +29,12 @@ let
     rdp-server-key-path=/var/lib/gnome-remote-desktop/rdp-tls.key
     rdp-port=3389
   '';
-  # xrdp launches the window manager in a session env that, on NixOS, does NOT set
-  # HOME (xrdp-sesman's pam line is `pam_env … readenv=0`), so a full desktop like
-  # Xfce fails to start and you get a black screen. This wrapper sets HOME, launches
-  # Xfce, and tees its output to /tmp/xrdp-wm.log so any remaining failure is visible
-  # (nixpkgs's xrdp test sidesteps this with bare WMs that don't need HOME).
-  rdpSession = pkgs.writeShellScript "xrdp-xfce-session" ''
-    export HOME="''${HOME:-/home/agentydragon}"
-    exec ${pkgs.xfce.xfce4-session}/bin/startxfce4 > /tmp/xrdp-wm.log 2>&1
-  '';
+  # Parked XRDP session; uncomment this and the service below together.
+  # HOME is unset by xrdp-sesman's PAM environment on NixOS.
+  # rdpSession = pkgs.writeShellScript "xrdp-xfce-session" ''
+  #   export HOME="''${HOME:-/home/agentydragon}"
+  #   exec ${pkgs.xfce4-session}/bin/startxfce4 > /tmp/xrdp-wm.log 2>&1
+  # '';
 in
 {
   imports = [
@@ -58,6 +53,9 @@ in
   ducktape.cowork.enable = true;
 
   ducktape.homeWifi.enable = true;
+
+  # No cellular modem is attached to this VM; keep the NetworkManager default off.
+  networking.modemmanager.enable = false;
 
   ducktape.piraeusHost.enable = true;
 
@@ -205,17 +203,13 @@ in
   # we do NOT run a second logind seat. The display 5090 (01:00.0) is seat0's sole
   # graphical output — a normal, fully-supported GDM seat0 login, so the physical
   # seat "just works" — and remote access is a *session, not a seat*
-  # (gnome-remote-desktop, below; reach it over an SSH-key tunnel on nebula). This
+  # (remote desktop is currently parked; see nix/debug/wyrm2/remote_desktop/README.md). This
   # retires the whole multi-seat-DM problem: GDM cannot complete a *non*-seat0 user
   # login (gdm!291 unmerged, blocked on systemd#42247), which is exactly the wall
   # the old `seatphysical` seat hit. Full analysis + the retracted multi-seat
   # decision: nix/debug/wyrm2/direct_display_bringup/README.md (full multiseat saga archived under archive/).
 
-  # seat0 defaults to GNOME. mutter is what honours `mutter-device-ignore` (see the
-  # udev rules below), so the single-display isolation only works under
-  # GNOME/mutter — NOT sway, which (via wlroots) claims every seat DRM card and
-  # ignores that tag. programs.sway stays enabled for experimentation, but a sway
-  # seat0 login would grab all three GPUs until pinned with WLR_DRM_DEVICES.
+  # Mutter honors the GPU isolation rules below, keeping the other cards off seat0.
   services.displayManager.defaultSession = "gnome";
 
   # CLEANUP(added 2026-07-17): remove once gnome-remote-desktop headless login is
@@ -227,33 +221,17 @@ in
   # nix/debug/wyrm2/direct_display_bringup/login_zombie_recovery.md.
   services.displayManager.gdm.debug = true;
 
-  # Remote access = a *session, not a seat*: gnome-remote-desktop "Remote Login"
-  # (system RDP with GDM handover) starts a fresh headless GNOME session on connect
-  # — no prior local login needed, and its virtual monitor resizes to the client.
-  # Reach it over an SSH-key tunnel on nebula (`ssh -L 3389:localhost:3389
-  # <wyrm2-nebula>`, then RDP to localhost:3389): RDP is NOT firewalled open, so the
-  # only path in is the key-only SSH already configured — nebula cert + SSH key are
-  # the gates, the RDP password is just the login step. RDP is enabled declaratively:
-  # the TLS pair is a SOPS secret (below) and grd.conf (grdConf above) is symlinked
-  # into place by tmpfiles — no grdctl, no runtime bootstrap. See the GRD bring-up
-  # notes in nix/debug/wyrm2/direct_display_bringup/README.md.
+  # GNOME Remote Login is configured but its system listener has not been
+  # brought up on NixOS; see nix/debug/wyrm2/remote_desktop/README.md.
   services.gnome.gnome-remote-desktop.enable = true;
 
-  # ACTUAL remote desktop: xrdp + Xfce. gnome-remote-desktop system "Remote Login"
-  # above is the GNOME-native headless path but is BLOCKED on NixOS (`grdctl enable`
-  # self-systemd-enables into read-only /etc → EROFS; GDM handover broken — nixpkgs
-  # #504490/#535360; see nix/debug/wyrm2/remote_desktop_wyrm2.md), so it never listens and
-  # stays dormant. xrdp spawns its own X session on connect (PAM auth with your system
-  # password — no stored creds), which works pre-login WITHOUT auto-login. Tunnel-only:
-  # services.xrdp.openFirewall defaults false, so 3389 is not exposed on nebula — reach
-  # it via `ssh -L 3390:localhost:3389 wyrm2` + an RDP client (freerdp3 on rugged).
-  # Separate X11 Xfce session, not the GPU/Wayland seat (use Sunshine for that, when
-  # logged in).
-  services.xrdp = {
-    enable = true;
-    defaultWindowManager = "${rdpSession}";
-  };
-  services.xserver.desktopManager.xfce.enable = true;
+  # Parked: uncomment with rdpSession above to restore the pre-login Xfce session.
+  # Review the Nebula/firewall access model in nix/debug/wyrm2/remote_desktop/README.md.
+  # services.xrdp = {
+  #   enable = true;
+  #   defaultWindowManager = "${rdpSession}";
+  # };
+  # services.xserver.desktopManager.xfce.enable = true;
 
   # The self-signed TLS pair RDP mandates. Host-only secret (admin + wyrm2-host), like
   # the Nebula host keys — the daemon decrypts at activation via the host key. Rendered
@@ -285,41 +263,7 @@ in
   # the GDM greeter if the KVM reverts again — see
   # nix/debug/wyrm2/direct_display_bringup/README.md.
 
-  # Sway kept as an OPTIONAL seat0 session (NOT the default — GNOME is, because only
-  # mutter honours the mutter-device-ignore isolation). A real WM to game/debug from,
-  # run as agentydragon. NVIDIA: --unsupported-gpu is mandatory; hardware cursors off
-  # (wlroots can't do them on this NVIDIA path).
-  # CAVEAT (single-seat0): wlroots ignores mutter-device-ignore, so a sway seat0
-  # login enumerates ALL THREE seat0 cards (virtio + both 5090s) and picks the wrong
-  # one / "Found N GPUs". To actually use sway here it must be pinned to the display
-  # 5090 (01:00.0) via a colon-free WLR_DRM_DEVICES symlink — NOT yet wired. Open
-  # sway-on-seat0 question tracked in the decision doc.
-  programs.sway = {
-    enable = true;
-    wrapperFeatures.gtk = true;
-    extraOptions = [ "--unsupported-gpu" ];
-    extraPackages = with pkgs; [
-      foot
-      wofi
-      wl-clipboard
-      swayidle
-      swaylock
-      dex # runs XDG ~/.config/autostart entries under sway
-      grim # screenshots (wlroots)
-      slurp # region select for grim
-    ];
-  };
-  # NVIDIA: wlroots can't do hardware cursors on this path. Kept for the optional
-  # sway seat0 session above; harmless for the default GNOME/mutter session.
-  environment.sessionVariables.WLR_NO_HARDWARE_CURSORS = "1";
-
-  # Steam — games run on the RTX 5090s (direct display via seatphysical, or
-  # streamed to atlas via Sunshine/Moonlight).
-  # Games run directly in the sway session on seatphysical (the display GPU is
-  # 01:00.0 = the same GPU DXVK renders on, so no gamescope GPU-pinning is
-  # needed — see nix/debug/wyrm2/direct_display_bringup/README.md). No gamescope kiosk
-  # session: on this 2-identical-5090 box gamescope can't disambiguate the
-  # GPUs and its greeter session crashed opening the wrong (seat0-owned) card.
+  # Steam runs on the display 5090.
   programs.steam.enable = true;
   # Attempt at the native Steam Linux Runtime `libselinux.so.1` failure (Stellaris
   # dies: "mkdir: libselinux.so.1: cannot open shared object file"). Adds it to
@@ -327,79 +271,39 @@ in
   # not deep inside the pressure-vessel container — if a game still fails in the
   # SLR sandbox, force Proton on it instead.
   programs.steam.extraPackages = [ pkgs.libselinux ];
-  services.displayManager.sessionPackages = [
-    # Debug variant of sway: logs sway -d output to /tmp/sway-session.log, since
-    # a failed session Exec dies silently under GDM (~60s, zero journal output).
-    # Remove once sway on the seat is confirmed working.
-    (
-      (pkgs.writeTextDir "share/wayland-sessions/sway-debug.desktop" ''
-        [Desktop Entry]
-        Name=Sway (debug)
-        Comment=sway -d with logging to /tmp/sway-session.log
-        Exec=${pkgs.writeShellScript "sway-debug" ''
-          exec > /tmp/sway-session.log 2>&1
-          set -x
-          date
-          id
-          echo "seat=$XDG_SEAT vt=$XDG_VTNR session=$XDG_SESSION_ID"
-          ls -l /dev/dri/by-path/
-          export WLR_NO_HARDWARE_CURSORS=1
-          exec sway -d
-        ''}
-        Type=Application
-      '').overrideAttrs
-        (_: {
-          passthru.providedSessions = [ "sway-debug" ];
-        })
-    )
-  ];
-
-  # Game streaming host: Moonlight client on atlas connects here; games render
-  # + NVENC-encode on a 5090. capSysAdmin for KMS capture under Wayland.
-  # See <debug/atlas/gpu_strategy.md>.
-  services.sunshine = {
-    enable = true;
-    # Default package has no CUDA → only software x264. NVENC on the 5090s
-    # needs the CUDA build.
-    package = pkgs.sunshine.override { cudaSupport = true; };
-    capSysAdmin = true;
-    openFirewall = true;
-  };
-  # Rule 1: upstream's 60-sunshine.rules — the nixpkgs sunshine package ships no
-  # udev rules, so the module's `services.udev.packages = [ package ]` is a no-op
-  # and Sunshine gets "Permission denied" creating virtual keyboard/mouse.
-  # Rules 2+3: seat0 single-display — hide the virtio-gpu (00:01.0, SPICE console)
+  # Parked Sunshine game streaming; see nix/debug/wyrm2/remote_desktop/README.md.
+  # services.sunshine = {
+  #   enable = true;
+  #   package = pkgs.sunshine.override { cudaSupport = true; };
+  #   capSysAdmin = true;
+  #   openFirewall = true;
+  # };
+  # Seat0 single-display: hide the virtio-gpu (00:01.0, SPICE console)
   # and the spare 5090 (02:00.0, headless compute) from mutter so seat0 renders
   # only on the display 5090 (01:00.0). This replaces the old seatphysical/seatspare
   # multi-seat rules: multi-GPU mutter with NVIDIA SIGSEGV'd as primary / rendered
   # black as copy target (2026-07-02), so mutter must see exactly one card. Render
-  # nodes are not seat- or ignore-gated, so Sunshine / game render-offload still
+  # nodes are not seat- or ignore-gated, so game render-offload still
   # reaches the spare GPU. The TEX Shura keyboard (04d9:0532) needs no rule now — it
   # just defaults to seat0.
   # CAVEAT: `mutter-device-ignore` is honoured by MUTTER ONLY — wlroots/sway ignores
   # it and would grab all three cards (that's why seat0 defaults to GNOME above).
   # virtio stays a plain text/recovery VT console. Gotcha: udev TAGS persist in the
   # udev db — a VM reboot is needed to fully apply a change here.
-  # Rule 4: MT7921U Wi-Fi stick (CPAP ez Share sync) — disable USB runtime PM.
+  # MT7921U Wi-Fi stick (CPAP ez Share sync) — disable USB runtime PM.
   # On 2026-07-25 the stick failed a USB-autosuspend resume (`mt7921u ... resume
   # error -110`), went electrically dark, and stayed dark through four warm
   # reboots (VBUS holds through reboot); only a physical replug at the
   # hypervisor revived it, and cpap-sync was down the whole week. Keeping the
   # device out of autosuspend removes the resume path entirely.
   services.udev.extraRules = ''
-    KERNEL=="uinput", SUBSYSTEM=="misc", OPTIONS+="static_node=uinput", TAG+="uaccess"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:00:01.0", TAG+="mutter-device-ignore"
     SUBSYSTEM=="drm", KERNEL=="card[0-9]*", KERNELS=="0000:02:00.0", TAG+="mutter-device-ignore"
     ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="7961", TEST=="power/control", ATTR{power/control}="on"
   '';
-  # Composite the cursor into frames instead of the hardware cursor plane —
-  # Sunshine's KMS capture can't grab the cursor plane on virtio-gpu, so the
-  # Moonlight stream has no cursor otherwise.
-  environment.sessionVariables.MUTTER_DEBUG_DISABLE_HW_CURSORS = "1";
-
   # SPICE audio: increase PipeWire quantum to 2048 to eliminate xruns on the
   # virtual ich9-intel-hda device. Adds ~42ms audio latency (vs ~21ms default),
-  # acceptable for media playback. See <nix/debug/wyrm2/spice_audio/README.md>.
+  # acceptable for media playback. See <nix/debug/wyrm2/spice/audio/README.md>.
   services.pipewire.extraConfig.pipewire."10-spice-quantum" = {
     "context.properties" = {
       "default.clock.quantum" = 2048;
