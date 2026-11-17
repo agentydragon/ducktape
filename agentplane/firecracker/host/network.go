@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"strconv"
 
@@ -28,40 +27,27 @@ const (
 
 var managedChains = []string{inputChain, forwardChain, ingressChain}
 
-type firewallOperations interface {
+type firewall interface {
 	ChainExists(table, chain string) (bool, error)
 	NewChain(table, chain string) error
-	DeleteChain(table, chain string) error
 	ClearChain(table, chain string) error
 	Exists(table, chain string, rulespec ...string) (bool, error)
 	Append(table, chain string, rulespec ...string) error
+	AppendUnique(table, chain string, rulespec ...string) error
 	Insert(table, chain string, pos int, rulespec ...string) error
 	Delete(table, chain string, rulespec ...string) error
-	List(table, chain string) ([]string, error)
 }
 
-// networkOperations is the seam between the policy we own and the host
-// networking libraries. Tests fake these operations and inspect resulting
-// links and rules rather than shell command strings.
-type networkOperations interface {
-	LinkList() ([]netlink.Link, error)
-	LinkByName(name string) (netlink.Link, error)
-	LinkAdd(link netlink.Link) error
-	LinkDel(link netlink.Link) error
-	AddrAdd(link netlink.Link, addr *netlink.Addr) error
-	LinkSetMTU(link netlink.Link, mtu int) error
-	LinkSetUp(link netlink.Link) error
-	IPv4() firewallOperations
-	IPv6() firewallOperations
-	EnableIPv4Forwarding() error
+var _ firewall = (*iptables.IPTables)(nil)
+
+type Network struct {
+	relayPort     int
+	platformPorts []int
+	ipv4          firewall
+	ipv6          firewall
 }
 
-type hostNetworkOperations struct {
-	ipv4 firewallOperations
-	ipv6 firewallOperations
-}
-
-func newHostNetworkOperations() (*hostNetworkOperations, error) {
+func NewNetwork(relayPort int, platformPorts []int) (*Network, error) {
 	ipv4, err := iptables.NewWithProtocol(iptables.ProtocolIPv4)
 	if err != nil {
 		return nil, fmt.Errorf("create IPv4 iptables client: %w", err)
@@ -70,77 +56,25 @@ func newHostNetworkOperations() (*hostNetworkOperations, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create IPv6 iptables client: %w", err)
 	}
-	return &hostNetworkOperations{ipv4: ipv4, ipv6: ipv6}, nil
+	return newNetwork(relayPort, platformPorts, ipv4, ipv6), nil
 }
 
-func (hostNetworkOperations) LinkList() ([]netlink.Link, error) { return netlink.LinkList() }
-func (hostNetworkOperations) LinkByName(name string) (netlink.Link, error) {
-	return netlink.LinkByName(name)
-}
-func (hostNetworkOperations) LinkAdd(link netlink.Link) error { return netlink.LinkAdd(link) }
-func (hostNetworkOperations) LinkDel(link netlink.Link) error { return netlink.LinkDel(link) }
-func (hostNetworkOperations) AddrAdd(link netlink.Link, addr *netlink.Addr) error {
-	return netlink.AddrAdd(link, addr)
-}
-
-func (hostNetworkOperations) LinkSetMTU(link netlink.Link, mtu int) error {
-	return netlink.LinkSetMTU(link, mtu)
-}
-func (hostNetworkOperations) LinkSetUp(link netlink.Link) error { return netlink.LinkSetUp(link) }
-func (ops hostNetworkOperations) IPv4() firewallOperations      { return ops.ipv4 }
-func (ops hostNetworkOperations) IPv6() firewallOperations      { return ops.ipv6 }
-func (hostNetworkOperations) EnableIPv4Forwarding() error {
-	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o644); err != nil {
-		return fmt.Errorf("enable IPv4 forwarding: %w", err)
-	}
-	return nil
-}
-
-type Network struct {
-	relayPort     int
-	platformPorts []int
-	ops           networkOperations
-	initErr       error
-}
-
-func NewNetwork(relayPort int, platformPorts []int) *Network {
-	ops, err := newHostNetworkOperations()
+func newNetwork(relayPort int, platformPorts []int, ipv4, ipv6 firewall) *Network {
 	return &Network{
 		relayPort:     relayPort,
 		platformPorts: append([]int(nil), platformPorts...),
-		ops:           ops,
-		initErr:       err,
-	}
-}
-
-func newNetwork(relayPort int, platformPorts []int, ops networkOperations) *Network {
-	return &Network{
-		relayPort:     relayPort,
-		platformPorts: append([]int(nil), platformPorts...),
-		ops:           ops,
+		ipv4:          ipv4,
+		ipv6:          ipv6,
 	}
 }
 
 type networkFamily struct {
-	name     string
-	iptables firewallOperations
+	name string
+	fw   firewall
 }
 
 func (n *Network) families() []networkFamily {
-	return []networkFamily{{name: "IPv4", iptables: n.ops.IPv4()}, {name: "IPv6", iptables: n.ops.IPv6()}}
-}
-
-func (n *Network) checkReady(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if n.initErr != nil {
-		return n.initErr
-	}
-	if n.ops == nil || n.ops.IPv4() == nil || n.ops.IPv6() == nil {
-		return errors.New("host network operations are unavailable")
-	}
-	return nil
+	return []networkFamily{{name: "IPv4", fw: n.ipv4}, {name: "IPv6", fw: n.ipv6}}
 }
 
 type firewallGuard struct {
@@ -159,20 +93,16 @@ var firewallGuards = []firewallGuard{
 }
 
 func (n *Network) Setup(ctx context.Context) error {
-	if err := n.checkReady(ctx); err != nil {
-		return err
-	}
 	return n.withGuards(ctx, func() error {
-		links, err := n.ops.LinkList()
-		if err != nil {
-			return fmt.Errorf("list host links: %w", err)
-		}
-		for _, link := range links {
-			if link.Attrs().Name == Tap {
-				if err := n.ops.LinkDel(link); err != nil {
-					return fmt.Errorf("remove existing %s link: %w", Tap, err)
-				}
-				break
+		link, err := netlink.LinkByName(Tap)
+		if err == nil {
+			if err := netlink.LinkDel(link); err != nil {
+				return fmt.Errorf("remove existing %s link: %w", Tap, err)
+			}
+		} else {
+			var notFound netlink.LinkNotFoundError
+			if !errors.As(err, &notFound) {
+				return fmt.Errorf("look up existing %s link: %w", Tap, err)
 			}
 		}
 
@@ -181,180 +111,102 @@ func (n *Network) Setup(ctx context.Context) error {
 			Mode:      netlink.TUNTAP_MODE_TAP,
 			Flags:     netlink.TUNTAP_NO_PI,
 		}
-		if err := n.ops.LinkAdd(tap); err != nil {
+		if err := netlink.LinkAdd(tap); err != nil {
 			return fmt.Errorf("create %s TAP link: %w", Tap, err)
 		}
-		link, err := n.ops.LinkByName(Tap)
+		link, err = netlink.LinkByName(Tap)
 		if err != nil {
 			return fmt.Errorf("look up %s link: %w", Tap, err)
 		}
 		for _, item := range []struct {
 			cidr  string
-			flags int
+			nodad bool
 		}{
 			{cidr: gatewayV4 + "/30"},
-			{cidr: gatewayV6 + "/64", flags: unix.IFA_F_NODAD},
+			{cidr: gatewayV6 + "/64", nodad: true},
 		} {
-			addr, err := parseNetworkAddress(item.cidr, item.flags)
+			addr, err := netlink.ParseAddr(item.cidr)
 			if err != nil {
-				return err
+				return fmt.Errorf("parse host address %q: %w", item.cidr, err)
 			}
-			if err := n.ops.AddrAdd(link, addr); err != nil {
+			if item.nodad {
+				addr.Flags |= unix.IFA_F_NODAD
+			}
+			if err := netlink.AddrAdd(link, addr); err != nil {
 				return fmt.Errorf("assign %s to %s: %w", item.cidr, Tap, err)
 			}
 		}
-		if err := n.ops.LinkSetMTU(link, 1280); err != nil {
+		if err := netlink.LinkSetMTU(link, 1280); err != nil {
 			return fmt.Errorf("set %s MTU: %w", Tap, err)
 		}
-		if err := n.ops.LinkSetUp(link); err != nil {
+		if err := netlink.LinkSetUp(link); err != nil {
 			return fmt.Errorf("bring up %s: %w", Tap, err)
 		}
-		if err := n.ops.EnableIPv4Forwarding(); err != nil {
+		if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o644); err != nil {
+			return fmt.Errorf("enable IPv4 forwarding: %w", err)
+		}
+		if err := n.ensureFirewall(); err != nil {
 			return err
 		}
-		if err := n.ensureFirewall(ctx); err != nil {
-			return err
-		}
-		return n.writeRules(ctx, false)
+		return n.writeRules(false)
 	})
-}
-
-func parseNetworkAddress(cidr string, flags int) (*netlink.Addr, error) {
-	ip, subnet, err := net.ParseCIDR(cidr)
-	if err != nil {
-		return nil, fmt.Errorf("parse host address %q: %w", cidr, err)
-	}
-	subnet.IP = ip
-	return &netlink.Addr{IPNet: subnet, Flags: flags}, nil
 }
 
 func (n *Network) Enable(ctx context.Context) error {
-	if err := n.checkReady(ctx); err != nil {
-		return err
-	}
-	return n.withGuards(ctx, func() error { return n.writeRules(ctx, true) })
+	return n.withGuards(ctx, func() error { return n.writeRules(true) })
 }
 
 func (n *Network) Disable(ctx context.Context) error {
-	if err := n.checkReady(ctx); err != nil {
-		return err
-	}
-	return n.withGuards(ctx, func() error { return n.writeRules(ctx, false) })
+	return n.withGuards(ctx, func() error { return n.writeRules(false) })
 }
 
-func (n *Network) Teardown(ctx context.Context) error {
-	if err := n.checkReady(ctx); err != nil {
-		return err
-	}
-	return n.withGuards(ctx, func() error {
-		if err := removeRule(ctx, n.ops.IPv4(), "nat", "PREROUTING", []string{"-p", "tcp", "--dport", "9090", "-j", "DNAT", "--to-destination", GuestV4 + ":9090"}); err != nil {
-			return fmt.Errorf("remove Runtime port forwarding: %w", err)
-		}
-		for _, family := range n.families() {
-			for _, jump := range firewallJumps {
-				if err := removeRule(ctx, family.iptables, "filter", jump.parent, jump.rule); err != nil {
-					return fmt.Errorf("remove %s %s jump: %w", family.name, jump.parent, err)
-				}
-			}
-		}
-		families := n.families()
-		for familyIndex := len(families) - 1; familyIndex >= 0; familyIndex-- {
-			family := families[familyIndex]
-			for chainIndex := len(managedChains) - 1; chainIndex >= 0; chainIndex-- {
-				chain := managedChains[chainIndex]
-				exists, err := family.iptables.ChainExists("filter", chain)
-				if err != nil {
-					return fmt.Errorf("check %s chain %s: %w", family.name, chain, err)
-				}
-				if !exists {
-					continue
-				}
-				if err := family.iptables.ClearChain("filter", chain); err != nil {
-					return fmt.Errorf("clear %s chain %s: %w", family.name, chain, err)
-				}
-				rules, err := family.iptables.List("filter", chain)
-				if err != nil {
-					return fmt.Errorf("list %s chain %s after clearing: %w", family.name, chain, err)
-				}
-				if len(rules) != 0 {
-					return fmt.Errorf("%s chain %s still contains rules after clearing", family.name, chain)
-				}
-				if err := family.iptables.DeleteChain("filter", chain); err != nil {
-					return fmt.Errorf("delete %s chain %s: %w", family.name, chain, err)
-				}
-			}
-		}
-		links, err := n.ops.LinkList()
-		if err != nil {
-			return fmt.Errorf("list host links: %w", err)
-		}
-		for _, link := range links {
-			if link.Attrs().Name == Tap {
-				if err := n.ops.LinkDel(link); err != nil {
-					return fmt.Errorf("remove %s link: %w", Tap, err)
-				}
-				break
-			}
-		}
-		return nil
-	})
-}
-
-func (n *Network) withGuards(ctx context.Context, update func() error) error {
-	if err := n.installGuards(ctx); err != nil {
+func (n *Network) withGuards(_ context.Context, update func() error) error {
+	if err := n.installGuards(); err != nil {
 		return err
 	}
 	if err := update(); err != nil {
 		return err
 	}
-	if err := n.removeGuards(ctx); err != nil {
-		return errors.Join(err, n.installGuards(ctx))
+	if err := n.removeGuards(); err != nil {
+		return errors.Join(err, n.installGuards())
 	}
 	return nil
 }
 
-func (n *Network) installGuards(ctx context.Context) error {
+func (n *Network) installGuards() error {
 	var errs []error
 	for _, guard := range firewallGuards {
-		if err := ctx.Err(); err != nil {
-			return errors.Join(errors.Join(errs...), err)
-		}
-		fw := n.firewall(guard.family)
-		if err := fw.Insert("filter", guard.parent, 1, guard.rule...); err != nil {
+		if err := n.firewall(guard.family).Insert("filter", guard.parent, 1, guard.rule...); err != nil {
 			errs = append(errs, fmt.Errorf("install %s %s guard: %w", guard.family, guard.parent, err))
 		}
 	}
 	return errors.Join(errs...)
 }
 
-func (n *Network) removeGuards(ctx context.Context) error {
+func (n *Network) removeGuards() error {
 	for _, guard := range firewallGuards {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := removeRule(ctx, n.firewall(guard.family), "filter", guard.parent, guard.rule); err != nil {
-			return fmt.Errorf("remove %s %s guard: %w", guard.family, guard.parent, err)
+		fw := n.firewall(guard.family)
+		for {
+			exists, err := fw.Exists("filter", guard.parent, guard.rule...)
+			if err != nil {
+				return err
+			}
+			if !exists {
+				break
+			}
+			if err := fw.Delete("filter", guard.parent, guard.rule...); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func removeRule(ctx context.Context, fw firewallOperations, table, chain string, rule []string) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		exists, err := fw.Exists(table, chain, rule...)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return nil
-		}
-		if err := fw.Delete(table, chain, rule...); err != nil {
-			return err
-		}
+func (n *Network) firewall(family string) firewall {
+	if family == "IPv6" {
+		return n.ipv6
 	}
+	return n.ipv4
 }
 
 type firewallJump struct {
@@ -369,68 +221,41 @@ var firewallJumps = []firewallJump{
 	{chain: ingressChain, parent: "FORWARD", rule: []string{"-o", Tap, "-j", ingressChain}},
 }
 
-func (n *Network) ensureFirewall(ctx context.Context) error {
+func (n *Network) ensureFirewall() error {
 	for _, family := range n.families() {
 		for _, chain := range managedChains {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			exists, err := family.iptables.ChainExists("filter", chain)
+			exists, err := family.fw.ChainExists("filter", chain)
 			if err != nil {
 				return fmt.Errorf("check %s chain %s: %w", family.name, chain, err)
 			}
 			if !exists {
-				if err := family.iptables.NewChain("filter", chain); err != nil {
+				if err := family.fw.NewChain("filter", chain); err != nil {
 					return fmt.Errorf("create %s chain %s: %w", family.name, chain, err)
 				}
 			}
 		}
 		for _, jump := range firewallJumps {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			exists, err := family.iptables.Exists("filter", jump.parent, jump.rule...)
-			if err != nil {
-				return fmt.Errorf("check %s jump to %s: %w", family.name, jump.chain, err)
-			}
-			if !exists {
-				if err := family.iptables.Append("filter", jump.parent, jump.rule...); err != nil {
-					return fmt.Errorf("add %s jump to %s: %w", family.name, jump.chain, err)
-				}
+			if err := family.fw.AppendUnique("filter", jump.parent, jump.rule...); err != nil {
+				return fmt.Errorf("add %s jump to %s: %w", family.name, jump.chain, err)
 			}
 		}
 	}
 	natRule := []string{"-p", "tcp", "--dport", "9090", "-j", "DNAT", "--to-destination", GuestV4 + ":9090"}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	exists, err := n.ops.IPv4().Exists("nat", "PREROUTING", natRule...)
-	if err != nil {
-		return fmt.Errorf("check Runtime port forwarding: %w", err)
-	}
-	if !exists {
-		if err := n.ops.IPv4().Append("nat", "PREROUTING", natRule...); err != nil {
-			return fmt.Errorf("add Runtime port forwarding: %w", err)
-		}
+	if err := n.ipv4.AppendUnique("nat", "PREROUTING", natRule...); err != nil {
+		return fmt.Errorf("add Runtime port forwarding: %w", err)
 	}
 	return nil
 }
 
-func (n *Network) writeRules(ctx context.Context, enabled bool) error {
+func (n *Network) writeRules(enabled bool) error {
 	for _, family := range n.families() {
 		for _, chain := range managedChains {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if err := family.iptables.ClearChain("filter", chain); err != nil {
+			if err := family.fw.ClearChain("filter", chain); err != nil {
 				return fmt.Errorf("clear %s chain %s: %w", family.name, chain, err)
 			}
 		}
 		for _, rule := range n.policyRules(family.name == "IPv6", enabled) {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if err := family.iptables.Append("filter", rule.chain, rule.args...); err != nil {
+			if err := family.fw.Append("filter", rule.chain, rule.args...); err != nil {
 				return fmt.Errorf("append rule to %s chain %s: %w", family.name, rule.chain, err)
 			}
 		}
@@ -469,11 +294,4 @@ func (n *Network) policyRules(ipv6, enabled bool) []policyRule {
 	}
 	rules = append(rules, policyRule{chain: ingressChain, args: []string{"-j", "REJECT"}})
 	return rules
-}
-
-func (n *Network) firewall(family string) firewallOperations {
-	if family == "IPv6" {
-		return n.ops.IPv6()
-	}
-	return n.ops.IPv4()
 }

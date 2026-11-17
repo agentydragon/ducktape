@@ -43,7 +43,6 @@ type networkController interface {
 	Setup(context.Context) error
 	Enable(context.Context) error
 	Disable(context.Context) error
-	Teardown(context.Context) error
 }
 
 type virtualMachine interface {
@@ -69,10 +68,18 @@ type Supervisor struct {
 	reachable    func(context.Context) bool
 }
 
-func NewSupervisor(config Config) *Supervisor {
+func NewSupervisor(config Config) (*Supervisor, error) {
+	network, err := NewNetwork(config.RelayPort, config.PlatformRoutePorts)
+	if err != nil {
+		return nil, err
+	}
+	return newSupervisor(config, network), nil
+}
+
+func newSupervisor(config Config, network networkController) *Supervisor {
 	return &Supervisor{
 		config: config, storage: NewStorage(config, vmmBinary),
-		network: NewNetwork(config.RelayPort, config.PlatformRoutePorts),
+		network: network,
 		status:  launcherStatus{PodUID: config.PodUID, Phase: starting},
 		intent:  intentPath, apiPath: apiSocket, vsockPath: vsockSocket,
 		start:       func(binary, socket, log string) (virtualMachine, error) { return StartVMM(binary, socket, log) },
@@ -213,15 +220,6 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		case <-runCtx.Done():
 		}
 		return err
-	}
-	if ctx.Err() != nil && s.networkOwned {
-		cleanupCtx, stop := context.WithTimeout(context.Background(), 20*time.Second)
-		if cleanupErr := s.network.Teardown(cleanupCtx); cleanupErr != nil {
-			slog.Error("network teardown failed", "error", cleanupErr)
-			stop()
-			return errors.Join(ctx.Err(), cleanupErr)
-		}
-		stop()
 	}
 	return ctx.Err()
 }

@@ -29,10 +29,8 @@ go_test(
     deps = [
         "//agentplane/env/firecracker:management_go_proto",
         "//agentplane/net/peertls/testing",
-        "@com_github_vishvananda_netlink//:netlink",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
-        "@org_golang_x_sys//unix",
     ],
 )
