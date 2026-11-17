@@ -31,16 +31,23 @@ remote actions; it is not the production image. The 2026-11-17 experiment used
   application symbols and source paths; some system libraries were unavailable
   on the interpretation host.
 
+The 2026-11-17 loader probe rebuilt nix-ld with its fallback library path at
+`/share/nix-ld/lib` and added `hostname`. With a fresh, empty `/run` and no
+`NIX_LD` variables, the downloaded Bazel 9.2.0 ELF failed on the earlier image
+(`libstdc++.so.6` not found) and printed `bazel 9.2.0` on the rebuilt image.
+This was a local container compatibility check, not a Firecracker or pool test.
+
 The image still needs work before regular CI use:
 
-- Firecracker mounts a fresh `/run`, hiding nix-ld's baked-in fallback under
-  `/run/current-system/sw/share/nix-ld`. Explicit environment variables let
-  Bazel start, but Bazel actions and rules may clear the environment, so a
-  durable solution needs to work without those variables as well.
+- Firecracker mounts a fresh `/run`, hiding nix-ld's standard fallback under
+  `/run/current-system/sw/share/nix-ld`. The experimental loader now points
+  directly at `/share/nix-ld/lib`; a Firecracker run without loader variables
+  still needs validation.
 - Cold image pulls exceeded the pool's five-minute limit; a later attempt
   succeeded after the cache warmed. Image size and distribution need attention.
 - The first benchmark attempt lacked `prlimit`; adding `util-linux` fixed it.
-  Heaptrack also emitted a nonfatal warning that `hostname` was missing.
+  Heaptrack also emitted a nonfatal warning that `hostname` was missing;
+  the rebuilt image includes it, pending a new profiler run.
 - These are focused probes, not validation that this image supports the full
   CI toolchain, nested Docker, or all repository tests. No production image
   pin or workflow has been changed by the experiment.
