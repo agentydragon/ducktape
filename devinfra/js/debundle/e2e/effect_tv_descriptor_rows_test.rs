@@ -91,7 +91,7 @@ fn freezing_an_earlier_statement_object_awaits_coverage() {
             source,
             vec![logical_module(
                 "records/frozen",
-                &[Member::new("shared"), Member::new("frozen")],
+                &binding_members(["shared", "frozen"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -113,11 +113,7 @@ fn accessor_descriptor_field_keeps_the_facade_conservative() {
         source,
         vec![logical_module_with_anon(
             "state/all",
-            &[
-                Member::new("facade"),
-                Member::new("startup"),
-                Member::new("later"),
-            ],
+            &binding_members(["facade", "startup", "later"]),
             &["later = 42;"],
         )],
     );

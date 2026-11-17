@@ -21,7 +21,7 @@ console.log(observed);
             source,
             vec![logical_module(
                 "instance",
-                &[Member::new("Registry"), Member::new("instance")],
+                &binding_members(["Registry", "instance"]),
             )],
         )
         .with_import_order(&["instance", "residual"]),
@@ -52,7 +52,7 @@ console.log(instance.value.marker);
             vec![
                 logical_module_with_anon(
                     "registry",
-                    &[Member::new("Registry"), Member::new("instance")],
+                    &binding_members(["Registry", "instance"]),
                     &["globalThis.saved = () => later;", replacement],
                 ),
                 logical_module("later", &[Member::new("later")]),
@@ -75,7 +75,7 @@ fn class_field_native_premises_include_other_analyzed_chunks() {
                 source,
                 vec![logical_module(
                     "registry",
-                    &[Member::new("Registry"), Member::new("b")],
+                    &binding_members(["Registry", "b"]),
                 )],
             )
             .with_extra_chunks(&[("static/replacement", replacement)])
@@ -97,7 +97,7 @@ fn global_slot_read_back_write_reaches_its_key_on_every_native() {
             source,
             vec![logical_module(
                 "registry",
-                &[Member::new("Registry"), Member::new("b")],
+                &binding_members(["Registry", "b"]),
             )],
         )
         .with_extra_chunks(holder)

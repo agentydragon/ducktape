@@ -189,7 +189,7 @@ fn source_match_and_resolved_member_keep_the_same_site_and_dependencies() {
         "var alias = Symbol('alias');\nconst value = alias;\nexport { alias, value };\n";
     let modules = vec![logical_module(
         "alias_module",
-        &[Member::new("alias"), Member::new("value")],
+        &binding_members(["alias", "value"]),
     )];
     let source_match = run_fixture_with_graphs(
         FixtureOpts::new(SOURCE, modules.clone()).with_native_operation_inputs(
@@ -289,10 +289,7 @@ fn native_own_data_read_composes_exact_root_effect_coverage() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         SOURCE,
         vec![
-            logical_module(
-                "alias_module",
-                &[Member::new("alias"), Member::new("after")],
-            ),
+            logical_module("alias_module", &binding_members(["alias", "after"])),
             logical_module_with_anon(
                 "observe",
                 &[Member::new("marker")],
@@ -373,7 +370,7 @@ fn resolved_member_rejects_stale_hash_and_wrong_reference_or_shape() {
     const SOURCE: &str = "var alias = Symbol(1);\nvar other = Math.random();\n";
     let modules = vec![logical_module(
         "alpha",
-        &[Member::new("alias"), Member::new("other")],
+        &binding_members(["alias", "other"]),
     )];
     let mut stale = resolved_member_input(SOURCE, "alpha", "alias");
     stale.audited_source_sha256 = "0".repeat(64);
@@ -454,8 +451,8 @@ fn intact_object_read_has_an_independent_source_certificate() {
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         SOURCE,
         vec![
-            logical_module("alias", &[Member::new("sentinel"), Member::new("alias")]),
-            logical_module("consumer", &[Member::new("before"), Member::new("after")]),
+            logical_module("alias", &binding_members(["sentinel", "alias"])),
+            logical_module("consumer", &binding_members(["before", "after"])),
         ],
     ));
     assert_preserved_entry_output(&fixture, "function\n");

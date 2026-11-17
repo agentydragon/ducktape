@@ -123,7 +123,7 @@ fn class_binding_writes_still_conflict_with_a_tdz_read_when_extraction_reorders_
         source,
         vec![logical_module(
             "all",
-            &[Member::new("earlier"), Member::new("WorkQueue")],
+            &binding_members(["earlier", "WorkQueue"]),
         )],
     ));
     assert_preserved_entry_error(&colocated, "ReferenceError");

@@ -21,7 +21,7 @@ fn passive_multideclaration_provider_preserves_the_local_split() {
         (
             "const field = callback => globalThis.get = callback;\nconst node = tag => tag;\n",
             &[][..],
-            &[Member::new("node"), Member::new("icon")][..],
+            &binding_members(["node", "icon"])[..],
         ),
     ] {
         let source = format!("{prefix}{ENTRY}");
@@ -57,8 +57,8 @@ fn passive_provider_cycles_and_saved_analysis_preserve_availability() {
     let provider_modules = [(
         "static/peer",
         vec![
-            logical_module("first", &[Member::new("first"), Member::new("node")]),
-            logical_module("second", &[Member::new("second"), Member::new("field")]),
+            logical_module("first", &binding_members(["first", "node"])),
+            logical_module("second", &binding_members(["second", "field"])),
         ],
     )];
     let (case, _fixture) = staged(

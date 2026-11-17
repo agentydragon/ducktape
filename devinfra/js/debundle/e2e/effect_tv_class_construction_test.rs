@@ -20,7 +20,7 @@ fn construction_fixture(source: &str) -> Fixture {
             source,
             vec![logical_module(
                 "registry",
-                &[Member::new("Registry"), Member::new("registry")],
+                &binding_members(["Registry", "registry"]),
             )],
         )
         .with_import_order(&["registry", "residual"]),
@@ -197,11 +197,7 @@ fn a_factory_construction_is_pending_callable_construct_admission() {
             source,
             vec![logical_module(
                 "registry",
-                &[
-                    Member::new("Registry"),
-                    Member::new("create"),
-                    Member::new("registry"),
-                ],
+                &binding_members(["Registry", "create", "registry"]),
             )],
         )
         .with_import_order(&["registry", "residual"]),

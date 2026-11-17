@@ -140,10 +140,7 @@ fn partial_claim_leaves_unclaimed_in_residual() {
 console.log(a, b, c);
 export { a, b, c };
 "#,
-            vec![logical_module(
-                "mod_x",
-                &[Member::new("a"), Member::new("c")],
-            )],
+            vec![logical_module("mod_x", &binding_members(["a", "c"]))],
         )
         .with_import_order(&["mod_x", "residual"]),
     );
@@ -286,8 +283,8 @@ console.log(a, b, c, d);
 export { a, b, c, d };
 "#,
         vec![
-            logical_module("mod_ad", &[Member::new("a"), Member::new("d")]),
-            logical_module("mod_bc", &[Member::new("b"), Member::new("c")]),
+            logical_module("mod_ad", &binding_members(["a", "d"])),
+            logical_module("mod_bc", &binding_members(["b", "c"])),
         ],
     ));
 

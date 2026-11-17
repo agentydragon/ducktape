@@ -68,7 +68,7 @@ console.log(typeof values, typeof frozen.callback);
         vec![
             logical_module_with_anon(
                 "native/value",
-                &[Member::new("values"), Member::new("frozen")],
+                &binding_members(["values", "frozen"]),
                 &["globalThis.saved = () => Later;"],
             ),
             logical_module("native/later", &[Member::new("Later")]),
@@ -206,11 +206,7 @@ console.log(text, later);
         );
         let fixture = run_fixture(split_opts(
             &source,
-            &[
-                Member::new("input"),
-                Member::new("normalized"),
-                Member::new("text"),
-            ],
+            &binding_members(["input", "normalized", "text"]),
             &["globalThis.saved = () => later;"],
         ));
         assert_preserved_entry_output(&fixture, &format!("{expected} 42\n"));
@@ -250,7 +246,7 @@ console.log(globalThis.observed, pattern.test("ok"));
     expect_atomic_conflict_rejection(
         split_opts(
             source,
-            &[Member::new("argument"), Member::new("pattern")],
+            &binding_members(["argument", "pattern"]),
             &["globalThis.saved = () => later;"],
         ),
         &["native/value", "native/later"],
@@ -276,11 +272,7 @@ console.log(globalThis.observed, pattern.test("ok"));
     expect_atomic_conflict_rejection(
         split_opts(
             source,
-            &[
-                Member::new("host"),
-                Member::new("Original"),
-                Member::new("pattern"),
-            ],
+            &binding_members(["host", "Original", "pattern"]),
             &[
                 "globalThis.saved = () => later;",
                 "host.RegExp = function() { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return new Original('ok'); };",
@@ -336,7 +328,7 @@ console.log(globalThis.observed, typeof marker);
     expect_atomic_conflict_rejection(
         split_opts(
             source,
-            &[Member::new("argument"), Member::new("marker")],
+            &binding_members(["argument", "marker"]),
             &["globalThis.saved = () => later;"],
         ),
         &["native/value", "native/later"],
@@ -362,11 +354,7 @@ console.log(globalThis.observed, typeof marker);
     expect_atomic_conflict_rejection(
         split_opts(
             source,
-            &[
-                Member::new("original"),
-                Member::new("symbols"),
-                Member::new("marker"),
-            ],
+            &binding_members(["original", "symbols", "marker"]),
             &[
                 "globalThis.saved = () => later;",
                 "symbols.for = () => { try { globalThis.saved(); } catch (error) { globalThis.observed = error.name; } return original('marker'); };",

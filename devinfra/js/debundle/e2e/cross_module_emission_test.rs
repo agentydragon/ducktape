@@ -134,10 +134,7 @@ b();
 console.log(a);
 export { a };
 "#,
-        vec![logical_module(
-            "state",
-            &[Member::new("a"), Member::new("b")],
-        )],
+        vec![logical_module("state", &binding_members(["a", "b"]))],
     );
     opts.unassigned_mode = unassigned_mode_inline();
     let fixture = run_fixture(opts);
@@ -911,11 +908,7 @@ export { destructure, alias, consumer };
 "#,
         vec![logical_module(
             "mod_x",
-            &[
-                Member::new("destructure"),
-                Member::new("alias"),
-                Member::new("consumer"),
-            ],
+            &binding_members(["destructure", "alias", "consumer"]),
         )],
     );
     assert_entry_output(&run_fixture(opts), "0 y vx\n");

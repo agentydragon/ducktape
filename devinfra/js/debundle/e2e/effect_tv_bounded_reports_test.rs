@@ -48,10 +48,7 @@ fn default_report_bounds_examples_without_losing_exact_counts() {
         "const tail = {};\nconsole.log(tail);\n",
         names.join(" + ")
     ));
-    let mut modules = vec![logical_module(
-        "outer",
-        &[Member::new("item0"), Member::new("tail")],
-    )];
+    let mut modules = vec![logical_module("outer", &binding_members(["item0", "tail"]))];
     modules.extend(
         names[1..]
             .iter()
@@ -115,11 +112,7 @@ fn bounded_examples_prefer_modeled_rows_after_early_havoc_only_rows() {
     ));
     let mut modules = vec![logical_module(
         "outer",
-        &[
-            Member::new("item0"),
-            Member::new("tail"),
-            Member::new("reader"),
-        ],
+        &binding_members(["item0", "tail", "reader"]),
     )];
     modules.extend(
         names[1..]
@@ -271,12 +264,7 @@ fn full_stream_retains_cells_beyond_examples_and_pair_dispositions() {
             vec![
                 logical_module(
                     "a_writer",
-                    &[
-                        Member::new("state0"),
-                        Member::new("peek"),
-                        Member::new("first"),
-                        Member::new("tail"),
-                    ],
+                    &binding_members(["state0", "peek", "first", "tail"]),
                 ),
                 logical_module("b_reader", &[Member::new("second")]),
                 logical_module("c_reader", &[Member::new("third")]),

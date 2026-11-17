@@ -30,12 +30,7 @@ fn fixture(annotated: bool) -> FixtureOpts<'static> {
         vec![
             logical_module_with_anon(
                 "probes/outer",
-                &[
-                    Member::new("trace"),
-                    Member::new("alpha"),
-                    Member::new("beta"),
-                    Member::new("gamma"),
-                ],
+                &binding_members(["trace", "alpha", "beta", "gamma"]),
                 &[RECORD_INSTALL],
             ),
             logical_module("helpers/math", &[seven]),
@@ -211,11 +206,7 @@ fn lint_reports_nothing_for_consumed_annotations() {
         vec![
             logical_module_with_anon(
                 "probes/outer",
-                &[
-                    Member::new("trace"),
-                    Member::new("alpha"),
-                    Member::new("gamma"),
-                ],
+                &binding_members(["trace", "alpha", "gamma"]),
                 &[RECORD_INSTALL],
             ),
             logical_module("probes/inner", &[Member::new("beta")]),
@@ -243,11 +234,7 @@ fn lint_reports_the_pass_failure_beside_its_findings() {
             vec![
                 logical_module_with_anon(
                     "probes/outer",
-                    &[
-                        Member::new("trace"),
-                        Member::new("alpha"),
-                        Member::new("gamma"),
-                    ],
+                    &binding_members(["trace", "alpha", "gamma"]),
                     &[RECORD_INSTALL],
                 ),
                 logical_module("probes/inner", &[Member::new("beta")]),

@@ -143,7 +143,7 @@ fn subset_priority_spec(priority: &[&str]) -> FixtureOpts<'static> {
         vec![
             logical_module(
                 "features/dependency",
-                &[Member::new("dependency"), Member::new("lazy_reader")],
+                &binding_members(["dependency", "lazy_reader"]),
             ),
             logical_module("features/consumer", &[Member::new("consumer")]),
             logical_module("features/bridge", &[Member::new("bridge")]),

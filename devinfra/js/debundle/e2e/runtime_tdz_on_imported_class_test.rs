@@ -75,7 +75,7 @@ fn opts_for_fixture() -> FixtureOpts<'static> {
         FIXTURE_SOURCE,
         vec![logical_module_with_anon(
             "mod_logger",
-            &[Member::new("currentLogger"), Member::new("setLogger")],
+            &binding_members(["currentLogger", "setLogger"]),
             &["setLogger(new Backend());"],
         )],
     );

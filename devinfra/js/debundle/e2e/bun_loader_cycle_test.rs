@@ -46,12 +46,7 @@ fn colocated_late_binding_preserves_called_cycle_observation_under_pinned_bun() 
             APP,
             vec![logical_module(
                 "core",
-                &[
-                    Member::new("readLater"),
-                    Member::new("loadPeer"),
-                    Member::new("observed"),
-                    Member::new("later"),
-                ],
+                &binding_members(["readLater", "loadPeer", "observed", "later"]),
             )],
         )
         .with_admission_overrides(&["a5_import_meta"])
@@ -82,11 +77,7 @@ fn splitting_the_late_binding_from_the_cycle_is_rejected() {
             vec![
                 logical_module(
                     "cycle_path",
-                    &[
-                        Member::new("readLater"),
-                        Member::new("loadPeer"),
-                        Member::new("observed"),
-                    ],
+                    &binding_members(["readLater", "loadPeer", "observed"]),
                 ),
                 logical_module("late_state", &[Member::new("later")]),
             ],

@@ -83,7 +83,7 @@ fn assign_opts(source: &str) -> FixtureOpts<'_> {
         vec![
             logical_module_with_anon(
                 "values/failure",
-                &[Member::new("restore"), Member::new("failure")],
+                &binding_members(["restore", "failure"]),
                 &["globalThis.saved = () => later;"],
             ),
             logical_module("values/later", &[Member::new("later")]),

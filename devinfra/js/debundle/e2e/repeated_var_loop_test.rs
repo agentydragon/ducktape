@@ -334,7 +334,7 @@ export { read, late, answer };
             source,
             vec![logical_module(
                 "reader",
-                &[Member::new("read"), Member::new("answer")],
+                &binding_members(["read", "answer"]),
             )],
         )
         .with_import_order(&["reader", "residual"]),
@@ -349,7 +349,7 @@ export { read, late, answer };
             source,
             vec![logical_module(
                 "reader",
-                &[Member::new("read"), Member::new("answer")],
+                &binding_members(["read", "answer"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),

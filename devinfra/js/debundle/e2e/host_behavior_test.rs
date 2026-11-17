@@ -16,7 +16,7 @@ fn split_provider() -> FixtureOpts<'static> {
         PROVIDER,
         vec![
             logical_module("startup", &[Member::new("prefix")]),
-            logical_module("values", &[Member::new("value"), Member::new("read")]),
+            logical_module("values", &binding_members(["value", "read"])),
         ],
     )
     .with_extra_chunks(COMMONJS_SIBLING)

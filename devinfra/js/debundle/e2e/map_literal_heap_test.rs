@@ -14,8 +14,8 @@ fn split() -> FixtureOpts<'static> {
     FixtureOpts::new(
         SOURCE,
         vec![
-            logical_module("odd", &[Member::new("a"), Member::new("c")]),
-            logical_module("even", &[Member::new("b"), Member::new("d")]),
+            logical_module("odd", &binding_members(["a", "c"])),
+            logical_module("even", &binding_members(["b", "d"])),
         ],
     )
 }
@@ -66,8 +66,8 @@ export { a, b, c, d };
     let fixture = run_fixture_with_graphs(FixtureOpts::new(
         source,
         vec![
-            logical_module("odd", &[Member::new("a"), Member::new("c")]),
-            logical_module("even", &[Member::new("b"), Member::new("d")]),
+            logical_module("odd", &binding_members(["a", "c"])),
+            logical_module("even", &binding_members(["b", "d"])),
         ],
     ));
     assert_preserved_entry_output(&fixture, "1 2 3 4\n");
@@ -95,8 +95,8 @@ fn poisoned_map_adder_rejects_the_interleaved_split() {
         FixtureOpts::new(
             &source,
             vec![
-                logical_module("odd", &[Member::new("a"), Member::new("c")]),
-                logical_module("even", &[Member::new("b"), Member::new("d")]),
+                logical_module("odd", &binding_members(["a", "c"])),
+                logical_module("even", &binding_members(["b", "d"])),
             ],
         ),
         &["odd", "even"],

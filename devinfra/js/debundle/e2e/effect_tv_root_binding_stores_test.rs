@@ -58,7 +58,7 @@ fn a_hoisted_var_initialized_by_a_later_statement_commutes_with_an_independent_d
                 &source,
                 vec![logical_module_with_anon(
                     "state",
-                    &[Member::new("independentLabel"), Member::new("current")],
+                    &binding_members(["independentLabel", "current"]),
                     &[store.as_str()],
                 )],
             )
@@ -339,7 +339,7 @@ fn a_binding_read_after_an_await_in_a_closure_is_captured() {
             source,
             vec![logical_module_with_anon(
                 "state",
-                &[Member::new("current"), Member::new("read")],
+                &binding_members(["current", "read"]),
                 &["current = 1;"],
             )],
         )

@@ -9,8 +9,8 @@
 //! `realizability_test.rs::top_level_await_is_rejected`.
 
 use debundle_e2e_support::{
-    FixtureOpts, Member, assert_entry_output, chunk_rename, expect_rejection_containing_all,
-    logical_module, run_fixture,
+    FixtureOpts, Member, assert_entry_output, binding_members, chunk_rename,
+    expect_rejection_containing_all, logical_module, run_fixture,
 };
 
 // --- A1: no direct `eval`, and no `eval` at module top level ---------------
@@ -82,10 +82,7 @@ export { A, reader };
     for (modules, import_order) in [
         (vec![], &["residual"][..]),
         (
-            vec![logical_module(
-                "mod_x",
-                &[Member::new("reader"), Member::new("A")],
-            )],
+            vec![logical_module("mod_x", &binding_members(["reader", "A"]))],
             &["mod_x"][..],
         ),
     ] {

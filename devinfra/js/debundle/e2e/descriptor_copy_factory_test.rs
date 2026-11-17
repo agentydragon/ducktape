@@ -65,10 +65,7 @@ fn copied_getter_read_before_later_initialization_is_eager() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module(
-                    "wrapped",
-                    &[Member::new("wrapped"), Member::new("observed")],
-                ),
+                logical_module("wrapped", &binding_members(["wrapped", "observed"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )
@@ -146,7 +143,7 @@ fn argument_effects_run_before_registration_and_getter_runs_at_read() {
             vec![
                 logical_module_with_anon(
                     "wrapped",
-                    &[Member::new("events"), Member::new("wrapped")],
+                    &binding_members(["events", "wrapped"]),
                     &["events.push('registered');"],
                 ),
                 logical_module("later", &[Member::new("later")]),
@@ -194,7 +191,7 @@ fn unlisted_result_property_remains_conservative() {
         FixtureOpts::new(
             source,
             vec![
-                logical_module("wrapped", &[Member::new("wrapped"), Member::new("unknown")]),
+                logical_module("wrapped", &binding_members(["wrapped", "unknown"])),
                 logical_module("later", &[Member::new("later")]),
             ],
         )

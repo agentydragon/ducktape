@@ -314,7 +314,7 @@ console.log(late);
             source,
             vec![logical_module(
                 "features/__auto/residual_groups/endpoints",
-                &[Member::new("early"), Member::new("late")],
+                &binding_members(["early", "late"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_coarse_atomic_groups())

@@ -412,11 +412,7 @@ fn record_array_field_and_identity_consumers_keep_their_split() {
                 vec![
                     logical_module(
                         "registry",
-                        &[
-                            Member::new("tools"),
-                            Member::new("registry"),
-                            Member::new("result"),
-                        ],
+                        &binding_members(["tools", "registry", "result"]),
                     ),
                     logical_module_with_anon(
                         "values/later",
@@ -464,7 +460,7 @@ fn a_real_host_mutator_through_the_same_statement_alias_keeps_ordering() {
             vec![
                 logical_module_with_anon(
                     "registry",
-                    &[Member::new("tools"), Member::new("first"), Member::new("registry")],
+                    &binding_members(["tools", "first", "registry"]),
                     &["(globalThis.consume?.(first), tools.forEach(n => { registry[n.name] = n; }));"],
                 ),
                 logical_module_with_anon("values/later", &[Member::new("later")], &["later = 42;"]),

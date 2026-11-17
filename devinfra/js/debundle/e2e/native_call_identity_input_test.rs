@@ -25,11 +25,7 @@ fn modules(with_write: bool) -> Vec<LogicalModuleEntry> {
     vec![
         logical_module_with_anon(
             "records/early",
-            &[
-                Member::new("startupTarget"),
-                Member::new("peek"),
-                Member::new("early"),
-            ],
+            &binding_members(["startupTarget", "peek", "early"]),
             &anonymous,
         ),
         logical_module("values/later", &[Member::new("later")]),
@@ -140,7 +136,7 @@ fn certified_fresh_record_freeze_does_not_observe_an_unrelated_live_array() {
         FixtureOpts::new(
             &source,
             vec![
-                logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                logical_module("heap/a", &binding_members(["values", "later"])),
                 logical_module("records/b", &[Member::new("frozen")]),
             ],
         )
@@ -188,7 +184,7 @@ fn freeze_heap_proof_requires_a_fresh_plain_data_record() {
             FixtureOpts::new(
                 &source,
                 vec![
-                    logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                    logical_module("heap/a", &binding_members(["values", "later"])),
                     logical_module("records/b", &[Member::new("frozen")]),
                 ],
             )
@@ -297,14 +293,10 @@ fn returned_record_with_live_array_descendant_stays_ordered_conservatively() {
         FixtureOpts::new(
             &source,
             vec![
-                logical_module("heap/a", &[Member::new("values"), Member::new("later")]),
+                logical_module("heap/a", &binding_members(["values", "later"])),
                 logical_module(
                     "records/b",
-                    &[
-                        Member::new("frozen"),
-                        Member::new("exposed"),
-                        Member::new("pushed"),
-                    ],
+                    &binding_members(["frozen", "exposed", "pushed"]),
                 ),
             ],
         )
@@ -362,11 +354,7 @@ fn known_sibling_object_write_does_not_contradict_exact_freeze_slot() {
     let modules = vec![
         logical_module_with_anon(
             "records/early",
-            &[
-                Member::new("startupTarget"),
-                Member::new("peek"),
-                Member::new("early"),
-            ],
+            &binding_members(["startupTarget", "peek", "early"]),
             &[
                 "Object.unrelated = 1;",
                 "startupTarget.freeze = 1;",

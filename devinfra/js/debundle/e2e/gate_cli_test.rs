@@ -42,15 +42,9 @@ export { A, B, C, D };
         vec![
             logical_module(
                 "mod_x",
-                &[
-                    Member::new("A"),
-                    Member::new("D"),
-                    Member::new("local"),
-                    Member::new("lazy"),
-                    Member::new("extra"),
-                ],
+                &binding_members(["A", "D", "local", "lazy", "extra"]),
             ),
-            logical_module("mod_y", &[Member::new("B"), Member::new("C")]),
+            logical_module("mod_y", &binding_members(["B", "C"])),
             logical_module("mod_outside", &[Member::new("outside")]),
         ],
     )

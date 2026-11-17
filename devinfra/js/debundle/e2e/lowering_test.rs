@@ -43,7 +43,7 @@ console.log(c);
 export { c };
 "#,
         vec![
-            logical_module("helper", &[Member::new("a"), Member::new("b")]),
+            logical_module("helper", &binding_members(["a", "b"])),
             logical_module("consumer", &[Member::new("c")]),
         ],
     ));
@@ -92,7 +92,7 @@ function b() { return A.X; }
 console.log(b());
 export { b };
 "#,
-        vec![logical_module("x", &[Member::new("A"), Member::new("b")])],
+        vec![logical_module("x", &binding_members(["A", "b"]))],
     ));
     assert_module_source(
         &fixture.out_root,

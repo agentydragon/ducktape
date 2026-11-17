@@ -872,11 +872,7 @@ console.log(wrapped.value);
             vec![
                 logical_module(
                     "callbacks/wrapped",
-                    &[
-                        Member::new("input"),
-                        Member::new("intermediate"),
-                        Member::new("wrapped"),
-                    ],
+                    &binding_members(["input", "intermediate", "wrapped"]),
                 ),
                 logical_module("values/later", &[Member::new("later")]),
             ],

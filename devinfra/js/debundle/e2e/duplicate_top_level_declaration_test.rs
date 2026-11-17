@@ -44,10 +44,7 @@ function shadow() { var dup = "inner"; return dup; }
 console.log(dup, shadow());
 export { dup, shadow };
 "#,
-        vec![logical_module(
-            "mod_a",
-            &[Member::new("dup"), Member::new("shadow")],
-        )],
+        vec![logical_module("mod_a", &binding_members(["dup", "shadow"]))],
     ));
     assert_entry_output(&fixture, "outer inner\n");
 }

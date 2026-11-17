@@ -542,7 +542,7 @@ export { A, B, Existing };
 "#,
             vec![logical_module_with_anon(
                 "ab_module",
-                &[Member::new("A"), Member::new("B")],
+                &binding_members(["A", "B"]),
                 &[
                     r#"console.log("before");"#,
                     r#"console.log("between");"#,
@@ -780,11 +780,7 @@ export { RuntimeSubject, Existing };
 "#,
             vec![logical_module_with_anon_alpha(
                 "decorated_runtime",
-                &[
-                    Member::new("applyMetadata"),
-                    Member::new("RuntimeToken"),
-                    Member::new("RuntimeSubject"),
-                ],
+                &binding_members(["applyMetadata", "RuntimeToken", "RuntimeSubject"]),
                 &[r#"decorate([token], Subject.prototype, "statusFlag");"#],
             )],
         )
@@ -1381,11 +1377,7 @@ export { FirstSubject, SecondSubject };
 "#,
         vec![logical_module_with_anon_alpha(
             "first_subject",
-            &[
-                Member::new("decorate"),
-                Member::new("FirstToken"),
-                Member::new("FirstSubject"),
-            ],
+            &binding_members(["decorate", "FirstToken", "FirstSubject"]),
             &[r#"applyMetadata([token], Subject.prototype, "statusFlag");"#],
         )],
     );

@@ -101,11 +101,7 @@ fn oversized_spread_fallback_retains_callback_tdz_capability() {
         &source,
         vec![logical_module_with_anon(
             "app/arrays",
-            &[
-                Member::new("seed"),
-                Member::new("expanded"),
-                Member::new("later"),
-            ],
+            &binding_members(["seed", "expanded", "later"]),
             &[&branch, CALLBACK_INVOKE],
         )],
     ));
@@ -119,7 +115,7 @@ fn oversized_spread_fallback_retains_callback_tdz_capability() {
             vec![
                 logical_module_with_anon(
                     "app/arrays",
-                    &[Member::new("seed"), Member::new("expanded")],
+                    &binding_members(["seed", "expanded"]),
                     &[&branch, CALLBACK_INVOKE],
                 ),
                 logical_module("values/later", &[Member::new("later")]),

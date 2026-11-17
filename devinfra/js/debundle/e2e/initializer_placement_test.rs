@@ -37,7 +37,7 @@ fn eager_initializer_stays_with_its_value_or_split_is_rejected() {
     // `a`, so this eager read cannot be emitted as a valid split.
     let unsafe_split = opts(vec![logical_module(
         "mod_y",
-        &[Member::new("b"), Member::new("readable")],
+        &binding_members(["b", "readable"]),
     )])
     .with_unassigned_mode(unassigned_mode_inline());
     run_rejection_fixture(unsafe_split);
@@ -45,7 +45,7 @@ fn eager_initializer_stays_with_its_value_or_split_is_rejected() {
     // Co-locating the eager initializer with the value it reads gives ESM a
     // valid evaluation order and preserves the entry's result.
     let safe_split = opts(vec![
-        logical_module("mod_x_data", &[Member::new("a"), Member::new("b")]),
+        logical_module("mod_x_data", &binding_members(["a", "b"])),
         logical_module("mod_y", &[Member::new("readable")]),
     ])
     .with_unassigned_mode(unassigned_mode_inline());

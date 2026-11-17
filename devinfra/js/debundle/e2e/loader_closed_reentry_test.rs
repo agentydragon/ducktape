@@ -34,18 +34,10 @@ fn audited_host() -> HostBehavior {
 
 fn provider_modules() -> Vec<LogicalModuleEntry> {
     vec![
-        logical_module(
-            "values/dynamic",
-            &[Member::new("prefix"), Member::new("dynamic")],
-        ),
+        logical_module("values/dynamic", &binding_members(["prefix", "dynamic"])),
         logical_module(
             "values/later",
-            &[
-                Member::new("later"),
-                Member::new("Registry"),
-                Member::new("readLater"),
-                Member::new("loadHelper"),
-            ],
+            &binding_members(["later", "Registry", "readLater", "loadHelper"]),
         ),
     ]
 }
@@ -365,19 +357,11 @@ fn dynamic_provider_modules() -> Vec<LogicalModuleEntry> {
     vec![
         logical_module(
             "values/dynamic",
-            &[
-                Member::new("pending"),
-                Member::new("prefix"),
-                Member::new("dynamic"),
-            ],
+            &binding_members(["pending", "prefix", "dynamic"]),
         ),
         logical_module(
             "values/later",
-            &[
-                Member::new("later"),
-                Member::new("Registry"),
-                Member::new("readLater"),
-            ],
+            &binding_members(["later", "Registry", "readLater"]),
         ),
     ]
 }

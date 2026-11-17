@@ -43,12 +43,7 @@ fn accepted_split() -> FixtureOpts<'static> {
         AGGREGATOR_SOURCE,
         vec![logical_module(
             "ids/index",
-            &[
-                Member::new("ids"),
-                Member::new("sub_a"),
-                Member::new("sub_b"),
-                Member::new("helper"),
-            ],
+            &binding_members(["ids", "sub_a", "sub_b", "helper"]),
         )],
     )
     .with_unassigned_mode(unassigned_mode_inline())
@@ -109,7 +104,7 @@ fn rejection_with_unresolved_claim_writes_no_tree() {
             logical_module("ids/index", &[Member::new("ids")]),
             logical_module(
                 "ids/sub_a",
-                &[Member::new("sub_a"), Member::new("undeclared_binding")],
+                &binding_members(["sub_a", "undeclared_binding"]),
             ),
             logical_module("ids/sub_b", &[Member::new("sub_b")]),
         ],

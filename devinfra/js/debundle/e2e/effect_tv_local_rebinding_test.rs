@@ -20,7 +20,7 @@ fn local_assignment_receipts_allow_an_independent_statement_inversion() {
                 &source,
                 vec![logical_module(
                     "compute",
-                    &[Member::new("compute"), Member::new("result")],
+                    &binding_members(["compute", "result"]),
                 )],
             )
             .with_import_order(&["compute", "residual"]),
@@ -42,7 +42,7 @@ fn initialized_parameter_assignments_compose_the_same_checked_store_receipt() {
                 &source,
                 vec![logical_module(
                     "compute",
-                    &[Member::new("compute"), Member::new("result")],
+                    &binding_members(["compute", "result"]),
                 )],
             )
             .with_import_order(&["compute", "residual"]),
@@ -67,13 +67,7 @@ fn assignments_transport_actual_callable_selection_without_manufacturing_it() {
                 &source,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("seed"),
-                        Member::new("readSeed"),
-                        Member::new("alias"),
-                        Member::new("invoke"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["seed", "readSeed", "alias", "invoke", "result"]),
                 )],
             )
             .with_import_order(&["all"]),
@@ -106,11 +100,7 @@ fn assignment_receipts_preserve_abrupt_stores_and_right_hand_sides() {
                 &source,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("fail"),
-                        Member::new("compute"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["fail", "compute", "result"]),
                 )],
             )
             .with_import_order(&["all"]),
@@ -131,7 +121,7 @@ fn assignment_to_a_later_parameter_in_its_tdz_cannot_seal_normal_coverage() {
         "function compute(value = (later = 1), later = 2) { return value; }\nvar result = compute();\nconsole.log(result);\n",
         vec![logical_module(
             "all",
-            &[Member::new("compute"), Member::new("result")],
+            &binding_members(["compute", "result"]),
         )],
     ).with_import_order(&["all"]));
     assert_preserved_entry_error(&fixture, "ReferenceError");
@@ -159,12 +149,7 @@ fn assignments_do_not_cover_captured_cells_or_effectful_operands() {
                 &source,
                 vec![logical_module(
                     "all",
-                    &[
-                        Member::new("calls"),
-                        Member::new("observe"),
-                        Member::new("compute"),
-                        Member::new("result"),
-                    ],
+                    &binding_members(["calls", "observe", "compute", "result"]),
                 )],
             )
             .with_import_order(&["all"]),

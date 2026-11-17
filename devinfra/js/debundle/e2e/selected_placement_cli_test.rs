@@ -200,7 +200,7 @@ console.log(first, middle, last);
                     "omitted",
                     &[Member::renamed("Wrapper", "wrapper").with_purity(purity)],
                 ),
-                logical_module("kept", &[Member::new("first"), Member::new("last")]),
+                logical_module("kept", &binding_members(["first", "last"])),
             ],
         )
         .with_extra_files(&[

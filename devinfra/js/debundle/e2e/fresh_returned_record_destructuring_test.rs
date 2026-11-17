@@ -22,7 +22,7 @@ fn split(source: &str) -> FixtureOpts<'_> {
     FixtureOpts::new(
         source,
         vec![
-            logical_module("outer", &[Member::new("first"), Member::new("last")]),
+            logical_module("outer", &binding_members(["first", "last"])),
             logical_module("inner", &[Member::new("middle")]),
         ],
     )
@@ -63,8 +63,8 @@ export { first, middle, last };
         FixtureOpts::new(
             source,
             vec![
-                logical_module("outer", &[Member::new("first"), Member::new("last")]),
-                logical_module("inner", &[Member::new("seed"), Member::new("middle")]),
+                logical_module("outer", &binding_members(["first", "last"])),
+                logical_module("inner", &binding_members(["seed", "middle"])),
             ],
         )
         .with_import_order(&["outer", "inner", "residual"]),
@@ -94,7 +94,7 @@ console.log(first(), middle(), last());
 export { first, middle, last };
 "#,
         vec![
-            logical_module("outer", &[Member::new("first"), Member::new("last")]),
+            logical_module("outer", &binding_members(["first", "last"])),
             logical_module("inner", &[Member::new("middle")]),
         ],
     ));

@@ -13,14 +13,7 @@ use spec::{
 };
 
 fn annotated_encoder_split(source: &'static str) -> FixtureOpts<'static> {
-    let mut codec = logical_module(
-        "codec",
-        &[
-            Member::new("encoder"),
-            Member::new("left"),
-            Member::new("right"),
-        ],
-    );
+    let mut codec = logical_module("codec", &binding_members(["encoder", "left", "right"]));
     for binding in ["left", "right"] {
         codec.1.annotations.insert(
             binding.to_owned(),
@@ -653,7 +646,7 @@ fn metadata_boundary_fixture<'a>(
     source: &'a str,
     chunks: &'a [(&'a str, &'a str)],
 ) -> FixtureOpts<'a> {
-    let mut schemas = logical_module("schemas", &[Member::new("first"), Member::new("second")]);
+    let mut schemas = logical_module("schemas", &binding_members(["first", "second"]));
     for binding in ["first", "second"] {
         schemas.1.annotations.insert(
             binding.to_owned(),
@@ -673,7 +666,7 @@ fn private_metadata_split<'a>(
     source: &'a str,
     chunks: &'a [(&'a str, &'a str)],
 ) -> FixtureOpts<'a> {
-    let mut module = logical_module("a", &[Member::new("first"), Member::new("second")]);
+    let mut module = logical_module("a", &binding_members(["first", "second"]));
     for binding in ["first", "second"] {
         module.1.annotations.insert(
             binding.to_owned(),
@@ -908,7 +901,7 @@ fn private_metadata_does_not_erase_source_known_shared_cell_ordering() {
         const second = (state[0] = 2, makeSchema('b'));\n\
         console.log(observed, description(first), description(second));\n\
         export { first, second };\n";
-    let mut schemas = logical_module("schemas", &[Member::new("first"), Member::new("second")]);
+    let mut schemas = logical_module("schemas", &binding_members(["first", "second"]));
     for binding in ["first", "second"] {
         schemas.1.annotations.insert(
             binding.to_owned(),

@@ -38,7 +38,7 @@ fn one_module(operations: &[ReentryFreeOperation]) -> FixtureOpts<'static> {
         SOURCE,
         vec![logical_module_with_anon(
             "host/value",
-            &[Member::new("gate"), Member::new("later")],
+            &binding_members(["gate", "later"]),
             &[SAVED],
         )],
     )

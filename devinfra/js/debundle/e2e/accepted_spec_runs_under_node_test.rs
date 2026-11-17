@@ -72,10 +72,7 @@ console.log(list[0]);
 export { factory, command, list, readList };
 "#,
             vec![
-                logical_module(
-                    "factory",
-                    &[Member::new("factory"), Member::new("readList")],
-                ),
+                logical_module("factory", &binding_members(["factory", "readList"])),
                 logical_module("command", &[Member::new("command")]),
                 logical_module("list", &[Member::new("list")]),
             ],
@@ -227,10 +224,7 @@ console.log(list[0]);
 export { factory, command, list, readList };
 "#,
             vec![
-                logical_module(
-                    "factory",
-                    &[Member::new("factory"), Member::new("readList")],
-                ),
+                logical_module("factory", &binding_members(["factory", "readList"])),
                 logical_module("command", &[Member::new("command")]),
                 logical_module("list", &[Member::new("list")]),
             ],
@@ -256,7 +250,7 @@ export { T, readT, init };
 "#,
         vec![
             logical_module("mod_logger", &[Member::new("T")]),
-            logical_module("mod_init", &[Member::new("readT"), Member::new("init")]),
+            logical_module("mod_init", &binding_members(["readT", "init"])),
         ],
     ));
     assert_entry_output(&fixture, "ready\n");
@@ -273,7 +267,7 @@ console.log(init);
 export { T, readT, init };
 "#,
             vec![
-                logical_module("mod_init", &[Member::new("readT"), Member::new("init")]),
+                logical_module("mod_init", &binding_members(["readT", "init"])),
                 logical_module("mod_logger", &[Member::new("T")]),
             ],
         ),
@@ -347,10 +341,7 @@ export { T, readT, init, disableDevMode, middleHelper, loggerReader };
             // mod_early imports `T` (drags mod_logger into DFS first).
             logical_module("mod_early", &[Member::new("disableDevMode")]),
             // mod_logger declares T. References middleHelper (lazy).
-            logical_module(
-                "mod_logger",
-                &[Member::new("T"), Member::new("loggerReader")],
-            ),
+            logical_module("mod_logger", &binding_members(["T", "loggerReader"])),
             // mod_middle owns middleHelper. References init (lazy).
             logical_module("mod_middle", &[Member::new("middleHelper")]),
             // mod_init owns init. At-init reads T via residual readT.
@@ -383,7 +374,7 @@ export { counter, Counter, c };
             source,
             vec![logical_module(
                 "mod_counter_class",
-                &[Member::new("Counter"), Member::new("c")],
+                &binding_members(["Counter", "c"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
@@ -405,11 +396,7 @@ export { counter, Counter, c };
             source,
             vec![logical_module(
                 "mod_counter_class",
-                &[
-                    Member::new("counter"),
-                    Member::new("Counter"),
-                    Member::new("c"),
-                ],
+                &binding_members(["counter", "Counter", "c"]),
             )],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
