@@ -8,6 +8,7 @@
 //! callables it invokes (`SynchronousCalls::heap_contents`), and an execution
 //! it cannot complete is a heap-frontier barrier in the graph emitter.
 
+use super::value_flow::Values;
 use super::*;
 use crate::facts::abstract_domain::value::{Kind, Value};
 
@@ -320,8 +321,7 @@ impl ArrayContentCollector<'_> {
         self.bodies.pop();
     }
 
-    fn array_ids(&self, expr: &Expr) -> (BTreeSet<u32>, bool) {
-        let values = self.value_flow.values_of_expr(expr);
+    fn array_ids(&self, values: &Values) -> (BTreeSet<u32>, bool) {
         let mut arrays = BTreeSet::new();
         let mut unknown = false;
         let mut possible = 0usize;
@@ -339,8 +339,7 @@ impl ArrayContentCollector<'_> {
         (arrays, ambiguous)
     }
 
-    fn record_set_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
-        let values = self.value_flow.values_of_expr(expr);
+    fn record_set_values(&mut self, values: &Values, read: bool, write: bool, opaque: bool) {
         let mut sets = BTreeSet::new();
         let mut unknown = false;
         let mut count = 0;
@@ -376,7 +375,12 @@ impl ArrayContentCollector<'_> {
     }
 
     fn record_array_expr(&mut self, expr: &Expr, read: bool, write: bool, opaque: bool) {
-        let (arrays, ambiguous) = self.array_ids(expr);
+        let values = self.value_flow.values_of_expr(expr);
+        self.record_array_values(&values, read, write, opaque);
+    }
+
+    fn record_array_values(&mut self, values: &Values, read: bool, write: bool, opaque: bool) {
+        let (arrays, ambiguous) = self.array_ids(values);
         if arrays.is_empty() {
             if ambiguous {
                 self.record_opaque();
@@ -388,9 +392,13 @@ impl ArrayContentCollector<'_> {
 
     fn record_escaped_expr(&mut self, expr: &Expr) {
         let values = self.value_flow.values_of_expr(expr);
+        self.record_escaped_values(&values);
+    }
+
+    fn record_escaped_values(&mut self, values: &Values) {
         let mut arrays = BTreeSet::new();
         self.array_reachability
-            .for_values(&values, |origin| match origin {
+            .for_values(values, |origin| match origin {
                 Value::Alloc(Kind::Object, object) if self.array_origins.contains(&object) => {
                     arrays.insert(EffectCell::ArrayContents(object));
                 }
@@ -470,15 +478,17 @@ impl ArrayContentCollector<'_> {
             return;
         }
         let receiver = binding_targets::transparent_target_expr(&member.obj);
-        self.record_set_expr(receiver, true, false, true);
+        let values = self.value_flow.values_of_expr(receiver);
+        self.record_set_values(&values, true, false, true);
         if let Some(opaque) = self.member_content_kind(member) {
-            self.record_array_expr(receiver, true, false, opaque);
+            self.record_array_values(&values, true, false, opaque);
         }
     }
 
     fn record_member_write(&mut self, member: &MemberExpr, read: bool) {
         let receiver = binding_targets::transparent_target_expr(&member.obj);
-        self.record_set_expr(receiver, read, true, true);
+        let values = self.value_flow.values_of_expr(receiver);
+        self.record_set_values(&values, read, true, true);
         if self.member_content_kind(member).is_some() {
             // A static key identifies which array's contents are involved,
             // but it does not prove an own writable data property. The write
@@ -486,7 +496,7 @@ impl ArrayContentCollector<'_> {
             // array escaped. Keep the exact cell plus the opaque barrier;
             // trusted binding/global summaries do not assert descriptor
             // integrity.
-            self.record_array_expr(receiver, read, true, true);
+            self.record_array_values(&values, read, true, true);
         }
     }
 }
@@ -596,8 +606,11 @@ impl Visit for ArrayContentCollector<'_> {
         }
         match &node.callee {
             Callee::Expr(callee) if let Expr::Member(member) = callee.unwrap_parens() => {
-                self.record_set_expr(&member.obj, true, true, true);
-                self.record_array_expr(&member.obj, true, true, true);
+                {
+                    let values = self.value_flow.values_of_expr(&member.obj);
+                    self.record_set_values(&values, true, true, true);
+                    self.record_array_values(&values, true, true, true);
+                }
                 self.visit_member_children(member);
                 self.record_opaque();
             }
@@ -618,8 +631,11 @@ impl Visit for ArrayContentCollector<'_> {
             Callee::Import(_) | Callee::Super(_) => self.record_opaque(),
         }
         for arg in &node.args {
-            self.record_escaped_expr(&arg.expr);
-            self.record_array_expr(&arg.expr, true, true, true);
+            {
+                let values = self.value_flow.values_of_expr(&arg.expr);
+                self.record_escaped_values(&values);
+                self.record_array_values(&values, true, true, true);
+            }
             arg.visit_with(self);
         }
     }
@@ -750,8 +766,9 @@ impl Visit for ArrayContentCollector<'_> {
                 // heap state. Visit children below to retain spread-source
                 // reads and every nested allocation/effect.
                 if !certified_set {
-                    self.record_escaped_expr(&arg.expr);
-                    self.record_array_expr(&arg.expr, true, true, true);
+                    let values = self.value_flow.values_of_expr(&arg.expr);
+                    self.record_escaped_values(&values);
+                    self.record_array_values(&values, true, true, true);
                 }
                 arg.visit_with(self);
             }
@@ -759,8 +776,11 @@ impl Visit for ArrayContentCollector<'_> {
     }
 
     fn visit_for_of_stmt(&mut self, node: &ForOfStmt) {
-        self.record_set_expr(&node.right, true, false, true);
-        self.record_array_expr(&node.right, true, false, true);
+        {
+            let values = self.value_flow.values_of_expr(&node.right);
+            self.record_set_values(&values, true, false, true);
+            self.record_array_values(&values, true, false, true);
+        }
         node.visit_children_with(self);
     }
 
@@ -777,8 +797,11 @@ impl Visit for ArrayContentCollector<'_> {
             .set_iterable_proof
             .stable_spread_dependencies(node.expr.span())
             .is_some();
-        self.record_set_expr(&node.expr, true, false, !certified);
-        self.record_array_expr(&node.expr, true, false, !certified);
+        {
+            let values = self.value_flow.values_of_expr(&node.expr);
+            self.record_set_values(&values, true, false, !certified);
+            self.record_array_values(&values, true, false, !certified);
+        }
         node.expr.visit_with(self);
     }
 
@@ -791,14 +814,15 @@ impl Visit for ArrayContentCollector<'_> {
                 .set_iterable_proof
                 .stable_spread_dependencies(token)
                 .is_some();
-            self.record_set_expr(&node.expr, true, false, !certified_set);
+            let values = self.value_flow.values_of_expr(&node.expr);
+            self.record_set_values(&values, true, false, !certified_set);
             // A certified primitive-array source reads its exact allocation
             // contents. Unsupported iterables retain the opaque heap barrier.
             let certified = self
                 .set_iterable_proof
                 .stable_array_spread_dependencies(token)
                 .is_some();
-            self.record_array_expr(&node.expr, true, false, !certified);
+            self.record_array_values(&values, true, false, !certified);
         }
         node.expr.visit_with(self);
     }
