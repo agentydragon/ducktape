@@ -62,3 +62,12 @@ debundle_e2e_test(
         "manual",
     ],
 )
+
+debundle_e2e_test(
+    name = "source_fact_memory_bench_test",
+    tags = [
+        "bench",
+        "manual",
+    ],
+    deps = ["@crates//:libc"],
+)
