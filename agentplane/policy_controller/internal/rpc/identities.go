@@ -160,14 +160,6 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 	if err := s.requireKnownPolicySets(ctx, request.GetPolicySets()); err != nil {
 		return nil, err
 	}
-	var expiresAt *metav1.Time
-	if value := request.GetExpiresAt(); value != nil {
-		if err := value.CheckValid(); err != nil {
-			return nil, status.Error(codes.InvalidArgument, "expires_at must be a valid timestamp")
-		}
-		converted := metav1.NewTime(value.AsTime().UTC())
-		expiresAt = &converted
-	}
 	controller, blockOwnerDeletion := false, false
 	binding := &policyapi.PolicyBinding{
 		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
@@ -183,15 +175,11 @@ func (s *Service) GrantIdentityPolicyBinding(ctx context.Context, request *polic
 		},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
-			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
+			PolicySets: slices.Clone(request.GetPolicySets()),
 		},
 	}
-	if err := s.objects.Create(ctx, binding); err != nil {
-		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
-		if apierrors.IsAlreadyExists(err) {
-			return nil, status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
-		}
-		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
+	if err := s.createPolicyBinding(ctx, binding, request.GetExpiresAt()); err != nil {
+		return nil, err
 	}
 	message, err := bindingMessage(binding)
 	if err != nil {
