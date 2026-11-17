@@ -69,8 +69,8 @@ async def test_thread_row_archive_button_on_hover_or_keyboard_focus(view: Visual
     await view.check(context="fixture ready")
     page = view.page
     sidebar = page.get_by_role("navigation")
-    archive = sidebar.get_by_role("button", name="Archive Idle thread", exact=True)
-    row = sidebar.locator(".agentplane-thread-list-row").filter(has=archive)
+    row = sidebar.locator(".agentplane-thread-list-row").filter(has=page.get_by_text("Idle thread", exact=True))
+    archive = row.get_by_role("button", name="Archive Idle thread", exact=True)
     text = row.locator(".agentplane-thread-list-row-text")
     await page.mouse.move(0, 0)
     await expect(archive).to_have_css("opacity", "0")
