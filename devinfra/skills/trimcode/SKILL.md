@@ -27,6 +27,15 @@ complex areas, instead of restricting the search to duplicates. State where the
 survey was shallow or excluded code. Identify the requirements that explain why
 apparently verbose code exists before proposing its removal.
 
+Apply Chesterton's fence: when complexity's value is unclear, investigate why it
+was introduced before recommending its removal. Trace relevant history and
+context (such as `git log` and blame, documentation, debug notes, issues, and
+linked changes where available) for hard-won fixes, failed approaches, and
+non-obvious constraints. Check whether those reasons still apply and whether the
+proposed simplification handles them. Cite the evidence; if the rationale remains
+unknown, say so and identify what needs investigation or validation rather than
+assuming the complexity is unnecessary.
+
 Look at different scales, following evidence rather than a fixed quota:
 
 - **Architecture and dependencies:** collapse needless layers, adapters and
