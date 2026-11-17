@@ -451,7 +451,9 @@ async def test_copy_transaction_summary(page: Page, dashboard_url: str) -> None:
     assert "Account:" in copied
     assert "Status:" in copied
     assert "Plaid transaction ID: shipping" in copied
-    await page.evaluate("navigator.clipboard.writeText = () => Promise.reject(new Error('Clipboard unavailable'))")
+    await page.evaluate("""() => {
+        navigator.clipboard.writeText = () => Promise.reject(new Error('Clipboard unavailable'));
+    }""")
     await rows.get_by_role("button", name="Copy transaction").click()
     await expect(rows.get_by_role("status")).to_have_text("Could not copy transaction")
 
