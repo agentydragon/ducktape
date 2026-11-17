@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import EntityLink from "./EntityLink";
 
 interface Props {
   snapshotSlug: string;
@@ -16,12 +16,12 @@ export default function OccurrenceLink({ snapshotSlug, issueId, occurrenceId, fi
   const text = displayText ?? `${issueId}/${occurrenceId}`;
 
   return (
-    <Link
+    <EntityLink
       to={urlPath}
-      className="font-mono text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`View occurrence ${issueId}/${occurrenceId} in ${snapshotSlug}`}
+      variant="monospace"
     >
       {text}
-    </Link>
+    </EntityLink>
   );
 }

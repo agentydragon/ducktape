@@ -1,5 +1,5 @@
 // Link component for examples.
-import { Link } from "react-router";
+import EntityLink from "./EntityLink";
 import type { SingleFileSetExampleOutput, WholeSnapshotExampleOutput } from "./schema";
 
 type Example = WholeSnapshotExampleOutput | SingleFileSetExampleOutput;
@@ -24,12 +24,12 @@ export default function ExampleLink({ example }: Props) {
   const queryString = params.toString();
 
   return (
-    <Link
+    <EntityLink
       to={`/examples?${queryString}`}
-      className="font-mono text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`${example.snapshot_slug} (${example.kind})`}
+      variant="smallMonospace"
     >
       {displayText}
-    </Link>
+    </EntityLink>
   );
 }

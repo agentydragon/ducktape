@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import EntityLink from "./EntityLink";
 
 interface Props {
   snapshotSlug: string;
@@ -10,12 +10,12 @@ export default function FileLink({ snapshotSlug, filePath, displayText }: Props)
   const text = displayText ?? filePath;
 
   return (
-    <Link
+    <EntityLink
       to={`/snapshots/${snapshotSlug}?file=${encodeURIComponent(filePath)}`}
-      className="font-mono text-xs text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
       title={`View ${filePath} in ${snapshotSlug}`}
+      variant="smallMonospace"
     >
       {text}
-    </Link>
+    </EntityLink>
   );
 }

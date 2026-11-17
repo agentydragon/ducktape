@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import EntityLink from "./EntityLink";
 import { formatDigest } from "./formatters";
 
 interface Props {
@@ -8,12 +8,8 @@ interface Props {
 
 export default function DefinitionIdLink({ id, display_name }: Props) {
   return (
-    <Link
-      to={`/definitions/${id}`}
-      className="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
-      title={id}
-    >
+    <EntityLink to={`/definitions/${id}`} title={id}>
       {display_name ?? formatDigest(id)}
-    </Link>
+    </EntityLink>
   );
 }

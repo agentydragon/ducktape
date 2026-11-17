@@ -1,6 +1,6 @@
 """Exercise hash routing through the production app with a synthetic HTTP origin."""
 
-from urllib.parse import urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import pytest
 import pytest_bazel
@@ -14,6 +14,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 async def test_app_hash_navigation(visual: VisualHarness) -> None:
     slug = "example/2026-01-01"
+    file_path = "src/auth/login file.py"
     snapshot = {
         "slug": slug,
         "split": "valid",
@@ -23,7 +24,7 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
                 "tp_id": "example-issue",
                 "rationale": "Example issue",
                 "occurrences": [
-                    {"occurrence_id": "example-occurrence", "locations": [{"file": "OTHER.md", "start_line": 1}]}
+                    {"occurrence_id": "example-occurrence", "locations": [{"file": file_path, "start_line": 1}]}
                 ],
             }
         ],
@@ -36,17 +37,20 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         f"/api/gt/snapshots/{slug}/tree": {
             "tree": [{"path": "README.md", "name": "README.md", "is_dir": False, "tp_count": 0, "fp_count": 0}]
         },
-        f"/api/gt/snapshots/{slug}/files/README.md": {
-            "path": "README.md",
-            "content": "# Routing example",
-            "line_count": 1,
-        },
         f"/api/gt/snapshots/{slug}/clusters": {"clusters": []},
         "/api/stats/occurrences": {"occurrences": []},
     }
+    file_requests: list[str] = []
 
     async def respond(route: Route) -> None:
-        await route.fulfill(json=responses[urlsplit(route.request.url).path])
+        path = urlsplit(route.request.url).path
+        if "/files/" in path:
+            file_requests.append(path)
+            requested_file = unquote(path.split("/files/", maxsplit=1)[1])
+            content = "# Routing example" if requested_file == "README.md" else "# Encoded routing example"
+            await route.fulfill(json={"path": requested_file, "content": content, "line_count": 1})
+            return
+        await route.fulfill(json=responses[path])
 
     async with visual.open() as view:
         await view.page.route("**/auth/me", respond)
@@ -60,6 +64,16 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
             "slug => { window.location.hash = `/snapshots/${slug}/example-issue/example-occurrence?file=README.md`; }",
             slug,
         )
+        await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
+        await view.page.get_by_role("tab", name="True Positives (1)").click()
+        occurrence_link = view.page.get_by_role("link", name="example-issue/example-occurrence")
+        await expect(occurrence_link).to_have_attribute(
+            "href", f"#/snapshots/{slug}/example-issue/example-occurrence?file={quote(file_path, safe='')}"
+        )
+        await occurrence_link.click()
+        await expect(view.page.get_by_text("# Encoded routing example", exact=True)).to_be_visible()
+        assert file_requests[-1].endswith("/files/src/auth/login%20file.py")
+        await view.page.go_back()
         await expect(view.page.get_by_text("# Routing example", exact=True)).to_be_visible()
         await view.capture("SnapshotHashQuery", target=view.page.locator(".mantine-AppShell-root"))
         await view.page.go_back()
