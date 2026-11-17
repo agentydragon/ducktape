@@ -104,13 +104,19 @@ in
     environment.etc."xdg/autostart/timekpr-client.desktop".source =
       "${cfg.package}/etc/xdg/autostart/timekpr-client.desktop";
 
-    # The daemon starts after multi-user.target, so attaching this oneshot to
-    # that target would create an ordering cycle.
+    # The daemon starts after multi-user.target. Disable the oneshot's default
+    # dependencies so that target does not automatically order itself after it.
     systemd.services.timekpr-configure = lib.mkIf (cfg.users != { }) {
       description = "Apply declarative timekpr user configuration";
-      after = [ "timekpr.service" ];
+      after = [
+        "basic.target"
+        "timekpr.service"
+      ];
+      before = [ "shutdown.target" ];
+      conflicts = [ "shutdown.target" ];
       requires = [ "timekpr.service" ];
-      wantedBy = [ "timekpr.service" ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig.DefaultDependencies = false;
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
