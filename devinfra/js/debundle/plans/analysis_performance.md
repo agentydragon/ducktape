@@ -21,7 +21,7 @@ existing performance report, not in a completion log here.
 ### PF0 — Observable, bounded private-consumer completion
 
 Restore fresh projection, whole-program analysis and passing-spec application
-within 600 seconds and 16 GiB for the large private web consumer. Preserve the
+within 300 seconds and 16 GiB for the large private web consumer. Preserve the
 normal ownership, realizability, translation and emitted-runtime checks. A
 timeout, OOM or analysis-only result does not meet this completion condition.
 Keep proprietary captures and source witnesses in the private repository.
@@ -60,8 +60,11 @@ Remaining work:
    attributes that interval to repeated candidate remapping and per-member
    bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
    completes whole-program value-flow preparation within memory, then reaches
-   the 600-second deadline in main-chunk analysis. Profile that newly reached
-   phase before selecting the next change. Preserve shared SCC summaries,
+   previous 600-second deadline in main-chunk analysis. Compile completed value
+   facts into a source-sized read index, preserving absent versus empty facts
+   and deterministic property-row enumeration. Evaluate the resulting lookup,
+   bitmap-query and source-solver costs separately against the stricter
+   whole-pipeline budget. Preserve shared SCC summaries,
    bounded immutable-identity caches, transient-query lifetimes and independent
    graph/proof oracles. Do not infer full completion from one completed phase.
 
@@ -74,13 +77,17 @@ Remaining work:
    projection, projection of completed whole-program facts into chunk views,
    and subsequent chunk analysis when attributing the remaining cost.
 
-   Evaluate each slice with a fresh Tana pipeline bounded by 600 seconds and
+   Evaluate each slice with a fresh private pipeline bounded by 300 seconds and
    16 GiB, and require the matched optimized Excalidraw check below (no more
    than 10% wall-time slowdown). A bounded failure can establish a narrower
    improvement but does not close PF0. Preserve the normal gate and
    emitted-runtime checks. Use the
    landed [property-producer census](../docs/inference.md#source-property-producer-census)
    as the baseline.
+
+   A separate, explicitly labeled diagnostic may use the former 600-second
+   cap to reach and attribute a later phase. It cannot satisfy the 300-second
+   completion requirement or substitute saved analysis for the fresh pipeline.
 
 2. Freeze identical source/spec/package inputs and compare optimized historical
    passing, whole-program-flow boundary and current engines with matching
