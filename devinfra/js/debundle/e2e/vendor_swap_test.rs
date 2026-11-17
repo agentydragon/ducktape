@@ -3,7 +3,7 @@
 //! asserts the generated wrapper.
 
 use debundle_e2e_support::{
-    CommandResult, assert_node_output, assert_source_file, read_json, run_debundler,
+    CaseWorkspace, CommandResult, assert_node_output, assert_source_file, read_json,
     run_debundler_with_args, write_text_file, write_yaml_file,
 };
 use serde_json::{Value, json};
@@ -14,7 +14,6 @@ use spec::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
-use tempfile::TempDir;
 
 fn assert_success(result: &CommandResult) {
     assert!(
@@ -90,13 +89,12 @@ struct VendorSwapFixture {
     chunk_path: String,
     wrapper_path: PathBuf,
     manifest_path: PathBuf,
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 struct VendorTestWorkspace {
-    root: TempDir,
+    root: CaseWorkspace,
     snapshot_root: PathBuf,
-    _extracted_root: PathBuf,
     out_root: PathBuf,
     wrapper_root: PathBuf,
     manifest_path: PathBuf,
@@ -104,8 +102,8 @@ struct VendorTestWorkspace {
 }
 
 impl VendorTestWorkspace {
-    fn new(prefix: &str) -> Self {
-        let root = TempDir::with_prefix(prefix).expect("create tempdir");
+    fn new() -> Self {
+        let root = CaseWorkspace::default();
         let workspace_root = root.path().join("workspace");
         let snapshot_root = workspace_root.join("snapshot");
         let extracted_root = workspace_root.join("extracted");
@@ -113,13 +111,9 @@ impl VendorTestWorkspace {
         let wrapper_root = out_root.join("app").join("vendors").join("generated");
         let manifest_path = out_root.join("reports").join("vendor_swaps.json");
         let js_list_path = extracted_root.join("js-files.txt");
-        fs::create_dir_all(&extracted_root).unwrap();
-        fs::create_dir_all(&snapshot_root).unwrap();
-        fs::create_dir_all(&out_root).unwrap();
         Self {
             root,
             snapshot_root,
-            _extracted_root: extracted_root,
             out_root,
             wrapper_root,
             manifest_path,
@@ -137,11 +131,17 @@ impl VendorTestWorkspace {
     }
 
     fn write_chunk(&self, chunk_path: &str, source: &str) {
-        let full_path = self.snapshot_root.join(chunk_path);
-        if let Some(parent) = full_path.parent() {
-            fs::create_dir_all(parent).unwrap();
+        write_text_file(&self.snapshot_root.join(chunk_path), source);
+    }
+
+    fn write_chunks(&self, chunks: &[(&str, &str)]) {
+        let mut entries = String::new();
+        for (chunk_path, source) in chunks {
+            self.write_chunk(chunk_path, source);
+            entries.push_str(chunk_path);
+            entries.push('\n');
         }
-        write_text_file(&full_path, source);
+        self.write_js_list(&entries);
     }
 
     fn write_js_list(&self, entries: &str) {
@@ -157,10 +157,6 @@ impl VendorTestWorkspace {
         source: &str,
     ) -> PathBuf {
         let package_root = self.root.path().join(rel_path);
-        fs::create_dir_all(&package_root).unwrap();
-        if let Some(parent) = Path::new(subpath).parent() {
-            fs::create_dir_all(package_root.join(parent)).unwrap();
-        }
         write_text_file(
             &package_root.join("package.json"),
             &format!(
@@ -186,10 +182,28 @@ impl VendorTestWorkspace {
     /// fixtures whose spec carries a `bundle: { path: ... }` block.
     fn write_bundle(&self, filename: &str, source: &str) -> PathBuf {
         let bundle_root = self.root.path().join("external-bundles");
-        fs::create_dir_all(&bundle_root).unwrap();
         let bundle_path = bundle_root.join(filename);
         write_text_file(&bundle_path, source);
         bundle_path
+    }
+
+    fn run(&self, vendor: impl serde::Serialize, packages: &[(&str, &Path)]) -> CommandResult {
+        self.run_spec(&self.transform_spec(vendor), packages)
+    }
+
+    fn run_spec(&self, spec: &Value, packages: &[(&str, &Path)]) -> CommandResult {
+        self.run_spec_with_args(spec, packages, &[])
+    }
+
+    fn run_spec_with_args(
+        &self,
+        spec: &Value,
+        packages: &[(&str, &Path)],
+        extra_args: &[&str],
+    ) -> CommandResult {
+        let spec_path = self.root.path().join("transform_spec.yaml");
+        write_yaml_file(&spec_path, spec);
+        run_debundler_with_args(&spec_path, packages, extra_args)
     }
 }
 
@@ -198,21 +212,12 @@ impl VendorTestWorkspace {
 /// bundle file. The returned tuple `(ws, bundle_path)` is everything
 /// downstream wiring needs to compose the spec.
 fn setup_bundled_partial_swap(
-    tempdir_prefix: &str,
     bundle_filename: &str,
     bundle_source: &str,
     chunks: &[(&str, &str)],
 ) -> (VendorTestWorkspace, PathBuf) {
-    let ws = VendorTestWorkspace::new(tempdir_prefix);
-    for (chunk_path, source) in chunks {
-        ws.write_chunk(chunk_path, source);
-    }
-    let entries: String = chunks
-        .iter()
-        .map(|(p, _)| format!("{p}\n"))
-        .collect::<Vec<_>>()
-        .join("");
-    ws.write_js_list(&entries);
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(chunks);
     let bundle_path = ws.write_bundle(bundle_filename, bundle_source);
     (ws, bundle_path)
 }
@@ -239,7 +244,6 @@ fn build_bundled_partial_swap_spec(
 
 fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFixture {
     run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-named-from-module-default-",
         chunk_source: "export { x as default };\nconst x = 0;\n",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source,
@@ -248,7 +252,6 @@ fn run_named_from_module_default_fixture(upstream_source: &str) -> VendorSwapFix
 }
 
 struct FullSwapFixtureArgs<'a> {
-    temp_prefix: &'a str,
     chunk_source: &'a str,
     /// `None` runs the plain (wrapper-less) swap path.
     wrapper_shape: Option<WrapperShape>,
@@ -264,9 +267,8 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
     const SUBPATH: &str = "dist/index.mjs";
     const CHUNK_PATH: &str = "static/lib-X.js";
 
-    let ws = VendorTestWorkspace::new(args.temp_prefix);
-    ws.write_chunk(CHUNK_PATH, args.chunk_source);
-    ws.write_js_list(&format!("{CHUNK_PATH}\n"));
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[(CHUNK_PATH, args.chunk_source)]);
     let package_root = ws.write_upstream_package(
         "upstream",
         PACKAGE_NAME,
@@ -289,13 +291,12 @@ fn run_full_swap_fixture(args: FullSwapFixtureArgs<'_>) -> VendorSwapFixture {
                 .collect(),
         }),
     };
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = ws.transform_spec(json!({
-        CHUNK_PATH: vendor_mark,
-    }));
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run(
+        json!({
+            CHUNK_PATH: vendor_mark,
+        }),
+        &[(PACKAGE_NAME, &package_root)],
+    );
     VendorSwapFixture {
         result,
         chunk_path: CHUNK_PATH.to_string(),
@@ -398,7 +399,6 @@ struct NamedFromDefaultFixtureArgs<'a> {
 
 fn run_named_from_default_fixture(args: NamedFromDefaultFixtureArgs<'_>) -> VendorSwapFixture {
     run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-named-from-default-",
         chunk_source: args.chunk_source,
         wrapper_shape: Some(WrapperShape::NamedFromDefault),
         upstream_source: args.upstream_source,
@@ -1050,7 +1050,7 @@ struct PartialSwapFixture {
     result: CommandResult,
     caller_emitted_path: PathBuf,
     megachunk_emitted_path: PathBuf,
-    _root: TempDir,
+    _root: CaseWorkspace,
 }
 
 fn run_partial_swap_with_mark(
@@ -1060,13 +1060,12 @@ fn run_partial_swap_with_mark(
 ) -> PartialSwapFixture {
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    let spec = ws.transform_spec(json!({
-        MEGACHUNK_PATH: vendor_spec,
-    }));
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, packages);
+    let result = ws.run(
+        json!({
+            MEGACHUNK_PATH: vendor_spec,
+        }),
+        packages,
+    );
 
     let caller_emitted_path = ws.out_root.join("app/static/app").join("entry.js");
     let megachunk_emitted_path = ws.out_root.join("app/static/megachunk").join("entry.js");
@@ -1086,7 +1085,6 @@ fn run_partial_swap_fixture(args: PartialSwapFixtureArgs<'_>) -> PartialSwapFixt
     // Keep the installed version fixed: mismatch cases deliberately request
     // a different version in the spec.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-",
         args.chunk_source,
         args.caller_source,
         PACKAGE_NAME,
@@ -1135,16 +1133,17 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
     const PACKAGE_VERSION: &str = "1.0.0";
     const SUBPATH: &str = "index.js";
 
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-materialized-collision-");
-    ws.write_chunk(
-        VENDOR_PATH,
-        "export const q = () => \"vendor\";\nexport const keep = () => 7;\n",
-    );
-    ws.write_chunk(
-        APP_PATH,
-        "const q = () => \"app\";\nexport function out() { return q(); }\n",
-    );
-    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        (
+            VENDOR_PATH,
+            "export const q = () => \"vendor\";\nexport const keep = () => 7;\n",
+        ),
+        (
+            APP_PATH,
+            "const q = () => \"app\";\nexport function out() { return q(); }\n",
+        ),
+    ]);
     let package_root = ws.write_upstream_package(
         &format!("upstream/{PACKAGE_NAME}"),
         PACKAGE_NAME,
@@ -1153,7 +1152,6 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
         "export const q = () => \"package\";\n",
     );
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
             VENDOR_PATH: {
@@ -1195,9 +1193,7 @@ fn partial_swap_skips_materialized_module_import_colliding_with_vendor_source_pa
         },
         "write_js_tree": { "out_dir": &ws.out_root },
     });
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     let probe_path = ws.out_root.join("__run_materialized_collision.mjs");
@@ -1219,19 +1215,20 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
     const PACKAGE_VERSION: &str = "3.23.8";
     const SUBPATH: &str = "lib/index.mjs";
 
-    let ws = VendorTestWorkspace::new("vendor-partial-swap-count-parity-");
-    ws.write_chunk(
-        MEGACHUNK_PATH,
-        "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
-    );
-    ws.write_chunk(
-        APP_PATH,
-        "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        (
+            MEGACHUNK_PATH,
+            "export const e6 = () => true;\nexport const keepMe = () => 7;\n",
+        ),
+        (
+            APP_PATH,
+            "import { e6 as zodBoolean, keepMe as kept } from \"../megachunk/entry.js\";\n\
          export const movedFlag = ({ zodBoolean }).zodBoolean() && kept() === 7;\n\
          export function stay() { return ({ zodBoolean }).zodBoolean(); }\n\
          export function shadow(zodBoolean) { return ({ zodBoolean }).zodBoolean(); }\n",
-    );
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{APP_PATH}\n"));
+        ),
+    ]);
     let package_root = ws.write_upstream_package(
         &format!("upstream/{PACKAGE_NAME}"),
         PACKAGE_NAME,
@@ -1240,7 +1237,6 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
         "export const boolean = () => true;\n",
     );
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
             MEGACHUNK_PATH: {
@@ -1283,9 +1279,7 @@ fn partial_swap_references_rewritten_parity_across_materialized_and_passthrough_
         },
         "write_js_tree": { "out_dir": &ws.out_root },
     });
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     let manifest: Value =
@@ -1504,7 +1498,6 @@ fn partial_swap_rejects_local_export_of_a_dotted_member_read() {
     // `z.nested.boolean` is a property read with no live export form; left
     // in place, `export { zodBoolean }` would name an unbound local.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-dotted-local-export-",
         "export const e6 = () => true;\n",
         "import { e6 as zodBoolean } from \"../megachunk/entry.js\";\nexport { zodBoolean };\n",
         "zod",
@@ -1581,7 +1574,6 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
     const PACKAGE_VERSION: &str = "18.3.1";
 
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-react-",
         "react-family.esbuilt.js",
         "const dispatcher = { current: \"package\" };\n\
          const React = { dispatcher, useState: () => dispatcher.current };\n\
@@ -1622,11 +1614,8 @@ fn bundled_partial_swap_replaces_react_cjs_family_with_singleton_esm_facade() {
         json!({MEGACHUNK_PATH: bundled_vendor("React CJS family bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "React", None)), (JSX_RUNTIME_NAME, bundled_package(PACKAGE_VERSION, "jsx-runtime.js", "jsxRuntime", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("j", swap_symbol(JSX_RUNTIME_NAME, PartialSwapKind::Namespace, None, None))])}),
         None,
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(
-        &spec_path,
+    let result = ws.run_spec(
+        &spec,
         &[
             (PACKAGE_NAME, &package_root),
             (JSX_RUNTIME_NAME, &package_root),
@@ -1659,7 +1648,6 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
     const PACKAGE_VERSION: &str = "1.0.0";
 
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-singleton-",
         "singleton-kit.esbuilt.js",
         "const dispatcher = { current: null };\n\
          const Hooks = {\n\
@@ -1718,11 +1706,8 @@ fn bundled_partial_swap_runtime_cannot_mix_swapped_client_with_residual_singleto
         json!({VENDOR_PATH: bundled_vendor("singleton runtime mixed-copy fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Hooks", None)), (CLIENT_NAME, bundled_package(PACKAGE_VERSION, "client.js", "Client", None))], &[("a", swap_symbol(PACKAGE_NAME, PartialSwapKind::Namespace, None, None)), ("h", swap_symbol(CLIENT_NAME, PartialSwapKind::Namespace, None, None))])}),
         None,
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(
-        &spec_path,
+    let result = ws.run_spec(
+        &spec,
         &[(PACKAGE_NAME, &package_root), (CLIENT_NAME, &package_root)],
     );
     assert_success(&result);
@@ -1753,7 +1738,6 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
     const PACKAGE_VERSION: &str = "1.0.0";
 
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-materialized-",
         "observer-kit.esbuilt.js",
         "const observe = value => `package:${value}`;\n\
          export { observe };\n",
@@ -1807,10 +1791,7 @@ fn bundled_partial_swap_rewrites_imports_created_by_logical_module_materializati
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     let probe_path = ws.out_root.join("__run_materialized.mjs");
@@ -1835,7 +1816,6 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
     const PACKAGE_VERSION: &str = "1.0.0";
 
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-materialized-named-",
         "toolkit-core.esbuilt.js",
         "const Toolkit = {\n\
            map(value) { return `package:${value}`; },\n\
@@ -1904,10 +1884,7 @@ fn bundled_partial_swap_rewrites_materialized_named_alias_references() {
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     let probe_path = ws.out_root.join("__run_materialized_named.mjs");
@@ -1932,7 +1909,6 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
     const PACKAGE_VERSION: &str = "4.1.12";
 
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-bundled-partial-swap-local-helper-",
         "zod.esbuilt.js",
         "const Zod = { instanceof: Ctor => `package:${Ctor.name}` };\n\
          export { Zod };\n",
@@ -1965,10 +1941,7 @@ fn bundled_partial_swap_rewrites_non_exported_local_helper_in_vendor_chunk() {
         json!({VENDOR_PATH: bundled_vendor("local helper bundled partial swap fixture", &bundle_path, &[(PACKAGE_NAME, bundled_package(PACKAGE_VERSION, "index.js", "Zod", Some("Zod")))], &[("zodInstanceof", swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("instanceof"), Some("nY")))])}),
         None,
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     let probe_path = ws.out_root.join("__run_local_helper.mjs");
@@ -2049,7 +2022,6 @@ struct PartialSwapKindFixtureArgs<'a> {
 
 fn run_partial_swap_kind_fixture(args: PartialSwapKindFixtureArgs<'_>) -> PartialSwapFixture {
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-kind-",
         args.chunk_source,
         args.caller_source,
         args.package_name,
@@ -2089,7 +2061,6 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
     const PROVIDER: &str =
         "export function object(shape) { const kind = \"object\"; return { kind, shape }; }\n";
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-equivalent-export-",
         &format!("{PROVIDER}export const keep = () => 7;\n"),
         "import { object } from \"./megachunk.js\";\n\
          const wrapped = object({ read: () => later });\n\
@@ -2127,10 +2098,7 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-
-    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    let result = ws.run_spec(&spec, &[("fac", &package_root)]);
     assert_success(&result);
     let modules: Value = read_json(&report_root.join("static/app/modules.json"));
     assert_eq!(
@@ -2156,7 +2124,6 @@ fn partial_swap_split_uses_summary_of_swapped_export_body() {
 // or silently reads `undefined` (namespace member).
 
 fn setup_partial_swap_consumer_fixture(
-    prefix: &str,
     chunk_source: &str,
     caller_source: &str,
     package_name: &str,
@@ -2166,10 +2133,8 @@ fn setup_partial_swap_consumer_fixture(
 ) -> (VendorTestWorkspace, PathBuf) {
     const MEGACHUNK_PATH: &str = "static/megachunk.js";
     const CALLER_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new(prefix);
-    ws.write_chunk(MEGACHUNK_PATH, chunk_source);
-    ws.write_chunk(CALLER_PATH, caller_source);
-    ws.write_js_list(&format!("{MEGACHUNK_PATH}\n{CALLER_PATH}\n"));
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[(MEGACHUNK_PATH, chunk_source), (CALLER_PATH, caller_source)]);
     let package_root = ws.write_upstream_package(
         &format!("upstream/{package_name}"),
         package_name,
@@ -2203,7 +2168,6 @@ fn partial_swap_vendor(
 #[test]
 fn partial_swap_rewrites_import_peeled_into_coarse_residual() {
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-coarse-residual-",
         "const a = value => `bundled:${value}`; export { a };\n",
         "import { a as U } from \"./megachunk.js\";\n\
          const residual = U(\"ok\");\n\
@@ -2238,9 +2202,7 @@ fn partial_swap_rewrites_import_peeled_into_coarse_residual() {
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[("fac", &package_root)]);
+    let result = ws.run_spec(&spec, &[("fac", &package_root)]);
     assert_success(&result);
     install_node_module(
         &ws.out_root.join("app"),
@@ -2296,7 +2258,6 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
     // from the chunk's export surface while the re-export still references
     // it, guaranteeing a module-link failure in the emitted tree.
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-reexport-named-",
         "export const e6 = () => \"UPSTREAM\";\nexport const keepMe = () => 7;\n",
         "export { e6 as zodBoolean, keepMe } from \"../megachunk/entry.js\";\n",
         "zod",
@@ -2334,7 +2295,6 @@ fn partial_swap_rewrites_named_kind_reexport_from_consumer() {
 #[test]
 fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-reexport-default-",
         "export const aQ = (...args) => args.join(\"+\");\nexport const keepMe = () => 7;\n",
         "export { aQ as z, keepMe } from \"../megachunk/entry.js\";\n",
         "clsx",
@@ -2372,7 +2332,6 @@ fn partial_swap_rewrites_default_kind_reexport_from_consumer() {
 #[test]
 fn partial_swap_rewrites_namespace_kind_reexport_from_consumer() {
     let (ws, package_root) = setup_partial_swap_consumer_fixture(
-        "vendor-partial-swap-reexport-namespace-",
         "export const a = { useState: () => 1 };\nexport const keepMe = () => 7;\n",
         "export { a as React, keepMe } from \"../megachunk/entry.js\";\n",
         "react",
@@ -2432,7 +2391,6 @@ fn partial_swap_rejects_consumers_that_would_lose_swapped_exports() {
         ),
     ] {
         let (ws, package_root) = setup_partial_swap_consumer_fixture(
-            label,
             vendor_source,
             consumer,
             "zod",
@@ -2474,18 +2432,18 @@ fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
     // bail on the colliding shape.
     const VENDOR_PATH: &str = "static/vendor.js";
     const APP_PATH: &str = "static/app.js";
-    let ws = VendorTestWorkspace::new("vendor-full-swap-boundary-collision-");
-    ws.write_chunk(
-        VENDOR_PATH,
-        "const a = \"local-a\";\nconst z = \"local-z\";\nexport { a as alpha, z as a };\n",
-    );
-    ws.write_chunk(
-        APP_PATH,
-        "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
-    );
-    ws.write_js_list(&format!("{VENDOR_PATH}\n{APP_PATH}\n"));
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        (
+            VENDOR_PATH,
+            "const a = \"local-a\";\nconst z = \"local-z\";\nexport { a as alpha, z as a };\n",
+        ),
+        (
+            APP_PATH,
+            "import { a } from \"../vendor/entry.js\";\nconsole.log(a);\n",
+        ),
+    ]);
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = json!({
         "vendor": {
             VENDOR_PATH: {
@@ -2496,8 +2454,7 @@ fn full_swap_bails_when_mapping_key_is_a_real_export_of_another_local() {
         "inputs": { "input_root": &ws.snapshot_root, "js_list_path": &ws.js_list_path },
         "write_js_tree": { "out_dir": &ws.out_root },
     });
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[]);
+    let result = ws.run_spec(&spec, &[]);
     assert!(
         !result.status.success(),
         "debundler must reject a boundary mapping key that collides with a real export\nstdout:\n{}\nstderr:\n{}",
@@ -2521,13 +2478,14 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
     const CHUNK_PATH: &str = "static/lib-X.js";
     const APP_PATH: &str = "static/app.js";
     const PACKAGE_NAME: &str = "lib";
-    let ws = VendorTestWorkspace::new("vendor-full-swap-caller-");
-    ws.write_chunk(CHUNK_PATH, "export const ping = () => \"vendor\";\n");
-    ws.write_chunk(
-        APP_PATH,
-        "import { ping } from \"../lib-X/entry.js\";\nconsole.log(ping());\n",
-    );
-    ws.write_js_list(&format!("{CHUNK_PATH}\n{APP_PATH}\n"));
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        (CHUNK_PATH, "export const ping = () => \"vendor\";\n"),
+        (
+            APP_PATH,
+            "import { ping } from \"../lib-X/entry.js\";\nconsole.log(ping());\n",
+        ),
+    ]);
     let package_root = ws.write_upstream_package(
         "upstream",
         PACKAGE_NAME,
@@ -2536,7 +2494,6 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
         "export const ping = () => \"pkg\";\n",
     );
 
-    let spec_path = ws.root.path().join("transform_spec.yaml");
     let spec = ws.transform_spec(json!({
         CHUNK_PATH: {
             "level": "swap",
@@ -2546,8 +2503,7 @@ fn full_swap_with_caller_preserves_import_for_removed_chunk() {
             "subpath": "dist/index.mjs",
         },
     }));
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]);
     assert_success(&result);
 
     assert!(
@@ -2569,7 +2525,6 @@ fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
     // does: if the upstream package has no default export, callers that
     // import the chunk's default would break post-swap.
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-full-swap-default-expr-",
         chunk_source: "const x = 0;\nexport default x;\n",
         wrapper_shape: None,
         upstream_source: "export const unrelated = 1;\n",
@@ -2592,7 +2547,6 @@ fn full_swap_without_wrapper_requires_upstream_default_for_default_export() {
 #[test]
 fn full_swap_without_wrapper_accepts_named_default_alias_when_upstream_has_default() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-full-swap-named-default-",
         chunk_source: "const x = 0;\nexport { x as default };\n",
         wrapper_shape: None,
         upstream_source: "const d = 1;\nexport default d;\n",
@@ -2642,7 +2596,6 @@ fn named_from_module_default_rejects_unverified_named_exports() {
     // bail instead of silently re-exporting the upstream default under
     // an unrelated name.
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-module-default-overclaim-",
         chunk_source: "const x = 0;\nconst y = 1;\nexport { x as default, y as other };\n",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"pkg\"; }\n",
@@ -2665,7 +2618,6 @@ fn named_from_module_default_rejects_unverified_named_exports() {
 #[test]
 fn named_from_module_default_accepts_verified_default_aliases() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-module-default-alias-",
         chunk_source: "const x = () => \"val\";\nexport { x as default, x as alias };\n",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"val\"; }\n",
@@ -2686,7 +2638,6 @@ fn named_from_module_default_rejects_single_named_export_without_assertion() {
     // default from the chunk alone, so without an explicit assertion the
     // swap must bail rather than silently re-export the default under `c`.
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-module-default-single-unasserted-",
         chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"cy\"; }\n",
@@ -2712,7 +2663,6 @@ fn named_from_module_default_admits_authored_default_alias() {
     // `default_export_aliases` that `c` is the package default. The swap
     // then succeeds and the wrapper re-exports the package default under `c`.
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-module-default-single-asserted-",
         chunk_source: "const Ft = () => \"cy\";\nexport { Ft as c };\n",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "export default function f() { return \"cy\"; }\n",
@@ -2730,7 +2680,6 @@ fn named_from_module_default_admits_authored_default_alias() {
 #[test]
 fn named_from_json_default_generates_named_pulls_from_json_keys() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-named-from-json-default-",
         chunk_source: "export { version, flag } from \"lib\";\n",
         wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{ \"version\": \"1.2.3\", \"flag\": true }\n",
@@ -2753,7 +2702,6 @@ fn named_from_json_default_generates_named_pulls_from_json_keys() {
 #[test]
 fn named_from_json_default_rejects_names_missing_from_json() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-swap-named-from-json-default-missing-",
         chunk_source: "export { missing } from \"lib\";\n",
         wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{ \"version\": \"1.2.3\" }\n",
@@ -2838,7 +2786,6 @@ fn wrappers_preserve_reserved_and_string_export_names() {
         ),
     ] {
         let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-            temp_prefix: "vendor-export-names-",
             chunk_source: "const a = 0; export { a as class, a as 'x-y' };",
             wrapper_shape: Some(shape),
             upstream_source: upstream,
@@ -2855,7 +2802,6 @@ fn wrappers_preserve_reserved_and_string_export_names() {
 #[test]
 fn json_wrapper_preserves_proto_as_an_own_data_property() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-json-proto-",
         chunk_source: "export const value = 0;",
         wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{\"value\":1,\"__proto__\":{\"nested\":2}}",
@@ -2871,7 +2817,6 @@ fn json_wrapper_preserves_proto_as_an_own_data_property() {
 #[test]
 fn vendor_namespaces_reject_reserved_binding_names() {
     let (ws, root) = setup_partial_swap_consumer_fixture(
-        "vendor-invalid-namespace-",
         "export const a = 1;",
         "import { a } from '../megachunk/entry.js'; console.log(a);",
         "lib",
@@ -2899,7 +2844,6 @@ fn vendor_namespaces_reject_reserved_binding_names() {
 #[test]
 fn module_default_wrapper_aliases_reserved_string_and_colliding_names() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-module-default-names-",
         chunk_source: "const x = {}; export { x as class, x as 'x-y', x as existing };",
         wrapper_shape: Some(WrapperShape::NamedFromModuleDefault),
         upstream_source: "const existing = { value: 7 }; export default existing;",
@@ -2943,7 +2887,6 @@ fn partial_swap_preserves_external_names_for_imports_and_reexports() {
 #[test]
 fn json_wrapper_export_names_do_not_shadow_json_or_payload_local() {
     let fixture = run_full_swap_fixture(FullSwapFixtureArgs {
-        temp_prefix: "vendor-json-collision-",
         chunk_source: "export const JSON = 0, _d = 0;",
         wrapper_shape: Some(WrapperShape::NamedFromJsonDefault),
         upstream_source: "{\"JSON\":1,\"_d\":2}",
@@ -2962,7 +2905,6 @@ fn bundled_facades_preserve_default_reserved_and_string_export_names() {
         let name = serde_json::to_string(bundle_export).unwrap();
         let bundle = format!("const value = {{ answer: 7 }}; export {{ value as {name} }};");
         let (ws, bundle_path) = setup_bundled_partial_swap(
-            "vendor-bundle-export-name-",
             "lib.js",
             &bundle,
             &[
@@ -2994,23 +2936,25 @@ fn bundled_facades_preserve_default_reserved_and_string_export_names() {
         );
         let spec =
             build_bundled_partial_swap_spec(&ws, json!({"static/megachunk.js": vendor}), None);
-        let path = ws.root.path().join("spec.yaml");
-        write_yaml_file(&path, &spec);
-        assert_success(&run_debundler(&path, &[("lib", &package_root)]));
+        assert_success(&ws.run_spec(&spec, &[("lib", &package_root)]));
         assert_node_output(&ws.out_root.join("app/static/app/entry.js"), "7\n", "");
     }
 }
 
 #[test]
 fn partial_swap_preserves_residual_dependency_without_its_ast() {
-    let ws = VendorTestWorkspace::new("vendor-residual-dependency-");
-    ws.write_chunk("helper.js", "export const helper = () => 'helper';\n");
-    ws.write_chunk("vendor.js", "import { helper } from './helper.js';\nexport const old = () => 'bundled';\nexport const residual = () => helper();\n");
-    ws.write_chunk(
-        "app.js",
-        "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n",
-    );
-    ws.write_js_list("helper.js\nvendor.js\napp.js\n");
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        ("helper.js", "export const helper = () => 'helper';\n"),
+        (
+            "vendor.js",
+            "import { helper } from './helper.js';\nexport const old = () => 'bundled';\nexport const residual = () => helper();\n",
+        ),
+        (
+            "app.js",
+            "import { old, residual } from './vendor.js';\nconsole.log(old() + ':' + residual());\n",
+        ),
+    ]);
     let upstream = "export const replacement = () => 'upstream';\n";
     let package = ws.write_upstream_package("upstream/lib", "lib", "1.0.0", "index.js", upstream);
     let vendor = partial_swap_vendor(
@@ -3021,9 +2965,7 @@ fn partial_swap_preserves_residual_dependency_without_its_ast() {
             swap_symbol("lib", PartialSwapKind::Named, Some("replacement"), None),
         )],
     );
-    let spec = ws.root.path().join("transform.yaml");
-    write_yaml_file(&spec, &ws.transform_spec(json!({"vendor.js": vendor})));
-    assert_success(&run_debundler(&spec, &[("lib", &package)]));
+    assert_success(&ws.run(json!({"vendor.js": vendor}), &[("lib", &package)]));
     let app = ws.out_root.join("app");
     install_node_module(&app, "lib", "1.0.0", upstream);
     assert_node_output(&app.join("app/entry.js"), "upstream:helper\n", "");
@@ -3061,7 +3003,6 @@ fn bundled_named_swap_preserves_literal_dotted_exports() {
 
 fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "vendor-dotted-member-",
         "lib.js",
         "export const Lib = { convert: { nested: { 'read-value': () => 7 } }, 'convert.nested.read-value': () => 11 };",
         &[
@@ -3092,42 +3033,46 @@ fn assert_bundled_dotted_export(kind: PartialSwapKind, expected: &str) {
         )],
     );
     let spec = build_bundled_partial_swap_spec(&ws, json!({"static/megachunk.js": vendor}), None);
-    let path = ws.root.path().join("spec.yaml");
-    write_yaml_file(&path, &spec);
-    assert_success(&run_debundler(&path, &[("lib", &package)]));
+    assert_success(&ws.run_spec(&spec, &[("lib", &package)]));
     assert_node_output(&ws.out_root.join("app/static/app/entry.js"), expected, "");
 }
 
 // ─── full swap: cross-module purity ─────────────────────────────────────
 
+struct VendorRun {
+    result: CommandResult,
+    _root: CaseWorkspace,
+}
+
 /// Three `callWrap(...)` calls in `app`, interleaved across two logical
 /// modules, where `callWrap` comes from `adapter` and `adapter` delegates to the
 /// pure `vendorlib::wrap`. `swap_adapter` fully swaps `adapter`.
-fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
+fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> VendorRun {
     const APP_PATH: &str = "static/app.js";
     const ADAPTER_PATH: &str = "static/adapter.js";
     const VENDORLIB_PATH: &str = "static/vendorlib.js";
     const PACKAGE_NAME: &str = "lib";
-    let ws = VendorTestWorkspace::new("vendor-full-swap-purity-");
-    ws.write_chunk(
-        APP_PATH,
-        "import { callWrap } from \"./adapter.js\";\n\
+    let ws = VendorTestWorkspace::new();
+    ws.write_chunks(&[
+        (
+            APP_PATH,
+            "import { callWrap } from \"./adapter.js\";\n\
          const A = callWrap(() => \"a\");\n\
          const B = callWrap(() => \"b\");\n\
          const C = callWrap(() => \"c\");\n\
          console.log(A, B, C);\n\
          export { A, B, C };\n",
-    );
-    ws.write_chunk(
-        ADAPTER_PATH,
-        "import { wrap } from \"./vendorlib.js\";\n\
+        ),
+        (
+            ADAPTER_PATH,
+            "import { wrap } from \"./vendorlib.js\";\n\
          export function callWrap(f) { return wrap(f); }\n",
-    );
-    ws.write_chunk(
-        VENDORLIB_PATH,
-        "export function wrap(f) { return { impl: f }; }\n",
-    );
-    ws.write_js_list(&format!("{APP_PATH}\n{ADAPTER_PATH}\n{VENDORLIB_PATH}\n"));
+        ),
+        (
+            VENDORLIB_PATH,
+            "export function wrap(f) { return { impl: f }; }\n",
+        ),
+    ]);
     let package_root = ws.write_upstream_package(
         "upstream",
         PACKAGE_NAME,
@@ -3166,9 +3111,10 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform_spec.yaml");
-    write_yaml_file(&spec_path, &spec);
-    run_debundler(&spec_path, &[(PACKAGE_NAME, &package_root)])
+    VendorRun {
+        result: ws.run_spec(&spec, &[(PACKAGE_NAME, &package_root)]),
+        _root: ws.root,
+    }
 }
 
 /// A full swap promises the package behaves like the bundled chunk, so the
@@ -3176,14 +3122,13 @@ fn run_interleaved_calls_through_adapter(swap_adapter: bool) -> CommandResult {
 /// interleaved calls through `adapter` are pure whether or not it is swapped.
 #[test]
 fn full_swapped_chunk_keeps_cross_module_purity() {
-    assert_success(&run_interleaved_calls_through_adapter(false));
-    assert_success(&run_interleaved_calls_through_adapter(true));
+    assert_success(&run_interleaved_calls_through_adapter(false).result);
+    assert_success(&run_interleaved_calls_through_adapter(true).result);
 }
 
 fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorSwapFixture {
     const PACKAGE: &str = "factory-kit";
     let (ws, bundle_path) = setup_bundled_partial_swap(
-        "browser-vendor-reentry-",
         "factory.js",
         bundle_source,
         &[
@@ -3228,9 +3173,7 @@ fn browser_bundled_reentry_fixture(bundle_source: &str, loader: &str) -> VendorS
             },
         })),
     );
-    let spec_path = ws.root.path().join("transform.yaml");
-    write_yaml_file(&spec_path, &spec);
-    let result = run_debundler(&spec_path, &[(PACKAGE, &package_root)]);
+    let result = ws.run_spec(&spec, &[(PACKAGE, &package_root)]);
     VendorSwapFixture {
         result,
         chunk_path: "static/vendor.js".to_string(),
@@ -3304,7 +3247,6 @@ fn named_swap_cannot_capture_a_source_global() {
              console.log(typeof observer + \":\" + wrap(\"X\"));\n"
         };
         let (ws, package_root) = setup_partial_swap_consumer_fixture(
-            "vendor-partial-swap-global-capture-",
             "export const o = (value) => value;\n",
             caller,
             PACKAGE_NAME,
@@ -3326,7 +3268,6 @@ fn named_swap_cannot_capture_a_source_global() {
                 swap_symbol(PACKAGE_NAME, PartialSwapKind::Named, Some("observer"), None),
             )],
         );
-        let spec_path = ws.root.path().join("transform_spec.yaml");
         let mut spec = ws.transform_spec(json!({ "static/megachunk.js": vendor }));
         if materialized {
             spec["logical_modules"] = json!({
@@ -3342,10 +3283,8 @@ fn named_swap_cannot_capture_a_source_global() {
             spec["materialize_logical_modules"] =
                 json!({ "report_out_dir": ws.out_root.join("reports/tree") });
         }
-        write_yaml_file(&spec_path, &spec);
         let extra_args: &[&str] = if dry_run { &["--dry-run"] } else { &[] };
-        let result =
-            run_debundler_with_args(&spec_path, &[(PACKAGE_NAME, &package_root)], extra_args);
+        let result = ws.run_spec_with_args(&spec, &[(PACKAGE_NAME, &package_root)], extra_args);
         assert!(
             !result.status.success(),
             "capturing source globals must be rejected (materialized={materialized}, reports={with_reports}, dry_run={dry_run}):\n{}",
