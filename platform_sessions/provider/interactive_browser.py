@@ -53,13 +53,15 @@ class InteractiveBrowserRuntime:
     caches. It can carry the provider's existing proxy and executable path. The profile must
     be a per-instance durable directory; credentials in it are never copied to the gateway.
     ``owner_token`` is the gateway-to-provider secret, not the browser owner's OIDC cookie.
+    With no ``initial_url``, Chromium starts on its blank tab; the provider may navigate in
+    ``on_viewer_connect`` after authenticated admission and before viewer acceptance.
     """
 
     def __init__(
         self,
         *,
         profile_dir: Path,
-        initial_url: str,
+        initial_url: str | None = None,
         owner_token: str,
         launch_options: Mapping[str, Any] | None = None,
         on_viewer_connect: Callable[[], Awaitable[None] | None] | None = None,
@@ -70,9 +72,10 @@ class InteractiveBrowserRuntime:
         viewport: tuple[int, int] = (1280, 800),
         startup_timeout_seconds: float = 30.0,
     ) -> None:
-        url = urlsplit(initial_url)
-        if url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment:
-            raise ValueError("initial_url must be a fixed HTTPS URL without userinfo or fragment")
+        if initial_url is not None:
+            url = urlsplit(initial_url)
+            if url.scheme != "https" or not url.hostname or url.username or url.password or url.fragment:
+                raise ValueError("initial_url must be a fixed HTTPS URL without userinfo or fragment")
         if len(owner_token) < 32 or not owner_token.isascii() or any(not 32 < ord(c) < 127 for c in owner_token):
             raise ValueError("owner_token must be at least 32 visible ASCII characters")
         if any(size <= 0 for size in viewport) or startup_timeout_seconds <= 0:
@@ -220,10 +223,8 @@ class InteractiveBrowserRuntime:
             with suppress(OSError, RuntimeError):
                 await websocket.close(code=1011)
         finally:
-            with self._state_lock:
-                self._viewer_connected = False
-                self._viewer_socket = None
             cancelled = False
+            quiesce_failed = False
             try:
                 if self._on_viewer_disconnect is not None:
                     completion = self._on_viewer_disconnect()
@@ -235,12 +236,36 @@ class InteractiveBrowserRuntime:
                             except asyncio.CancelledError:
                                 cancelled = True
                         transition.result()
-            except Exception as error:
-                logger.error(  # noqa: TRY400 - exception text may contain credentials
-                    "interactive browser disconnect callback failed error_type=%s", type(error).__name__
-                )
+            except BaseException as error:
+                quiesce_failed = True
+                if isinstance(error, asyncio.CancelledError):
+                    cancelled = True
+                else:
+                    logger.error(  # noqa: TRY400 - exception text may contain credentials
+                        "interactive browser disconnect callback failed error_type=%s", type(error).__name__
+                    )
             finally:
+                with self._state_lock:
+                    if quiesce_failed and self._state == "running":
+                        self._state = "quiesce_failed"
+                    self._viewer_connected = False
+                    self._viewer_socket = None
                 self._viewer_ended.set()
+            if quiesce_failed:
+                # An unquiesced page may still issue requests. Stop it, but keep the
+                # runtime unavailable even if teardown cannot finish safely.
+                teardown = asyncio.create_task(self.close())
+                while not teardown.done():
+                    try:
+                        await asyncio.shield(teardown)
+                    except asyncio.CancelledError:
+                        cancelled = True
+                try:
+                    teardown.result()
+                except Exception as error:
+                    logger.error(  # noqa: TRY400 - exception text may contain credentials
+                        "interactive browser teardown failed error_type=%s", type(error).__name__
+                    )
             if cancelled:
                 raise asyncio.CancelledError
 
@@ -383,12 +408,7 @@ class InteractiveBrowserRuntime:
                     )
                     self._context = context
                     try:
-                        if not context.pages or all(page.url == "about:blank" for page in context.pages):
-                            page = context.pages[0] if context.pages else context.new_page()
-                            try:
-                                page.goto(self._initial_url, wait_until="commit", timeout=15000)
-                            except PlaywrightError as error:
-                                logger.warning("initial sign-in navigation failed error_type=%s", type(error).__name__)
+                        self._prepare_initial_page(context)
                         started.set()
                         while (work := self._jobs.get()) is not None:
                             try:
@@ -419,6 +439,28 @@ class InteractiveBrowserRuntime:
             raise TimeoutError("Chromium did not start")
         if failure:
             raise RuntimeError("Chromium did not start") from failure[0]
+
+    def _prepare_initial_page(self, context: BrowserContext) -> None:
+        # A provider may keep Chromium at about:blank until authenticated viewer
+        # admission, then navigate in on_viewer_connect after fencing reads.
+        if self._initial_url is None:
+            pages = context.pages
+            if not pages:
+                context.new_page()
+                return
+            for extra in pages[1:]:
+                extra.close()
+            if pages[0].url != "about:blank":
+                # Fail startup if a restored tab cannot be quiesced; otherwise a
+                # restart could keep making unattended upstream requests.
+                pages[0].goto("about:blank", wait_until="commit", timeout=15000)
+            return
+        if not context.pages or all(page.url == "about:blank" for page in context.pages):
+            page = context.pages[0] if context.pages else context.new_page()
+            try:
+                page.goto(self._initial_url, wait_until="commit", timeout=15000)
+            except PlaywrightError as error:
+                logger.warning("initial sign-in navigation failed error_type=%s", type(error).__name__)
 
     def _stop_blocking(self) -> None:
         if self._thread is not None:
