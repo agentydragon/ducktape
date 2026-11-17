@@ -47,8 +47,8 @@ gateway image and provider images are published by different repositories.
 
 After reconciliation, verify that the old Deployment has terminated, the existing
 Service has ready gateway EndpointSlices, the gateway and provider Deployments are
-ready, their Secrets and certificates exist, and provider metrics are scraped. Sign in
-through the public owner frontend, import new sessions, and check owner and scoped
+ready, their required Secrets exist, provider certificates exist, and provider metrics
+are scraped. Sign in through the public owner frontend, import new sessions, and check owner and scoped
 bearers with a safe read for each provider. Verify the affected consumers, including
 the Agentplane egress credential service. Do not issue a Quest mutation to test the
 cutover.

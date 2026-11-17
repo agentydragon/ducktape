@@ -17,8 +17,13 @@ def test_remote_workloads_share_connections_but_not_legacy_storage(scratch_app: 
 
     gateway = resource("Deployment", "gateway")["spec"]
     assert gateway["strategy"]["type"] == "Recreate"
-    assert resource("Certificate", "gateway")["spec"]["dnsNames"] == [f"gateway.{remote.NAMESPACE}.svc"]
     gateway_pod = gateway["template"]["spec"]
+    gateway_container = gateway_pod["containers"][0]
+    assert {port["name"]: port["containerPort"] for port in gateway_container["ports"]} == {"http": 8080}
+    assert all(not (item["kind"] == "Certificate" and item["metadata"]["name"] == "gateway") for item in objects)
+    assert all(not env["name"].startswith("PLATFORM_SESSIONS_GRPC_") for env in gateway_container["env"])
+    gateway_service = resource("Service", "gateway")["spec"]
+    assert {port["name"]: port["port"] for port in gateway_service["ports"]} == {"http": 8080}
     assert all("persistentVolumeClaim" not in volume for volume in gateway_pod["volumes"])
     public_objects = Cdk8sTesting.synth(app.chart(scratch_app))
     public_service = next(

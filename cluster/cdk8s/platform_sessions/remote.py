@@ -65,7 +65,6 @@ BEARER_FILES = (
     "blueshield-read",
 )
 _GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
-_GATEWAY_DNS = f"gateway.{NAMESPACE}.svc"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
 _RECORD_CA_SECRET = "platform-sessions-recorder-ca"
@@ -509,14 +508,6 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
         _provider_workload(chart, instance, record_upstream_traffic=record_upstream_traffic)
     for image in PROVIDER_IMAGES:
         _image_policy(chart, image)
-    Certificate(
-        chart,
-        f"{GATEWAY}-certificate",
-        metadata=ApiObjectMetadata(name="gateway", namespace=NAMESPACE),
-        spec=CertificateSpec(
-            secret_name=f"{GATEWAY}-tls", issuer_ref=cluster_ca.INTERNAL_ISSUER, dns_names=[_GATEWAY_DNS]
-        ),
-    )
     provider_credentials = k8s.Volume(
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
@@ -542,15 +533,8 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
                 _config_env("PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json"),
                 _config_env("PLATFORM_SESSIONS_BEARERS", "bearers.json"),
                 _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json"),
-                k8s.EnvVar(name="PLATFORM_SESSIONS_GRPC_ADDRESS", value="0.0.0.0:8444"),
-                k8s.EnvVar(name="PLATFORM_SESSIONS_GRPC_OWNER_TOKEN_FILE", value="/var/run/platform-sessions/owner"),
-                k8s.EnvVar(name="PLATFORM_SESSIONS_GRPC_TLS_CERT", value="/var/run/gateway-tls/tls.crt"),
-                k8s.EnvVar(name="PLATFORM_SESSIONS_GRPC_TLS_KEY", value="/var/run/gateway-tls/tls.key"),
             ],
-            ports=[
-                k8s.ContainerPort(name="http", container_port=8080),
-                k8s.ContainerPort(name="grpc", container_port=8444),
-            ],
+            ports=[k8s.ContainerPort(name="http", container_port=8080)],
             readiness_probe=gateway_health,
             liveness_probe=gateway_health,
             resources=_resources(),
@@ -560,7 +544,6 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
                 k8s.VolumeMount(name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True),
                 k8s.VolumeMount(name="bearers", mount_path="/var/run/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="trust", mount_path="/var/run/provider-trust", read_only=True),
-                k8s.VolumeMount(name="tls", mount_path="/var/run/gateway-tls", read_only=True),
             ],
         ),
         [
@@ -579,17 +562,13 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
                     name=cluster_ca.BUNDLE, items=[k8s.KeyToPath(key=cluster_ca.BUNDLE_KEY, path="ca.crt")]
                 ),
             ),
-            k8s.Volume(name="tls", secret=k8s.SecretVolumeSource(secret_name=f"{GATEWAY}-tls")),
         ],
         selector_name=GATEWAY,
     )
     _service(
         chart,
         "gateway",
-        [
-            k8s.ServicePort(name="http", port=8080, target_port=k8s.IntOrString.from_string("http")),
-            k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
-        ],
+        [k8s.ServicePort(name="http", port=8080, target_port=k8s.IntOrString.from_string("http"))],
         selector_name=GATEWAY,
     )
 

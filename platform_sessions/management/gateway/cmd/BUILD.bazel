@@ -16,8 +16,6 @@ go_binary(
         "//platform_sessions/management/gateway",
         "//platform_sessions/provider:session_provider_go_proto",
         "@io_bazel_rules_go//go/runfiles",
-        "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//credentials",
     ],
 )
 
