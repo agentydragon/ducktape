@@ -1733,6 +1733,9 @@ rust_test(
 
 debundle_e2e_test(
     name = "initialization_test",
+    srcs = glob(
+        ["initialization/*.rs"],
+        exclude = ["initialization/mod.rs"],
+    ),
     source = "initialization/mod.rs",
-    srcs = glob(["initialization/*.rs"], exclude = ["initialization/mod.rs"]),
 )
