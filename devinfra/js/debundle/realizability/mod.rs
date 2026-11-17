@@ -741,13 +741,6 @@ impl RealizabilityIndex {
             .cross_rebinds_with_overlay(&QuotientOverlay::default())
     }
 
-    pub fn first_cross_rebind(&self) -> Option<&CrossRebindEdge> {
-        self.quotient
-            .cross_rebinds
-            .first_key_value()
-            .map(|(_, edge)| edge)
-    }
-
     /// Commit `delta` to the working assignment and quotient; it cannot
     /// be reverted. Hypothetical moves are answered without mutation by
     /// [`Self::verdict_after_moving_source_units_touching`] and

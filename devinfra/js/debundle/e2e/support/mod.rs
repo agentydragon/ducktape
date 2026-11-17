@@ -529,10 +529,6 @@ pub fn run_emit_on_rejection_failure_fixture(opts: FixtureOpts<'_>) -> RejectedF
     run_rejection_fixture_with_args(opts, &["--emit-on-rejection"], 1)
 }
 
-pub fn run_emit_on_rejection_failure_fixture_with_graphs(opts: FixtureOpts<'_>) -> RejectedFixture {
-    run_rejection_fixture_with_graphs_and_args(opts, &["--emit-on-rejection"], 1)
-}
-
 /// Asserts `entry_path` is a parseable module that opens with the
 /// gate-rejected banner: a leading `//` comment block naming the
 /// `GATE_REJECTED` marker and `evidence_report`.
@@ -878,23 +874,6 @@ pub fn assert_line_directly_above(
         below_index > 0 && lines[below_index - 1] == above,
         "expected {above:?} directly above {below_prefix:?} in {module_path}\n--- {module_path} ---\n{code}",
     );
-}
-
-pub fn assert_pure_cycle_break(
-    source: &str,
-    logical_modules: Vec<LogicalModuleEntry>,
-    module_path: &str,
-    contains: &[&str],
-    does_not_contain: &[&str],
-    expected_stdout: &str,
-) -> Fixture {
-    assert_pure_cycle_break_with_opts(
-        FixtureOpts::new(source, logical_modules),
-        module_path,
-        contains,
-        does_not_contain,
-        expected_stdout,
-    )
 }
 
 pub fn assert_pure_cycle_break_with_opts(
