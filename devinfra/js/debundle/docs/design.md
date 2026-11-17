@@ -260,6 +260,12 @@ premise summary adds source-known callee heap reads and writes only when the
 invocation path is non-assumed. The interpreter retains all callee heap cells
 for conservative ordering, including opaque callback and fallback paths; each
 invocation outcome and memo carries the non-assumed subset through nested calls.
+Graph conflict checks borrow the endpoint summaries' read/write sets for the
+graph-build pass and keep no per-edge index. Exact and
+`OwnProperty`-to-`ArrayContents` lookups are `O(log n)`;
+`ArrayContents`-to-property lookup starts in `O(log n)` and may scan `O(r)`
+own-property entries for that origin, preserving the shared overlap index's
+first-witness order.
 These are modeled may-accesses, not claims of runtime execution. Allocations
 remain separate from content writes. The premise therefore covers only orderings the analysis emitted because an
 endpoint's effects were not summarizable (barrier relations of `cell_order`, a

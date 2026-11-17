@@ -148,7 +148,7 @@ mod value_set_tests;
 pub(crate) use array_spreads::StableArraySpreadShapes;
 pub(crate) use at_init_fallback::*;
 pub use cell_overlap::{CellOverlap, CellOverlapIndex, CellOverlapLaw};
-pub(crate) use cell_overlap::{may_conflict, may_overlap};
+pub(crate) use cell_overlap::{first_overlapping, may_conflict, may_overlap};
 pub(crate) use collector::*;
 pub(crate) use dynamic_scope::DynamicScopeFact;
 pub(crate) use global_object::*;

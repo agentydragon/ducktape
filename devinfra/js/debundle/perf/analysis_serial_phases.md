@@ -1497,3 +1497,90 @@ and manifests are in `excalidraw-source-join-paired/`, with binary identities in
 passes the analysis and work-metrics libraries, their tests, and the
 candidate-object escape, whole-program value-flow and metrics CLI tests. The
 large private passing-subset completion target remains a separate requirement.
+
+### Borrowed effect footprints: public Excalidraw check
+
+[#17437](https://github.com/agentydragon/ducktape/pull/17437) queries immutable
+statement read/write sets directly when recording edge premise verdicts. It
+preserves the first conflict witness and array index/length alias law without
+rebuilding an overlap index for each edge. The
+[optimized build](https://app.buildbuddy.io/invocation/7946a301-7169-46ee-8795-a93e7466ab7b)
+is commit `4dfd9dc87edd801cda92326d1b3cb5a2401aa45b`, based on devel
+`10d82686725183eb299baf4fc6e3cdcfb247f736`. Analyzer SHA-256:
+`bf9565cc5c6ca81f90aec05178d9dcdb8a956c8f29f271f2d4df847995f42ab2`.
+The baseline is the activation-local property-join build above; intervening
+Debundle changes at this base affect tests and documentation only.
+
+Three adjacent pairs per metrics mode alternate execution order, with identical
+staged public inputs, four workers and no overlapping local consumer. Metrics
+export every second when enabled. Timings include fresh projection, analysis
+and application, excluding compilation and staging.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Peak RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ---------------------------------- |
+| Off     | 13.68 → 13.09 s                   | 20.87 → 20.10 s                  | 0.9690                   | 0.9479–0.9715      | 712,640 → 713,440                  |
+| On      | 13.36 → 13.41 s                   | 20.31 → 20.49 s                  | 1.0030                   | 0.9860–1.0234      | 714,624 → 713,960                  |
+
+All 12 pipelines pass the normal gate and emit byte-identical sets of 156
+JavaScript files. Every paired wall ratio meets the 10% slowdown guardrail.
+These small measurements do not establish a general runtime or memory reduction.
+Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-borrowed-cell-conflicts-paired/` under the task scratch root; binary
+identities are in `borrowed-cell-conflicts-tools/identity.json` and
+`source-join-tools/identity.json`.
+
+[Focused validation](https://app.buildbuddy.io/invocation/820666a3-9372-4945-bf54-ac6f00800dd5)
+passes `:analysis` with Clippy, `:analysis_test`, both commuting-statements CLI
+tests, ordered-own-data-field and foreign-call-summary tests. The small-subset
+oracle compares borrowed lookups with the existing indexed witness order.
+Fresh large-consumer passing-subset completion remains a separate requirement.
+
+### Rejected cell-ID arena
+
+The prototype `edb9bb19ad16eb2f5ffdaf017a34e77e29cda3ac` replaces repeated
+solver key storage with internal cell IDs, a key interner, reverse reader vectors
+and per-cell `Option<Fact>` slots. Its
+[optimized validation](https://app.buildbuddy.io/invocation/9ab43516-b7af-49e6-b7bc-cd089f690376)
+passes analysis Clippy, solver tests and the whole-program value-flow CLI tests.
+The comparison baseline is composed candidate
+`c560e141acc664c394d5db5d014efd1e37b22735`, not devel.
+The only production difference in the measured candidate is the arena.
+
+Three adjacent pairs per metrics mode alternate execution order on identical
+staged public Excalidraw inputs, with four workers and no overlapping local
+consumer. Metrics export every second when enabled. Timings sum fresh projection,
+analysis and application; compilation and staging are excluded.
+
+| Metrics | Median wall, baseline → candidate | Median CPU, baseline → candidate | Median paired wall ratio | Paired ratio range | Maximum RSS KiB, baseline → candidate |
+| ------- | --------------------------------- | -------------------------------- | ------------------------ | ------------------ | ------------------------------------- |
+| Off     | 13.15 → 14.97 s                   | 20.05 → 22.07 s                  | 1.1587                   | 1.1361–1.1885      | 712,116 → 1,864,028                   |
+| On      | 12.93 → 15.15 s                   | 19.70 → 22.24 s                  | 1.1878                   | 1.1530–1.2019      | 713,452 → 1,914,320                   |
+
+All 12 normal-gate pipelines pass and emit byte-identical sets of 156 JavaScript
+files. Every paired wall comparison nevertheless exceeds the 10% slowdown
+guardrail. Reject this representation for adoption. Reserving an inline optional
+fact for every absent read is a candidate explanation, not yet measured
+attribution; key/cell layout and positive/absent cardinalities must establish
+that before another representation is chosen. Smaller watcher keys alone do not
+guarantee a cheaper complete solver.
+
+Raw GNU time outputs, commands, OTLP JSONL and manifests are in
+`excalidraw-cell-id-arena-paired/` under the task scratch root, with binary
+identities in `cell-id-arena-tools/identity.json` and
+`composed-cell-tools/identity.json`. This prototype has no adoption PR and was
+not used for a private acceptance attempt.
+
+The subsequent [layout probe](https://app.buildbuddy.io/invocation/fa808387-5804-42a9-990e-b6a4f203dbbe),
+commit `cd12e7abe6d46d5227875220383dd99df32a967c`, measures `FlowKey` at 12 bytes,
+`FlowFact` and `Option<FlowFact>` at 56, and the actual
+`InferenceCell<Judgment<FlowKey, FlowFact>>` at 96. Existing metrics count read
+occurrences and new facts, not distinct absent cells, so these sizes do not yet
+attribute the observed RSS increase.
+
+Code review finds a separate lifetime regression: `take_final` removes consumed
+facts, but the prototype retains both owned copies of every consumed key until
+solve completion. Runtime request/result keys own `ProgramPoint` path vectors.
+The old map drops those consumed keys immediately. Separating positive fact slots
+therefore cannot by itself restore the old lifetime bound. Any revision must
+retire unobserved completed cells safely while retaining stable IDs for cells
+still referenced by watchers or pending delivery.

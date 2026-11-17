@@ -53,24 +53,53 @@ Remaining work:
    Keep source witness attribution separate from later interpreter fallback or
    global reach; inherited receipts are not new fallback occurrences.
 
-   The [current bounded-summary run](../perf/analysis_serial_phases.md#bounded-call-return-relationships-2026-11-17)
-   still exhausts 16 GiB during analysis before applying the passing spec.
-   The [late-phase profile](../perf/analysis_serial_phases.md#candidate-containment-graph-materialization-2026-11-17)
-   distinguishes two costs: source-flow propagation is large, but finishes;
-   materializing candidate-containment edges then exhausts memory. The
-   [borrowed-adjacency result](../perf/analysis_serial_phases.md#borrowed-adjacency-result)
-   completes closure within memory but times out before whole-program value-flow
-   preparation ends. The [post-closure profile](../perf/analysis_serial_phases.md#chunk-candidate-projection)
-   attributes that interval to repeated candidate remapping and per-member
-   bitmap insertion. The [shared-projection result](../perf/analysis_serial_phases.md#shared-projection-result)
-   completes whole-program value-flow preparation within memory, then reaches
-   previous 600-second deadline in main-chunk analysis. Validate the completed
-   value read index described in <../docs/inference.md> against the full
-   pipeline. Evaluate the resulting lookup,
-   bitmap-query and source-solver costs separately against the stricter
-   whole-pipeline budget. Preserve shared SCC summaries,
-   bounded immutable-identity caches, transient-query lifetimes and independent
-   graph/proof oracles. Do not infer full completion from one completed phase.
+   Finish whole-pipeline validation of the completed-value read index, shared
+   candidate queries and activation-local property joins described in
+   <../docs/inference.md>. Keep earlier measurements and failed approaches in
+   <../perf/analysis_serial_phases.md>; phase progress does not close this task.
+   Attribute the remaining source dependency collection, dirty-key delivery,
+   completed expression queries and interpreter-effect work separately. Test
+   pending heap-effect masks against exact state/proof oracles and the full
+   pipeline before claiming a benefit. Reprofile after composition so a later
+   optimization targets a remaining cost rather than an earlier bottleneck.
+   Coalesce identical completed-value queries within paired heap-content
+   consumers before adding any persistent expression cache. Preserve each
+   consumer's independent flags, proof checks and opaque effects. Attribute
+   remaining completed-property lookups and effect-cell set operations with the
+   [documented profiling build](../docs/bazel_integration.md#public-performance-workflow)
+   so caller evidence includes line tables and frame pointers; use separate
+   unprofiled binaries for acceptance timing. Do not infer a caller distribution
+   from stripped-binary flat symbols or failed stack attachment.
+   Attribute passing-spec application separately after Analyze completes.
+   Remove per-edge reconstruction of immutable statement-effect overlap indexes;
+   query the existing footprints while preserving the exact first conflict
+   witness and the shared array-alias law. Check borrowed queries against the
+   indexed oracle and real commuting/heap CLI controls. A faster saved-artifact
+   application is diagnostic evidence only; acceptance still includes fresh
+   analysis. Resolve any normal-gate rejection exposed by the longer diagnostic
+   as a separate correctness/spec investigation; a faster refusal is not a
+   successful passing-spec run. Preserve the selected ownership contract while
+   determining whether missing premises or lost inference explain the refusal.
+   Profiling flags change the compiled engine identity, so profiling
+   Apply requires an artifact produced by that same profiling configuration.
+   Validate transient expression dependency deduplication and compact completed
+   property-key lookup independently, then compose them for a fresh pipeline.
+   Keep transient heap-content collectors scoped to one source item and freeze
+   them into the existing ordered facts; compare parsed-source eager/callable,
+   deferred and one-shot summaries and preserve all opacity/proof gates.
+   For the remaining effect-translation sweep, carry observed read/write bits
+   with each indexed cell participant instead of querying the evidence map for
+   every pair. Preserve exact cell orientation, allocation-only behavior,
+   overlap union, conflict counts, witness ordering and premise contradictions;
+   measure the larger participant records as well as CPU cost.
+   Diagnose retained-callback admission failures at one selected call site with
+   bounded predicate-level visibility before changing an admission guard. A
+   provider contract, its indexed call shape, and runtime argument/escape
+   eligibility are separate obligations. Reproduce any proposed gate fix through
+   the real CLI and retain unsafe-cut controls; empty side reports alone do not
+   identify which obligation failed.
+   Preserve shared SCC summaries, bounded immutable-identity caches,
+   transient-query lifetimes and independent graph/proof oracles.
 
    Keep the upstream precision witnesses separate: pooled ref cells, returned
    record fields and memoized tuple fields can still produce broad may-origins.
@@ -244,7 +273,7 @@ dependencies no longer contain that key. Per-reader hash tables, key payloads,
 vector capacity and fact-table lookups remain. The test-only counters distinguish
 accesses from distinct edges, no-op from changing proposals, and wake attempts
 from schedules; they do not provide production corpus cardinalities. The early
-Tana heap sample includes both watcher directions, not a complete account of the
+private-consumer heap sample includes both watcher directions, not a complete account of the
 later RSS peak.
 
 Use the closed source [property-producer census](../docs/inference.md#source-property-producer-census)
@@ -264,6 +293,32 @@ ordering, new-edge backfill, typed proof propagation and completed-transfer
 retirement. Proof-bearing proposals also rescan their preceding reads to register
 premise edges; charge that work separately. Source-only flow already skips that
 proof index, so it is not the explanation for its watcher cost.
+
+Revise the cell-ID arena layout before any further adoption attempt; the first
+[public comparison](../perf/analysis_serial_phases.md#rejected-cell-id-arena)
+exceeds the wall-time guardrail and increases peak memory. Measure the full
+optional fact slot reserved by absent cells, and evaluate separate storage for
+positive facts while sharing key-to-cell lookup and using sparse ID sets for
+rule-local membership and pending changes. Keep IDs internal; restore the
+original key order at semantic delivery boundaries. Check absent reads followed
+by late producers, proof-only growth, sealed inputs, consumed facts and positive
+finished outputs. Measure actual key/cell layouts and distinct absent, present
+and consumed cells: an absent cell's optional fact slot and the final map
+conversion can offset savings in watcher sets. Restore immediate release of
+unobserved consumed runtime keys as well as fact payloads; those keys own path
+vectors. Prove that cell-ID reuse follows removal of active read/change and
+proof references and that no registered watcher or pending delivery can retain
+the old ID. Keep historically watched cells stable, and cover consume/reuse in
+one activation plus later producers. Compare complete optimized pipelines and
+peak memory; unchanged work counts are expected for this representation change.
+
+If per-property watcher edges remain dominant, first measure unique eligible
+receiver/slot edges, expression-group widths and writer fanout before choosing
+grouped property queries. A union of an object's property values is not an
+exact change signal: a new value for one property may already occur in another.
+Any grouped design needs exact property-growth notifications, receiver-growth
+backfill, absent-read behavior and a bound on scans of hot property buckets.
+It must preserve current exact query results and typed proof dependencies.
 
 Close with registration/wakeup and retained-state work controls plus identical
 semantic/CLI outcomes and matched optimized profiles. Measure useful work and
