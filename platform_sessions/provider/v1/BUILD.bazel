@@ -84,3 +84,32 @@ py_test(
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
+
+py_library(
+    name = "import_journal",
+    srcs = ["import_journal.py"],
+    deps = [
+        ":validation",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//atomicwrites",
+        "@pypi//filelock",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//sqlalchemy",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
+
+py_test(
+    name = "import_journal_test",
+    srcs = ["import_journal_test.py"],
+    deps = [
+        ":import_journal",
+        "//:conftest",
+        "//platform_sessions/provider/v1:session_provider_pb2",
+        "@pypi//filelock",
+        "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
+    ],
+)
