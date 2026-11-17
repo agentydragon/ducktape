@@ -362,6 +362,16 @@ async def test_probe_failures_are_typed_and_not_collapsed_to_no_session() -> Non
         assert provider.probes == [pb.PROBE_SOURCE_MANUAL]
 
 
+@pytest.mark.parametrize("source", [pb.PROBE_SOURCE_VERIFY, pb.PROBE_SOURCE_STARTUP, pb.PROBE_SOURCE_OTHER])
+async def test_internal_probe_sources_cannot_be_requested(source: pb.ProbeSource) -> None:
+    provider = SyntheticProvider()
+    async with served_provider(provider) as (client, _service):
+        with pytest.raises(grpc.aio.AioRpcError) as error:
+            await client.Probe(pb.ProbeRequest(instance=instance_ref(), source=source))
+        assert error.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert provider.probes == []
+
+
 async def test_probe_failure_unspecified_reason_is_a_provider_protocol_error() -> None:
     provider = SyntheticProvider()
     provider.probe_outcome = pb.ProbeResult(failure=pb.ProbeFailure(reason=pb.PROBE_FAILURE_REASON_UNSPECIFIED))

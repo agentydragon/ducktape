@@ -13,7 +13,13 @@ class ProviderProtocolError(ValueError):
 
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
-PROBE_SOURCES = {pb.PROBE_SOURCE_SCHEDULED, pb.PROBE_SOURCE_MANUAL}
+PROBE_SOURCES = {
+    pb.PROBE_SOURCE_SCHEDULED,
+    pb.PROBE_SOURCE_MANUAL,
+    pb.PROBE_SOURCE_VERIFY,
+    pb.PROBE_SOURCE_STARTUP,
+    pb.PROBE_SOURCE_OTHER,
+}
 
 
 def _timestamp(value: Timestamp) -> None:

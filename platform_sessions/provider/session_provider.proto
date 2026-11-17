@@ -214,7 +214,7 @@ enum CandidateRejectionReason {
 
 message ProbeRequest {
   InstanceRef instance = 1;
-  // Required. PROBE_SOURCE_UNSPECIFIED is invalid.
+  // Required. Only SCHEDULED and MANUAL are accepted for an RPC request.
   ProbeSource source = 2;
 }
 
@@ -224,6 +224,12 @@ enum ProbeSource {
   PROBE_SOURCE_SCHEDULED = 1;
   // Started by an explicit gateway or operator request.
   PROBE_SOURCE_MANUAL = 2;
+  // A verification initiated by the provider or its integration.
+  PROBE_SOURCE_VERIFY = 3;
+  // A check performed during provider startup.
+  PROBE_SOURCE_STARTUP = 4;
+  // A completed check whose initiator is not otherwise classified.
+  PROBE_SOURCE_OTHER = 5;
 }
 
 message ProbeResponse {
