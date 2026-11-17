@@ -33,12 +33,6 @@ pub fn report(
                         "cross_module_purity: dangling {contract} assertion {chunk}:{export} — no such analyzed module export; ignoring"
                     ),
                 )?,
-                ChunkDiagnostic::OpaqueEntry { error } => write_diagnostic(
-                    stderr,
-                    format_args!(
-                        "cross_module_purity: chunk {chunk} entry failed to parse; leaving it opaque to the purity oracle: {error:#}"
-                    ),
-                )?,
                 ChunkDiagnostic::Selector(outcome) => {
                     write_diagnostic(stderr, format_args!("{}", outcome.render_line()))?
                 }

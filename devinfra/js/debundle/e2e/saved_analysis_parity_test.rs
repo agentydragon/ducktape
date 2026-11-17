@@ -779,3 +779,28 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
         "{execution:#}"
     );
 }
+
+#[test]
+fn unselected_provider_preserves_redeclarations_and_hygiene_on_replay() {
+    let (case, _fixture) = staged(
+        FixtureOpts::new(
+            "import { read } from './bridge.js';\nconst value = read();\nconsole.log(value);\n",
+            vec![logical_module("value", &[Member::new("value")])],
+        ).with_extra_chunks(&[
+            ("static/bridge", "export { read } from './provider.js';\n"),
+            ("static/provider", "var value = 1; var value = 2;\nexport function read() { return ((value) => value)(40) + value; }\n"),
+        ]).with_unassigned_mode(unassigned_mode_inline()),
+    );
+    assert_node_output(&case.root().join("snapshot/static/app.js"), "42\n", "");
+    let fresh = case.run(&[]);
+    let saved = case.run(&["--analysis", path(&case.artifact)]);
+    assert_same_invocation_trees(&fresh, &saved);
+    for invocation in [&fresh, &saved] {
+        assert_ok(&invocation.result, "prepared provider replay");
+        assert_node_output(
+            &invocation.output_root().join("app/static/app/entry.js"),
+            "42\n",
+            "",
+        );
+    }
+}

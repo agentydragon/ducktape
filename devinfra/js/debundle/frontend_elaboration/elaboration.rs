@@ -303,11 +303,8 @@ fn resolve_analysis_source_sites(
     BTreeMap<String, Vec<AnalysisNativeOperationInput>>,
 )> {
     let indexes = ArtifactIndexes::build(artifact)?;
-    let provider_closure = analysis_projection::selected_static_import_closure(
-        artifact,
-        &indexes,
-        selected_chunk_ids,
-    )?;
+    let provider_closure =
+        artifact::selected_static_import_closure(artifact, &indexes, selected_chunk_ids)?;
     let mut source_sites = AnalysisSourceSites::default();
     let mut native_operation_inputs = BTreeMap::new();
 

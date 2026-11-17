@@ -5,7 +5,7 @@
 //! (`analysis::cross_module_purity`). Its results feed each chunk's
 //! `AnalysisInputs`, including `imported_purities` for imported calls.
 
-use analysis::diagnostics::{ChunkDiagnostic, Diagnostics, ExportContract};
+use analysis::diagnostics::{Diagnostics, ExportContract};
 use analysis_model::{PrimKinds, StableExportValue};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,14 +28,9 @@ use analysis::facts::abstract_domain::value::Value;
 use analysis::program_bindings::{ProgramBindings, ResolvedImport};
 use analysis::purity::Purity;
 use anyhow::{Context, Result, bail, ensure};
-use artifact::reports::{
-    ExportAliasRecord, ImportRecord, ImportSpecifierKind, StaticModuleRequest,
-    StaticModuleRequestMode,
-};
+use artifact::reports::{ImportSpecifierKind, StaticModuleRequest, StaticModuleRequestMode};
 use artifact::{ArtifactIndexes, ChunkBundle};
 use graph_provenance::{CurrentRoots, GraphProvenance, InputRoot};
-use js_ast::ParsedJsModule;
-use program_analysis::analyze_program_shallow;
 use swc_common::{Span, Spanned};
 use swc_ecma_ast::{
     ArrowExpr, CallExpr, Callee, Constructor, Decl, Function, GetterProp, MemberProp, ModuleDecl,
@@ -67,18 +62,6 @@ fn exported_decl_names(decl: &Decl) -> Vec<String> {
             .collect(),
         _ => Vec::new(),
     }
-}
-
-/// Parsed entry + import/export records for a chunk whose entry the artifact
-/// kept as raw source (non-selected chunks). The program-summary pass parses
-/// these itself so every listed chunk participates in analysis, not just the
-/// selected ones.
-pub struct ReparsedEntry {
-    pub parsed: ParsedJsModule,
-    imports: Vec<ImportRecord>,
-    export_aliases: Vec<ExportAliasRecord>,
-    stable_export_values: BTreeMap<String, StableExportValue>,
-    static_requests: Vec<StaticModuleRequest>,
 }
 
 /// Program-wide analysis summaries, keyed by source chunk name.
@@ -326,62 +309,12 @@ pub struct ProgramSummaryOptions<'a> {
     pub replacement_packages: &'a BTreeMap<ChunkId, BTreeMap<String, String>>,
 }
 
-/// Re-parse the entries stored as raw source so every chunk's body is
-/// analyzable by the program-summary pass. Parse failures only warn: an
-/// unparseable chunk degrades to conservative behavior rather than failing the
-/// build. The caller keeps the parses until it has numbered the hygiene
-/// contexts they introduce in an analysis artifact.
-pub fn reparse_unretained_entries(
-    artifact: &ChunkBundle,
-    chunk_filter: Option<&BTreeSet<ChunkId>>,
-    diagnostics: &Diagnostics,
-) -> BTreeMap<ChunkId, ReparsedEntry> {
-    let mut reparsed: BTreeMap<ChunkId, ReparsedEntry> = BTreeMap::new();
-    for chunk_artifact in &artifact.chunks {
-        if !chunk_allowed(chunk_artifact.chunk_id, chunk_filter) {
-            continue;
-        }
-        let entry_file = &chunk_artifact.analysis.entry_file;
-        let Some(file) = chunk_artifact.js.get_file(entry_file) else {
-            continue;
-        };
-        if file.ast().is_some() {
-            continue;
-        }
-        let Some(source) = file.source() else {
-            continue;
-        };
-        let chunk_name = artifact.chunk_table.name(chunk_artifact.chunk_id);
-        match js_ast::parse_js_module(chunk_name, source) {
-            Ok(parsed) => {
-                let analysis = analyze_program_shallow(&parsed);
-                reparsed.insert(
-                    chunk_artifact.chunk_id,
-                    ReparsedEntry {
-                        parsed,
-                        imports: analysis.imports,
-                        export_aliases: analysis.export_aliases,
-                        stable_export_values: analysis.runtime_facts.stable_export_values,
-                        static_requests: analysis.runtime_facts.static_requests,
-                    },
-                );
-            }
-            Err(error) => {
-                diagnostics.record_chunk(chunk_name, ChunkDiagnostic::OpaqueEntry { error });
-            }
-        }
-    }
-
-    reparsed
-}
-
 pub fn collect_program_summary(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
     projection: &AnalysisProjection<'_>,
     options: ProgramSummaryOptions<'_>,
     chunk_filter: Option<&BTreeSet<ChunkId>>,
-    reparsed: &BTreeMap<ChunkId, ReparsedEntry>,
     diagnostics: &Diagnostics,
 ) -> Result<ProgramSummary> {
     let ProgramSummaryOptions {
@@ -393,8 +326,7 @@ pub fn collect_program_summary(
     let chunk_analysis_inputs = projection.chunk_analysis_inputs.as_ref();
     let predefined_globals = projection.host_behavior.predefined_globals;
     let declared_pure_new_bindings = &projection.declared_pure_new();
-    // Pass 2: assemble each chunk's oracle inputs from whichever body is
-    // available (retained AST or re-parsed entry).
+    // Assemble oracle inputs from the prepared syntax and matching manifests.
     let mut modules = BTreeMap::new();
     let mut local_export_values =
         BTreeMap::<(String, String), (PrimKinds, BTreeSet<String>)>::new();
@@ -407,32 +339,17 @@ pub fn collect_program_summary(
         }
         let chunk_name = artifact.chunk_table.name(chunk_artifact.chunk_id);
         let entry_file = &chunk_artifact.analysis.entry_file;
-        let retained_ast = chunk_artifact
+        let Some(parsed) = chunk_artifact
             .js
             .get_file(entry_file)
-            .and_then(|file| file.ast());
-        let (parsed, import_records, export_alias_records) =
-            match (retained_ast, reparsed.get(&chunk_artifact.chunk_id)) {
-                (Some(ast), _) => (
-                    ast,
-                    chunk_artifact.analysis.imports.as_slice(),
-                    chunk_artifact.analysis.export_aliases.as_slice(),
-                ),
-                (None, Some(entry)) => (
-                    &entry.parsed,
-                    entry.imports.as_slice(),
-                    entry.export_aliases.as_slice(),
-                ),
-                (None, None) => continue,
-            };
-        let stable_export_values = match reparsed.get(&chunk_artifact.chunk_id) {
-            Some(entry) => &entry.stable_export_values,
-            None => &chunk_artifact.analysis.runtime_facts.stable_export_values,
+            .and_then(|file| file.ast())
+        else {
+            continue;
         };
-        let module_static_requests = match reparsed.get(&chunk_artifact.chunk_id) {
-            Some(entry) => &entry.static_requests,
-            None => &chunk_artifact.analysis.runtime_facts.static_requests,
-        };
+        let import_records = &chunk_artifact.analysis.imports;
+        let export_alias_records = &chunk_artifact.analysis.export_aliases;
+        let stable_export_values = &chunk_artifact.analysis.runtime_facts.stable_export_values;
+        let module_static_requests = &chunk_artifact.analysis.runtime_facts.static_requests;
         static_requests.insert(
             chunk_name.to_string(),
             (
@@ -1721,6 +1638,7 @@ mod tests {
         ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole, JsChunk, JsFile,
         JsFileBody,
     };
+    use program_analysis::analyze_program_shallow;
     use source_identity::ChunkTable;
     use spec::ChunkExportPurity;
 
@@ -1838,11 +1756,6 @@ mod tests {
                 replacement_packages: &BTreeMap::new(),
             },
             None,
-            &reparse_unretained_entries(
-                artifact,
-                None,
-                &analysis::diagnostics::Diagnostics::default(),
-            ),
             &analysis::diagnostics::Diagnostics::default(),
         )
         .expect("program summary analysis succeeds")

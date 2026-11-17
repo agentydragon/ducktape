@@ -28,6 +28,7 @@ mod source_program;
 pub use emission_files::EmissionFiles;
 pub use source_program::{
     SourceProgram, chunk_runtime_entry, normalized_chunk_ids, prune_artifact_to_chunk_ids,
+    selected_static_import_closure,
 };
 
 pub const CANONICAL_CHUNK_ENTRY_FILE: &str = "entry.js";
