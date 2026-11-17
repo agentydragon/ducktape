@@ -1,7 +1,8 @@
 """Typed cdk8s synthesis for source-watcher ArtifactGenerator resources.
 
 The entry point builds each consumer's artifact before its Kustomization node, which
-reads `sourceRef` and `path` off it, and passes every artifact here last.
+reads `sourceRef` and `path` off it. An explicit destination collects the source artifacts
+at declaration time; emission sorts their otherwise unordered names.
 """
 
 from collections.abc import Mapping, Sequence
@@ -35,7 +36,12 @@ _FLUX_SYSTEM_SOURCE = ArtifactGeneratorSpecSources(
 )
 
 
-def artifact(name: str, *directories: str, files: Mapping[str, str] | None = None) -> ArtifactGeneratorSpecArtifacts:
+def artifact(
+    name: str,
+    *directories: str,
+    files: Mapping[str, str] | None = None,
+    into: list[ArtifactGeneratorSpecArtifacts] | None = None,
+) -> ArtifactGeneratorSpecArtifacts:
     """An artifact packaging `directories`, in copy order. The first is the consumer's
     Kustomization directory; following ones are shared bases its Kustomization references.
     `files` maps exact repository file paths to paths inside the first directory. These files
@@ -67,7 +73,10 @@ def artifact(name: str, *directories: str, files: Mapping[str, str] | None = Non
             if not valid_path(destination) or not destination.startswith(f"{root}/"):
                 raise ValueError(f"{name=}: file destination must be inside {root}: {destination=}")
             copies.append(ArtifactGeneratorSpecArtifactsCopy(from_=f"@repo/{source}", to=f"@artifact/{destination}"))
-    return ArtifactGeneratorSpecArtifacts(name=name, origin_revision="@repo", copy=copies)
+    result = ArtifactGeneratorSpecArtifacts(name=name, origin_revision="@repo", copy=copies)
+    if into is not None:
+        into.append(result)
+    return result
 
 
 def artifact_generators(flux_chart: Chart) -> Kustomization:
@@ -95,10 +104,11 @@ def write_artifact_generators(
         ("ducktape-artifacts", ducktape, _DUCKTAPE_SOURCE),
         ("flux-system-artifacts", flux_system, _FLUX_SYSTEM_SOURCE),
     ):
+        ordered: list[ArtifactGeneratorSpecArtifacts] = sorted(artifacts, key=lambda item: item.name)
         ArtifactGenerator(
             chart,
             name,
             metadata=ApiObjectMetadata(name=name, namespace=NAMESPACE),
-            spec=ArtifactGeneratorSpec(artifacts=list(artifacts), sources=[source]),
+            spec=ArtifactGeneratorSpec(artifacts=ordered, sources=[source]),
         )
     write_app(root, _ARTIFACT_GENERATORS_DIR, app)
