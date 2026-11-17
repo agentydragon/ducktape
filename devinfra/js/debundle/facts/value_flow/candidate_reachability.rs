@@ -521,6 +521,7 @@ mod tests {
         type Fact = FlowFact;
         type Rule = FlowKey;
 
+        type MergeScratch = ();
         fn evaluate(&self, rule: &FlowKey, context: &mut impl FactContext<FlowKey, FlowFact>) {
             let Some(fact) = context.read(*rule).cloned() else {
                 return;

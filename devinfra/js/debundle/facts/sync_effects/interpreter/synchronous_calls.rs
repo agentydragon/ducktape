@@ -687,6 +687,7 @@ impl IterativeRules for PrefixNeededRules<'_> {
     type Fact = ();
     type Rule = PrefixNeededKey;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         match rule {
             PrefixNeededKey::Binding(binding) => {

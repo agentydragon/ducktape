@@ -152,6 +152,7 @@ impl IterativeRules for AliasInvalidationRules {
     type Fact = ();
     type Rule = Id;
 
+    type MergeScratch = ();
     fn evaluate(&self, id: &Id, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         if context.read(id.clone()).is_none() {
             return;

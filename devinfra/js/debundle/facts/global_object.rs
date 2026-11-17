@@ -81,6 +81,7 @@ pub(crate) fn apply_global_escape_taint(
         type Fact = ();
         type Rule = usize;
 
+        type MergeScratch = ();
         fn evaluate(&self, index: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             let facts = &self.0[*index];
             let escaped = context.read(Key::Statement(*index)).is_some()

@@ -35,6 +35,8 @@ categories!(Operation {
     BitmapSubsetSkip,
     BitmapSupersetAdoption,
     BitmapCopyOnWriteUnion,
+    BitmapJoinMemoHit,
+    BitmapJoinMemoMiss,
 });
 
 categories!(KeyFamily {

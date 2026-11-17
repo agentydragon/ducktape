@@ -965,6 +965,7 @@ impl IterativeRules for LocalClassProvenance {
     type Key = Id;
     type Fact = ();
     type Rule = usize;
+    type MergeScratch = ();
     const SOURCE_ONLY: bool = true;
 
     fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Id, ()>) {
@@ -1817,6 +1818,7 @@ pub(super) fn infer_namespace_aliases(
         type Key = ();
         type Fact = BTreeSet<Id>;
         type Rule = usize;
+        type MergeScratch = ();
         fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
             let (target, value) = self.assignments[*rule];
             if target == self.namespace {

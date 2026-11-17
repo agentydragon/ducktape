@@ -944,6 +944,7 @@ impl IterativeRules for MutationReceiverAliasRules<'_> {
     type Fact = bool;
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = self.assignments[*rule];
         let receiver = if target != self.namespace {
@@ -2788,6 +2789,7 @@ impl IterativeRules for RawIntrinsicAliasRules<'_> {
     type Fact = NativeReceiverRoots;
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, value) = self.assignments[*rule];
         let aliases = read_intrinsic_alias_inputs(context, value);
@@ -3495,6 +3497,7 @@ impl IterativeRules for ReceiverFlowRules<'_> {
     type Fact = ReceiverFlowFact;
     type Rule = ReceiverFlowRule;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         match rule {
             ReceiverFlowRule::Assignment(index) => {
@@ -4178,6 +4181,7 @@ impl IterativeRules for DerivedBindingRules {
     type Fact = ();
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let (target, sources) = &self.dependencies[*rule];
         if sources
@@ -7874,6 +7878,7 @@ impl ExecutionIndex {
             type Key = Rejected;
             type Fact = ();
             type Rule = ();
+            type MergeScratch = ();
             fn evaluate(&self, _: &(), context: &mut impl FactContext<Self::Key, Self::Fact>) {
                 let legacy: Members = self
                     .legacy

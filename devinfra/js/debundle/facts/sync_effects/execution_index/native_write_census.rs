@@ -407,6 +407,7 @@ impl IterativeRules for NativeIntegrityRootRules<'_> {
     type Fact = IntrinsicRoots;
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Self::Rule, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let write = self.writes[*rule];
         let invalid = {

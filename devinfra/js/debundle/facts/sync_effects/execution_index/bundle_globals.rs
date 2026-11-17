@@ -648,6 +648,7 @@ impl IterativeRules for &Rules<'_> {
     type Fact = ();
     type Rule = Rule;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &Rule, context: &mut impl FactContext<Key, ()>) {
         for key in self.transfer(*rule, &mut Watched(context)) {
             context.propose(key, ());

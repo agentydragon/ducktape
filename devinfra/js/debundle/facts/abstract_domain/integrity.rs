@@ -364,6 +364,7 @@ impl<PrototypeIntact: Fn(IntrinsicSlot) -> bool> IterativeRules
     type Fact = ();
     type Rule = usize;
 
+    type MergeScratch = ();
     fn evaluate(&self, rule: &usize, context: &mut impl FactContext<Self::Key, Self::Fact>) {
         let mut contribution = OwnSlotWrites::default();
         contribution.add(
