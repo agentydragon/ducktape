@@ -238,7 +238,6 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 	store := runtimetesting.NewStore(t, integrationDatabase)
 	session := runtimetesting.OpenSessionForStore(t, store, "")
 	var requests atomic.Int32
-	var completedResponses atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := io.Copy(io.Discard, r.Body); err != nil {
 			t.Error(err)
@@ -261,21 +260,14 @@ func TestRuntimeTurnLimitIncludesProviderBackoffAndAllowsNextInput(t *testing.T)
 			"response": map[string]any{"id": "after-limit-response", "status": "completed"},
 		}); err != nil {
 			t.Error(err)
-			return
 		}
-		completedResponses.Add(1)
 	}))
 	defer server.Close()
 	settings := providerSamplingSettings(server.URL, 1)
 	seconds := 1
 	settings.TurnTimeoutSeconds = &seconds
-	manager, _ := newFakeCodeModeManager(t)
-	runtime := New(store, settings, manager)
-	cancelRuntime, done := startRuntimeForTest(t, runtime)
-	defer func() {
-		cancelRuntime()
-		waitRuntimeDone(t, done)
-	}()
+	runtime, stop := startProviderSamplingRuntime(t, store, settings)
+	defer stop()
 	admitProviderSamplingCommand(t, store, session.ID, "limited-backoff", "start")
 	runtime.Wake(session.ID)
 	waitProviderCommandOutcome(t, store, session.ID, "limited-backoff", samplerpb.CommandOutcome_COMMAND_OUTCOME_FAILED)
