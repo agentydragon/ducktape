@@ -990,7 +990,6 @@ debundle_e2e_test(
         "//devinfra/js/debundle:spec",
         "@crates//:serde",
         "@crates//:serde_json",
-        "@crates//:tempfile",
     ],
 )
 
