@@ -26,7 +26,7 @@ from agentplane.native.codex import scenarios, wire
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
 from agentplane.native.codex.testing.model import EFFORT, MODEL
-from agentplane.native.codex.testing.probe_support import rpc, server
+from agentplane.native.codex.testing.probe_support import native_probe_thread_start_params, rpc, server
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess
 
@@ -54,17 +54,12 @@ async def test_v2_child_discovery_and_resume(
                 await rpc(
                     process,
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={
-                        "model_reasoning_effort": EFFORT,
-                        "features.multi_agent": True,
-                        "features.multi_agent_v2": True,
-                    },
+                    **native_probe_thread_start_params(
+                        codex,
+                        scenarios.BASE_INSTRUCTIONS,
+                        ephemeral=False,
+                        config_overrides={"features.multi_agent": True, "features.multi_agent_v2": True},
+                    ),
                 )
             )["thread"]
             root_id = root["id"]
@@ -196,17 +191,12 @@ async def test_concurrent_child_transcripts_and_recovery(
                 await rpc(
                     process,
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={
-                        "model_reasoning_effort": EFFORT,
-                        "features.multi_agent": True,
-                        "features.multi_agent_v2": v2,
-                    },
+                    **native_probe_thread_start_params(
+                        codex,
+                        scenarios.BASE_INSTRUCTIONS,
+                        ephemeral=False,
+                        config_overrides={"features.multi_agent": True, "features.multi_agent_v2": v2},
+                    ),
                 )
             )["thread"]
             root_id = root["id"]
@@ -366,6 +356,7 @@ async def test_nested_child_ancestry_and_terminal_recovery(
 ) -> None:
     """V1 grandchildren and v2's fresh-child delegation boundary, through failure and crash."""
     namespace = "collaboration" if v2 else "multi_agent_v1"
+    thread_start_config = {"features.multi_agent": True, "features.multi_agent_v2": v2, "agents.max_depth": 2}
     ancestry: dict[str, str] = {}
     async with asyncio.timeout(90):
         async with server(codex, openai_responses, "nested") as process:
@@ -373,18 +364,9 @@ async def test_nested_child_ancestry_and_terminal_recovery(
                 await rpc(
                     process,
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={
-                        "model_reasoning_effort": EFFORT,
-                        "features.multi_agent": True,
-                        "features.multi_agent_v2": v2,
-                        "agents.max_depth": 2,
-                    },
+                    **native_probe_thread_start_params(
+                        codex, scenarios.BASE_INSTRUCTIONS, ephemeral=False, config_overrides=thread_start_config
+                    ),
                 )
             )["thread"]
             root_id = root["id"]

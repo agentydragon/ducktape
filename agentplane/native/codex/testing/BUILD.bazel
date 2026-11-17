@@ -82,6 +82,7 @@ py_library(
     srcs = ["probe_support.py"],
     deps = [
         ":harness",
+        ":model",
         ":responses",
         "//agentplane/native/codex:driver",
         "//agentplane/native/codex:scenarios",

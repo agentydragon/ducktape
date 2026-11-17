@@ -12,8 +12,8 @@ import pytest_bazel
 from agentplane.native.codex import scenarios
 from agentplane.native.codex.testing import responses_sse
 from agentplane.native.codex.testing.harness import CodexHarness
-from agentplane.native.codex.testing.model import EFFORT, MODEL
-from agentplane.native.codex.testing.probe_support import request, rpc, server
+from agentplane.native.codex.testing.model import MODEL
+from agentplane.native.codex.testing.probe_support import native_probe_thread_start_params, request, rpc, server
 from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.native.testing.async_process import AsyncNativeProcess, FrameCursor
 
@@ -127,14 +127,9 @@ async def test_history_projection_against_resumed_model_input(
                 await rpc(
                     process,
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={"model_reasoning_effort": EFFORT},
-                    **({"historyMode": history_mode} if history_mode else {}),
+                    **native_probe_thread_start_params(
+                        codex, scenarios.BASE_INSTRUCTIONS, ephemeral=False, history_mode=history_mode
+                    ),
                 )
             )["thread"]
             assert thread["historyMode"] == (history_mode or "paginated")
@@ -210,13 +205,7 @@ async def test_compaction_history_projection_against_resumed_model_input(
                 await rpc(
                     process,
                     "thread/start",
-                    cwd=str(codex.workspace),
-                    model=MODEL,
-                    approvalPolicy="never",
-                    sandbox="danger-full-access",
-                    ephemeral=False,
-                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
-                    config={"model_reasoning_effort": EFFORT},
+                    **native_probe_thread_start_params(codex, scenarios.BASE_INSTRUCTIONS, ephemeral=False),
                 )
             )["thread"]
             assert thread["historyMode"] == "paginated"
