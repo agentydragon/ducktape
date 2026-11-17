@@ -222,7 +222,7 @@ assume one. The nodes live in sections 2, 5, 13 and 14; this is their order.
 | Decide creation             | `CENTRAL_SESSION_CREATION_CONTRACT`                                                                                           | Drafted with the next two in [#15436](https://github.com/agentydragon/ducktape/pull/15436), awaiting review |
 | Decide attachments          | `SESSION_ATTACHMENT_CONTRACT`                                                                                                 | Same PR                                                                                                     |
 | Decide lifetimes            | `SESSION_AND_INBOX_LIFETIME`                                                                                                  | Same PR; row and inbox retention already implemented                                                        |
-| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | #15436 recommends moving `setup_script` and `cwd` to attachments                                            |
+| Decide setup                | `SESSION_ENVIRONMENT_SETUP_DESIGN`                                                                                            | Setup stays per Session for now (operator, 2026-11-17); revisit before zero or several attachments          |
 | Decide identity details     | `SESSION_IDENTITY_CONTRACT`                                                                                                   | Principal decided (an `Identity`); name, incarnation and shared-Environment rules open                      |
 | Zero-Environment path       | `CENTRAL_SESSION_WITHOUT_ENVIRONMENT`                                                                                         | Blocked on the decisions above                                                                              |
 | Inboxes keyed by Session    | `INBOX_SESSION_KEYING`                                                                                                        | Unscheduled to-do; not blocked on the decisions above                                                       |
@@ -250,7 +250,7 @@ flowchart LR
     SESSION_ATTACHMENT_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_AND_INBOX_LIFETIME --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_CONTRACT --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
-    SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    SESSION_ENVIRONMENT_SETUP_DESIGN -- setup ownership --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> CENTRAL_SESSION_NOTIFICATIONS[Blocked: inboxes without an Environment]
     INBOX_SESSION_KEYING[Unscheduled: inboxes keyed by Session alone, section 2] --> CENTRAL_SESSION_NOTIFICATIONS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_HISTORY_PRESENTATION[Blocked: app views without a Sandbox]
@@ -2545,8 +2545,8 @@ flowchart LR
     SESSION_IDENTITY_ENFORCEMENT --> SESSION_NATIVE_IDENTITY_WORKFLOW
     SESSION_IDENTITY_CONTRACT --> SESSION_ATTACHMENT_CONTRACT
     SESSION_ATTACHMENT_CONTRACT --> SESSION_ENV_ATTACHMENTS
-    SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> SESSION_ENV_ATTACHMENTS
-    SESSION_ENVIRONMENT_SETUP_DESIGN -. setup behavior .-> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
+    SESSION_ENVIRONMENT_SETUP_DESIGN -- setup ownership --> SESSION_ENV_ATTACHMENTS
+    SESSION_ENVIRONMENT_SETUP_DESIGN -- setup ownership --> CENTRAL_SESSION_WITHOUT_ENVIRONMENT
     SESSION_IDENTITY_ENFORCEMENT --> SESSION_ENV_ATTACHMENTS
     CENTRAL_SESSION_WITHOUT_ENVIRONMENT --> SESSION_ENV_ATTACHMENTS
     SESSION_ENV_ATTACHMENTS --> SESSION_ATTACHMENT_SURFACES
@@ -2694,8 +2694,9 @@ Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEf
 `HarnessHost` service in package `agentplane.harness_host`:
 
 - `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
-  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. `ListSessions` and the
-  stream carry per-Session harness state, setup, active turn and launch outcome.
+  marker, then upserts, the shape of the Dispatcher's `WatchSessions`. On devel, `ListSessions`
+  and the stream carry `SessionSummary`. The per-Session status both hosts would report instead is
+  the undecided [status sketch](harness_host_session_status.md).
 - `EnvironmentRuntime` keeps the lifecycle RPCs and `GetStatus` lifecycle, boot ID and harness
   processes for diagnostics.
 - Inside the Runtime, a HarnessHost adapter in `coordinator` beside `Runtime` translates its
@@ -2730,11 +2731,21 @@ harnesses? idk". The sampler's `Sampler` service already reuses the Runtime's fo
 the differences are its `CreateSessionRequest` and its own RPCs. Starts once
 `HARNESS_HOST_EXTRACTION` step 1 lands the proto.
 
-1. **One CreateSession:** the sampler's `executor` and `expected_incarnation_uid` leave
-   `CreateSessionRequest`. The executor's namespace joins `central_sampler_v1` placement beside
-   `executor_environment`; the executor incarnation fence stays, as placement or as a precondition
-   both hosts check, decided in this PR.
-2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`.
+1. **One CreateSession.** Released by the operator 2026-11-17 06:10 UTC ("yeah sounds good to me");
+   a worker started at 06:12.
+   - The sampler's `executor` and `expected_incarnation_uid` leave `CreateSessionRequest`.
+   - The sampler takes the executor's name and UID from `central_sampler_v1.executor_environment`,
+     and the namespace from a new sampler setting.
+   - The first Executor `OpenSession` binds the current incarnation, and the sampler guards on it
+     from then on.
+   - The executor stays required in the placement.
+   - PRs, in order:
+     1. The image accepts an optional setting.
+     2. The staging setting, after that image is pinned.
+     3. The setting becomes required, the Dispatcher stops sending, and the fields are reserved.
+2. **Sampler serves HarnessHost**, including `ListSessions` and `WatchSessions`, beside `Sampler`;
+   their per-Session payload follows the [status sketch](harness_host_session_status.md) once
+   reviewed.
 3. **One Dispatcher client:** after the step 2 image is pinned, central and hosted delivery use one
    HarnessHost client and differ only in the target: the sampler, or Environments' proxy for the
    Sandbox.
@@ -2755,7 +2766,8 @@ HarnessHost `WatchSessions` stream per running Sandbox through the Environments 
 Sessions from the sampler's; hosted Sessions can land first. Waits on the card in
 `SESSION_LIVE_STATUS_OWNERSHIP_DESIGN` (record shape, fencing, staleness), on
 `DISPATCHER_SESSION_WATCH`, and on HarnessHost's `WatchSessions`. If the card picks status from
-History, this node needs no HarnessHost edge.
+History, this node needs no HarnessHost edge. The record and archive check sketched for the
+recommended option, not yet accepted, are in the [HarnessHost status sketch](harness_host_session_status.md#dispatcher-running-status).
 
 **Exit:** a shared Codex host with attached and dormant Sessions, a Runtime restart and a suspended
 Sandbox each show the reviewed current, stale and unknown states in the App.
@@ -2991,7 +3003,40 @@ The decision may retire or reshape `HISTORY_SANDBOX_RECORD` rather than require 
 
 ### `SESSION_ENVIRONMENT_SETUP_DESIGN` — choose where setup belongs
 
-**Decision; operator lean, 2026-11-04:** the current Session `setup_script` may belong to the
+**For now, setup stays per Session; this decision must be revisited before a central Session can run
+with no Environment or with several attachments.** Operator, 2026-11-17 06:28 UTC: "the conservative
+thing would be to keep setup per session for now if we can, but we should revisit it before central
+sampler can have detached sessions / multiple attachment". Earlier, 06:22: "it would become maybe
+setup state on a _attached sandbox_, or we might just get rid of the session / sandbox setup script
+feature. it might be easier, we would need to think about it - there are tradeoffs." That is why this
+node is a hard prerequisite of `CENTRAL_SESSION_WITHOUT_ENVIRONMENT` and `SESSION_ENV_ATTACHMENTS`.
+Until then, the [HarnessHost status sketch](harness_host_session_status.md) reports setup on the
+host side of each Session.
+
+Facts on devel, 2026-11-17:
+
+- `setup_script` is a per-Session `CreateSession` field. It is supplied by the App's new-Thread form
+  and Thread presets, the Actions `create_session` and delegation inputs, and the CLI.
+- The Runtime runs it once per Session, after Sandbox bootstrap, in the Session's cwd, and starts the
+  harness only after it succeeds. Two Sessions on one Sandbox each run their own script.
+- The sampler runs it through the Executor on the executor Sandbox. A failure or interruption blocks
+  that Session for good, because setup is never replayed.
+- The Sandbox already has its own once-per-Sandbox `bootstrap`.
+- Three staging Thread presets clone a repository into a per-Session workspace this way: Haku,
+  finance-agent and the ducktape coder. Shared worker Sandboxes rely on the same per-Session clones.
+
+The options:
+
+- **Keep it per Session.** This is the current choice.
+- **Make it per (Session, attached Sandbox).** This only means something once attachments can change
+  after creation.
+- **Drop it.** Removing it deletes the field from both `CreateSession`s, the Dispatcher record and
+  every input. It also removes the Runtime setup job, four journal events, the sampler's setup path and
+  block, and the App's setup UI. Clones would move to Sandbox bootstrap, giving one checkout shared by
+  all Sessions, or to the agent's first turn. That loses isolated per-Session checkouts on shared
+  Sandboxes and the structured never-replayed failure.
+
+**Earlier operator lean, 2026-11-04:** the current Session `setup_script` may belong to the
 Environment instead. Compare Environment creation/bootstrap, an explicitly scoped attachment or
 workspace setup operation, and any narrowly justified Session-specific setup. Do not make a
 zero-Environment Session run an Environment script or silently choose an attachment. Define behavior
