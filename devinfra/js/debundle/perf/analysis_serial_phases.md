@@ -912,6 +912,16 @@ states. They neither establish completed-solve memory savings nor an
 end-to-end speedup. Fresh projection, passing-spec application and runtime
 checks within 600 seconds/16 GiB remain unverified.
 
+Comparing the periodic samples at matching propagation progress gives stronger
+evidence for the subscription reduction. The closest control sample to the
+census endpoint has exactly the same 2,542,207 fact rows, including identical
+per-family row counts. It has 802,723 event evaluations versus 802,668 for the
+census, and 78,293,225 subscriptions versus 63,661,979: 14,631,246 fewer
+subscriptions (18.7%). Reads are 123,622,950 versus 99,135,843. These are
+periodic, batched snapshots rather than identical solver checkpoints, but the
+drop is not explained just by the different timeout endpoints. The receipts
+are in `census-matched-progress.json` and the two `*-samples.json` files below.
+
 Raw commands, GNU time files, OTLP, manifests and tool identities are in
 `/tmp/agents/2026_11_16/debundle-performance-workflow/.git/task-scratch/metrics/`:
 `census-{control,census}-{off,on}-excalidraw-{1,2,3}`,
