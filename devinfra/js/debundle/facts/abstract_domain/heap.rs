@@ -1844,9 +1844,11 @@ mod tests {
 
     #[test]
     fn effect_frontiers_match_full_heap_scan_and_skip_saturated_queries() {
+        // Fallthrough avoids publishing an opaque return from a method body;
+        // the explicit calls below should drive the publication transitions.
         let source = r#"
-const foo = { value: 1, read: function () { return this.value; } };
-const bar = { value: 1, read: function () { return this.value; } };
+const foo = { value: 1, read: function () { this.value; } };
+const bar = { value: 1, read: function () { this.value; } };
 const next = 2;
 const alias = foo;
 function getFoo() { return foo; }
