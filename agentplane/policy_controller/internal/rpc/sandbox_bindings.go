@@ -14,6 +14,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -41,14 +42,6 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 	if err := s.requireKnownPolicySets(ctx, request.GetPolicySets()); err != nil {
 		return nil, err
 	}
-	var expiresAt *metav1.Time
-	if value := request.GetExpiresAt(); value != nil {
-		if err := value.CheckValid(); err != nil {
-			return nil, status.Error(codes.InvalidArgument, "expires_at must be a valid timestamp")
-		}
-		converted := metav1.NewTime(value.AsTime().UTC())
-		expiresAt = &converted
-	}
 	controller, blockOwnerDeletion := false, false
 	binding := &policyapi.PolicyBinding{
 		TypeMeta: metav1.TypeMeta{APIVersion: policyapi.SchemeGroupVersion.String(), Kind: "PolicyBinding"},
@@ -62,15 +55,11 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 		},
 		Spec: policyapi.PolicyBindingSpec{
 			Subject:    policyapi.Subject{Identity: &policyapi.IdentityRef{Name: identity.Name}},
-			PolicySets: slices.Clone(request.GetPolicySets()), ExpiresAt: expiresAt,
+			PolicySets: slices.Clone(request.GetPolicySets()),
 		},
 	}
-	if err := s.objects.Create(ctx, binding); err != nil {
-		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
-		if apierrors.IsAlreadyExists(err) {
-			return nil, status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
-		}
-		return nil, status.Error(codes.Unavailable, "PolicyBinding could not be created")
+	if err := s.createPolicyBinding(ctx, binding, request.GetExpiresAt()); err != nil {
+		return nil, err
 	}
 	// The owner reference carries the Sandbox UID, but the subject names the Identity by name only.
 	// Recheck after create to catch a Sandbox replacement, a rebind or an Identity replacement
@@ -89,6 +78,24 @@ func (s *Service) GrantSandboxPolicyBinding(ctx context.Context, request *policy
 		return nil, status.Error(codes.Internal, "PolicyBinding response is invalid")
 	}
 	return &policypb.GrantSandboxPolicyBindingResponse{Binding: message}, nil
+}
+
+func (s *Service) createPolicyBinding(ctx context.Context, binding *policyapi.PolicyBinding, expiresAt *timestamppb.Timestamp) error {
+	if expiresAt != nil {
+		if err := expiresAt.CheckValid(); err != nil {
+			return status.Error(codes.InvalidArgument, "expires_at must be a valid timestamp")
+		}
+		converted := metav1.NewTime(expiresAt.AsTime().UTC())
+		binding.Spec.ExpiresAt = &converted
+	}
+	if err := s.objects.Create(ctx, binding); err != nil {
+		slog.ErrorContext(ctx, "PolicyService PolicyBinding creation failed", "error", err)
+		if apierrors.IsAlreadyExists(err) {
+			return status.Error(codes.Aborted, "PolicyBinding creation conflicted; try again")
+		}
+		return status.Error(codes.Unavailable, "PolicyBinding could not be created")
+	}
+	return nil
 }
 
 func (s *Service) cleanupCreatedBinding(ctx context.Context, binding *policyapi.PolicyBinding) {
