@@ -12,11 +12,5 @@ import (
 var database *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(fixtureDatabase *postgres.Database) int {
-			database = fixtureDatabase
-			return m.Run()
-		},
-	))
+	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &database))
 }
