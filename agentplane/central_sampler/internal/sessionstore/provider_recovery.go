@@ -147,14 +147,7 @@ func (s *Store) beginProviderAfterHostLoss(ctx context.Context, owner Owner, ses
 		if err := insertProviderAttempt(ctx, tx, id, owner, string(requestWire), session, policy, previous.StepID, &previousID, previous.Number+1, previous.Budget); err != nil {
 			return err
 		}
-		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
-			return err
-		}
-		conversation.Pending = &PendingIntent{ID: id, Kind: kind}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
-			return err
-		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err

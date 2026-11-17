@@ -84,19 +84,26 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
 		}
-		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
-			return err
-		}
-		conversation.Pending = &PendingIntent{ID: id, Kind: kind}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
-			return err
-		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
 	}
 	return id, wire, nil
+}
+
+// publishIntent follows the caller's admission checks and intent insertion in the same transaction.
+func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+	id string, request IntentPayload,
+) error {
+	if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
+		return err
+	}
+	conversation.Pending = &PendingIntent{ID: id, Kind: request.Kind}
+	if err := updateConversation(ctx, tx, conversation); err != nil {
+		return err
+	}
+	return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
@@ -313,14 +320,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, policy, id, nil, 1, policy.Budget); err != nil {
 			return err
 		}
-		if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
-			return err
-		}
-		conversation.Pending = &PendingIntent{ID: id, Kind: PendingIntentCompaction}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
-			return err
-		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, eventpb.ExecutionProgress_KIND_COMPACTION, eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
