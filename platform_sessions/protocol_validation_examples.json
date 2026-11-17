@@ -1,0 +1,187 @@
+{
+  "snapshots": [
+    {
+      "name": "storage_error_may_omit_state_changed_at",
+      "valid": true,
+      "message": { "state": 7 }
+    },
+    {
+      "name": "verified_requires_state_changed_at",
+      "valid": true,
+      "message": { "state": 3, "stateChangedAt": "2025-01-01T00:00:00Z" }
+    },
+    {
+      "name": "verified_missing_state_changed_at",
+      "valid": false,
+      "message": { "state": 3 }
+    },
+    {
+      "name": "future_state_with_state_changed_at",
+      "valid": true,
+      "message": { "state": 88, "stateChangedAt": "2025-01-01T00:00:00Z" }
+    },
+    {
+      "name": "future_state_missing_state_changed_at",
+      "valid": false,
+      "message": { "state": 88 }
+    },
+    {
+      "name": "future_probe_outcome",
+      "valid": true,
+      "message": {
+        "state": 3,
+        "stateChangedAt": "2025-01-01T00:00:00Z",
+        "lastProbe": {
+          "completedAt": "2025-01-01T00:00:00Z",
+          "source": 2,
+          "outcome": 88
+        }
+      }
+    }
+  ],
+  "probe_results": [
+    {
+      "name": "future_probe_outcome",
+      "valid": true,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 88
+      }
+    },
+    {
+      "name": "unknown_upstream_http_error_status_100",
+      "valid": true,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 100 }
+      }
+    },
+    {
+      "name": "unknown_upstream_http_error_status_599",
+      "valid": true,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 599 }
+      }
+    },
+    {
+      "name": "unknown_upstream_http_error_status_below_range",
+      "valid": false,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 99 }
+      }
+    },
+    {
+      "name": "unknown_upstream_http_error_status_above_range",
+      "valid": false,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 600 }
+      }
+    },
+    {
+      "name": "unknown_non_http_reason_cannot_have_http_status",
+      "valid": false,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 1, "upstreamHttpStatus": 401 }
+      }
+    },
+    {
+      "name": "upstream_http_error_without_optional_status",
+      "valid": true,
+      "message": {
+        "completedAt": "2025-01-01T00:00:00Z",
+        "source": 2,
+        "outcome": 5,
+        "outcomeUnknown": { "reason": 4 }
+      }
+    }
+  ],
+  "import_results": [
+    {
+      "name": "future_import_outcome",
+      "valid": true,
+      "message": { "outcome": 88 }
+    },
+    {
+      "name": "upstream_failure_status_100",
+      "valid": true,
+      "message": { "outcome": 7, "failure": { "reason": 2, "upstreamHttpStatus": 100 } }
+    },
+    {
+      "name": "upstream_failure_status_599",
+      "valid": true,
+      "message": { "outcome": 7, "failure": { "reason": 2, "upstreamHttpStatus": 599 } }
+    },
+    {
+      "name": "upstream_failure_status_below_range",
+      "valid": false,
+      "message": { "outcome": 7, "failure": { "reason": 2, "upstreamHttpStatus": 99 } }
+    },
+    {
+      "name": "upstream_failure_status_above_range",
+      "valid": false,
+      "message": { "outcome": 7, "failure": { "reason": 2, "upstreamHttpStatus": 600 } }
+    },
+    {
+      "name": "non_http_failure_cannot_have_http_status",
+      "valid": false,
+      "message": { "outcome": 7, "failure": { "reason": 3, "upstreamHttpStatus": 401 } }
+    },
+    {
+      "name": "future_failure_reason_without_status",
+      "valid": true,
+      "message": { "outcome": 7, "failure": { "reason": 88 } }
+    },
+    {
+      "name": "unknown_import_upstream_status_599",
+      "valid": true,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 599 } }
+    },
+    {
+      "name": "unknown_import_status_out_of_range",
+      "valid": false,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 99 } }
+    },
+    {
+      "name": "unknown_import_http_status_with_non_http_reason",
+      "valid": false,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 1, "upstreamHttpStatus": 401 } }
+    }
+  ],
+  "verify_results": [
+    {
+      "name": "future_verify_outcome",
+      "valid": true,
+      "message": { "outcome": 88 }
+    },
+    {
+      "name": "unknown_verify_upstream_status_100",
+      "valid": true,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 100 } }
+    },
+    {
+      "name": "unknown_verify_status_out_of_range",
+      "valid": false,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 4, "upstreamHttpStatus": 600 } }
+    },
+    {
+      "name": "unknown_verify_http_status_with_non_http_reason",
+      "valid": false,
+      "message": { "outcome": 6, "outcomeUnknown": { "reason": 2, "upstreamHttpStatus": 401 } }
+    }
+  ]
+}
