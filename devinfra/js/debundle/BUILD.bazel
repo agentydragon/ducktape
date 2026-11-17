@@ -1233,8 +1233,6 @@ rust_library(
     deps = [
         ":analysis",
         ":analysis_projection_wire_rust_proto",
-        ":artifact",
-        ":source_identity",
         ":spec",
         ":spec_wire",
         ":spec_wire_rust_proto",

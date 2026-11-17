@@ -27,7 +27,8 @@ pub struct SourcePreparation {
 }
 
 /// `materialized_chunk_ids` is `TransformSpec::materialize_chunk_ids`: the
-/// chunks whose modules are planned keep their AST. `analysis_provider_chunk_ids`
+/// chunks whose modules are planned keep their AST, and their static import
+/// closure keeps read-only syntax for program analysis. `analysis_provider_chunk_ids`
 /// independently retains original ASTs for source-premise providers, including
 /// providers inside the import closure that are not materialized.
 pub fn prepare_js_chunks(
@@ -93,49 +94,20 @@ pub fn prepare_js_chunks(
         })
         .collect();
 
-    // Second pass: replace ASTs with original source for chunks that don't need them.
-    //
-    // A chunk needs to keep its AST if any downstream stage will read it. The
-    // predicates below cover spec-driven stages (logical modules, residual
-    // modules, renames, vendor) and source-premise provider analysis. The
-    // pass-through emission rewriter also canonicalizes specifiers in every
-    // emitted non-module file, including literal `import.meta.require` calls,
-    // so we keep its AST whenever it would rewrite this chunk's entry. The
-    // `has_rewritable_specifier` fact mirrors the canonicalizer's relative-path
-    // gate (`.` or `/` prefix) exactly and is computed during the first-pass
-    // `analyze_program_shallow` walk, so this second pass does not need to
-    // re-visit the AST.
-    let prepared_chunks = parsed_chunks
-        .into_iter()
-        .map(|(chunk_id, chunk_name, mut prepared)| {
-            let needs_emission_ast = materialized_chunk_ids.contains(&chunk_name)
-                || vendor_target_chunk_ids.contains(&chunk_name)
-                || prepared.has_rewritable_specifier;
-
-            if !needs_emission_ast
-                && let Some(pos) = prepared
-                    .files
-                    .iter()
-                    .position(|f| f.path == CANONICAL_CHUNK_ENTRY_FILE)
-            {
-                let file = prepared.files.remove(pos);
-                // Read-only analysis retention must not change source-marker
-                // matching or pass-through output bytes/header behavior.
-                let file = if analysis_provider_chunk_ids.contains(&chunk_name) {
-                    file.into_source_with_ast()
-                } else {
-                    file.into_rendered_source()
-                }
-                .context("freshly prepared entry must contain an AST")?;
-                prepared.files.insert(pos, file);
-            }
-
-            Ok((chunk_id, chunk_name, prepared))
+    // Retention uses the prepared request manifests, without another AST walk.
+    // Relative specifiers still need an emission AST for canonicalization.
+    let emission_asts = parsed_chunks
+        .iter()
+        .filter(|(_, name, prepared)| {
+            materialized_chunk_ids.contains(name)
+                || vendor_target_chunk_ids.contains(name)
+                || prepared.has_rewritable_specifier
         })
-        .collect::<Result<Vec<_>>>()?;
+        .map(|(_, name, _)| name.clone())
+        .collect();
 
     let artifact = ChunkBundle {
-        chunks: prepared_chunks
+        chunks: parsed_chunks
             .into_iter()
             .map(|(chunk_id, _, prepared)| ChunkArtifact {
                 chunk_id,
@@ -152,7 +124,11 @@ pub fn prepare_js_chunks(
 
     let (counts, chunk_records) = build_prepare_output(&artifact.chunks);
     Ok(SourcePreparation {
-        program: SourceProgram::new(artifact)?,
+        program: SourceProgram::new(artifact)?.retain_entry_asts(
+            materialized_chunk_ids,
+            analysis_provider_chunk_ids,
+            &emission_asts,
+        )?,
         counts,
         chunk_records,
     })

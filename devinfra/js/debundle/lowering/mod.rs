@@ -691,16 +691,11 @@ pub fn materialize_logical_modules(
     // function bindings, consumed per chunk via
     // `AnalysisInputs::imported_purities`. Vendor-swapped providers take part
     // through their bundled bodies (SPEC.md § Vendor swap equivalence).
-    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
+    let program_summary_chunk_closure = artifact::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
-    let reparsed = program_summary::reparse_unretained_entries(
-        &artifact,
-        Some(&program_summary_chunk_closure),
-        diagnostics,
-    );
     let mut loaded = match &options.analysis {
         AnalysisMode::Load {
             artifact: bytes,
@@ -711,7 +706,6 @@ pub fn materialize_logical_modules(
             &artifact,
             &selected_chunk_ids,
             options.config.file.as_deref(),
-            &reparsed,
             options.graph_provenance.as_ref(),
             analysis_engine_sha256,
         )?),
@@ -886,7 +880,6 @@ pub fn materialize_logical_modules(
                     replacement_packages: &vendor_plan.replacement_packages(),
                 },
                 Some(&program_summary_chunk_closure),
-                &reparsed,
                 diagnostics,
             )?,
             None,

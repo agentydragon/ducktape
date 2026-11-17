@@ -211,12 +211,11 @@ shared import order, explicit saved DTOs, and validated writer boundary.
 
 - **AR5 — Reuse one prepared source/index across analysis phases.**
   <frontend_elaboration/elaboration.rs> and <staged_analysis/chunk_facts.rs>
-  recollect structural facts; `reparse_unretained_entries` in
-  <staged_analysis/program_summary.rs> rebuilds released syntax. Extend
+  recollect structural facts. Prepared syntax now survives through the selected
+  static provider closure; consolidate the remaining censuses. Extend
   `SourceProgram`/manifest ownership so selectors, provider analysis and local
   facts reuse immutable syntax and indexes across the required provider closure.
-  Close when those production paths neither reparse prepared entries nor build
-  duplicate structural censuses, while exact source sites, repeated declarations,
+  Close when those production paths no longer build duplicate structural censuses, while exact source sites, repeated declarations,
   hygiene, provenance and staged replay remain stable. Preserve `SourceWithAst`
   mutation invalidation, its release at the `EmissionFiles` boundary, and actual
   source-marker/pass-through-byte controls. Profile retention and memory before

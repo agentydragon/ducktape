@@ -132,9 +132,7 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::program_summary::{
-        ProgramSummaryOptions, collect_program_summary, reparse_unretained_entries,
-    };
+    use crate::program_summary::{ProgramSummaryOptions, collect_program_summary};
     use analysis::AnalysisInputs;
     use analysis_projection::AnalysisProjection;
     use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
@@ -270,11 +268,6 @@ mod tests {
                 replacement_packages: &BTreeMap::new(),
             },
             None,
-            &reparse_unretained_entries(
-                artifact,
-                None,
-                &analysis::diagnostics::Diagnostics::default(),
-            ),
             &analysis::diagnostics::Diagnostics::default(),
         )
         .expect("program summary analysis succeeds");

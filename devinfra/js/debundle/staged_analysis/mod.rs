@@ -125,15 +125,12 @@ pub struct ExportReentryTarget {
 
 /// Hygiene-context ordinals for an analysis artifact: the analysed chunks'
 /// runtime ASTs in analysis order, every retained entry AST in chunk table
-/// order, then the cross-module pass's re-parsed entries in chunk order.
-/// `debundle analyze` and a run that loads its artifact parse the same files,
-/// retain the same ASTs and re-parse the same entries, so both number the same
-/// contexts.
+/// order. `debundle analyze` and a run that loads its artifact retain the same
+/// prepared source closure, so both number the same contexts.
 fn context_ordinals(
     artifact: &ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
-    reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
 ) -> Result<ContextOrdinals> {
     let mut modules = Vec::new();
     for chunk_id in analysed_chunk_ids {
@@ -153,7 +150,6 @@ fn context_ordinals(
             modules.push(&ast.module);
         }
     }
-    modules.extend(reparsed.values().map(|entry| &entry.parsed.module));
     Ok(ContextOrdinals::new(modules))
 }
 
@@ -173,7 +169,6 @@ pub fn load_analysis(
     artifact: &ChunkBundle,
     analysed_chunk_ids: &[String],
     file: Option<&str>,
-    reparsed: &BTreeMap<ChunkId, program_summary::ReparsedEntry>,
     provenance: Option<&GraphProvenance>,
     analysis_engine_sha256: &str,
 ) -> Result<(AnalysisArtifactHeader, AnalysisArtifactBody)> {
@@ -202,7 +197,7 @@ pub fn load_analysis(
                 .join(", ")
         );
     }
-    let ordinals = context_ordinals(artifact, analysed_chunk_ids, file, reparsed)?;
+    let ordinals = context_ordinals(artifact, analysed_chunk_ids, file)?;
     let body = analysis_artifact::read_body(body, &ordinals)?;
     Ok((header, body))
 }
@@ -258,17 +253,12 @@ pub fn analyze_program(
         .iter()
         .map(|(chunk_id, report)| (*chunk_id, report.policy.clone()))
         .collect();
-    let program_summary_chunk_closure = analysis_projection::selected_static_import_closure(
+    let program_summary_chunk_closure = artifact::selected_static_import_closure(
         &artifact,
         &artifact_indexes,
         &selected_chunk_ids,
     )?;
     let projection = spec.projection(resolved_export_purity.as_ref());
-    let reparsed = program_summary::reparse_unretained_entries(
-        &artifact,
-        Some(&program_summary_chunk_closure),
-        diagnostics,
-    );
     let mut program_summary = program_summary::collect_program_summary(
         &artifact,
         &artifact_indexes,
@@ -279,19 +269,9 @@ pub fn analyze_program(
             replacement_packages: &vendor_plan.replacement_packages(),
         },
         Some(&program_summary_chunk_closure),
-        &reparsed,
         diagnostics,
     )?;
-    // Reparsed entries are no longer needed once cross-module analysis and
-    // context numbering are complete. Build the ordinal table now so those
-    // ASTs can be released before retaining every chunk's analysis facts.
-    let ordinals = context_ordinals(
-        &artifact,
-        &selected_chunk_ids,
-        spec.entry_file.as_deref(),
-        &reparsed,
-    )?;
-    drop(reparsed);
+    let ordinals = context_ordinals(&artifact, &selected_chunk_ids, spec.entry_file.as_deref())?;
     let chunks = GLOBALS
         .with(|globals| {
             selected_chunk_ids

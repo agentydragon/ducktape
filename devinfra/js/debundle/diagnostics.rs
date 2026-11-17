@@ -31,9 +31,6 @@ pub enum ChunkDiagnostic {
         contract: ExportContract,
         export: String,
     },
-    OpaqueEntry {
-        error: js_ast::JsParseError,
-    },
 }
 
 /// Shared by parallel chunk work. A command drains it even when analysis fails.
@@ -142,7 +139,6 @@ impl<'a> Diagnostics<'a> {
 // Ordering reads structured identities, never human explanations.
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum DiagnosticOrder<'a> {
-    OpaqueEntry,
     DanglingExportContract(ExportContract, &'a str),
     Selector(selector_outcome::SelectorIdentity<'a>),
     RedundantPurityHint(&'a str),
@@ -156,7 +152,6 @@ enum DiagnosticOrder<'a> {
 impl ChunkDiagnostic {
     fn ordering_key(&self) -> DiagnosticOrder<'_> {
         match self {
-            Self::OpaqueEntry { .. } => DiagnosticOrder::OpaqueEntry,
             Self::DanglingExportContract { contract, export } => {
                 DiagnosticOrder::DanglingExportContract(*contract, export)
             }
