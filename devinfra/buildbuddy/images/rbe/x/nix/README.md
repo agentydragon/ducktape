@@ -35,7 +35,12 @@ The 2026-11-17 loader probe rebuilt nix-ld with its fallback library path at
 `/share/nix-ld/lib` and added `hostname`. With a fresh, empty `/run` and no
 `NIX_LD` variables, the downloaded Bazel 9.2.0 ELF failed on the earlier image
 (`libstdc++.so.6` not found) and printed `bazel 9.2.0` on the rebuilt image.
-This was a local container compatibility check, not a Firecracker or pool test.
+On the self-hosted `kvm-vm` pool, a [digest-pinned action test](https://app.buildbuddy.io/invocation/762003d2-b9d6-43c4-b1a1-c1d3b0dc261f)
+ran a dynamically linked C++ executable with an empty environment and printed
+`fhs-loader-ok`; `hostname` also ran, and the test confirmed the standard
+`/run/current-system/sw/share/nix-ld` path was absent. This was a Docker-isolated
+pool action, not a Firecracker runner test. Its image was
+`ghcr.io/agentydragon/buildbuddy-remote-runner@sha256:7ff3661d85a9245eb5306a0423e433c3d0997f71607b31a982baa5e224601f6b`.
 
 The image still needs work before regular CI use:
 
@@ -44,7 +49,10 @@ The image still needs work before regular CI use:
   directly at `/share/nix-ld/lib`; a Firecracker run without loader variables
   still needs validation.
 - Cold image pulls exceeded the pool's five-minute limit; a later attempt
-  succeeded after the cache warmed. Image size and distribution need attention.
+  succeeded after the cache warmed. The new candidate repeated this pattern:
+  the [first action attempt](https://app.buildbuddy.io/invocation/55e4c6ac-fd80-4988-8902-52332249b0dd)
+  timed out while pulling the image, then the retry ran inside it. Image size
+  and distribution need attention.
 - The first benchmark attempt lacked `prlimit`; adding `util-linux` fixed it.
   Heaptrack also emitted a nonfatal warning that `hostname` was missing;
   the rebuilt image includes it, pending a new profiler run.
