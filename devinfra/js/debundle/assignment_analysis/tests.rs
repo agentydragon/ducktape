@@ -1,14 +1,24 @@
-//! Focused atomic-group, factor-assembly, purity and source-location tests.
+//! Focused assignment, report, purity and source-location tests.
 //! Acceptance, rejection and runtime ordering are exercised through the CLI
 //! in e2e/realizability/gate_reports.rs and the at_init_* and lemma_* suites.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::{analyze_facts, build_dependency_graph, parse, parse_with_source_map, test_id};
-use crate::*;
+use super::*;
 use analysis::*;
 use analysis_model::DepKind;
+use raw_js_test_support::parse;
 use source_identity::ChunkId;
+use swc_common::SyntaxContext;
+use swc_ecma_ast::{Id, Module};
+
+fn test_id(name: &str) -> Id {
+    (name.into(), SyntaxContext::empty())
+}
+
+fn analyze_facts(module: &Module) -> Vec<StatementFacts> {
+    analysis::facts::analyze_chunk(module, &AnalysisInputs::default(), None).facts
+}
 
 #[derive(Debug, Clone, Copy)]
 enum TestDestination {
@@ -503,137 +513,6 @@ fn atomic_graph_preserves_direction_between_atomic_groups() {
     assert!(edge.constrains_init_order);
 }
 
-// --- has_side_effect refinement ------------------------------------------
-
-fn has_side_effect_for(src: &str) -> Vec<bool> {
-    let module = parse(src);
-    analyze_facts(&module)
-        .into_iter()
-        .map(|f| !f.purity.is_pure())
-        .collect()
-}
-
-#[test]
-fn function_decl_is_not_side_effecting() {
-    assert_eq!(
-        has_side_effect_for("function f() { return io(); }"),
-        vec![false]
-    );
-}
-
-#[test]
-fn class_decl_pure_without_static_init() {
-    assert_eq!(
-        has_side_effect_for("class C { m() { return io(); } }"),
-        vec![false]
-    );
-    assert_eq!(
-        has_side_effect_for("class C { static x = 1; }"),
-        vec![false]
-    );
-    assert_eq!(
-        has_side_effect_for("class C { static x = io(); }"),
-        vec![true]
-    );
-    assert_eq!(has_side_effect_for("class C { static {} }"), vec![true]);
-}
-
-#[test]
-fn immutable_symbol_const_is_an_inert_computed_class_key() {
-    assert_eq!(
-        has_side_effect_for("const brand = Symbol('brand'); class C { [brand]() {} }"),
-        vec![false, false]
-    );
-}
-
-#[test]
-fn bare_expression_classified_by_purity() {
-    // Plain ident-read expression statement: pure.
-    assert_eq!(has_side_effect_for("X;"), vec![false]);
-    // Function call expression statement: side-effecting.
-    assert_eq!(has_side_effect_for("io();"), vec![true]);
-}
-
-#[test]
-fn multi_declarator_var_decl_is_side_effecting_if_any_init_is() {
-    // After the comma-list pre-split, a multi-declarator
-    // var-decl becomes one row per declarator. So a
-    // mixed-purity comma-list produces both a Pure row and
-    // an Impure row, not a single conservative row.
-    assert_eq!(
-        has_side_effect_for("const A = 1, B = compute();"),
-        vec![false, true]
-    );
-    assert_eq!(
-        has_side_effect_for("const A = 1, B = 2, C = 3;"),
-        vec![false, false, false]
-    );
-}
-
-// --- Comma-list splitter -------------------------------------------------
-
-fn statement_kinds(source: &str) -> Vec<StatementKind> {
-    let module = parse(source);
-    analyze_facts(&module).into_iter().map(|f| f.kind).collect()
-}
-
-#[test]
-fn non_var_decl_statements_are_not_split() {
-    // function / class declarations have no comma-list shape.
-    // Mixed source: const + function + class + bare expression.
-    assert_eq!(
-        statement_kinds("const A = 1; function f() {} class C {} 'side-effecting-string';"),
-        vec![
-            StatementKind::VarDecl,
-            StatementKind::FnDecl,
-            StatementKind::ClassDecl,
-            StatementKind::SideEffect,
-        ]
-    );
-}
-
-// --- Comma-list source locations -----------------------------------------
-
-#[test]
-fn split_comma_list_assigns_per_declarator_source_ranges() {
-    // Each post-split single-declarator source unit must report just its
-    // declarator's line range, not the parent statement's (for
-    // `export const`, not the `ExportDecl` wrapper's). The proposer's
-    // `size_lines_estimate` and the lane workers' `body_extraction`
-    // per-source-unit snippets both rely on this.
-    for source in [
-        "const A = 1,\n      B = 2,\n      C = 3;\n",
-        "export const A = 1,\n             B = 2,\n             C = 3;\n",
-    ] {
-        let (module, cm) = parse_with_source_map(source);
-        let line_index = js_ast::SourceLineIndex::for_source_map(&cm);
-        let analysis = analyze_chunk(
-            &module,
-            &AnalysisInputs::default(),
-            Some(analysis::execution_evidence::SourceLocator {
-                source_path: "test.js",
-                lines: &line_index,
-            }),
-        );
-        let lines: Vec<(usize, usize)> = analysis
-            .facts
-            .iter()
-            .map(|f| {
-                let loc = f
-                    .source_location
-                    .as_ref()
-                    .expect("source_location should be populated");
-                (loc.start_line, loc.end_line)
-            })
-            .collect();
-        assert_eq!(
-            lines,
-            vec![(1, 1), (2, 2), (3, 3)],
-            "each declarator should report only its own line for {source:?}",
-        );
-    }
-}
-
 // --- linker_order in AssignmentReport --------------------------------------
 
 #[test]
@@ -680,115 +559,6 @@ fn validate_retains_the_supplied_traversal_for_cyclic_constraints() {
         ["mod_1", "mod_0", "anon_residual_sentinel"],
         "a rejected witness still has a concrete traversal; it is not a successful schedule-existence query",
     );
-}
-
-// --- Atomic groups ---------------------------------------------------------
-
-fn atomic_groups_for(source: &str) -> Vec<AtomicGroup> {
-    let module = parse(source);
-    let facts = analyze_facts(&module);
-    let dependency_graph = build_dependency_graph(&facts).unwrap();
-    compute_atomic_groups(&dependency_graph)
-}
-
-fn atomic_group_sizes(atomic_groups: &[AtomicGroup]) -> Vec<usize> {
-    let mut sizes: Vec<usize> = atomic_groups.iter().map(|u| u.members.len()).collect();
-    sizes.sort_unstable();
-    sizes
-}
-
-fn assert_partitions_all_source_units(atomic_groups: &[AtomicGroup], total_source_units: usize) {
-    let summed: usize = atomic_groups.iter().map(|u| u.members.len()).sum();
-    assert_eq!(
-        summed, total_source_units,
-        "atomic groups must cover every source unit exactly once; got atomic_groups {atomic_groups:?}",
-    );
-    let mut seen = BTreeSet::new();
-    for atomic_group in atomic_groups {
-        for source_unit in &atomic_group.members {
-            assert!(
-                seen.insert(*source_unit),
-                "source unit {source_unit:?} appears in more than one atomic group",
-            );
-        }
-    }
-}
-
-#[test]
-fn atomic_groups_singletons_for_independent_source_units() {
-    // No edges → each source unit is its own atomic group.
-    let atomic_groups = atomic_groups_for("const A = 1; const B = 2; const C = 3;");
-    assert_partitions_all_source_units(&atomic_groups, 3);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
-}
-
-#[test]
-fn atomic_groups_eager_use_chain_stays_split() {
-    // A → B → C via EagerUse: directed-only edges, no cycle, so
-    // each source unit remains its own atomic group.
-    let atomic_groups = atomic_groups_for("const C = 3; const B = C + 1; const A = B + 1;");
-    assert_partitions_all_source_units(&atomic_groups, 3);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
-}
-
-#[test]
-fn atomic_groups_lazy_use_cycle_stays_split() {
-    // Two functions that reference each other lazily plus their
-    // bindings — no constraining edges, so all four source units are
-    // independent atomic groups.
-    let atomic_groups = atomic_groups_for(
-        "function helperA() { return B; } function helperB() { return A; } const A = 1; const B = 2;",
-    );
-    assert_partitions_all_source_units(&atomic_groups, 4);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1, 1]);
-}
-
-#[test]
-fn atomic_groups_sequenced_chain_stays_split() {
-    // Three side-effecting top-level statements form a directed
-    // Sequenced chain. A directed source-order edge alone is
-    // satisfiable by linker order — no co-location forced — so
-    // every source unit stays in its own atomic group. Co-location
-    // would only kick in if some non-Sequenced edge ran in the
-    // reverse direction.
-    let atomic_groups = atomic_groups_for(
-        r#"const a1 = (globalThis.tag = "a1", 1); const b1 = (globalThis.tag = "b1", 2); const a2 = (globalThis.tag = "a2", 3);"#,
-    );
-    assert_partitions_all_source_units(&atomic_groups, 3);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![1, 1, 1]);
-}
-
-#[test]
-fn atomic_groups_sequenced_plus_reverse_eager_merges() {
-    // A Sequenced source-order edge in one direction plus an
-    // EagerUse read in the reverse direction forms an SCC in
-    // `G_atomic` and forces co-location.
-    // `const A = 1;` is pure (no side effect, no Sequenced edge);
-    // `const x = (globalThis.tag = "x", A);` is side-effecting AND
-    // eagerly reads `A`. The eager read draws `x → A`; the
-    // Sequenced edge from the next side-effect (`const y = ...`)
-    // gives `y → x`. Eager `y → A` adds `y → A` too. So {x, y}
-    // ends up merged only if some edge reverses through A. Use a
-    // shape that produces a real cycle:
-    // `let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);`
-    // — top-level Sequenced + EagerRebind force {A, stmt_1, stmt_2}
-    // into one atomic group (Rebind bidirectional + Sequenced directed
-    // form a cycle).
-    let atomic_groups = atomic_groups_for(
-        r#"let A = 1; A = (globalThis.tag = "x", 2); A = (globalThis.tag = "y", 3);"#,
-    );
-    assert_partitions_all_source_units(&atomic_groups, 3);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![3]);
-}
-
-#[test]
-fn atomic_groups_lazy_rebind_merges() {
-    // `let A = 0; function B() { A = 1; }` produces a LazyRebind
-    // edge from B → A. LazyRebind is bidirectional in `G_atomic`,
-    // so A and B collapse into one atomic group.
-    let atomic_groups = atomic_groups_for("let A = 0; function B() { A = 1; }");
-    assert_partitions_all_source_units(&atomic_groups, 2);
-    assert_eq!(atomic_group_sizes(&atomic_groups), vec![2]);
 }
 
 // --- Factor assembly -----------------------------------------------------

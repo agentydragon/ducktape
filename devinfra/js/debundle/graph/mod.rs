@@ -26,6 +26,8 @@ mod linker_order;
 mod quotient;
 
 #[cfg(test)]
+mod analysis_tests;
+#[cfg(test)]
 mod tests;
 
 pub use build::{
