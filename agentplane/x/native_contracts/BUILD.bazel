@@ -79,7 +79,7 @@ py_test(
         "//agentplane/env/e2e/testing:config",
         "//agentplane/env/e2e/testing:events",
         "//agentplane/env/e2e/testing:process_fixtures",
-        "//agentplane/env/runtime/control:environment_runtime_pb2",
+        "//agentplane/harness_host:harness_host_pb2",
         "//agentplane/history_service/testing:go_service",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:session_pb2",

@@ -111,7 +111,7 @@ def assert_vm_process_trace_contract(output_dir: Path, *, sandbox_uids: set[str]
         stages_by_uid,
         scenario_ready,
         {
-            "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession",
+            "agentplane.harness_host.HarnessHost/CreateSession",
             "Environment Runtime CreateSession",
             "agentplane.env.runtime.harness.start",
             "agentplane.env.runtime.harness.handshake",
@@ -140,7 +140,7 @@ def assert_vm_process_trace_contract(output_dir: Path, *, sandbox_uids: set[str]
     rpc_create_ids = {
         (_trace_id(span), span.get("span_id"))
         for span in environment_runtime_spans
-        if span.get("name") == "agentplane.env.runtime.control.EnvironmentRuntime/CreateSession"
+        if span.get("name") == "agentplane.harness_host.HarnessHost/CreateSession"
     }
     for span in environment_runtime_creates:
         assert (_trace_id(span), span.get("parent_span_id")) in rpc_create_ids, (

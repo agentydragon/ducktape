@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/coordinator"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -41,7 +41,7 @@ func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
 	attempts := 0
 	discarded := false
 	config.ControlInterceptor = func(ctx context.Context, request any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		submit, ok := request.(*environmentruntimepb.SubmitInputRequest)
+		submit, ok := request.(*harnesshostpb.SubmitInputRequest)
 		if !ok {
 			return handler(ctx, request)
 		}
@@ -76,7 +76,7 @@ func newRuntime(config coordinator.Config) (*coordinator.Runtime, error) {
 			ReturnedCode: status.Code(handlerErr).String(),
 		}
 		if handlerErr == nil {
-			actual, responseOK := response.(*environmentruntimepb.SubmitInputResponse)
+			actual, responseOK := response.(*harnesshostpb.SubmitInputResponse)
 			if !responseOK || actual.GetAdmission() == nil {
 				return nil, status.Error(codes.Internal, "real SubmitInput handler returned no admission")
 			}

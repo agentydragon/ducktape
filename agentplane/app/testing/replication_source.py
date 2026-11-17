@@ -13,7 +13,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import grpc
 
-from agentplane.env.runtime.control import environment_runtime_pb2, environment_runtime_pb2_grpc
+from agentplane.env.runtime.control import environment_runtime_pb2_grpc
 from agentplane.harness_host import harness_host_pb2, harness_host_pb2_grpc
 from agentplane.history_service.testing.history import History
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_pb2
@@ -47,10 +47,7 @@ class ReplicationSource:
         self.session_id = uuid5(NAMESPACE_URL, SANDBOX + "/" + SESSION)
         self.entries: list[event_log_pb2.EventEntry] = []
         self.attached = session_pb2.Attached(
-            session_id=SESSION,
-            spec=SPEC,
-            harness_state=session_pb2.HARNESS_STATE_RUNNING,
-            setup_state=session_pb2.SETUP_STATE_NOT_REQUIRED,
+            session_id=SESSION, spec=SPEC, harness_state=session_pb2.HARNESS_STATE_RUNNING
         )
         self.opened: asyncio.Queue[Opened] = asyncio.Queue()
         self.runner = Runner(self)
@@ -99,16 +96,69 @@ class ReplicationSource:
 
 
 def add_replication_source(source: ReplicationSource, server: grpc.aio.Server) -> None:
-    """Registers the scripted Runner service used by the app's control proxy client."""
-    environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(source.runner, server)
-    harness_host_pb2_grpc.add_HarnessHostServicer_to_server(HarnessHost(source), server)
+    """Serve HarnessHost delivery beside the Runtime inventory used by proxy readiness."""
+    harness_host_pb2_grpc.add_HarnessHostServicer_to_server(source.runner, server)
+    environment_runtime_pb2_grpc.add_EnvironmentRuntimeServicer_to_server(RuntimeInventory(source), server)
 
 
-class HarnessHost(harness_host_pb2_grpc.HarnessHostServicer):
-    """Publish the scripted Session's current activity through the production observer protocol."""
+class RuntimeInventory(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
+    """Runtime reads remain served beside HarnessHost, matching the production Runtime."""
 
     def __init__(self, source: ReplicationSource) -> None:
         self.source = source
+
+    @override
+    async def GetStatus(
+        self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
+    ) -> session_pb2.EnvironmentRuntimeStatus:
+        return session_pb2.EnvironmentRuntimeStatus(
+            environment_runtime_boot_id=self.source.boot_id,
+            sessions=[
+                session_pb2.SessionStatus(
+                    session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
+                )
+            ],
+        )
+
+    @override
+    async def ListSessions(
+        self, request: session_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> session_pb2.ListSessionsResponse:
+        return session_pb2.ListSessionsResponse(
+            sessions=[
+                session_pb2.SessionSummary(
+                    session_id=str(self.source.session_id),
+                    spec=self.source.attached.spec,
+                    last_cursor=self.source.attached.last_cursor,
+                    harness_state=self.source.attached.harness_state,
+                    active_turn_id=self.source.attached.active_turn_id,
+                )
+            ]
+        )
+
+
+class Runner(harness_host_pb2_grpc.HarnessHostServicer):
+    """A scripted Runner whose per-operation RPCs append command admissions to retained history."""
+
+    def __init__(self, source: ReplicationSource) -> None:
+        self.source = source
+        self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
+        self._admissions: dict[str, event_log_pb2.EventEntry] = {}
+
+    @override
+    async def CreateSession(
+        self, request: harness_host_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.CreateSessionResponse:
+        if (
+            request.session_id != str(self.source.session_id)
+            or request.spec != self.source.attached.spec
+            or request.HasField("setup_script")
+        ):
+            await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting scripted Session")
+        attached = session_pb2.Attached()
+        attached.CopyFrom(self.source.attached)
+        attached.session_id = request.session_id
+        return harness_host_pb2.CreateSessionResponse(attached=attached)
 
     def session(self) -> harness_host_pb2.Session:
         return harness_host_pb2.Session(
@@ -144,58 +194,6 @@ class HarnessHost(harness_host_pb2_grpc.HarnessHostServicer):
             self.source.activity_updates.remove(update)
 
 
-class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
-    """A scripted Runner whose per-operation RPCs append command admissions to retained history."""
-
-    def __init__(self, source: ReplicationSource) -> None:
-        self.source = source
-        self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
-        self._admissions: dict[str, event_log_pb2.EventEntry] = {}
-
-    @override
-    async def CreateSession(
-        self, request: environment_runtime_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.CreateSessionResponse:
-        if (
-            request.session_id != str(self.source.session_id)
-            or request.spec != self.source.attached.spec
-            or request.HasField("setup_script")
-        ):
-            await context.abort(grpc.StatusCode.ALREADY_EXISTS, "conflicting scripted Session")
-        attached = session_pb2.Attached()
-        attached.CopyFrom(self.source.attached)
-        attached.session_id = request.session_id
-        return environment_runtime_pb2.CreateSessionResponse(attached=attached)
-
-    @override
-    async def GetStatus(
-        self, request: session_pb2.GetStatusRequest, context: grpc.aio.ServicerContext
-    ) -> session_pb2.EnvironmentRuntimeStatus:
-        return session_pb2.EnvironmentRuntimeStatus(
-            environment_runtime_boot_id=self.source.boot_id,
-            sessions=[
-                session_pb2.SessionStatus(
-                    session_id=str(self.source.session_id), busy=bool(self.source.attached.active_turn_id)
-                )
-            ],
-        )
-
-    @override
-    async def ListSessions(
-        self, request: session_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> session_pb2.ListSessionsResponse:
-        return session_pb2.ListSessionsResponse(
-            sessions=[
-                session_pb2.SessionSummary(
-                    session_id=str(self.source.session_id),
-                    spec=self.source.attached.spec,
-                    last_cursor=self.source.attached.last_cursor,
-                    harness_state=self.source.attached.harness_state,
-                    active_turn_id=self.source.attached.active_turn_id,
-                )
-            ]
-        )
-
     async def admit(self, command: command_pb2.Command, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
         if previous := self._admissions.get(command.command_id):
             if previous.event.command_admitted.command != command:
@@ -208,37 +206,37 @@ class Runner(environment_runtime_pb2_grpc.EnvironmentRuntimeServicer):
 
     @override
     async def SubmitInput(
-        self, request: environment_runtime_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.SubmitInputResponse:
+        self, request: harness_host_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.SubmitInputResponse:
         command = command_pb2.Command(
             command_id=request.command_id, submit_input=command_pb2.SubmitInput(text=request.text)
         )
-        return environment_runtime_pb2.SubmitInputResponse(admission=await self.admit(command, context))
+        return harness_host_pb2.SubmitInputResponse(admission=await self.admit(command, context))
 
     @override
     async def ChangeModel(
-        self, request: environment_runtime_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.ChangeModelResponse:
+        self, request: harness_host_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.ChangeModelResponse:
         command = command_pb2.Command(
             command_id=request.command_id, change_model=command_pb2.ChangeModel(model=request.model)
         )
-        return environment_runtime_pb2.ChangeModelResponse(admission=await self.admit(command, context))
+        return harness_host_pb2.ChangeModelResponse(admission=await self.admit(command, context))
 
     @override
     async def ChangeReasoningEffort(
-        self, request: environment_runtime_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.ChangeReasoningEffortResponse:
+        self, request: harness_host_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.ChangeReasoningEffortResponse:
         command = command_pb2.Command(
             command_id=request.command_id,
             change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=request.effort),
         )
-        return environment_runtime_pb2.ChangeReasoningEffortResponse(admission=await self.admit(command, context))
+        return harness_host_pb2.ChangeReasoningEffortResponse(admission=await self.admit(command, context))
 
     @override
     async def InterruptTurn(
-        self, request: environment_runtime_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
-    ) -> environment_runtime_pb2.InterruptTurnResponse:
+        self, request: harness_host_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
+    ) -> harness_host_pb2.InterruptTurnResponse:
         command = command_pb2.Command(
             command_id=request.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=request.turn_id)
         )
-        return environment_runtime_pb2.InterruptTurnResponse(admission=await self.admit(command, context))
+        return harness_host_pb2.InterruptTurnResponse(admission=await self.admit(command, context))
