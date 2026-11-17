@@ -28,9 +28,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestSVIDListenerPinsIdentityInboxAndRejectsDeletedSandbox(t *testing.T) {
@@ -220,36 +217,7 @@ func TestAnIdentityMessagesAndSubscribesForAnIdentityRunSession(t *testing.T) {
 		c.RPC.Auth = append(c.RPC.Auth, &listener.SPIFFEAuth{CAFile: serving.CAFile})
 		c.SessionDispatcher.Target, c.HistoryService.Target, c.Actions.URL = dispatcherAddress, historyAddress, "http://"+actionAddress
 	})
-	set := &policyapi.PolicySet{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sender.Identity.Name + "-send"},
-		Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{
-			Type: "session_inbox_access", Operations: []string{"send_message"},
-			Targets: &policyapi.SandboxTargets{Sandboxes: []policyapi.SandboxTarget{{Name: recipient.Sandbox.Name}}},
-		}}},
-	}
-	binding := &policyapi.PolicyBinding{
-		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: sender.Identity.Name},
-		Spec: policyapi.PolicyBindingSpec{
-			Subject: policyapi.Subject{Identity: &policyapi.IdentityRef{Name: sender.Identity.Name}}, PolicySets: []string{set.Name},
-		},
-	}
-	for _, object := range []client.Object{set, binding} {
-		if err := apiClient.Create(t.Context(), object); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if err := client.IgnoreNotFound(apiClient.Delete(context.Background(), object)); err != nil {
-				t.Error(err)
-			}
-		})
-	}
-	eventually(t, "the binding to be ready", func() bool {
-		var current policyapi.PolicyBinding
-		if err := apiClient.Get(t.Context(), client.ObjectKeyFromObject(binding), &current); err != nil {
-			t.Fatal(err)
-		}
-		return meta.IsStatusConditionTrue(current.Status.Conditions, "SessionInboxAccessReady")
-	})
+	grantSend(t, sender.Identity.Name, recipient.Sandbox.Name)
 	connect := func(caller workloadauthtesting.Workload) notificationspb.NotificationsClient {
 		credentials, err := ca.Issue(t, caller.URI).ClientCredentials(peertls.NotificationsURI)
 		if err != nil {
