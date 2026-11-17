@@ -50,7 +50,7 @@ func operationTestSession(t *testing.T, st state.State) (*Session, *Manager) {
 	m := &Manager{ctx: ctx, state: st, fail: fail}
 	// Suppress native/journal notifications to isolate operation scheduling.
 	s := &Session{id: "test-session", loading: true, record: &retained.Record{}, deps: sessionDependencies{
-		ctx: ctx, signalOperation: m.signalOperation, publish: m.publishSession, fail: fail, changed: func() {},
+		ctx: ctx, signalOperation: m.signalOperation, publish: m.publishSession, fail: fail, changed: func() {}, summaryChanged: func() {},
 	}}
 	m.sessions = map[string]*Session{s.id: s}
 	m.publishSession(s, false)

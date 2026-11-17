@@ -2647,7 +2647,7 @@ Running status moves onto the watch only after the current-status record in
 
 ### `HARNESS_HOST_EXTRACTION` — pull HarnessHost out of the Environment Runtime
 
-**Planned, not released; operator, 2026-11-17 UTC.** 00:31: "at least we should probably have
+**PRs 1 and 2 released; the operator, 2026-11-17 03:34 UTC:** "dispatch harness host, runner status through proxy". Caller cutover and removal remain gated below. Earlier, 00:31: "at least we should probably have
 something like "HarnessHost" service - that's already a separate seam in runtime already anyway,
 right? that would handle session status and commands." 03:18: "if WatchStatus watches all sessions,
 it should be WatchSessions, no?" 03:19: "line up the pull-out of HarnessHost and unifying of central
@@ -2661,10 +2661,11 @@ Notifications (`CreateSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEf
 
 - `CreateSession`, the four commands, `ListSessions`, and `WatchSessions`: snapshot, caught-up
   marker, then upserts, the shape of the Dispatcher's `WatchSessions`. `ListSessions` and the
-  stream carry per-Session harness, setup and active-turn state and the harness process
-  serving the Session.
-- `EnvironmentRuntime` keeps the lifecycle RPCs and a `GetStatus` reduced to lifecycle and boot ID.
-- Inside the Runtime, both services stay on `coordinator.Runtime`: HarnessHost commands still pass
+  stream carry per-Session harness state, setup, active turn and launch outcome.
+- `EnvironmentRuntime` keeps the lifecycle RPCs and `GetStatus` lifecycle, boot ID and harness
+  processes for diagnostics.
+- Inside the Runtime, a HarnessHost adapter in `coordinator` beside `Runtime` translates its
+  messages to shared Runtime behavior: commands still pass
   the lifecycle admission fence (`Runtime.admit`), so `Quiesce` and `PrepareSuspend` still close
   them and drain admissions in flight.
 - Environments' Runtime proxy forwards HarnessHost per Sandbox with the same routing and

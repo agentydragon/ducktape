@@ -165,6 +165,7 @@ func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
 	s.notifyBlockers()
 	var notifications atomic.Int32
 	s.deps.changed = func() { notifications.Add(1) }
+	summariesChanged := manager.SummaryChangesSince()
 	for _, text := range []string{"first", "second"} {
 		if err := s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil); err != nil {
 			t.Fatal(err)
@@ -173,6 +174,11 @@ func TestJournalNotificationsOnlySignalBlockerTransitions(t *testing.T) {
 	}
 	if notifications.Load() != 0 {
 		t.Fatal("raw history woke aggregate observers")
+	}
+	select {
+	case <-summariesChanged:
+	default:
+		t.Fatal("journal cursor changes did not wake Session summary observers")
 	}
 	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)

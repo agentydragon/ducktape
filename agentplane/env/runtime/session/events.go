@@ -116,6 +116,9 @@ func (s *Session) recordEventUnderWriteGate(ctx context.Context, e *eventpb.Even
 	}
 	s.apply(entry, ids)
 	s.notifyBlockers()
+	// Watch summaries include journal cursor, launch outcome and configuration,
+	// which can change without changing an autosuspend predicate.
+	s.deps.summaryChanged()
 	return entry, nil
 }
 

@@ -37,6 +37,7 @@ type Manager struct {
 	loadMu               sync.Mutex
 	sessions             map[string]*Session
 	inventoryChanges     chan struct{}
+	summaryChanges       chan struct{}
 	ownerErrors          map[string]error
 	ownerFailuresChanged chan struct{}
 	// loadMu guards freshReservations; those records have not completed their first publication.
@@ -59,7 +60,7 @@ func NewManager(config Config) (*Manager, error) {
 		ctx: config.Context, state: config.State, store: config.Store,
 		workspaceRoot: config.WorkspaceRoot, environment: config.Environment,
 		changed: config.OnChange, fail: config.OnError,
-		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, inventoryChanges: make(chan struct{}), freshReservations: map[string]struct{}{},
+		workers: config.ReconcileConcurrency, sessions: map[string]*Session{}, inventoryChanges: make(chan struct{}), summaryChanges: make(chan struct{}), freshReservations: map[string]struct{}{},
 		ownerErrors: map[string]error{}, ownerFailuresChanged: make(chan struct{}),
 	}
 	m.dependencies = sessionDependencies{
@@ -71,7 +72,7 @@ func NewManager(config Config) (*Manager, error) {
 		ensureWorkspace: config.EnsureWorkspace, launchProcess: config.LaunchProcess,
 		resolveModelConfig: config.ResolveModelConfig,
 		publish:            m.publishSession, signalOperation: m.signalOperation,
-		changed: config.OnChange, fail: config.OnError,
+		changed: config.OnChange, summaryChanged: m.summaryChanged, fail: config.OnError,
 	}
 	return m, nil
 }
@@ -107,9 +108,26 @@ func (m *Manager) InventoryChangesSince() <-chan struct{} {
 	return m.inventoryChanges
 }
 
+// SummaryChangesSince signals current Session summaries independently of autosuspend facts.
+// Subscribe before reading Inventory and each Session observation.
+func (m *Manager) SummaryChangesSince() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.summaryChanges
+}
+
+func (m *Manager) summaryChanged() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	close(m.summaryChanges)
+	m.summaryChanges = make(chan struct{})
+}
+
 func (m *Manager) inventoryChangedLocked() {
 	close(m.inventoryChanges)
 	m.inventoryChanges = make(chan struct{})
+	close(m.summaryChanges)
+	m.summaryChanges = make(chan struct{})
 }
 
 func (m *Manager) inventoryChanged() {

@@ -52,7 +52,7 @@ func TestWatchStatePublishesChangesAndPeriodicHeartbeat(t *testing.T) {
 		server := New(Config{
 			Security: security,
 			Changes:  func() <-chan struct{} { return changed },
-		}, nil)
+		}, nil, nil)
 		facts := &environmentruntimestatepb.EnvironmentRuntimeFacts{}
 		stream := &watchStateTestStream{
 			ctx:       ctx,
@@ -134,7 +134,7 @@ func TestControllerWatchLossDoesNotRevokeCalls(t *testing.T) {
 				return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil
 			},
 			Changes: func() <-chan struct{} { return changed },
-		}, nil)
+		}, nil, nil)
 		start := func(request *environmentruntimepb.WatchStateRequest) (context.CancelFunc, <-chan error) {
 			t.Helper()
 			ctx, cancel := context.WithCancel(t.Context())
@@ -199,7 +199,7 @@ func TestControllerBindingSurvivesUncertainAdoption(t *testing.T) {
 			}
 			return nil
 		},
-	}, nil)
+	}, nil, nil)
 	observer := func(uid string) *watch {
 		t.Helper()
 		w, err := server.passiveWatchContext(&environmentruntimepb.WatchStateRequest{SandboxUid: "sandbox", IncarnationUid: uid, ObserveOnly: true}, t.Context())
@@ -247,7 +247,7 @@ func TestCallsRemainBoundToIncarnationAcrossIndependentGatewayWatches(t *testing
 				return &environmentruntimestatepb.EnvironmentRuntimeFacts{}, nil
 			},
 			Changes: func() <-chan struct{} { return changed },
-		}, nil)
+		}, nil, nil)
 		callContext := func(incarnation, boot string) context.Context {
 			return metadata.NewIncomingContext(t.Context(), metadata.Pairs(SandboxMetadata, "sandbox", IncarnationMetadata, incarnation, BootMetadata, boot))
 		}

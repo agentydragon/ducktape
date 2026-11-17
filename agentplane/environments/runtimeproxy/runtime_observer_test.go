@@ -18,6 +18,7 @@ import (
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimestatepb "github.com/agentydragon/ducktape/agentplane/proto/environmentruntimestatepb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
@@ -240,7 +241,7 @@ func startProductionRuntime(t *testing.T, f *sandboxFixture, g *Server) (runtime
 			}, nil
 		},
 		Changes: func() <-chan struct{} { return changes },
-	}, backend)
+	}, backend, &harnesshostpb.UnimplementedHarnessHostServer{})
 	listener, server, err := runtimeServer.Listen(&executorpb.UnimplementedExecutorServer{})
 	if err != nil {
 		t.Fatal(err)

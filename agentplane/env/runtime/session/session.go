@@ -90,6 +90,7 @@ type sessionDependencies struct {
 	publish            func(*Session, bool)
 	signalOperation    func(string) error
 	changed            func()
+	summaryChanged     func()
 	fail               func(error)
 }
 

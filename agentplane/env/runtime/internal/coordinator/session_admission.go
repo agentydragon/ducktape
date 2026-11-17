@@ -9,10 +9,10 @@ import (
 	runtimecontrol "github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 
-	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/workspace"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/journal"
+	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	"github.com/agentydragon/ducktape/agentplane/observability"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
@@ -25,7 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntimepb.CreateSessionRequest) (response *environmentruntimepb.CreateSessionResponse, resultErr error) {
+func (r *Runtime) createSession(ctx context.Context, request *harnesshostpb.CreateSessionRequest) (attached *sessionpb.Attached, resultErr error) {
 	ctx, span := observability.Start(
 		ctx, "Environment Runtime CreateSession",
 		trace.WithAttributes(
@@ -106,7 +106,7 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 		if !proto.Equal(attached.Spec, spec) {
 			return nil, status.Errorf(codes.AlreadyExists, "session %s exists with a different spec", request.GetSessionId())
 		}
-		return &environmentruntimepb.CreateSessionResponse{Attached: attached}, nil
+		return attached, nil
 	}
 	if request.GetExecutionIdentity() == nil {
 		return nil, status.Error(codes.InvalidArgument, "execution_identity is required for a new Session")
@@ -145,7 +145,7 @@ func (r *Runtime) CreateSession(ctx context.Context, request *environmentruntime
 		return nil, rpcError(err)
 	}
 	r.changed()
-	return &environmentruntimepb.CreateSessionResponse{Attached: s.Attached()}, nil
+	return s.Attached(), nil
 }
 
 func validateExecutionIdentity(identity *identitypb.Identity) error {
@@ -208,24 +208,20 @@ func (r *Runtime) finishAdmission(resultErr *error) {
 	}
 }
 
-func (r *Runtime) SubmitInput(ctx context.Context, q *environmentruntimepb.SubmitInputRequest) (*environmentruntimepb.SubmitInputResponse, error) {
-	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: q.Text}}})
-	return &environmentruntimepb.SubmitInputResponse{Admission: entry}, err
+func (r *Runtime) submitInput(ctx context.Context, sessionID, commandID, text string) (*eventlogpb.EventEntry, error) {
+	return r.admit(ctx, sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}}})
 }
 
-func (r *Runtime) ChangeModel(ctx context.Context, q *environmentruntimepb.ChangeModelRequest) (*environmentruntimepb.ChangeModelResponse, error) {
-	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: q.Model}}})
-	return &environmentruntimepb.ChangeModelResponse{Admission: entry}, err
+func (r *Runtime) changeModel(ctx context.Context, sessionID, commandID, model string) (*eventlogpb.EventEntry, error) {
+	return r.admit(ctx, sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_ChangeModel{ChangeModel: &commandpb.ChangeModel{Model: model}}})
 }
 
-func (r *Runtime) ChangeReasoningEffort(ctx context.Context, q *environmentruntimepb.ChangeReasoningEffortRequest) (*environmentruntimepb.ChangeReasoningEffortResponse, error) {
-	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: q.Effort}}})
-	return &environmentruntimepb.ChangeReasoningEffortResponse{Admission: entry}, err
+func (r *Runtime) changeReasoningEffort(ctx context.Context, sessionID, commandID, effort string) (*eventlogpb.EventEntry, error) {
+	return r.admit(ctx, sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_ChangeReasoningEffort{ChangeReasoningEffort: &commandpb.ChangeReasoningEffort{Effort: effort}}})
 }
 
-func (r *Runtime) InterruptTurn(ctx context.Context, q *environmentruntimepb.InterruptTurnRequest) (*environmentruntimepb.InterruptTurnResponse, error) {
-	entry, err := r.admit(ctx, q.SessionId, &commandpb.Command{CommandId: q.CommandId, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: q.TurnId}}})
-	return &environmentruntimepb.InterruptTurnResponse{Admission: entry}, err
+func (r *Runtime) interruptTurn(ctx context.Context, sessionID, commandID, turnID string) (*eventlogpb.EventEntry, error) {
+	return r.admit(ctx, sessionID, &commandpb.Command{CommandId: commandID, Operation: &commandpb.Command_InterruptTurn{InterruptTurn: &commandpb.InterruptTurn{TurnId: turnID}}})
 }
 
 func rpcError(err error) error {
@@ -292,6 +288,9 @@ func (r *Runtime) authorizeSessionIdentityLocked(authorization *runtimecontrol.A
 }
 
 func (r *Runtime) authorizeSessionRead(ctx context.Context) error {
-	_, err := r.authorizeSession(ctx, false)
-	return err
+	return r.control.Admit(ctx, func(authorization *runtimecontrol.Authorization) error {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return r.authorizeSessionIdentityLocked(authorization, false)
+	})
 }

@@ -242,3 +242,17 @@ at open and failure. Debug level adds the caller stack. Later calls reporting th
 journal do not repeat these diagnostics. Path observations do not identify a lock holder or prove
 which inode an existing SQLite descriptor references. Diagnostics do not include event payloads
 or SQL arguments and do not alter failure, retry, admission or cleanup policy.
+
+## HarnessHost
+
+The Runtime serves `agentplane.harness_host.HarnessHost` on its existing control listener with
+its existing peer, Sandbox incarnation and boot authorization. The parallel `EnvironmentRuntime`
+Session RPCs remain available during caller migration. Both surfaces share durable creation,
+command admission and lifecycle fences: quiesce drains admissions before stopping native work,
+and successful prepare-suspend excludes in-flight admissions and refuses new ones.
+
+`ListSessions` returns shared per-Session summaries (harness state, setup, active turn and launch
+outcome). `WatchSessions` begins with snapshot upserts and `CaughtUp`, then emits changed
+summaries and checkpoints from Runtime change notifications. Intermediate states may coalesce;
+there is no polling or historical replay. A reconnect rebuilds current state from a fresh snapshot,
+without a resume token. Harness process diagnostics remain in `EnvironmentRuntime.GetStatus`.
