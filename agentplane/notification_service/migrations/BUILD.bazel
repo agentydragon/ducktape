@@ -16,7 +16,10 @@ go_library(
 go_test(
     name = "baseline_integration_test",
     size = "medium",
-    srcs = ["baseline_integration_test.go"],
+    srcs = [
+        "baseline_integration_test.go",
+        "session_inbox_data_migration_integration_test.go",
+    ],
     embed = [":migrations"],
     tags = ["requires_docker"],
     deps = [
