@@ -13801,7 +13801,7 @@
       "frequency": "3 / 10 failed VM target verdicts have cold setup and the 600-second deadline; overlapping seven-day population.",
       "observation": "54d9f029: setup 375.019s (baseline missing_marker), 25 serial image imports with a 324.902s elapsed envelope, then concurrent Claude/Codex cases. Claude ran 229.839s; all its turn waits completed before pytest interrupted it. The outer deadline included setup. Two earlier failures, e995fe1b and 44881c80, show the same cumulative-budget pattern. These are distinct from the 300-second silent guest waits.",
       "comparator": "Fresh neighbouring pass 26a37e83 reused the same baseline fingerprint, setup 51.405s, Claude 138.281s and Codex 124.111s; its JUnit has two passing cases. Source and TestRunner action digest differ, so this is a phase comparator, not same-source recovery or a controlled speedup. Earlier fresh cold pass 35e28298 had 102.177s setup; its XML is unavailable.",
-      "repair": "PR #17261 separates case_timeout from pytest item timeout and reports native JUnit call durations. Five accounting regressions pass; the scaled old-policy control fails during shared setup. Rebased required CI is green, with a fresh cold VM pass. The newly traced pre-Runtime boot/cleanup failure is the next engineering lead; see the 17 November follow-up.",
+      "repair": "PR #17261 separates case_timeout from pytest item timeout and reports native JUnit call durations. Five accounting regressions pass; the scaled old-policy control fails during shared setup. Rebased required CI is green, with a fresh cold VM pass. The newly traced pre-Runtime boot/cleanup failure is the next engineering lead; see the 17 November follow-up. Native profile capture is merged (#17327); a separate fully cold 25-image control now supplies complete bounded artifacts. See the selected experiments without changing this historical denominator.",
       "limit": "Historical 3/10 count and source/window are unchanged. Selected post-change executions have different sources/state and do not establish a fleet latency or failure-rate improvement.",
       "links": [
         {
@@ -13858,11 +13858,11 @@
     {
       "id": "C",
       "title": "Keep browser failure mechanisms separate",
-      "classification": "One pre-repair projection recurrence; separate navigation and navigation-setup failures",
+      "classification": "Destination readiness repair merged; separate browser startup trigger remains unresolved",
       "frequency": "3 failed thread-browser verdicts in the stats API slice of 74 runs, plus 1 / 76 thread-window verdicts. The API denominator is cache-filtered target tracking, not a physical exposure census.",
       "observation": "c210960a reproduces History/direct/fresh Electric cursor 334 while DOM remains 264 before route-lifetime repair #16051. Its final live GET raced route removal. Separate 80e31b7f fails thread navigation: metadata names the destination, but message 129 is absent at the default 5s assertion. Existing browser marks show new rows and tail layout arrive much later than destination metadata. 5699ac4c fails before the lost-HTTP-reply scenario starts: open_browser shares a 30s timeout across opened.get() and page.goto(); the timeout fires in page.goto. Later close/unsubscribe cancellation is downstream. ed5acdf3 ends at Bazel TIMEOUT with only a partial test log.",
       "comparator": "The earlier final route-lifetime candidate passed ten distinct remote streaming attempts, retaining cursor, anchor and draft assertions. The new seven-day window overlaps that intervention; no matched post-fix browser physical denominator was collected. A later navigation failure is a different case and cannot refute or validate that specific repair.",
-      "repair": "For navigation, join the retained Playwright trace and thread-view marks at the first divergent payload/DOM boundary, then control delayed entity delivery before choosing a readiness or layout repair. For navigation setup, retain harness-open and document-lifecycle timings to distinguish a late producer from a navigation/load wait consuming the remaining shared budget. Preserve tail, one-shape, reader-anchor, raw-frame and real-streaming assertions.",
+      "repair": "PR #17307 now waits for the destination message with the existing standard predicate helper; streaming, tail, cursor, anchor, draft and lost-reply assertions remain. PR #17305 adds open/proxy phases. The historical setup await was held in Playwright post-action snapshot instrumentation after successful navigation; bounded controls narrow, but do not identify, its natural trigger. See selected experiments.",
       "limit": "The navigation record supports a readiness boundary, not a proven frontend race or justification for longer global waits. Natural login ReadTimeout from earlier selected PR runs remains unresolved.",
       "links": [
         {
@@ -13880,8 +13880,17 @@
         {
           "label": "projection causal evidence and controls",
           "url": "https://github.com/agentydragon/ducktape/blob/55e1227d1f631b8e478321c84da66737bedef38c/agentplane/app/debug/2026_11_12_thread_window_projection_gap.md"
+        },
+        {
+          "label": "#17305",
+          "url": "https://github.com/agentydragon/ducktape/pull/17305"
+        },
+        {
+          "label": "#17307",
+          "url": "https://github.com/agentydragon/ducktape/pull/17307"
         }
-      ]
+      ],
+      "status": "Readiness merged; startup open"
     },
     {
       "id": "D",
@@ -14528,7 +14537,7 @@
     "No new same-full-SHA fresh recovery pair was established. Previously verified #15741 remains historical; cache passes and adjacent source passes are not new recoveries.",
     "Passing artifacts can be unavailable: a fresh comparator test.xml returned 404 while its driver trace was retained. Raw payloads and logs remain local.",
     "All 24 observed bad target verdicts were audited for summary/cache/shard identity; major clusters have source/trace diagnosis or a specific visibility boundary. Smaller PID1, archive and MCP setup clusters retain incomplete causal diagnosis.",
-    "Report source pin includes fixes merged after the observation window; each such intervention is labeled separately. No policy changes or reruns were made."
+    "Original-window measurements remain observational and retain their original source/window. Selected 17 November controls are separate experiments, not a new census, matched overhead comparison or failure-rate estimate."
   ],
   "setup_breakdown": {
     "invocation": "54d9f029-3e3c-55e3-8fa7-4f38d48461a0",
@@ -39482,5 +39491,528 @@
       "passing_guests": "Transient sampled ISR236 or IRR236 also occurs in passing guests; one observed CPU0 clears ISR236 by its next sample, and another final sampled CPU1 has no later monitor sample. Persistent state plus complete covered event replay, not a single pending interrupt, supports this failure boundary.",
       "artifact_hashes": {}
     }
+  },
+  "lane_experiments": {
+    "collected_at_utc": "2026-11-17T13:06:40.684966+00:00",
+    "scope": "Selected 17 November manual controls; separate from all historical census populations. No rate or causal speedup is inferred.",
+    "cold_import": {
+      "invocation": "1a8d57e8-08c4-44d8-8058-c97994132fbf",
+      "sync_commit": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+      "working_diff": {
+        "cold-import-experiment/BUILD.patch": "27da82276e9fbd5aa835cd8475106c0f272b66c004253fc965776cd5c065ee52",
+        "cold-import-experiment/cold_content_precondition.py": "ef4f5cce6c1fd55f4d865659eba0ff92ff6229cc6812e4e06168d1c7c543b4ee"
+      },
+      "source_note": "The sync commit plus attached BUILD patch and precollection guard define the experiment. Both normal test_vm.py harness cases, manifest, assertions, cleanup, resources and Firecracker placement are retained. Only a unique recycling family/data directory and fail-fast guard change.",
+      "coldness": "Native Action confirms unique recycling family and absolute K3s data path. Guard records baseline root/marker and unique data/store absent before collection. Before-import ctr image list is header-only. baseline.open reports missing_marker/cold.",
+      "image_count": 25,
+      "actual_imports": 25,
+      "skipped_imports": 0,
+      "image_span_seconds": 212.769064,
+      "image_envelope_seconds": 216.208587,
+      "image_spans": [
+        {
+          "image": "ghcr.io/kyverno/kyverno:v1.19.1",
+          "seconds": 10.42525
+        },
+        {
+          "image": "ghcr.io/kyverno/kyvernopre:v1.19.1",
+          "seconds": 4.236448
+        },
+        {
+          "image": "quay.io/kubevirt/virt-api:v1.8.2",
+          "seconds": 4.803392
+        },
+        {
+          "image": "quay.io/kubevirt/virt-controller:v1.8.2",
+          "seconds": 6.914167
+        },
+        {
+          "image": "quay.io/kubevirt/virt-handler:v1.8.2",
+          "seconds": 18.203821
+        },
+        {
+          "image": "quay.io/kubevirt/virt-launcher:v1.8.2",
+          "seconds": 31.937105
+        },
+        {
+          "image": "quay.io/kubevirt/virt-operator:v1.8.2",
+          "seconds": 6.267116
+        },
+        {
+          "image": "quay.io/jetstack/cert-manager-cainjector:v1.21.2",
+          "seconds": 4.796192
+        },
+        {
+          "image": "quay.io/jetstack/cert-manager-controller:v1.21.2",
+          "seconds": 5.497368
+        },
+        {
+          "image": "quay.io/jetstack/cert-manager-webhook:v1.21.2",
+          "seconds": 3.3712
+        },
+        {
+          "image": "quay.io/jetstack/trust-manager:v0.25.0",
+          "seconds": 2.093858
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-action-service:unset",
+          "seconds": 8.13938
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-app:unset",
+          "seconds": 4.007807
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-egress-proxy:unset",
+          "seconds": 2.810098
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset",
+          "seconds": 2.745564
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-history-service:unset",
+          "seconds": 6.578707
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-llm-ingress:unset",
+          "seconds": 5.018768
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-notification-service:unset",
+          "seconds": 5.377867
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset",
+          "seconds": 3.274916
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-postgres:unset",
+          "seconds": 13.867427
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-runner-disk:unset",
+          "seconds": 10.334521
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-runner-gateway:unset",
+          "seconds": 4.692308
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset",
+          "seconds": 4.112769
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-boot:unset",
+          "seconds": 1.724291
+        },
+        {
+          "image": "git.allegedly.works/ducktape-ci/agentplane-vm-guest-root:unset",
+          "seconds": 41.538724
+        }
+      ],
+      "stack_setup_seconds": 252.751504,
+      "pytest_setup_seconds_rounded": 259.27,
+      "pytest_teardown_seconds_rounded": 30.74,
+      "junit_suite_seconds": 492.303,
+      "case_calls": [
+        {
+          "name": "test_vm_scenarios[claude]",
+          "seconds": 198.793
+        },
+        {
+          "name": "test_vm_scenarios[codex]",
+          "seconds": 189.963
+        }
+      ],
+      "test_runner_seconds_rounded": 510.8,
+      "profiles": [
+        {
+          "artifact": "containerd-import.cpu.pprof",
+          "sha256": "b4ad41fd835b64f12c599c86b6eda3e66192e696a7ad0af4f1961f46a4c319da",
+          "bytes": 176850,
+          "status": "complete",
+          "truncated": false,
+          "requested_duration_seconds": 420,
+          "output_limit_bytes": 16777216,
+          "queue_marker_window_seconds": 225.324149,
+          "process_exit_observed_after_seconds": 438.873158,
+          "process_wait_at_context_exit_seconds": 9.3e-5,
+          "sampling_start_acknowledged": false
+        },
+        {
+          "artifact": "containerd-import.runtime.trace",
+          "sha256": "fdfbc6de78e5b96fd7b5a37954cb659e18ee662abbb3750d7b2d42af8707a033",
+          "bytes": 62309269,
+          "status": "complete",
+          "truncated": false,
+          "requested_duration_seconds": 420,
+          "output_limit_bytes": 134217728,
+          "queue_marker_window_seconds": 225.324149,
+          "process_exit_observed_after_seconds": 438.871565,
+          "process_wait_at_context_exit_seconds": 0.00028,
+          "sampling_start_acknowledged": false
+        }
+      ],
+      "native_parser_status": "passed: pprof + trace syscall profile",
+      "phase_marker_limit": "The 225.324s queue-marker window includes Deployment availability after the final image; it is not pure import elapsed. Actual spans and their envelope are reported separately.",
+      "attribution_limit": "Native capture is containerd-daemon-only, with a 420s requested window containing both imports and later work. It excludes short-lived ctr client CPU. No storage bottleneck, whole-queue CPU/I/O attribution or profiler overhead comparison is established.",
+      "native_parser_go_version": "1.27.3",
+      "native_clock_parser_invocation": "26964de2-6865-4659-a4f9-06e6eea6dcad",
+      "native_cpu_duration_seconds_reported": 420,
+      "native_cpu_samples_seconds": 171.08,
+      "native_cpu_cumulative_seconds": {
+        "unpack_fsApplier_Apply": 63.1,
+        "local_transfer_importStream": 25.28
+      },
+      "native_trace_first_monotonic_ns": 43775897536,
+      "native_trace_last_monotonic_ns": 463777089537,
+      "native_trace_event_span_seconds": 420.001192001,
+      "native_syscall_aggregate_seconds": 554.11,
+      "native_syscall_background_seconds": {
+        "profile_reader": 260.53,
+        "fifo_open": 116.79
+      },
+      "test_runner_seconds": 510.829,
+      "bazel_invocation_seconds": 582.573,
+      "cleanup": {
+        "test_errors": 0,
+        "test_failures": 0,
+        "baseline_clean_span_present": true,
+        "baseline_certify_span_present": true,
+        "teardown_error": false
+      },
+      "native_parser": {
+        "status": "PASSED",
+        "invocation_id": "26964de2-6865-4659-a4f9-06e6eea6dcad",
+        "url": "https://app.buildbuddy.io/invocation/26964de2-6865-4659-a4f9-06e6eea6dcad",
+        "declared_go_sdk_version": "1.27.3",
+        "checks": [
+          "go tool pprof -top parsed the CPU profile",
+          "go tool trace -pprof=syscall parsed the complete runtime trace",
+          "go tool pprof -top parsed the generated syscall-delay profile",
+          "go tool trace -d=parsed extracted first and last native trace clocks"
+        ],
+        "trace_syscall_sample_duration_seconds": 554.11,
+        "trace_profile_total_is_wall_duration": false,
+        "trace_profile_semantics": "Aggregate syscall-state sample duration across goroutines; includes CPU time in syscalls and blocking, not wall duration.",
+        "trace_syscall_top_cumulative_seconds": {
+          "runtime_pprof_profile_writer_and_profbuf": 260.53,
+          "fifo_open_syscall": 118.33,
+          "syscall_write": 99.92,
+          "containerd_fsApplier_Apply": 61.48,
+          "containerd_transfer_importStream_WriteBlob": 51.03
+        },
+        "sync_commit": "4b73d0bbcc17cf98af10dd06e1648a3c7a26cd0f"
+      },
+      "selected_artifacts": [
+        {
+          "name": "test.outputs/cold-content-preconditions.json",
+          "sha256": "dde81fe685aebca926e715ef169a04474de153666c4b5df11328e0902edc3eaa",
+          "bytes": 531
+        },
+        {
+          "name": "test.outputs/storage/before-import/images.txt",
+          "sha256": "d14416baa2043783121a62ef8d0c8cb40b54373fcc5cb494c7a19a4b080dcf82",
+          "bytes": 39
+        },
+        {
+          "name": "test.outputs/test-spans.jsonl",
+          "sha256": "18b6968217c26a538b67a96be3bc9b26d43fa9a3d647342394270d190895dba4",
+          "bytes": 82844
+        },
+        {
+          "name": "test.xml",
+          "sha256": "1805d4ec99814d4317e8244556bf3fc49c96a2f43f0b5f3176fb251f3dfde3f3",
+          "bytes": 472
+        },
+        {
+          "name": "test.outputs/containerd-import.cpu.pprof",
+          "sha256": "b4ad41fd835b64f12c599c86b6eda3e66192e696a7ad0af4f1961f46a4c319da",
+          "bytes": 176850
+        },
+        {
+          "name": "test.outputs/containerd-import.cpu.pprof.json",
+          "sha256": "1ecde9a037d0d8a62c33359ae8aa0c31f39d76857ad0923ce3e0597ea411fc66",
+          "bytes": 1298
+        },
+        {
+          "name": "test.outputs/containerd-import.runtime.trace",
+          "sha256": "fdfbc6de78e5b96fd7b5a37954cb659e18ee662abbb3750d7b2d42af8707a033",
+          "bytes": 62309269
+        },
+        {
+          "name": "test.outputs/containerd-import.runtime.trace.json",
+          "sha256": "0c333e371868e21875986a01a356c481e778ca637867e821f54fa4a77d35d737",
+          "bytes": 1310
+        },
+        {
+          "name": "test.outputs/cpu-pprof-top.txt",
+          "sha256": "89243bf02fd1a1c69f89bb33a8847735dca5022ddf36729a99a731f8b93b6e99",
+          "bytes": 20107
+        },
+        {
+          "name": "test.outputs/syscall-pprof-top.txt",
+          "sha256": "4c8f7bf4c24b60ab9b595d190e5a7c90a2618adb5a7bdc71c7b41beb51b94291",
+          "bytes": 10393
+        },
+        {
+          "name": "test.outputs/runtime-trace-clock.txt",
+          "sha256": "e939e9a64fc2b58e55c2b5734a71066667d17699f06c2bed880940efca1c5ab7",
+          "bytes": 71
+        }
+      ],
+      "native_cpu_header_time_utc": "2026-11-17 12:24:18 UTC",
+      "native_cpu_header_time_precision": "seconds",
+      "native_runtime_clock_basis": "monotonic; not joined to host wall time"
+    },
+    "browser": {
+      "failed_invocation": "5699ac4c-baa3-5d54-a7b0-8ea9ad0f7136",
+      "failed_sync_commit": "c52a46c69db0bba0e026fa3d012e8631fac4a710",
+      "playwright_version": "1.62.0",
+      "historical_action_id": "call@13",
+      "historical_goto_end_trace_seconds": 13.901,
+      "historical_after_snapshot_trace_seconds": 40.934,
+      "mechanism": "Pinned dispatcher awaits instrumentation.onAfterCall before its protocol response; tracing awaits the after-action DOM snapshot. The observed gap lies in this awaited post-action path before JS snapshot collection, after document navigation succeeded.",
+      "cpu_control": {
+        "invocation": "1585db6a-8bb1-4aee-9056-10650ca8a7c9",
+        "chromium_cpu_throttle": 8,
+        "verdict": "PASSED",
+        "test_runner_seconds_rounded": 65.7,
+        "navigation_seconds": 5.754,
+        "after_snapshot_gap_seconds": 1.392,
+        "proxy_max_headers_seconds": 0.099
+      },
+      "renderer_control": {
+        "invocation": "18f973d1-e647-4b1a-9964-c4ef4d6cd027",
+        "injected_busy_task_seconds": 32,
+        "verdict": "EXPECTED INJECTED FAILURE",
+        "test_runner_seconds_rounded": 80.0,
+        "after_snapshot_gap_seconds": 32.378,
+        "python_navigation_cancelled_after_seconds": 33.059,
+        "proxy_max_headers_seconds": 0.069,
+        "sync_commit": "5c6cc2ebeaa53c1e8ea3e0a1cc6c6335776119ed",
+        "source_patch": "browser-renderer-control.patch",
+        "source_patch_sha256": "0f57c303efbb7e21eb7fbaec6922d76e9a4c19f0b0b58079da813449b5632d91"
+      },
+      "limit": "Renderer blocking reproduces the late snapshot/Python timeout signature but not the historical roughly 23s API-header wait. No natural post-diagnostic failure was captured. The natural trigger, Node scheduling/VM pause possibility, and simultaneous proxy/API delay remain unresolved; no runtime fix or timeout change is justified.",
+      "control_target": "//agentplane/app:test_thread_browser",
+      "control_case": "test_streamed_admission_survives_a_lost_http_reply_and_reload"
+    },
+    "boot_reproduction": {
+      "pr": 17350,
+      "state": "PASSED in 337.052s, one fresh remote attempt and one VMI lifecycle; no timer/RCU stall reproduced",
+      "initial_arm": {
+        "invocation": "14831492-2683-472c-9e75-4e454b71570b",
+        "source_head": "2c8c2b1edb859a9d20d1caa310ddf1303e72aee5",
+        "verdict": "pre-boot scheduling failure",
+        "cause": "Explicit EPYC model added an unsatisfiable CPU node selector; full-suite VMI source leaves the model unspecified. No QEMU was started.",
+        "qemu_count": 0,
+        "observed_launcher_count": 0,
+        "kernel_exposure": false
+      },
+      "correction_pr": 17357,
+      "corrected_invocation": "3ca84157-a445-4ff2-b36a-b4b71da0d046",
+      "result_rows": [
+        [
+          "Native result",
+          "337.052s; one fresh remote attempt, one successful VMI boot and graceful shutdown"
+        ],
+        [
+          "Runtime match",
+          "TCG / EPYC / 2 vCPUs / q35 / ACPI; four virtiofs tags and Block workspace match"
+        ],
+        [
+          "Exact observer",
+          "15 sites, 13 event families; all five exact transitions hit; pinned QEMU SHA matches; no probe errors"
+        ],
+        [
+          "APIC coverage",
+          "CPU0: 35,099 lines retained, zero overwritten. CPU1: 19,522 older lines overwritten. No APIC kernel-ring loss."
+        ],
+        [
+          "Cleanup",
+          "Ordered guest shutdown receipt and host Shutoff/Shutdown; UID-guarded namespace/PV/StorageClass removal passed"
+        ],
+        [
+          "Limits",
+          "Pre-attachment history unavailable; extra boot arguments, placeholder configuration, masked Runtime; no full services or kernel-stall reproduction"
+        ]
+      ],
+      "source_head": "0c267381152728502db26e14134255df232a7393",
+      "test_runner_seconds": 337.052,
+      "noncached_runs": 1,
+      "attempt_count": 1,
+      "qemu_binary_sha256": "7921a53da58154d272c13b0d217314c92e5cde1bae05fe32e8607ae74549d0cb",
+      "probe_sites": 15,
+      "event_families": 13,
+      "exact_transition_probe_hit_counts": {
+        "accepted": 8374,
+        "eoi_before": 8374,
+        "eoi_after": 8374,
+        "guest_before": 8409,
+        "guest_after": 8409
+      },
+      "probe_errors": [],
+      "missing_transition_probes": [],
+      "apic_kernel_ring_overruns": 0,
+      "apic_kernel_dropped_events": 0,
+      "apic_retained_lines_by_cpu": {
+        "cpu0": 35099,
+        "cpu1": 11961,
+        "other": 7452
+      },
+      "apic_overwritten_lines_by_cpu": {
+        "cpu0": 0,
+        "cpu1": 19522,
+        "other": 0
+      },
+      "stop_reason": "userspace",
+      "qemu_configuration_matches": {
+        "accel": {
+          "failed_guest": "tcg",
+          "manual_guest": "tcg",
+          "matches": true
+        },
+        "acpi": {
+          "failed_guest": "on",
+          "manual_guest": "on",
+          "matches": true
+        },
+        "cpu": {
+          "failed_guest": "EPYC",
+          "manual_guest": "EPYC",
+          "matches": true
+        },
+        "machine": {
+          "failed_guest": "pc-q35-rhel9.8.0",
+          "manual_guest": "pc-q35-rhel9.8.0",
+          "matches": true
+        },
+        "vcpus": {
+          "failed_guest": "2",
+          "manual_guest": "2",
+          "matches": true
+        }
+      },
+      "virtiofs_tags": [
+        "agentplane-environment-runtime-tls",
+        "agentplane-environment-runtime-trust",
+        "runner-workload-trust",
+        "state"
+      ],
+      "kernel_args": {
+        "extra_in_manual": [
+          "agentplane.boot-evidence=1",
+          "systemd.mask=agentplane-environment-runtime.service"
+        ],
+        "failed_guest": [
+          "agentplane.shutdown-sysrq=1",
+          "agentplane.supervision-checks=1",
+          "console=ttyS0",
+          "net.ifnames=0"
+        ],
+        "missing_from_manual": []
+      },
+      "unmatched_topology": [
+        "direct VMI, no Sandbox controller or Runtime workload",
+        "placeholder Secret, ConfigMap and config/launch/trust disk contents",
+        "host scheduling and retained baseline may differ"
+      ],
+      "workspace_host_block_device": true,
+      "backing_source_limit": "Source kinds compared with full-suite controller source; failed VMI spec unavailable.",
+      "shutdown": "orderly_guest_powerdown; ordered guest receipt and matching host Shutoff reason Shutdown",
+      "cleanup": "UID-guarded namespace, VMI/PVC/PV/StorageClass cleanup passed",
+      "source_note_pr": 17361,
+      "selected_artifacts": [
+        {
+          "name": "summary.json",
+          "sha256": "f23d27fe0e5e1cbc779b6a66d0860336e548d45d317baa066fe68b19e2e092e4",
+          "bytes": 11299
+        },
+        {
+          "name": "observer.json",
+          "sha256": "6a181d0e55cdbde3984836b17c7b2d735f86139fa49fd98407ceb9d82417d89c",
+          "bytes": 69
+        },
+        {
+          "name": "early-boot-configuration-audit.json",
+          "sha256": "e0fe97c1592211603ec331f2ec5f6fa866014b4609b1fc1a704116809e53736c",
+          "bytes": 1898
+        },
+        {
+          "name": "shutdown-diagnostic.json",
+          "sha256": "21462dce2dee88a944de1248fefb1abbe55301e00e261c99f09dad74b7f6de79",
+          "bytes": 3064
+        },
+        {
+          "name": "interrupts.log",
+          "sha256": "ceaeb9361f40cf5f198b80af8e75fc3ba539eb3eceb6e22481de7c2e0d288fc2",
+          "bytes": 9085070
+        },
+        {
+          "name": "test.log",
+          "sha256": "705e83b63a5143d13c455aaac88fae12c590fed99ab90ff5bb6811e99d16b1a8",
+          "bytes": 6894
+        },
+        {
+          "name": "test.xml",
+          "sha256": "43c98e6f9d0abecc0b8a076407757d6fb9d48884edf78e0782fdc5dce4a52a25",
+          "bytes": 4228
+        }
+      ],
+      "pre_attachment_history_unavailable": true
+    },
+    "interventions": [
+      {
+        "pr": 17301,
+        "state": "MERGED",
+        "change": "Exact QEMU APIC acceptance, dispatch and EOI probes",
+        "merge_commit": "96f87b419e60ca3311aab00fb52be2f2fd7a20c5"
+      },
+      {
+        "pr": 17305,
+        "state": "MERGED",
+        "change": "Browser open/proxy phase diagnostics",
+        "merge_commit": "b4b98b7190562e0ad2dbf321a404c510e3e34fc2"
+      },
+      {
+        "pr": 17307,
+        "state": "MERGED",
+        "change": "Predicate-based destination-message readiness",
+        "merge_commit": "25cccc8db0d9d3a7eeedeea1c740cd24104e4869"
+      },
+      {
+        "pr": 17327,
+        "state": "MERGED",
+        "change": "Bounded native containerd CPU/runtime capture",
+        "merge_commit": "1d0acd88cd4523bb2b7186dbd581b8b15801fbb7"
+      },
+      {
+        "pr": 17339,
+        "state": "MERGED",
+        "change": "Opt-in exact observer on direct manual VMI"
+      },
+      {
+        "pr": 17342,
+        "state": "MERGED",
+        "change": "Accurate profiler process-exit clock labels"
+      },
+      {
+        "pr": 17350,
+        "state": "MERGED",
+        "change": "Four-virtiofs and block-workspace boot preset"
+      },
+      {
+        "pr": 17353,
+        "state": "MERGED",
+        "change": "Browser post-action snapshot controls and visibility boundary"
+      },
+      {
+        "pr": 17357,
+        "state": "MERGED",
+        "change": "Match full-suite unspecified CPU model; remove accidental node selector"
+      }
+    ]
   }
 }

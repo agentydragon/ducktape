@@ -19,7 +19,7 @@ report snapshots. The CI reports are:
   VM cache and physical-attempt audit, a full 375-second setup breakdown, the
   interim 380-fresh-result baseline census for #16027, three
   red-at-merge devel PRs, and current dispositions of earlier interventions.
-  The 17 November follow-up records merged case accounting, a pre-Runtime kernel stall and cleanup fence, and provider snapshot-version evidence. Historical measurements retain their original windows.
+  The 17 November follow-up records merged case accounting, a pre-Runtime kernel stall and cleanup fence, native profiles around 25 cold imports, bounded browser snapshot controls, and a focused VM topology control. Provider snapshot decisions remain unavailable. Historical measurements retain their original windows.
 
 - **Visual reliability:** [standalone HTML](visual-reliability/index.html),
   [evidence](visual-reliability/evidence.json),
